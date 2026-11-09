@@ -18,8 +18,10 @@ import {
   MediaOperationItemStatus,
   MediaOperationKind,
   MediaOperationStatus,
+  StorageFolder,
 } from 'src/enum.js';
 import { SharpOperations } from 'src/queue/sharp-operations.js';
+import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -92,6 +94,10 @@ describe(MediaHealthService.name, () => {
       relinkExternalAsset: vi.fn(),
       streamAssets: vi.fn(),
       upsertFinding: vi.fn(),
+      appendSteps: vi.fn().mockResolvedValue(undefined),
+      listSteps: vi.fn().mockResolvedValue([]),
+      settleFinding: vi.fn().mockResolvedValue(true),
+      getFindingsForAsset: vi.fn().mockResolvedValue([]),
     } as unknown as MediaHealthRepository;
     mediaOperationRepository = {
       list: vi.fn().mockResolvedValue({ items: [], total: 0 }),
@@ -3568,8 +3574,11 @@ describe(MediaHealthService.name, () => {
       vi.mocked(mocks.storage.mkdtemp).mockImplementation((prefix) => mkdtemp(join(root, prefix)));
       vi.mocked(mocks.storage.readFile).mockImplementation((path) => readFile(path));
       vi.mocked(mocks.storage.unlinkDir).mockImplementation((folder, options) => rm(folder, options));
+      // as through the image worker pool: a repair the worker refused comes back as its operation error
       vi.mocked(mocks.media.repairJpeg).mockImplementation((input, output, preview, metadataSource) =>
-        operations.repairJpeg(input, output, preview, metadataSource),
+        operations.repairJpeg(input, output, preview, metadataSource).catch((error: Error) => {
+          throw new SharpOperationError(error.message);
+        }),
       );
       nestedPath = vi
         .spyOn(StorageCore, 'getNestedPath')
@@ -3752,6 +3761,374 @@ describe(MediaHealthService.name, () => {
     it('says when a file has no picture to recover', async () => {
       await writeFile(damaged, 'not a picture at all');
       await expect(sut.previewRepair(owner, { findingId: 'health-1' })).rejects.toThrow('could not be repaired');
+    });
+  });
+
+  describe('the fix job (FL-1337)', () => {
+    type Written = { step: string; outcome: string; facts?: Record<string, any>; undo?: Record<string, any> | null };
+    const operations = new SharpOperations();
+    const crypto = new CryptoRepository();
+    const minutes = (count: number) => count * 60_000;
+    const care = (libraryCare: Record<string, unknown>) => {
+      clearConfigCache();
+      vi.mocked(mocks.systemMetadata.get).mockResolvedValue({ libraryCare } as never);
+    };
+    let root: string;
+    let nestedPath: { mockRestore: () => void };
+    let asset: Record<string, unknown> & { id: string; originalPath: string; checksum: Buffer };
+
+    const finding = (category: MediaHealthCategory, status: MediaHealthStatus, evidence = {}) => ({
+      id: 'health-1',
+      assetId: 'asset-1',
+      runId: null,
+      category,
+      status,
+      severity: MediaHealthSeverity.Critical,
+      originalPath: asset.originalPath,
+      originalFileName: asset.originalFileName,
+      evidence,
+      resolution: {},
+      checkedAt: new Date(),
+      resolvedAt: null,
+      dismissedAt: null,
+    });
+    const recorded = (...findings: unknown[]) => {
+      vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue(findings as never);
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue(findings as never);
+    };
+    /** The photo's original is this file, stored with its own checksum (it arrived as it is now). */
+    const original = async (file: string, bytes: Buffer, originalFileName = file.split('/').pop()!) => {
+      await writeFile(file, bytes);
+      asset = { ...asset, originalPath: file, originalFileName, checksum: createHash('sha1').update(bytes).digest() };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+    };
+    /** A JPEG whose end was cut off: the decoder says "premature end". Textured, so a cut keeps rows. */
+    const cutShort = async () => {
+      const values = Buffer.alloc(320 * 240 * 3);
+      let seed = 7;
+      for (let index = 0; index < values.length; index++) {
+        seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+        values[index] = seed >>> 24;
+      }
+      const good = await sharp(values, { raw: { width: 320, height: 240, channels: 3 } })
+        .jpeg()
+        .toBuffer();
+      await original(join(root, 'IMG_2041.jpg'), good.subarray(0, Math.floor(good.length * 0.7)));
+    };
+    const decoderSays = (result: Record<string, unknown>) =>
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValue(result);
+
+    /** Every step the job wrote, in the order it wrote them, whichever write carried it. */
+    const written = (): Written[] => {
+      const repository = mediaHealthRepository as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const carried: Array<{ order: number; steps: Written[] }> = [];
+      const collect = (name: string, steps: (args: any[]) => Written[] | undefined) => {
+        const mock = repository[name];
+        for (const [index, args] of (mock?.mock.calls ?? []).entries()) {
+          carried.push({ order: mock.mock.invocationCallOrder[index], steps: steps(args) ?? [] });
+        }
+      };
+      collect('upsertFinding', ([input]) => input.steps);
+      collect('replaceRepairedOriginal', ([input]) => input.steps);
+      collect('relinkManagedAsset', ([input]) => input.steps);
+      collect('relinkExternalAsset', ([input]) => input.steps);
+      collect('setRetainedPath', (args) => args[2]);
+      collect('settleFinding', ([input]) => input.steps);
+      collect('appendSteps', ([steps]) => steps);
+      return carried.sort((a, b) => a.order - b.order).flatMap(({ steps }) => steps);
+    };
+    const stepsWritten = () => written().map(({ step, outcome }) => `${step}/${outcome}`);
+    const stepNamed = (name: string) => written().find(({ step }) => step === name);
+    /** The finding's last recorded state, from whichever write set it. */
+    const fixState = () => {
+      const repository = mediaHealthRepository as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const states: Array<{ order: number; evidence: Record<string, unknown> }> = [];
+      for (const name of ['replaceRepairedOriginal', 'relinkManagedAsset', 'relinkExternalAsset', 'settleFinding']) {
+        const mock = repository[name];
+        for (const [index, [input]] of (mock?.mock.calls ?? []).entries()) {
+          if (input?.evidence?.fixState) {
+            states.push({ order: mock.mock.invocationCallOrder[index], evidence: input.evidence });
+          }
+        }
+      }
+      return states.sort((a, b) => a.order - b.order).at(-1)?.evidence;
+    };
+
+    beforeEach(async () => {
+      root = await mkdtemp(join(tmpdir(), 'library-care-fix-'));
+      asset = {
+        id: 'asset-1',
+        ownerId: 'user-id',
+        updateId: 'update-1',
+        checksum: Buffer.alloc(20, 1),
+        checksumAlgorithm: ChecksumAlgorithm.sha1File,
+        originalPath: join(root, 'IMG_2041.jpg'),
+        originalFileName: 'IMG_2041.jpg',
+        type: AssetType.Image,
+        isExternal: false,
+        libraryId: null,
+        deletedAt: null,
+      };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([]);
+      vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([]);
+      vi.mocked(mediaHealthRepository.createRun).mockResolvedValue({ id: 'run-1' } as never);
+      vi.mocked(mediaHealthRepository.upsertFinding).mockImplementation((input) =>
+        Promise.resolve({ ...input, id: 'health-1' } as never),
+      );
+      (mediaHealthRepository as unknown as Record<string, unknown>).replaceRepairedOriginal = vi
+        .fn()
+        .mockResolvedValue(true);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      vi.mocked(mocks.storage.stat).mockImplementation((file) => stat(file) as never);
+      vi.mocked(mocks.storage.mkdtemp).mockImplementation((prefix) => mkdtemp(join(root, prefix)));
+      vi.mocked(mocks.storage.unlinkDir).mockImplementation((folder, options) => rm(folder, options));
+      vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((file) => crypto.hashFileDigests(file));
+      vi.mocked(mocks.crypto.hashFileMatching).mockImplementation((file, reference) =>
+        crypto.hashFileMatching(file, reference),
+      );
+      // as through the image worker pool: a repair the worker refused comes back as its operation error
+      vi.mocked(mocks.media.repairJpeg).mockImplementation((input, output, preview, metadataSource) =>
+        operations.repairJpeg(input, output, preview, metadataSource).catch((error: Error) => {
+          throw new SharpOperationError(error.message);
+        }),
+      );
+      nestedPath = vi
+        .spyOn(StorageCore, 'getNestedPath')
+        .mockReturnValue(join(root, 'upload', 'user-id', 'as', 'se', 'asset-1'));
+    });
+
+    afterEach(async () => {
+      nestedPath.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    it('repairs a cut-short JPEG and keeps the damaged file', async () => {
+      await cutShort();
+      const damaged = asset.originalPath;
+      // after the commit the finding points at the repaired file and records the damaged one as `retainedPath`
+      vi.mocked(mediaHealthRepository.getByIds).mockImplementation(() => {
+        const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0]?.[0];
+        return Promise.resolve([
+          {
+            ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.Resolved, { retainedPath: damaged }),
+            originalPath: input?.originalPath,
+          },
+        ] as never);
+      });
+
+      await expect(
+        sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' }),
+      ).resolves.toBe(JobStatus.Success);
+
+      expect(stepsWritten()).toEqual(['wont-open/failed', 'repaired/ok', 'kept-damaged/info']);
+      expect(stepNamed('wont-open')?.facts).toEqual({ cause: 'cut-short' });
+      const repaired = stepNamed('repaired')!;
+      expect(repaired.facts).toMatchObject({ method: 'rebuilt', metadataLost: false });
+      expect(repaired.facts!.percentSaved).toBeGreaterThan(0);
+      expect(repaired.facts!.percentSaved).toBeLessThan(100);
+      // the damaged file was moved beside the repaired one, never deleted, and Undo knows where it is
+      const kept = stepNamed('kept-damaged')!;
+      expect(kept.undo).toMatchObject({ kind: 'repair', previousPath: expect.stringContaining('.library-care') });
+      await expect(stat(kept.undo!.previousPath)).resolves.toBeDefined();
+      await expect(stat(damaged)).rejects.toThrow();
+      const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0][0];
+      expect(kept.undo).toMatchObject({ originalPath: input.originalPath, checksum: input.sha256.toString('hex') });
+      expect(input).toMatchObject({
+        expectedOriginalPath: damaged,
+        provenance: expect.objectContaining({ recoveredBy: 'user-id', automatic: true, repairMethod: 'rebuilt' }),
+      });
+      expect(fixState()).toEqual({ fixState: 'part-saved', partSaved: true });
+      // previews are made again, as after an upload, so the follow-up work runs too
+      expect(mocks.job.queueAll).toHaveBeenCalledWith(
+        expect.arrayContaining([{ name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } }]),
+      );
+    });
+
+    it('leaves a Photoshop file as it is', async () => {
+      await original(join(root, 'Album-cover.psd'), Buffer.concat([Buffer.from('8BPS'), Buffer.alloc(2048, 3)]));
+
+      await sut.handleFixAsset({
+        id: 'asset-1',
+        from: 'preview',
+        message: 'Input buffer contains unsupported image format',
+      });
+
+      expect(stepsWritten()).toEqual(['unsupported/info']);
+      expect(fixState()).toMatchObject({ fixState: 'left-as-is' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('does not repair when automatic repair is off', async () => {
+      care({ autoRepair: false });
+      await cutShort();
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' });
+
+      expect(stepsWritten()).toEqual(['wont-open/failed', 'checked/failed']);
+      expect(stepNamed('checked')?.facts).toEqual({ cause: 'cut-short' });
+      expect(fixState()).toMatchObject({ fixState: 'cant-repair' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+    });
+
+    it('does not repair again after Undo', async () => {
+      await cutShort();
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { autoRepairDeclined: true }));
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+
+      // the file check already said it won't open: nothing says it twice
+      expect(stepsWritten()).toEqual(['checked/failed']);
+      expect(fixState()).toMatchObject({ fixState: 'cant-repair' });
+      expect(fixState()).not.toHaveProperty('autoRepairDeclined', false);
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+    });
+
+    it('restores a changed file from Cloud Backup', async () => {
+      await cutShort();
+      // the file is no longer the one Frameleaf stored
+      asset = { ...asset, checksum: Buffer.alloc(20, 9) };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed));
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      const restore = vi.spyOn(sut as any, 'restoreLostOriginal').mockResolvedValue('restored');
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+
+      expect(restore).toHaveBeenCalledWith('asset-1');
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/ok', 'restored/ok']);
+      expect(stepNamed('restored')?.undo).toMatchObject({ kind: 'restore', previousPath: asset.originalPath });
+      expect(fixState()).toMatchObject({ fixState: 'restored' });
+      expect(mediaHealthRepository.settleFinding).toHaveBeenLastCalledWith(
+        expect.objectContaining({ healthId: 'health-1', status: MediaHealthStatus.Resolved }),
+      );
+      // a real original always beats a repair
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+    });
+
+    it('puts back the one exact copy of a missing file', async () => {
+      const copy = join(root, 'IMG_3310+1.jpg');
+      await original(copy, Buffer.from('the photo, exactly'));
+      asset = { ...asset, originalPath: join(root, 'IMG_3310.jpg'), originalFileName: 'IMG_3310.jpg' };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing));
+      vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+        {
+          id: 'candidate-1',
+          healthId: 'health-1',
+          candidatePath: copy,
+          status: MediaHealthStatus.Found,
+          evidence: { rootId: MANAGED_ROOT_ID, decodeValid: true },
+          resolution: { autoRelinkable: true },
+        },
+      ] as never);
+      vi.mocked(mediaHealthRepository.relinkManagedAsset).mockResolvedValue(true);
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+
+      expect(stepsWritten()).toEqual(['searched-copy/ok', 'put-back/ok']);
+      expect(stepNamed('put-back')?.undo).toMatchObject({ kind: 'relink', previousPath: join(root, 'IMG_3310.jpg') });
+      expect(vi.mocked(mediaHealthRepository.relinkManagedAsset).mock.calls[0][0]).toMatchObject({
+        originalPath: copy,
+        provenance: expect.objectContaining({ relinkedBy: 'user-id', automatic: true }),
+      });
+      expect(fixState()).toMatchObject({ fixState: 'found-again' });
+    });
+
+    it('waits for a phone when a missing file is nowhere else', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing));
+      vi.spyOn(sut as any, 'phonesToAsk').mockResolvedValue([{ id: 'session-1', name: 'iPhone' }]);
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/not-found', 'asked-phones/waiting']);
+      expect(fixState()).toMatchObject({ fixState: 'waiting-phone' });
+      expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('tries a busy file three times, then stops', async () => {
+      await cutShort();
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed));
+      decoderSays({ status: 'timeout', reason: 'decode_timeout' });
+
+      let data: Record<string, unknown> = { id: 'asset-1', from: 'check' };
+      for (const delay of [5, 30, 120]) {
+        await expect(sut.handleFixAsset(data as never)).resolves.toBe(JobStatus.Success);
+        const queued = vi.mocked(mocks.job.queue).mock.calls.at(-1)![0] as { name: JobName; data: typeof data };
+        expect(queued.name).toBe(JobName.MediaHealthFixAsset);
+        expect(queued.data).toMatchObject({ id: 'asset-1', from: 'check', delay: minutes(delay) });
+        expect(written()).toEqual([]);
+        data = queued.data;
+      }
+      expect(data).toMatchObject({ attempt: 3, requeue: 3 });
+
+      await sut.handleFixAsset(data as never);
+
+      expect(mocks.job.queue).toHaveBeenCalledTimes(3);
+      expect(stepsWritten()).toEqual(['checked/failed']);
+      expect(stepNamed('checked')?.facts).toEqual({ cause: 'busy' });
+      expect(fixState()).toMatchObject({ fixState: 'couldnt-check' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+    });
+
+    it('tries again when the image worker crashes partway through a repair, leaving the original untouched', async () => {
+      await cutShort();
+      const before = await readFile(asset.originalPath);
+      vi.mocked(mocks.media.repairJpeg).mockRejectedValue(new Error('Sharp child closed (SIGSEGV)'));
+
+      await expect(
+        sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' }),
+      ).resolves.toBe(JobStatus.Success);
+
+      expect(vi.mocked(mocks.job.queue).mock.calls[0][0]).toEqual({
+        name: JobName.MediaHealthFixAsset,
+        data: expect.objectContaining({ attempt: 1, requeue: 1, delay: minutes(5) }),
+      });
+      expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+      expect(fixState()).toBeUndefined();
+      await expect(readFile(asset.originalPath)).resolves.toEqual(before);
+    });
+
+    it('waits while the drive is unplugged', async () => {
+      const upload = StorageCore.getBaseFolder(StorageFolder.Upload);
+      asset = { ...asset, originalPath: join(upload, 'user-id', 'as', 'se', 'asset-1.jpg') };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      // the drive's mount file is gone, so every file on it looks lost
+      vi.mocked(mocks.storage.stat).mockImplementation((file) =>
+        file === join(upload, '.frameleaf')
+          ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+          : Promise.resolve(settledStat({ size: 10 }) as never),
+      );
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.MediaHealthFixAsset,
+        data: { id: 'asset-1', from: 'check', waits: 1, requeue: 1, delay: minutes(30) },
+      });
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+
+      // after a day of waiting it stops; the next file check or Try again starts it again
+      vi.mocked(mocks.job.queue).mockClear();
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check', waits: 48 })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+    });
+
+    it('skips a photo that is gone or in the trash, recording nothing', async () => {
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValueOnce([]);
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Skipped);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValueOnce([{ ...asset, deletedAt: new Date() }] as never);
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Skipped);
+      expect(written()).toEqual([]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 });

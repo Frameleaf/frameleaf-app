@@ -5,12 +5,14 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
+import type { FindingStep, FixState, NewFileStep } from 'src/utils/file-steps.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -61,6 +63,7 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
+import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -90,6 +93,21 @@ import { BulkMediaHealthEntry, BulkOperationItem, bulkErrorMessage } from 'src/u
 import { getConfig } from 'src/utils/config.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import {
+  BUSY_RETRY_DELAYS_MS,
+  FIX_WAIT_MS,
+  MAX_DRIVE_WAITS,
+  checkedStep,
+  folderFacts,
+  repairResult,
+} from 'src/utils/file-fix.js';
+import {
+  FileCause,
+  classifyFileProblem,
+  isJpegFileName,
+  nextFixAction,
+  readFileShape,
+} from 'src/utils/file-problem.js';
 import { fileIdentity } from 'src/utils/file-trash.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { JPEG_REPAIR_EXTENSIONS, type JpegRepairResult } from 'src/utils/jpeg-repair.js';
@@ -119,6 +137,7 @@ import { getErrorMessage } from 'src/utils/media-health.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { isFileRootReachable } from 'src/utils/storage-reach.js';
 
 const MEDIA_HEALTH_PAGE_SIZE = 100;
 const MANAGED_LOOKUP_MAX_ENTRIES = 10_000;
@@ -158,7 +177,26 @@ type CandidateValidation = {
   score: number | null;
   evidence: Record<string, unknown>;
   resolution: Record<string, unknown>;
+  /** FL-1337: the decoder's own words, for telling the cause. Never stored. */
+  message?: string;
 };
+
+type FixJob = JobOf<JobName.MediaHealthFixAsset>;
+/**
+ * How a fix leaves the finding a relink or recovery writes (FL-1337): its state, and the history the
+ * write adds. `kept` is the step for the previous file once it is in its kept place; it carries what
+ * Undo needs.
+ */
+type FixWrite = {
+  evidence: Record<string, unknown>;
+  steps: FindingStep[];
+  kept?: (retainedPath: string, after: { originalPath: string; checksum: string }) => FindingStep;
+};
+/** Cloud Backup's answer to "put this original back" (FL-1337; Task 7 makes it real). */
+type LostOriginalRestore = 'restored' | 'not-in-backup' | 'busy' | 'not-set-up';
+
+const isOpenFinding = (finding: Pick<MediaHealthFinding, 'resolvedAt' | 'dismissedAt'>) =>
+  !finding.resolvedAt && !finding.dismissedAt;
 
 /** A validation that could not reach a verdict (busy, timed out, out of resources): no change this time. */
 type BusyValidation = { busy: true; candidate: CandidateValidation };
@@ -1178,28 +1216,50 @@ export class MediaHealthService {
     if (result?.status !== MediaHealthStatus.CorruptConfirmed && result?.status !== MediaHealthStatus.CorruptSuspect) {
       throw new BadRequestException('This photo isn’t damaged, so there is nothing to repair');
     }
-    const finding = await this.mediaHealthRepository.upsertFinding({
-      runId: null,
-      assetId: asset.id,
-      expectedUpdateId: asset.updateId,
-      category: MediaHealthCategory.Corrupt,
-      status: result.status,
-      severity:
-        result.status === MediaHealthStatus.CorruptConfirmed
-          ? MediaHealthSeverity.Critical
-          : MediaHealthSeverity.Warning,
-      originalPath: asset.originalPath,
-      originalFileName: asset.originalFileName,
-      evidence: result.evidence,
-      resolution: result.resolution,
-      checkedAt: new Date(),
-      dismissedAt: null,
-      resolvedAt: null,
-    });
+    const cause = await this.causeOf(asset, this.decoderMessage(result), await this.matchesStoredChecksum(asset));
+    const finding = await this.ensureFinding(asset, MediaHealthCategory.Corrupt, checkedStep(cause), result);
     if (!finding) {
       throw new ConflictException('The photo changed while it was being checked; try again');
     }
     return finding.id;
+  }
+
+  /**
+   * Record what is wrong with the asset now as its finding of this category, with the step that found
+   * it (FL-1337): the auth-free core of the photo viewer's way in, and how the fix job records a problem
+   * nothing recorded yet. The step starts a history only when no open finding of this category exists,
+   * so asking again adds nothing twice. Undefined when the asset changed meanwhile.
+   */
+  private async ensureFinding(
+    asset: MediaHealthAsset,
+    category: MediaHealthCategory,
+    first: FindingStep,
+    verdict: Pick<CandidateValidation, 'status' | 'evidence' | 'resolution'>,
+  ): Promise<MediaHealthFinding | undefined> {
+    const known = (await this.mediaHealthRepository.getFindingsForAsset(asset.id)).some(
+      (finding) => finding.category === category && isOpenFinding(finding),
+    );
+    return this.mediaHealthRepository.upsertFinding({
+      runId: null,
+      assetId: asset.id,
+      expectedUpdateId: asset.updateId,
+      category,
+      status: verdict.status,
+      severity:
+        verdict.status === MediaHealthStatus.CorruptConfirmed || verdict.status === MediaHealthStatus.Missing
+          ? MediaHealthSeverity.Critical
+          : verdict.status === MediaHealthStatus.UnsupportedRaw
+            ? MediaHealthSeverity.Info
+            : MediaHealthSeverity.Warning,
+      originalPath: asset.originalPath,
+      originalFileName: asset.originalFileName,
+      evidence: verdict.evidence,
+      resolution: verdict.resolution,
+      checkedAt: new Date(),
+      dismissedAt: null,
+      resolvedAt: null,
+      steps: known ? [] : [first],
+    });
   }
 
   /** Who may repair which photo; the same rules for a finding and for the photo viewer. */
@@ -1258,6 +1318,12 @@ export class MediaHealthService {
         result = await this.mediaRepository.repairJpeg(asset.originalPath, output, preview, metadataSource);
       } catch (error) {
         this.logger.warn(`JPEG repair of ${asset.id} failed: ${getErrorMessage(error)}`);
+        if (!(error instanceof SharpOperationError)) {
+          // the image worker crashed, stalled or ran out of room: not a verdict on the photo (FL-1337)
+          throw new ServiceUnavailableException(
+            "Frameleaf couldn't repair this photo just now. Try again in a few minutes.",
+          );
+        }
         throw new BadRequestException('This photo could not be repaired');
       }
       // the file already decodes as it is: replacing it would only accept a changed file as the original
@@ -1282,6 +1348,608 @@ export class MediaHealthService {
     } finally {
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * FL-1337: check one damaged or missing file and fix what can be fixed without a person (design §3),
+   * writing each step of its history as it goes. A failed preview, a file check, an import and a
+   * person's Try again ask for it; one runs per photo at a time (`fix-<id>`).
+   *
+   * Safe to repeat: every write checks that the asset and its finding are still what was read, and a
+   * file that is busy, on an unplugged drive or waiting on Cloud Backup puts the fix back with a delay
+   * instead of guessing. Nothing is deleted: a repaired, relinked or restored photo keeps its previous
+   * file, and the step that changed it records what Undo needs.
+   */
+  @OnJob({ name: JobName.MediaHealthFixAsset, queue: QueueName.MediaHealth })
+  async handleFixAsset(job: FixJob): Promise<JobStatus> {
+    const [asset] = await this.mediaHealthRepository.getAssets([job.id]);
+    if (!asset || asset.deletedAt) {
+      return JobStatus.Skipped;
+    }
+    const libraries = await this.libraryRepository.getAll().catch(() => []);
+    if (!(await isFileRootReachable(this.storageRepository, asset.originalPath, libraries))) {
+      // Review Focus 1: on an unplugged drive every file looks lost. Wait for it, recording nothing.
+      const waits = job.waits ?? 0;
+      if (waits >= MAX_DRIVE_WAITS) {
+        this.logger.log(`Library care stopped waiting for the drive that holds ${asset.id}`);
+        return JobStatus.Skipped;
+      }
+      return this.putFixBack(job, { waits: waits + 1, delay: FIX_WAIT_MS });
+    }
+    const open = (await this.mediaHealthRepository.getFindingsForAsset(asset.id)).filter((finding) =>
+      isOpenFinding(finding),
+    );
+    const settings = await this.careSettings();
+    return (await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK))
+      ? this.fixDamaged(job, asset, open, settings)
+      : this.fixMissing(job, asset, open, settings);
+  }
+
+  /** The file is there: find out what is wrong with it, then find its original, repair it or say so. */
+  private async fixDamaged(
+    job: FixJob,
+    asset: MediaHealthAsset,
+    open: MediaHealthFinding[],
+    settings: Awaited<ReturnType<MediaHealthService['careSettings']>>,
+  ): Promise<JobStatus> {
+    if (await this.isEncryptedOriginal(asset)) {
+      // FL-721: a sealed original is ciphertext; nothing here can call it damaged or repair it
+      return JobStatus.Skipped;
+    }
+    let message = job.message;
+    let verdict: CandidateValidation | undefined;
+    let busy = false;
+    if (message === undefined) {
+      // a check, an import or a person asked: what does the decoder say now?
+      const result = await this.validateReadableAssetIntegrity(asset, { verifyChecksum: false });
+      verdict = result ? ('busy' in result ? result.candidate : result) : undefined;
+      // gone between the two looks: as busy, the next try sees it missing
+      busy = !!result && ('busy' in result || result.status === MediaHealthStatus.Missing);
+      message = verdict ? this.decoderMessage(verdict) : '';
+    }
+    const matches = busy ? null : await this.matchesStoredChecksum(asset);
+    if (!busy && !verdict && job.message === undefined && matches !== false) {
+      // it opens, and it is the file Frameleaf stored: nothing is wrong with it now
+      return this.settleHealthy(open);
+    }
+
+    const attempt = job.attempt ?? 0;
+    let finding = open.find(({ category }) => category === MediaHealthCategory.Corrupt);
+    const declined = (finding?.evidence as Record<string, unknown> | undefined)?.autoRepairDeclined === true;
+    const next = (current: FileCause) =>
+      nextFixAction({
+        cause: current,
+        attempt,
+        autoRepair: settings.autoRepair,
+        declined,
+        repairableType: isJpegFileName(asset.originalFileName),
+        writable: !asset.isExternal,
+      });
+    let cause: FileCause = busy ? 'busy' : await this.causeOf(asset, message, matches);
+    let action = next(cause);
+    if (action === 'retry-later') {
+      // busy is never a verdict: no finding and no step until it has had its three tries
+      return this.putFixBack(job, { attempt: attempt + 1, delay: BUSY_RETRY_DELAYS_MS[attempt] });
+    }
+
+    // What was wrong starts the history once. A file check already wrote it for its own finding; a
+    // preview's failure is news even then (but not again when this fix carries on from its search).
+    const opening: FindingStep =
+      cause === 'not-supported'
+        ? {
+            step: 'unsupported',
+            outcome: 'info',
+            facts: { extension: path.extname(asset.originalFileName).toLowerCase() },
+          }
+        : { step: 'wont-open', outcome: 'failed', facts: { cause } };
+    let lead: FindingStep[] = [];
+    if (finding) {
+      if (cause === 'not-supported' || (job.from === 'preview' && !job.managedSearch && !job.stage)) {
+        lead = [opening];
+      }
+    } else {
+      finding = await this.ensureFinding(
+        asset,
+        MediaHealthCategory.Corrupt,
+        opening,
+        this.damageVerdict(cause, verdict),
+      );
+      if (!finding) {
+        // the photo changed while it was checked: look again a little later, as for a busy file
+        return attempt < BUSY_RETRY_DELAYS_MS.length
+          ? this.putFixBack(job, { attempt: attempt + 1, delay: BUSY_RETRY_DELAYS_MS[attempt] })
+          : JobStatus.Skipped;
+      }
+    }
+
+    if (action === 'find-original') {
+      if (finding.status !== MediaHealthStatus.CorruptConfirmed) {
+        // it is proven changed: the search for a verified replacement only looks for confirmed damage
+        finding =
+          (await this.mediaHealthRepository.upsertFinding({
+            ...finding,
+            expectedUpdateId: asset.updateId,
+            status: MediaHealthStatus.CorruptConfirmed,
+            severity: MediaHealthSeverity.Critical,
+          })) ?? finding;
+      }
+      if ((await this.findOriginal(job, asset, finding, lead)) === 'done') {
+        return JobStatus.Success;
+      }
+      // no stored original anywhere: the file is all there is, so treat it for what is wrong with it
+      lead = [];
+      cause = await this.causeOf(asset, message, null);
+      action = next(cause);
+    }
+
+    switch (action) {
+      case 'retry-later': {
+        return this.putFixBack(job, { attempt: attempt + 1, delay: BUSY_RETRY_DELAYS_MS[attempt] });
+      }
+      case 'leave-as-is': {
+        await this.settle(finding, 'left-as-is', lead);
+        return JobStatus.Success;
+      }
+      case 'repair': {
+        const repaired = await this.repairAutomatically(finding, asset, lead);
+        if (repaired === 'busy' && attempt < BUSY_RETRY_DELAYS_MS.length) {
+          // the image worker crashed or the photo changed under the repair (Review Focus 2): try again
+          return this.putFixBack(job, { attempt: attempt + 1, delay: BUSY_RETRY_DELAYS_MS[attempt] });
+        }
+        if (repaired === 'busy') {
+          await this.settle(finding, 'couldnt-check', [...lead, checkedStep('busy')]);
+        } else if (repaired === 'not-repaired') {
+          await this.settle(finding, 'cant-repair', [...lead, checkedStep(cause)]);
+        }
+        return JobStatus.Success;
+      }
+      default: {
+        // Needs you: repair is off or declined, the file type has no repair, or it stayed busy
+        await this.settle(finding, cause === 'busy' ? 'couldnt-check' : 'cant-repair', [...lead, checkedStep(cause)]);
+        return JobStatus.Success;
+      }
+    }
+  }
+
+  /** The file is not on the drive: look for it by its contents, then in Cloud Backup, then ask phones. */
+  private async fixMissing(
+    job: FixJob,
+    asset: MediaHealthAsset,
+    open: MediaHealthFinding[],
+    settings: Awaited<ReturnType<MediaHealthService['careSettings']>>,
+  ): Promise<JobStatus> {
+    let finding = open.find(({ category }) => category === MediaHealthCategory.Missing);
+    if (!finding) {
+      const roots = await this.ownerFolders(asset);
+      finding = await this.ensureFinding(
+        asset,
+        MediaHealthCategory.Missing,
+        { step: 'not-on-drive', outcome: 'failed', facts: folderFacts(roots, asset.originalPath) },
+        {
+          status: MediaHealthStatus.Missing,
+          evidence: { reason: 'source_file_missing_or_unreadable' },
+          resolution: { autoRelinkable: !!asset.isExternal && !!asset.libraryId },
+        },
+      );
+      if (!finding) {
+        return JobStatus.Skipped;
+      }
+    }
+    if ((await this.findOriginal(job, asset, finding, [])) === 'done') {
+      return JobStatus.Success;
+    }
+    if (!settings.askPhones) {
+      await this.settle(finding, 'missing', []);
+      return JobStatus.Success;
+    }
+    const phones = await this.phonesToAsk(asset.ownerId);
+    await (phones.length > 0
+      ? this.settle(finding, 'waiting-phone', [
+          { step: 'asked-phones', outcome: 'waiting', facts: { phones: phones.length } },
+        ])
+      : this.settle(finding, 'missing', [{ step: 'asked-phones', outcome: 'not-found' }]));
+    return JobStatus.Success;
+  }
+
+  /**
+   * Look for the stored original by its checksum and put back its one verified copy; otherwise ask
+   * Cloud Backup for it (design §3 Missing 1-2, Damaged 2). `done` when the fix is settled or put back on
+   * its queue; `none` when nothing had it, with the search and the backups recorded.
+   */
+  private async findOriginal(
+    job: FixJob,
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    lead: FindingStep[],
+  ): Promise<'done' | 'none'> {
+    if (job.stage === 'backups') {
+      // the search was done and recorded before Cloud Backup asked this fix to wait
+      await this.mediaHealthRepository.appendSteps(this.stepsOf(finding, lead));
+    } else {
+      const search = await this.searchForCopy(job, asset, finding);
+      if (!search) {
+        return 'done';
+      }
+      const places = { places: [asset.isExternal ? 'library' : 'managed'] };
+      if (search.copies > 0) {
+        const found: FindingStep = {
+          step: 'searched-copy',
+          outcome: 'ok',
+          facts: {
+            ...places,
+            copies: search.copies,
+            ...(search.verified.length === 1 &&
+              folderFacts(await this.ownerFolders(asset), search.verified[0].candidatePath)),
+          },
+        };
+        if (!(await this.putBackCopy(asset, finding, search.verified, [...lead, found]))) {
+          // copies, but not one Frameleaf may pick by itself: the person chooses
+          await this.settle(finding, finding.category === MediaHealthCategory.Missing ? 'missing' : 'cant-repair', [
+            ...lead,
+            found,
+          ]);
+        }
+        return 'done';
+      }
+      await this.mediaHealthRepository.appendSteps(
+        this.stepsOf(finding, [...lead, { step: 'searched-copy', outcome: 'not-found', facts: places }]),
+      );
+    }
+
+    switch (await this.restoreLostOriginal(asset.id)) {
+      case 'restored': {
+        await this.settleRestored(asset, finding);
+        return 'done';
+      }
+      case 'busy': {
+        // a backup or restore is running: ask again later, without searching again
+        await this.putFixBack(job, {
+          stage: 'backups',
+          delay: FIX_WAIT_MS,
+          runId: undefined,
+          managedSearch: undefined,
+        });
+        return 'done';
+      }
+      case 'not-in-backup': {
+        await this.mediaHealthRepository.appendSteps(
+          this.stepsOf(finding, [{ step: 'checked-backups', outcome: 'not-found' }]),
+        );
+        return 'none';
+      }
+      default: {
+        // no Cloud Backup is set up: there is no backup to name
+        return 'none';
+      }
+    }
+  }
+
+  /**
+   * One bounded step of the search for this finding's original (`locateFindings`, as the classic search
+   * runs it). While the walk is incomplete the fix puts itself back to carry on; once complete, how many
+   * usable copies it found and the ones Frameleaf may relink by itself. Undefined when it carries on.
+   */
+  private async searchForCopy(
+    job: FixJob,
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+  ): Promise<{ copies: number; verified: MediaHealthCandidate[] } | undefined> {
+    const runId = job.runId ?? (await this.mediaHealthRepository.createRun(finding.category, asset.ownerId)).id;
+    let step: MediaHealthLocateStep;
+    try {
+      step = await this.locateFindings({
+        runId,
+        findingIds: [finding.id],
+        ownerId: asset.ownerId,
+        rootIds: null,
+        managedSearch: job.managedSearch,
+      });
+    } catch (error) {
+      await this.mediaHealthRepository.finishRun(runId, { status: 'failed', error: getErrorMessage(error) });
+      throw error;
+    }
+    const { checkedAssets, foundAssets, continuation } = step;
+    await this.mediaHealthRepository.finishRun(runId, {
+      status: continuation ? 'running' : 'completed',
+      ...(continuation && { finishedAt: null }),
+      totalAssets: checkedAssets,
+      checkedAssets,
+      foundAssets,
+      error: null,
+    });
+    if (continuation) {
+      await this.putFixBack(job, { runId, managedSearch: continuation, delay: undefined });
+      return;
+    }
+    // An exact copy; a replacement for damage must decode too. An inexact match is never used.
+    const copies = (await this.mediaHealthRepository.getCandidatesByHealthIds([finding.id])).filter(
+      ({ status, evidence }) =>
+        status === MediaHealthStatus.Found &&
+        (finding.category === MediaHealthCategory.Missing ||
+          (evidence as Record<string, unknown> | null)?.decodeValid === true),
+    );
+    // Only one Frameleaf may relink by itself: never from a recovery location
+    const verified = copies.filter(
+      (candidate) =>
+        (candidate.resolution as Record<string, unknown> | null)?.autoRelinkable === true &&
+        this.candidateRootKind(candidate) !== 'recovery',
+    );
+    return { copies: copies.length, verified };
+  }
+
+  /** Put the one verified copy back as the asset's original, with the steps that say so. */
+  private async putBackCopy(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    verified: MediaHealthCandidate[],
+    steps: FindingStep[],
+  ): Promise<boolean> {
+    if (verified.length !== 1) {
+      return false;
+    }
+    const [candidate] = verified;
+    // read again now: the search takes a while, and previews or metadata may have changed the asset
+    const [current] = await this.mediaHealthRepository.getAssets([asset.id]);
+    if (!current || current.deletedAt) {
+      return false;
+    }
+    const evidence = { fixState: 'found-again' satisfies FixState };
+    if (finding.category === MediaHealthCategory.Missing) {
+      if (current.isExternal && !current.libraryId) {
+        return false;
+      }
+      const item = await this.relinkInPlace(current.ownerId, finding, current, candidate, {
+        evidence,
+        steps: [
+          ...steps,
+          { step: 'put-back', outcome: 'ok', undo: { kind: 'relink', previousPath: current.originalPath } },
+        ],
+      });
+      return item.status === MediaOperationItemStatus.Ok;
+    }
+    if (current.isExternal) {
+      return false;
+    }
+    // a changed file is replaced by a published copy of its original and kept beside it, like a repair
+    const item = await this.publishAndCommit(
+      { id: current.ownerId, isAdmin: false },
+      finding,
+      current,
+      candidate,
+      MediaHealthCategory.Corrupt,
+      {
+        evidence,
+        steps,
+        kept: (retainedPath, after) => ({
+          step: 'put-back',
+          outcome: 'ok',
+          undo: { kind: 'relink', previousPath: retainedPath, ...after },
+        }),
+      },
+    );
+    return item.status === MediaOperationItemStatus.Ok;
+  }
+
+  /**
+   * Repair a damaged JPEG without a person (design §3 step 3): FL-1273's repair, published into the
+   * hidden Library Care folder, the asset relinked to it and the damaged file kept beside it. Its
+   * refusals are FL-1273's (external libraries, encrypted Locked originals, anything but a JPEG) without
+   * the owner check or the reviewed checksum: the repair is deterministic, it runs on the owner's
+   * behalf, and Undo puts the damaged file back. `busy` when the image worker gave up or the photo
+   * changed while it was repaired.
+   */
+  private async repairAutomatically(
+    finding: MediaHealthFinding,
+    asset: MediaHealthAsset,
+    steps: FindingStep[] = [],
+  ): Promise<'repaired' | 'part-saved' | 'not-repaired' | 'busy'> {
+    if (asset.isExternal || !isJpegFileName(asset.originalFileName) || (await this.isEncryptedOriginal(asset))) {
+      return 'not-repaired';
+    }
+    let repaired: { destination: string; checksum: string; fixState: 'repaired' | 'part-saved' } | undefined;
+    try {
+      repaired = await this.withRepair(asset, async ({ output, method, metadataKept, percentSaved }) => {
+        const digests = await this.cryptoRepository.hashFileDigests(output);
+        const destination = path.join(
+          path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
+          RECOVERY_FOLDER,
+          `${asset.id}-${finding.id}-${digests.sha1.toString('hex').slice(0, 8)}.jpg`,
+        );
+        await publishVerifiedCopy({
+          source: output,
+          destination,
+          expected: digests,
+          hash: (filePath) => this.cryptoRepository.hashFileDigests(filePath),
+        });
+        const stat = await this.storageRepository.stat(destination);
+        const result = repairResult({ method, percentSaved });
+        const committed = await this.mediaHealthRepository.replaceRepairedOriginal({
+          assetId: asset.id,
+          ownerId: asset.ownerId,
+          healthId: finding.id,
+          expectedUpdateId: asset.updateId,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          expectedOriginalPath: asset.originalPath,
+          expectedChecksum: asset.checksum,
+          originalPath: destination,
+          originalFileName: asset.originalFileName,
+          ...digests,
+          fileModifiedAt: stat.mtime,
+          provenance: {
+            recoveredBy: asset.ownerId,
+            automatic: true,
+            repairMethod: method,
+            recoveredAt: new Date().toISOString(),
+          },
+          evidence: { fixState: result.fixState, partSaved: result.partSaved },
+          steps: [
+            ...steps,
+            {
+              step: 'repaired',
+              outcome: 'ok',
+              facts: {
+                method,
+                ...(result.percentSaved !== undefined && { percentSaved: result.percentSaved }),
+                metadataLost: !metadataKept,
+              },
+            },
+          ],
+          verifyCandidate: () => this.cryptoRepository.hashFileDigests(destination).catch((): undefined => {}),
+        });
+        // not committed: left unreferenced in the hidden folder, where the same repair reuses it
+        return committed
+          ? { destination, checksum: digests.sha256.toString('hex'), fixState: result.fixState }
+          : undefined;
+      });
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        return 'busy';
+      }
+      if (error instanceof BadRequestException || isAssetChecksumConstraint(error)) {
+        this.logger.log(`Library care could not repair ${asset.id} by itself: ${getErrorMessage(error)}`);
+        return 'not-repaired';
+      }
+      throw error;
+    }
+    if (!repaired) {
+      return 'busy';
+    }
+    const after = { originalPath: repaired.destination, checksum: repaired.checksum };
+    await this.retainDamagedOriginal(finding.id, (retainedPath) => ({
+      step: 'kept-damaged',
+      outcome: 'info',
+      undo: { kind: 'repair', previousPath: retainedPath, ...after },
+    }));
+    await this.queueRelinkJobs(asset.id);
+    return repaired.fixState;
+  }
+
+  /** The original came back from Cloud Backup (Task 7 restores it): record it, with what Undo needs. */
+  private async settleRestored(asset: MediaHealthAsset, finding: MediaHealthFinding): Promise<void> {
+    const [after = asset] = await this.mediaHealthRepository.getAssets([asset.id]);
+    await this.mediaHealthRepository.settleFinding({
+      healthId: finding.id,
+      evidence: { fixState: 'restored' satisfies FixState },
+      status:
+        finding.category === MediaHealthCategory.Missing ? MediaHealthStatus.Relinked : MediaHealthStatus.Resolved,
+      steps: [
+        { step: 'checked-backups', outcome: 'ok' },
+        {
+          step: 'restored',
+          outcome: 'ok',
+          undo: {
+            kind: 'restore',
+            previousPath: asset.originalPath,
+            originalPath: after.originalPath,
+            checksum: after.checksum.toString('hex'),
+          },
+        },
+      ],
+    });
+    await this.queueRelinkJobs(asset.id);
+  }
+
+  /** It opens and is the stored file: each open finding is settled, saying so. */
+  private async settleHealthy(open: MediaHealthFinding[]): Promise<JobStatus> {
+    for (const finding of open) {
+      await this.mediaHealthRepository.settleFinding({
+        healthId: finding.id,
+        evidence: {},
+        status: MediaHealthStatus.Resolved,
+        steps: [{ step: 'checked', outcome: 'ok' }],
+      });
+    }
+    return open.length > 0 ? JobStatus.Success : JobStatus.Skipped;
+  }
+
+  /** How the fix leaves an open finding, with its last steps, in one write. */
+  private async settle(finding: MediaHealthFinding, fixState: FixState, steps: FindingStep[]): Promise<void> {
+    if (!(await this.mediaHealthRepository.settleFinding({ healthId: finding.id, evidence: { fixState }, steps }))) {
+      this.logger.log(`Library care left ${finding.id} as it is: it was resolved or dismissed meanwhile`);
+    }
+  }
+
+  /** Put this fix back on its queue under its next key, after `delay` when given (FL-1337 ruling R1). */
+  private async putFixBack(job: FixJob, changes: Partial<FixJob>): Promise<JobStatus> {
+    await this.jobRepository.queue({
+      name: JobName.MediaHealthFixAsset,
+      data: { ...job, delay: undefined, ...changes, requeue: (job.requeue ?? 0) + 1 },
+    });
+    return JobStatus.Success;
+  }
+
+  /** What is wrong with the file, in plain words (design §2a): from the decoder's words and the bytes. */
+  private async causeOf(
+    asset: MediaHealthAsset,
+    message: string,
+    matchesStoredChecksum: boolean | null,
+  ): Promise<FileCause> {
+    try {
+      return classifyFileProblem({ message, shape: await readFileShape(asset.originalPath), matchesStoredChecksum });
+    } catch (error) {
+      // an I/O error is busy: never a verdict on the file
+      this.logger.debug(`Could not read ${asset.id} to tell what is wrong with it: ${getErrorMessage(error)}`);
+      return 'busy';
+    }
+  }
+
+  /** The decoder's own words, or the check's reason when it gave none. */
+  private decoderMessage(verdict: CandidateValidation): string {
+    return verdict.message ?? (typeof verdict.evidence.reason === 'string' ? verdict.evidence.reason : '');
+  }
+
+  /** Whether the original is still the file Frameleaf stored; null without a file checksum or a read. */
+  private async matchesStoredChecksum(asset: MediaHealthAsset): Promise<boolean | null> {
+    if (
+      asset.checksumAlgorithm !== ChecksumAlgorithm.sha1File &&
+      asset.checksumAlgorithm !== ChecksumAlgorithm.sha256File
+    ) {
+      return null;
+    }
+    try {
+      return (await this.cryptoRepository.hashFileMatching(asset.originalPath, asset.checksum)).equals(asset.checksum);
+    } catch {
+      return null;
+    }
+  }
+
+  /** The finding a fix records for damage nothing recorded yet: the check's verdict, or one from the cause. */
+  private damageVerdict(cause: FileCause, verdict?: CandidateValidation) {
+    if (verdict && verdict.status !== MediaHealthStatus.Missing) {
+      return { ...verdict, evidence: { ...verdict.evidence, cause } };
+    }
+    return {
+      status:
+        cause === 'not-supported'
+          ? MediaHealthStatus.UnsupportedRaw
+          : cause === 'busy'
+            ? MediaHealthStatus.CorruptSuspect
+            : MediaHealthStatus.CorruptConfirmed,
+      evidence: { reason: 'decode_failed', cause },
+      resolution: { reuploadRecommended: cause !== 'not-supported' && cause !== 'busy' },
+    };
+  }
+
+  /** The owner's own folders (and the asset's external library), the only paths its history may name. */
+  private async ownerFolders(asset: MediaHealthAsset): Promise<string[]> {
+    const own = (await this.ownerRoots([asset.ownerId])).get(asset.ownerId) ?? [];
+    const library = asset.libraryId ? await this.libraryRepository.get(asset.libraryId) : undefined;
+    return [...own, ...(library?.importPaths ?? [])];
+  }
+
+  /**
+   * FL-1337 stub until Task 7: put a lost or changed original back from Cloud Backup, verified against
+   * the photo's own checksum and never replacing anything. `busy` while a backup or restore runs.
+   */
+  private restoreLostOriginal(assetId: string): Promise<LostOriginalRestore> {
+    this.logger.verbose(`Cloud Backup restore of ${assetId} is not available yet`);
+    return Promise.resolve('not-in-backup');
+  }
+
+  /** FL-1337 stub until Task 8: the owner's phones and tablets that may still hold a lost photo. */
+  private phonesToAsk(ownerId: string): Promise<Array<{ id: string; name: string }>> {
+    this.logger.verbose(`Asking phones for ${ownerId}'s lost photos is not available yet`);
+    return Promise.resolve([]);
   }
 
   /**
@@ -1469,9 +2137,24 @@ export class MediaHealthService {
       if (asset.isExternal) {
         return unverified(id, 'External originals are relinked within their own library');
       }
-      return this.publishAndCommit(auth, finding, asset, candidate, MediaHealthCategory.Missing);
+      return this.publishAndCommit(auth.user, finding, asset, candidate, MediaHealthCategory.Missing);
     }
+    return this.relinkInPlace(auth.user.id, finding, asset, candidate);
+  }
 
+  /**
+   * Link a missing original to its verified copy where the copy is (FL-69): library storage, or the
+   * asset's own external library. The copy is hashed again now. FL-1337: a fix passes how it leaves the
+   * finding and the steps it adds, written with the relink.
+   */
+  private async relinkInPlace(
+    actorId: string,
+    finding: MediaHealthFinding,
+    asset: MediaHealthAsset,
+    candidate: MediaHealthCandidate,
+    fix?: FixWrite,
+  ): Promise<BulkOperationItem> {
+    const id = asset.id;
     const digests = await this.validateManagedCandidate(asset, candidate.candidatePath);
     if (!digests) {
       return unverified(id, 'Candidate no longer matches or could not be safely linked');
@@ -1496,7 +2179,8 @@ export class MediaHealthService {
       expectedChecksum: asset.checksum,
       ...digests,
       fileModifiedAt: stat.mtime,
-      provenance: { relinkedBy: auth.user.id, rootId: this.candidateRootId(candidate) },
+      provenance: { relinkedBy: actorId, ...(fix && { automatic: true }), rootId: this.candidateRootId(candidate) },
+      ...(fix && { evidence: fix.evidence, steps: fix.steps }),
       verifyCandidate: () => this.cryptoRepository.hashFileDigests(candidate.candidatePath).catch((): undefined => {}),
     };
     const relinked = asset.isExternal
@@ -1542,7 +2226,7 @@ export class MediaHealthService {
     if (!candidate || candidate.status !== MediaHealthStatus.Found) {
       return changed(id, 'The reviewed copy is no longer a verified match');
     }
-    return this.publishAndCommit(auth, finding, asset, candidate, MediaHealthCategory.Corrupt);
+    return this.publishAndCommit(auth.user, finding, asset, candidate, MediaHealthCategory.Corrupt);
   }
 
   private async trashOne(auth: AuthDto, entry: BulkMediaHealthEntry): Promise<BulkOperationItem> {
@@ -1611,18 +2295,22 @@ export class MediaHealthService {
    * a hidden Library Care folder in the owner's upload storage under a name fixed by the asset and
    * the finding, so a repeated attempt finds its own earlier copy instead of writing another. The
    * old path is never written to: for damage, the damaged file stays exactly where it is.
+   *
+   * `actor` is who recovers it: the reviewer, or (FL-1337) the owner when a fix does it by itself, which
+   * passes how it leaves the finding and the steps it adds.
    */
   private async publishAndCommit(
-    auth: AuthDto,
+    actor: { id: string; isAdmin: boolean },
     finding: MediaHealthFinding,
     asset: MediaHealthAsset,
     candidate: MediaHealthCandidate,
     category: MediaHealthCategory,
+    fix?: FixWrite,
   ): Promise<BulkOperationItem> {
     const id = asset.id;
     const roots = await this.searchRoots();
     const root = rootForPath(roots, candidate.candidatePath);
-    if (!root || root.kind === 'library' || (root.kind === 'recovery' && !auth.user.isAdmin)) {
+    if (!root || root.kind === 'library' || (root.kind === 'recovery' && !actor.isAdmin)) {
       return unverified(id, 'The location of this copy is no longer available');
     }
 
@@ -1688,12 +2376,14 @@ export class MediaHealthService {
       category,
       candidatePath: candidate.candidatePath,
       provenance: {
-        recoveredBy: auth.user.id,
+        recoveredBy: actor.id,
+        ...(fix && { automatic: true }),
         rootId: root.id,
         rootKind: root.kind,
         rootLabel: root.label,
         recoveredAt: new Date().toISOString(),
       },
+      ...(fix && { evidence: fix.evidence, steps: fix.steps }),
       verifyCandidate: () => this.cryptoRepository.hashFileDigests(destination).catch((): undefined => {}),
     });
     if (!committed) {
@@ -1709,7 +2399,9 @@ export class MediaHealthService {
     }
 
     if (category === MediaHealthCategory.Corrupt) {
-      await this.retainDamagedOriginal(finding.id);
+      const after = { originalPath: destination, checksum: digests.sha256.toString('hex') };
+      const kept = fix?.kept;
+      await this.retainDamagedOriginal(finding.id, kept && ((retainedPath) => kept(retainedPath, after)));
     }
     await this.queueRelinkJobs(asset.id);
     return outcome(id, MediaOperationItemStatus.Ok);
@@ -1771,17 +2463,28 @@ export class MediaHealthService {
    * is a hard link to a new name followed by removing the old name, and an existing name is never
    * replaced. A file some other asset still uses as its original is left exactly where it is.
    * Safe to repeat: a file already retained, or already gone, is left alone.
+   *
+   * FL-1337: `kept` is the history step for the kept file, given where it ended up; it is written with
+   * the new place, or on its own when the file stays where it was.
    */
-  private async retainDamagedOriginal(findingId: string): Promise<void> {
+  private async retainDamagedOriginal(findingId: string, kept?: (retainedPath: string) => FindingStep): Promise<void> {
     const [finding] = await this.mediaHealthRepository.getByIds([findingId]);
     const evidence = (finding?.evidence ?? {}) as Record<string, unknown>;
     const retained = typeof evidence.retainedPath === 'string' ? evidence.retainedPath : undefined;
-    if (!finding || !retained || retained.split(path.sep).includes(RECOVERY_FOLDER)) {
+    if (!finding || !retained) {
       return;
+    }
+    const keptWhere = async () => {
+      if (kept) {
+        await this.mediaHealthRepository.appendSteps(this.stepsOf(finding, [kept(retained)]));
+      }
+    };
+    if (retained.split(path.sep).includes(RECOVERY_FOLDER)) {
+      return keptWhere();
     }
 
     if (await this.mediaHealthRepository.isOriginalPathInUse(retained)) {
-      return;
+      return keptWhere();
     }
 
     // Next to the recovered copy, which already lives in the Library Care folder.
@@ -1795,9 +2498,18 @@ export class MediaHealthService {
     } catch (error) {
       // Still recorded on the finding, and still not overwritten or lost: only its place is unchanged.
       this.logger.warn(`Could not move retained damaged file ${retained}: ${getErrorMessage(error)}`);
-      return;
+      return keptWhere();
     }
-    await this.mediaHealthRepository.setRetainedPath(finding.id, destination);
+    if (kept) {
+      await this.mediaHealthRepository.setRetainedPath(finding.id, destination, [kept(destination)]);
+    } else {
+      await this.mediaHealthRepository.setRetainedPath(finding.id, destination);
+    }
+  }
+
+  /** Steps as the history of this finding (FL-1337). */
+  private stepsOf(finding: Pick<MediaHealthFinding, 'id' | 'assetId'>, steps: FindingStep[]): NewFileStep[] {
+    return steps.map((step) => ({ ...step, healthId: finding.id, assetId: step.assetId ?? finding.assetId }));
   }
 
   /**
@@ -2905,6 +3617,7 @@ export class MediaHealthService {
       score: null,
       evidence: { reason: result.reason, validationStatus: result.status },
       resolution: { reuploadRecommended: result.status === 'corrupt' },
+      ...('message' in result && result.message && { message: result.message }),
     };
     // Busy, timed out, out of resources or still being written: not a verdict on the file. The scan skips
     // the asset this run. Other transient reasons (an unknown decoder error, a damaged RAW) stay suspects.

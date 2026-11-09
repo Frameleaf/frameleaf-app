@@ -3,7 +3,7 @@ import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { FileStep, NewFileStep } from 'src/utils/file-steps.js';
+import type { FileStep, FindingStep, NewFileStep } from 'src/utils/file-steps.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
@@ -27,6 +27,10 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
 import { isLocked } from 'src/utils/locked.js';
+
+/** The steps for the finding a write has just recorded, written in that write's transaction (FL-1337). */
+const stepsFor = (steps: FindingStep[] | undefined, finding: { id: string; assetId: string }): NewFileStep[] =>
+  (steps ?? []).map((step) => ({ ...step, healthId: finding.id, assetId: step.assetId ?? finding.assetId }));
 /**
  * What an interactive read may show: the viewer's hidden-content settings, and their Locked media only
  * in their elevated session (`lockedOwnerId`, FL-34). Background jobs pass no privacy and see every
@@ -85,6 +89,8 @@ export type UpsertMediaHealthFinding = Omit<
   dismissedAt?: Date | null;
   resolvedAt?: Date | null;
   expectedUpdateId?: string;
+  /** FL-1337: the history it starts or adds to, written with it. */
+  steps?: FindingStep[];
 };
 export type UpsertMediaHealthCandidate = Omit<Insertable<AssetHealthCandidateTable>, 'id' | 'createdAt' | 'updatedAt'>;
 export type RelinkManagedAsset = {
@@ -122,6 +128,13 @@ export type RelinkManagedAsset = {
   candidatePath?: string;
   /** FL-69: who recovered it and from which search location, kept on the finding. */
   provenance?: Record<string, unknown>;
+  /** FL-1337: how the fix left the finding (`fixState`, `partSaved`), kept beside the relink's own evidence. */
+  evidence?: Record<string, unknown>;
+  /**
+   * FL-1337: the history the relink adds, written with it. A step carrying `undo` gets the asset's new
+   * `originalPath` and `checksum` (hex) in it, which Undo compares before it changes anything.
+   */
+  steps?: FindingStep[];
 };
 export type RelinkExternalAsset = RelinkManagedAsset & {
   expectedLibraryId: string;
@@ -456,7 +469,7 @@ export class MediaHealthRepository {
     });
   }
   async upsertFinding(input: UpsertMediaHealthFinding): Promise<MediaHealthFinding | undefined> {
-    const { expectedUpdateId, ...finding } = input;
+    const { expectedUpdateId, steps, ...finding } = input;
     return this.db.transaction().execute(async (trx) => {
       const asset = await trx
         .withSchema('public')
@@ -475,7 +488,7 @@ export class MediaHealthRepository {
       }
       let result: MediaHealthFinding | undefined;
       {
-        result = await this.upsertFindingInto(trx.withSchema('public'), finding);
+        result = await this.upsertFindingInto(trx.withSchema('public'), finding, steps);
       }
       return result;
     });
@@ -574,8 +587,18 @@ export class MediaHealthRepository {
       return true;
     });
   }
-  private upsertFindingInto(db: Kysely<DB>, finding: UpsertMediaHealthFinding): Promise<MediaHealthFinding> {
-    return db
+  /**
+   * Insert or replace the asset's finding of this category, and append `steps` to it in the same
+   * transaction. FL-1337: replacing keeps what a person decided (`autoRepairDeclined`, after an Undo)
+   * unless the new evidence says otherwise, and keeps how the last fix left it (`fixState`,
+   * `partSaved`) while it is the same open problem; a new verdict or a closed finding starts afresh.
+   */
+  private async upsertFindingInto(
+    db: Kysely<DB>,
+    finding: UpsertMediaHealthFinding,
+    steps?: FindingStep[],
+  ): Promise<MediaHealthFinding> {
+    const result = await db
       .insertInto('asset_health')
       .values({
         dismissedAt: null,
@@ -589,7 +612,14 @@ export class MediaHealthRepository {
           severity: eb.ref('excluded.severity'),
           originalPath: eb.ref('excluded.originalPath'),
           originalFileName: eb.ref('excluded.originalFileName'),
-          evidence: eb.ref('excluded.evidence'),
+          evidence: sql<Record<string, unknown>>`
+            CASE WHEN asset_health."resolvedAt" IS NULL AND excluded."resolvedAt" IS NULL
+              AND asset_health.status = excluded.status
+            THEN jsonb_strip_nulls(jsonb_build_object(
+              'fixState', asset_health.evidence->'fixState', 'partSaved', asset_health.evidence->'partSaved'))
+            ELSE '{}'::jsonb END
+            || jsonb_strip_nulls(jsonb_build_object('autoRepairDeclined', asset_health.evidence->'autoRepairDeclined'))
+            || excluded.evidence`,
           resolution: eb.ref('excluded.resolution'),
           checkedAt: eb.ref('excluded.checkedAt'),
           dismissedAt: eb.ref('excluded.dismissedAt'),
@@ -598,6 +628,8 @@ export class MediaHealthRepository {
       )
       .returningAll()
       .executeTakeFirstOrThrow();
+    await this.appendSteps(stepsFor(steps, result), db);
+    return result;
   }
   async markResolved(category: MediaHealthCategory, assetId: string): Promise<void> {
     const resolvedAt = new Date();
@@ -734,18 +766,73 @@ export class MediaHealthRepository {
       .executeTakeFirst();
     return !!row;
   }
-  /** Record where a replaced damaged original is kept now (FL-69). Metadata only. */
-  async setRetainedPath(healthId: string, retainedPath: string): Promise<void> {
+  /**
+   * Record where a replaced damaged original is kept now (FL-69). Metadata only. FL-1337: `steps` (the
+   * kept file, with what Undo needs) are written with it.
+   */
+  async setRetainedPath(healthId: string, retainedPath: string, steps?: FindingStep[]): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      await trx
+      const row = await trx
         .withSchema('public')
         .updateTable('asset_health')
         .set({
           evidence: sql`coalesce(evidence, '{}'::jsonb) || jsonb_build_object('retainedPath', ${retainedPath}::text)`,
         })
         .where('id', '=', asUuid(healthId))
-        .execute();
+        .returning(['id', 'assetId'])
+        .executeTakeFirst();
+      if (row) {
+        await this.appendSteps(stepsFor(steps, row), trx);
+      }
     });
+  }
+  /**
+   * Record how a fix left a finding (FL-1337): merge `evidence` (its `fixState` and flags) into the
+   * finding's own and append `steps`, in one transaction. Keys the patch leaves out are kept, so a
+   * person's `autoRepairDeclined` survives. With `status` the finding is settled as fixed too, resolved
+   * now unless it already was. Only an undismissed finding is written, and without `status` only an
+   * open one: a finding someone dismissed, or that was resolved meanwhile, is left as it is. Returns
+   * whether it was written.
+   */
+  async settleFinding(input: {
+    healthId: string;
+    evidence: Record<string, unknown>;
+    steps?: FindingStep[];
+    status?: MediaHealthStatus;
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .withSchema('public')
+        .updateTable('asset_health')
+        .set({
+          evidence: sql`coalesce(evidence, '{}'::jsonb) || ${JSON.stringify(input.evidence)}::text::jsonb`,
+          ...(input.status && {
+            status: input.status,
+            severity: MediaHealthSeverity.Info,
+            resolvedAt: sql<Date>`coalesce("resolvedAt", now())`,
+          }),
+        })
+        .where('id', '=', asUuid(input.healthId))
+        .where('dismissedAt', 'is', null)
+        .$if(!input.status, (qb) => qb.where('resolvedAt', 'is', null))
+        .returning(['id', 'assetId'])
+        .executeTakeFirst();
+      if (!row) {
+        return false;
+      }
+      await this.appendSteps(stepsFor(input.steps, row), trx);
+      return true;
+    });
+  }
+  /** Every finding of one asset, open or settled (FL-1337): at most one of each category. */
+  getFindingsForAsset(assetId: string): Promise<MediaHealthFinding[]> {
+    return this.db
+      .withSchema('public')
+      .selectFrom('asset_health')
+      .selectAll()
+      .where('assetId', '=', asUuid(assetId))
+      .orderBy('category')
+      .execute();
   }
   /**
    * Findings a trash job was queued for but no running job holds any more (FL-69): the job was
@@ -1092,6 +1179,8 @@ export class MediaHealthRepository {
         occupants.find(
           (item) => !item.isExternal && !item.libraryId && !item.deletedAt && item.status === AssetStatus.Active,
         )?.id ?? asset.id;
+      // the asset's checksum once relinked: an external original keeps a path checksum
+      const checksum = external ? createHash('sha1').update(`path:${recoveredPath}`).digest() : input.sha256;
       if (external) {
         if (!(await verify())) {
           return false;
@@ -1102,7 +1191,7 @@ export class MediaHealthRepository {
           .set({
             originalPath: recoveredPath,
             originalFileName: input.originalFileName,
-            checksum: createHash('sha1').update(`path:${recoveredPath}`).digest(),
+            checksum,
             checksumAlgorithm: ChecksumAlgorithm.sha1Path,
             fileModifiedAt: input.fileModifiedAt,
             isOffline: false,
@@ -1155,7 +1244,7 @@ export class MediaHealthRepository {
             originalPath: recoveredPath,
             // FL-417: the recovered file is the photo's own
             libraryPath: libraryPathOnRelink(recoveredPath, true),
-            checksum: input.sha256,
+            checksum,
             checksumAlgorithm: ChecksumAlgorithm.sha256File,
             fileModifiedAt: input.fileModifiedAt,
             isOffline: false,
@@ -1195,6 +1284,9 @@ export class MediaHealthRepository {
           originalPath: recoveredPath,
           originalFileName: input.originalFileName,
           evidence: {
+            // FL-1337: a person's "don't repair this again" outlives the relink; the fix says how it left it
+            ...(health.evidence?.autoRepairDeclined === true && { autoRepairDeclined: true }),
+            ...input.evidence,
             reason: repaired
               ? 'repaired_damaged_file'
               : category === MediaHealthCategory.Missing
@@ -1214,6 +1306,13 @@ export class MediaHealthRepository {
         .where('id', '=', input.healthId)
         .where('assetId', '=', asset.id)
         .execute();
+      const undoAfter = { originalPath: recoveredPath, checksum: checksum.toString('hex') };
+      await this.appendSteps(
+        stepsFor(input.steps, { id: input.healthId, assetId: asset.id }).map((step) =>
+          step.undo ? { ...step, undo: { ...step.undo, ...undoAfter } } : step,
+        ),
+        trx,
+      );
 
       await trx
         .withSchema('public')

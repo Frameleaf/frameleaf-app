@@ -2357,6 +2357,8 @@ export enum JobName {
   MediaHealthLocateMissing = 'MediaHealthLocateMissing',
   MediaHealthScanCorrupt = 'MediaHealthScanCorrupt',
   MediaHealthDeleteCorrupt = 'MediaHealthDeleteCorrupt',
+  /** FL-1337: check one damaged or missing file and fix what can be fixed by itself, step by step. */
+  MediaHealthFixAsset = 'MediaHealthFixAsset',
 
   AuditTableCleanup = 'AuditTableCleanup',
 
@@ -2534,6 +2536,7 @@ export const JobNameSchema = z
     JobName.LockedUnseal,
     JobName.LockedRewrap,
     JobName.LockedSweep,
+    JobName.MediaHealthFixAsset,
   ])
   .describe('Job name')
   .meta({ id: 'JobName' });

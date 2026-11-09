@@ -61,6 +61,8 @@ describe('classifyFileProblem', () => {
     ['EIO', 'read EIO', {}, null, 'busy'],
     ['EAGAIN', 'EAGAIN: try again', {}, null, 'busy'],
     ['worker exit', 'Worker exited unexpectedly', {}, null, 'busy'],
+    ['image worker crashed', 'Sharp child closed (SIGSEGV)', {}, null, 'busy'],
+    ['image worker stalled', 'Sharp operation stopped making progress', {}, null, 'busy'],
     ['changed beats everything', 'VipsJpeg: premature end of JPEG image', { blank: true }, false, 'changed'],
     ['matching checksum is no verdict', 'vipspng: libpng read error', { extension: '.png' }, true, 'unreadable'],
     ['blank beats busy', 'Timeout', { blank: true }, null, 'blank'],

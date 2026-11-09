@@ -586,12 +586,37 @@ export class SharpOperations {
       // the original's own header, readable by ExifTool, to copy the lost details from
       await writeFile(metadataSource, found.candidates[0], { flag: 'wx' });
     }
+    const method = converted ? 'converted' : small(best) ? 'preview' : lossless ? 'lossless' : 'rebuilt';
     return {
-      method: converted ? 'converted' : small(best) ? 'preview' : lossless ? 'lossless' : 'rebuilt',
+      method,
       width: best.width,
       height: best.height,
       metadataLost,
+      ...(method === 'rebuilt' && { percentSaved: await this.pictureSaved(best.bytes) }),
     };
+  }
+
+  /**
+   * FL-1337: how much of a leniently decoded picture is really there. The decoder fills whatever comes
+   * after a cut with flat mid-grey, so the rows above that fill are the part saved. Read small, row by
+   * row in the file's own order, so a cut is always at the bottom.
+   */
+  private async pictureSaved(bytes: Buffer): Promise<number> {
+    const { data, info } = await sharp(bytes, { failOn: 'none', limitInputPixels: this.maxPixels })
+      .resize(64, 400, { fit: 'fill', kernel: 'nearest' })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const row = info.width * info.channels;
+    let filled = 0;
+    while (filled < info.height) {
+      const line = data.subarray((info.height - filled - 1) * row, (info.height - filled) * row);
+      if (!line.every((value) => Math.abs(value - 128) <= 2)) {
+        break;
+      }
+      filled++;
+    }
+    return Math.floor((100 * (info.height - filled)) / info.height);
   }
 
   /**

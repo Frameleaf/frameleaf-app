@@ -48,6 +48,12 @@ export type JpegRepairResult = {
   height: number;
   /** Metadata the original carries that the repaired file does not. */
   metadataLost: JpegMetadataGroup[];
+  /**
+   * FL-1337: for `rebuilt`, how much of the picture is really there, as a whole percentage of its
+   * rows: a picture cut short decodes to flat grey after the cut. Every other method keeps the whole
+   * picture it has (`preview` keeps only the small one), so it is left out.
+   */
+  percentSaved?: number;
 };
 
 export type JpegMetadataGroup = 'EXIF' | 'XMP' | 'IPTC';

@@ -57,6 +57,22 @@ describe(JobRepository.name, () => {
     expect(enqueue.mock.calls[1][0][0].options).toEqual({ jobId: 'album/user', delay: 3000 });
   });
 
+  it('keeps one fix per photo, and lets a fix put itself back beside its own live row (FL-1337)', async () => {
+    await sut.queue({ name: JobName.MediaHealthFixAsset, data: { id: 'asset', from: 'preview' } });
+    await sut.queue({ name: JobName.MediaHealthFixAsset, data: { id: 'asset', from: 'check', requeue: 0 } });
+    await sut.queue({
+      name: JobName.MediaHealthFixAsset,
+      data: { id: 'asset', from: 'check', requeue: 2, attempt: 2, delay: 1_800_000 },
+    });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      // every feed of one photo collapses onto the fix that is queued or running
+      { jobId: 'fix-asset' },
+      { jobId: 'fix-asset' },
+      // a fix that puts itself back gets a key of its own, and waits
+      { jobId: 'fix-asset/r2', delay: 1_800_000 },
+    ]);
+  });
+
   it('deduplicates palette work per source revision and backfill cursor', async () => {
     await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev1' } });
     await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev2' } });

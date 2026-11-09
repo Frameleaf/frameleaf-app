@@ -817,4 +817,244 @@ describe(MediaHealthRepository.name, () => {
       await expect(sut.listSteps(finding.id)).resolves.toEqual([]);
     });
   });
+
+  describe('fix writes (FL-1337)', () => {
+    it("writes a new finding's first step with that finding's id, in the same transaction", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        steps: [{ step: 'not-on-drive', outcome: 'failed', facts: { folder: '2020/08', name: 'IMG_3310.jpg' } }],
+      });
+      assert.isDefined(finding);
+      await expect(sut.listSteps(finding.id)).resolves.toEqual([
+        expect.objectContaining({
+          healthId: finding.id,
+          assetId: asset.id,
+          step: 'not-on-drive',
+          outcome: 'failed',
+          facts: { folder: '2020/08', name: 'IMG_3310.jpg' },
+        }),
+      ]);
+
+      // a step that cannot be written takes its finding with it
+      const { result: other } = await ctx.newAsset({ ownerId: user.id });
+      await expect(
+        sut.upsertFinding({
+          ...findingDto(other.id, other.originalPath, null),
+          steps: [{ step: 'not-on-drive', outcome: 'failed', assetId: '00000000-0000-4000-8000-000000000000' }],
+        }),
+      ).rejects.toThrow();
+      await expect(sut.getFindingsForAsset(other.id)).resolves.toEqual([]);
+
+      // a refused finding (the asset's file is another now) writes no step either
+      await expect(
+        sut.upsertFinding({
+          ...findingDto(other.id, '/somewhere/else.jpg', null),
+          steps: [{ step: 'not-on-drive', outcome: 'failed' }],
+        }),
+      ).resolves.toBeUndefined();
+      await expect(sut.getFindingsForAsset(other.id)).resolves.toEqual([]);
+    });
+
+    it('keeps a declined repair, and the fix state of the same open problem, when a check records it again', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const damaged = {
+        ...findingDto(asset.id, asset.originalPath, null),
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+      };
+      const finding = await sut.upsertFinding(damaged);
+      assert.isDefined(finding);
+      await expect(
+        sut.settleFinding({ healthId: finding.id, evidence: { fixState: 'cant-repair', autoRepairDeclined: true } }),
+      ).resolves.toBe(true);
+
+      // the nightly check finds the same damage
+      await sut.upsertFinding({ ...damaged, evidence: { reason: 'decode_failed' } });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          evidence: { reason: 'decode_failed', fixState: 'cant-repair', autoRepairDeclined: true },
+        }),
+      ]);
+
+      // a new verdict starts the fix state afresh, but never forgets "don't repair this again"
+      await sut.upsertFinding({ ...damaged, status: MediaHealthStatus.CorruptSuspect, evidence: { reason: 'x' } });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({ evidence: { reason: 'x', autoRepairDeclined: true } }),
+      ]);
+    });
+
+    it('settles a finding with its steps, keeping what the patch leaves out, and never a dismissed one', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        evidence: { reason: 'stat failed', autoRepairDeclined: true },
+      });
+      assert.isDefined(finding);
+
+      await expect(
+        sut.settleFinding({
+          healthId: finding.id,
+          evidence: { fixState: 'waiting-phone' },
+          steps: [{ step: 'asked-phones', outcome: 'waiting' }],
+        }),
+      ).resolves.toBe(true);
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          evidence: { reason: 'stat failed', autoRepairDeclined: true, fixState: 'waiting-phone' },
+          resolvedAt: null,
+        }),
+      ]);
+      await expect(sut.listSteps(finding.id)).resolves.toMatchObject([{ step: 'asked-phones', outcome: 'waiting' }]);
+
+      // settled as fixed: resolved now
+      await sut.settleFinding({
+        healthId: finding.id,
+        evidence: { fixState: 'restored' },
+        status: MediaHealthStatus.Relinked,
+      });
+      const [fixed] = await sut.getByIds([finding.id]);
+      expect(fixed).toMatchObject({ status: MediaHealthStatus.Relinked, evidence: { fixState: 'restored' } });
+      expect(fixed.resolvedAt).toBeInstanceOf(Date);
+
+      // the person dismissed it meanwhile: the fix leaves it as it is
+      await sut.markDismissed([finding.id]);
+      await expect(
+        sut.settleFinding({
+          healthId: finding.id,
+          evidence: { fixState: 'missing' },
+          steps: [{ step: 'asked-phones', outcome: 'not-found' }],
+        }),
+      ).resolves.toBe(false);
+      await expect(sut.listSteps(finding.id)).resolves.toHaveLength(1);
+    });
+
+    it('keeps the fix state a repair is given, and writes its steps with it', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const damagedSha1 = Buffer.alloc(20, 7);
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id, checksum: damagedSha1 });
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+      });
+      assert.isDefined(finding);
+      const repairedPath = `/data/upload/${user.id}/.library-care/${asset.id}-repaired.jpg`;
+      const sha1 = Buffer.alloc(20, 8);
+      const sha256 = Buffer.alloc(32, 9);
+
+      await expect(
+        sut.replaceRepairedOriginal({
+          expectedUpdateId: asset.updateId,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 50 }),
+          assetId: asset.id,
+          ownerId: user.id,
+          healthId: finding.id,
+          expectedOriginalPath: asset.originalPath,
+          expectedChecksum: damagedSha1,
+          originalPath: repairedPath,
+          originalFileName: asset.originalFileName,
+          sha1,
+          sha256,
+          sizeInBytes: 50,
+          fileModifiedAt: new Date(),
+          provenance: { recoveredBy: user.id, automatic: true, repairMethod: 'rebuilt' },
+          evidence: { fixState: 'part-saved', partSaved: true },
+          steps: [{ step: 'repaired', outcome: 'ok', facts: { method: 'rebuilt', percentSaved: 92 } }],
+        }),
+      ).resolves.toBe(true);
+
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          status: MediaHealthStatus.Resolved,
+          evidence: expect.objectContaining({
+            fixState: 'part-saved',
+            partSaved: true,
+            reason: 'repaired_damaged_file',
+            retainedPath: asset.originalPath,
+          }),
+        }),
+      ]);
+      await expect(sut.listSteps(finding.id)).resolves.toMatchObject([
+        { step: 'repaired', outcome: 'ok', facts: { method: 'rebuilt', percentSaved: 92 }, assetId: asset.id },
+      ]);
+
+      // where the damaged file is kept now, with the step Undo reads
+      const keptPath = `/data/upload/${user.id}/.library-care/${asset.id}-${finding.id}.damaged.jpg`;
+      await sut.setRetainedPath(finding.id, keptPath, [
+        { step: 'kept-damaged', outcome: 'info', undo: { kind: 'repair', previousPath: keptPath } },
+      ]);
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          evidence: expect.objectContaining({ retainedPath: keptPath, fixState: 'part-saved' }),
+        }),
+      ]);
+      await expect(sut.listSteps(finding.id)).resolves.toMatchObject([
+        { step: 'repaired' },
+        { step: 'kept-damaged', undo: { kind: 'repair', previousPath: keptPath } },
+      ]);
+    });
+
+    it("keeps the fix state a relink is given, and completes its Undo with the asset's new file", async () => {
+      const { asset, candidate, finding, recoveredPath, sha1, sha256, sut, user } = await arrangeManagedRelink();
+      await sut.settleFinding({ healthId: finding.id, evidence: { autoRepairDeclined: true } });
+
+      await expect(
+        sut.relinkManagedAsset({
+          expectedUpdateId: asset.updateId,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 100 }),
+          assetId: asset.id,
+          candidateId: candidate.id,
+          ownerId: user.id,
+          healthId: finding.id,
+          expectedOriginalPath: asset.originalPath,
+          originalPath: recoveredPath,
+          originalFileName: asset.originalFileName,
+          expectedChecksum: sha1,
+          sha1,
+          sha256,
+          sizeInBytes: 100,
+          fileModifiedAt: new Date(),
+          evidence: { fixState: 'found-again' },
+          steps: [
+            { step: 'searched-copy', outcome: 'ok', facts: { copies: 1 } },
+            { step: 'put-back', outcome: 'ok', undo: { kind: 'relink', previousPath: asset.originalPath } },
+          ],
+        }),
+      ).resolves.toBe(true);
+
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          status: MediaHealthStatus.Relinked,
+          evidence: expect.objectContaining({
+            fixState: 'found-again',
+            autoRepairDeclined: true,
+            reason: 'candidate_relinked',
+          }),
+        }),
+      ]);
+      await expect(sut.listSteps(finding.id)).resolves.toMatchObject([
+        { step: 'searched-copy', undo: null },
+        {
+          step: 'put-back',
+          undo: {
+            kind: 'relink',
+            previousPath: asset.originalPath,
+            originalPath: recoveredPath,
+            checksum: sha256.toString('hex'),
+          },
+        },
+      ]);
+    });
+  });
 });

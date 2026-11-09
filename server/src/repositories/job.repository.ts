@@ -149,6 +149,9 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.LockedUnseal,
   JobName.LockedRewrap,
   JobName.LockedSweep,
+  // FL-1337: every write checks the asset and finding it read are unchanged, and a repair, relink or
+  // kept file is published under a name fixed by the asset and finding, so a re-run reuses its own
+  JobName.MediaHealthFixAsset,
 ]);
 /** Rows a selection producer inserts per fenced transaction. */
 const SELECTION_PAGE = 2000;
@@ -1259,6 +1262,13 @@ export class JobRepository {
       }
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
+      }
+      case JobName.MediaHealthFixAsset: {
+        // FL-1337: one fix per photo at a time, so the feeds of one photo collapse while it is queued or
+        // running. A fix that puts itself back carries its own key: the store drops a job whose key
+        // matches a live row, and the live row is the fix that is queuing it.
+        const jobId = item.data.requeue ? `fix-${item.data.id}/r${item.data.requeue}` : `fix-${item.data.id}`;
+        return item.data.delay ? { jobId, delay: item.data.delay } : { jobId };
       }
       case JobName.AssetDetectDuplicates: {
         // FL-651: a recheck after each group mate's fingerprint is its own run item, so one queued

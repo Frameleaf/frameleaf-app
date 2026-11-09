@@ -143,17 +143,25 @@ describe(MediaIntegrityService.name, () => {
     expect(mocks.media.extract).not.toHaveBeenCalled();
   });
   it.each([
-    [Object.assign(new Error('private'), { killed: true }), 'timeout', 'decode_timeout'],
-    [Object.assign(new Error('private'), { code: 'ENOENT' }), 'transient', 'decoder_unavailable'],
-    [new Error('Invalid data found when processing input'), 'corrupt', 'decode_failed'],
-  ])('classifies ffmpeg failure %j', async (error, status, reason) => {
+    [Object.assign(new Error('private'), { killed: true }), { status: 'timeout', reason: 'decode_timeout' }],
+    [Object.assign(new Error('private'), { code: 'ENOENT' }), { status: 'transient', reason: 'decoder_unavailable' }],
+    [
+      new Error('Invalid data found when processing input'),
+      // FL-1337: a decode failure carries the decoder's words, for telling its cause
+      { status: 'corrupt', reason: 'decode_failed', message: 'Invalid data found when processing input' },
+    ],
+  ])('classifies ffmpeg failure %j', async (error, expected) => {
     exec.error = error;
-    expect(await sut.validate({ ...input, type: AssetType.Video, deep: true })).toEqual({ status, reason });
+    expect(await sut.validate({ ...input, type: AssetType.Video, deep: true })).toEqual(expected);
   });
   it('an unsupported-format message on a JPEG with junk in front is corrupt', async () => {
     await writeFile(input.path, Buffer.concat([Buffer.alloc(300, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]));
     mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
-    expect(await sut.validate({ ...input, deep: true })).toEqual({ status: 'corrupt', reason: 'decode_failed' });
+    expect(await sut.validate({ ...input, deep: true })).toEqual({
+      status: 'corrupt',
+      reason: 'decode_failed',
+      message: 'Input buffer contains unsupported image format',
+    });
   });
   it('an unsupported-format message on a PSD with an embedded JPEG stays unsupported', async () => {
     const psd = join(directory, 'original.psd');
@@ -162,6 +170,7 @@ describe(MediaIntegrityService.name, () => {
     expect(await sut.validate({ ...input, path: psd, originalFileName: 'original.psd', deep: true })).toEqual({
       status: 'unsupported',
       reason: 'decode_unsupported',
+      message: 'Input buffer contains unsupported image format',
     });
   });
   it('an unsupported-format message on a file with no JPEG marker stays unsupported', async () => {
@@ -169,6 +178,7 @@ describe(MediaIntegrityService.name, () => {
     expect(await sut.validate({ ...input, deep: true })).toEqual({
       status: 'unsupported',
       reason: 'decode_unsupported',
+      message: 'Input buffer contains unsupported image format',
     });
   });
   it('decodes the full rendered RAW without thumbnail resizing', async () => {
@@ -225,7 +235,11 @@ describe(MediaIntegrityService.name, () => {
 
   it('reports malformed image', async () => {
     mocks.media.decodeImage.mockRejectedValue(new Error('premature end of JPEG'));
-    expect(await sut.validate({ ...input, deep: true })).toEqual({ status: 'corrupt', reason: 'decode_failed' });
+    expect(await sut.validate({ ...input, deep: true })).toEqual({
+      status: 'corrupt',
+      reason: 'decode_failed',
+      message: 'premature end of JPEG',
+    });
   });
   it('bounds a stalled operation', async () => {
     vi.useFakeTimers();

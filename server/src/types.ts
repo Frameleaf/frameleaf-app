@@ -473,6 +473,27 @@ export interface IMediaHealthDeleteCorruptJob extends IBaseJob {
   userId: string;
 }
 
+/** FL-1337: check one damaged or missing file and fix it by itself where it can, recording each step. */
+export interface IMediaHealthFixAssetJob extends IEntityJob {
+  /** What asked: a preview that failed, a file check, an import, or a person's Try again. */
+  from: 'preview' | 'check' | 'import' | 'person';
+  /** The decoder's own words, when a failed preview asked. */
+  message?: string;
+  /** How many busy checks it has had; it stops after three. */
+  attempt?: number;
+  /** Milliseconds before it may run (an `availableAt` in the future). */
+  delay?: number;
+  /** How many times this fix has put itself back. Its key changes with it, so the store never drops it. */
+  requeue?: number;
+  /** How many times it has waited for an unplugged drive; it stops after a day. */
+  waits?: number;
+  /** A search for a copy carried on from an earlier run of this fix. */
+  runId?: string;
+  managedSearch?: IMediaHealthLocateJob['managedSearch'];
+  /** The search is done and recorded: carry on from the backups. */
+  stage?: 'backups';
+}
+
 export interface INightlyJob extends IBaseJob {
   nightly?: boolean;
   clusterGroupId?: string;
@@ -598,6 +619,7 @@ export type JobItem =
   | { name: JobName.MediaHealthLocateMissing; data: IMediaHealthLocateJob }
   | { name: JobName.MediaHealthScanCorrupt; data: IMediaHealthScanJob }
   | { name: JobName.MediaHealthDeleteCorrupt; data: IMediaHealthDeleteCorruptJob }
+  | { name: JobName.MediaHealthFixAsset; data: IMediaHealthFixAssetJob }
 
   // User
   | { name: JobName.UserDeleteCheck; data?: IBaseJob }

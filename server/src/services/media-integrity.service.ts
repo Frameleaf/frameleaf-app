@@ -45,8 +45,16 @@ export type MediaIntegrityResult =
     }
   | { status: 'missing'; reason: 'file_missing' }
   | { status: 'unreadable'; reason: 'access_denied' | 'not_regular_file' }
-  | { status: 'corrupt'; reason: 'expected_mismatch' | 'empty_file' | 'decode_failed' }
-  | { status: 'unsupported'; reason: 'raw_decode_unsupported' | 'media_type_unsupported' | 'decode_unsupported' }
+  /**
+   * FL-1337: `message` is the decoder's own words, when a decode failed, so a damaged file can be told
+   * apart by its cause (`classifyFileProblem`). Raw text: never shown on an everyday screen or stored.
+   */
+  | { status: 'corrupt'; reason: 'expected_mismatch' | 'empty_file' | 'decode_failed'; message?: string }
+  | {
+      status: 'unsupported';
+      reason: 'raw_decode_unsupported' | 'media_type_unsupported' | 'decode_unsupported';
+      message?: string;
+    }
   | { status: 'timeout'; reason: 'validation_timeout' | 'decode_timeout' }
   /**
    * FL-721 (spec §8.3): a sealed Locked file (its bytes start with `FLLK`). It is never hashed or
@@ -63,6 +71,7 @@ export type MediaIntegrityResult =
         | 'raw_decode_damaged'
         | 'decode_unverified'
         | 'validation_busy';
+      message?: string;
     };
 export type MediaIntegrityInput = {
   path: string;
@@ -246,6 +255,7 @@ export class MediaIntegrityService {
         return { status: 'unsupported', reason: 'raw_decode_unsupported' };
       }
       const message = error instanceof Error ? error.message : '';
+      const said = message ? { message } : {};
       if (/unsupported|decoder.*not found|unknown decoder/i.test(message)) {
         // "Unsupported" on a file that holds a JPEG start marker is a damaged JPEG, not an unknown format.
         if (
@@ -253,14 +263,14 @@ export class MediaIntegrityService {
           isJpegFileName(input.originalFileName) &&
           (await hasJpegMarker(input.path))
         ) {
-          return { status: 'corrupt', reason: 'decode_failed' };
+          return { status: 'corrupt', reason: 'decode_failed', ...said };
         }
-        return { status: 'unsupported', reason: 'decode_unsupported' };
+        return { status: 'unsupported', reason: 'decode_unsupported', ...said };
       }
       if (classifyImageDecodeFailure(error, { isRaw: false }) === MediaHealthStatus.CorruptConfirmed) {
-        return { status: 'corrupt', reason: 'decode_failed' };
+        return { status: 'corrupt', reason: 'decode_failed', ...said };
       }
-      return { status: 'transient', reason: 'decode_unverified' };
+      return { status: 'transient', reason: 'decode_unverified', ...said };
     }
   }
 }
