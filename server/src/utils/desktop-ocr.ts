@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { OcrOptions } from 'src/repositories/machine-learning.repository.js';
 import {
   type DesktopModelProfile,
-  desktopImageModelKeys,
+  desktopImageModelKey,
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
 import { canonicalJson } from 'src/utils/object.js';
@@ -17,7 +17,7 @@ export const ocrEntries = ({ modelName, minDetectionScore, minRecognitionScore, 
 let catalogue: ReturnType<typeof parseDesktopModelCatalogue> | undefined;
 export const desktopOcrProfile = (
   options: OcrOptions,
-  modelKey: string = desktopImageModelKeys.ocr,
+  modelKey: string | undefined = desktopImageModelKey('ocr', options.modelName),
 ): DesktopModelProfile => {
   catalogue ??= parseDesktopModelCatalogue(
     JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/model-catalogue.json'), 'utf8')),

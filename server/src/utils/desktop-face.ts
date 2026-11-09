@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { FaceDetectionOptions } from 'src/repositories/machine-learning.repository.js';
 import {
   type DesktopModelProfile,
-  desktopImageModelKeys,
+  desktopImageModelKey,
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
 import { canonicalJson } from 'src/utils/object.js';
@@ -14,7 +14,7 @@ export const faceEntries = ({ modelName, minScore }: FaceDetectionOptions) => ({
 let catalogue: ReturnType<typeof parseDesktopModelCatalogue> | undefined;
 export const desktopFaceProfile = (
   options: FaceDetectionOptions,
-  modelKey: string = desktopImageModelKeys.face,
+  modelKey: string | undefined = desktopImageModelKey('face', options.modelName),
 ): DesktopModelProfile => {
   catalogue ??= parseDesktopModelCatalogue(
     JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/model-catalogue.json'), 'utf8')),

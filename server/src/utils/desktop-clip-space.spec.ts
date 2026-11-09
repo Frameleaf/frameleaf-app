@@ -21,8 +21,8 @@ const key = (space: { visualModelKey: string; textModelKeys: string[] }) =>
 it('preserves all prior spaces when adding the corrected CPU producer group', () => {
   const catalogue = models();
   const spaces = parseDesktopClipSpaces(raw(), catalogue);
-  expect(spaces.epoch).toBe(6);
-  expect(spaces.spaces).toHaveLength(7);
+  expect(spaces.epoch).toBe(7);
+  expect(spaces.spaces).toHaveLength(11);
   expect(
     createHash('sha256')
       .update(canonicalJson(spaces.spaces.slice(0, 5)))
@@ -36,8 +36,8 @@ it('preserves all prior spaces when adding the corrected CPU producer group', ()
 it('maps every released exact text/image producer to its explicit space without joining old and new preprocessing', () => {
   const catalogue = models();
   const spaces = parseDesktopClipSpaces(raw(), catalogue);
-  expect(spaces.spaces).toHaveLength(7);
-  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(7);
+  expect(spaces.spaces).toHaveLength(11);
+  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(11);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') {
       expect(findDesktopClipSpace(spaces, profile.modelKey)).toBeUndefined();
@@ -132,9 +132,36 @@ it('binds all new CPU and CoreML roles to a distinct space while preserving hist
       .digest('hex'),
   ).toBe('f55e21472d358013b69b60350b0a8187b2850898cae155ab0f32a3f9195e6af8');
   const current = catalogue.profiles.filter(
-    (p) => p.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' && p.workload === 'clip',
+    (p) =>
+      p.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' &&
+      p.modelName === 'ViT-B-16-SigLIP-384__webli',
   );
   for (const profile of current) {
     expect(findDesktopClipSpace(spaces, profile.modelKey)).toEqual(spaces.spaces[6]);
+  }
+});
+
+it('epoch 7 gives each newly qualified model and runtime its own space and keeps every prior space', () => {
+  const catalogue = models();
+  const spaces = parseDesktopClipSpaces(raw(), catalogue);
+  expect(
+    createHash('sha256')
+      .update(canonicalJson(spaces.spaces.slice(0, 7)))
+      .digest('hex'),
+  ).toBe('ef20d7087b1a5f05aa1f91de6913a25a07573377bfc605697ce52c152ecd0f0d');
+  const added = [
+    ['ViT-B-32__openai', '25b22c16e47a27a2eb50017d838497abce850d11'],
+    ['ViT-SO400M-16-SigLIP2-384__webli', '25b22c16e47a27a2eb50017d838497abce850d11'],
+    ['ViT-B-32__openai', 'f2c451a6bf71ca3f3aec986e07f0852937268e2f'],
+    ['ViT-SO400M-16-SigLIP2-384__webli', 'f2c451a6bf71ca3f3aec986e07f0852937268e2f'],
+  ];
+  for (const [index, [modelName, source]] of added.entries()) {
+    const group = catalogue.profiles.filter(
+      (p) =>
+        p.modelName === modelName && p.runtimeSourceRevision === source && p.spec.provider === 'CPUExecutionProvider',
+    );
+    expect(group).toHaveLength(3);
+    for (const profile of group)
+      expect(findDesktopClipSpace(spaces, profile.modelKey)).toEqual(spaces.spaces[7 + index]);
   }
 });

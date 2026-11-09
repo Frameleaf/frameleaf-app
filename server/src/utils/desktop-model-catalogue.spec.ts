@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { CLIP_MODEL_INFO } from 'src/constants.js';
 import {
   type DesktopModelCatalogue,
   createDesktopModelChallenge,
+  desktopImageModelKey,
   desktopImageModelKeys,
   matchDesktopModelProfile,
   parseDesktopModelCatalogue,
@@ -14,8 +16,8 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(12);
-  expect(catalogue.profiles).toHaveLength(52);
+  expect(catalogue.epoch).toBe(13);
+  expect(catalogue.profiles).toHaveLength(102);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 27)))
@@ -30,18 +32,15 @@ it('preserves every prior binding and selects the qualified precision-corrected 
     expect(legacyKeys.has(profile.modelKey)).toBe(false);
   }
   expect(current.map((profile) => profile.workload)).toEqual(['clip', 'clip', 'clip', 'ocr', 'face']);
-  expect(desktopImageModelKeys).toEqual({
-    ocr: catalogue.profiles[35].modelKey,
-    face: catalogue.profiles[36].modelKey,
-  });
+  expect(desktopImageModelKeys.ocr['PP-OCRv5_mobile']).toBe(catalogue.profiles[35].modelKey);
+  expect(desktopImageModelKeys.face.buffalo_l).toBe(catalogue.profiles[36].modelKey);
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(52);
+  expect(catalogue.profiles).toHaveLength(102);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
-    expect(profile.modelName).toBe('ViT-B-16-SigLIP-384__webli');
-    expect(profile.embeddingDimensions).toBe(768);
+    expect(profile.embeddingDimensions).toBe(CLIP_MODEL_INFO[profile.modelName].dimSize);
     expect(
       matchDesktopModelProfile(
         catalogue,
@@ -54,7 +53,8 @@ it('validates the approved default model and preserves exact config, source and 
     expect(
       matchDesktopModelProfile(
         catalogue,
-        'ViT-B-32__openai',
+        // a selectable model the release has no profile for
+        'ViT-B-16-SigLIP2__webli',
         profile.spec.entries,
         profile.runtimeSourceRevision,
         profile.spec.provider,
@@ -177,6 +177,56 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
     'c07473e7f48fc116ede101ba012f266a7c84c1a79485f8be4f6f80df49153d82',
     'eb5990f3895a30726bf70f19dca270e14c09325364d0c71085c4334a54912cff',
     '84a5a8662aab5eac9415ca46b9c25318ba0bd989f4711853c75776614e919f8c',
+    'f27d2e6a303cff1789e855e0f1561a3a04b030639d4ff789800394a6ead51b94',
+    '064de008feb79e0ce67642f2613a17a33479e9238ef0ccc58db3eb5571bd8a77',
+    'a40b7628bbc61c2dbab819e83fae6bc738e4e5d0fba06eed749bede91c1dba70',
+    '207621ca4431e3358137b8ce4a742887b0db1e003b78548ea8fc36209a25512e',
+    'b3c98ec6de5f9e761a62044b8a261dc66d6273eff91f4a40fe7a9f97ea7f1016',
+    '25c77459eda63cc99a54f72320de3d0ef2029ce9a0c7d239eea62e24c499ad24',
+    '5b33ebee9460aa445513f196cc73597daa3f874ea2b527801f18bc67121f0759',
+    '6a1a473fc90069f0b222e697272cb1a78f8fadd4a1c52af7e42ed3d6eb8bb37e',
+    '194ab4b05a9b81e28466bc4341bd26d3c80349f3508f701ae63c9569a11a4d58',
+    'efa3e6033ea6b6c6aa769444ef5e3ba2432f1ed236ed37d919083edf255c5452',
+    '9e8cc701380276c1af1036c3493460904e91b6dc3c49193100f2733b244fed1f',
+    '994248b4729d33ae1dfc09365b7fd56f4949f80f15e1a6d4608b256b5308e54c',
+    '003981e4139fad9a251f21c59a89824c06a109640a358a8367683bd6b865cd4c',
+    '439a10ed09c75b25a0a4e39df0928e4636f6cc71eb73fecffa3eda028cbf4738',
+    'c7d74c2feef0e1abd8ab48c519338f7d2bbebd7b5785544d21729dadb7231742',
+    '8ae4a97bd0e176b44e519bf6c850310979364b986bd0f113913d3fe4df43fcf7',
+    '9c3beed723095dbca064cc7b8af523d703fe249740367b9cb6d1ebc034ae2ab6',
+    'c6af78be57ce709d21297e95b4be5030212ecd52d140899983dbd9f56fef9873',
+    '9b285e797d131b12e0a583a467d11ab107610d4b81c196e6b438f274296d3657',
+    '933b0789ec4350b99e64b3cb3b6d6bccaa850c54868131116a331a751ee60836',
+    'b6a672e4e27b03b749c4a93801f79803ae1faf92eaab9694539c9b1361a0160b',
+    '11ef055a3ba652e3231037eda669596ae0c141d79a19ec5bb255e3f719fc3309',
+    'fdbf9b5a1e0573f59dd0842d2e543e9d71e4a2ce4fcc1ce36082302dcca2a263',
+    'f651de490bf0ca761c0f475a2f4cf72cfa74bf1498cda30e2e12b7c25fbfd615',
+    'b60e9e5b4a848a98ff3732ff961bcde2516d7b915b99299426d9631f36c34d1b',
+    'd1ffb882c8508f0e4d37d03b84ece09a3311ebce7c53324a63b972e17dcf81cf',
+    '69e9528ebf2333b497346eb8a786cbc1e029902a360f66d093396b1d93298105',
+    '9037f282ae92ec3906fd5fd543de5f50954790b80a73a65168bde38633532895',
+    '44138e82b6571ef566be87863442e5496e84dc294107aadf38608db00289d4da',
+    '5c79f0a79976a2febed2381b0ff57e1fe6698947857327ff2d356fe925f736fc',
+    '7131c1c5d18fe4d38ebf2654012e8f224a85e5dfd55aebd276579ee1554a3d5f',
+    '4a42dc6f14a18a1aad75221992118a78aa96259ac0ba2cc686e29c02d684f7b1',
+    '0429e7033b3ff53bf003e5f41514f3e22cdb2a372382f3e54cd8430474d5ff70',
+    'c41e72990bd1faa690e43735707f2ed5191a367cea165c8188c2347243d9a3ce',
+    '88430bcfd76c9853b392e5e99efc6c85bfff348e95e9ddba2ce2fcd5e205bbc8',
+    'f3cec2f18b98eb7b266f19fcbfbf2e768205786813ab32c1877552ea7f8ed969',
+    'f7ec69608f3bbd197f2095305ae237fbb92adefefcbb81427e6f16b7fc07aba4',
+    'e816bfa65037eb5cf31c9f15235a5e62e28afeef93f55cfe067fac0b1f9e69a4',
+    '79f6a6828171d0ac79d0a1b7b46e5bc495707ca354eee47685c0e3990d1a78f3',
+    '3f3a667881b789ee7910f66d642ccb2f2988e31356845bfdaabebee2cca0f475',
+    '988bea3533a79c9092e4ddd093041311fdc94dadcc7929c5418a538b940817e3',
+    'f4fd2d89d61c68add788954f3eaa46e72446e709dee68a67653f54b56ff69c7f',
+    'abc7407292f1b815c9f3694275e3a8bb130adafb0b48d2ad3396580c05f3e552',
+    'b7d1e04824d89660c67265de02b9702c28df5364181318ce9ba6afc9813b75da',
+    'e3a49032696ca9abb0369f90ecc530e3bbc36a371834a20a1250f1b96ec14052',
+    '1904b558975efc5e39f122b7e2203bf750f9b704ac4f1e2136db1b52d474383e',
+    'cdad3bb06fd2d2d90b508cd873dee95956d4da36d9c74b64841e7c502d0dd966',
+    '4b8b16bf798bb5aec952a42b251ef33150e429ef04851f3031fe052a1e5a4996',
+    '02bc91e1c3f4081ad6d1e5e1dc992616ba1c142e5b04c1f9f3f2e78f3e352b5e',
+    '2ce10598215ef4ab45f4fcc38c3ae39c7bea261e742a21d10f7c67f7579f4095',
   ];
   expect(catalogue.profiles).toHaveLength(expected.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
@@ -317,7 +367,7 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
-  expect(catalogue.profiles).toHaveLength(52);
+  expect(catalogue.profiles).toHaveLength(102);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
@@ -348,17 +398,20 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
 
 it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(12);
-  expect(catalogue.profiles).toHaveLength(52);
+  expect(catalogue.epoch).toBe(13);
+  expect(catalogue.profiles).toHaveLength(102);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 32)))
       .digest('hex'),
   ).toBe('22b8e3fa22858c0422bed4c4cbee128e44d111775fef176f71bfa499269f5ec8');
   for (const provider of ['CPUExecutionProvider', 'CoreMLExecutionProvider']) {
-    const selected = catalogue.profiles.filter(
-      (p) => p.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' && p.spec.provider === provider,
-    );
+    // the epoch 11 group; epoch 13 appends other models for the same runtime
+    const selected = catalogue.profiles
+      .slice(0, 52)
+      .filter(
+        (p) => p.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' && p.spec.provider === provider,
+      );
     expect(selected.map((p) => p.workload)).toEqual(['clip', 'clip', 'clip', 'ocr', 'face']);
     for (const profile of selected) {
       expect(profile.spec.preprocessingSha256).toBe('8d9fc77dbb8d8c1ee262ed800a564b7cc82b0160e3c29166f724b84529ec353a');
@@ -382,8 +435,8 @@ it('selects exact current CPU and CoreML profiles while preserving all historica
 
 it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(12);
-  expect(catalogue.profiles).toHaveLength(52);
+  expect(catalogue.epoch).toBe(13);
+  expect(catalogue.profiles).toHaveLength(102);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -403,5 +456,65 @@ it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps 
       expect({ ...twin, spec: { ...twin.spec, provider: 'CPUExecutionProvider' } }).toEqual(cpu);
       expect(matchDesktopModelProfile(catalogue, twin.modelName, twin.spec.entries, source, provider)).toEqual(twin);
     }
+  }
+});
+
+it('epoch 13 qualifies every selectable model the desktop runtimes can run and keeps every prior binding', () => {
+  const catalogue = parseDesktopModelCatalogue(raw());
+  expect(catalogue.epoch).toBe(13);
+  expect(catalogue.profiles).toHaveLength(102);
+  expect(
+    createHash('sha256')
+      .update(canonicalJson(catalogue.profiles.slice(0, 42)))
+      .digest('hex'),
+  ).toBe('55de0a4da603339578721080a8eca52ef7a9beb32ca28d4b52aa58d798a49d5d');
+  const models = [
+    ['clip', 'ViT-B-32__openai'],
+    ['clip', 'ViT-B-32__openai'],
+    ['clip', 'ViT-B-32__openai'],
+    ['clip', 'ViT-SO400M-16-SigLIP2-384__webli'],
+    ['clip', 'ViT-SO400M-16-SigLIP2-384__webli'],
+    ['clip', 'ViT-SO400M-16-SigLIP2-384__webli'],
+    ['ocr', 'PP-OCRv5_server'],
+    ['face', 'antelopev2'],
+    ['face', 'buffalo_s'],
+    ['face', 'buffalo_m'],
+  ];
+  for (const [offset, source, preprocessing] of [
+    [52, '25b22c16e47a27a2eb50017d838497abce850d11', 'c1e21e7f'],
+    [62, 'f2c451a6bf71ca3f3aec986e07f0852937268e2f', '8d9fc77d'],
+  ] as const) {
+    const added = catalogue.profiles.slice(offset, offset + 10);
+    expect(added.map((p) => [p.workload, p.modelName])).toEqual(models);
+    for (const profile of added) {
+      expect(profile.runtimeSourceRevision).toBe(source);
+      expect(profile.spec.provider).toBe('CPUExecutionProvider');
+      expect(profile.spec.preprocessingSha256.slice(0, 8)).toBe(preprocessing);
+    }
+  }
+  for (const [offset, provider] of [
+    [72, 'CoreMLExecutionProvider'],
+    [82, 'CUDAExecutionProvider'],
+    [92, 'OpenVINOExecutionProvider'],
+  ] as const) {
+    for (let index = 0; index < 10; index++) {
+      const cpu = catalogue.profiles[62 + index];
+      const twin = catalogue.profiles[offset + index];
+      expect(twin.spec.provider).toBe(provider);
+      expect({ ...twin, spec: { ...twin.spec, provider: 'CPUExecutionProvider' } }).toEqual(cpu);
+    }
+  }
+  // Each released face/OCR default is the precision-corrected CPU profile of that model.
+  for (const workload of ['ocr', 'face'] as const) {
+    for (const [modelName, key] of Object.entries(desktopImageModelKeys[workload])) {
+      const profile = catalogue.profiles.find((p) => p.modelKey === key)!;
+      expect([profile.workload, profile.modelName, profile.runtimeSourceRevision]).toEqual([
+        workload,
+        modelName,
+        'f2c451a6bf71ca3f3aec986e07f0852937268e2f',
+      ]);
+      expect(desktopImageModelKey(workload, modelName)).toBe(key);
+    }
+    expect(desktopImageModelKey(workload, 'constructor')).toBeUndefined();
   }
 });
