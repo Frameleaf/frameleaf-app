@@ -61,6 +61,12 @@ const NEVER_REPLACED_PATH_TYPES: ReadonlySet<PathType> = new Set<PathType>([
   AssetFileType.Sidecar,
 ]);
 
+/**
+ * FL-1333: the errors from removing a name that certainly left it in place (refused before anything changed).
+ * Any other error, such as a network share's EIO or ETIMEDOUT, may come after the server removed the name.
+ */
+const UNLINK_LEFT_THE_NAME: ReadonlySet<string> = new Set(['EACCES', 'EPERM', 'EROFS', 'EBUSY']);
+
 let mediaLocation: string | undefined;
 
 export class StorageCore {
@@ -387,7 +393,8 @@ export class StorageCore {
    * Moves a file within one filesystem without replacing a file at `to` (FL-1333): the file is linked at `to`,
    * which fails when anything is there, and only then is its old name removed. When `to` is this file already
    * (an interrupted move linked it there and stopped), the move is finished. Any other file there is kept
-   * (`exists`) unless `replace`, for a file that can be made again. `exists` and `failed` changed nothing; a
+   * (`exists`) unless `replace`, for a file that can be made again. `exists` changed nothing; `failed` left the
+   * file at `from`, or under both names when removing `from` failed unclearly, for the recorded move to finish. A
    * move to another filesystem is reported rather than attempted.
    */
   private async rename(
@@ -431,11 +438,11 @@ export class StorageCore {
 
   /**
    * Removing `from`, once the file was linked at `to`, failed. An unclear failure (a network drive that timed
-   * out after removing the name) may have removed it anyway, leaving `to` the file's only name, so nothing is
-   * taken back on trust:
+   * out after removing the name) may have removed it anyway, leaving `to` the file's only name, and the check
+   * that follows may be answered from the share's cache, so nothing is taken back on trust:
    * - `from` is gone: the move is made (`renamed`).
-   * - `from` still names the file: with `takeBack`, the link at `to` is removed (`failed`, as if nothing was
-   *   tried); without, both names stay (`failed`).
+   * - `from` still names the file, and the error certainly left it (`takeBack` and an error such as EACCES):
+   *   the link at `to` is removed (`failed`, as if nothing was tried).
    * - anything else, or it cannot tell: both names stay (`failed`), and the next run finishes the move.
    */
   private async afterFailedUnlink(
@@ -458,15 +465,20 @@ export class StorageCore {
       this.logger.warn(`Keeping ${from} and ${to}: ${from} is not known to name the file still`);
       return 'failed';
     }
-    if (takeBack) {
-      // the file was never anywhere but `from`: the new link is taken back
-      try {
-        await this.storageRepository.unlink(to);
-      } catch (unlinkError: any) {
-        this.logger.error(
-          `Unable to remove ${to}, a second name of ${from}; the recorded move keeps both: ${unlinkError}`,
-        );
-      }
+    if (!takeBack) {
+      return 'failed';
+    }
+    if (!UNLINK_LEFT_THE_NAME.has((error as { code?: string } | undefined)?.code ?? '')) {
+      this.logger.warn(`Keeping ${from} and ${to}: removing ${from} may have gone through despite the error`);
+      return 'failed';
+    }
+    // the file was never anywhere but `from`: the new link is taken back
+    try {
+      await this.storageRepository.unlink(to);
+    } catch (unlinkError: any) {
+      this.logger.error(
+        `Unable to remove ${to}, a second name of ${from}; the recorded move keeps both: ${unlinkError}`,
+      );
     }
     return 'failed';
   }
