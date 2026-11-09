@@ -38,6 +38,7 @@ import {
   albumPlaceKey,
   countCleanupSuggestions,
   detectHomeAreas,
+  hasCurrentAlbumFacts,
   isDateOnlyName,
 } from 'src/utils/album-cleanup.js';
 import { healDates, suspiciousDate } from 'src/utils/album-suggestions.js';
@@ -225,7 +226,9 @@ export class AlbumCleanupService extends BaseService {
   }
 
   async getSnapshot(auth: AuthDto): Promise<AlbumCleanupSnapshotResponseDto> {
-    const snapshot = await this.albumCleanupRepository.getSnapshot(auth.user.id, variantOf(auth));
+    const stored = await this.albumCleanupRepository.getSnapshot(auth.user.id, variantOf(auth));
+    // A snapshot from before the facts changed shape is treated as missing, so a fresh scan replaces it.
+    const snapshot = stored && hasCurrentAlbumFacts(stored.facts.albums) ? stored : undefined;
     await this.scanWhenStale(auth.user.id, snapshot?.computedAt);
     if (!snapshot) {
       return { ready: false, computedAt: null, suggestionCount: 0, facts: null };

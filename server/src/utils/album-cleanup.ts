@@ -41,6 +41,10 @@ export const albumNameKey = (name: string): string => cleanAlbumName(name).toLow
 export const albumPlaceKey = (name: string, parentId: string | null): string =>
   parentId ? `${parentId}>${albumNameKey(name)}` : albumNameKey(name);
 
+/** Whether stored album facts were written with `parentId` and `readOnly`. */
+export const hasCurrentAlbumFacts = (albums: object[]): boolean =>
+  albums.every((album) => 'parentId' in album && 'readOnly' in album);
+
 /** Rule 16: only an album named nothing but a date can be removed. */
 export const isDateOnlyName = (name: string): boolean => DATE_ONLY.test(cleanAlbumName(name));
 

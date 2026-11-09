@@ -72,6 +72,7 @@ describe('every album on the Albums page', () => {
       ]),
     );
     expect(plan.duplicates.map(({ name }) => name)).toEqual(['Beach']);
+    expect(plan.summary).toMatchObject({ albumsBefore: 4, albumsAfter: 3 });
     expect(operationsFor(plan)).toEqual([
       expect.objectContaining({ type: 'merge', albumIds: expect.arrayContaining(['c', 'd']) }),
     ]);

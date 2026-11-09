@@ -697,7 +697,7 @@
         <dd>
           <s>{number(summary.albumsBefore)}</s>
           <Icon icon={mdiArrowRight} size="20" aria-hidden={true} />
-          <strong>{number(summary.topLevelAfter)}</strong>
+          <strong>{number(summary.albumsAfter)}</strong>
         </dd>
       </div>
       <div class="ac-stat">

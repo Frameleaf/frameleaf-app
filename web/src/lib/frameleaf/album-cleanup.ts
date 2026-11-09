@@ -324,6 +324,8 @@ export type CleanupPlan = {
     similarMerged: number;
     daysCombined: number;
     albumsCombined: number;
+    /** Albums left once merges and removals are done, however they are filed. */
+    albumsAfter: number;
     lostPhotos: number;
     datesHealed: number;
     collections: number;
@@ -965,6 +967,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   const albumsMerged = activeDuplicates.reduce((sum, group) => sum + group.others.length, 0);
   const daysCombined = absorbedDays.size - combined.length;
   const similarMerged = absorbedBySimilar.size - unmergedLosers.size;
+  const albumsCombined = albumsMerged + similarMerged + daysCombined + inTrip.size - tripAlbums.length;
   return {
     structure,
     untouched,
@@ -988,7 +991,8 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
       albumsMerged,
       similarMerged,
       daysCombined,
-      albumsCombined: albumsMerged + similarMerged + daysCombined + inTrip.size - tripAlbums.length,
+      albumsCombined,
+      albumsAfter: facts.albums.length - albumsCombined - removed.length,
       lostPhotos: lostDates.reduce((sum, item) => sum + item.suggestions.length, 0),
       datesHealed: lostDates.filter((item) => item.healed).reduce((sum, item) => sum + item.suggestions.length, 0),
       collections: countGroups(structure) - countExisting(structure),

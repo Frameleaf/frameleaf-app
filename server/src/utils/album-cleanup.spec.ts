@@ -4,6 +4,7 @@ import {
   countCleanupSuggestions,
   detectHomeAreas,
   distanceKm,
+  hasCurrentAlbumFacts,
   isDateOnlyName,
 } from 'src/utils/album-cleanup.js';
 
@@ -20,6 +21,14 @@ describe('isDateOnlyName', () => {
 describe('albumNameKey', () => {
   it('ignores case and repeated spaces', () => {
     expect(albumNameKey('  Friends  -  Patrick ')).toBe('friends - patrick');
+  });
+});
+
+describe('hasCurrentAlbumFacts', () => {
+  it('refuses facts written before the fields existed', () => {
+    expect(hasCurrentAlbumFacts([{ id: 'a' }])).toBe(false);
+    expect(hasCurrentAlbumFacts([{ id: 'a', parentId: null, readOnly: false }])).toBe(true);
+    expect(hasCurrentAlbumFacts([])).toBe(true);
   });
 });
 
