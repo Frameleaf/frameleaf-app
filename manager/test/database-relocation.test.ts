@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -382,7 +382,10 @@ test('a retained database folder is removed only on request, and never the one i
     const container = (name: string, source: string, labels: Record<string, string> = {}) =>
       ({ Id: name.padEnd(64, '0'), Name: `/${name}`, State: { Running: false }, Config: { Labels: labels },
         Mounts: [{ Type: 'bind', Source: source, Destination: '/data', RW: true }] });
-    for (const [other, source] of [['filebrowser', f.oldRoot], ['backup-tool', join(f.current.databasePath, 'base')]] as const) {
+    // A link to the folder above it, as Docker can report a bind of a symlink.
+    await symlink(f.oldRoot, join(f.directory, 'cache-link'));
+    for (const [other, source] of [['filebrowser', f.oldRoot], ['backup-tool', join(f.current.databasePath, 'base')],
+      ['linked-app', join(f.directory, 'cache-link')]] as const) {
       f.extra.splice(0, f.extra.length, container(other, source));
       await assert.rejects(operations.removeRetainedDatabase(f.current.databasePath),
         (error: Refusal) => error.code === 'database_folder_in_use' && error.detail === `Container ${other} maps this folder.`, other);
