@@ -454,7 +454,8 @@ export class AlbumCleanupService extends BaseService {
         smaller === 0 ||
         shared < SAME_PHOTOS_MIN_SHARED ||
         shared / smaller < SAME_PHOTOS_SHARE ||
-        nameOf(firstId) === nameOf(secondId)
+        nameOf(firstId) === nameOf(secondId) ||
+        album(firstId).parentId !== album(secondId).parentId
       ) {
         return [];
       }
@@ -480,7 +481,11 @@ export class AlbumCleanupService extends BaseService {
         }
         const lead = winner(group.map(({ id }) => album(id)));
         return group.flatMap((other) => {
-          if (other.id === lead.id || nameOf(other.id) === nameOf(lead.id)) {
+          if (
+            other.id === lead.id ||
+            nameOf(other.id) === nameOf(lead.id) ||
+            album(other.id).parentId !== lead.parentId
+          ) {
             return [];
           }
           const [firstId, secondId] = lead.id < other.id ? [lead.id, other.id] : [other.id, lead.id];
