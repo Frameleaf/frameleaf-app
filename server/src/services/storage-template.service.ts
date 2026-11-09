@@ -544,9 +544,11 @@ export class StorageTemplateService extends BaseService {
       while (true) {
         const isExists = await this.storageRepository.checkFileExists(destination);
         // FL-1333: a name that already holds this photo's own file (an interrupted move linked it there) is
-        // the photo's; the move finishes there and removes the old name, so the file keeps one name. A name that
-        // another photo is recorded at is that photo's, even when it is another name of this file.
-        if (!isExists || (await this.isOwnName(asset.id, source, destination))) {
+        // the photo's; the move finishes there and removes the old name, so the file keeps one name.
+        const isFree = !isExists || (await this.isOwnFile(source, destination));
+        // FL-1333: a name another asset or physical file is recorded at is taken, even when nothing is on disk
+        // there or it is another name of this file (two photos can share one file); the locked move refuses it too
+        if (isFree && !(await this.assetRepository.isPathNamedByOthers(asset.id, destination))) {
           break;
         }
 
@@ -561,16 +563,10 @@ export class StorageTemplateService extends BaseService {
     }
   }
 
-  /**
-   * Whether `candidate` is the asset's own name: another name of the file at `originalPath` that no other asset or
-   * physical file names. When that cannot be told, it is not.
-   */
-  private async isOwnName(assetId: string, originalPath: string, candidate: string): Promise<boolean> {
+  /** Whether `candidate` is another name of the file at `originalPath`; when that cannot be told, it is not. */
+  private async isOwnFile(originalPath: string, candidate: string): Promise<boolean> {
     try {
-      return (
-        (await this.storageRepository.isOtherLinkOf(originalPath, candidate)) &&
-        !(await this.assetRepository.isPathNamedByOthers(assetId, candidate))
-      );
+      return await this.storageRepository.isOtherLinkOf(originalPath, candidate);
     } catch (error: any) {
       this.logger.debug(`Unable to compare ${candidate} with ${originalPath}: ${error}`);
       return false;

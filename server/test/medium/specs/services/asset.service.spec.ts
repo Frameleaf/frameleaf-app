@@ -994,7 +994,7 @@ describe(AssetService.name, () => {
           const moveId = await recordMove(asset.id, asset.originalPath, to);
           const operations = { rename: vi.fn(renamed), finish: vi.fn(noop), undo: vi.fn(noop) };
 
-          await expect(repository.moveFile(originalMove(asset, moveId, to), operations)).resolves.toBe('failed');
+          await expect(repository.moveFile(originalMove(asset, moveId, to), operations)).resolves.toBe('taken');
 
           expect(operations.rename).not.toHaveBeenCalled();
           expect(operations.undo).not.toHaveBeenCalled();
@@ -1222,105 +1222,131 @@ describe(AssetService.name, () => {
           await expect(repository.getById(other.id)).resolves.toMatchObject({ originalPath: to });
         });
 
-        it('two photos that land on the same name keep both files', async () => {
-          // FL-1333: real files, moved by the storage template's own job
-          const media = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-same-name-')));
-          StorageCore.reset();
-          StorageCore.setMediaLocation(media);
-          try {
-            const { sut, ctx } = newMediumService(StorageTemplateService, {
-              database: forkDatabase,
-              real: [
-                AssetRepository,
-                AssetJobRepository,
-                CryptoRepository,
-                MoveRepository,
-                PhysicalFileRepository,
-                StorageRepository,
-                UserRepository,
-              ],
-              mock: [DatabaseRepository, EventRepository, JobRepository, LoggingRepository],
-            });
-            const config = structuredClone(defaults);
-            config.storageTemplate.enabled = true;
-            config.storageTemplate.template = 'same-name/{{filename}}';
-            sut.onConfigInit({ newConfig: config });
-            vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
-            // The template's own lock runs one of its moves at a time. Without it the first move stands for any
-            // writer that takes a name between the template's check for it and the move.
-            ctx.getMock(DatabaseRepository).withLock.mockImplementation((_lock, callback) => callback());
-
-            const { user } = await ctx.newUser();
-            const folder = join(media, 'upload', user.id, 'ab', 'cd');
-            await mkdir(folder, { recursive: true });
-            const photos: { id: string; originalPath: string; bytes: Buffer }[] = [];
-            for (const bytes of [Buffer.from('the first photo'), Buffer.from('a second, different photo')]) {
-              const originalPath = join(folder, `${randomUUID()}.jpg`);
-              await writeFile(originalPath, bytes);
-              const { asset } = await ctx.newAsset({
-                ownerId: user.id,
-                originalPath,
-                originalFileName: 'IMG_0001.jpg',
-                checksum: createHash('sha1').update(bytes).digest(),
-              });
-              await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
-              photos.push({ id: asset.id, originalPath, bytes });
-            }
-            const [first, second] = photos;
-            const name = join(
-              StorageCore.getLibraryFolder({ id: user.id, storageLabel: user.storageLabel ?? null }),
-              'same-name',
-              'IMG_0001',
-            );
-
-            // The second move finds the name free, and the first move takes it before the second goes on. (Two
-            // moves whose records overlap never get this far: the second record of one new path is refused.)
-            const storage = ctx.get(StorageRepository);
-            const checkFileExists = storage.checkFileExists.bind(storage);
-            let held = false;
-            let secondChecked!: () => void;
-            const checked = new Promise<void>((resolve) => (secondChecked = resolve));
-            let firstMoved!: () => void;
-            const moved = new Promise<void>((resolve) => (firstMoved = resolve));
-            vi.spyOn(storage, 'checkFileExists').mockImplementation(async (path, mode) => {
-              const exists = await checkFileExists(path, mode);
-              if (path === `${name}.jpg` && !held) {
-                held = true;
-                secondChecked();
-                await moved;
-              }
-              return exists;
-            });
-
-            await Promise.all([
-              sut.handleMigrationSingle({ id: second.id }),
-              checked.then(() => sut.handleMigrationSingle({ id: first.id })).finally(firstMoved),
-            ]);
-
-            const pathOf = async (id: string) => (await ctx.get(AssetRepository).getById(id))?.originalPath;
-            await expect(pathOf(first.id)).resolves.toBe(`${name}.jpg`);
-            await expect(readFile(`${name}.jpg`)).resolves.toEqual(first.bytes);
-            // the move that found the name taken changed nothing, and stays recorded for the next run
-            await expect(pathOf(second.id)).resolves.toBe(second.originalPath);
-            await expect(readFile(second.originalPath)).resolves.toEqual(second.bytes);
-            await expect(movesOf(second.id)).resolves.toHaveLength(1);
-
-            // which sees the name taken and picks a free one
-            await expect(sut.handleMigrationSingle({ id: second.id })).resolves.toBe(JobStatus.Success);
-
-            await expect(pathOf(first.id)).resolves.toBe(`${name}.jpg`);
-            await expect(pathOf(second.id)).resolves.toBe(`${name}+1.jpg`);
-            await expect(readFile(`${name}.jpg`)).resolves.toEqual(first.bytes);
-            await expect(readFile(`${name}+1.jpg`)).resolves.toEqual(second.bytes);
-            for (const photo of photos) {
-              await expect(readFile(photo.originalPath)).rejects.toMatchObject({ code: 'ENOENT' });
-              await expect(movesOf(photo.id)).resolves.toEqual([]);
-            }
-          } finally {
+        it.each([
+          { taker: 'another photo', label: 'its record' },
+          { taker: 'a file with no record', label: 'the file that is there' },
+        ])(
+          'two moves that land on the same name keep both files when $taker takes it first ($label stops the move)',
+          async ({ taker }) => {
+            // FL-1333: real files, moved by the storage template's own job
+            const media = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-same-name-')));
             StorageCore.reset();
-            await rm(media, { recursive: true, force: true });
-          }
-        });
+            StorageCore.setMediaLocation(media);
+            try {
+              const { sut, ctx } = newMediumService(StorageTemplateService, {
+                database: forkDatabase,
+                real: [
+                  AssetRepository,
+                  AssetJobRepository,
+                  CryptoRepository,
+                  MoveRepository,
+                  PhysicalFileRepository,
+                  StorageRepository,
+                  UserRepository,
+                ],
+                mock: [DatabaseRepository, EventRepository, JobRepository, LoggingRepository],
+              });
+              const config = structuredClone(defaults);
+              config.storageTemplate.enabled = true;
+              config.storageTemplate.template = 'same-name/{{filename}}';
+              sut.onConfigInit({ newConfig: config });
+              vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
+              // The template's own lock runs one of its moves at a time. Without it the first move stands for any
+              // writer that takes a name between the template's check for it and the move.
+              ctx.getMock(DatabaseRepository).withLock.mockImplementation((_lock, callback) => callback());
+
+              const { user } = await ctx.newUser();
+              const folder = join(media, 'upload', user.id, 'ab', 'cd');
+              await mkdir(folder, { recursive: true });
+              const photos: { id: string; originalPath: string; bytes: Buffer }[] = [];
+              for (const bytes of [Buffer.from('the first photo'), Buffer.from('a second, different photo')]) {
+                const originalPath = join(folder, `${randomUUID()}.jpg`);
+                await writeFile(originalPath, bytes);
+                const { asset } = await ctx.newAsset({
+                  ownerId: user.id,
+                  originalPath,
+                  originalFileName: 'IMG_0001.jpg',
+                  checksum: createHash('sha1').update(bytes).digest(),
+                });
+                await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
+                photos.push({ id: asset.id, originalPath, bytes });
+              }
+              const [first, second] = photos;
+              const name = join(
+                StorageCore.getLibraryFolder({ id: user.id, storageLabel: user.storageLabel ?? null }),
+                'same-name',
+                'IMG_0001',
+              );
+
+              // The second move's template finds the name free on disk and in the records, and the name is taken
+              // before its move goes on: by the first photo's move (the locked move then finds its record), or by a
+              // file no record names (the move then finds the file there and never replaces it). (Two moves whose
+              // records overlap never get this far: the second record of one new path is refused.)
+              const assets = ctx.get(AssetRepository);
+              const isPathNamedByOthers = assets.isPathNamedByOthers.bind(assets);
+              let held = false;
+              let secondChecked!: () => void;
+              const checked = new Promise<void>((resolve) => (secondChecked = resolve));
+              let nameTaken!: () => void;
+              const taken = new Promise<void>((resolve) => (nameTaken = resolve));
+              vi.spyOn(assets, 'isPathNamedByOthers').mockImplementation(async (assetId, path, kysely) => {
+                const named = await isPathNamedByOthers(assetId, path, kysely);
+                // the template's own check (the locked move passes its transaction)
+                if (path === `${name}.jpg` && !kysely && !held) {
+                  held = true;
+                  secondChecked();
+                  await taken;
+                }
+                return named;
+              });
+              const stranger = Buffer.from('a file no record names');
+              const takeName = async () => {
+                if (taker === 'another photo') {
+                  await sut.handleMigrationSingle({ id: first.id });
+                  return;
+                }
+                await mkdir(dirname(name), { recursive: true });
+                await writeFile(`${name}.jpg`, stranger, { flag: 'wx' });
+              };
+
+              await Promise.all([
+                sut.handleMigrationSingle({ id: second.id }),
+                checked.then(takeName).finally(nameTaken),
+              ]);
+
+              const pathOf = async (id: string) => (await ctx.get(AssetRepository).getById(id))?.originalPath;
+              const atName = taker === 'another photo' ? first.bytes : stranger;
+              await expect(readFile(`${name}.jpg`)).resolves.toEqual(atName);
+              // the move that found the name taken changed nothing, and stays recorded for the next run
+              await expect(pathOf(second.id)).resolves.toBe(second.originalPath);
+              await expect(readFile(second.originalPath)).resolves.toEqual(second.bytes);
+              await expect(movesOf(second.id)).resolves.toHaveLength(1);
+              if (taker === 'another photo') {
+                await expect(pathOf(first.id)).resolves.toBe(`${name}.jpg`);
+                // the locked move's refusal is reported, with the path, so it never fails silently
+                const warnings = ctx
+                  .getMock(LoggingRepository)
+                  .warn.mock.calls.filter(([message]) => message.includes('another record names'));
+                expect(warnings).toHaveLength(1);
+                expect(warnings[0][0]).toContain(`${name}.jpg`);
+              }
+
+              // which sees the name taken and picks a free one
+              await expect(sut.handleMigrationSingle({ id: second.id })).resolves.toBe(JobStatus.Success);
+
+              await expect(pathOf(second.id)).resolves.toBe(`${name}+1.jpg`);
+              await expect(readFile(`${name}.jpg`)).resolves.toEqual(atName);
+              await expect(readFile(`${name}+1.jpg`)).resolves.toEqual(second.bytes);
+              for (const photo of taker === 'another photo' ? photos : [second]) {
+                await expect(readFile(photo.originalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+                await expect(movesOf(photo.id)).resolves.toEqual([]);
+              }
+            } finally {
+              StorageCore.reset();
+              await rm(media, { recursive: true, force: true });
+            }
+          },
+        );
 
         it.each([
           { recorded: true, label: 'with its recorded move' },

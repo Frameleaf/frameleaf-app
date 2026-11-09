@@ -865,6 +865,39 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.storage.link).not.toHaveBeenCalledWith(oldPath, newPath);
     });
 
+    it('skips a name another photo is recorded at even when nothing is on disk there (FL-1333)', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+      })
+        .exif()
+        .build();
+
+      const oldPath = asset.originalPath;
+      const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+      const newPath2 = newPath.replace('.jpg', '+1.jpg');
+
+      mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
+      mocks.user.getList.mockResolvedValue([userStub.user1]);
+      mocks.move.create.mockResolvedValue({
+        id: '123',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath,
+        newPath: newPath2,
+      });
+      // another photo is recorded at the name, though its file is missing (an offline or lost original)
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      mocks.asset.isPathNamedByOthers.mockImplementation((assetId, path) =>
+        Promise.resolve(assetId === asset.id && path === newPath),
+      );
+
+      await sut.handleMigration();
+
+      expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath2 }]);
+      expect(mocks.asset.isPathNamedByOthers).toHaveBeenCalledWith(asset.id, newPath);
+      expect(mocks.storage.link).not.toHaveBeenCalledWith(oldPath, newPath);
+    });
+
     it('takes the next name when it cannot tell whether a destination is the asset’s own file', async () => {
       const asset = AssetFactory.from({
         fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
@@ -1698,6 +1731,33 @@ describe(StorageTemplateService.name, () => {
 
       const warnings = mocks.logger.warn.mock.calls.filter(([message]) => message.includes('mapped to another file'));
       expect(warnings).toHaveLength(1);
+    });
+
+    it('reports a move refused because another record names its new path once, naming the path (FL-1333)', async () => {
+      const user = UserFactory.create();
+      const asset = AssetFactory.from({ fileCreatedAt: new Date('2022-06-19T23:41:36.910Z') })
+        .owner(user)
+        .exif({ fileSizeInByte: 5000 })
+        .build();
+      mocks.user.get.mockResolvedValue(user);
+      mocks.assetJob.getForStorageTemplateJob.mockResolvedValue(getForStorageTemplate(asset));
+      mocks.move.create.mockResolvedValue({
+        id: 'move-taken',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath: asset.originalPath,
+        newPath: '/data/library/taken.jpg',
+      });
+      // the locked move found the new path held by another record after the template chose it
+      mocks.asset.moveFile.mockResolvedValue('taken');
+
+      await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      await sut.handleMigrationSingle({ id: asset.id });
+
+      const warnings = mocks.logger.warn.mock.calls.filter(([message]) => message.includes('another record names'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0][0]).toContain(mocks.asset.moveFile.mock.calls[0][0].to);
+      expect(mocks.storage.link).not.toHaveBeenCalled();
     });
 
     it('defers a failure to the next night', async () => {
