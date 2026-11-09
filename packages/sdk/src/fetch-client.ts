@@ -26161,6 +26161,17 @@ export function playStudioHdrVideo({ id }: {
     }));
 }
 /**
+ * Record an asset view
+ */
+export function recordAssetView({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/views`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get video audio waveform
  */
 export function getAssetWaveform({ buckets, channels, id, key, slug }: {

@@ -3057,6 +3057,24 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('recordView', () => {
+    it('should require asset read permission', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.recordView(authStub.admin, 'asset-1')).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.asset.recordView).not.toHaveBeenCalled();
+    });
+
+    it('should count the view for the viewer', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.recordView(authStub.admin, 'asset-1');
+
+      expect(mocks.asset.recordView).toHaveBeenCalledWith(authStub.admin.user.id, 'asset-1');
+    });
+  });
+
   describe('getOcr', () => {
     it('should require asset read permission', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());

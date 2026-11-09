@@ -3670,6 +3670,21 @@ export class AssetRepository {
       .where('asset.type', '=', AssetType.Video)
       .executeTakeFirst();
   }
+  /** Year in Review: one more viewer open of `assetId` by `userId` today. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  async recordView(userId: string, assetId: string): Promise<void> {
+    await this.db
+      .insertInto('asset_view')
+      .values({ userId, assetId, viewedOn: sql<string>`current_date` })
+      .onConflict((oc) =>
+        oc.columns(['userId', 'assetId', 'viewedOn']).doUpdateSet((eb) => ({
+          viewCount: eb('asset_view.viewCount', '+', 1),
+          lastViewedAt: sql`now()`,
+        })),
+      )
+      .execute();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForOcr(id: string) {
     return this.db

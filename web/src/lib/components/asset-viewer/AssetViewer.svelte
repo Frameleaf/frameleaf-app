@@ -59,6 +59,7 @@
     getAssetInfo,
     getAssetDevelop,
     getStack,
+    recordAssetView,
     type AlbumResponseDto,
     type AssetResponseDto,
     type PersonResponseDto,
@@ -316,6 +317,34 @@
     }
     pendingNavigation = undefined;
     queuedWhileBusy = undefined;
+  });
+
+  // Year in Review groundwork: count each asset the person opens once. Slideshows advance on their own and
+  // shared-link visitors are not the library's people, so neither counts.
+  let countedViewFor: string | undefined;
+  $effect(() => {
+    const { id, lockedEncryption } = cursor.current;
+    // An encrypted Locked item that doesn't open yet isn't seen: it counts once it opens, and moving onto it
+    // still ends the previous view, so going back counts that asset again.
+    if (lockedEncryption && !lockedEncryption.openable) {
+      countedViewFor = undefined;
+      return;
+    }
+    if (countedViewFor === id || !authManager.authenticated || authManager.isSharedLink) {
+      return;
+    }
+    // Mark slideshow slides as seen too, so stopping on one does not count it as an opening.
+    countedViewFor = id;
+    if (slideshowActive) {
+      return;
+    }
+    void (async () => {
+      try {
+        await recordAssetView({ id });
+      } catch {
+        // A lost count is not worth a toast.
+      }
+    })();
   });
 
   // A reload reconstructs the viewer with isShowEditor=false. If this tab has an unsaved draft,

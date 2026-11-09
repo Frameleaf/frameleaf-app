@@ -558,6 +558,21 @@ describe(AssetController.name, () => {
     });
   });
 
+  describe('POST /assets/:id/views', () => {
+    it('should require a valid id', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).post(`/assets/123/views`);
+      expect(status).toBe(400);
+      expect(body).toEqual(factory.responses.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+    });
+
+    it('should record the view', async () => {
+      const id = factory.uuid();
+      const { status } = await request(ctx.getHttpServer()).post(`/assets/${id}/views`);
+      expect(status).toBe(204);
+      expect(service.recordView).toHaveBeenCalledWith(undefined, id);
+    });
+  });
+
   describe('video edit versions (FL-39)', () => {
     const expectPermission = (permission: Permission) =>
       expect(ctx.authenticate).toHaveBeenCalledWith(
