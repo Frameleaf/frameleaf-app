@@ -247,14 +247,14 @@ const publishByCopy = async (
   staged: string,
   destination: string,
   refuseDifferent: (error: unknown) => Promise<void>,
-) => {
+): Promise<boolean> => {
   let file;
   try {
     file = await open(destination, 'wx', (await lstat(staged)).mode & 0o777);
   } catch (error) {
     if (errorCode(error) === 'EEXIST') {
       await refuseDifferent(error);
-      return;
+      return false;
     }
     throw error;
   }
@@ -267,6 +267,7 @@ const publishByCopy = async (
     throw error;
   }
   await file.close();
+  return true;
 };
 
 /**
@@ -306,6 +307,9 @@ let retainQueue: Promise<unknown> = Promise.resolve();
 const retainingMoves = new Map<string, Promise<boolean>>();
 
 const retainFileNow = async (source: string, destination: string): Promise<void> => {
+  // Whether this call made the destination, so a copy that fails the final check is only ever
+  // removed when it is this call's own, never a file that was already there.
+  let createdDestination = false;
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
   const refuseDifferent = async (error: unknown) => {
     if (!(await holdsSameBytes(source, destination))) {
@@ -328,12 +332,13 @@ const retainFileNow = async (source: string, destination: string): Promise<void>
         }
         try {
           await link(temporary, destination);
+          createdDestination = true;
         } catch (linkError) {
           const linkCode = errorCode(linkError);
           if (linkCode === 'EEXIST') {
             await refuseDifferent(linkError);
           } else if (typeof linkCode === 'string' && NO_HARD_LINKS.has(linkCode)) {
-            await publishByCopy(temporary, destination, refuseDifferent);
+            createdDestination = await publishByCopy(temporary, destination, refuseDifferent);
           } else {
             throw linkError;
           }
@@ -353,6 +358,14 @@ const retainFileNow = async (source: string, destination: string): Promise<void>
     await directory.sync();
   } finally {
     await directory.close();
+  }
+
+  // The source is only removed once the new name is proven to hold the same bytes.
+  if (!(await holdsSameBytes(source, destination))) {
+    if (createdDestination) {
+      await unlink(destination).catch(() => {});
+    }
+    throw new Error(`${destination} does not match ${source}; the file was left where it was`);
   }
   await unlink(source);
 };

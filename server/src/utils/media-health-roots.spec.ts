@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -20,7 +20,7 @@ import {
 // Real filesystem calls by default; single cases simulate other filesystems through `link`.
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return { ...actual, link: vi.fn(actual.link), open: vi.fn(actual.open) };
+  return { ...actual, copyFile: vi.fn(actual.copyFile), link: vi.fn(actual.link), open: vi.fn(actual.open) };
 });
 
 const failWith = (code: string) => Object.assign(new Error(code), { code });
@@ -294,6 +294,39 @@ describe('media-health-roots (FL-69)', () => {
       await expect(retainFile(source, destination)).rejects.toThrow('EIO');
       await expect(readFile(destination, 'utf8')).resolves.toBe('someone else');
       await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+    });
+
+    it('keeps the source when the placed copy differs', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV'));
+      // A copy that is the same size but holds different bytes.
+      vi.mocked(copyFile).mockImplementationOnce(async (_from, to) => actual.writeFile(to, 'damagxx', { flag: 'wx' }));
+
+      await expect(retainFile(source, destination)).rejects.toThrow('does not match');
+
+      await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(destination)).rejects.toThrow();
+    });
+
+    it('never removes a destination it did not create when the bytes differ', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      await writeFile(destination, 'damaged');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV'));
+      // The destination changes after the same-bytes check passed, as another writer might.
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      vi.mocked(link).mockImplementationOnce(async () => {
+        await actual.writeFile(destination, 'damagxx');
+        throw failWith('EEXIST');
+      });
+
+      await expect(retainFile(source, destination)).rejects.toThrow('already holds a different file');
+      await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damagxx');
     });
 
     it('finishes a cross-filesystem move whose complete copy is already at the new name', async () => {
