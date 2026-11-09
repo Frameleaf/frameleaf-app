@@ -2162,7 +2162,8 @@ export class Operations {
    * FL-1322: stop the application, checkpoint, restore into a new folder in the chosen root and compare it
    * (moveDatabase), then start the application on it. Until the application is started on the new folder,
    * any failure puts the original stack back on the original folder, which nothing wrote since the stop.
-   * Once `start-state` is journaled the new database may have taken writes and is kept.
+   * `start-state` is the barrier: journaled before the server first starts on the new folder, after which the new
+   * database may have taken writes and is kept, whatever happens next.
    */
   private async applyDatabaseRelocation(operation: Operation, review: DatabaseRelocationReview): Promise<void> {
     if (operation.receipts['rollback-intent']) return this.returnToOriginalDatabase(operation, review, 'database_relocation_rolled_back');
@@ -2207,8 +2208,9 @@ export class Operations {
         return this.libraryStatus();
       });
     } catch (error) {
-      // A server that is running may have written to the new folder: it is kept, and the operation fails.
-      if (operation.receipts['start-state'] && (await this.serverRunning(installation).catch(() => true))) throw error;
+      // Past the barrier the server may have written to the new folder, even if it has stopped since: the new
+      // folder is kept and the operation fails, so nothing those writes changed is ever rolled back.
+      if (operation.receipts['start-state']) throw error;
       return fail(error, 'database_move_start_failed');
     }
     // The original folder (and any interrupted attempt's) is kept as it was until the administrator removes it.
@@ -2219,14 +2221,6 @@ export class Operations {
   private async mlService(): Promise<string> {
     const compose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
     return compose.services['frameleaf-machine-learning'] ? 'frameleaf-machine-learning' : 'immich-machine-learning';
-  }
-  private async serverRunning(installation: Installation): Promise<boolean> {
-    return (await this.docker.inventory()).some(
-      (c) =>
-        c.Config.Labels?.['app.frameleaf.manager'] === installation.id &&
-        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server' &&
-        c.State.Running,
-    );
   }
   /**
    * Put the stack from before a drive move back: the checkpoint's compose.json (the original folder, which was
@@ -2280,12 +2274,12 @@ export class Operations {
     if (this.store.locked()) throw new Refusal('operation_in_progress');
     const installation = this.installation();
     if (!installation) throw new Refusal('no_installation');
-    const within = (child: string, parent: string) => child === parent || child.startsWith(parent + '/');
-    if (within(installation.databasePath, path) || within(path, installation.databasePath))
+    // inside() also matches the same files through another Unraid share view (/mnt/user and /mnt/diskN).
+    if (inside(installation.databasePath, path) || inside(path, installation.databasePath))
       throw new Refusal('database_folder_in_use');
     if (!/^frameleaf-[a-f0-9]{12}-postgres-[A-Za-z0-9]+$/.test(basename(path)) || !isAbsolute(path))
       throw new Refusal('invalid_database_directory');
-    const user = (await this.docker.inventory()).find((c) => c.Mounts.some((m) => m.Source && within(m.Source, path)));
+    const user = (await this.docker.inventory()).find((c) => c.Mounts.some((m) => m.Source && inside(m.Source, path)));
     if (user) throw new Refusal('database_folder_in_use', 409, `Container ${user.Name.replace(/^\//, '')} maps this folder.`);
     await this.docker.sql(await this.targetDatabase(installation), 'SELECT 1;').catch(() => {
       throw new Refusal('database_unconfirmed');

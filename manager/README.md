@@ -196,12 +196,14 @@ folder) and requires room for twice the measured database size: the moved copy, 
 a later engine upgrade restores beside it. `POST /manager-api/move-database` with `{ id, key }`
 starts a `move-database` operation: `stop-application`, `database-checkpoint`, `database-move` (new
 folder allocated in the chosen root, checked by row counts, extensions and version) and `start`,
-which saves the new `databaseRoot` and `databasePath`. Any failure before the application is started
-on the new folder, or a start whose server never ran, puts the checkpoint's `compose.json` back on the
-original folder and starts it (`database_relocation_rolled_back`); cancelling an interrupted move does
-the same (`database_relocation_cancelled`), and resuming it restores into another new folder. Once the
-start journaled `start-state` the new folder may hold writes: it is kept and cancelling is refused
-(`database_move_reverse_required`). The original folder is retained. `GET
+which saves the new `databaseRoot` and `databasePath`. Any failure before the server is first started
+on the new folder puts the checkpoint's `compose.json` back on the original folder and starts it
+(`database_relocation_rolled_back`); cancelling an interrupted move does the same
+(`database_relocation_cancelled`), and resuming it restores into another new folder. `start-state` is
+journaled before that first start: from then on the new folder may hold writes, so it is kept whatever
+fails or stops afterwards, the operation fails instead of rolling back, and cancelling is refused
+(`database_move_reverse_required`). The removal check compares Unraid share views (`/mnt/user` and
+`/mnt/diskN`) as the same files. The original folder is retained. `GET
 /manager-api/retained-databases` lists retained folders; `POST /manager-api/remove-retained-database`
 with `{ path }` deletes one, only while no operation is open, the current database answers, and no
 container maps it.

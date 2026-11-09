@@ -9,7 +9,7 @@ import { Refusal } from '../src/contracts.js';
 import { fileHash } from '../src/files.js';
 
 // FL-1322: moving the installed database to a folder on another drive, on the same release and image.
-type Options = { restore?: 'fails' | 'differs' | 'hangs'; start?: 'fails' | 'fails-while-running' };
+type Options = { restore?: 'fails' | 'differs' | 'hangs'; start?: 'fails' | 'fails-while-running' | 'crash-then-fails' | 'media' };
 async function relocationFixture(options: Options = {}) {
   process.env.MANAGER_ML_ACCELERATION = 'cpu';
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'manager-database-relocation-')));
@@ -53,8 +53,11 @@ async function relocationFixture(options: Options = {}) {
   const allocated: [string, number][] = [];
   const validated: unknown[][] = [];
   let serverUp = false;
+  let fullStarts = 0;
   let hang: () => void = () => {};
   const reachedRestore = new Promise<void>((resolve) => (hang = resolve));
+  let started: () => void = () => {};
+  const reachedStart = new Promise<void>((resolve) => (started = resolve));
   const docker = {
     compose: async (_dir: string, _project: string, action: string, services: string[] = []) => {
       composed.push([action, ...services]);
@@ -64,6 +67,13 @@ async function relocationFixture(options: Options = {}) {
       if (action === 'up' && !services.length) {
         const moved = path !== current.databasePath;
         if (moved && options.start === 'fails') throw new Error('container frameleaf-test-frameleaf-server-1 exited');
+        if (moved && options.start === 'crash-then-fails' && ++fullStarts === 1) {
+          // The server starts and takes writes; Manager stops before `up` returns.
+          serverUp = true;
+          started();
+          return new Promise<void>(() => {});
+        }
+        if (moved && options.start === 'crash-then-fails') throw new Error('container frameleaf-test-frameleaf-server-1 exited');
         serverUp = true;
         if (moved && options.start === 'fails-while-running') throw new Error('container frameleaf-test-frameleaf-server-1 is unhealthy');
       }
@@ -115,7 +125,12 @@ async function relocationFixture(options: Options = {}) {
   const backups = { initialize: async () => {}, snapshot: async () => 'snapshot' };
   const create = () => {
     const operations = new Operations(store, docker as never, releases as never, backups as never, [], databaseStorage as never);
-    (operations as any).fencing = { assertMedia: async () => {}, verify: async () => {} };
+    (operations as any).fencing = {
+      assertMedia: async (_mounts: unknown, installation: any) => {
+        if (options.start === 'media' && installation.databasePath !== current.databasePath) throw new Refusal('media_mount_changed');
+      },
+      verify: async () => {},
+    };
     (operations as any).libraryStatus = async () => null;
     // The checkpoint itself is covered by the backup tests: here it leaves its dump and compose.json.
     (operations as any).checkpoint = async (operation: any) => {
@@ -141,7 +156,7 @@ async function relocationFixture(options: Options = {}) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
   };
-  return { directory, store, current, newRoot, oldRoot, previousCompose, folders, composed, restored, allocated, validated,
+  return { reachedStart, stopServer: () => (serverUp = false), directory, store, current, newRoot, oldRoot, previousCompose, folders, composed, restored, allocated, validated,
     reachedRestore, create, begin, settled, escaped,
     attemptPath: (n: number) => join(newRoot, `frameleaf-${id}-postgres-$new${n}`),
     stackNow: async () => JSON.parse(await readFile(stack, 'utf8')),
@@ -224,15 +239,55 @@ for (const failure of ['fails', 'differs'] as const)
     }
   });
 
-test('a moved database whose server never starts goes back to the original folder', async () => {
-  const f = await relocationFixture({ start: 'fails' });
+test('a start refused before the server could run on the moved database goes back to the original folder', async () => {
+  const f = await relocationFixture({ start: 'media' });
   try {
     const { operation } = await f.begin();
     const done = await f.settled(operation.id);
     assert.equal(done.error, 'database_relocation_rolled_back');
-    assert.equal(done.receipts['rollback-intent'], 'database_move_start_failed');
+    assert.equal(done.receipts['rollback-intent'], 'media_mount_changed');
+    assert.equal(done.receipts['start-state'], undefined, 'the server never started on the new folder');
     assert.deepEqual(await f.stackNow(), f.previousCompose);
     assert.deepEqual(f.store.get<any>('installation'), f.current);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a moved database whose server fails to start is kept: it may have written', async () => {
+  const f = await relocationFixture({ start: 'fails' });
+  try {
+    const { operation } = await f.begin();
+    const done = await f.settled(operation.id);
+    assert.equal(done.state, 'failed');
+    assert.equal(done.receipts['start-state'], 'starting');
+    assert.equal(done.receipts['rollback-intent'], undefined);
+    assert.equal(f.store.get<any>('installation').databasePath, f.attemptPath(1));
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a crash after the server started on the moved database never rolls back, even once the server stopped', async () => {
+  const f = await relocationFixture({ start: 'crash-then-fails' });
+  try {
+    const { operation } = await f.begin();
+    await f.reachedStart;
+    f.store.interrupt();
+    f.stopServer(); // The server took writes, then stopped with the host.
+    const journal = f.store.history().find((o) => o.id === operation.id)!;
+    assert.equal(journal.step, 'start');
+    assert.equal(journal.receipts['start-state'], 'starting', 'journaled before the server first started');
+    const operations = f.create();
+    assert.equal(operations.history().find((o) => o.id === journal.id)!.canCancel, false);
+    await assert.rejects(operations.recover(journal.id), /database_move_reverse_required/);
+    operations.resume(journal.id);
+    const done = await f.settled(journal.id);
+    assert.equal(done.state, 'failed');
+    assert.equal(done.receipts['rollback-intent'], undefined);
+    assert.ok(!done.completed.includes('return-original-database'));
+    assert.equal(f.store.get<any>('installation').databasePath, f.attemptPath(1));
+    assert.equal((await f.stackNow()).services.database.volumes[0].source, f.escaped(f.attemptPath(1)));
   } finally {
     await f.cleanup();
   }

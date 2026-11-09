@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { overlappingWriter } from '../src/postgres-storage.js';
-import { assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, isMounted, listFolders, realTarget } from '../src/folders.js';
+import { assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, inside, isMounted, listFolders, realTarget } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
 
@@ -143,4 +143,12 @@ test('External folders edit only same-path lines and keep advanced mappings', ()
   const text = '/mnt/user/other:/archive:ro\n/mnt/user/a:/mnt/user/a:ro';
   assert.deepEqual(externalFolders(text), [{ path: '/mnt/user/a', readOnly: true }]);
   assert.equal(setExternalFolders(text, [{ path: '/mnt/user/b', readOnly: false }]), '/mnt/user/other:/archive:ro\n/mnt/user/b:/mnt/user/b');
+});
+
+test('inside() is one-way and sees the same Unraid files through another share view', () => {
+  assert.equal(inside('/mnt/user/db/frameleaf-x/sub', '/mnt/user/db/frameleaf-x'), true);
+  assert.equal(inside('/mnt/disk1/db/frameleaf-x', '/mnt/user/db/frameleaf-x'), true, 'a disk view of a user share folder');
+  assert.equal(inside('/mnt/user/db', '/mnt/user/db/frameleaf-x'), false, 'a parent is not inside');
+  assert.equal(inside('/mnt/disk1/db/frameleaf-x', '/mnt/disk2/db/frameleaf-x'), false, 'two disks are never the same files');
+  assert.equal(inside('/mnt/disks/UD01/db', '/mnt/user/db'), false, 'an unassigned drive is its own');
 });
