@@ -94,6 +94,15 @@ export class StudioTranscriptionDto extends createZodDto(
       progress: z.number().min(0).max(100).meta({ format: 'double' }),
       error: z.string().nullable(),
       result: StudioTranscriptionResultSchema.nullable().describe('Present once the job has completed'),
+      placement: z
+        .object({
+          start: Seconds.describe('Where the clip started on the main sequence'),
+          sourceStart: Seconds.describe('Where the clip started in its source, in seconds'),
+          speed: Seconds.describe("The clip's speed factor"),
+        })
+        .meta({ id: 'StudioTranscriptionPlacement' })
+        .nullable()
+        .describe('Where the clip sat in the transcribed revision; present for Frameleaf Cloud jobs'),
     })
     .meta({ id: 'StudioTranscriptionDto' }),
 ) {}

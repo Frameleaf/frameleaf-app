@@ -10,8 +10,7 @@ export type StudioCloudCaptionAnchor = { fromSeconds: number; sourceStartSeconds
 
 export type StudioCloudCaptionRequest = { clipId: string; language: string; name: string };
 
-/** `anchor` is where the clip sits in the priced revision: the server's cues are in that revision's timeline seconds. */
-export type StudioCloudCaptionJob = StudioCloudCaptionRequest & { id: string; anchor: StudioCloudCaptionAnchor };
+export type StudioCloudCaptionJob = StudioCloudCaptionRequest & { id: string };
 
 export type StudioCloudCaptionCue = { start: number; end: number; text: string };
 
@@ -19,6 +18,8 @@ export type StudioCloudCaptionState = {
   status: 'running' | 'completed' | 'failed' | 'cancelled';
   error: string | null;
   cues: StudioCloudCaptionCue[];
+  /** Where the clip sat in the transcribed revision: cues are in that revision's timeline seconds. */
+  anchor: StudioCloudCaptionAnchor | null;
 };
 
 const CLIP_ID = /^[\w-]{1,128}$/;
@@ -29,15 +30,6 @@ const SETTLED = ['completed', 'failed', 'cancelled'] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const isAnchor = (value: unknown): value is StudioCloudCaptionAnchor =>
-  isRecord(value) &&
-  Number.isFinite(value.fromSeconds) &&
-  (value.fromSeconds as number) >= 0 &&
-  Number.isFinite(value.sourceStartSeconds) &&
-  (value.sourceStartSeconds as number) >= 0 &&
-  Number.isFinite(value.speed) &&
-  (value.speed as number) > 0;
 
 export const isStudioCloudCaptionId = (value: unknown): value is string =>
   typeof value === 'string' && JOB_ID.test(value);
@@ -52,45 +44,23 @@ export const isStudioCloudCaptionRequest = (value: unknown): value is StudioClou
   value.name.length <= MAX_NAME;
 
 const isJob = (value: unknown): value is StudioCloudCaptionJob =>
-  isStudioCloudCaptionRequest(value) &&
-  isStudioCloudCaptionId((value as StudioCloudCaptionJob).id) &&
-  isAnchor((value as StudioCloudCaptionJob).anchor);
-
-const numberOr = (value: unknown, fallback: number) => (value === undefined ? fallback : value);
-
-/** Where a clip sits in a saved graph, read the way the server reads it to transcribe that revision. */
-export const clipAnchorIn = (graph: unknown, clipId: string): StudioCloudCaptionAnchor | null => {
-  if (!isRecord(graph) || !isRecord(graph.metadata) || !isRecord(graph.timeline)) {
-    return null;
-  }
-  const items: unknown[] = Array.isArray(graph.timeline.items) ? graph.timeline.items : [];
-  const clip = items.find((item) => isRecord(item) && item.id === clipId);
-  const { fps } = graph.metadata;
-  if (!isRecord(clip) || typeof fps !== 'number' || fps <= 0 || typeof clip.from !== 'number') {
-    return null;
-  }
-  const sourceFps = numberOr(clip.sourceFps, fps) as number;
-  const anchor = {
-    fromSeconds: clip.from / fps,
-    sourceStartSeconds: (numberOr(clip.sourceStart, 0) as number) / sourceFps,
-    speed: numberOr(clip.speed, 1) as number,
-  };
-  return sourceFps > 0 && isAnchor(anchor) ? anchor : null;
-};
+  isStudioCloudCaptionRequest(value) && isStudioCloudCaptionId((value as StudioCloudCaptionJob).id);
 
 type Transcription = {
   status: string;
   error: string | null;
   result?: { cues: Array<{ start: Rational; end: Rational; text: string }> } | null;
+  placement?: { start: Rational; sourceStart: Rational; speed: Rational } | null;
 };
 type Rational = { num: number; den: number };
+
+const seconds = ({ num, den }: Rational) => num / den;
 
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 export const createCloudCaptionServices = ({
   projectId,
   save,
-  graph,
   confirm,
   read,
   storage = localStorage,
@@ -99,8 +69,6 @@ export const createCloudCaptionServices = ({
   projectId: () => string;
   /** The server prices the head revision, so unsaved edits must land first. */
   save: () => Promise<unknown>;
-  /** The saved graph once `save` has settled: the revision the server prices. */
-  graph: () => unknown;
   /** Show the price. Resolves with the confirmed job's id, or null when nothing was sent. */
   confirm: (request: StudioCloudCaptionRequest) => Promise<string | null>;
   read: (projectId: string, id: string) => Promise<Transcription>;
@@ -142,16 +110,11 @@ export const createCloudCaptionServices = ({
   return {
     startCloudCaptions: async (request: StudioCloudCaptionRequest): Promise<StudioCloudCaptionJob | null> => {
       await save();
-      // From the saved revision, not the editor: its newest edit may not have been saved yet.
-      const anchor = clipAnchorIn(graph(), request.clipId);
-      if (!anchor) {
-        throw new Error('CLOUD_CAPTIONS_CLIP_NOT_SAVED');
-      }
       const id = await confirm(request);
       if (!id) {
         return null;
       }
-      const job = { ...request, id, anchor };
+      const job = { ...request, id };
       const project = projectId();
       owners.set(id, project);
       remember(project, [...pending(project), job]);
@@ -162,8 +125,9 @@ export const createCloudCaptionServices = ({
       const project = owners.get(id) ?? projectId();
       const transcription = await read(project, id);
       const settled = SETTLED.find((value) => value === transcription.status) ?? 'running';
-      // A completed job always carries its result; without one there is nothing to add.
-      const status = settled === 'completed' && !transcription.result ? 'failed' : settled;
+      const { placement } = transcription;
+      // A completed job always carries its result and placement; without them there is nothing to add.
+      const status = settled === 'completed' && (!transcription.result || !placement) ? 'failed' : settled;
       // A completed job stays until the editor has added its lines or the person has kept their own.
       if (status === 'failed' || status === 'cancelled') {
         forget(project, id);
@@ -177,6 +141,13 @@ export const createCloudCaptionServices = ({
           end: end.num / end.den,
           text,
         })),
+        anchor: placement
+          ? {
+              fromSeconds: seconds(placement.start),
+              sourceStartSeconds: seconds(placement.sourceStart),
+              speed: seconds(placement.speed),
+            }
+          : null,
       };
     },
 

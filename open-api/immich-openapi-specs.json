@@ -149933,6 +149933,15 @@
             "description": "The language asked for (`auto` or a BCP 47 tag)",
             "type": "string"
           },
+          "placement": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioTranscriptionPlacement"
+              }
+            ],
+            "description": "Where the clip sat in the transcribed revision; present for Frameleaf Cloud jobs",
+            "nullable": true
+          },
           "progress": {
             "format": "double",
             "maximum": 100,
@@ -149969,6 +149978,7 @@
           "error",
           "id",
           "language",
+          "placement",
           "progress",
           "projectId",
           "result",
@@ -150006,6 +150016,28 @@
           "clipId",
           "destinationId",
           "language"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionPlacement": {
+        "properties": {
+          "sourceStart": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime",
+            "description": "Where the clip started in its source, in seconds"
+          },
+          "speed": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime",
+            "description": "The clip's speed factor"
+          },
+          "start": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime",
+            "description": "Where the clip started on the main sequence"
+          }
+        },
+        "required": [
+          "sourceStart",
+          "speed",
+          "start"
         ],
         "type": "object"
       },

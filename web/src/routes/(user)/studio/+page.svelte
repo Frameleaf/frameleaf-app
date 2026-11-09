@@ -1111,7 +1111,6 @@
     ...createCloudCaptionServices({
       projectId: () => project.id,
       save: () => session.flush(),
-      graph: () => project.graph,
       confirm: confirmCloudCaptions,
       read: (id, transcriptionId) => getStudioTranscription({ id, transcriptionId }),
     }),
