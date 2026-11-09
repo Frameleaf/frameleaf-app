@@ -196,7 +196,7 @@ describe(AlbumCleanupService.name, () => {
       });
     });
 
-    it('reads only the top-level plain albums the person owns', async () => {
+    it('lists the whole Albums page, and only owned plain albums can change', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const { user: other } = await ctx.newUser();
@@ -205,14 +205,26 @@ describe(AlbumCleanupService.name, () => {
         albumName: 'Trips',
         kind: AlbumKind.Collection,
       });
-      await ctx.newAlbum({ ownerId: user.id, albumName: 'Inside', parentId: collection.id });
+      const { album: inside } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Inside', parentId: collection.id });
       await ctx.newAlbum({ ownerId: other.id, albumName: 'Theirs' });
+      const { album: withMe } = await ctx.newAlbum({
+        ownerId: other.id,
+        albumName: 'With me',
+        parentId: collection.id,
+      });
+      await ctx.newAlbumUser({ albumId: withMe.id, userId: user.id, role: AlbumUserRole.Viewer });
       const top = await albumOf(ctx, user.id, 'Mine', 1);
 
       await sut.handleScan({ userId: user.id });
 
       const { facts } = await sut.getSnapshot(plain(user));
-      expect(facts!.albums.map(({ id }) => id)).toEqual([top.album.id]);
+      const row = (albumName: string) => facts!.albums.find(({ name }) => name === albumName);
+      expect(facts!.albums.map(({ name }) => name).toSorted()).toEqual(['Inside', 'Mine', 'Trips', 'With me']);
+      expect(row('Mine')).toMatchObject({ id: top.album.id, parentId: null, readOnly: false });
+      expect(row('Inside')).toMatchObject({ id: inside.id, parentId: collection.id, readOnly: false });
+      expect(row('Trips')).toMatchObject({ id: collection.id, readOnly: true });
+      // Someone else's album doesn't say where it is filed.
+      expect(row('With me')).toMatchObject({ parentId: null, readOnly: true });
       expect(facts!.collections.map(({ id }) => id)).toEqual([collection.id]);
     });
 

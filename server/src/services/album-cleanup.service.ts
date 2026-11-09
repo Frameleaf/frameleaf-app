@@ -411,7 +411,8 @@ export class AlbumCleanupService extends BaseService {
         createdAt: new Date(album.createdAt).toISOString(),
         locked: album.isLocked,
         shared: album.shared,
-        parentId: album.parentId,
+        // Read-only albums never use it, and someone else's album shouldn't reveal their private collection.
+        parentId: album.readOnly ? null : album.parentId,
         readOnly: album.readOnly,
         gps:
           place && stat && stat.located > 0
