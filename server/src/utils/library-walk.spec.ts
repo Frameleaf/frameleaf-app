@@ -4,8 +4,15 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import type { Dirent } from 'node:fs';
+import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { LIBRARY_WALK_BUFFER, LibraryWalkStorage, walkLibraryPaths } from 'src/utils/library-walk.js';
+import { queueExecution } from 'src/queue/context.js';
+import {
+  LIBRARY_WALK_BUFFER,
+  LIBRARY_WALK_LIVENESS_MS,
+  LibraryWalkStorage,
+  walkLibraryPaths,
+} from 'src/utils/library-walk.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 describe('bounded library source walk', () => {
@@ -31,6 +38,56 @@ describe('bounded library source walk', () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, 'source remains read-only');
   };
+
+  it('tells the queue it is alive while walking a tree that yields no media', async () => {
+    await write(path.join(root, 'a.txt'));
+    await write(path.join(root, 'b.txt'));
+    const progress = vi.fn();
+    const execution = { progress, progressUnits: 0 } as unknown as QueueExecution;
+    let now = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += LIBRARY_WALK_LIVENESS_MS));
+
+    try {
+      await expect(queueExecution.run(execution, () => collect(options([root])))).resolves.toEqual([]);
+    } finally {
+      clock.mockRestore();
+    }
+
+    // two slow entries and the end-of-directory read, far fewer than any batch, each count as the walk moving
+    expect(progress).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['FRAMELEAF_JOB_DEADLINE_MS', 'FRAMELEAF_JOB_IDLE_DEADLINE_MS'])(
+    'reports liveness well inside a short %s',
+    async (name) => {
+      vi.stubEnv(name, '20000');
+      vi.resetModules();
+      try {
+        const walk = await import('src/utils/library-walk.js');
+        expect(walk.LIBRARY_WALK_LIVENESS_MS).toBe(5000);
+      } finally {
+        vi.unstubAllEnvs();
+        vi.resetModules();
+      }
+    },
+  );
+
+  it('does not report liveness until the interval has passed', async () => {
+    await write(path.join(root, 'a.txt'));
+    await write(path.join(root, 'b.txt'));
+    const progress = vi.fn();
+    const execution = { progress, progressUnits: 0 } as unknown as QueueExecution;
+    let now = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += 1));
+
+    try {
+      await expect(queueExecution.run(execution, () => collect(options([root])))).resolves.toEqual([]);
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(progress).not.toHaveBeenCalled();
+  });
 
   it('accepts omitted optional exclusion patterns', async () => {
     await write(path.join(root, 'a.jpg'));
