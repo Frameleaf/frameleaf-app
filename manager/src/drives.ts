@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { open, readFile, readdir, realpath, rm, statfs } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { toContainer, toHost } from './host-paths.js';
 import { filesystemMounts, type FilesystemMount } from './postgres-storage.js';
 
@@ -257,11 +257,12 @@ export function boundedProbe(
   const entry = { at: Date.now(), running: true, result: Promise.resolve<ProbeResult>(null) };
   const run = probe(path)
     .catch(() => null)
-    .finally(() => {
+    .then((result) => {
       clearTimeout(timer);
       entry.running = false;
-      // A result that came too late isn't kept: the report already said unidentified.
-      if (late && probes.get(key) === entry) probes.delete(key);
+      // Kept only when it came in time and says something: a full drive or a passing I/O error is tried again next time.
+      if ((late || result === null) && probes.get(key) === entry) probes.delete(key);
+      return result;
     });
   entry.result = Promise.race([
     run,
@@ -347,7 +348,8 @@ export function suggestDrive(
   const fast = drives
     .filter((drive): drive is Drive & { freeBytes: number } => drive.speed === 'fast' && drive.freeBytes !== null)
     .sort((a, b) => Number(b.kind === 'nvme') - Number(a.kind === 'nvme') || b.freeBytes - a.freeBytes);
-  const promised = (drive: Drive) => !!keep && within(keep.path, drive.path);
+  // resolve() folds /mnt//cache/ into /mnt/cache, so a promise always lands on its drive.
+  const promised = (drive: Drive) => !!keep && within(resolve(keep.path), drive.path);
   const spare = (drive: Drive & { freeBytes: number }) => drive.freeBytes - (promised(drive) ? keep!.bytes : 0);
   const drive = fast.find((item) => spare(item) >= Math.ceil(needBytes * ROOM_TO_GROW));
   if (drive)

@@ -273,6 +273,9 @@ test('suggestions: space promised to the database counts against the drive', () 
     both.thumbs.reason,
     '/mnt/cache label has 60 GB free, but thumbnails need about 50 GB and room to grow, so Manager isn’t suggesting it.',
   );
+  // A chosen database folder written loosely still reserves its space.
+  const loose = suggestFolders([nvme], { databaseBytes: 40 * GB, databasePath: '/mnt//cache/appdata/frameleaf-databases/' });
+  assert.equal(loose.thumbs.status, 'too_full');
   // A database already chosen elsewhere leaves the NVMe whole.
   const elsewhere = suggestFolders([nvme], { databaseBytes: 40 * GB, databasePath: '/mnt/ssd/frameleaf-databases' });
   assert.equal(elsewhere.thumbs.status === 'found' && elsewhere.thumbs.reason.startsWith('It has 100 GB free, and'), true);
@@ -335,6 +338,12 @@ test('a write that hangs is not waited on: the drive reads as unidentified, one 
     for (let i = 0; i < 50 && (await readdir(folder)).length; i++) await new Promise((done) => setTimeout(done, 10));
     assert.deepEqual(await readdir(folder), []);
     assert.ok(['fast', 'slow'].includes((await boundedProbe('stall', folder, timedWrite, 1000))!));
+    // An answer of unidentified (a full drive, a permissions or passing I/O error) isn't kept either.
+    let failures = 0;
+    const failing = async () => (failures++, null);
+    assert.equal(await boundedProbe('failing', folder, failing), null);
+    assert.equal(await boundedProbe('failing', folder, failing), null);
+    assert.equal(failures, 2);
     // A result in time is kept for later reports.
     let calls = 0;
     const quick = async () => (calls++, 'fast' as const);
