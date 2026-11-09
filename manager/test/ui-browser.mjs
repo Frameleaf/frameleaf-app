@@ -125,6 +125,7 @@ let backupAction = 'reuse',
   restoreThumbnailsGone = true,
   // FL-1321: what the Storage step learns about this server's drives, and the checks its review answers with.
   driveReport = null,
+  drivesGate = null,
   storageChecks = null;
 const okChecks = (restore = false) => [
   { id: 'docker', status: 'ok', facts: { version: '28.4' } },
@@ -269,7 +270,11 @@ await page.route('**/manager-api/**', async (route) => {
       databaseStorage: { root: body.databaseRoot },
       replacesInstallation: true,
     };
-  else if (path === 'drives') value = driveReport;
+  else if (path === 'drives') {
+    // FL-1321: a slow drive scan can answer after setup has moved on.
+    if (drivesGate) await drivesGate;
+    value = driveReport;
+  }
   else if (path === 'review' && storageChecks) {
     const checks = storageChecks(body);
     value = { ready: true, host: 'unraid', kind: 'install', checks, id: 'storage-review', tag: body.tag, databaseStorage: { root: body.databaseRoot }, requiredBytes: 3 * 1024 ** 3 };
@@ -1095,6 +1100,27 @@ try {
       await page.locator('.check-fine li', { hasText: 'Thumbnails' }).getByText('Cache pool (NVMe SSD) · 180 GB free').waitFor();
       await mainButton('Review installation').click();
       await page.locator('.list-row', { hasText: 'Thumbnails' }).getByText('/mnt/cache/appdata/frameleaf-thumbnails').waitFor();
+      // A drive report that answers after setup has moved on changes nothing that was checked.
+      let release;
+      drivesGate = new Promise((done) => (release = done));
+      await page.locator('.wizard-footer').getByRole('button', { name: 'Back', exact: true }).click();
+      await page.locator('.wizard-footer').getByRole('button', { name: 'Back', exact: true }).click();
+      await chooser();
+      await mainButton('Set up Frameleaf').click();
+      await page.getByRole('heading', { name: 'Give your library a home' }).waitFor();
+      assert.equal(await page.getByText('Cache pool (NVMe SSD) · 180 GB free').count(), 0, 'no hints until the report arrives');
+      // The default folder is the one a report would replace, so it shows whether a late answer still could.
+      await page.getByLabel('Database', { exact: true }).fill('/mnt/user/appdata/frameleaf-databases');
+      await mainButton('Check this server').click();
+      await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+      const checked = requests.findLast((r) => r.path === 'review').body.databaseRoot;
+      assert.equal(checked, '/mnt/user/appdata/frameleaf-databases');
+      release();
+      drivesGate = null;
+      await page.waitForTimeout(300);
+      await mainButton('Review installation').click();
+      await page.locator('.list-row', { hasText: 'New PostgreSQL database' }).getByText(checked).waitFor();
+      assert.equal(requests.findLast((r) => r.path === 'review').body.databaseRoot, checked);
     } finally {
       Object.assign(dashboard, saved);
       driveReport = storageChecks = null;

@@ -584,7 +584,9 @@
     if (!dashboard?.folderSetup || installation) return;
     // The step shows straight away; hints fill in when the report arrives. A slow scan is no hint at all.
     const report: DriveReport | null = await api('drives', undefined, AbortSignal.timeout(8000)).catch(() => null);
-    if (request !== drivesRequest || screen !== 'fresh' || !report) return;
+    // Only while the Storage step is still showing and nothing is being checked: a late answer never changes a
+    // folder the checks or the review have already seen.
+    if (request !== drivesRequest || !report || screen !== 'fresh' || step !== 0 || checking || review) return;
     driveReport = report;
     // Folders the administrator already changed are kept.
     if (report.database.status === 'found' && dashboard.folderSetup.fastDatabase && databaseRoot === dashboard.folderSetup.database) databaseRoot = report.database.folder;
