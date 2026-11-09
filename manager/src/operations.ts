@@ -911,9 +911,13 @@ export class Operations {
     });
     await checks.run('backups', async () => {
       await chosenFolder('backups', backups);
-      // Database backups and recovery points are written through Manager's own folder first.
+      return { outcome: { facts: { path: backups, free: await freeBytes(backups) } } };
+    });
+    // Database backups and recovery points are written through Manager's own folder first: its own result, since
+    // choosing another backups folder can't free it.
+    await checks.run('manager', async () => {
       await storagePath(this.store.directory, [this.store.directory], databaseBytes);
-      return { outcome: { facts: { path: backups, free: await freeBytes(broad ? backups : this.store.directory) } } };
+      return { outcome: { facts: { path: this.store.directory, free: await freeBytes(this.store.directory) } } };
     });
     await checks.run(
       'port',

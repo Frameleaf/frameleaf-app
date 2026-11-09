@@ -45,6 +45,7 @@ export const CHECK_LABELS: Record<string, string> = {
   media: 'Photos and videos',
   database: 'Database',
   backups: 'Backups',
+  manager: 'Manager’s own folder',
   port: 'Frameleaf port',
   containers: 'Container settings',
   release: 'Release signature',
@@ -54,7 +55,7 @@ export const checkOrder = (flow: 'install' | 'import' | 'restore', containers = 
   'docker',
   'media',
   'database',
-  ...(flow === 'restore' ? [] : ['backups']),
+  ...(flow === 'restore' ? [] : ['backups', 'manager']),
   'port',
   ...(containers && flow !== 'restore' ? ['containers'] : []),
   'release',
@@ -114,6 +115,12 @@ const permissionSteps: Record<CheckHost, string[]> = {
   ],
   hexos: ['In HexOS, open the folder’s settings and give Frameleaf read and write access.', AGAIN],
   linux: ['Check the folder isn’t on a read-only drive, or a network share that maps root to another user.', 'Fix the drive or share, then check again.'],
+};
+const managerRoomSteps: Record<CheckHost, string[]> = {
+  unraid: ['Free some space on the drive that holds appdata, usually the cache pool.', AGAIN],
+  truenas: ['Free some space on the pool that holds Frameleaf Manager’s data, or remove apps you no longer use.', AGAIN],
+  hexos: ['Free some space on the drive that holds your applications, or remove apps you no longer use.', AGAIN],
+  linux: ['Free some space on the drive that holds Manager’s state folder.', AGAIN],
 };
 const portSteps = (host: CheckHost, port: number): string[] =>
   ({
@@ -199,6 +206,12 @@ function problem(result: CheckResult, context: CheckContext): Words {
         ? { title: `Port ${port} is in use`, detail: `Another app on this server is already using the port Frameleaf would open on. Port ${free} is free.`, action: { kind: 'port', port: free, label: `Use port ${free}` } }
         : { title: `Port ${port} is in use`, detail: 'Another app on this server is already using the port Frameleaf would open on.', steps: portSteps(host, port) };
     }
+    case 'manager':
+      if (code === 'insufficient_disk_space')
+        return { title: 'Not enough room in Manager’s own folder', detail: 'Manager saves each database backup there before it moves to your backups folder.', steps: managerRoomSteps[host] };
+      if (code === 'storage_permissions')
+        return { title: 'Manager can’t save in its own folder', detail: 'Manager’s own folder is read-only.', steps: permissionSteps[host] };
+      return generic('manager', code, result.detail);
     case 'containers':
       return { title: 'A container setting can’t be used', detail: readable(code, result.detail), steps: ['Go back, open Advanced container settings, and change or remove it.'] };
     case 'release':
@@ -242,6 +255,7 @@ function value(result: CheckResult, host: CheckHost): string {
     case 'database':
       return `On this server${freeText(facts)}`;
     case 'backups':
+    case 'manager':
       return `Can save here${freeText(facts)}`;
     case 'port':
       return `${facts?.port} is free`;

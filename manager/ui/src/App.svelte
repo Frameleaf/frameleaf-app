@@ -610,7 +610,8 @@
   }
   /** Moves to the Checks step and runs every check; a refusal before the checks returns to the step before. */
   async function checkServer(at: number, work: () => Promise<void>) {
-    if (!configurationReady()) return;
+    // A restore sends no configuration or container settings: leftovers from Services never block it.
+    if (screen !== 'restore' && !configurationReady()) return;
     if (screen === 'restore') restoreReview = null;
     else review = null;
     // A recheck starts on the Checks step itself: if it can't finish, go back to the step before it, not a screen with no results.

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Operations, ReviewInput } from '../src/operations.js';
@@ -25,12 +25,17 @@ const publishing = (port: number, running = true): Container =>
     Mounts: [],
   }) as unknown as Container;
 
-async function fixture() {
+async function fixture({ stateLink = false } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'manager-server-check-')));
   const media = join(root, 'media'),
     database = join(root, 'database');
   await mkdir(media);
   await mkdir(database);
+  // A state folder reached through a link is one Manager refuses to write recovery points through.
+  if (stateLink) {
+    await mkdir(join(root, 'state-real'));
+    await symlink(join(root, 'state-real'), join(root, 'state'));
+  }
   const store = new Store(join(root, 'state'));
   const state = {
     dockerVersion: '27.5.1' as string | null,
@@ -101,10 +106,10 @@ test('a server with several problems reports them all in one pass, and nothing i
     assert.equal(result.ready, false);
     assert.equal(result.host, 'linux');
     const byId = Object.fromEntries(result.checks.map((check) => [check.id, check]));
-    assert.deepEqual(result.checks.map((check) => check.id), ['docker', 'media', 'database', 'backups', 'port']);
+    assert.deepEqual(result.checks.map((check) => check.id), ['docker', 'media', 'database', 'backups', 'manager', 'port']);
     assert.deepEqual(
       Object.fromEntries(result.checks.map((check) => [check.id, check.status])),
-      { docker: 'problem', media: 'ok', database: 'problem', backups: 'ok', port: 'problem' },
+      { docker: 'problem', media: 'ok', database: 'problem', backups: 'ok', manager: 'ok', port: 'problem' },
     );
     assert.equal(byId.docker.code, 'unsupported_docker_version_or_architecture');
     assert.equal(byId.database.code, 'insufficient_database_space');
@@ -132,6 +137,20 @@ test('the same folder chosen for photos and the database is refused on both', as
     );
   } finally {
     delete process.env.MANAGER_FOLDER_ROOT;
+    await f.cleanup();
+  }
+});
+
+test('a problem with Manager’s own folder is its own result, not the backups folder', async () => {
+  const f = await fixture({ stateLink: true });
+  try {
+    const result = await f.operations.review(f.input);
+    assert.equal(result.ready, false);
+    assert.deepEqual(
+      result.checks.filter((check) => check.id === 'backups' || check.id === 'manager').map((check) => [check.id, check.status, check.code]),
+      [['backups', 'ok', undefined], ['manager', 'problem', 'storage_outside_approved_roots']],
+    );
+  } finally {
     await f.cleanup();
   }
 });

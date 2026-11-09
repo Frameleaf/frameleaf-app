@@ -24,12 +24,22 @@ test('Choose another folder is offered only for a folder this flow sends', () =>
   assert.equal(fresh[0].action?.kind, 'folder');
 });
 
+test('Manager’s own folder never offers a folder picker', () => {
+  for (const code of ['insufficient_disk_space', 'storage_permissions', 'storage_outside_approved_roots']) {
+    const [row] = checkRows([{ id: 'manager', status: 'problem', code }], context('unraid', ['media', 'database', 'backups']));
+    assert.equal(row.action, undefined, code);
+    assert.ok(row.steps?.length, code);
+  }
+  const [room] = checkRows([{ id: 'manager', status: 'problem', code: 'insufficient_disk_space' }], context('truenas', ['database']));
+  assert.equal(room.title, 'Not enough room in Manager’s own folder');
+});
+
 test('every problem has a fix on Unraid, TrueNAS, HexOS and other Linux', () => {
   const problems = [
     ['docker', 'unsupported_docker_version_or_architecture'], ['docker', 'compose_v2_required'], ['docker', 'unsupported_docker_host'], ['docker', 'check_failed'],
     ['media', 'storage_inaccessible'], ['media', 'storage_permissions'], ['media', 'insufficient_disk_space'], ['media', 'external_media_volume_unavailable'],
     ['database', 'database_directory_missing'], ['database', 'database_permissions'], ['database', 'insufficient_database_space'], ['database', 'chosen_folders_overlap'],
-    ['backups', 'storage_permissions'], ['port', 'port_in_use'], ['containers', 'service_override_conflict'],
+    ['backups', 'storage_permissions'], ['manager', 'insufficient_disk_space'], ['manager', 'storage_permissions'], ['port', 'port_in_use'], ['containers', 'service_override_conflict'],
     ['release', 'release_architecture_unavailable'], ['release', 'release_download_failed'], ['release', 'release_verification_failed'], ['other', 'anything'],
   ];
   for (const host of ['unraid', 'truenas', 'hexos', 'linux'] as const)

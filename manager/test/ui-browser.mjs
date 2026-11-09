@@ -125,7 +125,7 @@ const okChecks = (restore = false) => [
   { id: 'docker', status: 'ok', facts: { version: '28.4' } },
   { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
   { id: 'database', status: 'ok', facts: { free: 200 * 1024 ** 3 } },
-  ...(restore ? [] : [{ id: 'backups', status: 'ok', facts: { free: 3 * 1024 ** 4 } }]),
+  ...(restore ? [] : [{ id: 'backups', status: 'ok', facts: { free: 3 * 1024 ** 4 } }, { id: 'manager', status: 'ok', facts: { free: 200 * 1024 ** 3 } }]),
   { id: 'port', status: 'ok', facts: { port: 2283 } },
   { id: 'release', status: 'ok', facts: { tag: 'frameleaf-v3.2.1-1' } },
 ];
@@ -473,6 +473,10 @@ try {
     await refresh();
   });
   await check('backups, protected downloads and installed restore review', async () => {
+    // A container setting left invalid on Services never blocks a restore, which sends none.
+    await nav('Services');
+    await page.getByText('Advanced container settings', { exact: true }).click();
+    await page.getByLabel('Environment variables').first().fill('POSTGRES_DB=nope');
     await nav('Backups');
     await mainButton('Export recovery key').click();
     await page.getByLabel('Current Manager password').fill('fixture proof password');
