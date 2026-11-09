@@ -14,6 +14,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl, memoryLaneTitle } from '$lib/utils';
+  import { restoreScroll } from '$lib/utils/restore-scroll';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { getNextAsset, getPreviousAsset } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
@@ -146,9 +147,7 @@
 
   export const snapshot: Snapshot<number> = {
     capture: () => scroller?.scrollTop ?? 0,
-    restore: (top) => {
-      requestAnimationFrame(() => scroller?.scrollTo({ top, behavior: 'instant' }));
-    },
+    restore: (top) => restoreScroll(() => scroller, top),
   };
 </script>
 
