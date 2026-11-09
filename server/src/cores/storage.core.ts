@@ -381,11 +381,19 @@ export class StorageCore {
         break;
       }
       case 'taken': {
-        // FL-1333: the template skips such names, so this is a record that took the name since it chose it
-        this.reportKeptMove(
-          `taken:${move.id}`,
-          `Deferred moving ${oldPath} to ${newPath}: another record names ${newPath}; the move is kept and the next run picks another name`,
-        );
+        // FL-1333: the file was found at a name another record holds (a recorded move whose old path is gone), or the
+        // new path was taken since the template chose it. Read again only to say which.
+        if (source !== oldPath && (await this.assetRepository.isPathNamedByOthers(entityId, source))) {
+          this.reportKeptMove(
+            `taken-source:${move.id}`,
+            `Deferred moving ${oldPath}: its file was found at ${source}, but another record names ${source}; nothing is moved from there and the move is kept`,
+          );
+        } else {
+          this.reportKeptMove(
+            `taken:${move.id}`,
+            `Deferred moving ${oldPath} to ${newPath}: another record names ${newPath}; the move is kept and the next run picks another name`,
+          );
+        }
         break;
       }
       case 'moved':

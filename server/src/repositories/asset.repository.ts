@@ -184,7 +184,8 @@ export type AssetFileMove = {
  * - `changed`: the asset's row names another path now; nothing was moved.
  * - `deferred`: an unreleased Buddy Backup reference names one of the move's paths;
  *   nothing was moved and the move stays recorded.
- * - `taken`: another asset or physical file names `to` (FL-1333); nothing was moved and the move stays recorded.
+ * - `taken`: another asset or physical file names `to`, or `source` where it is not `from` (FL-1333); nothing was
+ *   moved and the move stays recorded.
  */
 export type AssetFileMoveResult = 'moved' | 'failed' | 'removed' | 'changed' | 'deferred' | 'mismatched' | 'taken';
 /** The filesystem side of a move, run by `moveFile` while it holds the move's locks. */
@@ -2101,8 +2102,13 @@ export class AssetRepository {
       }
       // FL-1333: two photos can keep their originals as two names of one file (hard links). A name another
       // record holds is never taken, even when it is another name of this file: nothing is touched. The template
-      // skips such names; this backstop covers a record that took the name since.
-      if (await this.isPathNamedByOthers(move.assetId, move.to, tx)) {
+      // skips such names; this backstop covers a record that took the name since. Nor is a file moved from a
+      // name another record holds: a recorded move whose old path is gone finds its file at its recorded new
+      // path, which may be another photo's name of the same bytes, and moving from there would remove that name.
+      if (
+        (move.source !== move.from && (await this.isPathNamedByOthers(move.assetId, move.source, tx))) ||
+        (await this.isPathNamedByOthers(move.assetId, move.to, tx))
+      ) {
         return 'taken';
       }
       if (!(await operations.rename())) {
