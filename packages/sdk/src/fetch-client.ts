@@ -67,8 +67,9 @@ export type AttentionBackupDto = {
     place: (AttentionBackupPlace) | null;
 };
 export type AttentionStorageDto = {
-    /** Space left on the drive the library is on */
+    /** Space left on the drive */
     availableBytes: number;
+    drive: AttentionStorageDrive;
     /** Size of that drive */
     totalBytes: number;
     /** How full the drive is */
@@ -37406,6 +37407,10 @@ export enum AttentionReason {
     WorkFailed = "work-failed",
     WorkPaused = "work-paused",
     NewVersion = "new-version"
+}
+export enum AttentionStorageDrive {
+    Library = "library",
+    Thumbnails = "thumbnails"
 }
 export enum QueueName {
     ThumbnailGeneration = "thumbnailGeneration",

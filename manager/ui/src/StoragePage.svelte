@@ -83,8 +83,8 @@
     folders?: { media: string; database: string; backups: string; manager: string } | null;
     /** Without browsing: the folders mounted into Manager to choose from. */
     roots?: string[];
-    /** GET /manager-api/storage: a place's drive is nearly full when it says so (FL-1324). */
-    storage?: { path: string; lowOnSpace?: boolean | null }[];
+    /** GET /manager-api/storage (FL-1324 StorageSpace): a place's drive is nearly full when its folder says so. */
+    storage?: { path: string; uses?: string[]; lowOnSpace?: boolean | null; measurable?: boolean }[];
     disabled?: boolean;
     started: (id: string) => void;
   }>();
@@ -119,6 +119,9 @@
   const amount = (bytes: number) => (bytes < 1024 ** 3 ? formatBytes(bytes) : gigabytes(bytes));
   const used = (bytes: number | null | undefined, rest = '') => (bytes == null ? '' : `${amount(bytes)} used${rest}`);
   const low = (path: string | null | undefined) => !!path && storage.some((place: { path: string; lowOnSpace?: boolean | null }) => place.path === path && place.lowOnSpace);
+  /** FL-1324: a folder only Docker reaches (an imported library's thumbnails or database) can't be measured from here. */
+  const unmeasurable = (path: string | null | undefined) =>
+    !!path && storage.some((place: { path: string; measurable?: boolean }) => place.path === path && place.measurable === false);
   const view = $derived(
     !usage ? 'media' : usage.thumbnails.missing ? 'missing' : usage.thumbnails.own ? 'fast' : 'media',
   );
@@ -197,7 +200,8 @@
 
 {#snippet hint(path: string | null | undefined)}
   {@const found = path ? driveHint(path, drives) : null}
-  {#if found}<span class="sp-drive" data-speed={low(path) ? 'low' : found.speed}><Icon name={DRIVE_ICON[found.speed]} />{found.text}{#if low(path)} · Nearly full{/if}</span>{/if}
+  {#if unmeasurable(path)}<span class="sp-drive">Manager can’t check free space on this folder from here. Frameleaf still uses it as normal.</span>
+  {:else if found}<span class="sp-drive" data-speed={low(path) ? 'low' : found.speed}><Icon name={DRIVE_ICON[found.speed]} />{found.text}{#if low(path)}{' · Nearly full'}{/if}</span>{/if}
 {/snippet}
 
 {#snippet suggestion(kind: MoveKind, value: Suggestion | null | undefined)}

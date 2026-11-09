@@ -10,6 +10,7 @@ import {
   AttentionKind,
   AttentionLevel,
   AttentionReason,
+  AttentionStorageDrive,
   type AttentionCheckDto,
   type AttentionItemDto,
   type QueueName,
@@ -129,6 +130,8 @@ export const attentionView = (item: AttentionItemDto, say: AttentionSayings): At
   const drive = item.storage
     ? { left: say.size(item.storage.availableBytes), total: say.size(item.storage.totalBytes) }
     : { left: '', total: '' };
+  // FL-1324: thumbnails kept on a drive of their own are named as that drive
+  const thumbnails = item.storage?.drive === AttentionStorageDrive.Thumbnails;
   const toOverview = { label: words('frameleaf_attention_open_overview'), href: commandCenterUrl('overview') };
   const work = item.work;
   const kinds = say.list((work?.queues ?? []).map((queue) => say.words(workName(queue.name))));
@@ -171,16 +174,24 @@ export const attentionView = (item: AttentionItemDto, say: AttentionSayings): At
     case AttentionReason.OutOfSpace: {
       return {
         ...base,
-        title: words('frameleaf_attention_storage_out_title'),
-        detail: words('frameleaf_attention_storage_out', drive),
+        title: words(
+          thumbnails ? 'frameleaf_attention_storage_thumbnails_out_title' : 'frameleaf_attention_storage_out_title',
+        ),
+        detail: words(
+          thumbnails ? 'frameleaf_attention_storage_thumbnails_out' : 'frameleaf_attention_storage_out',
+          drive,
+        ),
         action: toOverview,
       };
     }
     case AttentionReason.NearlyFull: {
       return {
         ...base,
-        title: words('frameleaf_attention_storage_title'),
-        detail: words('frameleaf_attention_storage_detail', drive),
+        title: words(thumbnails ? 'frameleaf_attention_storage_thumbnails_title' : 'frameleaf_attention_storage_title'),
+        detail: words(
+          thumbnails ? 'frameleaf_attention_storage_thumbnails_detail' : 'frameleaf_attention_storage_detail',
+          drive,
+        ),
         action: toOverview,
       };
     }

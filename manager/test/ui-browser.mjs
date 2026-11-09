@@ -223,7 +223,10 @@ await page.route('**/manager-api/**', async (route) => {
     };
   } else if (path === 'storage')
     value = [
-      { path: '/fixture/media', totalBytes: 4 * 1024 ** 4, freeBytes: 3 * 1024 ** 4, availableBytes: 3 * 1024 ** 4 },
+      { path: '/fixture/media', uses: ['media'], device: '1', totalBytes: 4 * 1024 ** 4, freeBytes: 3 * 1024 ** 4, availableBytes: 3 * 1024 ** 4, lowOnSpace: false, measurable: true },
+      { path: '/fixture/imported/thumbs', uses: ['thumbnails'], device: null, totalBytes: null, freeBytes: null, availableBytes: null, lowOnSpace: null, measurable: false },
+      // FL-1324: the database's drive is nearly full.
+      { path: '/fixture/appdata', uses: ['database'], device: '2', totalBytes: 500 * GB, freeBytes: 1 * GB, availableBytes: 1 * GB, lowOnSpace: true, measurable: true },
     ];
   else if (path === 'backup-status')
     value = { configured: true, unlocked: true, keyAvailable: true, snapshots };
@@ -505,6 +508,9 @@ try {
     const places = page.getByRole('list', { name: 'Where your library keeps its data' });
     assert.deepEqual(await places.getByRole('heading').allInnerTexts(), ['Photos and videos', 'Database', 'Thumbnails']);
     assert.ok((await places.innerText()).includes('86 GB used, with your photos and videos'));
+    // FL-1324's low-space finding shows on the place whose drive it is.
+    assert.ok((await places.getByRole('listitem').nth(1).innerText()).includes('Cache pool (NVMe SSD) · 180 GB free · Nearly full'));
+    assert.ok(!(await places.getByRole('listitem').nth(0).innerText()).includes('Nearly full'));
     await screenshot('storage');
   });
   await check('installation switcher lists this server’s libraries and explains adding one', async () => {
@@ -561,7 +567,16 @@ try {
     await refresh();
   });
   await check('a missing thumbnail drive is named, checked again, and thumbnails can go back with the photos', async () => {
+    // A thumbnails folder only Docker reaches is listed without a drive, in FL-1324's words.
+    thumbnails = { path: '/fixture/imported/thumbs', own: true, missing: null, bytes: null, files: null };
+    await nav('Storage');
+    assert.ok(
+      (await page.getByRole('list', { name: 'Where your library keeps its data' }).getByRole('listitem').nth(2).innerText()).includes(
+        'Manager can’t check free space on this folder from here. Frameleaf still uses it as normal.',
+      ),
+    );
     thumbnails = { path: '/fixture/fast/thumbnails', own: true, missing: true, bytes: null, files: null };
+    await nav('Overview');
     await nav('Storage');
     await page.getByRole('heading', { name: 'The thumbnail drive isn’t connected' }).waitFor();
     await mainButton('Check again').click();
