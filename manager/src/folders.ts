@@ -1,5 +1,5 @@
 import { mkdir, readdir, realpath, stat } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { Refusal } from './contracts.js';
 import { folderDetail } from './host-paths.js';
 
@@ -38,12 +38,27 @@ function assertUsable(path: string): void {
     throw new Refusal('invalid_storage_path', 409, folderDetail(path));
 }
 
+/** Where `path` really lands, including the part that doesn't exist yet: a link anywhere on the way shows up as a difference. */
+export async function realTarget(path: string): Promise<string> {
+  let existing = path;
+  for (;;) {
+    const real = await realpath(existing).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw new Refusal('storage_permissions', 409, folderDetail(path));
+      return null;
+    });
+    if (real !== null) return join(real, relative(existing, path));
+    existing = dirname(existing);
+  }
+}
+
 /** A folder chosen in setup, created when it is missing. A drive or share that isn't there is never invented. */
 export async function ensureChosenFolder(path: string): Promise<void> {
   assertUsable(path);
   // ponytail: an unmounted drive that left its empty mount point behind passes; the disk-space check is the next guard.
   if (!(await stat(volume(path)).then((s) => s.isDirectory(), () => false)))
     throw new Refusal('storage_volume_missing', 409, folderDetail(path));
+  // A link could lead outside /mnt or into another chosen folder, past the checks that compare these paths.
+  if ((await realTarget(path)) !== path) throw new Refusal('invalid_storage_path', 409, folderDetail(path));
   await mkdir(path, { recursive: true });
 }
 

@@ -105,9 +105,12 @@
   /** "About N photos and videos, X GB", read again when the folder or what it skips changes. */
   let estimate = $state<LibraryFolderEstimateResponseDto | null>(null);
   let estimating = $state(false);
+  // Connecting a folder happens in Manager, in another tab; coming back looks again.
+  let looks = $state(0);
   $effect(() => {
     const path = folder;
     const skips = patterns;
+    void looks;
     estimate = null;
     if (!path) {
       return;
@@ -194,6 +197,14 @@
     }
   };
 </script>
+
+<svelte:window
+  onfocus={() => {
+    if (estimate && !estimate.found) {
+      looks++;
+    }
+  }}
+/>
 
 <KitPage>
   {#if error}

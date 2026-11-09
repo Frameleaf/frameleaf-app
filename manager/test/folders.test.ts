@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assertExternalFolder, assertSeparateFolders, applyUnraidFolderDefaults, broadRoots, ensureChosenFolder } from '../src/folders.js';
+import { mkdir, mkdtemp, realpath, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { assertExternalFolder, assertSeparateFolders, applyUnraidFolderDefaults, broadRoots, ensureChosenFolder, realTarget } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
 
@@ -39,6 +42,14 @@ test('photos, database and backups need separate folders', () => {
 test('a chosen folder must be a real location under /mnt', async () => {
   for (const path of ['/etc/x', '/mnt/user', '/mnt/user/a,b', '/mnt/user/../../etc'])
     await assert.rejects(ensureChosenFolder(path), (error: Refusal) => error.code === 'invalid_storage_path', path);
+});
+
+test('a folder reached through a link is seen for where it really lands', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'chosen-')));
+  await mkdir(join(root, 'media'));
+  await symlink(join(root, 'media'), join(root, 'link'));
+  assert.equal(await realTarget(join(root, 'plain', 'new')), join(root, 'plain', 'new'));
+  assert.equal(await realTarget(join(root, 'link', 'backups')), join(root, 'media', 'backups'));
 });
 
 test('External folders edit only same-path lines and keep advanced mappings', () => {

@@ -791,7 +791,7 @@ export class Operations {
     await this.checkPort(input.port, null, common?.fence ?? source, managerPort);
     // The same conflict check the stack generator runs, against the mounts this installation will have.
     checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {}, this.mountRoots());
-    this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot]);
+    this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot], input.backupPath);
     const databaseStorage = await this.databaseStorage.validate(
       input.databaseRoot,
       (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
@@ -1066,6 +1066,7 @@ export class Operations {
     assertCommonImportReview(operation, common);
     if (common && (operation.kind !== 'import' || review.source)) throw new Refusal('invalid_import_authority');
     const sourceFence = common?.fence ?? review.source;
+    this.adoptChosenBackupFolder(review.input.backupPath);
     await this.step(operation, 'preflight', async () => {
       if (this.installation()) throw new Refusal('installation_already_exists');
       await this.releases.eligible(review.input.tag);
@@ -1660,20 +1661,23 @@ export class Operations {
    * Host folders an advanced container setting may bind-mount: Manager's media and database roots (mapped
    * into Manager at identical paths) plus MANAGER_MOUNT_ROOTS, the administrator's explicit allow-list.
    */
-  /** On a new Unraid install: create the folders chosen in setup, and adopt the chosen backup location. */
+  /** On a new Unraid install: check the folders chosen in setup and create them. Nothing is adopted until the install starts. */
   private async prepareChosenFolders(input: z.infer<typeof ReviewInput>): Promise<void> {
     if (!broadRoots(this.roots)) return;
     const backups = input.backupPath ?? process.env.MANAGER_BACKUP_ROOT!;
     assertSeparateFolders([input.mediaPath, input.databaseRoot, backups, this.store.directory].filter((path): path is string => !!path));
     for (const path of [input.mediaPath, input.databaseRoot, backups]) if (path) await ensureChosenFolder(path);
+  }
+  private adoptChosenBackupFolder(backups: string | undefined): void {
+    if (!broadRoots(this.roots) || !backups) return;
     process.env.MANAGER_BACKUP_ROOT = backups;
     this.store.set('backup-root', backups);
     this.backups.relocate(join(backups, 'frameleaf-database'));
     this.mediaMove.backups = backups;
   }
-  private checkExternalFolders(services: ServiceOverrides, used: string[]): void {
+  private checkExternalFolders(services: ServiceOverrides, used: string[], backups = process.env.MANAGER_BACKUP_ROOT!): void {
     if (!broadRoots(this.roots)) return;
-    const occupied = [...used.filter(Boolean), process.env.MANAGER_BACKUP_ROOT!, this.store.directory];
+    const occupied = [...used.filter(Boolean), backups, this.store.directory];
     for (const override of Object.values(services))
       for (const mount of override?.mounts ?? []) assertExternalFolder(mount.source, occupied);
   }
