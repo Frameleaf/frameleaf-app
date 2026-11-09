@@ -28,6 +28,7 @@ import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
 import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
 import { findDrives, suggestFolders } from './drives.js';
+import { storageSuggestions } from './storage-suggestions.js';
 import { applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, listFolders } from './folders.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
@@ -524,6 +525,35 @@ class Api {
   @Post('move-library') moveLibrary(@Body() input: unknown) {
     const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
     return { id: operations.move(id, key).id };
+  }
+  /** FL-1323: move thumbnails to a folder of their own, usually on a faster drive. The photos stay where they are. */
+  @Post('review-thumbnail-move') async reviewThumbnailMove(@Body() input: unknown) {
+    const { root } = z
+      .object({ root: z.string().min(1).max(4096) })
+      .strict()
+      .parse(input);
+    if (folderSetup()) await ensureChosenFolder(root);
+    return operations.reviewThumbnailMove(root);
+  }
+  @Post('move-thumbnails') moveThumbnails(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.moveThumbnails(id, key).id };
+  }
+  /** FL-1323: thumbnails' own drive is missing; put them back with the photos and make them again. */
+  @Post('review-thumbnails-home') reviewThumbnailsHome(@Body() input: unknown) {
+    z.object({}).strict().parse(input ?? {});
+    return operations.reviewThumbnailsHome();
+  }
+  @Post('thumbnails-home') thumbnailsHome(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.thumbnailsHome(id, key).id };
+  }
+  /** FL-1323: photos, database and thumbnails: where each is, how much it holds, and whether a drive is missing. */
+  @Get('storage-usage') async storageUsage() {
+    const usage = await operations.storageUsage();
+    // Drive detection is a hint: without it the page lists each place without its drive or a suggestion.
+    const drives = await driveReport({}).then((report) => report.drives, () => null);
+    return { ...usage, drives, suggestions: drives ? storageSuggestions(drives, usage) : null };
   }
   @Post('stop-move') async stopMove(@Body() input: unknown) {
     const { id } = z.object({ id: z.string().uuid() }).strict().parse(input);

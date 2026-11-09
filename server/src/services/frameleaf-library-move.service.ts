@@ -2,7 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import type { LibraryMovePauseStatusDto } from 'src/dtos/frameleaf-library-move.dto.js';
 import type { LibraryMovePauseState } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
-import { FrameleafWorker, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { FrameleafWorker, JobName, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { libraryMoveFence } from 'src/utils/frameleaf-library-move-fence.js';
 
@@ -108,6 +108,17 @@ export class FrameleafLibraryMoveService extends BaseService {
       }
       return this.describe(null);
     });
+  }
+
+  /**
+   * FL-1323: thumbnails' own drive went missing and the Manager put them back in the library's `thumbs` folder,
+   * which is empty. Queue every thumbnail (and face thumbnail) to be made again from the original files, as the
+   * administrator's "Generate thumbnails: All" does. Original files are only read.
+   */
+  async queueThumbnails(): Promise<{ queued: boolean }> {
+    await this.jobRepository.queue({ name: JobName.AssetGenerateThumbnailsQueueAll, data: { force: true } });
+    this.logger.log('Thumbnails are back in the library folder: every thumbnail is queued to be made again');
+    return { queued: true };
   }
 
   /** Report the pause and what is still in flight. A Manager poll (`renew`) also renews the lease. */

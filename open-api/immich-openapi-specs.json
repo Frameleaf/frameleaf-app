@@ -48021,6 +48021,39 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/server/library-move/manager/thumbnails": {
+      "post": {
+        "operationId": "queueManagerThumbnails",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMoveThumbnailsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated rebuild of every thumbnail, after thumbnails lost their own drive",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/library-setup": {
       "get": {
         "operationId": "getLibrarySetupStatus",
@@ -102636,6 +102669,18 @@
         },
         "required": [
           "operationId"
+        ],
+        "type": "object"
+      },
+      "LibraryMoveThumbnailsDto": {
+        "properties": {
+          "queued": {
+            "description": "Every thumbnail is queued to be made again from the original files",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "queued"
         ],
         "type": "object"
       },

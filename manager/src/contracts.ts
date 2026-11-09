@@ -115,6 +115,8 @@ export type OperationKind =
   | 'reconfigure'
   | 'recover-source'
   | 'move-library'
+  | 'move-thumbnails'
+  | 'thumbnails-home'
   | 'move-database';
 export type Operation = {
   id: string;

@@ -15899,6 +15899,10 @@ export type LibraryMoveResumeDto = {
     /** Frameleaf Manager move operation that holds the pause */
     operationId: string;
 };
+export type LibraryMoveThumbnailsDto = {
+    /** Every thumbnail is queued to be made again from the original files */
+    queued: boolean;
+};
 export type LibrarySetupStatusDto = {
     canFinish: boolean;
     /** A file check or library scan ended early (failed or cancelled). Setup carried on; Library Care lists what it could not check */
@@ -33051,6 +33055,18 @@ export function resumeManagerLibraryMove({ libraryMoveResumeDto }: {
         method: "POST",
         body: libraryMoveResumeDto
     })));
+}
+/**
+ * Manager machine-authenticated rebuild of every thumbnail, after thumbnails lost their own drive
+ */
+export function queueManagerThumbnails(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMoveThumbnailsDto;
+    }>("/server/library-move/manager/thumbnails", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Library preparation for this authenticated device
