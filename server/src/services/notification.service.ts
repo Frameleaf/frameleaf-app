@@ -14,6 +14,7 @@ import {
   NotificationUpdateAllDto,
   NotificationUpdateDto,
   mapNotification,
+  mapNotificationSummary,
 } from 'src/dtos/notification.dto.js';
 import {
   AlbumKind,
@@ -55,7 +56,7 @@ export class NotificationService extends BaseService {
 
   async search(auth: AuthDto, dto: NotificationSearchDto): Promise<NotificationDto[]> {
     const items = await this.notificationRepository.search(auth.user.id, dto);
-    return items.map((item) => mapNotification(item));
+    return items.map((item) => mapNotificationSummary(item));
   }
 
   async updateAll(auth: AuthDto, dto: NotificationUpdateAllDto) {
@@ -84,7 +85,7 @@ export class NotificationService extends BaseService {
     const item = await this.notificationRepository.update(id, {
       readAt: dto.readAt,
     });
-    return mapNotification(item);
+    return mapNotificationSummary(item);
   }
 
   async delete(auth: AuthDto, id: string) {

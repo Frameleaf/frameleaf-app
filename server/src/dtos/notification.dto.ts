@@ -1,3 +1,4 @@
+import { omit } from 'lodash-es';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { NotificationLevel, NotificationLevelSchema, NotificationType, NotificationTypeSchema } from 'src/enum.js';
@@ -113,3 +114,14 @@ export const mapNotification = (notification: MapNotification): NotificationDto 
     readAt: notification.readAt ?? undefined,
   };
 };
+
+/**
+ * For responses clients fetch routinely. An import's lost-originals report holds up to 1,000 file
+ * records (about 820 KB); only `GET /notifications/:id` returns them, and the row keeps them.
+ */
+export const mapNotificationSummary = (notification: MapNotification): NotificationDto =>
+  mapNotification(
+    notification.data?.kind === 'immich-import-lost-originals'
+      ? { ...notification, data: omit(notification.data, 'items') }
+      : notification,
+  );
