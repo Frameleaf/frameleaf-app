@@ -57,6 +57,23 @@ describe('bounded library source walk', () => {
     expect(progress).toHaveBeenCalledTimes(2);
   });
 
+  it('does not report liveness until the interval has passed', async () => {
+    await write(path.join(root, 'a.txt'));
+    await write(path.join(root, 'b.txt'));
+    const progress = vi.fn();
+    const execution = { progress, progressUnits: 0 } as unknown as QueueExecution;
+    let now = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += 1));
+
+    try {
+      await expect(queueExecution.run(execution, () => collect(options([root])))).resolves.toEqual([]);
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(progress).not.toHaveBeenCalled();
+  });
+
   it('accepts omitted optional exclusion patterns', async () => {
     await write(path.join(root, 'a.jpg'));
     expect(await collect({ pathsToCrawl: [root], take: 1 })).toEqual([path.join(root, 'a.jpg')]);

@@ -6,6 +6,7 @@ import type { Dir, Dirent, Stats } from 'node:fs';
 import type { WalkOptionsDto } from 'src/dtos/library.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { advanceJobProgress } from 'src/queue/context.js';
+import { QUEUE_TIMING } from 'src/queue/types.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 // Node ESM requires the actual CommonJS namespace; Vite can synthesize absent named exports.
@@ -14,8 +15,12 @@ const { generateTasks, isDynamicPattern } = glob;
 
 /** Each open directory has a fixed native buffer; no directory listing or lifetime path index. */
 export const LIBRARY_WALK_BUFFER = 32;
-/** Time between liveness reports, well inside the job deadline, so a tree that is slow to yield media outlives it. */
-export const LIBRARY_WALK_LIVENESS_MS = 30_000;
+/** Time between liveness reports, well inside the configured job deadlines, so a tree slow to yield media outlives them. */
+export const LIBRARY_WALK_LIVENESS_MS = Math.min(
+  30_000,
+  QUEUE_TIMING.opaqueDeadline / 4,
+  QUEUE_TIMING.noProgressDeadline / 4,
+);
 export type LibraryWalkOptions = WalkOptionsDto & { signal?: AbortSignal };
 export type LibraryWalkStorage = {
   opendir: (folder: string, options: { bufferSize: number }) => Promise<Pick<Dir, 'read' | 'close'>>;
