@@ -70,6 +70,7 @@ const LOCATION_VARIABLES = [
   'MANAGER_DATABASE_ROOTS',
   'MANAGER_APPDATA_ROOT',
   'MANAGER_MOUNT_ROOTS',
+  'MANAGER_FOLDER_ROOT',
 ];
 
 /** Unraid's folder picker adds a trailing slash, which the exact path checks would otherwise refuse. */

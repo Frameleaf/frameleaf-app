@@ -4,11 +4,14 @@ import { Refusal } from './contracts.js';
 import { folderDetail } from './host-paths.js';
 
 /**
- * A new Unraid install maps all of /mnt into Manager, and folders are chosen in Manager rather than in the
- * template. Existing installs keep their saved template and explicit roots, so none of this applies to them.
+ * A new install maps one broad folder into Manager, and folders are chosen in Manager rather than in the template:
+ * all of /mnt on Unraid and TrueNAS, or the folder given to launch.sh on a plain Docker host. Existing installs keep
+ * their saved template and explicit roots, so none of this applies to them.
  */
-export const BROAD_ROOT = '/mnt';
-export const broadRoots = (roots: string[]) => roots.length === 1 && roots[0] === BROAD_ROOT;
+const MNT = '/mnt';
+export const broadRoot = () => process.env.MANAGER_FOLDER_ROOT || MNT;
+export const broadRoots = (roots: string[]) => roots.length === 1 && roots[0] === broadRoot();
+const unraid = () => process.env.MANAGER_PLATFORM === 'unraid';
 
 const within = (path: string, parent: string) => path === parent || path.startsWith(`${parent}/`);
 const lexicalOverlap = (a: string, b: string) => within(a, b) || within(b, a);
@@ -16,7 +19,7 @@ const lexicalOverlap = (a: string, b: string) => within(a, b) || within(b, a);
 const INDEPENDENT = ['disks', 'remotes', 'rootshare', 'addons'];
 const shareView = (path: string) => {
   const [, mnt, view, ...rest] = path.split('/');
-  return mnt === 'mnt' && view && !INDEPENDENT.includes(view) ? { view, path: `/${rest.join('/')}` } : null;
+  return unraid() && mnt === 'mnt' && view && !INDEPENDENT.includes(view) ? { view, path: `/${rest.join('/')}` } : null;
 };
 const combined = (view: string) => view === 'user' || view === 'user0';
 /** /mnt/user/a and /mnt/disk1/a can be the same files. Two different disks or pools never are. */
@@ -25,18 +28,20 @@ export function overlaps(a: string, b: string): boolean {
   const [left, right] = [shareView(a), shareView(b)];
   return !!left && !!right && (combined(left.view) || combined(right.view)) && lexicalOverlap(left.path, right.path);
 }
-/** /mnt/disks/UD01 is one drive and /mnt/remotes/nas one share, so they sit a level deeper than /mnt/user. */
+/** The share, pool or drive holding `path`. On Unraid /mnt/disks/UD01 is one drive and /mnt/remotes/nas one share, a level deeper than /mnt/user. */
 const volume = (path: string) => {
+  if (broadRoot() !== MNT) return broadRoot();
   const parts = path.split('/').slice(1);
-  return `/${parts.slice(0, ['disks', 'remotes', 'rootshare'].includes(parts[1]) ? 3 : 2).join('/')}`;
+  return `/${parts.slice(0, unraid() && ['disks', 'remotes', 'rootshare'].includes(parts[1]) ? 3 : 2).join('/')}`;
 };
 
-/** The location variables a new Unraid template no longer sets. An install that sets its roots is left alone. */
-export function applyUnraidFolderDefaults(env: Record<string, string | undefined> = process.env): void {
-  if (env.MANAGER_PLATFORM !== 'unraid' || env.MANAGER_STORAGE_ROOTS || !env.MANAGER_DATA) return;
-  env.MANAGER_STORAGE_ROOTS = BROAD_ROOT;
-  env.MANAGER_DATABASE_ROOTS = BROAD_ROOT;
-  env.MANAGER_MOUNT_ROOTS = BROAD_ROOT;
+/** The location variables a new install no longer sets. An install that sets its roots is left alone. */
+export function applyFolderDefaults(env: Record<string, string | undefined> = process.env): void {
+  const root = ['unraid', 'truenas'].includes(env.MANAGER_PLATFORM ?? '') ? MNT : env.MANAGER_FOLDER_ROOT;
+  if (!root || env.MANAGER_STORAGE_ROOTS || !env.MANAGER_DATA) return;
+  env.MANAGER_STORAGE_ROOTS = root;
+  env.MANAGER_DATABASE_ROOTS = root;
+  env.MANAGER_MOUNT_ROOTS = root;
   env.MANAGER_BACKUP_ROOT ??= join(dirname(env.MANAGER_DATA), 'frameleaf-backups');
 }
 
@@ -44,8 +49,10 @@ function assertUsable(path: string): void {
   if (
     path !== resolve(path) ||
     /[\n\0,:]/.test(path) ||
-    !path.startsWith(`${BROAD_ROOT}/`) ||
-    // /mnt/user is every share at once; a folder needs to be one of them or inside one.
+    !path.startsWith(`${broadRoot()}/`) ||
+    // TrueNAS keeps Docker and its apps in /mnt/.ix-apps; nothing hidden directly in the root is a place for photos.
+    relative(broadRoot(), path).startsWith('.') ||
+    // /mnt/user is every share at once, /mnt/tank a whole pool; a folder needs to be inside one.
     path.split('/').length < 4
   )
     throw new Refusal('invalid_storage_path', 409, folderDetail(path));
@@ -75,6 +82,17 @@ export async function ensureChosenFolder(path: string): Promise<void> {
   await mkdir(path, { recursive: true });
 }
 
+/** Manager's own folder, before anything can show a problem. A mistyped pool must stop here: /mnt/typo would land on the boot disk. */
+export async function ensureManagerFolder(path: string): Promise<void> {
+  if (unraid()) {
+    await mkdir(path, { recursive: true });
+    return;
+  }
+  await ensureChosenFolder(path).catch((error: Refusal) => {
+    throw new Error(`MANAGER_DATA is ${path}, which can't be used (${error.code}). Set it to a folder on a pool or drive that exists, then restart.`);
+  });
+}
+
 /** Photos, database, backups and Manager's own settings must not share a folder. */
 export function assertSeparateFolders(paths: string[]): void {
   paths.forEach((path, i) => {
@@ -93,12 +111,13 @@ const LISTING_LIMIT = 500;
 
 /** The folders directly inside `requested`, or inside its nearest existing parent, so a default not yet created still opens. */
 export async function listFolders(requested: string): Promise<FolderListing> {
+  const root = broadRoot();
   let path = resolve(requested);
-  if (!within(path, BROAD_ROOT)) path = BROAD_ROOT;
+  if (!within(path, root)) path = root;
   for (;;) {
     const real = await realpath(path).catch(() => null);
-    if (real !== null && within(real, BROAD_ROOT) && (await stat(real)).isDirectory()) break;
-    if (path === BROAD_ROOT) throw new Refusal('storage_volume_missing');
+    if (real !== null && within(real, root) && (await stat(real)).isDirectory()) break;
+    if (path === root) throw new Refusal('storage_volume_missing');
     path = dirname(path);
   }
   const entries = await readdir(path, { withFileTypes: true }).catch(() => {
@@ -108,5 +127,5 @@ export async function listFolders(requested: string): Promise<FolderListing> {
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
     .map((entry) => ({ name: entry.name, path: join(path, entry.name) }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { path, parent: path === BROAD_ROOT ? null : dirname(path), folders: folders.slice(0, LISTING_LIMIT), truncated: folders.length > LISTING_LIMIT };
+  return { path, parent: path === root ? null : dirname(path), folders: folders.slice(0, LISTING_LIMIT), truncated: folders.length > LISTING_LIMIT };
 }

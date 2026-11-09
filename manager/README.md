@@ -12,7 +12,15 @@ The folder must be outside Docker's data root and backed by a supported disk fil
 
 ## Launcher
 
-Use `launch.sh`, `cosign.pub` and `ghcr.io/frameleaf/frameleaf-manager:latest`; the launcher verifies the pulled image's signature before starting it. The launcher requires Docker, Compose v2, Cosign, `findmnt` and `realpath` on a Linux host. Create the state, library, backup and appdata folders on the intended storage first.
+Use `launch.sh`, `cosign.pub` and `ghcr.io/frameleaf/frameleaf-manager:latest`; the launcher verifies the pulled image's signature before starting it. The launcher requires Docker, Compose v2, Cosign, `findmnt` and `realpath` on a Linux host.
+
+The shortest launch needs no folders made first. Give the address you will open Manager at, and optionally a parent folder (default `/srv/frameleaf`, at least two levels deep). Manager keeps its settings in `manager` inside it, and you choose and create the other folders during setup:
+
+```sh
+sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "https://server.example:2282" "$FOLDER_ROOT" "$LAN_ADDRESS"
+```
+
+To name every folder yourself, use the long form, and create the state, library, backup and appdata folders on the intended storage first. It is also what an existing launch keeps using:
 
 ```sh
 sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "$STATE_FOLDER" "$LIBRARY_FOLDER" \

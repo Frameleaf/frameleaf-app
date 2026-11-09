@@ -9,9 +9,14 @@ MANAGER_MANIFEST OUTPUT`. It authenticates the independently published Manager
 component, exact successful two-architecture build, immutable image digest and
 signed release predicate before writing the Unraid Manager template or TrueNAS
 Custom App Compose file. Install via TrueNAS's supported **Install via YAML**
-flow. Set the exact HTTPS origin and persistent host folders first; keep host
-and container paths identical. Map additional source media/database folders
-before import. Manager has Docker socket access to coordinate its library.
+flow. Replace `POOL_NAME` in `MANAGER_DATA` with one of your pools; it is the
+only value to edit. All of `/mnt` is mapped into Manager, and the folders for
+photos, the database and backups are chosen and created in Manager. A pool
+that doesn't exist stops Manager with a message in the app's logs, rather than
+writing to the boot disk. A TrueNAS install with its own
+`MANAGER_STORAGE_ROOTS` keeps those saved folders. Set `MANAGER_ORIGIN` only to
+open Manager by a custom domain name. Manager has Docker socket access to
+coordinate its library.
 On Unraid, Manager automatically discovers Docker's actual data root and accesses
 its existing `unraid-autostart` file through an isolated helper using the running
 Manager image. No autostart mapping or path entry is needed. Existing manual
