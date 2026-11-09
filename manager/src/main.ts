@@ -530,6 +530,23 @@ class Api {
     await operations.stopMove(id);
     return { requested: true };
   }
+  /** FL-1322: move the database to another folder or drive; the old folder is retained until removed. */
+  @Post('review-database-move') reviewDatabaseMove(@Body() input: unknown) {
+    const { databaseRoot } = z.object({ databaseRoot: ReviewInput.shape.databaseRoot }).strict().parse(input);
+    return operations.reviewDatabaseMove(databaseRoot);
+  }
+  @Post('move-database') moveDatabase(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.moveDatabaseTo(id, key).id };
+  }
+  @Get('retained-databases') retainedDatabases() {
+    return operations.retainedDatabases();
+  }
+  @Post('remove-retained-database') async removeRetainedDatabase(@Body() input: unknown) {
+    const { path } = z.object({ path: z.string().min(1).max(4096) }).strict().parse(input);
+    await operations.removeRetainedDatabase(path);
+    return { removed: true };
+  }
   @Post('restore') restore(@Body() input: unknown) {
     const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
     return { id: operations.restore(id, key).id };
