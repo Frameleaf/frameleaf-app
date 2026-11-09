@@ -385,3 +385,28 @@ export function suggestFolders(
   const keep = target ? { path: target, bytes: databaseBytes ?? NEW_LIBRARY_BYTES.database } : undefined;
   return { drives, database, thumbs: suggestDrive('thumbs', drives, { needBytes: thumbsBytes, keep }) };
 }
+
+/** The drive a folder is on: the one whose path holds it most closely. Undefined when Manager doesn't know it. */
+export const driveOf = (path: string, drives: Drive[]): Drive | undefined =>
+  drives.filter((drive) => within(resolve(path), drive.path)).sort((a, b) => b.path.length - a.path.length)[0];
+
+export type DatabaseDriveFinding = {
+  /** The label of the database's drive, for "Cache pool (NVMe SSD) · 180 GB free". */
+  drive: string | null;
+  /** FL-1321: the database is on hard drives while a faster drive with room was found, and the one-press fix. */
+  warning?: { suggestion: string; suggestedDrive: string; suggestedName: string; reason: string };
+};
+/**
+ * What the server check says about the database's drive. A warning only when the database is on a drive Manager
+ * knows is slow and a faster one with room was found; a drive it couldn't identify never warns.
+ */
+export function databaseDriveFinding(path: string, report: DriveReport): DatabaseDriveFinding {
+  const drive = driveOf(path, report.drives);
+  const suggestion = report.database;
+  if (drive?.speed !== 'slow' || suggestion.status !== 'found' || suggestion.drive.path === drive.path)
+    return { drive: drive?.label ?? null };
+  return {
+    drive: drive.label,
+    warning: { suggestion: suggestion.folder, suggestedDrive: suggestion.drive.label, suggestedName: suggestion.drive.name, reason: suggestion.reason },
+  };
+}

@@ -8,6 +8,7 @@
   import ServerCheck from './ServerCheck.svelte';
   import { CHECKING, checkOrder, checkRows, checkSummary, type CheckAction, type CheckContext, type CheckRow } from './server-check';
   import { encodeQr, qrPath } from './qr.mjs';
+  import { driveHint, fastFolderIssue, onSuggested, type DriveReport, type Suggestion } from './drives';
   import { regenerationPresentation } from './regeneration';
   import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection, CONTAINERS, emptyContainers, parseContainerSettings, containerSummary, containerOverrides, containerText, photoAppName, photoAppDetail, photoAppReason, untestedNotice, lossText, restrictionText, ownerEmailProblems, isPhotoAppCapture, isFolderImport, sourceVersion, type PhotoAppSource } from './presentation';
 
@@ -66,7 +67,12 @@
     step = $state(0),
     mediaPath = $state(''),
     backupPath = $state(''),
-    browsing = $state<'' | 'media' | 'database' | 'backups'>(''),
+    browsing = $state<'' | 'media' | 'database' | 'thumbnails' | 'backups'>(''),
+    /** FL-1321: thumbnails with the photos, or in a folder of their own on a faster drive. */
+    thumbsFast = $state(false),
+    thumbsPath = $state(''),
+    /** FL-1321: the drives under Manager's folders and the fast drive it suggests; null until known, or where it can't tell. */
+    driveReport = $state<DriveReport | null>(null),
     databaseRoot = $state(''),
     port = $state(2283),
     ml = $state(false),
@@ -213,10 +219,15 @@
   const checkContext = $derived<CheckContext>({
     host: (screen === 'restore' ? restoreReview : review)?.host ?? 'linux',
     folderSetup: !!dashboard?.folderSetup,
-    paths: { media: mediaPath, database: databaseRoot, backups: backupPath || dashboard?.backupRoot },
-    chosen: screen === 'restore' ? ['database'] : [...(screen === 'fresh' ? (['media'] as const) : []), 'database', 'backups'],
+    paths: { media: mediaPath, database: databaseRoot, thumbnails: thumbsPath, backups: backupPath || dashboard?.backupRoot },
+    chosen:
+      screen === 'restore'
+        ? ['database']
+        : [...(screen === 'fresh' ? (['media'] as const) : []), 'database', ...(screen === 'fresh' && thumbsFast ? (['thumbnails'] as const) : []), 'backups'],
     fixedPort: screen === 'restore',
   });
+  /** FL-1321: a new library whose folders are chosen in Manager gets the prototype's Storage step. */
+  const storageLayout = $derived(screen === 'fresh' && !!dashboard?.folderSetup && !installation);
   const reviewRows = $derived(review?.checks ? checkRows(review.checks, checkContext) : null);
   const restoreRows = $derived(restoreReview?.checks ? checkRows(restoreReview.checks, checkContext) : null);
   let recheckAfterPick: (() => Promise<void>) | null = null;
@@ -555,7 +566,26 @@
     await loadReleases();
     tag = releases[0]?.tag ?? '';
     if (value === 'import') await loadSources();
+    if (value === 'install') await loadDrives();
     await go(value === 'install' ? 'fresh' : 'import');
+  }
+  /**
+   * FL-1321: what Manager knows about the drives, for the hints under each folder. On a new Unraid library the
+   * database starts on the suggested fast drive, unless the folder was already changed. Detection is a hint: without
+   * it the step works as before.
+   */
+  async function loadDrives() {
+    thumbsFast = false;
+    thumbsPath = '';
+    driveReport = dashboard?.folderSetup && !installation ? await api('drives').catch(() => null) : null;
+    const database = driveReport?.database;
+    if (database?.status === 'found' && dashboard.folderSetup.fastDatabase && databaseRoot === dashboard.folderSetup.database) databaseRoot = database.folder;
+    if (driveReport?.thumbs.status === 'found') thumbsPath = driveReport.thumbs.folder;
+  }
+  /** On a faster drive: the folder starts as Manager's suggestion. */
+  function useFastThumbnails() {
+    thumbsFast = true;
+    if (driveReport?.thumbs.status === 'found') thumbsPath = driveReport.thumbs.folder;
   }
   async function inspectSource() {
     sourceReview = await api('source-review', { sourceId });
@@ -601,6 +631,7 @@
         ...(kind === 'import' ? { sourceId } : { mediaPath }),
         ...(dashboard.folderSetup ? { backupPath } : {}),
         databaseRoot,
+        ...(kind === 'install' && thumbsFast && thumbsPath ? { thumbnailsPath: thumbsPath } : {}),
         port,
         ml,
         lifecycle: 'docker-only',
@@ -641,6 +672,7 @@
       return;
     }
     if (action.kind === 'thumbnails') restoreThumbnailFallback = true;
+    else if (action.kind === 'suggest') databaseRoot = action.path;
     else if (action.kind === 'port') port = action.port;
     else if (action.kind === 'ml') ml = false;
     void run(recheck);
@@ -1031,9 +1063,10 @@
           {/if}
         {:else if screen === 'fresh'}
           {@render steps(['Storage', 'Checks', 'Install'], step)}
-          {#if step === 0}{@render heading('Give your library a home', 'Choose the server locations and connection settings for this installation.')}{@render configuration()}<div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('welcome'))}><Icon name="back"/>Back</button>{#if checking}<p class="muted checking-note" role="status">Checking the server. This can take up to a minute.</p>{/if}<button class="button primary" disabled={busy || !mediaPath || !tag || !lifecycle} onclick={() => run(recheckInstall)}>Check this server</button></div>
+          {#if step === 0 && storageLayout}{@render heading('Give your library a home', 'Choose where your photos live on this server.')}{@render storageStep()}<div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('welcome'))}><Icon name="back"/>Back</button>{#if checking}<p class="muted checking-note" role="status">Checking the server. This can take up to a minute.</p>{/if}<button class="button primary" disabled={busy || !mediaPath || !databaseRoot || !tag || (thumbsFast && !thumbsPath)} onclick={() => run(recheckInstall)}>Check this server<Icon name="arrow"/></button></div>
+          {:else if step === 0}{@render heading('Give your library a home', 'Choose the server locations and connection settings for this installation.')}{@render configuration()}<div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('welcome'))}><Icon name="back"/>Back</button>{#if checking}<p class="muted checking-note" role="status">Checking the server. This can take up to a minute.</p>{/if}<button class="button primary" disabled={busy || !mediaPath || !tag || !lifecycle} onclick={() => run(recheckInstall)}>Check this server</button></div>
           {:else if step === 1}{@render checksStep(reviewRows, checkOrder('install', containerRows.length > 0), () => { step = 0; review = null; }, () => step = 2, 'Review installation', recheckInstall)}
-          {:else}{@render heading('Ready to set up Frameleaf', 'Manager will prepare the services and take you into Frameleaf when your server is ready.')}<section class="card"><div class="card-header"><h2>New installation</h2><span class="badge good">{review.tag}</span></div>{#each [['folder', 'Photo library', mediaPath], ['database', 'New PostgreSQL database', databaseRoot], ['shield', 'Encrypted database backups', dashboard.backupRoot], ['network', 'Application port', String(port)], ['cpu', 'Processing', `${processorName(dashboard.host?.acceleration)} · Machine learning ${ml ? 'on' : 'off'}`]] as [icon, title, detail]}<div class="list-row"><Icon name={icon}/><div><strong>{title}</strong><p><code>{detail}</code></p></div></div>{/each}</section>{@render containerReview()}<div class="mt16">{@render notice('Managed independently', 'Your photo library keeps running when Manager is unavailable. Keep a protected configuration export for manual recovery.')}</div><div class="wizard-footer"><button class="button quiet" onclick={() => step = 1}><Icon name="back"/>Back</button><button class="button primary" disabled={busy || !!activeOperation} onclick={() => run(() => start('install', { reviewId: review.id }))}>Install Frameleaf</button></div>{/if}
+          {:else}{@render heading('Ready to set up Frameleaf', 'Manager will prepare the services and take you into Frameleaf when your server is ready.')}<section class="card"><div class="card-header"><h2>New installation</h2><span class="badge good">{review.tag}</span></div>{#each [['folder', 'Photo library', mediaPath], ['database', 'New PostgreSQL database', databaseRoot], ['image', 'Thumbnails', thumbsFast && thumbsPath ? thumbsPath : 'With your photos and videos'], ['shield', 'Encrypted database backups', backupPath || dashboard.backupRoot], ['network', 'Application port', String(port)], ['cpu', 'Processing', `${processorName(dashboard.host?.acceleration)} · Machine learning ${ml ? 'on' : 'off'}`]] as [icon, title, detail]}<div class="list-row"><Icon name={icon}/><div><strong>{title}</strong><p><code>{detail}</code></p></div></div>{/each}</section>{@render containerReview()}<div class="mt16">{@render notice('Managed independently', 'Your photo library keeps running when Manager is unavailable. Keep a protected configuration export for manual recovery.')}</div><div class="wizard-footer"><button class="button quiet" onclick={() => step = 1}><Icon name="back"/>Back</button><button class="button primary" disabled={busy || !!activeOperation} onclick={() => run(() => start('install', { reviewId: review.id }))}>Install Frameleaf</button></div>{/if}
         {:else if screen === 'progress'}
           {#if operation && timeline}{@render heading(operationNames[operation.kind] ?? 'Manager operation', isPhotoAppCapture(operation) && operation.state === 'awaiting-review' ? (isFolderImport(operation.photoApp?.kind) ? 'Manager has read your export folder. Review what comes across before anything is imported.' : 'Your app is stopped and Manager has read its library. Review what comes across before anything is imported.') : operation.state === 'running' ? 'You can close this page. Manager records every completed step.' : operation.state === 'complete' && !operation.error ? 'The recorded operation completed successfully.' : 'Review the saved step before continuing.')}
             <section class="card"><div class="card-body">{#if setupMode}<div class="progress-hero"><div class="progress-ring" class:done={timeline.successful} style="--p: {timeline.percent}" role="progressbar" aria-label="Operation progress" aria-valuenow={timeline.percent} aria-valuemin="0" aria-valuemax="100">{#if timeline.successful}<Icon name="check"/>{:else}<strong>{timeline.percent}%</strong>{/if}</div><div><strong>{timeline.successful ? 'All done' : readable(operation.step ?? operation.state)}</strong><p class="meta">{operation.state === 'running' ? 'This usually takes a few minutes.' : readable(operation.state)}</p></div></div>{:else}<div class="spread progress-label"><span>{readable(operation.step ?? operation.state)}</span><strong>{timeline.percent}%</strong></div><progress class="progress" aria-label="Operation progress" value={timeline.percent} max="100"></progress>{/if}<ol class="timeline mt16">{#each timeline.steps as item, index}<li class:done={item.state === 'complete'} class:running={item.state === 'running'}><span class="stage-icon">{#if item.state === 'complete'}<Icon name="check"/>{:else if item.state === 'running'}<Icon name="loader" class="spin"/>{:else}{index + 1}{/if}</span><div><strong>{item.label}</strong></div><span class="stage-time">{readable(item.state)}</span></li>{/each}</ol>{#if operation.error}<div class="notice warning mt16" role="alert"><Icon name="warning"/><div><strong>{readable(operation.error, operation.detail)}</strong><p>Completed journal steps are retained. Resume runs the next safe step.</p></div></div>{/if}</div><div class="card-footer"><span class="safety-note"><Icon name="shield"/>Completed steps are recorded</span><span class="badge" class:good={timeline.successful}>{readable(operation.state)}</span></div></section>
@@ -1262,11 +1295,11 @@
   <div class="field full"><span>{label}</span><div class="folder-field"><input aria-label={label} {value} oninput={(event) => set(event.currentTarget.value)} required autocomplete="off" spellcheck="false"/><button type="button" class="button quiet" onclick={() => (browsing = key)}>Browse…</button></div><small>{help}</small></div>
 {/snippet}
 {#snippet externalFolderSection()}
-  {#if dashboard?.folderSetup}<ExternalFolders bind:mounts={containers['frameleaf-server'].mounts} occupied={installation ? [dashboard.folderSetup.media, dashboard.folderSetup.database, dashboard.folderSetup.backups, dashboard.folderSetup.manager] : [mediaPath, databaseRoot, backupPath, dashboard.folderSetup.manager]} {api} saving={installation ? { dirty: containers['frameleaf-server'].mounts !== containerText(containersSaved)['frameleaf-server'].mounts, disabled: busy || !!activeOperation, save: () => run(saveContainerSettings), discard: () => run(loadContainerSettings) } : null}/>{/if}
+  {#if dashboard?.folderSetup}<ExternalFolders bind:mounts={containers['frameleaf-server'].mounts} occupied={installation ? [dashboard.folderSetup.media, dashboard.folderSetup.database, ...(dashboard.folderSetup.thumbs ? [dashboard.folderSetup.thumbs] : []), dashboard.folderSetup.backups, dashboard.folderSetup.manager] : [mediaPath, databaseRoot, ...(thumbsFast && thumbsPath ? [thumbsPath] : []), backupPath, dashboard.folderSetup.manager]} {api} later={storageLayout} saving={installation ? { dirty: containers['frameleaf-server'].mounts !== containerText(containersSaved)['frameleaf-server'].mounts, disabled: busy || !!activeOperation, save: () => run(saveContainerSettings), discard: () => run(loadContainerSettings) } : null}/>{/if}
 {/snippet}
 {#snippet advancedContainers()}
   <details class="card mt16 containers" bind:open={containersOpen}>
-    <summary class="card-header"><div><h2>Advanced container settings</h2><p class="meta">{containerRows.length ? containerRows.map((row) => `${row.label}: ${row.summary || 'needs attention'}`).join(' · ') : 'Environment variables, extra folders and limits for each container. Optional.'}</p></div><Icon name="chevron"/></summary>
+    <summary class="card-header"><div><h2>Advanced container settings</h2><p class="meta">{containerRows.length ? containerRows.map((row) => `${row.label}: ${row.summary || 'needs attention'}`).join(' · ') : 'Environment variables, extra folders and limits for each container. Optional.'}</p></div>{#if storageLayout}<span class="st-change-link">{containerRows.length ? 'Change' : 'Show'}<Icon name="chevron-down"/></span>{:else}<Icon name="chevron"/>{/if}</summary>
     {#each CONTAINERS.filter((container) => containersMl || container.id !== 'frameleaf-machine-learning') as container (container.id)}
       {@const parsed = parseContainerSettings(containers[container.id])}
       <section class="card-body container" aria-labelledby={`container-${container.id}`}>
@@ -1286,6 +1319,42 @@
 {#snippet containerReview()}
   {#if containerRows.length}<section class="card mt16"><div class="card-header"><h2>Advanced container settings</h2></div>{#each containerRows as row (row.id)}<div class="list-row"><Icon name="settings"/><div><strong>{row.label}</strong><p>{row.summary}</p></div></div>{/each}</section>{/if}
 {/snippet}
+{#snippet driveLine(path: string)}
+  {@const hint = driveHint(path, driveReport?.drives)}
+  {#if hint}<span class="st-drive" data-speed={hint.speed}><Icon name={hint.speed === 'fast' ? 'bolt' : hint.speed === 'network' ? 'lan' : 'harddisk'}/>{hint.text}</span>{/if}
+{/snippet}
+{#snippet driveSuggestion(suggestion: Suggestion | undefined, applied: boolean, use: () => void)}
+  {#if suggestion?.status === 'found'}
+    <div class="st-suggest"><Icon name={applied ? 'check-circle' : 'bulb'}/><div><strong>{suggestion.title}</strong><p>{suggestion.reason}</p></div>{#if !applied}<button type="button" class="button" onclick={use}>Use {suggestion.drive.name}</button>{/if}</div>
+  {:else if suggestion}
+    <p class="st-suggest-note"><Icon name="info-outline"/><span>{suggestion.reason}</span></p>
+  {/if}
+{/snippet}
+{#snippet folderInput(id: string, value: string, set: (value: string) => void, key: 'media' | 'database' | 'thumbnails' | 'backups')}
+  <div class="st-folder"><input {id} {value} oninput={(event) => set(event.currentTarget.value)} required autocomplete="off" spellcheck="false"/><button type="button" class="button" onclick={() => (browsing = key)}>Browse…</button></div>{@render driveLine(value)}
+{/snippet}
+{#snippet choiceCard(type: 'radio' | 'checkbox', name: string, checked: boolean, change: () => void, icon: string, title: string, body: string)}
+  <label class="st-choice" class:checked><input {type} {name} {checked} onchange={change}/><span class="st-choice-head"><span class="st-choice-icon"><Icon name={icon}/></span><strong>{title}</strong><span class="st-choice-mark" aria-hidden="true"><Icon name="mdi-check"/></span></span><span class="st-choice-body">{body}</span></label>
+{/snippet}
+<!-- FL-1321: a new library's Storage step where folders are chosen in Manager, as the approved prototype draws it (frameleaf-prototype ManagerSetup.jsx, FL-1310). -->
+{#snippet storageStep()}
+  <form id="configuration-form" class="st-form" onsubmit={(event) => { event.preventDefault(); void run(recheckInstall); }}>
+    <div class="st-field"><label for="st-name">Library name</label><input id="st-name" bind:value={libraryName} required maxlength="120" autocomplete="off"/></div>
+    <div class="st-field"><label for="st-media">Photos and videos</label>{@render folderInput('st-media', mediaPath, (value) => (mediaPath = value), 'media')}<span class="st-hint">Your uploads and library. A big drive or array is fine. Manager creates this folder if it isn’t there.</span></div>
+    <div class="st-field"><label for="st-database">Database</label>{@render folderInput('st-database', databaseRoot, (value) => (databaseRoot = value), 'database')}{@render driveSuggestion(driveReport?.database, onSuggested(driveReport?.database, databaseRoot, driveReport?.drives), () => { if (driveReport?.database.status === 'found') databaseRoot = driveReport.database.folder; })}<span class="st-hint">Manager creates this folder if it isn’t there.</span></div>
+    <div class="st-choice-group" role="group" aria-labelledby="st-thumbs-title">
+      <span class="st-field-title" id="st-thumbs-title">Thumbnails</span>
+      <div class="st-choices">{@render choiceCard('radio', 'st-thumbs', !thumbsFast, () => (thumbsFast = false), 'images', 'With your photos', 'The simplest choice. Works well for most libraries.')}{@render choiceCard('radio', 'st-thumbs', thumbsFast, useFastThumbnails, 'bolt', 'On a faster drive', 'Large libraries scroll faster. You can move them later too.')}</div>
+      {#if !thumbsFast}{@render driveSuggestion(driveReport?.thumbs, false, useFastThumbnails)}{/if}
+    </div>
+    {#if thumbsFast}<div class="st-field"><label for="st-thumbs-folder">Thumbnails folder</label>{@render folderInput('st-thumbs-folder', thumbsPath, (value) => (thumbsPath = value), 'thumbnails')}{@render driveSuggestion(driveReport?.thumbs, onSuggested(driveReport?.thumbs, thumbsPath, driveReport?.drives), useFastThumbnails)}<span class="st-hint">If this drive fails, Frameleaf can make new thumbnails from your photos.</span></div>{/if}
+    <div class="st-field"><label for="st-backups">Backups</label>{@render folderInput('st-backups', backupPath, (value) => (backupPath = value), 'backups')}<span class="st-hint">Encrypted database backups. Photos and videos aren’t included.</span></div>
+    {@render externalFolderSection()}
+    <dl class="st-facts"><div><dt>Port</dt><dd>{port}</dd></div><div><dt>Release</dt><dd>{!tag ? 'None available' : tag === releases[0]?.tag ? 'Latest verified' : tag}</dd></div></dl>
+    {@render choiceCard('checkbox', 'st-ml', ml, () => (ml = !ml), 'face', 'Faces and smart search', 'Runs on this server. You can turn it off later.')}
+    {@render advancedContainers()}
+  </form>
+{/snippet}
 {#snippet configuration()}
   <form id="configuration-form" onsubmit={(event) => { event.preventDefault(); if (screen === 'photo-app') void run(preparePhotoApp); else if (screen === 'fresh') void run(recheckInstall); }}>
   <section class="card"><div class="card-header"><h2>Storage & access</h2></div><div class="card-body"><div class="form-grid">
@@ -1298,7 +1367,7 @@
   </form>
 {/snippet}
 <datalist id="database-roots">{#each dashboard?.databaseStorage?.roots ?? [] as root}<option value={root}></option>{/each}</datalist>
-{#if browsing}<FolderPicker title={{ media: 'Choose where photos and videos go', database: 'Choose the database folder', backups: 'Choose the backups folder' }[browsing]} start={{ media: mediaPath, database: databaseRoot, backups: backupPath }[browsing] || '/mnt'} {api} use={(path) => { if (browsing === 'media') mediaPath = path; else if (browsing === 'database') databaseRoot = path; else backupPath = path; browsing = ''; const recheck = recheckAfterPick; recheckAfterPick = null; if (recheck) void run(recheck); }} close={() => { browsing = ''; recheckAfterPick = null; }}/>{/if}
+{#if browsing}<FolderPicker title={{ media: 'Choose where photos and videos go', database: 'Choose the database folder', thumbnails: 'Choose the thumbnails folder', backups: 'Choose the backups folder' }[browsing]} start={{ media: mediaPath, database: databaseRoot, thumbnails: thumbsPath, backups: backupPath }[browsing] || '/mnt'} {api} issue={(browsing === 'database' || browsing === 'thumbnails') && dashboard?.folderSetup ? (path: string) => fastFolderIssue(path, { media: mediaPath, database: databaseRoot, backups: backupPath, manager: dashboard.folderSetup.manager }, browsing as 'database' | 'thumbnails') : undefined} use={(path) => { if (browsing === 'media') mediaPath = path; else if (browsing === 'database') databaseRoot = path; else if (browsing === 'thumbnails') { thumbsPath = path; thumbsFast = true; } else backupPath = path; browsing = ''; const recheck = recheckAfterPick; recheckAfterPick = null; if (recheck) void run(recheck); }} close={() => { browsing = ''; recheckAfterPick = null; }}/>{/if}
 <dialog bind:this={dialog} aria-labelledby="dialog-title" onclose={() => { password = ''; newPassword = ''; modal = ''; }}>
   <button class="button quiet icon-button modal-close" onclick={closeModal} aria-label="Close dialog"><Icon name="close"/></button>
   <div class="modal-body"><h2 id="dialog-title">{({ control: modalAction === 'stop' ? 'Stop your photo library' : 'Restart your photo library', update: 'Update Frameleaf', recover: 'Recover the saved operation', administrator: 'Secure your Manager', export: 'Export configuration', 'backup-key': 'Export recovery key', recovery: 'Recover Manager', 'skip-setup': 'Skip setup and let the server run?', 'source-recovery': 'Returning to your original app', 'add-installation': 'Add another installation', help: 'Frameleaf Manager guide', 'photo-app-capture': `Stop ${photoAppName(photoAppChosen?.kind)} for the import?`, 'photo-app-cancel': 'Cancel this import?' } as Record<string, string>)[modal]}</h2>

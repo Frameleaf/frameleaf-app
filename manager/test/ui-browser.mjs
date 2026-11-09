@@ -122,7 +122,10 @@ let backupAction = 'reuse',
   reviewProblems = null,
   reviewFails = false,
   // FL-1320 in the FL-1317 list: the first restore review finds the thumbnails drive gone.
-  restoreThumbnailsGone = true;
+  restoreThumbnailsGone = true,
+  // FL-1321: what the Storage step learns about this server's drives, and the checks its review answers with.
+  driveReport = null,
+  storageChecks = null;
 const okChecks = (restore = false) => [
   { id: 'docker', status: 'ok', facts: { version: '28.4' } },
   { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
@@ -265,7 +268,11 @@ await page.route('**/manager-api/**', async (route) => {
       databaseStorage: { root: body.databaseRoot },
       replacesInstallation: true,
     };
-  else if (path === 'review' && reviewFails) {
+  else if (path === 'drives') value = driveReport;
+  else if (path === 'review' && storageChecks) {
+    const checks = storageChecks(body);
+    value = { ready: true, host: 'unraid', kind: 'install', checks, id: 'storage-review', tag: body.tag, databaseStorage: { root: body.databaseRoot }, requiredBytes: 3 * 1024 ** 3 };
+  } else if (path === 'review' && reviewFails) {
     reviewFails = false;
     expectedHttpErrors++;
     return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'installation_already_exists' }) });
@@ -1006,6 +1013,70 @@ try {
     await page.locator('dialog').getByRole('button', { name: 'Cancel import', exact: true }).click();
     await page.getByText('Import cancelled. Your export folder is unchanged.', { exact: true }).waitFor();
     assert.equal(requests.findLast((r) => r.path === 'photo-app-cancel').body.operationId, '3b2a1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d');
+  });
+  await check('FL-1321 Storage step: drive hints, the suggested database drive, Thumbnails choice and the one-press fix', async () => {
+    const GB = 1024 ** 3;
+    const cache = { path: '/mnt/cache', name: 'Cache pool', label: 'Cache pool (NVMe SSD)', kind: 'nvme', speed: 'fast', freeBytes: 180 * GB, base: '/mnt/cache/appdata' };
+    const array = { path: '/mnt/user', name: 'Hard drive array', label: 'Hard drive array', kind: 'hdd', speed: 'slow', freeBytes: 2150 * GB, base: '/mnt/user' };
+    driveReport = {
+      drives: [cache, array],
+      database: { status: 'found', drive: cache, title: 'Suggested: Cache pool (NVMe SSD)', reason: 'It has 180 GB free, and the database needs about 20 GB. Browsing and search read it constantly, so an SSD or NVMe drive makes them noticeably faster.', folder: '/mnt/cache/appdata/frameleaf-databases' },
+      thumbs: { status: 'found', drive: cache, title: 'Suggested: Cache pool (NVMe SSD)', reason: 'It has 160 GB free after the database, and thumbnails need about 50 GB. The timeline loads hundreds of small images at once, so large libraries scroll faster from an SSD or NVMe drive.', folder: '/mnt/cache/appdata/frameleaf-thumbnails' },
+    };
+    storageChecks = (body) => [
+      ...okChecks().slice(0, 2),
+      body.databaseRoot.startsWith('/mnt/user/')
+        ? { id: 'database', status: 'warning', code: 'database_on_hard_drives', facts: { drive: 'Hard drive array', free: 2150 * GB, suggestion: '/mnt/cache/appdata/frameleaf-databases', suggestedDrive: 'Cache pool (NVMe SSD)', suggestedName: 'Cache pool', reason: driveReport.database.reason } }
+        : { id: 'database', status: 'ok', facts: { drive: 'Cache pool (NVMe SSD)', free: 180 * GB } },
+      body.thumbnailsPath ? { id: 'thumbnails', status: 'ok', facts: { path: body.thumbnailsPath, drive: 'Cache pool (NVMe SSD)', free: 180 * GB } } : { id: 'thumbnails', status: 'ok', facts: { withPhotos: true } },
+      ...okChecks().slice(3),
+    ];
+    const saved = { installation: dashboard.installation, folderSetup: dashboard.folderSetup };
+    dashboard.installation = null;
+    dashboard.folderSetup = {
+      media: '/mnt/user/frameleaf-photos',
+      database: '/mnt/user/appdata/frameleaf-databases',
+      thumbs: null,
+      backups: '/mnt/user/appdata/frameleaf-backups',
+      manager: '/mnt/user/appdata/frameleaf-manager',
+      fastDatabase: true,
+    };
+    try {
+      await page.reload();
+      await page.locator('main[aria-busy="false"]').waitFor();
+      await mainButton('Set up Frameleaf').click();
+      await page.getByRole('heading', { name: 'Give your library a home' }).waitFor();
+      // A new Unraid library: photos on the array, the database straight on the suggested fast pool.
+      assert.equal(await page.getByLabel('Photos and videos').inputValue(), '/mnt/user/frameleaf-photos');
+      assert.equal(await page.getByLabel('Database', { exact: true }).inputValue(), '/mnt/cache/appdata/frameleaf-databases');
+      await page.getByText('Hard drive array · 2.1 TB free').first().waitFor();
+      await page.getByText('Cache pool (NVMe SSD) · 180 GB free').first().waitFor();
+      // Picking another folder brings back the one-press way to the suggestion.
+      await page.getByLabel('Database', { exact: true }).fill('/mnt/user/appdata/frameleaf-databases');
+      await mainButton('Use Cache pool').first().click();
+      assert.equal(await page.getByLabel('Database', { exact: true }).inputValue(), '/mnt/cache/appdata/frameleaf-databases');
+      // Thumbnails stay with the photos unless chosen; the faster drive opens its folder filled with the suggestion.
+      assert.equal(await page.getByRole('radio', { name: /With your photos/ }).isChecked(), true);
+      assert.equal(await page.getByLabel('Thumbnails folder').count(), 0);
+      await page.getByText('On a faster drive', { exact: true }).click();
+      assert.equal(await page.getByLabel('Thumbnails folder').inputValue(), '/mnt/cache/appdata/frameleaf-thumbnails');
+      await screenshot('storage-step');
+      // The checks warn about hard drives only because a faster drive is there, and fix it in one press.
+      await page.getByLabel('Database', { exact: true }).fill('/mnt/user/appdata/frameleaf-databases');
+      await mainButton('Check this server').click();
+      await page.getByRole('heading', { name: 'The database is on hard drives' }).waitFor();
+      assert.equal(requests.findLast((r) => r.path === 'review').body.thumbnailsPath, '/mnt/cache/appdata/frameleaf-thumbnails');
+      await mainButton('Use Cache pool').click();
+      await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+      assert.equal(await page.getByRole('heading', { name: 'The database is on hard drives' }).count(), 0);
+      assert.equal(requests.findLast((r) => r.path === 'review').body.databaseRoot, '/mnt/cache/appdata/frameleaf-databases');
+      await page.locator('.check-fine li', { hasText: 'Thumbnails' }).getByText('Cache pool (NVMe SSD) · 180 GB free').waitFor();
+      await mainButton('Review installation').click();
+      await page.locator('.list-row', { hasText: 'Thumbnails' }).getByText('/mnt/cache/appdata/frameleaf-thumbnails').waitFor();
+    } finally {
+      Object.assign(dashboard, saved);
+      driveReport = storageChecks = null;
+    }
   });
   assert.deepEqual(errors, []);
   console.log('All Manager browser checks passed.');

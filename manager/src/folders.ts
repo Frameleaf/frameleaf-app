@@ -118,6 +118,35 @@ export async function ensureManagerFolder(path: string): Promise<void> {
   });
 }
 
+/** Filesystems whose files live on another machine. */
+const NETWORK_FILESYSTEMS = /^(?:nfs4?|cifs|smb3?|smbfs|9p|afs|ceph|glusterfs|fuse\.(?:sshfs|rclone|glusterfs|s3fs))$/;
+/**
+ * FL-1321: whether `path` is on a network share, from the mount table Manager sees (`mountinfo` text). Unraid's
+ * Unassigned Devices mounts remote shares under /mnt/remotes. Thumbnails and the database need a drive inside this
+ * server: a share that drops out takes the timeline with it.
+ */
+export function onNetworkShare(path: string, mountinfo: string): boolean {
+  if (unraid() && within(path, '/mnt/remotes')) return true;
+  const mount = filesystemMounts(mountinfo)
+    .filter((m) => within(path, m.target))
+    .sort((a, b) => b.target.length - a.target.length)[0];
+  return !!mount && NETWORK_FILESYSTEMS.test(mount.type);
+}
+
+/**
+ * FL-1321: the folders a new library starts with. On Unraid, photos go on the array rather than in appdata; the
+ * database starts in appdata until setup learns of a faster drive (`fastDatabase`). Elsewhere everything starts
+ * next to Manager's own folder, as before.
+ */
+export function newLibraryFolders(base: string, platform: string) {
+  const unraidArray = platform === 'unraid';
+  return {
+    media: unraidArray ? '/mnt/user/frameleaf-photos' : join(base, 'frameleaf-media'),
+    database: join(base, 'frameleaf-databases'),
+    fastDatabase: unraidArray,
+  };
+}
+
 /** Photos, database, backups and Manager's own settings must not share a folder. */
 export function assertSeparateFolders(paths: string[]): void {
   paths.forEach((path, i) => {

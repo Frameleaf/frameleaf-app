@@ -8,7 +8,8 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
-import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder } from './folders.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, onNetworkShare } from './folders.js';
+import { databaseDriveFinding, driveOf, type DriveReport } from './drives.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
 import { capturePhotoAppSource, restoreDatabaseUrl, type PhotoAppCapture } from './photo-app-capture.js';
@@ -62,6 +63,8 @@ export const ReviewInput = z
     /** Only where folders are chosen in Manager (a new Unraid install). */
     backupPath: z.string().min(1).max(4096).optional(),
     databaseRoot: z.string().min(1).max(4096),
+    /** FL-1321: thumbnails on a faster drive, in a folder of their own. Left out, they stay with the photos. New libraries only. */
+    thumbnailsPath: z.string().min(1).max(4096).optional(),
     port: z.number().int().min(1024).max(65535),
     ml: z.boolean(),
     lifecycle: z.literal('docker-only'),
@@ -238,6 +241,8 @@ export class Operations {
   private executing = new Set<string>();
   /** How often an update's start polls Docker for the new server's health. Docker keeps its last five probes. */
   serverWatchMs = 5000;
+  /** FL-1321: the drives under Manager's folders and the fast drive it suggests; unset where Manager can't tell. */
+  driveReport?: () => Promise<DriveReport>;
   constructor(
     readonly store: Store,
     readonly docker: Docker,
@@ -795,6 +800,8 @@ export class Operations {
    */
   async review(input: z.infer<typeof ReviewInput>, managerPort?: number, common?: CommonImportReview) {
     if (this.installation()) throw new Refusal('installation_already_exists');
+    // FL-1321: an import keeps its thumbnails where its library has them; the Storage page moves them later.
+    if (input.thumbnailsPath && (input.kind !== 'install' || common)) throw new Refusal('thumbnail_folder_unavailable');
     let source: Source | null = null,
       backup: Backup | null = null;
     if (common) {
@@ -894,8 +901,15 @@ export class Operations {
     const broad = broadRoots(this.roots);
     const backups = input.backupPath ?? process.env.MANAGER_BACKUP_ROOT!;
     // Each folder by its role: the same path chosen for two roles is still refused.
-    const chosen = Object.entries({ media: input.mediaPath, database: input.databaseRoot, backups, state: this.store.directory })
-      .filter((entry): entry is [string, string] => !!entry[1]);
+    const chosen = Object.entries({
+      media: input.mediaPath,
+      database: input.databaseRoot,
+      thumbnails: input.thumbnailsPath,
+      backups,
+      state: this.store.directory,
+    }).filter((entry): entry is [string, string] => !!entry[1]);
+    // FL-1321: what the review says about drives. Detection is a hint: without it the checks stay as they were.
+    const report = phase === 'review' && this.driveReport ? await this.driveReport().catch(() => undefined) : undefined;
     const databaseBytes = (source?.summary.databaseBytes ?? 1024 ** 3) * 3;
     // A folder chosen in setup must be its own, and exist (the review creates it, empty).
     const chosenFolder = async (role: string, path: string) => {
@@ -920,8 +934,29 @@ export class Operations {
     const databaseStorage = await checks.run('database', async () => {
       await chosenFolder('database', input.databaseRoot);
       const value = await this.databaseStorage.validate(input.databaseRoot, databaseBytes);
-      return { value, outcome: { facts: { path: input.databaseRoot, free: await freeBytes(input.databaseRoot) } } };
+      const facts: CheckFacts = { path: input.databaseRoot, free: await freeBytes(input.databaseRoot) };
+      const finding = report && databaseDriveFinding(input.databaseRoot, report);
+      if (finding?.drive) facts.drive = finding.drive;
+      // FL-1321: hard drives work; say so only when a faster drive with room is actually there, with its folder.
+      if (finding?.warning) return { value, outcome: { status: 'warning', code: 'database_on_hard_drives', facts: { ...facts, ...finding.warning } } };
+      return { value, outcome: { facts } };
     });
+    // FL-1321: a new library's thumbnails, with the photos or in a folder of their own on a faster drive.
+    if (input.kind === 'install' && !source && !common)
+      await checks.run('thumbnails', async () => {
+        const path = input.thumbnailsPath;
+        if (!path) return { outcome: { facts: { withPhotos: true } as CheckFacts } };
+        // Only where folders are chosen in Manager: elsewhere there is no folder to bind but the photos one.
+        if (!broad) throw new Refusal('thumbnail_folder_unavailable');
+        if (onNetworkShare(path, await readFile('/proc/self/mountinfo', 'utf8').catch(() => '')))
+          throw new Refusal('thumbnails_on_network_share', 409, path);
+        await chosenFolder('thumbnails', path);
+        // At install start the folder the review created must still be there: its drive may have gone.
+        if (!(await folderExists(path))) throw new Refusal('thumbnail_folder_missing', 409, path);
+        const at = await storagePath(path, this.roots, 1024 ** 3);
+        const drive = report && driveOf(path, report.drives);
+        return { outcome: { facts: { path: at, free: await freeBytes(at), ...(drive && { drive: drive.label }) } as CheckFacts } };
+      });
     await checks.run('backups', async () => {
       await chosenFolder('backups', backups);
       return { outcome: { facts: { path: backups, free: await freeBytes(backups) } } };
@@ -946,7 +981,7 @@ export class Operations {
       await checks.run('containers', async () => {
         // The same conflict check the stack generator runs, against the mounts this installation will have.
         checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {}, this.mountRoots());
-        this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot], input.backupPath);
+        this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot, input.thumbnailsPath ?? ''], input.backupPath);
       });
     return Object.assign(checks, { compatibility, databaseStorage });
   }
@@ -1226,9 +1261,13 @@ export class Operations {
           port: review.input.port,
           ml: review.input.ml,
           origin: sourceFence ? 'new_import' : 'new_library',
-          mounts: review.source?.mounts ?? [
-            { type: 'bind', source: review.input.mediaPath!, target: '/data', readOnly: false },
-          ],
+          // FL-1321: thumbnails chosen on a faster drive are the library's second mount (FL-1320's model).
+          mounts:
+            review.source?.mounts ??
+            withThumbnails(
+              [{ type: 'bind', source: review.input.mediaPath!, target: '/data', readOnly: false }],
+              review.input.thumbnailsPath ?? null,
+            ),
           sourceId: sourceFence?.id ?? null,
           mayHaveWrittenMedia: false,
           databaseRoot: review.input.databaseRoot,
@@ -1249,6 +1288,9 @@ export class Operations {
       });
       await mkdir(this.directory(), { recursive: true, mode: 0o700 });
       await this.managerToken();
+      // A thumbnail folder Manager chose and checked carries the server's folder marker from the start (FL-1320).
+      const thumbnails = thumbnailMount(result.mounts);
+      if (thumbnails && !review.source) await seedThumbnailMarker(thumbnails.source);
       await renderCompose(review.release, result, password, this.directory(), this.application());
       return result;
     });
