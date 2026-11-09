@@ -9743,7 +9743,7 @@
   "frameleaf_large_files_trash_off": "Trash is turned off, so items cannot be moved to it from here.",
   "frameleaf_large_files_undo": "Undo",
   "frameleaf_large_files_undone": "Last change undone.",
-  "frameleaf_layout_advanced": "Advanced: custom pattern and file checks",
+  "frameleaf_layout_advanced": "Advanced: custom pattern",
   "frameleaf_layout_custom": "Custom…",
   "frameleaf_layout_custom_hint": "Write your own pattern under Advanced.",
   "frameleaf_layout_day": "By year, then day",
