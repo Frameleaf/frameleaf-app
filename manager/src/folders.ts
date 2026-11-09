@@ -11,7 +11,9 @@ import { filesystemMounts } from './postgres-storage.js';
  * their saved template and explicit roots, so none of this applies to them.
  */
 const MNT = '/mnt';
+/** The entries of a colon-separated folder list, without empty ones. */
 const split = (value: string) => value.split(':').filter(Boolean);
+/** The broad folders Manager was given, in order: /mnt unless the launcher named its own. */
 export const broadRootList = () => split(process.env.MANAGER_FOLDER_ROOT || MNT);
 /** Whether `roots` (single entries or colon-separated lists) are exactly the broad folders, so folders are chosen in Manager. */
 export const broadRoots = (roots: string[]) => {
