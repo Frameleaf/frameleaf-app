@@ -1672,7 +1672,7 @@ export class Operations {
    * Host folders an advanced container setting may bind-mount: Manager's media and database roots (mapped
    * into Manager at identical paths) plus MANAGER_MOUNT_ROOTS, the administrator's explicit allow-list.
    */
-  /** On a new Unraid install: check the folders chosen in setup and create them. Nothing is adopted until the install starts. */
+  /** On a new install with a broad folder: check the folders chosen in setup and create them. Nothing is adopted until the install starts. */
   private async prepareChosenFolders(input: z.infer<typeof ReviewInput>): Promise<void> {
     if (!broadRoots(this.roots)) return;
     const backups = input.backupPath ?? process.env.MANAGER_BACKUP_ROOT!;

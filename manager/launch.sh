@@ -1,16 +1,34 @@
 #!/bin/sh
-# Usage: sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest HOST_STATE_FOLDER HOST_MEDIA_FOLDER HOST_BACKUP_FOLDER MANAGER_ORIGIN [APPDATA_FOLDER|auto] [LAN_ADDRESS]
-# Another installation on the same host: run again with MANAGER_NAME, MANAGER_PORT and its own state, media and backup folders.
+# Usage: sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest MANAGER_ORIGIN [FOLDER_ROOT] [LAN_ADDRESS]
+#   Folders are chosen and created in Manager, inside FOLDER_ROOT (default /srv/frameleaf).
+# Or name each folder yourself:
+#   sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest HOST_STATE_FOLDER HOST_MEDIA_FOLDER HOST_BACKUP_FOLDER MANAGER_ORIGIN [APPDATA_FOLDER|auto] [LAN_ADDRESS]
+# Another installation on the same host: run again with MANAGER_NAME, MANAGER_PORT and its own FOLDER_ROOT, or its own state, media and backup folders.
 set -eu
 umask 077
-test "$#" -ge 5 || { echo 'Expected Manager image, state folder, media folder, backup folder and HTTP or HTTPS origin' >&2; exit 2; }
-image=$1 state=$2 media=$3 backups=$4 origin=$5 appdata=${6:-auto} bind=${7:-127.0.0.1}
+test "$#" -ge 2 || { echo 'Expected Manager image and HTTP or HTTPS origin' >&2; exit 2; }
+root=
+if test "$#" -le 4; then
+  image=$1 origin=$2 root=${3:-/srv/frameleaf} bind=${4:-127.0.0.1}
+  root=${root%/}
+  case "$origin" in http://*|https://*) ;; *) echo 'Expected Manager image and HTTP or HTTPS origin, then optionally a parent folder and LAN address' >&2; exit 2;; esac
+  # Two levels, so a chosen folder inside it is never directly under /.
+  case "$root" in /[!/]*/[!/]*) ;; *) echo 'Use an absolute folder at least two levels deep, such as /srv/frameleaf' >&2; exit 2;; esac
+  # The checks below treat it as every location: Manager puts each chosen folder inside it.
+  state=$root/manager media=$root backups=$root appdata=$root
+else
+  image=$1 state=$2 media=$3 backups=$4 origin=$5 appdata=${6:-auto} bind=${7:-127.0.0.1}
+fi
 name=${MANAGER_NAME:-frameleaf-manager} port=${MANAGER_PORT:-2282}
 printf '%s' "$name" | LC_ALL=C grep -Eqx '[a-zA-Z0-9][a-zA-Z0-9_.-]*' || { echo 'MANAGER_NAME must be a valid container name' >&2; exit 2; }
 case "$port" in ''|*[!0-9]*) echo 'MANAGER_PORT must be a port number' >&2; exit 2;; esac
 test "$port" -ge 1 && test "$port" -le 65535 || { echo 'MANAGER_PORT must be a port number' >&2; exit 2; }
 platform=linux
 if test -f /boot/config/docker.cfg; then platform=unraid; fi
+if test -n "$root"; then
+  test "$platform" != unraid || { echo 'On Unraid, install from the Community Applications template' >&2; exit 2; }
+  mkdir -p "$state"
+fi
 if test "$appdata" = auto; then
   appdata=${DOCKER_APP_CONFIG_PATH:-}
   if test -z "$appdata" && test "$platform" = unraid; then
@@ -82,18 +100,23 @@ if test "$platform" = unraid; then
       --env MANAGER_UNRAID_AUTOSTART=/run/frameleaf-host/unraid-autostart
   fi
 fi
+if test -n "$root"; then
+  # ponytail: no propagation, so a drive mounted inside FOLDER_ROOT later needs a Manager restart. rslave would refuse hosts with private mounts.
+  set -- "$@" --mount "type=bind,source=$root,target=$root" --env "MANAGER_FOLDER_ROOT=$root"
+else
+  set -- "$@" --mount "type=bind,source=$state,target=$state" \
+    --mount "type=bind,source=$media,target=$media" \
+    --mount "type=bind,source=$backups,target=$backups" \
+    --mount "type=bind,source=$appdata,target=$appdata" \
+    --env "MANAGER_STORAGE_ROOTS=$media" --env "MANAGER_APPDATA_ROOT=$appdata" --env "MANAGER_DATABASE_ROOTS=$appdata" \
+    --env "DOCKER_APP_CONFIG_PATH=${DOCKER_APP_CONFIG_PATH:-}" --env "MANAGER_BACKUP_ROOT=$backups"
+fi
 docker run --detach --name "$name" --restart unless-stopped \
   --label app.frameleaf.manager.role=controller \
   --security-opt no-new-privileges --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
   --publish "$bind:$port:9443" \
   --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
   --mount type=bind,source=/proc/1/mountinfo,target=/run/frameleaf-host/mountinfo,readonly \
-  --mount "type=bind,source=$state,target=$state" \
-  --mount "type=bind,source=$media,target=$media" \
-  --mount "type=bind,source=$backups,target=$backups" \
-  --mount "type=bind,source=$appdata,target=$appdata" \
-  --env "MANAGER_DATA=$state" --env "MANAGER_STORAGE_ROOTS=$media" \
-  --env "MANAGER_APPDATA_ROOT=$appdata" --env "MANAGER_DATABASE_ROOTS=$appdata" --env "MANAGER_PLATFORM=$platform" \
-  --env "DOCKER_APP_CONFIG_PATH=${DOCKER_APP_CONFIG_PATH:-}" \
-  --env "MANAGER_BACKUP_ROOT=$backups" --env "MANAGER_ORIGIN=$origin" --env "MANAGER_BIND_ADDRESS=$bind" "$@" "$image"
+  --env "MANAGER_DATA=$state" --env "MANAGER_PLATFORM=$platform" \
+  --env "MANAGER_ORIGIN=$origin" --env "MANAGER_BIND_ADDRESS=$bind" "$@" "$image"
 printf 'Manager: %s\nOpen it from your home network to create the administrator.\n' "$origin"

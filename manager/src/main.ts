@@ -19,7 +19,7 @@ import { createNativeService } from './runtime/native-service.js';
 import { chmod, mkdir, readFile, realpath, rm, stat, statfs } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z, ZodError } from 'zod';
 import { Store } from './store.js';
@@ -27,7 +27,7 @@ import { DesktopGrants } from './desktop-grants.js';
 import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
 import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
-import { applyUnraidFolderDefaults, broadRoots, ensureChosenFolder, listFolders } from './folders.js';
+import { applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, listFolders } from './folders.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
@@ -48,7 +48,7 @@ import { connectionChecks, redactPaths, redactionRoots, renderReport } from './t
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
 // Docker only: these are Linux paths, and a native Windows path has a colon of its own.
 if (runtime === 'docker') {
-  applyUnraidFolderDefaults();
+  applyFolderDefaults();
   tidyLocations();
 }
 const docker = new Docker();
@@ -73,8 +73,8 @@ if (!directory || directory !== resolve(directory) || (runtime === 'native' && !
   throw new Error('MANAGER_DATA is required, and MANAGER_ORIGIN for the native runtime');
 const nativeAddress = runtime === 'native' ? nativeListener(origin!) : null;
 if (!['docker', 'native'].includes(runtime)) throw new Refusal('manager_runtime_invalid');
-// A new Unraid install maps all of /mnt, so Docker no longer creates Manager's own folder.
-if (runtime === 'docker' && broadRoots([process.env.MANAGER_STORAGE_ROOTS ?? ''])) await mkdir(directory, { recursive: true });
+// A new install maps one broad folder, so Docker no longer creates Manager's own folder.
+if (runtime === 'docker' && broadRoots([process.env.MANAGER_STORAGE_ROOTS ?? ''])) await ensureManagerFolder(directory);
 const store = new Store(directory);
 if (runtime === 'docker' && store.get('native-installation')) throw new Refusal('manager_runtime_changed');
 if (runtime === 'native') {
@@ -85,7 +85,7 @@ if (runtime === 'native') {
     : bootstrapPipe.isFIFO() || bootstrapPipe.isSocket();
   if (!privatePipe) throw new Refusal('native_bootstrap_unavailable');
 }
-// Chosen in setup on a new Unraid install; the template no longer carries it.
+// Chosen in setup on a new install; the template no longer carries it.
 if (runtime === 'docker' && store.get<string>('backup-root')) process.env.MANAGER_BACKUP_ROOT = store.get<string>('backup-root')!;
 const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? join(directory, 'backups') : undefined);
 if (!backupRoot || backupRoot !== resolve(backupRoot))
@@ -140,12 +140,12 @@ const managerVersion = await readFile(new URL('../package.json', import.meta.url
 const currentBackupRoot = () => process.env.MANAGER_BACKUP_ROOT ?? backupRoot!;
 const storageRoots = () => (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean);
 const folderSetup = () => runtime === 'docker' && broadRoots(storageRoots());
-/** With all of /mnt mapped, the places worth reporting are the folders in use, not /mnt. */
+/** With a broad folder mapped, the places worth reporting are the folders in use, not /mnt. */
 const mediaPlaces = () =>
   folderSetup() ? (operations.installation()?.mounts ?? []).filter((m) => m.type === 'bind').map((m) => m.source) : storageRoots();
 /** What setup pre-fills and External folders must stay clear of: the real folders once installed. */
 function folderDefaults() {
-  const base = ('detectedPath' in defaults && defaults.detectedPath) || '/mnt/user/appdata';
+  const base = ('detectedPath' in defaults && defaults.detectedPath) || dirname(directory!);
   const installed = operations.installation();
   return {
     media: installed?.mounts[0]?.source ?? join(base, 'frameleaf-media'),

@@ -1,27 +1,92 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdir, mkdtemp, realpath, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { overlappingWriter } from '../src/postgres-storage.js';
-import { assertExternalFolder, assertSeparateFolders, applyUnraidFolderDefaults, broadRoots, ensureChosenFolder, realTarget } from '../src/folders.js';
+import { assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, isMounted, listFolders, realTarget } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
 
 const occupied = ['/mnt/user/appdata/frameleaf-media', '/mnt/user/appdata/frameleaf-manager'];
+// The folder rules are Unraid's unless a test says otherwise.
+process.env.MANAGER_PLATFORM = 'unraid';
+async function on(platform: string, root: string | null, run: () => unknown) {
+  process.env.MANAGER_PLATFORM = platform;
+  if (root) process.env.MANAGER_FOLDER_ROOT = root;
+  try {
+    await run();
+  } finally {
+    process.env.MANAGER_PLATFORM = 'unraid';
+    delete process.env.MANAGER_FOLDER_ROOT;
+  }
+}
 
 test('a new Unraid template gets all of /mnt; explicit roots and other platforms are left alone', () => {
   const fresh: Record<string, string> = { MANAGER_PLATFORM: 'unraid', MANAGER_DATA: '/mnt/user/appdata/frameleaf-manager' };
-  applyUnraidFolderDefaults(fresh);
+  applyFolderDefaults(fresh);
   assert.ok(broadRoots([fresh.MANAGER_STORAGE_ROOTS]));
   assert.equal(fresh.MANAGER_MOUNT_ROOTS, '/mnt');
   assert.equal(fresh.MANAGER_BACKUP_ROOT, '/mnt/user/appdata/frameleaf-backups');
   const existing = { MANAGER_PLATFORM: 'unraid', MANAGER_DATA: '/state', MANAGER_STORAGE_ROOTS: '/mnt/user/photos' };
-  applyUnraidFolderDefaults(existing);
+  applyFolderDefaults(existing);
   assert.deepEqual(existing, { MANAGER_PLATFORM: 'unraid', MANAGER_DATA: '/state', MANAGER_STORAGE_ROOTS: '/mnt/user/photos' });
-  const truenas: Record<string, string> = { MANAGER_PLATFORM: 'linux', MANAGER_DATA: '/state' };
-  applyUnraidFolderDefaults(truenas);
-  assert.equal(truenas.MANAGER_STORAGE_ROOTS, undefined);
+  const plain: Record<string, string> = { MANAGER_PLATFORM: 'linux', MANAGER_DATA: '/state' };
+  applyFolderDefaults(plain);
+  assert.equal(plain.MANAGER_STORAGE_ROOTS, undefined);
+});
+
+test('a new TrueNAS or plain Docker install gets its broad folder; one with saved roots keeps them', () => {
+  const truenas: Record<string, string> = { MANAGER_PLATFORM: 'truenas', MANAGER_DATA: '/mnt/tank/frameleaf/manager' };
+  applyFolderDefaults(truenas);
+  assert.equal(truenas.MANAGER_STORAGE_ROOTS, '/mnt');
+  assert.equal(truenas.MANAGER_DATABASE_ROOTS, '/mnt');
+  assert.equal(truenas.MANAGER_BACKUP_ROOT, '/mnt/tank/frameleaf/frameleaf-backups');
+  const plain: Record<string, string> = { MANAGER_PLATFORM: 'linux', MANAGER_FOLDER_ROOT: '/srv/frameleaf', MANAGER_DATA: '/srv/frameleaf/manager' };
+  applyFolderDefaults(plain);
+  assert.equal(plain.MANAGER_STORAGE_ROOTS, '/srv/frameleaf');
+  const saved = { MANAGER_PLATFORM: 'truenas', MANAGER_DATA: '/mnt/tank/manager', MANAGER_STORAGE_ROOTS: '/mnt/tank/media' };
+  applyFolderDefaults(saved);
+  assert.deepEqual(saved, { MANAGER_PLATFORM: 'truenas', MANAGER_DATA: '/mnt/tank/manager', MANAGER_STORAGE_ROOTS: '/mnt/tank/media' });
+});
+
+test('on TrueNAS a pool is just a pool, whatever it is called, and the apps dataset is off limits', async () => {
+  await on('truenas', null, async () => {
+    assert.doesNotThrow(() => assertSeparateFolders(['/mnt/user/a', '/mnt/tank/a']));
+    assert.doesNotThrow(() => assertExternalFolder('/mnt/disks/photos', ['/mnt/tank/media']));
+    assert.throws(() => assertExternalFolder('/mnt/.ix-apps/docker/x', []), (error: Refusal) => error.code === 'invalid_storage_path');
+    await assert.rejects(ensureChosenFolder('/mnt/tank'), (error: Refusal) => error.code === 'invalid_storage_path');
+    await assert.rejects(ensureChosenFolder('/mnt/no-such-pool/media'), (error: Refusal) => error.code === 'storage_volume_missing');
+  });
+});
+
+test('a folder left where a pool used to be is not a mounted pool', () => {
+  const mountinfo = '36 1 0:30 / /mnt/tank rw,relatime shared:1 - zfs tank rw\n37 36 0:31 / /mnt/tank/media rw,relatime shared:2 - zfs tank/media rw';
+  assert.ok(isMounted('/mnt/tank', mountinfo));
+  assert.ok(!isMounted('/mnt/exported', mountinfo));
+  assert.ok(!isMounted('/mnt/tank', ''));
+});
+
+test('Manager will not create its own folder on a pool that is not there', async () => {
+  await on('truenas', null, () => assert.rejects(ensureManagerFolder('/mnt/POOL_NAME/frameleaf/manager'), /MANAGER_DATA is \/mnt\/POOL_NAME/));
+});
+
+test('on plain Docker, folders are created and browsed inside the folder given to the launcher', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'folder-root-')));
+  await on('linux', root, async () => {
+    assert.ok(broadRoots([root]));
+    assert.ok(!broadRoots(['/mnt']));
+    await ensureManagerFolder(join(root, 'manager'));
+    await ensureChosenFolder(join(root, 'media', 'new'));
+    assert.ok((await stat(join(root, 'media', 'new'))).isDirectory());
+    await assert.rejects(ensureChosenFolder('/mnt/user/photos'), (error: Refusal) => error.code === 'invalid_storage_path');
+    assert.throws(() => assertExternalFolder(join(root, '.hidden'), []), (error: Refusal) => error.code === 'invalid_storage_path');
+    // The picker still opens at /mnt in the browser; that lands on the folder Manager was given.
+    const listing = await listFolders('/mnt');
+    assert.equal(listing.path, root);
+    assert.equal(listing.parent, null);
+    assert.deepEqual(listing.folders.map((f) => f.name), ['manager', 'media']);
+  });
 });
 
 test('an external folder is never all of /mnt or Frameleaf data, on the server and in the browser', () => {

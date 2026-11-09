@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 const { load } = require('js-yaml');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const { buildManager } = require('./build-manager.cjs');
 const { TYPE, IMAGE } = require('../../.github/verify-manager-release.cjs');
 
@@ -105,8 +105,12 @@ for template in templates:
     assert.equal(compose.services.manager.privileged, undefined);
     assert.deepEqual(compose.services.manager.cap_add, ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']);
     assert.equal(compose.services.manager.environment.MANAGER_BIND_ADDRESS, '0.0.0.0');
-    for (const bind of compose.services.manager.volumes.filter(bind => bind.source.startsWith('/mnt/')))
-      assert.equal(bind.source, bind.target);
+    // One value to edit: Manager finds the pools through /mnt and creates the folders chosen in setup.
+    assert.deepEqual(Object.keys(compose.services.manager.environment).sort(), ['MANAGER_BIND_ADDRESS', 'MANAGER_DATA', 'MANAGER_PLATFORM']);
+    assert.equal(compose.services.manager.environment.MANAGER_PLATFORM, 'truenas');
+    assert.equal(compose.services.manager.environment.MANAGER_DATA, '/mnt/POOL_NAME/frameleaf/manager');
+    assert.deepEqual(compose.services.manager.volumes.filter(bind => bind.source.startsWith('/mnt')),
+      [{ type: 'bind', source: '/mnt', target: '/mnt', bind: { propagation: 'rslave', create_host_path: false } }]);
     assert(!compose.services.manager.volumes.some(bind => bind.target.startsWith('/var/lib/postgresql')));
     const hexos = JSON.parse(await fs.readFile(path.join(output, 'hexos/frameleaf-manager.hexos.json'), 'utf8'));
     assert.equal(hexos.custom, true);
@@ -175,5 +179,44 @@ for template in templates:
     const refused = path.join(directory, 'unsigned');
     await assert.rejects(buildManager(file, refused, { run: () => { throw new Error('unsigned'); }, request }), /unsigned/);
     await assert.rejects(fs.stat(refused), { code: 'ENOENT' });
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test('launch.sh short form maps one folder; the long form still names each one', async () => {
+  const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'manager-launch-')));
+  try {
+    const bin = path.join(directory, 'bin'), log = path.join(directory, 'run'), dockerRoot = path.join(directory, 'docker');
+    await fs.mkdir(bin); await fs.mkdir(dockerRoot);
+    for (const [name, script] of [
+      ['docker', `case "$1" in info) echo "${dockerRoot}";; image) echo "${IMAGE}@sha256:abc";; run) printf '%s\\n' "$@" > "${log}";; esac`],
+      ['findmnt', 'case "$*" in *FSTYPE*) echo ext4;; *) echo /dev/sda1;; esac'],
+      ['cosign', 'exit 0'],
+    ]) await fs.writeFile(path.join(bin, name), `#!/bin/sh\n${script}\n`, { mode: 0o700 });
+    const launch = args => spawnSync('sh', [path.join(__dirname, '../../manager/launch.sh'), `${IMAGE}:latest`, ...args],
+      { env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: 'utf8' });
+
+    const root = path.join(directory, 'library', 'frameleaf');
+    assert.equal(launch(['https://nas.local:2282', root]).status, 0);
+    let run = (await fs.readFile(log, 'utf8')).split('\n');
+    assert((await fs.stat(path.join(root, 'manager'))).isDirectory());
+    for (const arg of [`type=bind,source=${root},target=${root}`, `MANAGER_FOLDER_ROOT=${root}`, `MANAGER_DATA=${root}/manager`, 'MANAGER_ORIGIN=https://nas.local:2282'])
+      assert(run.includes(arg), arg);
+    assert(!run.some(arg => arg.startsWith('MANAGER_STORAGE_ROOTS=')));
+
+    const folders = ['state', 'media', 'backups', 'appdata'].map(name => path.join(directory, name));
+    await Promise.all(folders.map(folder => fs.mkdir(folder)));
+    assert.equal(launch([...folders.slice(0, 3), 'https://nas.local:2282', folders[3]]).status, 0);
+    run = (await fs.readFile(log, 'utf8')).split('\n');
+    assert(run.includes(`MANAGER_STORAGE_ROOTS=${folders[1]}`));
+    assert(run.includes(`MANAGER_BACKUP_ROOT=${folders[2]}`));
+    assert(!run.some(arg => arg.startsWith('MANAGER_FOLDER_ROOT=')));
+
+    assert.equal(launch(['/not/an/origin', root]).status, 2);
+    assert.equal(launch(['https://nas.local:2282', '/frameleaf']).status, 2);
+    assert.equal(launch(['https://nas.local:2282', '/frameleaf/']).status, 2);
+    assert.equal(launch(['https://nas.local:2282', '//frameleaf']).status, 2);
+    assert.equal(launch(['https://nas.local:2282', `${root}/`]).status, 0);
+    run = (await fs.readFile(log, 'utf8')).split('\n');
+    assert(run.includes(`MANAGER_FOLDER_ROOT=${root}`) && run.includes(`MANAGER_DATA=${root}/manager`));
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
