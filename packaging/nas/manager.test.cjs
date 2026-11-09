@@ -213,5 +213,10 @@ test('launch.sh short form maps one folder; the long form still names each one',
 
     assert.equal(launch(['/not/an/origin', root]).status, 2);
     assert.equal(launch(['https://nas.local:2282', '/frameleaf']).status, 2);
+    assert.equal(launch(['https://nas.local:2282', '/frameleaf/']).status, 2);
+    assert.equal(launch(['https://nas.local:2282', '//frameleaf']).status, 2);
+    assert.equal(launch(['https://nas.local:2282', `${root}/`]).status, 0);
+    run = (await fs.readFile(log, 'utf8')).split('\n');
+    assert(run.includes(`MANAGER_FOLDER_ROOT=${root}`) && run.includes(`MANAGER_DATA=${root}/manager`));
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });

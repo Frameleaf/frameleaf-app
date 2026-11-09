@@ -10,9 +10,10 @@ test "$#" -ge 2 || { echo 'Expected Manager image and HTTP or HTTPS origin' >&2;
 root=
 if test "$#" -le 4; then
   image=$1 origin=$2 root=${3:-/srv/frameleaf} bind=${4:-127.0.0.1}
+  root=${root%/}
   case "$origin" in http://*|https://*) ;; *) echo 'Expected Manager image and HTTP or HTTPS origin, then optionally a parent folder and LAN address' >&2; exit 2;; esac
   # Two levels, so a chosen folder inside it is never directly under /.
-  case "$root" in /*/*) ;; *) echo 'Use an absolute folder at least two levels deep, such as /srv/frameleaf' >&2; exit 2;; esac
+  case "$root" in /[!/]*/[!/]*) ;; *) echo 'Use an absolute folder at least two levels deep, such as /srv/frameleaf' >&2; exit 2;; esac
   # The checks below treat it as every location: Manager puts each chosen folder inside it.
   state=$root/manager media=$root backups=$root appdata=$root
 else
