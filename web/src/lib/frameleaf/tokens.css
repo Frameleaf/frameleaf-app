@@ -34,6 +34,8 @@
   --fl-border-strong: #687682;
   --fl-canvas: #101416;
   --fl-muted: #a2adb5;
+  /* The dropdown chevron (base.css), drawn in the muted colour: a data URI can't use currentColor. */
+  --fl-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a2adb5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --fl-panel: #171d21;
   --fl-raised: #21282d;
   --fl-text: #e8ecee;
@@ -89,6 +91,8 @@
   --fl-border-strong: #64727d;
   --fl-canvas: #f3f5f6;
   --fl-muted: #4c5b65;
+  /* The dropdown chevron (base.css), drawn in the muted colour: a data URI can't use currentColor. */
+  --fl-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234c5b65' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --fl-panel: #ffffff;
   --fl-raised: #eef1f3;
   --fl-text: #142026;

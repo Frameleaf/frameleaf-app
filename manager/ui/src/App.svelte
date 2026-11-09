@@ -91,7 +91,8 @@
     snapshot = $state(''),
     restoreReview = $state<any>(null),
     /** FL-1320: why the thumbnails folder can't be used, offered as a fallback to the photos folder. */
-    restoreThumbnailFallback = $state(false),
+    // The recovery point whose missing thumbnails folder the administrator chose to replace with the photos folder.
+    restoreThumbnailFallback = $state(''),
     updateReview = $state<any>(null);
   let firstName = $state(''),
     lastName = $state(''),
@@ -671,7 +672,7 @@
       browsing = action.folder;
       return;
     }
-    if (action.kind === 'thumbnails') restoreThumbnailFallback = true;
+    if (action.kind === 'thumbnails') restoreThumbnailFallback = snapshot;
     else if (action.kind === 'suggest') databaseRoot = action.path;
     else if (action.kind === 'port') port = action.port;
     else if (action.kind === 'ml') ml = false;
@@ -754,7 +755,7 @@
     step = 0;
     restoreAccepted = false;
     restoreReview = null;
-    restoreThumbnailFallback = false;
+    restoreThumbnailFallback = '';
     await loadBackups();
     await go('restore');
   }
@@ -769,7 +770,7 @@
   }
   async function prepareRestore() {
     // FL-1320: with the thumbnails drive gone, the administrator may keep thumbnails in the photos folder (a check fix).
-    restoreReview = await api('review-restore', { snapshot, databaseRoot, ...(restoreThumbnailFallback ? { thumbnailFallback: true } : {}) });
+    restoreReview = await api('review-restore', { snapshot, databaseRoot, ...(restoreThumbnailFallback && restoreThumbnailFallback === snapshot ? { thumbnailFallback: true } : {}) });
   }
   async function showModal(value: string, action = '') {
     modal = value;

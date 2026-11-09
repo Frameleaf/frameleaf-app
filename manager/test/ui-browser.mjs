@@ -135,6 +135,7 @@ const okChecks = (restore = false) => [
   { id: 'release', status: 'ok', facts: { tag: 'frameleaf-v3.2.1-1' } },
 ];
 const snapshot = { id: 'd'.repeat(64), time: '2026-10-07T02:00:00Z' };
+let snapshots = [snapshot];
 const containerSettings = {
   'frameleaf-server': { environment: { TZ: 'America/Toronto' }, mounts: [{ source: '/fixture/archive', target: '/old-archive', readOnly: true }], memory: '4g' },
 };
@@ -197,7 +198,7 @@ await page.route('**/manager-api/**', async (route) => {
       { path: '/fixture/media', totalBytes: 4 * 1024 ** 4, freeBytes: 3 * 1024 ** 4, availableBytes: 3 * 1024 ** 4 },
     ];
   else if (path === 'backup-status')
-    value = { configured: true, unlocked: true, keyAvailable: true, snapshots: [snapshot] };
+    value = { configured: true, unlocked: true, keyAvailable: true, snapshots };
   else if (path === 'releases')
     value = [
       {
@@ -515,6 +516,25 @@ try {
     assert.equal(requests.findLast((r) => r.path === 'review-restore').body.thumbnailFallback, true);
     await mainButton('Review restore').click();
     await page.getByText('Thumbnails go back in the photos folder', { exact: true }).waitFor();
+    // Another recovery point's missing thumbnails folder is checked again, never kept with the photos unasked.
+    snapshots = [snapshot, { id: 'e'.repeat(64), time: '2026-10-06T02:00:00Z' }];
+    await nav('Backups');
+    await mainButton('Restore').first().click();
+    await mainButton('Choose a recovery point').click();
+    await page.getByRole('radio').last().check();
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: 'The thumbnails drive isn’t connected' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review-restore').body.thumbnailFallback, undefined);
+    await mainButton('Keep thumbnails with your photos').click();
+    await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    await mainButton('Back').click();
+    await page.getByRole('radio').first().check();
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: 'The thumbnails drive isn’t connected' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review-restore').body.thumbnailFallback, undefined);
+    snapshots = [snapshot];
+    await mainButton('Keep thumbnails with your photos').click();
+    await mainButton('Review restore').click();
     assert.equal(await mainButton('Restore database').isDisabled(), true);
     await page.getByRole('checkbox').check();
     assert.equal(await mainButton('Restore database').isEnabled(), true);

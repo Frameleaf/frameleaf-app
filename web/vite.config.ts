@@ -104,10 +104,21 @@ export default defineConfig({
     target: 'es2022',
   },
   resolve: {
+    // SvelteKit 3 deprecated its own `alias` option (and dropped the built-in `$lib`), so the
+    // import aliases live here; tsconfig.json `paths` mirrors them for type checking.
     alias: {
       'xmlhttprequest-ssl': './node_modules/engine.io-client/lib/xmlhttprequest.js',
-      // eslint-disable-next-line unicorn/prefer-module
-      '@test-data': path.resolve(import.meta.dirname, './src/test-data'),
+      $lib: path.resolve(import.meta.dirname, 'src/lib'),
+      $tests: path.resolve(import.meta.dirname, 'tests'),
+      '@test-data': path.resolve(import.meta.dirname, 'src/test-data'),
+      $i18n: path.resolve(import.meta.dirname, '../i18n'),
+      // Third-party acknowledgements and the licence texts that ship with the product (FL-86).
+      $licenses: path.resolve(import.meta.dirname, '../licenses'),
+      $studioNotices: path.resolve(import.meta.dirname, '../studio/notices'),
+      'chromecast-caf-sender': path.resolve(
+        import.meta.dirname,
+        'node_modules/@types/chromecast-caf-sender/index.d.ts',
+      ),
       // '@frameleaf/ui': path.resolve(import.meta.dirname, '../../ui/packages/ui'),
     },
   },
@@ -136,18 +147,6 @@ export default defineConfig({
         fallback: 'index.html',
         precompress: true,
       }),
-      alias: {
-        $lib: 'src/lib',
-        '$lib/*': 'src/lib/*',
-        $tests: 'src/../tests',
-        '$tests/*': 'src/../tests/*',
-        '@test-data': 'src/test-data',
-        $i18n: '../i18n',
-        // Third-party acknowledgements and the licence texts that ship with the product (FL-86).
-        $licenses: '../licenses',
-        $studioNotices: '../studio/notices',
-        'chromecast-caf-sender': './node_modules/@types/chromecast-caf-sender/index.d.ts',
-      },
       onwarn: (warning, handler) => {
         if (warning.code === 'state_referenced_locally') {
           return;
