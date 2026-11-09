@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import { AssetStatus, AssetVisibility, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository.js';
@@ -819,7 +820,7 @@ describe(MediaHealthRepository.name, () => {
   });
 
   describe('fix writes (FL-1337)', () => {
-    it("claims an owner's findings waiting for the shared search once, and a stopped search's again", async () => {
+    it("claims an owner's waiting findings for one search, which a retry and a stopped search's successor claim again", async () => {
       const { ctx, sut } = setup();
       const [{ user }, { user: other }] = await Promise.all([ctx.newUser(), ctx.newUser()]);
       const waitingFor = async (ownerId: string, searchPending: unknown, settled = false) => {
@@ -832,24 +833,63 @@ describe(MediaHealthRepository.name, () => {
         assert.isDefined(finding);
         return finding.id;
       };
+      // live searches: one is the step that started it (its id), the other carries on (its `searchId`)
+      const search = randomUUID();
+      const live = randomUUID();
+      const liveJob = randomUUID();
+      const step = (id: string, data: Record<string, unknown>) =>
+        sql`INSERT INTO job (id, queue, name, data, "safeToRetry", "deadlineMs")
+          VALUES (${id}::uuid, 'media_health', 'MediaHealthLocateMissing', ${JSON.stringify(data)}::text::jsonb, true, 60000)`.execute(
+          defaultDatabase,
+        );
+      await sql`INSERT INTO job_queue (name) VALUES ('media_health') ON CONFLICT DO NOTHING`.execute(defaultDatabase);
+      await step(search, { userId: user.id, pending: true });
+      await step(liveJob, { userId: user.id, pending: true, searchId: live, ids: [] });
       const waiting = await waitingFor(user.id, true);
-      const walking = await waitingFor(user.id, new Date().toISOString());
-      const stopped = await waitingFor(user.id, '2026-01-01T00:00:00.000Z');
+      const walking = await waitingFor(user.id, { search: live });
+      const stopped = await waitingFor(user.id, { search: randomUUID() });
       await waitingFor(user.id, false);
       await waitingFor(user.id, true, true);
       await waitingFor(other.id, true);
 
-      const staleBefore = new Date(Date.now() - 6 * 60 * 60_000);
-      await expect(sut.claimSearchPending(user.id, staleBefore).then((ids) => ids.sort())).resolves.toEqual(
-        [waiting, stopped].sort(),
-      );
-      // claimed with the time: a search asked for meanwhile leaves them to this one
-      const [claimed] = await sut.getByIds([waiting]);
-      expect(Date.parse(claimed.evidence.searchPending as string)).toBeGreaterThan(staleBefore.getTime());
-      expect(claimed.evidence).toMatchObject({ reason: 'stat failed' });
-      await expect(sut.claimSearchPending(user.id, staleBefore)).resolves.toEqual([]);
-      await expect(sut.getByIds([walking])).resolves.toEqual([
-        expect.objectContaining({ evidence: expect.objectContaining({ searchPending: expect.any(String) }) }),
+      try {
+        await expect(sut.claimSearchPending(user.id, search).then((ids) => ids.sort())).resolves.toEqual(
+          [waiting, stopped].sort(),
+        );
+        const [claimed] = await sut.getByIds([waiting]);
+        expect(claimed.evidence).toEqual({ reason: 'stat failed', searchPending: { search } });
+        // a search asked for meanwhile leaves them to this one, and to the live one its own
+        await expect(sut.claimSearchPending(user.id, randomUUID())).resolves.toEqual([]);
+        await expect(sut.getByIds([walking])).resolves.toEqual([
+          expect.objectContaining({ evidence: expect.objectContaining({ searchPending: { search: live } }) }),
+        ]);
+        // a retried step claims the same findings again
+        await expect(sut.claimSearchPending(user.id, search).then((ids) => ids.sort())).resolves.toEqual(
+          [waiting, stopped].sort(),
+        );
+        // once no step of the live search is live (it failed or was stopped), the next search claims its findings
+        await sql`UPDATE job SET state = 'failed', "finishedAt" = now() WHERE id = ${liveJob}::uuid`.execute(
+          defaultDatabase,
+        );
+        await expect(sut.claimSearchPending(user.id, randomUUID())).resolves.toEqual([walking]);
+      } finally {
+        await sql`DELETE FROM job WHERE id IN (${search}::uuid, ${liveJob}::uuid)`.execute(defaultDatabase);
+      }
+    });
+
+    it('keeps the search a finding waits for when a check records it again', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const missing = findingDto(asset.id, asset.originalPath, null);
+      const finding = await sut.upsertFinding(missing);
+      assert.isDefined(finding);
+      await sut.settleFinding({ healthId: finding.id, evidence: { searchPending: true } });
+
+      // the nightly check, or the viewer, records the same open problem again
+      await sut.upsertFinding({ ...missing, evidence: { reason: 'source_file_missing_or_unreadable' } });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({ evidence: { reason: 'source_file_missing_or_unreadable', searchPending: true } }),
       ]);
     });
 

@@ -7,6 +7,7 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -63,6 +64,7 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -98,7 +100,6 @@ import {
   BUSY_RETRY_DELAYS_MS,
   FIX_WAIT_MS,
   MAX_DRIVE_WAITS,
-  SEARCH_CLAIM_STALE_MS,
   checkedStep,
   folderFacts,
   repairResult,
@@ -1639,7 +1640,7 @@ export class MediaHealthService {
     }
     if (job.stage !== 'backups') {
       if (!job.searched) {
-        await this.askForSearch(asset, finding, lead);
+        await this.askForSearch(job, asset, finding, lead);
         return 'done';
       }
       const search = await this.copiesFound(finding);
@@ -1698,15 +1699,16 @@ export class MediaHealthService {
    * Ask for the owner's shared search by contents (FL-1337): mark the finding as waiting for it and queue
    * the owner's one pending search, which collapses a burst of fixes into one walk of storage and feeds
    * each of them again when it is complete. Nothing is recorded about the search until then. A finding a
-   * walk is already searching is left to that walk.
+   * search already claimed is left to it (the search asked for here claims it again if that one stopped);
+   * a person's Try again always asks afresh.
    */
-  private async askForSearch(asset: MediaHealthAsset, finding: MediaHealthFinding, lead: FindingStep[]) {
+  private async askForSearch(job: FixJob, asset: MediaHealthAsset, finding: MediaHealthFinding, lead: FindingStep[]) {
     const pending = (finding.evidence as Record<string, unknown> | null)?.searchPending;
-    const walking = typeof pending === 'string' && Date.now() - Date.parse(pending) < SEARCH_CLAIM_STALE_MS;
-    if (!walking || lead.length > 0) {
+    const claimed = typeof pending === 'object' && pending !== null && job.from !== 'person';
+    if (!claimed || lead.length > 0) {
       await this.mediaHealthRepository.settleFinding({
         healthId: finding.id,
-        evidence: walking ? {} : { searchPending: true },
+        evidence: claimed ? {} : { searchPending: true },
         steps: lead,
       });
     }
@@ -2884,14 +2886,13 @@ export class MediaHealthService {
   async handleLocateMissing(job: JobOf<JobName.MediaHealthLocateMissing>): Promise<JobStatus> {
     // FL-1337: the fixes waiting on their owner's shared search. They are claimed when the walk starts,
     // so a search asked for while this one walks covers only what opened since; the walk carries on with
-    // the same findings. It is background work for single photos, so it records no run of its own and
-    // never stands in for the owner's last check.
+    // the same findings. A claim names the search: the job that started it, which a retry of that step
+    // reruns, so a retried step claims its own findings again and a failed search's are claimed by the
+    // next. It is background work for single photos, so it records no run of its own and never stands in
+    // for the owner's last check.
     const pending = !!job.pending && !!job.userId;
-    const ids =
-      job.ids ??
-      (pending
-        ? await this.mediaHealthRepository.claimSearchPending(job.userId!, new Date(Date.now() - SEARCH_CLAIM_STALE_MS))
-        : []);
+    const searchId = pending ? (job.searchId ?? queueExecution.getStore()?.claim.id ?? randomUUID()) : undefined;
+    const ids = job.ids ?? (pending ? await this.mediaHealthRepository.claimSearchPending(job.userId!, searchId!) : []);
     if (pending && ids.length === 0) {
       return JobStatus.Skipped;
     }
@@ -2924,7 +2925,7 @@ export class MediaHealthService {
       if (continuation) {
         await this.jobRepository.queue({
           name: JobName.MediaHealthLocateMissing,
-          data: { ...job, ...(pending && { ids }), runId: run, managedSearch: continuation },
+          data: { ...job, ...(pending && { ids, searchId }), runId: run, managedSearch: continuation },
         });
       } else if (pending) {
         await this.feedSearchedFixes(ids, job.userId!);

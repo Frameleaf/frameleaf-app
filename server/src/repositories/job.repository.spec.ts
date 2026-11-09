@@ -88,6 +88,8 @@ describe(JobRepository.name, () => {
       delay: 120_000,
       deduplication: { id: `MediaHealthLocateMissing:pending:${owner}`, keepLastIfActive: true },
     });
+    // a shared search's step may run again after a failure or a restart; the classic search may not
+    expect(enqueue.mock.calls.map(([items]) => items[0].safeToRetry)).toEqual([true, true, true, true, false, true]);
     expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
       // two photos of one owner: one key, so the store keeps one waiting search, and one after a running walk
       shared('owner'),

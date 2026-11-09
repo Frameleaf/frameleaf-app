@@ -467,6 +467,8 @@ export interface IMediaHealthLocateJob extends IBaseJob {
    * claims them as `ids`; when the walk is complete it feeds each fix again.
    */
   pending?: boolean;
+  /** FL-1337: which shared search a step carries on: the job that started it claimed its findings as this. */
+  searchId?: string;
   managedSearch?: {
     cursor: Array<{ path: string; after?: string }>;
     matches: Record<string, Record<string, Array<'sha1' | 'sha256'>>>;

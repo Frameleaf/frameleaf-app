@@ -16,8 +16,6 @@ export const FIX_WAIT_MS = 30 * 60_000;
 export const MAX_DRIVE_WAITS = 48;
 /** How long the owner's shared search waits for more fixes to ask, so a burst of them is one walk. */
 export const FIX_SEARCH_DELAY_MS = 2 * 60_000;
-/** A search that claimed a finding this long ago and never finished has stopped: it may be claimed again. */
-export const SEARCH_CLAIM_STALE_MS = 6 * 60 * 60_000;
 
 /**
  * How a repair turned out for the history and the list. Part saved: the picture was rebuilt from a file

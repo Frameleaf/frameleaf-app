@@ -154,6 +154,13 @@ const REPEATABLE_JOBS = new Set<JobName>([
   // kept file is published under a name fixed by the asset and finding, so a re-run reuses its own
   JobName.MediaHealthFixAsset,
 ]);
+/**
+ * Requests that are repeatable although their job name is not (the rest of that job's work is unaudited).
+ * FL-1337: the fixes' shared search claims its findings under its own search id, so a rerun of a step
+ * claims the same ones again; a step only replaces candidate lists and feeds fixes under their own keys.
+ */
+const isRepeatableRequest = (item: JobItem) =>
+  item.name === JobName.MediaHealthLocateMissing && item.data?.pending === true;
 /** Rows a selection producer inserts per fenced transaction. */
 const SELECTION_PAGE = 2000;
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
@@ -818,7 +825,7 @@ export class JobRepository {
           item.name === JobName.ImageEnrichmentPostprocess &&
           (data.cloudDescription || (Array.isArray(data.lockedIds) && data.lockedIds.length > 0))
         ) &&
-        REPEATABLE_JOBS.has(item.name) &&
+        (REPEATABLE_JOBS.has(item.name) || isRepeatableRequest(item)) &&
         !JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(item.name) &&
         !JOBS_NOT_RETRIED.has(item.name),
       sensitive: JOBS_WITH_SENSITIVE_DATA.has(item.name),

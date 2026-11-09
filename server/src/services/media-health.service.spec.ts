@@ -20,6 +20,7 @@ import {
   MediaOperationStatus,
   StorageFolder,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { SharpOperations } from 'src/queue/sharp-operations.js';
 import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -4276,16 +4277,59 @@ describe(MediaHealthService.name, () => {
       ]);
     });
 
-    it('leaves a finding a search is already walking to that search', async () => {
+    it('leaves a finding a search claimed to it, and still asks for a search in case that one stopped', async () => {
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
-      recorded(
-        finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: new Date().toISOString() }),
-      );
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: { search: 'job-0' } }));
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'import' });
+
+      expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+      // the search asked for here claims it again if job-0 is no longer live (medium spec)
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.MediaHealthLocateMissing,
+        data: { userId: 'user-id', pending: true },
+      });
+    });
+
+    it('gets the finding searched when a person tries again during a claim that never finished', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: { search: 'job-0' } }));
 
       await sut.handleFixAsset({ id: 'asset-1', from: 'person' });
 
-      expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
-      expect(mocks.job.queue).toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthLocateMissing }));
+      // waiting again, so the next search claims it whatever became of job-0
+      expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
+        healthId: 'health-1',
+        evidence: { searchPending: true },
+        steps: [],
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.MediaHealthLocateMissing,
+        data: { userId: 'user-id', pending: true },
+      });
+    });
+
+    it('lets a retried search step claim the findings it claimed before it failed', async () => {
+      vi.mocked(mediaHealthRepository.claimSearchPending).mockResolvedValue(['health-1']);
+      vi.spyOn(sut as any, 'locateFindings').mockRejectedValueOnce(new Error('EIO: the drive went away'));
+      // the queue runs a step as its job row, and a retry runs the same row again
+      const asStep = <T>(work: () => Promise<T>) => queueExecution.run({ claim: { id: 'job-1' } } as never, work);
+
+      await expect(asStep(() => sut.handleLocateMissing({ userId: 'user-id', pending: true }))).rejects.toThrow('EIO');
+      expect(mediaHealthRepository.claimSearchPending).toHaveBeenLastCalledWith('user-id', 'job-1');
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: { search: 'job-1' } }),
+      ] as never);
+      await expect(asStep(() => sut.handleLocateMissing({ userId: 'user-id', pending: true }))).resolves.toBe(
+        JobStatus.Success,
+      );
+      // the same search, so the repository hands its claims back (medium spec), and the fix is fed
+      expect(mediaHealthRepository.claimSearchPending).toHaveBeenLastCalledWith('user-id', 'job-1');
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.MediaHealthFixAsset, data: { id: 'asset-1', from: 'check', searched: true } },
+      ]);
     });
 
     it('feeds each fix still waiting when its owner’s shared search is complete', async () => {
@@ -4296,7 +4340,7 @@ describe(MediaHealthService.name, () => {
 
       await expect(sut.handleLocateMissing({ userId: 'user-id', pending: true })).resolves.toBe(JobStatus.Success);
 
-      expect(mediaHealthRepository.claimSearchPending).toHaveBeenCalledWith('user-id', expect.any(Date));
+      expect(mediaHealthRepository.claimSearchPending).toHaveBeenCalledWith('user-id', expect.any(String));
       // one walk for every waiting finding of the owner, with no run that would stand in for their last check
       expect(mediaHealthRepository.getByIds).toHaveBeenCalledWith(['health-1', 'health-2'], 'user-id');
       expect(mediaHealthRepository.createRun).not.toHaveBeenCalled();
@@ -4311,11 +4355,14 @@ describe(MediaHealthService.name, () => {
       const continuation = { cursor: [{ path: '/data/library' }], matches: {} };
       vi.spyOn(sut as any, 'locateFindings').mockResolvedValue({ checkedAssets: 1, foundAssets: 0, continuation });
 
-      await sut.handleLocateMissing({ userId: 'user-id', pending: true });
+      await queueExecution.run({ claim: { id: 'job-1' } } as never, () =>
+        sut.handleLocateMissing({ userId: 'user-id', pending: true }),
+      );
 
+      // the walk carries on as the same search, with the findings it claimed
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.MediaHealthLocateMissing,
-        data: { userId: 'user-id', pending: true, ids: ['health-1'], managedSearch: continuation },
+        data: { userId: 'user-id', pending: true, ids: ['health-1'], searchId: 'job-1', managedSearch: continuation },
       });
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
 

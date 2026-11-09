@@ -591,7 +591,8 @@ export class MediaHealthRepository {
    * Insert or replace the asset's finding of this category, and append `steps` to it in the same
    * transaction. FL-1337: replacing keeps what a person decided (`autoRepairDeclined`, after an Undo)
    * unless the new evidence says otherwise, and keeps how the last fix left it (`fixState`,
-   * `partSaved`) while it is the same open problem; a new verdict or a closed finding starts afresh.
+   * `partSaved`) and a search it waits for (`searchPending`) while it is the same open problem; a new
+   * verdict or a closed finding starts afresh.
    */
   private async upsertFindingInto(
     db: Kysely<DB>,
@@ -616,7 +617,8 @@ export class MediaHealthRepository {
             CASE WHEN asset_health."resolvedAt" IS NULL AND excluded."resolvedAt" IS NULL
               AND asset_health.status = excluded.status
             THEN jsonb_strip_nulls(jsonb_build_object(
-              'fixState', asset_health.evidence->'fixState', 'partSaved', asset_health.evidence->'partSaved'))
+              'fixState', asset_health.evidence->'fixState', 'partSaved', asset_health.evidence->'partSaved',
+              'searchPending', asset_health.evidence->'searchPending'))
             ELSE '{}'::jsonb END
             || jsonb_strip_nulls(jsonb_build_object('autoRepairDeclined', asset_health.evidence->'autoRepairDeclined'))
             || excluded.evidence`,
@@ -825,20 +827,33 @@ export class MediaHealthRepository {
     });
   }
   /**
-   * Claim the owner's findings waiting for the shared search by contents (FL-1337): open ones marked
-   * `searchPending: true`, and ones a search claimed before `staleBefore` that never finished. Each is
-   * stamped with the time it was claimed, so a search asked for meanwhile leaves it to this one.
+   * Claim the owner's findings waiting for the shared search by contents (FL-1337) as search `searchId`:
+   * open ones marked `searchPending: true`, ones this search claimed before (a retried step), and ones a
+   * search claimed that no live job carries on any more (it failed, or was stopped for attention). A
+   * claim names its search, `{ search }`, so a search asked for meanwhile leaves it to the live one.
    */
-  async claimSearchPending(ownerId: string, staleBefore: Date): Promise<string[]> {
+  async claimSearchPending(ownerId: string, searchId: string): Promise<string[]> {
     const { rows } = await sql<{ id: string }>`
       UPDATE public.asset_health health
-      SET evidence = health.evidence || jsonb_build_object('searchPending', ${new Date().toISOString()}::text)
+      SET evidence = health.evidence || jsonb_build_object('searchPending', jsonb_build_object('search', ${searchId}::text))
       FROM public.asset asset
       WHERE asset.id = health."assetId" AND asset."ownerId" = ${ownerId}::uuid AND asset."deletedAt" IS NULL
         AND health."resolvedAt" IS NULL AND health."dismissedAt" IS NULL
-        AND (health.evidence->'searchPending' = 'true'::jsonb
-          OR (jsonb_typeof(health.evidence->'searchPending') = 'string'
-            AND (health.evidence->>'searchPending')::timestamptz < ${staleBefore.toISOString()}::timestamptz))
+        AND (
+          health.evidence->'searchPending' = 'true'::jsonb
+          OR (
+            jsonb_typeof(health.evidence->'searchPending') = 'object'
+            AND (
+              health.evidence->'searchPending'->>'search' = ${searchId}::text
+              OR NOT EXISTS (
+                SELECT 1 FROM job
+                WHERE job.name = ${'MediaHealthLocateMissing'} AND job.state IN ('pending', 'waiting', 'active')
+                  AND (job.id::text = health.evidence->'searchPending'->>'search'
+                    OR job.data->>'searchId' = health.evidence->'searchPending'->>'search')
+              )
+            )
+          )
+        )
       RETURNING health.id`.execute(this.db);
     return rows.map(({ id }) => id);
   }
