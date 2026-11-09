@@ -457,7 +457,7 @@ export class Operations {
     if (!(await this.visibility())(own.source)) throw new Refusal('thumbnail_folder_not_visible');
     if (await folderExists(own.source)) throw new Refusal('thumbnail_folder_present');
     // The photos must be there: they are what new thumbnails are made from.
-    await assertMountSources(libraryMounts(current.mounts));
+    await assertMountSources(libraryMounts(current.mounts), 'frameleaf-server', await this.visibility());
     const folder = thumbnailFolder(libraryMounts(current.mounts));
     if (!folder) throw new Refusal('unsupported_thumbnail_mount');
     const summary = (await this.librarySummary().catch(() => null)) as { assets?: number } | null;
@@ -502,7 +502,7 @@ export class Operations {
       const installed = this.installation();
       if (digest(installed) !== digest(review.current) && digest(installed) !== digest(next))
         throw new Refusal('installation_changed');
-      await assertMountSources(libraryMounts(review.current.mounts));
+      await assertMountSources(libraryMounts(review.current.mounts), 'frameleaf-server', await this.visibility());
       await this.docker.compose(this.directory(), review.current.project, 'stop', ['frameleaf-server']);
       const path = join(this.directory(), 'compose.json');
       const compose = JSON.parse(await readFile(path, 'utf8'));
