@@ -6,16 +6,27 @@ import { filesystemMounts } from './postgres-storage.js';
 
 /**
  * A new install maps one broad folder into Manager, and folders are chosen in Manager rather than in the template:
- * all of /mnt on Unraid and TrueNAS, or the folder given to launch.sh on a plain Docker host. Existing installs keep
+ * all of /mnt on Unraid and TrueNAS, or the folders given to launch.sh on a plain Docker host (colon separated in
+ * MANAGER_FOLDER_ROOT: the first holds Manager's own folder, the rest are extra drives). Existing installs keep
  * their saved template and explicit roots, so none of this applies to them.
  */
 const MNT = '/mnt';
-export const broadRoot = () => process.env.MANAGER_FOLDER_ROOT || MNT;
-export const broadRoots = (roots: string[]) => roots.length === 1 && roots[0] === broadRoot();
+const split = (value: string) => value.split(':').filter(Boolean);
+export const broadRootList = () => split(process.env.MANAGER_FOLDER_ROOT || MNT);
+/** Whether `roots` (single entries or colon-separated lists) are exactly the broad folders, so folders are chosen in Manager. */
+export const broadRoots = (roots: string[]) => {
+  const [given, broad] = [roots.flatMap(split), broadRootList()];
+  return given.length === broad.length && given.every((root, i) => root === broad[i]);
+};
 const unraid = () => process.env.MANAGER_PLATFORM === 'unraid';
 
 const within = (path: string, parent: string) => path === parent || path.startsWith(`${parent}/`);
 const lexicalOverlap = (a: string, b: string) => within(a, b) || within(b, a);
+/** The broad folders holding `path`, innermost first: a drive given inside another folder is its own place. */
+const holders = (path: string) =>
+  broadRootList()
+    .filter((root) => within(path, root))
+    .sort((a, b) => b.length - a.length);
 /** Drives and remote shares hold their own files; everything else directly under /mnt is a view of the same shares. */
 const INDEPENDENT = ['disks', 'remotes', 'rootshare', 'addons'];
 const shareView = (path: string) => {
@@ -31,7 +42,8 @@ export function overlaps(a: string, b: string): boolean {
 }
 /** The share, pool or drive holding `path`. On Unraid /mnt/disks/UD01 is one drive and /mnt/remotes/nas one share, a level deeper than /mnt/user. */
 const volume = (path: string) => {
-  if (broadRoot() !== MNT) return broadRoot();
+  const roots = broadRootList();
+  if (roots.length > 1 || roots[0] !== MNT) return holders(path)[0];
   const parts = path.split('/').slice(1);
   return `/${parts.slice(0, unraid() && ['disks', 'remotes', 'rootshare'].includes(parts[1]) ? 3 : 2).join('/')}`;
 };
@@ -47,12 +59,15 @@ export function applyFolderDefaults(env: Record<string, string | undefined> = pr
 }
 
 function assertUsable(path: string): void {
+  // Strictly inside a broad folder: never a broad folder itself, even one inside another, and never /.
+  const inside = holders(path);
   if (
     path !== resolve(path) ||
     /[\n\0,:]/.test(path) ||
-    !path.startsWith(`${broadRoot()}/`) ||
-    // TrueNAS keeps Docker and its apps in /mnt/.ix-apps; nothing hidden directly in the root is a place for photos.
-    relative(broadRoot(), path).startsWith('.') ||
+    !inside.length ||
+    inside.includes(path) ||
+    // TrueNAS keeps Docker and its apps in /mnt/.ix-apps; nothing hidden directly in a broad folder is a place for photos.
+    inside.some((root) => relative(root, path).startsWith('.')) ||
     // /mnt/user is every share at once, /mnt/tank a whole pool; a folder needs to be inside one.
     path.split('/').length < 4
   )
@@ -117,15 +132,25 @@ export function assertExternalFolder(source: string, occupied: string[]): void {
 export type FolderListing = { path: string; parent: string | null; folders: { name: string; path: string }[]; truncated: boolean };
 const LISTING_LIMIT = 500;
 
-/** The folders directly inside `requested`, or inside its nearest existing parent, so a default not yet created still opens. */
+/** With several broad folders, the picker's top level lists them; it is never a folder to use. */
+export const FOLDER_TOP = '/';
+
+/**
+ * The folders directly inside `requested`, or inside its nearest existing parent, so a default not yet created still opens.
+ * With one broad folder, anything outside it opens that folder. With several, it opens the list of them.
+ */
 export async function listFolders(requested: string): Promise<FolderListing> {
-  const root = broadRoot();
+  const roots = broadRootList();
   let path = resolve(requested);
-  if (!within(path, root)) path = root;
+  if (!holders(path).length) {
+    if (roots.length > 1)
+      return { path: FOLDER_TOP, parent: null, folders: roots.map((root) => ({ name: root, path: root })), truncated: false };
+    path = roots[0];
+  }
   for (;;) {
     const real = await realpath(path).catch(() => null);
-    if (real !== null && within(real, root) && (await stat(real)).isDirectory()) break;
-    if (path === root) throw new Refusal('storage_volume_missing');
+    if (real !== null && holders(real).length && (await stat(real)).isDirectory()) break;
+    if (roots.includes(path)) throw new Refusal('storage_volume_missing');
     path = dirname(path);
   }
   const entries = await readdir(path, { withFileTypes: true }).catch(() => {
@@ -135,5 +160,7 @@ export async function listFolders(requested: string): Promise<FolderListing> {
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
     .map((entry) => ({ name: entry.name, path: join(path, entry.name) }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { path, parent: path === root ? null : dirname(path), folders: folders.slice(0, LISTING_LIMIT), truncated: folders.length > LISTING_LIMIT };
+  // Up stays inside the broad folders: from a nested drive to the folder around it, from an outer one to the list.
+  const parent = holders(path).some((root) => root !== path) ? dirname(path) : roots.length > 1 ? FOLDER_TOP : null;
+  return { path, parent, folders: folders.slice(0, LISTING_LIMIT), truncated: folders.length > LISTING_LIMIT };
 }

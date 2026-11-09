@@ -1,6 +1,7 @@
 #!/bin/sh
 # Usage: sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest MANAGER_ORIGIN [FOLDER_ROOT] [LAN_ADDRESS]
 #   Folders are chosen and created in Manager, inside FOLDER_ROOT (default /srv/frameleaf).
+#   More drives: MANAGER_EXTRA_FOLDERS=/media/ssd/frameleaf:/media/disk2/frameleaf (colon separated, each existing and two levels deep).
 # Or name each folder yourself:
 #   sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest HOST_STATE_FOLDER HOST_MEDIA_FOLDER HOST_BACKUP_FOLDER MANAGER_ORIGIN [APPDATA_FOLDER|auto] [LAN_ADDRESS]
 # Another installation on the same host: run again with MANAGER_NAME, MANAGER_PORT and its own FOLDER_ROOT, or its own state, media and backup folders.
@@ -18,6 +19,25 @@ if test "$#" -le 4; then
   state=$root/manager media=$root backups=$root appdata=$root
 else
   image=$1 state=$2 media=$3 backups=$4 origin=$5 appdata=${6:-auto} bind=${7:-127.0.0.1}
+  test -z "${MANAGER_EXTRA_FOLDERS:-}" || { echo 'MANAGER_EXTRA_FOLDERS needs the short form: image, origin and one parent folder' >&2; exit 2; }
+fi
+# Every folder Manager may choose in: FOLDER_ROOT first, then each extra drive. Colon separated, as MANAGER_FOLDER_ROOT.
+roots=$root extras=
+if test -n "$root" && test -n "${MANAGER_EXTRA_FOLDERS:-}"; then
+  old_ifs=$IFS
+  IFS=:
+  set -f
+  for extra in $MANAGER_EXTRA_FOLDERS; do
+    extra=${extra%/}
+    case "$extra" in /[!/]*/[!/]*) ;; *) echo "Use absolute extra folders at least two levels deep, such as /media/disk2/frameleaf: ${extra:-empty}" >&2; exit 2;; esac
+    for other in $roots; do
+      case "$extra/" in "$other/"*) echo "$extra is already inside $other; leave it out" >&2; exit 2;; esac
+      case "$other/" in "$extra/"*) echo "$other is inside $extra; give each drive's own folder once" >&2; exit 2;; esac
+    done
+    roots=$roots:$extra extras=${extras:+$extras:}$extra
+  done
+  set +f
+  IFS=$old_ifs
 fi
 name=${MANAGER_NAME:-frameleaf-manager} port=${MANAGER_PORT:-2282}
 printf '%s' "$name" | LC_ALL=C grep -Eqx '[a-zA-Z0-9][a-zA-Z0-9_.-]*' || { echo 'MANAGER_NAME must be a valid container name' >&2; exit 2; }
@@ -53,7 +73,12 @@ test -d "$appdata" || { echo 'Create the selected appdata folder on the host dis
 appdata=$(realpath "$appdata")
 # Never pin a release (owner 2026-10-18): Manager always follows :latest.
 test "$image" = ghcr.io/frameleaf/frameleaf-manager:latest || { echo 'Use ghcr.io/frameleaf/frameleaf-manager:latest' >&2; exit 2; }
-for path in "$state" "$media" "$backups" "$appdata"; do
+# Split only on the colons that join the extra drives; the paths themselves are never globbed.
+old_ifs=$IFS
+IFS=:
+set -f
+# shellcheck disable=SC2086
+for path in "$state" "$media" "$backups" "$appdata" $extras; do
   case "$path" in /*) ;; *) echo 'Use absolute existing host folders' >&2; exit 2;; esac
   test -d "$path" || { echo 'A required host folder is missing' >&2; exit 2; }
   test "$(realpath "$path")" = "$path" || { echo 'Use canonical paths, not symlinks' >&2; exit 2; }
@@ -64,6 +89,8 @@ for path in "$state" "$media" "$backups" "$appdata"; do
     exit 2
   fi
 done
+set +f
+IFS=$old_ifs
 docker_root=$(docker info --format '{{.DockerRootDir}}')
 case "$docker_root" in /*) ;; *) echo 'Cannot verify the Docker storage location' >&2; exit 2;; esac
 docker_root=$(realpath "$docker_root")
@@ -102,7 +129,14 @@ if test "$platform" = unraid; then
 fi
 if test -n "$root"; then
   # ponytail: no propagation, so a drive mounted inside FOLDER_ROOT later needs a Manager restart. rslave would refuse hosts with private mounts.
-  set -- "$@" --mount "type=bind,source=$root,target=$root" --env "MANAGER_FOLDER_ROOT=$root"
+  # Each extra drive is mapped at its own path. Never created here: a drive that isn't mounted is refused above.
+  set -- "$@" --mount "type=bind,source=$root,target=$root" --env "MANAGER_FOLDER_ROOT=$roots"
+  IFS=:
+  set -f
+  # shellcheck disable=SC2086
+  for path in $extras; do set -- "$@" --mount "type=bind,source=$path,target=$path"; done
+  set +f
+  IFS=$old_ifs
 else
   set -- "$@" --mount "type=bind,source=$state,target=$state" \
     --mount "type=bind,source=$media,target=$media" \

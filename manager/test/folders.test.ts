@@ -144,3 +144,64 @@ test('External folders edit only same-path lines and keep advanced mappings', ()
   assert.deepEqual(externalFolders(text), [{ path: '/mnt/user/a', readOnly: true }]);
   assert.equal(setExternalFolders(text, [{ path: '/mnt/user/b', readOnly: false }]), '/mnt/user/other:/archive:ro\n/mnt/user/b:/mnt/user/b');
 });
+
+test('on plain Docker with extra drives, each drive is browsed and used, and the drives are listed at the top', async () => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'folder-roots-')));
+  const [main, ssd] = [join(base, 'main'), join(base, 'ssd')];
+  await Promise.all([mkdir(main), mkdir(join(ssd, 'old'), { recursive: true })]);
+  await on('linux', `${main}:${ssd}`, async () => {
+    assert.ok(broadRoots([`${main}:${ssd}`]));
+    assert.ok(broadRoots([main, ssd]));
+    assert.ok(!broadRoots([main]));
+    assert.ok(!broadRoots([ssd, main]));
+    await ensureManagerFolder(join(main, 'manager'));
+    await ensureChosenFolder(join(ssd, 'database'));
+    assert.ok((await stat(join(ssd, 'database'))).isDirectory());
+    for (const path of [main, ssd, '/', join(ssd, '.hidden'), '/mnt/user/photos', `${ssd}x/db`])
+      await assert.rejects(ensureChosenFolder(path), (error: Refusal) => error.code === 'invalid_storage_path', path);
+    assert.doesNotThrow(() => assertExternalFolder(join(ssd, 'old'), [join(main, 'media')]));
+    assert.throws(() => assertExternalFolder(join(ssd, 'database', 'x'), [join(ssd, 'database')]), (error: Refusal) => !!error.code);
+    const top = await listFolders('/mnt');
+    assert.deepEqual(top, { path: '/', parent: null, folders: [{ name: main, path: main }, { name: ssd, path: ssd }], truncated: false });
+    const drive = await listFolders(ssd);
+    assert.equal(drive.parent, '/');
+    assert.deepEqual(drive.folders.map((f) => f.name), ['database', 'old']);
+    // A default not yet created opens its nearest folder on the right drive.
+    assert.equal((await listFolders(join(ssd, 'old', 'not-yet'))).path, join(ssd, 'old'));
+  });
+  // A drive that isn't there is never invented.
+  await on('linux', `${main}:${join(base, 'gone')}`, async () => {
+    await assert.rejects(ensureChosenFolder(join(base, 'gone', 'db')), (error: Refusal) => error.code === 'storage_volume_missing');
+    await assert.rejects(listFolders(join(base, 'gone')), (error: Refusal) => error.code === 'storage_volume_missing');
+  });
+});
+
+test('overlapping broad folders: the innermost drive is its own place, and Up walks back out', async () => {
+  const outer = await realpath(await mkdtemp(join(tmpdir(), 'folder-nested-')));
+  const inner = join(outer, 'disk2');
+  await mkdir(join(inner, 'photos'), { recursive: true });
+  await on('linux', `${outer}:${inner}`, async () => {
+    await ensureChosenFolder(join(inner, 'photos', 'new'));
+    await assert.rejects(ensureChosenFolder(inner), (error: Refusal) => error.code === 'invalid_storage_path');
+    await assert.rejects(ensureChosenFolder(join(inner, '.hidden')), (error: Refusal) => error.code === 'invalid_storage_path');
+    assert.throws(() => assertSeparateFolders([inner, join(inner, 'photos')]), (error: Refusal) => error.code === 'chosen_folders_overlap');
+    assert.equal((await listFolders(inner)).parent, outer);
+    assert.equal((await listFolders(outer)).parent, '/');
+    assert.equal((await listFolders('/elsewhere')).folders.length, 2);
+  });
+  // The inner drive given first changes nothing about where a folder belongs.
+  await on('linux', `${inner}:${outer}`, async () => {
+    await ensureChosenFolder(join(inner, 'photos', 'other'));
+    assert.equal((await listFolders(inner)).parent, outer);
+  });
+});
+
+test('one plain Docker folder keeps the picker it always had', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'folder-one-')));
+  await on('linux', `${root}:`, async () => {
+    assert.ok(broadRoots([root]));
+    const listing = await listFolders('/');
+    assert.equal(listing.path, root);
+    assert.equal(listing.parent, null);
+  });
+});

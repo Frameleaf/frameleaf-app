@@ -52,12 +52,13 @@
     {#each listing?.folders ?? [] as folder (folder.path)}
       <li><button type="button" onclick={() => open(folder.path)}><Icon name="folder"/><span>{folder.name}</span></button></li>
     {/each}
+    {#if listing?.path === '/'}<li class="folder-empty">Choose a drive, then a folder on it.</li>{/if}
     {#if listing && !listing.folders.length}<li class="folder-empty">No folders inside this one.</li>{/if}
     {#if listing?.truncated}<li class="folder-empty">Only the first 500 folders are shown.</li>{/if}
   </ul>
   {#if error}<p class="field-error" role="alert">{error}</p>{:else if problem}<p class="meta" role="status">{problem}</p>{/if}
   <div class="actions folder-actions">
     <button type="button" class="button quiet" onclick={close}>Cancel</button>
-    <button type="button" class="button primary" disabled={!listing || loading || !!error || !!problem} onclick={() => use(listing!.path)}>Use this folder</button>
+    <button type="button" class="button primary" disabled={!listing || loading || !!error || !!problem || listing.path === '/'} onclick={() => use(listing!.path)}>Use this folder</button>
   </div>
 </dialog>

@@ -20,6 +20,15 @@ The shortest launch needs no folders made first. Give the address you will open 
 sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "https://server.example:2282" "$FOLDER_ROOT" "$LAN_ADDRESS"
 ```
 
+To let Manager use more drives, for example the database or thumbnails on an SSD, list a folder on each one in `MANAGER_EXTRA_FOLDERS`, separated by colons. Each folder must already exist, be at least two levels deep, and not sit inside the parent folder or another extra folder. The launcher maps each one at its own path and never creates it, so a drive that isn't mounted stops the launch. In setup, the folder picker then starts with a list of these folders, and you choose and create folders inside any of them:
+
+```sh
+MANAGER_EXTRA_FOLDERS=/media/ssd/frameleaf:/media/disk2/frameleaf \
+  sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "https://server.example:2282" "$FOLDER_ROOT" "$LAN_ADDRESS"
+```
+
+Without `MANAGER_EXTRA_FOLDERS`, the launch maps only the parent folder, as before. Extra drives work only with this short form; the long form below names every folder itself.
+
 Without `$LAN_ADDRESS`, Manager listens only on this machine (`127.0.0.1`). Give the server's LAN address to open it from another device, unless a reverse proxy on this machine serves it.
 
 To name every folder yourself, use the long form, and create the state, library, backup and appdata folders on the intended storage first. It is also what an existing launch keeps using:
