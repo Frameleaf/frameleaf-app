@@ -7,6 +7,7 @@ import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, FrameleafWorker, JobName, JobStatus, LibraryScope, ManualJobName, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobService } from 'src/services/job.service.js';
+import { noteHandedToCare } from 'src/utils/library-care-handoff.js';
 import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { getForAsset } from 'test/mappers.js';
@@ -340,27 +341,49 @@ describe(JobService.name, () => {
     });
   });
 
-  it('a skipped preview queues nothing after it, but still announces the upload', async () => {
-    const asset = AssetFactory.create({ id: 'asset-1', type: AssetType.Image });
-    const data = { id: asset.id, source: 'upload' } as const;
-    mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([asset as never]);
-    mocks.systemMetadata.get.mockResolvedValue({
-      machineLearning: {
-        enabled: true,
-        clip: { enabled: true },
-        facialRecognition: { enabled: true },
-        ocr: { enabled: true },
-        imageDescription: { enabled: true },
-        nsfwDetection: { enabled: true },
-      },
+  describe('a skipped thumbnail job', () => {
+    const run = async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', type: AssetType.Image });
+      const data = { id: asset.id, source: 'upload' } as const;
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([asset as never]);
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: {
+          enabled: true,
+          clip: { enabled: true },
+          facialRecognition: { enabled: true },
+          ocr: { enabled: true },
+          imageDescription: { enabled: false },
+          nsfwDetection: { enabled: false },
+        },
+      });
+      mocks.job.run.mockResolvedValue(JobStatus.Skipped);
+      await sut.onJobRun(QueueName.ThumbnailGeneration, { name: JobName.AssetGenerateThumbnails, data });
+      return { asset, data };
+    };
+
+    it('handed to Library care queues nothing after it, but still announces the upload', async () => {
+      noteHandedToCare('asset-1');
+      const { asset } = await run();
+
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([]);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_upload_success', asset.ownerId, expect.anything());
     });
-    mocks.job.run.mockResolvedValue(JobStatus.Skipped);
 
-    await sut.onJobRun(QueueName.ThumbnailGeneration, { name: JobName.AssetGenerateThumbnails, data });
+    it.each(['a hidden asset', 'a partner copy sharing its source files'])('for %s keeps its follow-ups', async () => {
+      const { data } = await run();
 
-    expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([]);
-    expect(mocks.job.queue).not.toHaveBeenCalled();
-    expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_upload_success', asset.ownerId, expect.anything());
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith(
+        [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr, JobName.BestPhotosScore].map((name) => ({
+          name,
+          data,
+        })),
+      );
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'on_upload_success',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
   });
 
   describe('a handler that throws (FL-71)', () => {

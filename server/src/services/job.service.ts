@@ -17,6 +17,7 @@ import { afterJobCommit, queueExecution } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
+import { takeHandedToCare } from 'src/utils/library-care-handoff.js';
 import { deferForLockedKey } from 'src/utils/locked-read.js';
 import { effectiveVisibilityOf, isLockedRow } from 'src/utils/locked.js';
 import {
@@ -257,7 +258,6 @@ export class JobService extends BaseService {
    * Queue follow up jobs
    */
   private async onDone(item: JobItem, response?: JobStatus) {
-    const skipped = response === JobStatus.Skipped;
     switch (item.name) {
       case JobName.SidecarCheck: {
         await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: item.data });
@@ -326,6 +326,9 @@ export class JobService extends BaseService {
       }
 
       case JobName.AssetGenerateThumbnails: {
+        // FL-1337: a photo handed to Library care has no picture to work from yet. Thumbnails are queued again
+        // after a fix and the follow-up work runs then. The upload is still announced.
+        const handedToCare = response === JobStatus.Skipped && takeHandedToCare(item.data.id);
         if (!item.data.notify && item.data.source !== 'upload') {
           break;
         }
@@ -336,41 +339,35 @@ export class JobService extends BaseService {
           break;
         }
 
-        // FL-1337: a preview that was skipped has no picture to work from, so nothing is queued after it.
-        // Library care queues thumbnails again after a fix, and the work follows then. The upload is still announced.
-        const jobs: JobItem[] = [];
         const { machineLearning } = await this.getConfig({ withCache: true });
-        if (!skipped) {
-          if (isSmartSearchEnabled(machineLearning)) {
-            jobs.push({ name: JobName.SmartSearch, data: item.data });
-          }
-          if (asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
-            jobs.push({ name: JobName.AssetDetectFaces, data: item.data });
-          }
-          if (isOcrEnabled(machineLearning)) {
-            jobs.push({ name: JobName.Ocr, data: item.data });
-          }
+        const jobs: JobItem[] = [];
+        if (isSmartSearchEnabled(machineLearning)) {
+          jobs.push({ name: JobName.SmartSearch, data: item.data });
+        }
+        if (asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
+          jobs.push({ name: JobName.AssetDetectFaces, data: item.data });
+        }
+        if (isOcrEnabled(machineLearning)) {
+          jobs.push({ name: JobName.Ocr, data: item.data });
+        }
 
-          if (asset.type === AssetType.Video) {
-            // Videos are scored for Best Photos too (via sampled frames).
-            jobs.push({ name: JobName.AssetEncodeVideo, data: item.data });
-            if (asset.libraryScope !== LibraryScope.Design)
-              jobs.push({ name: JobName.BestPhotosScore, data: item.data });
-          }
+        if (asset.type === AssetType.Video) {
+          // Videos are scored for Best Photos too (via sampled frames).
+          jobs.push({ name: JobName.AssetEncodeVideo, data: item.data });
+          if (asset.libraryScope !== LibraryScope.Design) jobs.push({ name: JobName.BestPhotosScore, data: item.data });
+        }
 
-          if (asset.type === AssetType.Image) {
-            if (asset.libraryScope !== LibraryScope.Design)
-              jobs.push({ name: JobName.BestPhotosScore, data: item.data });
+        if (asset.type === AssetType.Image) {
+          if (asset.libraryScope !== LibraryScope.Design) jobs.push({ name: JobName.BestPhotosScore, data: item.data });
 
-            if (isImageDescriptionEnabled(machineLearning)) {
-              jobs.push({ name: JobName.ImageDescription, data: item.data });
-            } else if (isNsfwDetectionEnabled(machineLearning)) {
-              jobs.push({ name: JobName.NsfwDetection, data: item.data });
-            }
+          if (isImageDescriptionEnabled(machineLearning)) {
+            jobs.push({ name: JobName.ImageDescription, data: item.data });
+          } else if (isNsfwDetectionEnabled(machineLearning)) {
+            jobs.push({ name: JobName.NsfwDetection, data: item.data });
           }
         }
 
-        await this.jobRepository.queueAll(jobs);
+        await this.jobRepository.queueAll(handedToCare ? [] : jobs);
         await afterJobCommit(async () => {
           const [asset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([item.data.id]);
           if (!asset) {

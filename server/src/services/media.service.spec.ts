@@ -48,6 +48,7 @@ import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
+import { takeHandedToCare } from 'src/utils/library-care-handoff.js';
 import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -1951,6 +1952,7 @@ describe(MediaService.name, () => {
         name: JobName.MediaHealthFixAsset,
         data: { id: asset.id, from: 'preview', message },
       });
+      expect(takeHandedToCare(asset.id)).toBe(true);
     });
 
     it('an unsupported RAW is sent too', async () => {

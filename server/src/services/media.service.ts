@@ -76,6 +76,7 @@ import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { isBusy } from 'src/utils/file-problem.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
+import { noteHandedToCare } from 'src/utils/library-care-handoff.js';
 import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { DJI_SRT_HEAD_BYTES, getDjiSrtCandidates, parseDjiSrtColorMode } from 'src/utils/log-video-srt.js';
 import {
@@ -629,6 +630,7 @@ export class MediaService extends BaseService {
             name: JobName.MediaHealthFixAsset,
             data: { id: asset.id, from: 'preview', message: error.message },
           });
+          noteHandedToCare(asset.id);
           return JobStatus.Skipped;
         }
 
