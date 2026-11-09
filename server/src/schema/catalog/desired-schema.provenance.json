@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "d5807e09b556a186b3befadd4c6c54f7fd512e85",
+  "sourceCommit": "d6111138bf184bafee083e7ac60a58e9187e43bc",
   "sourceHashes": {
     "src/enum.ts": "687791f2ee9930bbe46fcbd89dfa738db84d523a95899cb81eca32f61ef74557",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,7 +8,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "73ec605fc1a3a7ab270e6ad8183b0c76a56f5d1c28c1b637b30ee1d084887db5",
-    "src/schema/index.ts": "f2218839d5404afbf964b7c9c33df3946cc0272b31ecea9241e306429f9f9fc2",
+    "src/schema/index.ts": "5908c6bd52e2b7435620b706cddf281c3102e48094be46f75d61e1c6ea1c684b",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
@@ -39,7 +39,7 @@
     "src/schema/tables/asset-face-audit.table.ts": "b24df9a765cce0fd089496042f7c702c8c8b37b1eea134e4800abe03c46d3a1e",
     "src/schema/tables/asset-face.table.ts": "69c216f6f94873a74f53bd1ca80ec584188532d9c08af2306a70210a3e482c43",
     "src/schema/tables/asset-file.table.ts": "67d155381476c79d6d6a1b6f458baeea1216cbb891c73ec95bc9ac5ee7662cfe",
-    "src/schema/tables/asset-health.table.ts": "536148718f59c2e563872283f16977f306bab2d5d484f94f32b564bef7bf4221",
+    "src/schema/tables/asset-health.table.ts": "09728aa89b34c4f8ff92603447e1099be4b9e61b7edba3a032a7b61e95c70271",
     "src/schema/tables/asset-job-status.table.ts": "04945382b91c12c509a3ef729b80297925c60a2e17d22fa195d3a680d529d9ab",
     "src/schema/tables/asset-local-effect.table.ts": "5f45865af1335a7b60e3c71f3e760a2afb60751f79e392172ecac216bd18feac",
     "src/schema/tables/asset-lock.table.ts": "5bccc0bfc516bc21e2859d5bf8086f85e36f6b49abc6705755ee310607f74fde",
@@ -165,6 +165,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "134d1bd3c5d7d77e8879be7b418fd6e38ac73ee516bfdadea167e563a85b57b3",
-  "rawMetadataSha256": "b8de833c685b878e4380ca80c6c793b08419b5d388280297e6a5bd43b864acfd"
+  "dumpSha256": "13d942640258e29ea83d4a267f6b665d9378c55feba146a5f8413e40941c733d",
+  "rawMetadataSha256": "df4bacfdcb0e943c479b727db85a053c8f9c950c4e52111f704fc281ae7df55f"
 }
