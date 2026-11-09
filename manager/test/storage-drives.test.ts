@@ -145,8 +145,8 @@ test('a thumbnail or database folder only Docker reaches is listed as not measur
   );
   assert.deepEqual(checks, [
     { name: 'Storage 1', ok: true, detail: '600.0 GB free (60%). Also holds the backups' },
-    { name: 'Thumbnails drive', ok: null, detail: 'Docker uses this folder directly, so Manager can’t measure its free space.' },
-    { name: 'Database drive', ok: null, detail: 'Docker uses this folder directly, so Manager can’t measure its free space.' },
+    { name: 'Thumbnails drive', ok: null, detail: 'Manager can’t check free space on this folder from here. Frameleaf still uses it as normal.' },
+    { name: 'Database drive', ok: null, detail: 'Manager can’t check free space on this folder from here. Frameleaf still uses it as normal.' },
   ]);
 
   // A media folder Manager cannot read stays a problem: it is Manager's own to read.

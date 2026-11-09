@@ -239,7 +239,7 @@ export async function driveChecks(
   const byDevice = new Map<number, Check & { also: string[] }>();
   for (const { name, path, use, measurable } of drives) {
     if (measurable === false) {
-      checks.push({ name, ok: null, detail: 'Docker uses this folder directly, so Manager can’t measure its free space.', also: [] });
+      checks.push({ name, ok: null, detail: 'Manager can’t check free space on this folder from here. Frameleaf still uses it as normal.', also: [] });
       continue;
     }
     const [space, device] = await Promise.all([
