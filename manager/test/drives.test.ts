@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, open, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   blockDevice,
+  boundedProbe,
   driveMounts,
   findDrives,
   NEW_LIBRARY_BYTES,
@@ -303,6 +304,43 @@ test('the timed write is quick and leaves nothing behind', async () => {
     assert.deepEqual(await readdir(folder), []);
     assert.equal(await timedWrite(join(folder, 'missing')), null);
     assert.deepEqual(await readdir(folder), []);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('a write that hangs is not waited on: the drive reads as unidentified, one write per drive, tidied when it returns', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'drives-stall-'));
+  try {
+    let release!: () => void;
+    const stalled = new Promise<void>((done) => (release = done));
+    let started = 0;
+    // A real file whose sync hangs until released, as on a pool stuck behind a failing disk.
+    const hanging = (path: string) => {
+      started++;
+      return timedWrite(path, 800, async (file) => {
+        const handle = await open(file, 'wx', 0o600);
+        return { write: handle.write.bind(handle), datasync: () => stalled.then(() => handle.datasync()), close: () => handle.close() };
+      });
+    };
+    const before = performance.now();
+    assert.equal(await boundedProbe('stall', folder, hanging, 100), null);
+    assert.ok(performance.now() - before < 1000);
+    // Still stalled: a second report gets the same answer and starts no second write.
+    assert.equal(await boundedProbe('stall', folder, hanging, 100), null);
+    assert.equal(started, 1);
+    assert.equal((await readdir(folder)).length, 1);
+    release();
+    // Once the stalled write returns, its file is removed and the late result isn't kept.
+    for (let i = 0; i < 50 && (await readdir(folder)).length; i++) await new Promise((done) => setTimeout(done, 10));
+    assert.deepEqual(await readdir(folder), []);
+    assert.ok(['fast', 'slow'].includes((await boundedProbe('stall', folder, timedWrite, 1000))!));
+    // A result in time is kept for later reports.
+    let calls = 0;
+    const quick = async () => (calls++, 'fast' as const);
+    assert.equal(await boundedProbe('quick', folder, quick), 'fast');
+    assert.equal(await boundedProbe('quick', folder, quick), 'fast');
+    assert.equal(calls, 1);
   } finally {
     await rm(folder, { recursive: true, force: true });
   }

@@ -144,11 +144,16 @@ const PROBE_BLOCK = 64 * 1024;
  * Time a few small synced writes in `folder` and remove the file, whatever happens. Random bytes, so ZFS compression
  * can't skip the write. Stops early once the budget is spent: a drive that slow is not fast. Null when it can't write.
  */
-export async function timedWrite(folder: string, budgetMs = PROBE_BUDGET_MS): Promise<'fast' | 'slow' | null> {
+type ProbeHandle = Pick<Awaited<ReturnType<typeof open>>, 'write' | 'datasync' | 'close'>;
+export async function timedWrite(
+  folder: string,
+  budgetMs = PROBE_BUDGET_MS,
+  openFile: (file: string) => Promise<ProbeHandle> = (file) => open(file, 'wx', 0o600),
+): Promise<'fast' | 'slow' | null> {
   const file = join(folder, `.frameleaf-drive-check-${randomUUID()}`);
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  let handle: ProbeHandle | undefined;
   try {
-    handle = await open(file, 'wx', 0o600);
+    handle = await openFile(file);
     const block = randomBytes(PROBE_BLOCK);
     const started = performance.now();
     const syncs: number[] = [];
@@ -230,14 +235,43 @@ const hostSpace = (path: string) =>
 
 // ponytail: one timed write per drive per quarter hour; the Storage page may ask often, and the answer rarely changes.
 const PROBE_CACHE_MS = 15 * 60 * 1000;
-const probes = new Map<string, { at: number; result: Promise<'fast' | 'slow' | null> }>();
-const cachedProbe = (key: string, path: string) => {
+/** The longest a drive report waits for one drive's timed write. */
+export const PROBE_LIMIT_MS = 1000;
+type ProbeResult = 'fast' | 'slow' | null;
+const probes = new Map<string, { at: number; result: Promise<ProbeResult>; running: boolean }>();
+/**
+ * A drive's timed write, at most one in flight per drive, and never waited on past `limitMs`. A write or sync can't be
+ * cancelled, so a stalled drive (a ZFS pool hung on a failing disk) reads as unidentified while its write is still
+ * running; no second write starts behind it, and once it returns, its file is removed and the next report tries again.
+ */
+export function boundedProbe(
+  key: string,
+  path: string,
+  probe: (path: string) => Promise<ProbeResult> = timedWrite,
+  limitMs = PROBE_LIMIT_MS,
+): Promise<ProbeResult> {
   const hit = probes.get(key);
-  if (hit && Date.now() - hit.at < PROBE_CACHE_MS) return hit.result;
-  const result = timedWrite(path);
-  probes.set(key, { at: Date.now(), result });
-  return result;
-};
+  if (hit && (hit.running || Date.now() - hit.at < PROBE_CACHE_MS)) return hit.result;
+  let timer: NodeJS.Timeout | undefined;
+  let late = false;
+  const entry = { at: Date.now(), running: true, result: Promise.resolve<ProbeResult>(null) };
+  const run = probe(path)
+    .catch(() => null)
+    .finally(() => {
+      clearTimeout(timer);
+      entry.running = false;
+      // A result that came too late isn't kept: the report already said unidentified.
+      if (late && probes.get(key) === entry) probes.delete(key);
+    });
+  entry.result = Promise.race([
+    run,
+    new Promise<ProbeResult>((done) => {
+      timer = setTimeout(() => ((late = true), done(null)), limitMs);
+    }),
+  ]);
+  probes.set(key, entry);
+  return entry.result;
+}
 
 /** Every drive Manager can use, from the host's mount table (`/run/frameleaf-host/mountinfo`). */
 export async function findDrives(sources: DriveSources): Promise<Drive[]> {
@@ -251,7 +285,7 @@ export async function findDrives(sources: DriveSources): Promise<Drive[]> {
         classify(drive, {
           platform: sources.platform,
           sys: sources.sys,
-          probe: sources.probe ?? ((path) => cachedProbe(`${drive.key}@${path}`, path)),
+          probe: sources.probe ?? ((path) => boundedProbe(`${drive.key}@${path}`, path)),
         }),
         space(drive.path),
       ]);
