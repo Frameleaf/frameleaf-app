@@ -14,6 +14,8 @@ const facts = (count: number): AlbumCleanupFactsDto => ({
     createdAt: '2020-01-01T00:00:00.000Z',
     locked: false,
     shared: false,
+    parentId: null,
+    readOnly: false,
     gps: null,
     span: null,
     coverAssetId: null,

@@ -37,6 +37,14 @@ export const cleanAlbumName = (name: string): string => name.trim().replaceAll(/
 /** Rule 5: same after trimming, collapsing spaces and ignoring case. */
 export const albumNameKey = (name: string): string => cleanAlbumName(name).toLowerCase();
 
+/** Albums compete as duplicates only beside each other. The review builds the same key. */
+export const albumPlaceKey = (name: string, parentId: string | null): string =>
+  parentId ? `${parentId}>${albumNameKey(name)}` : albumNameKey(name);
+
+/** Whether stored album facts were written with `parentId` and `readOnly`. */
+export const hasCurrentAlbumFacts = (albums: object[]): boolean =>
+  albums.every((album) => 'parentId' in album && 'readOnly' in album);
+
 /** Rule 16: only an album named nothing but a date can be removed. */
 export const isDateOnlyName = (name: string): boolean => DATE_ONLY.test(cleanAlbumName(name));
 
@@ -48,7 +56,7 @@ const firstLevelOf = (name: string): string | undefined => {
 };
 
 export type CleanupCountInput = {
-  albums: { id: string; name: string }[];
+  albums: { id: string; name: string; parentId?: string | null; readOnly?: boolean }[];
   sameName: { albumIds: string[] }[];
   samePhotos: { firstId: string; secondId: string }[];
   sameTrip: { firstId: string; secondId: string }[];
@@ -62,7 +70,11 @@ export type CleanupCountInput = {
 export const countCleanupSuggestions = ({ albums, sameName, samePhotos, sameTrip, lostDates }: CleanupCountInput) => {
   const levels = new Map<string, string[]>();
   const counted = new Set<string>();
-  for (const { id, name } of albums) {
+  for (const { id, name, parentId, readOnly } of albums) {
+    // Filed or not the person's to change: the review leaves these where they are.
+    if (parentId || readOnly) {
+      continue;
+    }
     if (isDateOnlyName(name)) {
       counted.add(id);
       continue;

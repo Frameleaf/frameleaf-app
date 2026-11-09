@@ -10,18 +10,22 @@ import { DB } from 'src/schema/index.js';
 import { AlbumChangeRunKind, AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.js';
 import { AlbumCleanupVariant } from 'src/schema/tables/album-cleanup-snapshot.table.js';
 import { anyUuid, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked } from 'src/utils/locked.js';
 
 /** The size of a GPS grid cell, in degrees: about 55 km, so a 100 km home area spans a few of them. */
 const HOME_BIN_DEGREES = 0.5;
 
-/** One top-level album the cleanup may touch: owned, plain, not a partner's copy. */
+/** One album on the person's Albums page. Read-only rows are listed but never changed. */
 export type CleanupAlbumRow = {
   id: string;
   name: string;
   createdAt: Date;
   isLocked: boolean;
   shared: boolean;
+  parentId: string | null;
+  /** A collection, a partner's copy, or an album someone else owns. */
+  readOnly: boolean;
 };
 
 export type CleanupCollectionRow = { id: string; name: string; parentId: string | null; createdAt: Date };
@@ -45,37 +49,43 @@ const jsonb = (value: unknown) => sql<never>`${value}::jsonb`;
 export class AlbumCleanupRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
-  /** A person's top-level plain albums. Smart albums are excluded by the caller, which has their rules. */
+  /** Everything on a person's Albums page. Smart albums are excluded by the caller, which has their rules. */
   @GenerateSql({ params: [DummyValue.UUID] })
-  getTopLevelAlbums(userId: string): Promise<CleanupAlbumRow[]> {
-    return this.db
-      .selectFrom('album')
-      .innerJoin('album_user as owner', (join) =>
-        join
-          .onRef('owner.albumId', '=', 'album.id')
-          .on('owner.userId', '=', userId)
-          .on('owner.role', '=', AlbumUserRole.Owner),
-      )
-      .where('album.deletedAt', 'is', null)
-      .where('album.kind', '=', AlbumKind.Album)
-      .where('album.parentId', 'is', null)
-      .where('album.libraryScope', '=', LibraryScope.Personal)
-      .where(sql<boolean>`not exists (select 1 from public.album_origin origin where origin."albumId" = album.id)`)
-      .select([
-        'album.id',
-        'album.albumName as name',
-        'album.createdAt',
-        'album.isLocked',
-        sql<boolean>`(
+  getScanAlbums(userId: string): Promise<CleanupAlbumRow[]> {
+    return (
+      this.db
+        .selectFrom('album')
+        .innerJoin('album_user as viewer', (join) =>
+          join.onRef('viewer.albumId', '=', 'album.id').on('viewer.userId', '=', userId),
+        )
+        .where('album.deletedAt', 'is', null)
+        .where((eb) =>
+          eb.or([eb('viewer.role', '!=', AlbumUserRole.Owner), libraryScopePredicate(LibraryScope.Personal, 'album')]),
+        )
+        // Someone else's locked album is theirs to reveal.
+        .where((eb) => eb.or([eb('viewer.role', '=', AlbumUserRole.Owner), eb('album.isLocked', '=', false)]))
+        .select([
+          'album.id',
+          'album.albumName as name',
+          'album.createdAt',
+          'album.isLocked',
+          'album.parentId',
+          sql<boolean>`(
+          viewer.role <> ${AlbumUserRole.Owner}
+          or album.kind <> ${AlbumKind.Album}
+          or exists (select 1 from public.album_origin origin where origin."albumId" = album.id)
+        )`.as('readOnly'),
+          sql<boolean>`(
           exists (select 1 from album_user member where member."albumId" = album.id and member.role <> ${AlbumUserRole.Owner})
           or exists (select 1 from shared_link where shared_link."albumId" = album.id)
           or exists (select 1 from shared_space_album linked where linked."linkedAlbumId" = album.id)
         )`.as('shared'),
-      ])
-      .orderBy('album.createdAt')
-      .orderBy('album.id')
-      .$castTo<CleanupAlbumRow>()
-      .execute();
+        ])
+        .orderBy('album.createdAt')
+        .orderBy('album.id')
+        .$castTo<CleanupAlbumRow>()
+        .execute()
+    );
   }
 
   /** Every collection the person owns, at any depth: existing structure to reuse. */

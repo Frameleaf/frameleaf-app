@@ -65863,7 +65863,7 @@
   "info": {
     "title": "Frameleaf",
     "description": "Frameleaf API",
-    "version": "1.2.11",
+    "version": "1.2.12",
     "contact": {}
   },
   "tags": [
@@ -69367,6 +69367,17 @@
             "description": "Album name",
             "type": "string"
           },
+          "parentId": {
+            "description": "The collection it sits in",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "readOnly": {
+            "description": "Listed but never changed: a collection, a partner copy, or someone else's album",
+            "type": "boolean"
+          },
           "shared": {
             "description": "The album is shared with people, by a public link or through a shared space",
             "type": "boolean"
@@ -69410,6 +69421,8 @@
           "id",
           "locked",
           "name",
+          "parentId",
+          "readOnly",
           "shared",
           "span"
         ],
@@ -69513,7 +69526,7 @@
       "AlbumCleanupFactsDto": {
         "properties": {
           "albums": {
-            "description": "Your top-level albums",
+            "description": "Everything on your Albums page except smart albums",
             "items": {
               "$ref": "#/components/schemas/AlbumCleanupAlbumFactDto"
             },

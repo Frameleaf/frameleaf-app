@@ -9,6 +9,8 @@ const fact = (id: string, name: string, count = 10, extra: Partial<AlbumCleanupA
   createdAt: '2020-01-01T00:00:00.000Z',
   locked: false,
   shared: false,
+  parentId: null,
+  readOnly: false,
   gps: null,
   span: null,
   coverAssetId: null,
@@ -33,6 +35,49 @@ const names = (nodes: PlanNode[]) => nodes.map((node) => node.name);
 const dayNumber = (year: number, month: number, day: number) => Date.UTC(year, month, day) / 86_400_000;
 const place = (city: string, lat = 49.3, lon = -122.8) => ({ gps: { city, share: 0.9, lat, lon } });
 const home = { city: 'Coquitlam', lat: 49.3, lon: -122.8, photoCount: 100 };
+
+describe('every album on the Albums page', () => {
+  it('lists read-only albums as unchanged and never sends an operation for them', () => {
+    const plan = buildPlan(
+      facts([
+        fact('copy', 'Friends - Ann', 5, { readOnly: true }),
+        fact('copy2', 'Friends - Bob', 5, { readOnly: true }),
+      ]),
+    );
+    expect(plan.summary.albumsBefore).toBe(2);
+    expect(names(plan.untouched)).toEqual(['Friends - Ann', 'Friends - Bob']);
+    expect(operationsFor(plan)).toEqual([]);
+  });
+
+  it('leaves filed albums in their collection', () => {
+    const plan = buildPlan(
+      facts([
+        fact('a', 'Friends - Ann', 5, { parentId: 'c1' }),
+        fact('b', 'Friends - Bob', 5, { parentId: 'c1' }),
+        fact('d', 'May 24, 2020', 5, { parentId: 'c1' }),
+      ]),
+    );
+    expect(plan.structure).toEqual([]);
+    expect(plan.untouched).toHaveLength(3);
+    expect(operationsFor(plan)).toEqual([]);
+  });
+
+  it('merges same-named albums only when they sit together', () => {
+    const plan = buildPlan(
+      facts([
+        fact('a', 'Day 1', 5, { parentId: 'italy' }),
+        fact('b', 'Day 1', 5, { parentId: 'spain' }),
+        fact('c', 'Beach', 5, { parentId: 'spain' }),
+        fact('d', 'Beach', 3, { parentId: 'spain' }),
+      ]),
+    );
+    expect(plan.duplicates.map(({ name }) => name)).toEqual(['Beach']);
+    expect(plan.summary).toMatchObject({ albumsBefore: 4, albumsAfter: 3 });
+    expect(operationsFor(plan)).toEqual([
+      expect.objectContaining({ type: 'merge', albumIds: expect.arrayContaining(['c', 'd']) }),
+    ]);
+  });
+});
 
 describe('splitName', () => {
   it('reads a date as one piece, whichever delimiter it contains', () => {

@@ -4,6 +4,7 @@ import {
   countCleanupSuggestions,
   detectHomeAreas,
   distanceKm,
+  hasCurrentAlbumFacts,
   isDateOnlyName,
 } from 'src/utils/album-cleanup.js';
 
@@ -20,6 +21,14 @@ describe('isDateOnlyName', () => {
 describe('albumNameKey', () => {
   it('ignores case and repeated spaces', () => {
     expect(albumNameKey('  Friends  -  Patrick ')).toBe('friends - patrick');
+  });
+});
+
+describe('hasCurrentAlbumFacts', () => {
+  it('refuses facts written before the fields existed', () => {
+    expect(hasCurrentAlbumFacts([{ id: 'a' }])).toBe(false);
+    expect(hasCurrentAlbumFacts([{ id: 'a', parentId: null, readOnly: false }])).toBe(true);
+    expect(hasCurrentAlbumFacts([])).toBe(true);
   });
 });
 
@@ -45,6 +54,18 @@ describe('countCleanupSuggestions', () => {
 
   it('finds nothing to mention in a clean library', () => {
     expect(countCleanupSuggestions({ ...none, albums: [{ id: 'a', name: 'Holiday' }] })).toBe(0);
+  });
+
+  it('does not count albums the review leaves where they are', () => {
+    expect(
+      countCleanupSuggestions({
+        ...none,
+        albums: [
+          { id: 'a', name: 'May 24, 2020', parentId: 'collection' },
+          { id: 'b', name: 'May 25, 2020', readOnly: true },
+        ],
+      }),
+    ).toBe(0);
   });
 
   it('reads a date as one piece', () => {
