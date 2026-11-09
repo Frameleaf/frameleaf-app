@@ -192,8 +192,7 @@ describe('CloudJobDialog: photo upscale under the 64 MP output cap (FC-46)', () 
     expect(onDismissed).toHaveBeenCalledOnce();
   });
   const pressConfirm = async () => {
-    await fireEvent.click(await screen.findByRole('checkbox'));
-    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_cloud_job_submit' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_cloud_job_submit' }));
   };
 
   it('does not call a confirmation on its way dismissed when the dialog closes (FL-1304)', async () => {
