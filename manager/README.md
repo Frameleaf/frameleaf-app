@@ -128,7 +128,10 @@ then `POST /manager-api/thumbnails-home` with `{ id, key }`. The
 folder's own `thumbs` folder with the server's marker (nothing else in the
 photos folder is touched), starts Frameleaf, and asks the server to queue every
 thumbnail to be made again (`POST /api/server/library-move/manager/thumbnails`).
-It only goes forward: Resume finishes it, and cancelling is refused.
+It only goes forward: Resume finishes it, and cancelling is refused. A thumbnail
+folder Manager can't see (one only Docker reaches) is never treated as missing
+(`thumbnail_folder_not_visible`), and a drive that comes back before the switch
+ends the operation with nothing changed (`thumbnail_folder_present`).
 
 `GET /manager-api/storage-usage` also gives the Storage page each place's size
 (photos from the accounts' storage use, the database from PostgreSQL, thumbnails

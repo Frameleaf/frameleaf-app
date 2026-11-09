@@ -514,6 +514,26 @@ test('putting thumbnails back is offered only while their drive is missing, and 
   });
 });
 
+test('a thumbnail drive that comes back before the switch is used again, and one Manager cannot see is never put back', async () => {
+  await homeFixture(async ({ operations, store, photos, missing, directory, calls }) => {
+    const before = await readFile(join(directory, 'stack', 'compose.json'), 'utf8');
+    const installation = store.get<Installation>('installation');
+    const review = await operations.reviewThumbnailsHome();
+    await mkdir(missing, { recursive: true });
+    const operation = await finished(store, operations.thumbnailsHome(review.id, crypto.randomUUID()).id);
+    assert.equal(operation.state, 'complete');
+    assert.equal(operation.error, 'thumbnail_folder_present');
+    assert.deepEqual(store.get<Installation>('installation'), installation);
+    assert.equal(await readFile(join(directory, 'stack', 'compose.json'), 'utf8'), before);
+    assert.deepEqual(calls, []);
+    assert.deepEqual(await readdir(photos), ['photo.jpg']);
+    // A folder only Docker reaches can't be told apart from a missing one: nothing is offered.
+    await rm(join(missing, '..'), { recursive: true });
+    operations.visibility = async () => (path: string) => path !== missing;
+    await assert.rejects(operations.reviewThumbnailsHome(), /thumbnail_folder_not_visible/);
+  });
+});
+
 test('a missing photos drive stops the thumbnails from being put back', async () => {
   await homeFixture(async ({ operations, photos }) => {
     await rm(photos, { recursive: true });

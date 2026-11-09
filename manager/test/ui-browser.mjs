@@ -563,6 +563,10 @@ try {
     assert.equal(starts[0].body.key, starts[1].body.key);
     const steps = await page.locator('ol.timeline li strong').allInnerTexts();
     assert.deepEqual(steps, ['Pause uploads and background work', 'Copy thumbnails', 'Check every file', 'Switch to the new folder', 'Start Frameleaf']);
+    // A running thumbnail move can be stopped, then cancelled safely back to the original folder.
+    await mainButton('Stop safely').click();
+    await mainButton('Cancel safely').waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'stop-move').body.id, 'thumbnail-operation');
     dashboard.operations = [];
     await refresh();
   });

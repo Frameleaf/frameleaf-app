@@ -184,6 +184,7 @@ const refusals: Record<string, string> = {
   unsupported_thumbnail_mount: 'Thumbnails can only be kept in one writable folder of their own, outside the photos folder.',
   // FL-1323: putting thumbnails back with the photos after their drive went missing.
   thumbnail_folder_present: 'The thumbnail drive is connected again. Check again to use it.',
+  thumbnail_folder_not_visible: 'Manager can’t see the thumbnail folder from here, so it can’t tell whether its drive is connected. Your thumbnails were left where they are.',
   thumbnails_already_with_photos: 'Thumbnails are already with your photos and videos.',
   thumbnails_home_resume_required: 'Thumbnails are going back with your photos. Choose Resume to finish; the old drive isn’t used again.',
   chosen_folders_overlap: 'Photos and videos, the database, backups and Manager’s own settings each need their own separate folder.',

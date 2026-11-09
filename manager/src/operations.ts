@@ -358,6 +358,8 @@ export class Operations {
     await copyVerified(compose, join(path, 'compose.json'), await fileHash(compose));
     return 'settings';
   }
+  /** Which host folders Manager itself can see (mounts.ts); a folder only Docker reaches can't be checked from here. */
+  visibility = visibility;
   /** Measured thumbnail folders: a walk of a large library takes a while, so each is measured at most hourly. */
   private thumbnailSizes = new Map<string, FolderSize & { measuredAt: number }>();
   private measuring = new Map<string, Promise<unknown>>();
@@ -370,7 +372,7 @@ export class Operations {
   async storageUsage() {
     const installation = this.installation();
     if (!installation) throw new Refusal('no_installation');
-    const visible = await visibility();
+    const visible = await this.visibility();
     const own = thumbnailMount(installation.mounts);
     const thumbs = thumbnailFolder(installation.mounts);
     const missing = own ? (visible(own.source) ? !(await folderExists(own.source)) : null) : false;
@@ -428,6 +430,8 @@ export class Operations {
     if (this.store.locked()) throw new Refusal('operation_in_progress');
     const own = thumbnailMount(current.mounts);
     if (!own) throw new Refusal('thumbnails_already_with_photos');
+    // A folder only Docker reaches (one never mapped into Manager) can't be told apart from a missing one: refuse.
+    if (!(await this.visibility())(own.source)) throw new Refusal('thumbnail_folder_not_visible');
     if (await folderExists(own.source)) throw new Refusal('thumbnail_folder_present');
     // The photos must be there: they are what new thumbnails are made from.
     await assertMountSources(libraryMounts(current.mounts));
@@ -460,6 +464,17 @@ export class Operations {
    */
   private async applyThumbnailsHome(operation: Operation, review: ThumbnailsHomeReview): Promise<void> {
     const next: Installation = { ...review.current, mounts: withThumbnails(review.current.mounts, null) };
+    // The drive came back after the review: nothing is changed, and Frameleaf uses it again once it is checked.
+    if (
+      !operation.completed.includes('thumbs-home-switch') &&
+      digest(this.installation()) === digest(review.current) &&
+      (await this.visibility())(review.missing) &&
+      (await folderExists(review.missing))
+    ) {
+      operation.receipts['cancelled'] = 'thumbnail_folder_present';
+      this.store.save(operation);
+      return;
+    }
     await this.step(operation, 'thumbs-home-switch', async () => {
       const installed = this.installation();
       if (digest(installed) !== digest(review.current) && digest(installed) !== digest(next))
