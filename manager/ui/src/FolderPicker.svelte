@@ -19,16 +19,20 @@
   }>();
   let dialog = $state<HTMLDialogElement>(),
     listing = $state<{ path: string; parent: string | null; folders: { name: string; path: string }[]; truncated: boolean } | null>(null),
-    error = $state('');
+    error = $state(''),
+    loading = $state(true);
   let latest = 0;
   async function open(path: string) {
     const request = ++latest;
     error = '';
+    loading = true;
     try {
       const answer = await api('folders', { path });
       if (request === latest) listing = answer;
     } catch (e) {
       if (request === latest) error = readable(e instanceof Error ? e.message : 'storage_volume_missing');
+    } finally {
+      if (request === latest) loading = false;
     }
   }
   onMount(() => {
@@ -54,6 +58,6 @@
   {#if error}<p class="field-error" role="alert">{error}</p>{:else if problem}<p class="meta" role="status">{problem}</p>{/if}
   <div class="actions folder-actions">
     <button type="button" class="button quiet" onclick={close}>Cancel</button>
-    <button type="button" class="button primary" disabled={!listing || !!problem} onclick={() => use(listing!.path)}>Use this folder</button>
+    <button type="button" class="button primary" disabled={!listing || loading || !!error || !!problem} onclick={() => use(listing!.path)}>Use this folder</button>
   </div>
 </dialog>

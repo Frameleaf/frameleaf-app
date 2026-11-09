@@ -2210,7 +2210,10 @@ export class Operations {
   }
   async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number) {
     const current = this.installation();
-    if (broadRoots(this.roots)) await ensureChosenFolder(databaseRoot);
+    if (broadRoots(this.roots)) {
+      assertSeparateFolders([databaseRoot, process.env.MANAGER_BACKUP_ROOT!, this.store.directory]);
+      await ensureChosenFolder(databaseRoot);
+    }
     await this.databaseStorage.validate(databaseRoot, 1024 ** 3);
     const id = randomUUID(),
       checkpoint = join(this.store.directory, `restore-${id}`);
@@ -2226,6 +2229,8 @@ export class Operations {
       throw new Refusal('backup_belongs_to_another_library');
     await this.fencing.assertMedia(recovery.installation.mounts, current ?? undefined);
     const containers = await this.docker.inventory();
+    if (broadRoots(this.roots))
+      assertSeparateFolders([databaseRoot, ...recovery.installation.mounts.filter((m) => m.type === 'bind').map((m) => m.source)]);
     for (const mount of recovery.installation.mounts) {
       if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
       else if (!containers.some((c) => c.Mounts.some((m) => m.Type === 'volume' && m.Name === mount.source)))

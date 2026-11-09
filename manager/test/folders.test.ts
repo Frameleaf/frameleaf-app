@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { mkdir, mkdtemp, realpath, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { overlappingWriter } from '../src/postgres-storage.js';
 import { assertExternalFolder, assertSeparateFolders, applyUnraidFolderDefaults, broadRoots, ensureChosenFolder, realTarget } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
@@ -34,6 +35,13 @@ test('an external folder is never all of /mnt or Frameleaf data, on the server a
   }
 });
 
+test('Unraid share and disk views of a folder count as the same folder, separate disks do not', () => {
+  assert.throws(() => assertExternalFolder('/mnt/disk1/appdata/frameleaf-manager/x', occupied), (error: Refusal) => !!error.code);
+  assert.throws(() => assertSeparateFolders(['/mnt/user/photos/a', '/mnt/cache/photos/a/b']), (error: Refusal) => !!error.code);
+  assert.doesNotThrow(() => assertSeparateFolders(['/mnt/disk1/photos/a', '/mnt/disk2/photos/a']));
+  assert.doesNotThrow(() => assertSeparateFolders(['/mnt/disks/UD01/photos/a', '/mnt/user/photos/a']));
+});
+
 test('photos, database and backups need separate folders', () => {
   assert.throws(() => assertSeparateFolders(['/mnt/user/a', '/mnt/user/a/db']), (error: Refusal) => error.code === 'chosen_folders_overlap');
   assert.doesNotThrow(() => assertSeparateFolders(['/mnt/user/a', '/mnt/user/ab']));
@@ -50,6 +58,20 @@ test('a folder reached through a link is seen for where it really lands', async 
   await symlink(join(root, 'media'), join(root, 'link'));
   assert.equal(await realTarget(join(root, 'plain', 'new')), join(root, 'plain', 'new'));
   assert.equal(await realTarget(join(root, 'link', 'backups')), join(root, 'media', 'backups'));
+});
+
+test('with all of /mnt approved, a file manager on a whole share does not block the database folder', () => {
+  const app = (Source: string) => [{ Id: 'other', Name: '/krusader', Config: { Labels: {} }, Mounts: [{ RW: true, Source }] }] as never;
+  const path = '/mnt/user/appdata/frameleaf-databases';
+  assert.equal(overlappingWriter(app('/mnt/user'), path, 'manager', undefined, ['/mnt']), undefined);
+  assert.equal(overlappingWriter(app(path), path, 'manager', undefined, ['/mnt'])?.container, 'krusader');
+});
+
+test('editing External folders leaves a line the Advanced editor rejects as typed', () => {
+  const text = '/mnt/user/a:/mnt/user/a:ro,slave\n/mnt/user/b:/mnt/user/b:ro';
+  assert.deepEqual(externalFolders(text), [{ path: '/mnt/user/b', readOnly: true }]);
+  assert.equal(setExternalFolders(text, []), '/mnt/user/a:/mnt/user/a:ro,slave');
+  assert.ok(externalFolderIssue('/mnt/disk1/appdata/frameleaf-media/x', occupied, []));
 });
 
 test('External folders edit only same-path lines and keep advanced mappings', () => {

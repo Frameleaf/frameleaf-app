@@ -11,7 +11,20 @@ export const BROAD_ROOT = '/mnt';
 export const broadRoots = (roots: string[]) => roots.length === 1 && roots[0] === BROAD_ROOT;
 
 const within = (path: string, parent: string) => path === parent || path.startsWith(`${parent}/`);
-export const overlaps = (a: string, b: string) => within(a, b) || within(b, a);
+const lexicalOverlap = (a: string, b: string) => within(a, b) || within(b, a);
+/** Drives and remote shares hold their own files; everything else directly under /mnt is a view of the same shares. */
+const INDEPENDENT = ['disks', 'remotes', 'rootshare', 'addons'];
+const shareView = (path: string) => {
+  const [, mnt, view, ...rest] = path.split('/');
+  return mnt === 'mnt' && view && !INDEPENDENT.includes(view) ? { view, path: `/${rest.join('/')}` } : null;
+};
+const combined = (view: string) => view === 'user' || view === 'user0';
+/** /mnt/user/a and /mnt/disk1/a can be the same files. Two different disks or pools never are. */
+export function overlaps(a: string, b: string): boolean {
+  if (lexicalOverlap(a, b)) return true;
+  const [left, right] = [shareView(a), shareView(b)];
+  return !!left && !!right && (combined(left.view) || combined(right.view)) && lexicalOverlap(left.path, right.path);
+}
 /** /mnt/disks/UD01 is one drive and /mnt/remotes/nas one share, so they sit a level deeper than /mnt/user. */
 const volume = (path: string) => {
   const parts = path.split('/').slice(1);
