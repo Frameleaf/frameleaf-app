@@ -33,6 +33,7 @@ export const icons: Record<string, string> = {
   stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   document: '<path d="M14 2H5v20h14V7l-5-5ZM14 2v5h5M8 12h8m-8 4h8"/>',
+  back: '<path d="M20 12H4m5-5-5 5 5 5"/>',
   arrow: '<path d="M4 12h16m-5-5 5 5-5 5"/>',
   loader: '<path d="M21 12a9 9 0 1 1-9-9"/>',
   network:
