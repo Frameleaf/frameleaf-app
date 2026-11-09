@@ -660,12 +660,19 @@ export class AnalyticsRepository {
         ? run<{ goldenMorning: string; goldenEvening: string; blueHour: string; daylight: string; night: string }>(sql`
         select
           count(*) filter (where sun.elevation >= 6) as daylight,
-          count(*) filter (where sun.elevation >= -4 and sun.elevation < 6 and extract(hour from ${local}) < 12) as "goldenMorning",
-          count(*) filter (where sun.elevation >= -4 and sun.elevation < 6 and extract(hour from ${local}) >= 12) as "goldenEvening",
+          count(*) filter (where sun.elevation >= -4 and sun.elevation < 6 and sun.hour < 12) as "goldenMorning",
+          count(*) filter (where sun.elevation >= -4 and sun.elevation < 6 and sun.hour >= 12) as "goldenEvening",
           count(*) filter (where sun.elevation >= -6 and sun.elevation < -4) as "blueHour",
           count(*) filter (where sun.elevation < -6) as night
+        -- FL-1336: "offset 0" keeps the elevation a column worked out once per photo. Without it the
+        -- planner inlines it into all eight references above, and the light took 4 s on 120k items.
+        from (
+        select extract(hour from ${local}) as hour, degrees(asin(least(1, greatest(-1,
+            sin(radians(items.latitude)) * sin(s.dec)
+            + cos(radians(items.latitude)) * cos(s.dec) * cos(radians(s.gmst * 15 + items.longitude - s.ra))
+          )))) as elevation
         from items
-        cross join lateral (select extract(epoch from items."fileCreatedAt") / 86400.0 - 10957.5 as d) t
+        cross join lateral (select extract(epoch from items."fileCreatedAt")::float8 / 86400 - 10957.5 as d) t
         cross join lateral (
           select radians(357.529 + 0.98560028 * t.d) as g, 280.459 + 0.98564736 * t.d as q,
             radians(23.439 - 0.00000036 * t.d) as e
@@ -675,13 +682,9 @@ export class AnalyticsRepository {
           select asin(sin(m.e) * sin(ec.l)) as dec, degrees(atan2(cos(m.e) * sin(ec.l), cos(ec.l))) as ra,
             18.697374558 + 24.06570982441908 * t.d as gmst
         ) s
-        cross join lateral (
-          select degrees(asin(least(1, greatest(-1,
-            sin(radians(items.latitude)) * sin(s.dec)
-            + cos(radians(items.latitude)) * cos(s.dec) * cos(radians(s.gmst * 15 + items.longitude - s.ra))
-          )))) as elevation
-        ) sun
-        where items.type = ${IMAGE} and ${located} and items."fileCreatedAt" is not null`)
+        where items.type = ${IMAGE} and ${located} and items."fileCreatedAt" is not null
+        offset 0
+        ) sun`)
         : Promise.resolve([]),
       own
         ? run<{ month: number; south: boolean | null; count: string }>(sql`

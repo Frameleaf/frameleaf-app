@@ -182,6 +182,14 @@ const mapInsights = (rows: AnalyticsInsightRows, items: number, isAdmin: boolean
 };
 
 type ResolvedScope = { scope: AnalyticsScope; label: string; ownerId: string | null };
+/** A report without the volume, which is read on every visit. */
+type KeptReport = Omit<AnalyticsReportResponseDto, 'host'>;
+
+/**
+ * FL-1336: how long one reader's report is reused. Owner's call (2026-11-09): five minutes, with the
+ * real reading time shown, so a change made meanwhile shows on the next reading.
+ */
+const REPORT_REUSE_MS = 5 * 60_000;
 
 /**
  * Scoped library analytics (FL-79): the report behind the command center's Library analytics
@@ -205,6 +213,9 @@ const SEEN_LABELS_WAIT_MS = 3000;
 
 @Injectable()
 export class AnalyticsService {
+  // ponytail: one process's memory, a handful of entries per reader; expired ones go when a new one is read.
+  private reports = new Map<string, { report: KeptReport; readAt: number }>();
+
   constructor(
     private logger: LoggingRepository,
     private analyticsRepository: AnalyticsRepository,
@@ -218,16 +229,23 @@ export class AnalyticsService {
     this.logger.setContext(AnalyticsService.name);
   }
 
-  /** The labels if they are ready within `ms`, otherwise none for this report (see SEEN_LABELS_WAIT_MS). */
+  /**
+   * The labels if they are ready within `ms`, otherwise none for this report (see SEEN_LABELS_WAIT_MS).
+   * `settled` is false when they were late or failed, so the report is not kept for the next visit.
+   */
   private seenLabelsWithin(ms: number) {
     let timer: NodeJS.Timeout | undefined;
-    const late = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), ms);
+    const late = new Promise<{ labels: undefined; settled: false }>((resolve) => {
+      timer = setTimeout(() => resolve({ labels: undefined, settled: false }), ms);
     });
     // a config lookup that fails must not take the whole report with it
-    const labels = this.seenLabels.labels().catch((error: unknown): undefined => {
-      this.logger.warn(`"What the AI sees" labels are unavailable: ${error}`);
-    });
+    const labels = this.seenLabels
+      .labels()
+      .then((labels) => ({ labels, settled: true }))
+      .catch((error: unknown) => {
+        this.logger.warn(`"What the AI sees" labels are unavailable: ${error}`);
+        return { labels: undefined, settled: false };
+      });
     return Promise.race([labels, late]).finally(() => clearTimeout(timer));
   }
 
@@ -293,9 +311,63 @@ export class AnalyticsService {
     return { scopes };
   }
 
+  /**
+   * FL-1336: a report takes seconds on a large library, so the same reader gets the same reading back
+   * for `REPORT_REUSE_MS`. It is read again sooner when the collector records a new reading ("Count now",
+   * the nightly run). "Library read" stays the time it was read; free space is read live every time.
+   */
   async getReport(auth: AuthDto, dto: AnalyticsQueryDto): Promise<AnalyticsReportResponseDto> {
     const now = new Date();
-    const { scope, label, ownerId } = await this.resolveScope(auth, dto.scope);
+    const resolved = await this.resolveScope(auth, dto.scope);
+    const scopeKey = analyticsScopeKey(resolved.scope);
+    const isHost = resolved.scope.kind === AnalyticsScopeKind.Host;
+    // Everything that decides what this reader may see: a Locked session's hidden people, pets and tags,
+    // an unlocked session's revealed Locked items, sensitive content, administrator or not.
+    const key = JSON.stringify([
+      auth.user.id,
+      auth.user.isAdmin,
+      getHiddenContentQueryOptions(auth),
+      scopeKey,
+      dto.range,
+    ]);
+    const lastObservedAt = await this.analyticsRepository.getLatestObservation(scopeKey);
+
+    let kept = this.reports.get(key);
+    if (
+      !kept ||
+      now.getTime() - kept.readAt >= REPORT_REUSE_MS ||
+      kept.report.history.lastObservedAt !== (lastObservedAt?.toISOString() ?? null)
+    ) {
+      const { report, settled } = await this.readReport(auth, dto, resolved, now, lastObservedAt);
+      kept = { report, readAt: now.getTime() };
+      for (const [other, entry] of this.reports) {
+        if (now.getTime() - entry.readAt >= REPORT_REUSE_MS) {
+          this.reports.delete(other);
+        }
+      }
+      if (settled) {
+        this.reports.set(key, kept);
+      }
+    }
+
+    const host = await this.readHost(now);
+    // FL-79: what uses the volume, for the administrator's whole-server report only
+    // Only against a live volume reading: a stale or unknown volume is never mixed with the live
+    // originals and database sizes.
+    host.breakdown =
+      isHost && host.state === AnalyticsState.Measured
+        ? await this.readVolumeBreakdown(host.volumeUsedBytes, kept.report.summary.uploadedPhysicalBytes)
+        : null;
+    return { ...kept.report, host };
+  }
+
+  private async readReport(
+    auth: AuthDto,
+    dto: AnalyticsQueryDto,
+    { scope, label, ownerId }: ResolvedScope,
+    now: Date,
+    lastObservedAt: Date | null,
+  ): Promise<{ report: KeptReport; settled: boolean }> {
     const window = analyticsWindow(dto.range, now);
     const scopeKey = analyticsScopeKey(scope);
     const isHost = scope.kind === AnalyticsScopeKind.Host;
@@ -303,50 +375,31 @@ export class AnalyticsService {
     // FL-79: people, places and file names are the owner's own; nobody else (an administrator, the
     // whole server) is told them, and Locked people and pets stay unnamed while the session is locked
     const readsOwnScope = !!ownerId && ownerId === auth.user.id;
-    const [
-      inventory,
-      physical,
-      arrivals,
-      captures,
-      cameras,
-      albums,
-      processing,
-      samples,
-      lastObservedAt,
-      host,
-      insights,
-      retention,
-    ] = await Promise.all([
-      this.analyticsRepository.getInventory(scope),
-      this.analyticsRepository.getPhysical(scope),
-      this.analyticsRepository.getArrivalsByDay(scope, window.from, window.through),
-      this.analyticsRepository.getCapturesByDay(scope, window.from, window.through),
-      this.analyticsRepository.getCameras(scope, getHiddenContentQueryOptions(auth)),
-      this.analyticsRepository.getAlbums(scope, auth.user.id),
-      isHost ? this.analyticsRepository.getProcessingByDay(window.from, window.through) : Promise.resolve(null),
-      this.analyticsRepository.getSamples(scopeKey, GROWTH_SERIES, parseIsoDay(window.from)),
-      this.analyticsRepository.getLatestObservation(scopeKey),
-      this.readHost(now),
-      this.seenLabelsWithin(SEEN_LABELS_WAIT_MS).then((seenLabels) =>
-        this.analyticsRepository.getInsights(scope, {
-          ownerId: readsOwnScope ? ownerId : null,
-          suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
-          suppressedPetIds: auth.hiddenContent?.petIds ?? [],
-          privacy: getHiddenContentQueryOptions(auth),
-          seenLabels,
+    let settled = true;
+    const [inventory, physical, arrivals, captures, cameras, albums, processing, samples, insights, retention] =
+      await Promise.all([
+        this.analyticsRepository.getInventory(scope),
+        this.analyticsRepository.getPhysical(scope),
+        this.analyticsRepository.getArrivalsByDay(scope, window.from, window.through),
+        this.analyticsRepository.getCapturesByDay(scope, window.from, window.through),
+        this.analyticsRepository.getCameras(scope, getHiddenContentQueryOptions(auth)),
+        this.analyticsRepository.getAlbums(scope, auth.user.id),
+        isHost ? this.analyticsRepository.getProcessingByDay(window.from, window.through) : Promise.resolve(null),
+        this.analyticsRepository.getSamples(scopeKey, GROWTH_SERIES, parseIsoDay(window.from)),
+        this.seenLabelsWithin(SEEN_LABELS_WAIT_MS).then((seen) => {
+          settled = seen.settled;
+          return this.analyticsRepository.getInsights(scope, {
+            ownerId: readsOwnScope ? ownerId : null,
+            suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
+            suppressedPetIds: auth.hiddenContent?.petIds ?? [],
+            privacy: getHiddenContentQueryOptions(auth),
+            seenLabels: seen.labels,
+          });
         }),
-      ),
-      this.getRetention(),
-    ]);
+        this.getRetention(),
+      ]);
 
     const items = inventory.photos + inventory.videos;
-    // FL-79: what uses the volume, for the administrator's whole-server report only
-    // Only against a live volume reading: a stale or unknown volume is never mixed with the live
-    // originals and database sizes.
-    host.breakdown =
-      isHost && host.state === AnalyticsState.Measured
-        ? await this.readVolumeBreakdown(host.volumeUsedBytes, physical.uploadedPhysicalBytes)
-        : null;
     const growth = bindGrowth(window.buckets, samples);
     const arrivalTotals = sumIntoBuckets(window.buckets, arrivals, ['photos', 'videos'] as const);
     const processingTotals = processing
@@ -398,7 +451,7 @@ export class AnalyticsService {
       total: items,
     });
 
-    return {
+    const report: KeptReport = {
       scope: analyticsScopeValue(scope),
       scopeKind: scope.kind,
       scopeLabel: label,
@@ -427,7 +480,6 @@ export class AnalyticsService {
         savedBytes: Math.max(0, inventory.logicalBytes - physical.physicalBytes),
         duplicateReferences: physical.sharedReferences,
       },
-      host,
       history: {
         state: historyState(lastObservedAt, now),
         lastObservedAt: lastObservedAt?.toISOString() ?? null,
@@ -502,6 +554,7 @@ export class AnalyticsService {
       },
       insights: mapInsights(insights, items, auth.user.isAdmin),
     };
+    return { report, settled };
   }
 
   /**
