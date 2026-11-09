@@ -7,7 +7,7 @@ export async function up(db: Kysely<any>): Promise<void> {
       id uuid NOT NULL DEFAULT immich_uuid_v7(),
       "healthId" uuid NOT NULL,
       "assetId" uuid NOT NULL,
-      at timestamp with time zone NOT NULL DEFAULT now(),
+      at timestamp with time zone NOT NULL DEFAULT clock_timestamp(),
       step text NOT NULL,
       outcome text NOT NULL,
       facts jsonb NOT NULL DEFAULT '{}',

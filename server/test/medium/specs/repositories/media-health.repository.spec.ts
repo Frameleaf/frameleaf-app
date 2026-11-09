@@ -750,6 +750,43 @@ describe(MediaHealthRepository.name, () => {
       expect(byStep['searched-copy']).toMatchObject({ outcome: 'not-found', facts: { looked: 2 } });
     });
 
+    it('lists steps appended without `at` in insertion order', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const finding = await sut.upsertFinding(findingDto(asset.id, asset.originalPath, null));
+      assert.isDefined(finding);
+      const base = { healthId: finding.id, assetId: asset.id };
+
+      // one multi-row call: the rows must not share a timestamp
+      await sut.appendSteps([
+        { ...base, step: 'repaired', outcome: 'ok' },
+        { ...base, step: 'kept-damaged', outcome: 'info' },
+        { ...base, step: 'checked', outcome: 'ok' },
+      ]);
+      await expect(sut.listSteps(finding.id)).resolves.toMatchObject([
+        { step: 'repaired' },
+        { step: 'kept-damaged' },
+        { step: 'checked' },
+      ]);
+
+      // separate calls inside one transaction keep call order
+      const { result: other } = await ctx.newAsset({ ownerId: user.id });
+      const second = await sut.upsertFinding(findingDto(other.id, other.originalPath, null));
+      assert.isDefined(second);
+      const otherBase = { healthId: second.id, assetId: other.id };
+      await defaultDatabase.transaction().execute(async (trx) => {
+        await sut.appendSteps([{ ...otherBase, step: 'moved', outcome: 'ok' }], trx);
+        await sut.appendSteps([{ ...otherBase, step: 'undone', outcome: 'ok' }], trx);
+        await sut.appendSteps([{ ...otherBase, step: 'removed', outcome: 'ok' }], trx);
+      });
+      await expect(sut.listSteps(second.id)).resolves.toMatchObject([
+        { step: 'moved' },
+        { step: 'undone' },
+        { step: 'removed' },
+      ]);
+    });
+
     it('writes in the caller transaction', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

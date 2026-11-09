@@ -150,7 +150,8 @@ export class AssetHealthStepTable {
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' })
   assetId!: string;
 
-  @Column({ type: 'timestamp with time zone', default: () => 'now()' })
+  // clock_timestamp(), not now(): each row gets its own time, so steps keep the order they were appended in
+  @Column({ type: 'timestamp with time zone', default: () => 'clock_timestamp()' })
   at!: Generated<Timestamp>;
 
   @Column()
