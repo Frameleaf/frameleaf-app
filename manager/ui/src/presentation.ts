@@ -156,6 +156,7 @@ const refusals: Record<string, string> = {
   unsupported_thumbnail_mount: 'Thumbnails can only be kept in one writable folder of their own, outside the photos folder.',
   chosen_folders_overlap: 'Photos and videos, the database, backups and Manager’s own settings each need their own separate folder.',
   external_folder_holds_frameleaf_data: 'This folder holds Frameleaf’s own data, or sits inside it. Choose a folder of photos instead.',
+  drive_detection_unavailable: 'Drive suggestions are only available when Manager runs in Docker.',
   folder_browsing_unavailable: 'This server’s folders are set in its container settings, so they can’t be browsed here.',
   storage_inaccessible: 'Manager can’t find this media folder inside its container. In your server’s settings for Frameleaf, map a folder to it, then try again.',
   storage_outside_approved_roots: 'This folder isn’t one of Manager’s media folders. Choose one from the list, or add it to Media roots in your server’s settings for Frameleaf.',
