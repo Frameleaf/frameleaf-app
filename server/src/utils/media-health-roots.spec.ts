@@ -1,5 +1,17 @@
 import { createHash } from 'node:crypto';
-import { copyFile, link, mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  link,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -170,6 +182,55 @@ describe('media-health-roots (FL-69)', () => {
 
       await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
       await expect(readFile(source)).rejects.toThrow();
+    });
+
+    it('removes the old name of a file that also has the new one, and keeps the file', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'media', 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      await mkdir(join(root, 'media'));
+      await link(source, destination);
+
+      await retainFile(source, destination);
+
+      await expect(readFile(source)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      expect((await stat(destination)).nlink).toBe(1);
+    });
+
+    it('keeps a file moved onto its own name', async () => {
+      const file = join(root, 'damaged.jpg');
+      await writeFile(file, 'damaged');
+
+      await retainFile(file, file);
+      await retainFile(file, `${root}/./damaged.jpg`);
+
+      await expect(readFile(file, 'utf8')).resolves.toBe('damaged');
+    });
+
+    it('keeps a file moved onto itself through a folder reached by a symbolic link', async () => {
+      const real = join(root, 'real');
+      await mkdir(real);
+      const file = join(real, 'damaged.jpg');
+      await writeFile(file, 'damaged');
+      // a second name elsewhere, so the link count alone does not tell
+      await link(file, join(root, 'kept-elsewhere.jpg'));
+      await symlink(real, join(root, 'alias'));
+
+      await retainFile(file, join(root, 'alias', 'damaged.jpg'));
+
+      await expect(readFile(file, 'utf8')).resolves.toBe('damaged');
+      await expect(readdir(real)).resolves.toEqual(['damaged.jpg']);
+    });
+
+    it('keeps a file moved onto another letter case of its name', async () => {
+      const file = join(root, 'damaged.jpg');
+      await writeFile(file, 'damaged');
+
+      await retainFile(file, join(root, 'DAMAGED.JPG'));
+
+      // one entry on a case-insensitive drive, so nothing moves; a real move on a case-sensitive one
+      await expect(readFile(join(root, 'DAMAGED.JPG'), 'utf8')).resolves.toBe('damaged');
     });
 
     describe('on a drive without hard links', () => {

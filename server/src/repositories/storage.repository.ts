@@ -21,6 +21,7 @@ import { createGunzip, createGzip } from 'node:zlib';
 import { CrawlOptionsDto, WalkOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
+import { isOtherLinkOf } from 'src/utils/file-identity.js';
 import { LibraryWalkOptions, walkLibraryPaths } from 'src/utils/library-walk.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -80,32 +81,9 @@ export class StorageRepository {
     return fs.link(source, target);
   }
 
-  /**
-   * Whether `second` is another name (hard link) of the file at `first` (FL-1333: a move that linked its file
-   * at the new path and stopped before removing the old name). They are one file (same device and inode, read
-   * without following a symbolic link) and two separate entries. Two spellings of one entry, such as a folder
-   * reached through a symbolic link or another letter case on a case-insensitive drive, are not: removing one
-   * would remove the file. When it cannot tell, it says no. A missing name rejects with ENOENT and that `path`.
-   */
-  async isOtherLinkOf(first: string, second: string): Promise<boolean> {
-    const [a, b] = await Promise.all([fs.lstat(first, { bigint: true }), fs.lstat(second, { bigint: true })]);
-    if (a.dev !== b.dev || a.ino !== b.ino || a.nlink < 2n) {
-      return false;
-    }
-    const [folderA, folderB] = await Promise.all([
-      fs.stat(path.dirname(first), { bigint: true }),
-      fs.stat(path.dirname(second), { bigint: true }),
-    ]);
-    if (folderA.dev !== folderB.dev || folderA.ino !== folderB.ino) {
-      return true;
-    }
-    const [nameA, nameB] = [path.basename(first), path.basename(second)];
-    if (nameA === nameB) {
-      return false;
-    }
-    // one folder, two spellings: two entries only when the folder lists both as they are
-    const names = await fs.readdir(path.dirname(first));
-    return names.includes(nameA) && names.includes(nameB);
+  /** Whether `second` is another name (hard link) of the file at `first`; see `isOtherLinkOf` in file-identity. */
+  isOtherLinkOf(first: string, second: string): Promise<boolean> {
+    return isOtherLinkOf(first, second);
   }
 
   stat(filepath: string) {
