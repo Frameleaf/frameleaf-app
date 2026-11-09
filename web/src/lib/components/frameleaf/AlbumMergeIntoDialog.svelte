@@ -20,6 +20,8 @@
   }
 
   const RECENT = 10;
+  /** The most albums one merge takes (AlbumMergeIntoDto.otherIds). */
+  const MAX_MERGE = 100;
 
   let { merging, albums, open = $bindable(false), busy = false, onMerge }: Props = $props();
 
@@ -33,6 +35,7 @@
   /** What actually merges: the chosen albums other than the target. */
   const others = $derived(merging.filter(({ id }) => id !== selected));
   const name = $derived(target?.albumName || $t('unnamed_album'));
+  const tooMany = $derived(others.length > MAX_MERGE);
 </script>
 
 <Dialog
@@ -44,7 +47,7 @@
     class="merge"
     onsubmit={(event) => {
       event.preventDefault();
-      if (target && others.length > 0) {
+      if (target && others.length > 0 && !tooMany) {
         void onMerge(target);
       }
     }}
@@ -57,7 +60,11 @@
       name="album-merge-into"
       label={$t('frameleaf_albums_merge_into')}
     />
-    {#if target}
+    {#if tooMany}
+      <p class="note" role="status">
+        {$t('frameleaf_albums_merge_into_too_many', { values: { max: MAX_MERGE, count: others.length } })}
+      </p>
+    {:else if target}
       <p class="note">
         {others.length > 0
           ? $t('frameleaf_albums_merge_into_note', { values: { count: others.length, name } })
@@ -66,7 +73,7 @@
     {/if}
     <div class="buttons">
       <button type="button" onclick={() => (open = false)}>{$t('cancel')}</button>
-      <button type="submit" class="primary" disabled={busy || !target || others.length === 0}>
+      <button type="submit" class="primary" disabled={busy || !target || others.length === 0 || tooMany}>
         {$t('frameleaf_albums_merge_into_confirm', { values: { count: others.length } })}
       </button>
     </div>

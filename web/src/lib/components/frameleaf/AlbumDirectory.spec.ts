@@ -465,6 +465,23 @@ describe('AlbumDirectory', () => {
       expect(bar.getByRole('status')).toHaveTextContent('1 selected');
     });
 
+    it('refuses to merge more than one merge takes, and says so', async () => {
+      const many = Array.from({ length: 102 }, (_, index) =>
+        owned({ id: `many-${index}`, albumName: `Many ${String(index).padStart(3, '0')}` }),
+      );
+      renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: many, spaces: [] }, onRefresh: vi.fn() });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+      const bar = within(screen.getByRole('toolbar', { name: 'Actions for the chosen albums' }));
+      await fireEvent.click(bar.getByRole('button', { name: 'Select all' }));
+      await fireEvent.click(bar.getByRole('button', { name: /Merge into…/ }));
+      const dialog = within(await screen.findByRole('dialog', { name: 'Merge 102 albums into…' }));
+      await fireEvent.click(dialog.getAllByRole('radio')[0]);
+
+      expect(dialog.getByText(/up to 100 albums, and 101 are chosen/)).toBeInTheDocument();
+      expect(dialog.getByRole('button', { name: 'Merge 101 albums' })).toBeDisabled();
+    });
+
     it('offers no merge or lock while a smart album someone else owns is chosen', async () => {
       renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 

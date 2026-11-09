@@ -3118,6 +3118,7 @@
   "frameleaf_albums_merge_into_note": "{count, plural, one {# album goes} other {# albums go}} into “{name}”, which keeps its name and icon. No photos leave your library, and Undo brings them back for 30 days.",
   "frameleaf_albums_merge_into_nothing": "That is the only album chosen. Choose another album to merge it into.",
   "frameleaf_albums_merge_into_title": "Merge {count, plural, one {# album} other {# albums}} into…",
+  "frameleaf_albums_merge_into_too_many": "One merge takes up to {max} albums, and {count} are chosen. Choose fewer, then merge the rest afterwards.",
   "frameleaf_albums_merge_undo_failed": "Couldn’t undo the merge",
   "frameleaf_albums_merge_undo_newer": "Undo your newer change first, then this one.",
   "frameleaf_albums_merge_undone": "Merge undone",
