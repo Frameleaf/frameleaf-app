@@ -1066,6 +1066,8 @@ try {
       await page.locator('main[aria-busy="false"]').waitFor();
       await mainButton('Set up Frameleaf').click();
       await page.getByRole('heading', { name: 'Give your library a home' }).waitFor();
+      // The step shows at once; the drive report fills in the hints and the suggested database folder when it arrives.
+      await page.getByText('Cache pool (NVMe SSD) · 180 GB free').first().waitFor();
       // A new Unraid library: photos on the array, the database straight on the suggested fast pool.
       assert.equal(await page.getByLabel('Photos and videos').inputValue(), '/mnt/user/frameleaf-photos');
       assert.equal(await page.getByLabel('Database', { exact: true }).inputValue(), '/mnt/cache/appdata/frameleaf-databases');

@@ -567,21 +567,28 @@
     await loadReleases();
     tag = releases[0]?.tag ?? '';
     if (value === 'import') await loadSources();
-    if (value === 'install') await loadDrives();
     await go(value === 'install' ? 'fresh' : 'import');
+    if (value === 'install') void loadDrives();
   }
   /**
    * FL-1321: what Manager knows about the drives, for the hints under each folder. On a new Unraid library the
    * database starts on the suggested fast drive, unless the folder was already changed. Detection is a hint: without
    * it the step works as before.
    */
+  let drivesRequest = 0;
   async function loadDrives() {
+    const request = ++drivesRequest;
     thumbsFast = false;
     thumbsPath = '';
-    driveReport = dashboard?.folderSetup && !installation ? await api('drives').catch(() => null) : null;
-    const database = driveReport?.database;
-    if (database?.status === 'found' && dashboard.folderSetup.fastDatabase && databaseRoot === dashboard.folderSetup.database) databaseRoot = database.folder;
-    if (driveReport?.thumbs.status === 'found') thumbsPath = driveReport.thumbs.folder;
+    driveReport = null;
+    if (!dashboard?.folderSetup || installation) return;
+    // The step shows straight away; hints fill in when the report arrives. A slow scan is no hint at all.
+    const report: DriveReport | null = await api('drives', undefined, AbortSignal.timeout(8000)).catch(() => null);
+    if (request !== drivesRequest || screen !== 'fresh' || !report) return;
+    driveReport = report;
+    // Folders the administrator already changed are kept.
+    if (report.database.status === 'found' && dashboard.folderSetup.fastDatabase && databaseRoot === dashboard.folderSetup.database) databaseRoot = report.database.folder;
+    if (report.thumbs.status === 'found' && !thumbsPath) thumbsPath = report.thumbs.folder;
   }
   /** On a faster drive: the folder starts as Manager's suggestion. */
   function useFastThumbnails() {
