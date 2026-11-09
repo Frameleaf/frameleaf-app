@@ -8,6 +8,7 @@ import { atomicJson } from './files.js';
 import type { Store } from './store.js';
 import type { Fencing } from './fencing.js';
 import { filesystemMounts, type PostgresStorage, type FilesystemMount } from './postgres-storage.js';
+import { assertMountSources, assertMounts, libraryMounts, thumbnailMount } from './mounts.js';
 
 type Review = {
   available: boolean;
@@ -60,13 +61,20 @@ export class LibraryMove {
   private current(): Installation {
     const installation = this.store.get<Installation>('installation');
     if (!installation) throw new Refusal('no_installation');
-    if (installation.mounts.length !== 1 || installation.mounts[0].type !== 'bind' || installation.mounts[0].readOnly)
+    // FL-1320: a thumbnail mount on its own drive stays where it is; only the library folder moves.
+    const library = libraryMounts(installation.mounts);
+    if (library.length !== 1 || library[0] !== installation.mounts[0] || library[0].type !== 'bind' || library[0].readOnly)
       throw new Refusal('unsupported_media_mappings');
+    assertMounts(installation.mounts);
     return installation;
   }
+  /** Folders the destination must stay outside: the library, a thumbnail folder, the database, Manager and backups. */
+  private reserved(current: Installation): string[] {
+    const thumbnails = thumbnailMount(current.mounts);
+    return [current.mounts[0].source, ...(thumbnails ? [thumbnails.source] : []), current.databaseRoot, this.directory, this.backups];
+  }
   private paths(current: Installation, root: string): void {
-    if ([current.mounts[0].source, current.databaseRoot, this.directory, this.backups].some((p) => overlap(root, p)))
-      throw new Refusal('media_move_overlap');
+    if (this.reserved(current).some((p) => overlap(root, p))) throw new Refusal('media_move_overlap');
   }
   private async identity(path: string): Promise<string> {
     const data = await stat(path);
@@ -111,7 +119,7 @@ export class LibraryMove {
     }
 
     if (
-      [current.mounts[0].source, current.databaseRoot, this.directory, this.backups]
+      this.reserved(current)
         .map(location)
         .some((source) => source.device === destination.device && overlap(source.path, destination.path))
     )
@@ -265,6 +273,7 @@ export class LibraryMove {
   async review(root: string): Promise<Review> {
     const current = this.current();
     this.paths(current, root);
+    await assertMountSources(current.mounts);
     await this.storage.validate(root, 0);
     await this.storage.validate(current.mounts[0].source, 0, current.id);
     await this.physicalPaths(current, root);
@@ -391,6 +400,7 @@ export class LibraryMove {
     await step('move-stop-writers', async () => {
       if (digest(this.current()) !== digest(current)) throw new Refusal('installation_changed');
       await this.storage.validate(review.root, review.bytes);
+      await assertMountSources(current.mounts);
       await this.fencing.assertMedia(current.mounts, current);
       await this.quiesce(operation, current);
       const writers = (await this.docker.inventory()).filter(
@@ -438,9 +448,10 @@ export class LibraryMove {
       return this.helper('copy', review, destination);
     });
     await step('move-verify', () => this.helper('verify', review, destination));
+    // Only the library mount changes; a thumbnail mount (and its drive) is kept as it is.
     const next = {
       ...current,
-      mounts: [{ ...current.mounts[0], source: destination }],
+      mounts: current.mounts.map((mount, index) => (index === 0 ? { ...mount, source: destination } : mount)),
     };
     await step('move-switch', async () => {
       if (await this.cancelled(operation)) throw new Refusal('media_move_cancelled');
@@ -501,11 +512,16 @@ export class LibraryMove {
         c.Config.Labels?.['app.frameleaf.manager'] === current.id &&
         c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
     );
+    const thumbnails = thumbnailMount(current.mounts);
     if (
       !server?.State.Running ||
       !server.Mounts.some(
         (m) => m.Type === 'bind' && m.Source === destination && m.Destination === current.mounts[0].target && m.RW,
-      )
+      ) ||
+      (thumbnails &&
+        !server.Mounts.some(
+          (m) => m.Type === 'bind' && m.Source === thumbnails.source && m.Destination === thumbnails.target && m.RW,
+        ))
     )
       throw new Refusal('media_mapping_changed');
     if (server.State.Health?.Status !== 'healthy') throw new Refusal('media_move_health_unverified');
@@ -514,7 +530,10 @@ export class LibraryMove {
       directory: boolean;
       sha256?: string;
     }[];
-    const files = manifest.filter((entry) => !entry.directory);
+    // With thumbnails on their own drive the server reads /data/thumbs from there, not from the copied folder.
+    const files = manifest.filter(
+      (entry) => !entry.directory && !(thumbnails && (entry.path === 'thumbs' || entry.path.startsWith('thumbs/'))),
+    );
     const chosen = [
       ...new Map(
         [

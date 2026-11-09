@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -86,5 +86,24 @@ describe('admin restore publication on a real filesystem', () => {
     );
     expect(contents.sort()).toEqual(['first occupant', 'second occupant']);
     expect(await readFile(target, 'utf8')).toBe('backup');
+  });
+
+  // FL-1320: <media>/thumbs can be its own drive. An owner restore stages in <media>/frameleaf/restore, so a
+  // thumbnail staged there could never be renamed into place.
+  it('puts an owner-restored thumbnail in place when the thumbnails folder is another drive', async () => {
+    const { sut, storage, options } = setup();
+    const thumbs = join(folder, 'thumbs');
+    const target = join(thumbs, 'owner', 'as', 'se', 'asset-thumbnail.webp');
+    options.files = [{ ...options.files[0], role: 'thumbnail', target }];
+    const drive = (path: string) => path === thumbs || path.startsWith(thumbs + sep);
+    const rename = storage.rename.bind(storage);
+    vi.spyOn(storage, 'rename').mockImplementation(async (from, to) => {
+      if (drive(from) !== drive(to))
+        throw Object.assign(new Error('cross-device link not permitted'), { code: 'EXDEV' });
+      await rename(from, to);
+    });
+    await sut.restore({ ...options, publish: (_file, _staged, publish) => publish() });
+    expect(await readFile(target, 'utf8')).toBe('backup');
+    expect((await readdir(join(thumbs, 'owner', 'as', 'se'))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 });

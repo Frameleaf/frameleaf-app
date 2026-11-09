@@ -8,6 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
 import { atomicJson, publishFile } from './files.js';
 import { containerView, dockerArguments, toHost } from './host-paths.js';
+import { assertComposeMountSources } from './mounts.js';
 import { completeCommonImport } from './common-import-lifecycle.js';
 import { COMMON_IMPORT_CONFIG, IMPORT_PREPARATION_TARGET, writeCommonImportCompose } from './common-import-runtime.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
@@ -509,6 +510,8 @@ export class Docker {
       )
     )
       throw new Refusal('invalid_managed_project');
+    // FL-1320: a missing folder (a disconnected drive) is named before Docker refuses the whole stack.
+    if (action !== 'stop') await assertComposeMountSources(directory, services);
     const unraid = action === 'up' && process.env.MANAGER_PLATFORM === 'unraid';
     // DockerMan templates are optional: catalog templates published before the mapping existed still start.
     const dockerman = unraid && (await access(DOCKERMAN_TEMPLATES).then(() => true, () => false));

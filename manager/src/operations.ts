@@ -23,6 +23,7 @@ import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
 import { Retention } from './retention.js';
+import { assertMountSources, folderExists, libraryMounts, seedThumbnailMarker, thumbnailFolder, thumbnailMount, withThumbnails } from './mounts.js';
 import { environment } from './docker.js';
 import { elapsed, log } from './banner.js';
 import {
@@ -36,6 +37,7 @@ import {
   recentBackup,
   releaseTag,
   type Installation,
+  type Mount,
   type Source,
   type SourceFence,
   type Operation,
@@ -168,6 +170,13 @@ type RestoreReview = {
   recovery: z.infer<typeof Recovery>;
   platform: string;
   current: Installation | null;
+  /**
+   * FL-1320: the mounts the restored library gets: the backup's library mounts with thumbnails where they are
+   * now (the current installation's folder, else the backup's). Absent in reviews saved before FL-1320.
+   */
+  mounts?: Mount[];
+  /** The thumbnail folder was gone and the administrator chose the library's own `thumbs` folder instead. */
+  thumbnailFallback?: { missing: string; folder: string };
 };
 type UpdateReview = {
   expires: number;
@@ -1724,6 +1733,8 @@ export class Operations {
     const current = this.installation();
     // ponytail: an older release is reached by restoring a recovery point taken on it (Backups), never as an update.
     if (!current || !isNewerRelease(tag, current.release)) throw new Refusal('select_a_new_release');
+    // FL-1320: a missing photos or thumbnails drive is named before the update is offered, not after a stop.
+    await assertMountSources(current.mounts);
     const compatibility = await this.docker.compatibility();
     const release = await this.releases.acquire(tag);
     const currentImage: string = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
@@ -1889,6 +1900,8 @@ export class Operations {
       return true;
     });
     await this.step(operation, 'stop-application', async () => {
+      // Nothing is stopped while a media folder is missing: the new release could not start on it.
+      await assertMountSources(review.current.mounts);
       const compose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
       const mlService = compose.services['frameleaf-machine-learning']
         ? 'frameleaf-machine-learning'
@@ -2219,7 +2232,11 @@ export class Operations {
     operation.receipts['cancelled'] =
       move && !operation.completed.includes('database-move') ? 'database_move_failed_rolled_back' : 'update_failed_rolled_back';
   }
-  async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number) {
+  /**
+   * `thumbnailFallback`: the administrator accepted keeping thumbnails in the library's own `thumbs` folder
+   * because the thumbnail folder is gone (FL-1320). Without it a missing thumbnail folder is refused by name.
+   */
+  async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number, thumbnailFallback = false) {
     const current = this.installation();
     if (broadRoots(this.roots)) {
       assertSeparateFolders([databaseRoot, process.env.MANAGER_BACKUP_ROOT!, this.store.directory]);
@@ -2232,17 +2249,32 @@ export class Operations {
     const recovery = Recovery.parse(JSON.parse(await readFile(join(checkpoint, 'recovery.json'), 'utf8')));
     if (recovery.databaseFormat !== 'frameleaf-canonical')
       throw new Refusal('immich_source_checkpoint_requires_source_recovery');
+    // FL-1320: thumbnails can move to another drive after a backup; that does not make it another library.
     if (
       current &&
       ((current.libraryId ?? current.id) !== (recovery.installation.libraryId ?? recovery.installation.id) ||
-        digest(current.mounts) !== digest(recovery.installation.mounts))
+        digest(libraryMounts(current.mounts)) !== digest(libraryMounts(recovery.installation.mounts)))
     )
       throw new Refusal('backup_belongs_to_another_library');
-    await this.fencing.assertMedia(recovery.installation.mounts, current ?? undefined);
+    // Thumbnails stay where they are now: the current installation's folder, else the backup's.
+    const thumbnails = thumbnailMount(current ? current.mounts : recovery.installation.mounts);
+    let fallback: RestoreReview['thumbnailFallback'];
+    if (thumbnails && !(await folderExists(thumbnails.source))) {
+      const folder = thumbnailFolder(libraryMounts(recovery.installation.mounts));
+      if (!thumbnailFallback || !folder)
+        throw new Refusal(
+          'thumbnail_folder_missing',
+          409,
+          `The thumbnails folder ${thumbnails.source} is not there: its drive may be disconnected or not mounted. Reconnect the drive and review again, or restore with thumbnails in the photos folder (${folder ?? 'unavailable'}); Frameleaf can make them again there. Your photos are untouched either way.`,
+        );
+      fallback = { missing: thumbnails.source, folder };
+    }
+    const mounts = withThumbnails(recovery.installation.mounts, fallback ? null : (thumbnails?.source ?? null));
+    await this.fencing.assertMedia(mounts, current ?? undefined);
     const containers = await this.docker.inventory();
     if (broadRoots(this.roots))
-      assertSeparateFolders([databaseRoot, ...recovery.installation.mounts.filter((m) => m.type === 'bind').map((m) => m.source)]);
-    for (const mount of recovery.installation.mounts) {
+      assertSeparateFolders([databaseRoot, ...mounts.filter((m) => m.type === 'bind').map((m) => m.source)]);
+    for (const mount of mounts) {
       if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
       else if (!containers.some((c) => c.Mounts.some((m) => m.Type === 'volume' && m.Name === mount.source)))
         throw new Refusal('external_media_volume_unavailable');
@@ -2269,11 +2301,14 @@ export class Operations {
       recovery,
       platform: compatibility.platform,
       current,
+      mounts,
+      ...(fallback && { thumbnailFallback: fallback }),
     } satisfies RestoreReview);
     return {
       id,
       release: release.nas.tag,
-      mounts: recovery.installation.mounts,
+      mounts,
+      thumbnailFallback: fallback ?? null,
       port: recovery.installation.port,
       databaseStorage,
       mediaIncluded: false,
@@ -2333,6 +2368,7 @@ export class Operations {
         const databasePath = await this.databaseStorage.allocate(review.databaseRoot, suffix, review.databaseBytes);
         const installation: Installation = {
           ...review.recovery.installation,
+          mounts: review.mounts ?? review.recovery.installation.mounts,
           id: suffix,
           project: `frameleaf-${suffix}`,
           databaseRoot: review.databaseRoot,
@@ -2394,6 +2430,10 @@ export class Operations {
       if (review.current) await this.fencing.verifyInstallation(review.current);
       await this.fencing.assertMedia(installation.mounts, installation);
       await this.releases.eligible(review.release.nas.tag);
+      await assertMountSources(installation.mounts);
+      // FL-1320: the restored database says thumbnails were checked; the library's own `thumbs` folder, chosen
+      // in the review, gets the server's marker so it starts there. Any other missing marker still stops it.
+      if (review.thumbnailFallback) await seedThumbnailMarker(review.thumbnailFallback.folder);
       installation.mayHaveWrittenMedia = true;
       this.store.set('installation', installation);
       await this.docker.compose(this.directory(), installation.project, 'up');

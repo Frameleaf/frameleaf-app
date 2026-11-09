@@ -88,6 +88,25 @@ bind-mounted media folder; named volumes, external/read-only mappings, symlinks,
 hard links, special files and nested filesystems require a separate move plan.
 PostgreSQL, Manager state and database backups remain in their original locations.
 
+### Thumbnails on a separate drive
+
+A library can keep its thumbnails in a folder of their own, usually on a faster
+drive. That folder is a second bind mount at `/data/thumbs`, listed straight
+after the photos mount at `/data` in the installation's mounts, so the server's
+paths and database records stay the same. Moving the library moves only the
+photos folder; the thumbnail mount and its drive are kept as they are. Before
+every start, update, rollback, restore and move, Manager checks that each
+mounted folder is there and names a missing one (`thumbnail_folder_missing`,
+`media_folder_missing`) instead of letting Docker refuse the whole stack. The
+server still refuses to start when a folder it has checked before loses its
+`.frameleaf` marker, which protects against a drive that is not mounted.
+
+A restore keeps thumbnails where they are now, so a backup taken before they
+moved still belongs to the same library. If their folder is gone, the restore
+review offers to keep them in the photos folder's own `thumbs` folder instead;
+Manager then seeds the marker there before starting, and missing thumbnails can
+be made again.
+
 Manager stops and fences managed writers, saves a verified database recovery point,
 copies into a new folder and independently compares the complete file inventory,
 SHA-256 checksums, POSIX metadata, ACLs and extended attributes. Its isolated copy helper uses the exact local

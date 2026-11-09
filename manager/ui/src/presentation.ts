@@ -149,6 +149,11 @@ const moveRefusals: Record<string, string> = {
 const refusals: Record<string, string> = {
   invalid_storage_path: 'That folder path can’t be used. Use a full path such as /mnt/user/photos, with no comma in it.',
   storage_volume_missing: 'That drive or share isn’t on this server right now. Check that it’s connected, then choose the folder again.',
+  // FL-1320: named before Docker refuses the whole stack; the detail names the folder.
+  thumbnail_folder_missing: 'The thumbnails drive isn’t connected.',
+  media_folder_missing: 'The photos drive isn’t connected.',
+  mounted_folder_missing: 'A folder Frameleaf uses isn’t there.',
+  unsupported_thumbnail_mount: 'Thumbnails can only be kept in one writable folder of their own, outside the photos folder.',
   chosen_folders_overlap: 'Photos and videos, the database, backups and Manager’s own settings each need their own separate folder.',
   external_folder_holds_frameleaf_data: 'This folder holds Frameleaf’s own data, or sits inside it. Choose a folder of photos instead.',
   folder_browsing_unavailable: 'This server’s folders are set in its container settings, so they can’t be browsed here.',
