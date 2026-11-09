@@ -323,8 +323,10 @@
   // shared-link visitors are not the library's people, so neither counts.
   let countedViewFor: string | undefined;
   $effect(() => {
-    const id = cursor.current.id;
-    if (countedViewFor === id || !authManager.authenticated || authManager.isSharedLink) {
+    const { id, lockedEncryption } = cursor.current;
+    // An encrypted Locked item that doesn't open yet isn't seen; it counts once it opens.
+    const unopenable = lockedEncryption && !lockedEncryption.openable;
+    if (countedViewFor === id || unopenable || !authManager.authenticated || authManager.isSharedLink) {
       return;
     }
     // Mark slideshow slides as seen too, so stopping on one does not count it as an opening.
