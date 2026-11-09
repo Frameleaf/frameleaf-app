@@ -52,6 +52,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
         return 'moved';
       },
     ),
+    isPathNamedByOthers: vitest.fn().mockResolvedValue(false),
     findLivePhotoMatch: vitest.fn(),
     getStatistics: vitest.fn(),
     countLockedRuleMatches: vitest.fn(),

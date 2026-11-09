@@ -827,6 +827,44 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith(oldPath);
     });
 
+    it('never reuses a name of the asset’s file that another photo is recorded at (FL-1333)', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+      })
+        .exif()
+        .build();
+
+      const oldPath = asset.originalPath;
+      const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+      const newPath2 = newPath.replace('.jpg', '+1.jpg');
+
+      mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
+      mocks.user.getList.mockResolvedValue([userStub.user1]);
+      mocks.move.create.mockResolvedValue({
+        id: '123',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath,
+        newPath: newPath2,
+      });
+      // an in-place import keeps two photos' originals as two names of one file: the other photo is at newPath
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === newPath));
+      mocks.storage.isOtherLinkOf.mockImplementation((first, second) =>
+        Promise.resolve(first === oldPath && second === newPath),
+      );
+      mocks.asset.isPathNamedByOthers.mockImplementation((assetId, path) =>
+        Promise.resolve(assetId === asset.id && path === newPath),
+      );
+
+      await sut.handleMigration();
+
+      expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath2 }]);
+      expect(mocks.asset.isPathNamedByOthers).toHaveBeenCalledWith(asset.id, newPath);
+      // the other photo's name is never touched
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(newPath);
+      expect(mocks.storage.link).not.toHaveBeenCalledWith(oldPath, newPath);
+    });
+
     it('takes the next name when it cannot tell whether a destination is the asset’s own file', async () => {
       const asset = AssetFactory.from({
         fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),

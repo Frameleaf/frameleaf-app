@@ -942,10 +942,16 @@ describe(AssetService.name, () => {
             .set({ physicalOriginalFileId: physicalId })
             .where('id', '=', asset.id)
             .execute();
-          // another physical file already has the new path, so saving it fails
-          await addPhysicalOriginal(to, null);
           const moveId = await recordMove(asset.id, asset.originalPath, to);
-          const operations = { rename: vi.fn(() => Promise.resolve(true)), finish: vi.fn(noop), undo: vi.fn(noop) };
+          // another physical file takes the new path once the move checked it, so saving it fails
+          const operations = {
+            rename: vi.fn(async () => {
+              await addPhysicalOriginal(to, null);
+              return true;
+            }),
+            finish: vi.fn(noop),
+            undo: vi.fn(noop),
+          };
 
           await expect(
             repository.moveFile(
@@ -965,6 +971,59 @@ describe(AssetService.name, () => {
           expect(operations.finish).not.toHaveBeenCalled();
           await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: asset.originalPath });
           await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
+        });
+
+        // FL-1333: two photos can keep their originals as two names of one file. A move never takes a name another
+        // record holds, so the file there is never treated as this photo's own, removed, or taken back.
+        it.each([
+          { label: 'another photo’s original', physical: false },
+          { label: 'another physical file', physical: true },
+        ])('moves nothing onto a path that $label names', async ({ physical }) => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
+          const to = `/data/library/${asset.id}-named.jpg`;
+          const { asset: other } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: physical ? ownOriginalPath() : to,
+          });
+          if (physical) {
+            await addPhysicalOriginal(to, other.id);
+          }
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+          const operations = { rename: vi.fn(renamed), finish: vi.fn(noop), undo: vi.fn(noop) };
+
+          await expect(repository.moveFile(originalMove(asset, moveId, to), operations)).resolves.toBe('failed');
+
+          expect(operations.rename).not.toHaveBeenCalled();
+          expect(operations.undo).not.toHaveBeenCalled();
+          await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: asset.originalPath });
+          await expect(repository.getById(other.id)).resolves.toMatchObject({ originalPath: other.originalPath });
+          // the move stays recorded; the next run picks another name
+          await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
+        });
+
+        it('moves onto a path only the asset’s own physical file names', async () => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
+          const to = `/data/library/${asset.id}-own.jpg`;
+          const physicalId = await addPhysicalOriginal(to, asset.id);
+          await forkDatabase
+            .updateTable('asset')
+            .set({ physicalOriginalFileId: physicalId })
+            .where('id', '=', asset.id)
+            .execute();
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+
+          await expect(
+            repository.moveFile(originalMove(asset, moveId, to), { rename: renamed, finish: noop, undo: noop }),
+          ).resolves.toBe('moved');
+
+          await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: to });
+          await expect(movesOf(asset.id)).resolves.toEqual([]);
         });
 
         it('makes a removal that starts during a move wait for it, and see the file at its new path', async () => {
@@ -1330,6 +1389,102 @@ describe(AssetService.name, () => {
             await rm(media, { recursive: true, force: true });
           }
         });
+
+        it.each([
+          { physical: false, label: 'without physical files' },
+          { physical: true, label: 'each with its own physical file' },
+        ])(
+          'keeps both names of two photos whose originals are hard links of one file, $label (FL-1333)',
+          async ({ physical }) => {
+            // real files: an in-place import kept the two photos' originals as two names of one file
+            const media = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-linked-photos-')));
+            StorageCore.reset();
+            StorageCore.setMediaLocation(media);
+            try {
+              const { sut, ctx } = newMediumService(StorageTemplateService, {
+                database: forkDatabase,
+                real: [
+                  AssetRepository,
+                  AssetJobRepository,
+                  CryptoRepository,
+                  MoveRepository,
+                  PhysicalFileRepository,
+                  StorageRepository,
+                  UserRepository,
+                ],
+                mock: [DatabaseRepository, EventRepository, JobRepository, LoggingRepository],
+              });
+              const config = structuredClone(defaults);
+              config.storageTemplate.enabled = true;
+              config.storageTemplate.template = 'linked/{{filename}}';
+              sut.onConfigInit({ newConfig: config });
+              vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
+              ctx.getMock(DatabaseRepository).withLock.mockImplementation((_lock, callback) => callback());
+
+              const { user } = await ctx.newUser();
+              const bytes = Buffer.from('one file, two photos');
+              const name = join(
+                StorageCore.getLibraryFolder({ id: user.id, storageLabel: user.storageLabel ?? null }),
+                'linked',
+                'IMG_0001',
+              );
+              // the photo already at its template name, and a second photo whose original is another name of it
+              await mkdir(dirname(name), { recursive: true });
+              await writeFile(`${name}.jpg`, bytes);
+              const folder = join(media, 'upload', user.id, 'ab', 'cd');
+              await mkdir(folder, { recursive: true });
+              const linkedPath = join(folder, `${randomUUID()}.jpg`);
+              await link(`${name}.jpg`, linkedPath);
+              const photos: { id: string; originalPath: string }[] = [];
+              for (const originalPath of [`${name}.jpg`, linkedPath]) {
+                const { asset } = await ctx.newAsset({
+                  ownerId: user.id,
+                  originalPath,
+                  originalFileName: 'IMG_0001.jpg',
+                  // one checksum per owner: the second photo's record is told apart by its path alone
+                  checksum: createHash('sha1').update(bytes).update(originalPath).digest(),
+                });
+                await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
+                if (physical) {
+                  const physicalId = await addPhysicalOriginal(originalPath, asset.id);
+                  await forkDatabase
+                    .updateTable('asset')
+                    .set({ physicalOriginalFileId: physicalId })
+                    .where('id', '=', asset.id)
+                    .execute();
+                }
+                photos.push({ id: asset.id, originalPath });
+              }
+              const [placed, linked] = photos;
+
+              for (const photo of [linked, placed]) {
+                await expect(sut.handleMigrationSingle({ id: photo.id })).resolves.toBe(JobStatus.Success);
+              }
+
+              const pathOf = async (id: string) => (await ctx.get(AssetRepository).getById(id))?.originalPath;
+              // the photo at its template name keeps it, with its bytes
+              await expect(pathOf(placed.id)).resolves.toBe(`${name}.jpg`);
+              await expect(readFile(`${name}.jpg`)).resolves.toEqual(bytes);
+              // the other photo never takes that name: it is at a free one, or where it was, and its file is there
+              const linkedAt = await pathOf(linked.id);
+              expect([`${name}+1.jpg`, linkedPath]).toContain(linkedAt);
+              await expect(readFile(linkedAt!)).resolves.toEqual(bytes);
+              // still two names of one file, one for each photo
+              expect((await stat(`${name}.jpg`)).nlink).toBe(2);
+              if (physical) {
+                const physicalPaths = await forkDatabase
+                  .selectFrom('physical_file')
+                  .select('path')
+                  .where('canonicalAssetId', 'in', [placed.id, linked.id])
+                  .execute();
+                expect(new Set(physicalPaths.map(({ path }) => path))).toEqual(new Set([`${name}.jpg`, linkedAt]));
+              }
+            } finally {
+              StorageCore.reset();
+              await rm(media, { recursive: true, force: true });
+            }
+          },
+        );
       });
 
       it('deletes canonical develop revisions with the asset', async () => {
