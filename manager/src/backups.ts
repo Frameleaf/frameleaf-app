@@ -77,6 +77,10 @@ export class Backups {
       await rm(temporary, { force: true });
     }
   }
+  /** Setup chose where backups live, before the first one exists. */
+  relocate(repository: string): void {
+    this.repository = repository;
+  }
   async initialize(): Promise<void> {
     if (typeof this.keyFile === 'function') await this.recoveryKey();
     await mkdir(this.repository, { recursive: true, mode: 0o700 });

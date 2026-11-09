@@ -102289,6 +102289,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "found": {
+            "description": "False when this server cannot see the folder at all, rather than being refused access",
+            "type": "boolean"
+          },
           "readable": {
             "description": "Whether the folder could be read",
             "type": "boolean"
@@ -102298,6 +102302,7 @@
           "bytes",
           "complete",
           "count",
+          "found",
           "readable"
         ],
         "type": "object"

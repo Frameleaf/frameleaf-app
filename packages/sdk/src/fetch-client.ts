@@ -2658,6 +2658,8 @@ export type LibraryFolderEstimateResponseDto = {
     complete: boolean;
     /** Photos and videos found */
     count: number;
+    /** False when this server cannot see the folder at all, rather than being refused access */
+    found: boolean;
     /** Whether the folder could be read */
     readable: boolean;
 };

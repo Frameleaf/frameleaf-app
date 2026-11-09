@@ -81,20 +81,22 @@ library from Manager to generate the service templates.
 
 ## Manager setup
 
-1. Click **Apply** to install with the suggested folders under
-   `/mnt/user/appdata/`, or change any folder's path first. Database storage must
-   be on supported local disk storage outside Docker's data root and `docker.img`.
+1. Click **Apply**. The template maps `/mnt` into Manager, and you choose where
+   Frameleaf keeps photos, the database and backups in Manager's setup, with
+   folders under `/mnt/user/appdata/` already filled in. Manager creates them.
+   Database storage must be on supported local disk storage outside Docker's
+   data root and `docker.img`.
 2. Leave **Manager origin** blank and open Manager from the WebUI link
    (`https://<NAS IP>:2282` or `https://tower.local:2282`). Only if you reach
    Manager through a custom DNS name, set **Manager origin** to that exact
    address, for example `https://nas.example:2282`, and set **Advanced View →
    WebUI** to match; other hostnames are then refused with HTTP 403.
-3. To store something elsewhere, change only that folder's path. Leave the
-   **Container Path** and the advanced variables as they are; Manager reads the
-   mapping from Docker. To add more media or database folders, add a mapping
-   for each and put its **Container Path** in `MANAGER_STORAGE_ROOTS` or
-   `MANAGER_DATABASE_ROOTS`, separated by colons. Never
-   expose the whole host filesystem to make additional folders selectable.
+3. To show photos you already keep somewhere else, add the folder under
+   **External folders** in Manager, during setup or later on the Services page.
+   It is read-only by default. Manager already controls Docker through its
+   socket, so mapping `/mnt` gives it nothing new; the Frameleaf server only sees
+   the folders you choose. An install from an earlier template keeps its own
+   folder mappings and location variables and works as before.
 4. Apply the container configuration and open the WebUI. Manager initially
    generates a self-signed certificate, so expect a browser warning. For a
    trusted HTTPS connection, provision a certificate and key matching the
