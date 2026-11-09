@@ -942,10 +942,16 @@ describe(AssetService.name, () => {
             .set({ physicalOriginalFileId: physicalId })
             .where('id', '=', asset.id)
             .execute();
-          // another physical file already has the new path, so saving it fails
-          await addPhysicalOriginal(to, null);
           const moveId = await recordMove(asset.id, asset.originalPath, to);
-          const operations = { rename: vi.fn(() => Promise.resolve(true)), finish: vi.fn(noop), undo: vi.fn(noop) };
+          // another physical file takes the new path once the move checked it, so saving it fails
+          const operations = {
+            rename: vi.fn(async () => {
+              await addPhysicalOriginal(to, null);
+              return true;
+            }),
+            finish: vi.fn(noop),
+            undo: vi.fn(noop),
+          };
 
           await expect(
             repository.moveFile(
@@ -965,6 +971,59 @@ describe(AssetService.name, () => {
           expect(operations.finish).not.toHaveBeenCalled();
           await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: asset.originalPath });
           await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
+        });
+
+        // FL-1333: two photos can keep their originals as two names of one file. A move never takes a name another
+        // record holds, so the file there is never treated as this photo's own, removed, or taken back.
+        it.each([
+          { label: 'another photo’s original', physical: false },
+          { label: 'another physical file', physical: true },
+        ])('moves nothing onto a path that $label names', async ({ physical }) => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
+          const to = `/data/library/${asset.id}-named.jpg`;
+          const { asset: other } = await ctx.newAsset({
+            ownerId: user.id,
+            originalPath: physical ? ownOriginalPath() : to,
+          });
+          if (physical) {
+            await addPhysicalOriginal(to, other.id);
+          }
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+          const operations = { rename: vi.fn(renamed), finish: vi.fn(noop), undo: vi.fn(noop) };
+
+          await expect(repository.moveFile(originalMove(asset, moveId, to), operations)).resolves.toBe('taken');
+
+          expect(operations.rename).not.toHaveBeenCalled();
+          expect(operations.undo).not.toHaveBeenCalled();
+          await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: asset.originalPath });
+          await expect(repository.getById(other.id)).resolves.toMatchObject({ originalPath: other.originalPath });
+          // the move stays recorded; the next run picks another name
+          await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
+        });
+
+        it('moves onto a path only the asset’s own physical file names', async () => {
+          const { ctx } = setup(forkDatabase);
+          const repository = ctx.get(AssetRepository);
+          const { user } = await ctx.newUser();
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
+          const to = `/data/library/${asset.id}-own.jpg`;
+          const physicalId = await addPhysicalOriginal(to, asset.id);
+          await forkDatabase
+            .updateTable('asset')
+            .set({ physicalOriginalFileId: physicalId })
+            .where('id', '=', asset.id)
+            .execute();
+          const moveId = await recordMove(asset.id, asset.originalPath, to);
+
+          await expect(
+            repository.moveFile(originalMove(asset, moveId, to), { rename: renamed, finish: noop, undo: noop }),
+          ).resolves.toBe('moved');
+
+          await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: to });
+          await expect(movesOf(asset.id)).resolves.toEqual([]);
         });
 
         it('makes a removal that starts during a move wait for it, and see the file at its new path', async () => {
@@ -1163,105 +1222,131 @@ describe(AssetService.name, () => {
           await expect(repository.getById(other.id)).resolves.toMatchObject({ originalPath: to });
         });
 
-        it('two photos that land on the same name keep both files', async () => {
-          // FL-1333: real files, moved by the storage template's own job
-          const media = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-same-name-')));
-          StorageCore.reset();
-          StorageCore.setMediaLocation(media);
-          try {
-            const { sut, ctx } = newMediumService(StorageTemplateService, {
-              database: forkDatabase,
-              real: [
-                AssetRepository,
-                AssetJobRepository,
-                CryptoRepository,
-                MoveRepository,
-                PhysicalFileRepository,
-                StorageRepository,
-                UserRepository,
-              ],
-              mock: [DatabaseRepository, EventRepository, JobRepository, LoggingRepository],
-            });
-            const config = structuredClone(defaults);
-            config.storageTemplate.enabled = true;
-            config.storageTemplate.template = 'same-name/{{filename}}';
-            sut.onConfigInit({ newConfig: config });
-            vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
-            // The template's own lock runs one of its moves at a time. Without it the first move stands for any
-            // writer that takes a name between the template's check for it and the move.
-            ctx.getMock(DatabaseRepository).withLock.mockImplementation((_lock, callback) => callback());
-
-            const { user } = await ctx.newUser();
-            const folder = join(media, 'upload', user.id, 'ab', 'cd');
-            await mkdir(folder, { recursive: true });
-            const photos: { id: string; originalPath: string; bytes: Buffer }[] = [];
-            for (const bytes of [Buffer.from('the first photo'), Buffer.from('a second, different photo')]) {
-              const originalPath = join(folder, `${randomUUID()}.jpg`);
-              await writeFile(originalPath, bytes);
-              const { asset } = await ctx.newAsset({
-                ownerId: user.id,
-                originalPath,
-                originalFileName: 'IMG_0001.jpg',
-                checksum: createHash('sha1').update(bytes).digest(),
-              });
-              await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
-              photos.push({ id: asset.id, originalPath, bytes });
-            }
-            const [first, second] = photos;
-            const name = join(
-              StorageCore.getLibraryFolder({ id: user.id, storageLabel: user.storageLabel ?? null }),
-              'same-name',
-              'IMG_0001',
-            );
-
-            // The second move finds the name free, and the first move takes it before the second goes on. (Two
-            // moves whose records overlap never get this far: the second record of one new path is refused.)
-            const storage = ctx.get(StorageRepository);
-            const checkFileExists = storage.checkFileExists.bind(storage);
-            let held = false;
-            let secondChecked!: () => void;
-            const checked = new Promise<void>((resolve) => (secondChecked = resolve));
-            let firstMoved!: () => void;
-            const moved = new Promise<void>((resolve) => (firstMoved = resolve));
-            vi.spyOn(storage, 'checkFileExists').mockImplementation(async (path, mode) => {
-              const exists = await checkFileExists(path, mode);
-              if (path === `${name}.jpg` && !held) {
-                held = true;
-                secondChecked();
-                await moved;
-              }
-              return exists;
-            });
-
-            await Promise.all([
-              sut.handleMigrationSingle({ id: second.id }),
-              checked.then(() => sut.handleMigrationSingle({ id: first.id })).finally(firstMoved),
-            ]);
-
-            const pathOf = async (id: string) => (await ctx.get(AssetRepository).getById(id))?.originalPath;
-            await expect(pathOf(first.id)).resolves.toBe(`${name}.jpg`);
-            await expect(readFile(`${name}.jpg`)).resolves.toEqual(first.bytes);
-            // the move that found the name taken changed nothing, and stays recorded for the next run
-            await expect(pathOf(second.id)).resolves.toBe(second.originalPath);
-            await expect(readFile(second.originalPath)).resolves.toEqual(second.bytes);
-            await expect(movesOf(second.id)).resolves.toHaveLength(1);
-
-            // which sees the name taken and picks a free one
-            await expect(sut.handleMigrationSingle({ id: second.id })).resolves.toBe(JobStatus.Success);
-
-            await expect(pathOf(first.id)).resolves.toBe(`${name}.jpg`);
-            await expect(pathOf(second.id)).resolves.toBe(`${name}+1.jpg`);
-            await expect(readFile(`${name}.jpg`)).resolves.toEqual(first.bytes);
-            await expect(readFile(`${name}+1.jpg`)).resolves.toEqual(second.bytes);
-            for (const photo of photos) {
-              await expect(readFile(photo.originalPath)).rejects.toMatchObject({ code: 'ENOENT' });
-              await expect(movesOf(photo.id)).resolves.toEqual([]);
-            }
-          } finally {
+        it.each([
+          { taker: 'another photo', label: 'its record' },
+          { taker: 'a file with no record', label: 'the file that is there' },
+        ])(
+          'two moves that land on the same name keep both files when $taker takes it first ($label stops the move)',
+          async ({ taker }) => {
+            // FL-1333: real files, moved by the storage template's own job
+            const media = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-same-name-')));
             StorageCore.reset();
-            await rm(media, { recursive: true, force: true });
-          }
-        });
+            StorageCore.setMediaLocation(media);
+            try {
+              const { sut, ctx } = newMediumService(StorageTemplateService, {
+                database: forkDatabase,
+                real: [
+                  AssetRepository,
+                  AssetJobRepository,
+                  CryptoRepository,
+                  MoveRepository,
+                  PhysicalFileRepository,
+                  StorageRepository,
+                  UserRepository,
+                ],
+                mock: [DatabaseRepository, EventRepository, JobRepository, LoggingRepository],
+              });
+              const config = structuredClone(defaults);
+              config.storageTemplate.enabled = true;
+              config.storageTemplate.template = 'same-name/{{filename}}';
+              sut.onConfigInit({ newConfig: config });
+              vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
+              // The template's own lock runs one of its moves at a time. Without it the first move stands for any
+              // writer that takes a name between the template's check for it and the move.
+              ctx.getMock(DatabaseRepository).withLock.mockImplementation((_lock, callback) => callback());
+
+              const { user } = await ctx.newUser();
+              const folder = join(media, 'upload', user.id, 'ab', 'cd');
+              await mkdir(folder, { recursive: true });
+              const photos: { id: string; originalPath: string; bytes: Buffer }[] = [];
+              for (const bytes of [Buffer.from('the first photo'), Buffer.from('a second, different photo')]) {
+                const originalPath = join(folder, `${randomUUID()}.jpg`);
+                await writeFile(originalPath, bytes);
+                const { asset } = await ctx.newAsset({
+                  ownerId: user.id,
+                  originalPath,
+                  originalFileName: 'IMG_0001.jpg',
+                  checksum: createHash('sha1').update(bytes).digest(),
+                });
+                await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
+                photos.push({ id: asset.id, originalPath, bytes });
+              }
+              const [first, second] = photos;
+              const name = join(
+                StorageCore.getLibraryFolder({ id: user.id, storageLabel: user.storageLabel ?? null }),
+                'same-name',
+                'IMG_0001',
+              );
+
+              // The second move's template finds the name free on disk and in the records, and the name is taken
+              // before its move goes on: by the first photo's move (the locked move then finds its record), or by a
+              // file no record names (the move then finds the file there and never replaces it). (Two moves whose
+              // records overlap never get this far: the second record of one new path is refused.)
+              const assets = ctx.get(AssetRepository);
+              const isPathNamedByOthers = assets.isPathNamedByOthers.bind(assets);
+              let held = false;
+              let secondChecked!: () => void;
+              const checked = new Promise<void>((resolve) => (secondChecked = resolve));
+              let nameTaken!: () => void;
+              const taken = new Promise<void>((resolve) => (nameTaken = resolve));
+              vi.spyOn(assets, 'isPathNamedByOthers').mockImplementation(async (assetId, path, kysely) => {
+                const named = await isPathNamedByOthers(assetId, path, kysely);
+                // the template's own check (the locked move passes its transaction)
+                if (path === `${name}.jpg` && !kysely && !held) {
+                  held = true;
+                  secondChecked();
+                  await taken;
+                }
+                return named;
+              });
+              const stranger = Buffer.from('a file no record names');
+              const takeName = async () => {
+                if (taker === 'another photo') {
+                  await sut.handleMigrationSingle({ id: first.id });
+                  return;
+                }
+                await mkdir(dirname(name), { recursive: true });
+                await writeFile(`${name}.jpg`, stranger, { flag: 'wx' });
+              };
+
+              await Promise.all([
+                sut.handleMigrationSingle({ id: second.id }),
+                checked.then(takeName).finally(nameTaken),
+              ]);
+
+              const pathOf = async (id: string) => (await ctx.get(AssetRepository).getById(id))?.originalPath;
+              const atName = taker === 'another photo' ? first.bytes : stranger;
+              await expect(readFile(`${name}.jpg`)).resolves.toEqual(atName);
+              // the move that found the name taken changed nothing, and stays recorded for the next run
+              await expect(pathOf(second.id)).resolves.toBe(second.originalPath);
+              await expect(readFile(second.originalPath)).resolves.toEqual(second.bytes);
+              await expect(movesOf(second.id)).resolves.toHaveLength(1);
+              if (taker === 'another photo') {
+                await expect(pathOf(first.id)).resolves.toBe(`${name}.jpg`);
+                // the locked move's refusal is reported, with the path, so it never fails silently
+                const warnings = ctx
+                  .getMock(LoggingRepository)
+                  .warn.mock.calls.filter(([message]) => message.includes('another record names'));
+                expect(warnings).toHaveLength(1);
+                expect(warnings[0][0]).toContain(`${name}.jpg`);
+              }
+
+              // which sees the name taken and picks a free one
+              await expect(sut.handleMigrationSingle({ id: second.id })).resolves.toBe(JobStatus.Success);
+
+              await expect(pathOf(second.id)).resolves.toBe(`${name}+1.jpg`);
+              await expect(readFile(`${name}.jpg`)).resolves.toEqual(atName);
+              await expect(readFile(`${name}+1.jpg`)).resolves.toEqual(second.bytes);
+              for (const photo of taker === 'another photo' ? photos : [second]) {
+                await expect(readFile(photo.originalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+                await expect(movesOf(photo.id)).resolves.toEqual([]);
+              }
+            } finally {
+              StorageCore.reset();
+              await rm(media, { recursive: true, force: true });
+            }
+          },
+        );
 
         it.each([
           { recorded: true, label: 'with its recorded move' },
@@ -1325,6 +1410,182 @@ describe(AssetService.name, () => {
             await expect(stat(originalPath)).rejects.toMatchObject({ code: 'ENOENT' });
             await expect(stat(name.replace('.jpg', '+1.jpg'))).rejects.toMatchObject({ code: 'ENOENT' });
             await expect(movesOf(asset.id)).resolves.toEqual([]);
+          } finally {
+            StorageCore.reset();
+            await rm(media, { recursive: true, force: true });
+          }
+        });
+
+        it.each([
+          { physical: false, label: 'without physical files' },
+          { physical: true, label: 'each with its own physical file' },
+        ])(
+          'keeps both names of two photos whose originals are hard links of one file, $label (FL-1333)',
+          async ({ physical }) => {
+            // real files: an in-place import kept the two photos' originals as two names of one file
+            const media = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-linked-photos-')));
+            StorageCore.reset();
+            StorageCore.setMediaLocation(media);
+            try {
+              const { sut, ctx } = newMediumService(StorageTemplateService, {
+                database: forkDatabase,
+                real: [
+                  AssetRepository,
+                  AssetJobRepository,
+                  CryptoRepository,
+                  MoveRepository,
+                  PhysicalFileRepository,
+                  StorageRepository,
+                  UserRepository,
+                ],
+                mock: [DatabaseRepository, EventRepository, JobRepository, LoggingRepository],
+              });
+              const config = structuredClone(defaults);
+              config.storageTemplate.enabled = true;
+              config.storageTemplate.template = 'linked/{{filename}}';
+              sut.onConfigInit({ newConfig: config });
+              vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
+              ctx.getMock(DatabaseRepository).withLock.mockImplementation((_lock, callback) => callback());
+
+              const { user } = await ctx.newUser();
+              const bytes = Buffer.from('one file, two photos');
+              const name = join(
+                StorageCore.getLibraryFolder({ id: user.id, storageLabel: user.storageLabel ?? null }),
+                'linked',
+                'IMG_0001',
+              );
+              // the photo already at its template name, and a second photo whose original is another name of it
+              await mkdir(dirname(name), { recursive: true });
+              await writeFile(`${name}.jpg`, bytes);
+              const folder = join(media, 'upload', user.id, 'ab', 'cd');
+              await mkdir(folder, { recursive: true });
+              const linkedPath = join(folder, `${randomUUID()}.jpg`);
+              await link(`${name}.jpg`, linkedPath);
+              const photos: { id: string; originalPath: string }[] = [];
+              for (const originalPath of [`${name}.jpg`, linkedPath]) {
+                const { asset } = await ctx.newAsset({
+                  ownerId: user.id,
+                  originalPath,
+                  originalFileName: 'IMG_0001.jpg',
+                  // one checksum per owner: the second photo's record is told apart by its path alone
+                  checksum: createHash('sha1').update(bytes).update(originalPath).digest(),
+                });
+                await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
+                if (physical) {
+                  const physicalId = await addPhysicalOriginal(originalPath, asset.id);
+                  await forkDatabase
+                    .updateTable('asset')
+                    .set({ physicalOriginalFileId: physicalId })
+                    .where('id', '=', asset.id)
+                    .execute();
+                }
+                photos.push({ id: asset.id, originalPath });
+              }
+              const [placed, linked] = photos;
+
+              for (const photo of [linked, placed]) {
+                await expect(sut.handleMigrationSingle({ id: photo.id })).resolves.toBe(JobStatus.Success);
+              }
+
+              const pathOf = async (id: string) => (await ctx.get(AssetRepository).getById(id))?.originalPath;
+              // the photo at its template name keeps it, with its bytes
+              await expect(pathOf(placed.id)).resolves.toBe(`${name}.jpg`);
+              await expect(readFile(`${name}.jpg`)).resolves.toEqual(bytes);
+              // the other photo never takes that name: it moves to the next free one, and its file is there
+              const linkedAt = await pathOf(linked.id);
+              expect(linkedAt).toBe(`${name}+1.jpg`);
+              await expect(readFile(linkedAt!)).resolves.toEqual(bytes);
+              // still two names of one file, one for each photo
+              expect((await stat(`${name}.jpg`)).nlink).toBe(2);
+              if (physical) {
+                const physicalPaths = await forkDatabase
+                  .selectFrom('physical_file')
+                  .select('path')
+                  .where('canonicalAssetId', 'in', [placed.id, linked.id])
+                  .execute();
+                expect(new Set(physicalPaths.map(({ path }) => path))).toEqual(new Set([`${name}.jpg`, linkedAt]));
+              }
+            } finally {
+              StorageCore.reset();
+              await rm(media, { recursive: true, force: true });
+            }
+          },
+        );
+
+        it('never takes another photo’s name as the source of a kept move whose old path is gone (FL-1333)', async () => {
+          // real files: A's move to B's name was kept ('taken') when B's record took it, and then A's own file went
+          const media = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-kept-move-')));
+          StorageCore.reset();
+          StorageCore.setMediaLocation(media);
+          try {
+            const { sut, ctx } = newMediumService(StorageTemplateService, {
+              database: forkDatabase,
+              real: [
+                AssetRepository,
+                AssetJobRepository,
+                CryptoRepository,
+                MoveRepository,
+                PhysicalFileRepository,
+                StorageRepository,
+                UserRepository,
+              ],
+              mock: [DatabaseRepository, EventRepository, JobRepository, LoggingRepository],
+            });
+            const config = structuredClone(defaults);
+            config.storageTemplate.enabled = true;
+            config.storageTemplate.template = 'kept/{{filename}}';
+            sut.onConfigInit({ newConfig: config });
+            vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
+            ctx.getMock(DatabaseRepository).withLock.mockImplementation((_lock, callback) => callback());
+
+            const { user } = await ctx.newUser();
+            const bytes = Buffer.from('one file, two photos, one name left');
+            const name = join(
+              StorageCore.getLibraryFolder({ id: user.id, storageLabel: user.storageLabel ?? null }),
+              'kept',
+              'IMG_0001',
+            );
+            // B at the template name; A's original another name of the same file
+            await mkdir(dirname(name), { recursive: true });
+            await writeFile(`${name}.jpg`, bytes);
+            const folder = join(media, 'upload', user.id, 'ab', 'cd');
+            await mkdir(folder, { recursive: true });
+            const pathA = join(folder, `${randomUUID()}.jpg`);
+            await link(`${name}.jpg`, pathA);
+            const { asset: a } = await ctx.newAsset({
+              ownerId: user.id,
+              originalPath: pathA,
+              originalFileName: 'IMG_0001.jpg',
+              // A's checksum is the file's, so the bytes at B's name verify as A's
+              checksum: createHash('sha1').update(bytes).digest(),
+            });
+            await ctx.newExif({ assetId: a.id, fileSizeInByte: bytes.length });
+            const { asset: b } = await ctx.newAsset({
+              ownerId: user.id,
+              originalPath: `${name}.jpg`,
+              originalFileName: 'IMG_0001.jpg',
+              checksum: createHash('sha1').update(bytes).update('b').digest(),
+            });
+            await ctx.newExif({ assetId: b.id, fileSizeInByte: bytes.length });
+            const moveId = await recordMove(a.id, pathA, `${name}.jpg`);
+            await rm(pathA);
+
+            await expect(sut.handleMigrationSingle({ id: a.id })).resolves.toBe(JobStatus.Success);
+
+            const pathOf = async (id: string) => (await ctx.get(AssetRepository).getById(id))?.originalPath;
+            // B keeps its name, its file and its record
+            await expect(readFile(`${name}.jpg`)).resolves.toEqual(bytes);
+            await expect(pathOf(b.id)).resolves.toBe(`${name}.jpg`);
+            // A has not moved, and its move is kept
+            await expect(pathOf(a.id)).resolves.toBe(pathA);
+            await expect(stat(`${name}+1.jpg`)).rejects.toMatchObject({ code: 'ENOENT' });
+            await expect(movesOf(a.id)).resolves.toEqual([{ id: moveId }]);
+            // reported once, naming the file the move would have taken from B
+            const warnings = ctx
+              .getMock(LoggingRepository)
+              .warn.mock.calls.filter(([message]) => message.includes('another record names'));
+            expect(warnings).toHaveLength(1);
+            expect(warnings[0][0]).toContain(`another record names ${name}.jpg`);
           } finally {
             StorageCore.reset();
             await rm(media, { recursive: true, force: true });

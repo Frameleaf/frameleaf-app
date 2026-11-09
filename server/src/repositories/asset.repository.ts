@@ -184,8 +184,10 @@ export type AssetFileMove = {
  * - `changed`: the asset's row names another path now; nothing was moved.
  * - `deferred`: an unreleased Buddy Backup reference names one of the move's paths;
  *   nothing was moved and the move stays recorded.
+ * - `taken`: another asset or physical file names `to`, or `source` where it is not `from` (FL-1333); nothing was
+ *   moved and the move stays recorded.
  */
-export type AssetFileMoveResult = 'moved' | 'failed' | 'removed' | 'changed' | 'deferred' | 'mismatched';
+export type AssetFileMoveResult = 'moved' | 'failed' | 'removed' | 'changed' | 'deferred' | 'mismatched' | 'taken';
 /** The filesystem side of a move, run by `moveFile` while it holds the move's locks. */
 export type AssetFileMoveOperations = {
   /** A rename on one filesystem to `to`; false when it could not, having changed nothing. */
@@ -2064,7 +2066,8 @@ export class AssetRepository {
    * `from` the way a removal does (through its physical file mapping), and then every row that names
    * `from` is pointed at `to`: every asset (or file row) with that path, the physical file, and, where
    * the phase writes them, the Frameleaf mappings and canonical path. Nothing is moved while rows that
-   * cannot change now name the file. The `move_history` row is deleted with them.
+   * cannot change now name the file, or onto a path another asset or physical file names (FL-1333). The
+   * `move_history` row is deleted with them.
    *
    * The move stays recorded until then. If the new path cannot be saved the file is put back; if the
    * process stops in between, the next move of the asset finds the recorded move and finishes it, and
@@ -2097,6 +2100,17 @@ export class AssetRepository {
         }
         return 'changed';
       }
+      // FL-1333: two photos can keep their originals as two names of one file (hard links). A name another
+      // record holds is never taken, even when it is another name of this file: nothing is touched. The template
+      // skips such names; this backstop covers a record that took the name since. Nor is a file moved from a
+      // name another record holds: a recorded move whose old path is gone finds its file at its recorded new
+      // path, which may be another photo's name of the same bytes, and moving from there would remove that name.
+      if (
+        (move.source !== move.from && (await this.isPathNamedByOthers(move.assetId, move.source, tx))) ||
+        (await this.isPathNamedByOthers(move.assetId, move.to, tx))
+      ) {
+        return 'taken';
+      }
       if (!(await operations.rename())) {
         return 'failed';
       }
@@ -2111,6 +2125,28 @@ export class AssetRepository {
       await operations.finish();
       return 'moved';
     });
+  }
+  /**
+   * Whether a record other than the asset's own names `path` (FL-1333): another asset's original, or a physical
+   * file (the identical-files record) other than the asset's own original. Two photos' originals can be two
+   * names of one file, so a name that is another name of a photo's file may still be another photo's.
+   */
+  async isPathNamedByOthers(assetId: string, path: string, kysely: Kysely<DB> = this.db): Promise<boolean> {
+    const { rows } = await sql<{ named: boolean }>`
+      SELECT
+        EXISTS (
+          SELECT 1 FROM public.asset other
+          WHERE other."originalPath" = ${path} AND other.id <> ${assetId}::uuid
+        )
+        OR EXISTS (
+          SELECT 1 FROM public.physical_file physical
+          WHERE physical.path = ${path}
+            AND physical.id IS DISTINCT FROM (
+              SELECT own."physicalOriginalFileId" FROM public.asset own WHERE own.id = ${assetId}::uuid
+            )
+        ) AS named
+    `.execute(kysely);
+    return rows[0].named;
   }
   /**
    * Where the asset's row records a moved file, resolved the way a removal resolves it, and what else

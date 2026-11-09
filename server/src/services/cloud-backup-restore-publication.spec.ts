@@ -1,15 +1,25 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
-import { CloudBackupRestorer, emptyRestoreResult } from 'src/services/cloud-backup-restore.js';
+import {
+  CloudBackupRestoreFile,
+  CloudBackupRestoreResult,
+  CloudBackupRestorer,
+  emptyRestoreResult,
+} from 'src/services/cloud-backup-restore.js';
 import * as ownerPath from 'src/utils/cloud-backup-owner-path.js';
 import { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import { retainFile } from 'src/utils/media-health-roots.js';
 
+// Real filesystem calls by default; single cases simulate a drive without hard links through `link`.
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof import('node:fs/promises')>();
+  return { ...actual, link: vi.fn(actual.link) };
+});
 vi.mock('src/utils/media-health-roots.js', async (original) => {
   const module = await original<typeof import('src/utils/media-health-roots.js')>();
   return { ...module, retainFile: vi.fn(module.retainFile) };
@@ -140,5 +150,170 @@ describe('admin restore publication on a real filesystem', () => {
     );
     expect(await readFile(target, 'utf8')).toBe('new occupant');
     vi.mocked(ownerPath.assertOwnerRestoreFile).mockReset();
+  });
+});
+
+// FL-1333: on a drive without hard links the verified staged file is copied into place, so the published file has
+// an identity of its own. It is kept only as a copy of the checked bytes, and a resumed restore counts what an
+// earlier attempt published as restored.
+describe('owner restore publication on a drive without hard links (FL-1333)', () => {
+  let folder: string;
+  beforeEach(async () => {
+    folder = await mkdtemp(join(tmpdir(), 'cloud-restore-copy-'));
+    vi.mocked(link).mockImplementation(() => Promise.reject(Object.assign(new Error('EPERM'), { code: 'EPERM' })));
+  });
+  afterEach(async () => {
+    vi.mocked(link).mockReset();
+    vi.mocked(retainFile).mockReset();
+    await rm(folder, { recursive: true, force: true });
+  });
+
+  const owned = (count: number) => {
+    const contents = new Map<string, Buffer>();
+    const files: CloudBackupRestoreFile[] = [];
+    for (let index = 1; index <= count; index++) {
+      const bytes = Buffer.from(`backed-up photo ${index}`);
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      contents.set(sha256, bytes);
+      files.push({
+        fileKey: `asset-${index}:000`,
+        assetId: `asset-${index}`,
+        role: 'original',
+        sha256,
+        size: bytes.length,
+        target: join(folder, 'library', `photo-${index}.jpg`),
+        inPlace: true,
+      });
+    }
+    const logger = LoggingRepository.create();
+    const sut = new CloudBackupRestorer(null, new StorageRepository(logger), new CryptoRepository(), logger);
+    const options = {
+      manifest: { database: null } as CloudBackupManifest,
+      scope: 'asset' as const,
+      files,
+      destination: null,
+      mediaLocation: folder,
+      backupsFolder: folder,
+      operationId: 'operation',
+      start: emptyRestoreResult(),
+      checkpoint: (_result: CloudBackupRestoreResult) => Promise.resolve(true),
+      read: async (_key: string, staged: string, sha256: string) => {
+        const bytes = contents.get(sha256)!;
+        await writeFile(staged, bytes);
+        return { size: bytes.length, sha256 };
+      },
+      publish: (
+        _file: CloudBackupRestoreFile,
+        _staged: string,
+        publish: () => Promise<'written' | 'skipped' | 'replaced'>,
+      ) => publish(),
+    };
+    return { sut, options, files, contents };
+  };
+
+  it('completes an owner publish that had to copy, and lists the item for new thumbnails', async () => {
+    const { sut, options, files } = owned(1);
+
+    const result = await sut.restore(options);
+
+    expect(result).toMatchObject({ files: 1, skipped: 0, replaced: 0, restoredAssetIds: ['asset-1'] });
+    expect(await readFile(files[0].target, 'utf8')).toBe('backed-up photo 1');
+    expect((await lstat(files[0].target)).nlink).toBe(1);
+    // the copy was forced: hard links were refused
+    expect(link).toHaveBeenCalled();
+    expect(await readdir(join(folder, 'frameleaf/restore/operation/staging'))).toEqual([]);
+  });
+
+  it.each([
+    { label: 'the same size', bytes: 'backed-up photo X' },
+    { label: 'another size', bytes: 'a different photo altogether' },
+  ])('still refuses a copied file whose bytes are not the backed-up ones ($label)', async ({ bytes }) => {
+    const { sut, options, files } = owned(1);
+    const retain = vi.mocked(retainFile).getMockImplementation()!;
+    vi.mocked(retainFile).mockImplementationOnce(async (from, to) => {
+      await retain(from, to);
+      // the file at the target changes between the copy and its check
+      await writeFile(to, bytes);
+    });
+
+    await expect(sut.restore(options)).rejects.toThrow('Owner restore original changed');
+    expect(await readFile(files[0].target, 'utf8')).toBe(bytes);
+  });
+
+  it('resumes after a failure at file 2 of 3 and completes all three in one run', async () => {
+    const { sut, options, files, contents } = owned(3);
+    let saved = emptyRestoreResult();
+    let failAfterSecond = true;
+    const checkpoint = (result: CloudBackupRestoreResult) => {
+      // the operation row is lost once the second file is in place, before it is recorded
+      if (failAfterSecond && result.cursor === files[1].fileKey) {
+        return Promise.reject(new Error('connection lost'));
+      }
+      saved = structuredClone(result);
+      return Promise.resolve(true);
+    };
+
+    await expect(sut.restore({ ...options, checkpoint })).rejects.toThrow('connection lost');
+    expect(await readFile(files[1].target, 'utf8')).toBe('backed-up photo 2');
+    // what was saved: file 1 counted, and file 2's publication begun
+    expect(saved).toMatchObject({
+      cursor: files[0].fileKey,
+      restoredAssetIds: ['asset-1'],
+      publishing: { fileKey: files[1].fileKey, outcome: 'written' },
+    });
+
+    failAfterSecond = false;
+    const result = await sut.restore({ ...options, start: saved, checkpoint });
+
+    expect(result).toMatchObject({
+      files: 3,
+      skipped: 0,
+      replaced: 0,
+      restoredAssetIds: ['asset-1', 'asset-2', 'asset-3'],
+    });
+    expect(result).not.toHaveProperty('publishing');
+    for (const file of files) {
+      expect(await readFile(file.target)).toEqual(contents.get(file.sha256));
+    }
+  });
+
+  it('publishes nothing when the restore is stopped just before a publication', async () => {
+    const { sut, options, files } = owned(1);
+    const checkpoint = vi.fn((result: CloudBackupRestoreResult) => Promise.resolve(!result.publishing));
+
+    await expect(sut.restore({ ...options, checkpoint })).resolves.toBeNull();
+
+    expect(checkpoint).toHaveBeenCalledOnce();
+    await expect(lstat(files[0].target)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readdir(join(folder, 'frameleaf/restore/operation/staging'))).toEqual([]);
+  });
+
+  it('still counts a file that was already in place before the restore as skipped', async () => {
+    const { sut, options, files } = owned(1);
+    await mkdir(join(folder, 'library'), { recursive: true });
+    await writeFile(files[0].target, 'backed-up photo 1');
+    const checkpoint = vi.fn((_result: CloudBackupRestoreResult) => Promise.resolve(true));
+
+    const result = await sut.restore({ ...options, checkpoint });
+
+    expect(result).toMatchObject({ files: 1, skipped: 1, restoredAssetIds: [] });
+    // nothing was published, so nothing was recorded as being published
+    for (const [saved] of checkpoint.mock.calls) {
+      expect(saved).not.toHaveProperty('publishing');
+    }
+  });
+
+  it('completes a Buddy restore that had to copy beside its target', async () => {
+    const { sut, options, files } = owned(1);
+
+    const result = await sut.restore({
+      ...options,
+      stageBesideTarget: true,
+      publish: (_file, _staged, publish, phase) => (phase === 'inspect' ? Promise.resolve('skipped') : publish()),
+    });
+
+    expect(result).toMatchObject({ files: 1, skipped: 0, restoredAssetIds: ['asset-1'] });
+    expect(await readFile(files[0].target, 'utf8')).toBe('backed-up photo 1');
+    expect(await readdir(join(folder, 'library'))).toEqual(['photo-1.jpg']);
   });
 });

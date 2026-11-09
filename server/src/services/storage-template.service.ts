@@ -544,8 +544,11 @@ export class StorageTemplateService extends BaseService {
       while (true) {
         const isExists = await this.storageRepository.checkFileExists(destination);
         // FL-1333: a name that already holds this photo's own file (an interrupted move linked it there) is
-        // the photo's; the move finishes there and removes the old name, so the file keeps one name
-        if (!isExists || (await this.isOwnFile(source, destination))) {
+        // the photo's; the move finishes there and removes the old name, so the file keeps one name.
+        const isFree = !isExists || (await this.isOwnFile(source, destination));
+        // FL-1333: a name another asset or physical file is recorded at is taken, even when nothing is on disk
+        // there or it is another name of this file (two photos can share one file); the locked move refuses it too
+        if (isFree && !(await this.assetRepository.isPathNamedByOthers(asset.id, destination))) {
           break;
         }
 

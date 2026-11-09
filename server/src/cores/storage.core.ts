@@ -70,8 +70,11 @@ const UNLINK_LEFT_THE_NAME: ReadonlySet<string> = new Set(['EACCES', 'EPERM', 'E
 let mediaLocation: string | undefined;
 
 export class StorageCore {
-  /** FL-179: recorded moves already reported as mismatched, so a nightly retry does not warn again. */
-  private reportedMismatches = new Set<string>();
+  /**
+   * FL-179: recorded moves already reported as kept (mismatched, or FL-1333 a new path another record names), so a
+   * nightly retry does not warn again. Keyed by the reason and the move.
+   */
+  private reportedMoves = new Set<string>();
 
   private constructor(
     private assetRepository: AssetRepository,
@@ -371,13 +374,25 @@ export class StorageCore {
         break;
       }
       case 'mismatched': {
-        const message = `Deferred moving ${oldPath}: asset ${entityId} is mapped to another file; the move is kept until they agree`;
-        // retried every night: reported once per recorded move
-        if (this.reportedMismatches.has(move.id)) {
-          this.logger.debug(message);
+        this.reportKeptMove(
+          `mismatched:${move.id}`,
+          `Deferred moving ${oldPath}: asset ${entityId} is mapped to another file; the move is kept until they agree`,
+        );
+        break;
+      }
+      case 'taken': {
+        // FL-1333: the file was found at a name another record holds (a recorded move whose old path is gone), or the
+        // new path was taken since the template chose it. Read again only to say which.
+        if (source !== oldPath && (await this.assetRepository.isPathNamedByOthers(entityId, source))) {
+          this.reportKeptMove(
+            `taken-source:${move.id}`,
+            `Deferred moving ${oldPath}: its file was found at ${source}, but another record names ${source}; nothing is moved from there and the move is kept`,
+          );
         } else {
-          this.reportedMismatches.add(move.id);
-          this.logger.warn(message);
+          this.reportKeptMove(
+            `taken:${move.id}`,
+            `Deferred moving ${oldPath} to ${newPath}: another record names ${newPath}; the move is kept and the next run picks another name`,
+          );
         }
         break;
       }
@@ -387,6 +402,16 @@ export class StorageCore {
       }
     }
     return result === 'moved';
+  }
+
+  /** A kept move is retried every night: it is reported once per recorded move and reason, then only in debug. */
+  private reportKeptMove(key: string, message: string) {
+    if (this.reportedMoves.has(key)) {
+      this.logger.debug(message);
+    } else {
+      this.reportedMoves.add(key);
+      this.logger.warn(message);
+    }
   }
 
   /**

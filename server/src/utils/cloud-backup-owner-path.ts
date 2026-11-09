@@ -45,6 +45,9 @@ const ownerRestoreFileIdentity = async (target: string): Promise<string | null> 
   }
 };
 
+/** A rename changes ctime: an identity without that final field, for the verified staged inode. */
+const withoutCtime = (value: string | null) => value?.split(':').slice(0, 4).join(':') ?? null;
+
 export const assertOwnerRestoreFile = async (
   target: string,
   identity: string | null,
@@ -52,8 +55,31 @@ export const assertOwnerRestoreFile = async (
 ): Promise<void> => {
   const current = await ownerRestoreFileIdentity(target);
   // A rename changes ctime. Only that final field may differ for the verified staged inode.
-  const comparable = (value: string | null) => (renamed ? (value?.split(':').slice(0, 4).join(':') ?? null) : value);
+  const comparable = (value: string | null) => (renamed ? withoutCtime(value) : value);
   if (comparable(current) !== comparable(identity)) throw new Error('Owner restore original changed');
+};
+
+/**
+ * FL-1333: the check after a verified staged file was published at `target`. Returns the published file's identity,
+ * the evidence any later check compares with. A hard link is the staged file, with its identity. A drive without
+ * hard links gets a copy, with an identity of its own: it is kept only as one regular file (one name) of the staged
+ * size that hashes to `sha256`, the checked bytes, and that stays the same file while it is hashed. Anything else
+ * is refused as changed.
+ */
+export const assertOwnerRestorePublished = async (
+  target: string,
+  staged: { identity: string | null; size: bigint | null },
+  sha256: string,
+  hash: (target: string) => Promise<string>,
+): Promise<string> => {
+  // a regular file with one name, or refused as unavailable; null when nothing is there
+  const current = await ownerRestoreFileIdentity(target);
+  if (current !== null && withoutCtime(current) === withoutCtime(staged.identity)) return current;
+  if (current === null || staged.size === null || BigInt(current.split(':', 3)[2]) !== staged.size)
+    throw new Error('Owner restore original changed');
+  if ((await hash(target)) !== sha256) throw new Error('Owner restore original changed');
+  await assertOwnerRestoreFile(target, current);
+  return current;
 };
 
 /** Whole-file I/O belongs before the short publication transaction. Bind even a missing target. */

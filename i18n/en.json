@@ -7976,6 +7976,7 @@
   "frameleaf_folders_all": "All folders",
   "frameleaf_folders_back_to": "Back to {name}",
   "frameleaf_folders_copy_check_body": "When Frameleaf moves a photo to another drive, the old file stays until the new copy matches it exactly.",
+  "frameleaf_folders_copy_check_retired": "Old copy-check switch (no longer used)",
   "frameleaf_folders_copy_check_title": "Copies are checked before the old file is removed",
   "frameleaf_folders_copy_path": "Copy path",
   "frameleaf_folders_copy_path_done": "Copied {path}",
