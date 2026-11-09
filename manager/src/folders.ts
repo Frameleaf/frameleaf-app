@@ -29,6 +29,12 @@ export function overlaps(a: string, b: string): boolean {
   const [left, right] = [shareView(a), shareView(b)];
   return !!left && !!right && (combined(left.view) || combined(right.view)) && lexicalOverlap(left.path, right.path);
 }
+/** Whether `path` is `parent` or inside it, counting /mnt/user/a and /mnt/disk1/a as the same files. */
+export function inside(path: string, parent: string): boolean {
+  if (within(path, parent)) return true;
+  const [child, outer] = [shareView(path), shareView(parent)];
+  return !!child && !!outer && (combined(child.view) || combined(outer.view)) && within(child.path, outer.path);
+}
 /** The share, pool or drive holding `path`. On Unraid /mnt/disks/UD01 is one drive and /mnt/remotes/nas one share, a level deeper than /mnt/user. */
 const volume = (path: string) => {
   if (broadRoot() !== MNT) return broadRoot();

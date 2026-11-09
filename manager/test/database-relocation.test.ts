@@ -195,6 +195,9 @@ test('a database moves to another drive unchanged, and the original folder is ke
     assert.deepEqual(f.folders.get(f.attemptPath(1)), f.folders.get(f.current.databasePath), 'same tables, counts and extensions');
     assert.deepEqual(f.store.get('retained-database-directories'), [f.current.databasePath]);
     assert.deepEqual(await f.create().retainedDatabases(), [{ path: f.current.databasePath, present: false }]);
+    // The retained original sits beside a move back to its root, never under it.
+    await f.create().reviewDatabaseMove(f.oldRoot);
+    await assert.rejects(f.create().reviewDatabaseMove(join(f.current.databasePath, 'inside')), /chosen_folders_overlap/);
   } finally {
     await f.cleanup();
   }
@@ -215,6 +218,7 @@ for (const failure of ['fails', 'differs'] as const)
       assert.deepEqual(f.composed.at(-1), ['up'], 'Frameleaf runs again');
       assert.deepEqual(f.folders.get(f.current.databasePath).tables, { 'public.asset': 3, 'public.user': 1 });
       assert.deepEqual(f.store.get('retained-database-directories'), [f.attemptPath(1)], 'the partial copy is kept');
+      await f.create().reviewDatabaseMove(f.newRoot); // A retry into the same root is offered.
     } finally {
       await f.cleanup();
     }

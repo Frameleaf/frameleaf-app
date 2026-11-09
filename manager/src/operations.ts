@@ -8,7 +8,7 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
-import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, overlaps } from './folders.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, inside, overlaps } from './folders.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
 import { capturePhotoAppSource, restoreDatabaseUrl, type PhotoAppCapture } from './photo-app-capture.js';
@@ -2112,9 +2112,11 @@ export class Operations {
     if (databaseRoot === current.databaseRoot) throw new Refusal('database_already_in_folder');
     const binds = current.mounts.filter((m) => m.type === 'bind').map((m) => m.source);
     const retained = this.store.get<string[]>('retained-database-directories') ?? [];
-    // Never inside the media, backups, Manager's own folder or any database folder (in use or retained).
-    for (const other of [current.databasePath, ...retained, ...binds, process.env.MANAGER_BACKUP_ROOT, this.store.directory])
+    // Apart from the media, backups, Manager's own folder and the database in use. A retained database folder only
+    // blocks a root inside it: a retry into the same root, or a move back to the original one, keeps it beside.
+    for (const other of [current.databasePath, ...binds, process.env.MANAGER_BACKUP_ROOT, this.store.directory])
       if (other && overlaps(databaseRoot, other)) throw new Refusal('chosen_folders_overlap');
+    if (retained.some((folder) => inside(databaseRoot, folder))) throw new Refusal('chosen_folders_overlap');
     this.checkExternalFolders(this.application().services ?? {}, [...binds, databaseRoot]);
     if (broadRoots(this.roots)) await ensureChosenFolder(databaseRoot);
     const release = await this.releases.acquire(current.release);
