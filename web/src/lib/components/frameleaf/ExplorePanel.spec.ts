@@ -199,6 +199,19 @@ describe('ExplorePanel', () => {
     });
   });
 
+  it('holds the People and Places rows while they load, so the cards below stay put (FL-1335)', () => {
+    render(ExplorePanel, props({ people: [], places: [], libraryTotal: null, pending: true }));
+
+    const people = screen.getByRole('region', { name: 'People' });
+    expect(people.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(people.querySelectorAll('.el-person-placeholder')).toHaveLength(8);
+    expect(within(people).queryAllByRole('link', { name: /items/ })).toHaveLength(0);
+    const places = screen.getByRole('region', { name: 'Places' });
+    expect(places.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(places.querySelectorAll('.el-place')).toHaveLength(8);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('points an empty library at uploading, in the prototype empty-state pattern', () => {
     render(ExplorePanel, props({ libraryTotal: 0 }));
     expect(screen.getByRole('status')).toHaveTextContent('Nothing to explore yet');

@@ -94,64 +94,30 @@ const loadLandmarks = async (): Promise<ExploreLandmarkSection> => {
   }
 };
 
-export const load = (async ({ url }) => {
-  await authenticate(url);
+export type ExploreFacetSection = {
+  peopleCards: ReturnType<typeof buildExplorePeople>;
+  places: ReturnType<typeof buildExplorePlaces>;
+  things: ReturnType<typeof buildExploreThings>;
+  mediaKinds: ReturnType<typeof buildExploreMediaKinds>;
+  libraryTotal: number | null;
+  withoutPeople: number | null;
+  failed: { people: boolean; places: boolean };
+};
 
-  const [
-    people,
-    albums,
-    memories,
-    favoriteCount,
-    photoStatistics,
-    videoStatistics,
-    withoutPeopleStatistics,
-    bestPhotos,
-    facets,
-    recentCaptures,
-  ] = await Promise.all([
-    // Every section loads on its own: a request that fails leaves `null`, the page still opens, and
-    // only that section says it could not load (`failed` below) instead of the whole page erroring.
+/**
+ * FL-1335: People, Places, Things and Media types wait on the facet count, the slowest request on
+ * a large library, and on the whole people list (Things leaves out tags named after a person). Not
+ * awaited by the loader, so the rest of the page opens first and these fill in.
+ */
+const loadFacetSection = async (formatter: ReturnType<typeof getFormatter>): Promise<ExploreFacetSection> => {
+  const [people, facets, withoutPeopleStatistics] = await Promise.all([
     getAllPeople({ withHidden: false }).catch(() => null),
-    getAlbumTree({}).catch(() => null),
-    loadMemories().catch(() => null),
-    // Card counts share the same scope/archive/privacy rules as the destinations they link to.
-    // Favorites: the Favorites timeline's own query (its `options`), summed over its buckets, so the
-    // count is what that page shows: Timeline and Archive, never Locked, and a stack once, as the
-    // timeline draws it (asset statistics would count every item in a stack).
-    getTimeBuckets({ isFavorite: true, withStacked: true })
-      .then((buckets) => buckets.reduce((total, { count }) => total + count, 0))
-      .catch(() => null),
-    // Photos/Videos/Without-people route to the search page, so their counts are taken with the
-    // body that page sends: a flat body gets the Timeline visibility the search session adds to
-    // every flat search (`library-search-session.svelte.ts`), so nothing archived, Locked or a
-    // Live Photo's video part is counted; the structured `filter.hasPeople` body is sent as is.
-    searchAssetStatistics({
-      statisticsSearchDto: { type: AssetTypeEnum.Image, visibility: AssetVisibility.Timeline },
-    }).catch(() => null),
-    searchAssetStatistics({
-      statisticsSearchDto: { type: AssetTypeEnum.Video, visibility: AssetVisibility.Timeline },
-    }).catch(() => null),
-    searchAssetStatistics({ statisticsSearchDto: { filter: { hasPeople: { eq: false } } } }).catch(() => null),
-    loadBestPhotosPreview().catch(() => null),
     // T-12: People, Places and Things counts and covers, in the scope of the flat search each card
     // opens (Timeline visibility, as the search session sends it), in one request.
     searchFacets({ searchFacetsDto: exploreFacetsBody }).catch(() => null),
-    // "Recent captures" (ExploreLibrary.jsx:223-250) are the newest by capture date, not upload
-    // ("Recently added" keeps upload order); the Timeline's own visibility, so nothing archived.
-    searchAssets({
-      metadataSearchDto: { size: EXPLORE_RECENT_LIMIT, order: AssetOrder.Desc, visibility: AssetVisibility.Timeline },
-    })
-      .then(({ assets }) => assets.items)
-      .catch(() => null),
+    // A flat search would add Timeline visibility; the structured `filter.hasPeople` body is sent as is.
+    searchAssetStatistics({ statisticsSearchDto: { filter: { hasPeople: { eq: false } } } }).catch(() => null),
   ]);
-  const $t = await getFormatter();
-
-  const shortcutCounts: ExploreShortcutCounts = {
-    favorites: favoriteCount,
-    photos: photoStatistics ? photoStatistics.total : null,
-    videos: videoStatistics ? videoStatistics.total : null,
-    withoutPeople: withoutPeopleStatistics ? withoutPeopleStatistics.total : null,
-  };
 
   // FL-707 item 15: things only, so no person's name, catalogue folder, camera keyword or code. The
   // non-things are left out of the busiest tags, so a library of mostly catalogue keywords asks once
@@ -167,25 +133,76 @@ export const load = (async ({ url }) => {
     }
   }
 
-  const bestPhotosPreview: ExploreBestPhotosPreview = bestPhotos ?? { total: null, cover: null };
-
+  const $t = await formatter;
   return {
-    failed: {
-      people: people === null,
-      // One facet request feeds People, Places and Things; Places carries its retry.
-      places: facets === null,
-      memories: memories === null,
-      albums: albums === null,
-      recents: recentCaptures === null,
-    },
     peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people?.people ?? []),
     places: buildExplorePlaces(facetCounts(facets?.facets, SearchFacetField.City)),
     things,
     mediaKinds: buildExploreMediaKinds(facetCounts(facets?.facets, SearchFacetField.MediaKinds), (entry) =>
       $t(entry.labelKey),
     ),
-    landmarkSection: loadLandmarks(),
     libraryTotal: facets ? facets.total : null,
+    withoutPeople: withoutPeopleStatistics ? withoutPeopleStatistics.total : null,
+    // One facet request feeds People, Places and Things; Places carries its retry.
+    failed: { people: people === null, places: facets === null },
+  };
+};
+
+export const load = (async ({ url }) => {
+  await authenticate(url);
+
+  const formatter = getFormatter();
+  const facetSection = loadFacetSection(formatter);
+  const [$t, albums, memories, favoriteCount, photoStatistics, videoStatistics, bestPhotos, recentCaptures] =
+    await Promise.all([
+      formatter,
+      // Every section loads on its own: a request that fails leaves `null`, the page still opens, and
+      // only that section says it could not load (`failed` below) instead of the whole page erroring.
+      getAlbumTree({}).catch(() => null),
+      loadMemories().catch(() => null),
+      // Card counts share the same scope/archive/privacy rules as the destinations they link to.
+      // Favorites: the Favorites timeline's own query (its `options`), summed over its buckets, so the
+      // count is what that page shows: Timeline and Archive, never Locked, and a stack once, as the
+      // timeline draws it (asset statistics would count every item in a stack).
+      getTimeBuckets({ isFavorite: true, withStacked: true })
+        .then((buckets) => buckets.reduce((total, { count }) => total + count, 0))
+        .catch(() => null),
+      // Photos/Videos route to the search page, so their counts are taken with the body that page
+      // sends: a flat body gets the Timeline visibility the search session adds to every flat search
+      // (`library-search-session.svelte.ts`), so nothing archived, Locked or a Live Photo's video
+      // part is counted. Without-people comes with the facet section.
+      searchAssetStatistics({
+        statisticsSearchDto: { type: AssetTypeEnum.Image, visibility: AssetVisibility.Timeline },
+      }).catch(() => null),
+      searchAssetStatistics({
+        statisticsSearchDto: { type: AssetTypeEnum.Video, visibility: AssetVisibility.Timeline },
+      }).catch(() => null),
+      loadBestPhotosPreview().catch(() => null),
+      // "Recent captures" (ExploreLibrary.jsx:223-250) are the newest by capture date, not upload
+      // ("Recently added" keeps upload order); the Timeline's own visibility, so nothing archived.
+      searchAssets({
+        metadataSearchDto: { size: EXPLORE_RECENT_LIMIT, order: AssetOrder.Desc, visibility: AssetVisibility.Timeline },
+      })
+        .then(({ assets }) => assets.items)
+        .catch(() => null),
+    ]);
+
+  const shortcutCounts: Omit<ExploreShortcutCounts, 'withoutPeople'> = {
+    favorites: favoriteCount,
+    photos: photoStatistics ? photoStatistics.total : null,
+    videos: videoStatistics ? videoStatistics.total : null,
+  };
+
+  const bestPhotosPreview: ExploreBestPhotosPreview = bestPhotos ?? { total: null, cover: null };
+
+  return {
+    failed: {
+      memories: memories === null,
+      albums: albums === null,
+      recents: recentCaptures === null,
+    },
+    facetSection,
+    landmarkSection: loadLandmarks(),
     recentCaptures: recentCaptures ?? [],
     albums: albums ? previewAlbums(albums) : [],
     memories: memories ?? [],

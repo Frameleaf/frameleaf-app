@@ -24,7 +24,7 @@
   import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
   import { invalidateAll } from '$app/navigation';
   import Portal from '$lib/elements/Portal.svelte';
-  import type { ExploreLandmarkSection } from './+page';
+  import type { ExploreFacetSection, ExploreLandmarkSection } from './+page';
   import type { PageData } from './$types';
   import type { Snapshot } from '@sveltejs/kit';
 
@@ -34,25 +34,37 @@
 
   let { data }: Props = $props();
 
-  // The landmarks section arrives after the page opens (see `loadLandmarks`); until then it is empty.
-  let landmarkSection = $state<ExploreLandmarkSection>({ cards: [], albumSuggestion: null, failed: false });
-  $effect(() => {
-    const pending = data.landmarkSection;
-    let current = true;
-    void pending.then((section) => {
-      if (current) {
-        landmarkSection = section;
-      }
+  // Sections that arrive after the page opens (see `loadLandmarks` and `loadFacetSection`). A retry
+  // keeps showing the last answer until the new one arrives.
+  const settle = <T,>(pending: () => Promise<T>, done: (section: T) => void) => {
+    $effect(() => {
+      let current = true;
+      void pending().then((section) => {
+        if (current) {
+          done(section);
+        }
+      });
+      return () => {
+        current = false;
+      };
     });
-    return () => {
-      current = false;
-    };
-  });
+  };
+  let landmarkSection = $state<ExploreLandmarkSection>({ cards: [], albumSuggestion: null, failed: false });
+  settle(
+    () => data.landmarkSection,
+    (section) => (landmarkSection = section),
+  );
+  // Null until the facet count answers: People and Places hold their rows meanwhile.
+  let facetSection = $state<ExploreFacetSection | null>(null);
+  settle(
+    () => data.facetSection,
+    (section) => (facetSection = section),
+  );
 
   // Follows the loader (so "Try again" fills in a section that failed) and can be replaced in
   // place: a thumbnail-ready event bumps a person's `updatedAt` so the avatar picks up the freshly
   // generated image without a full reload.
-  let peopleCards = $derived(data.peopleCards);
+  let peopleCards = $derived(facetSection?.peopleCards ?? []);
   const onPersonThumbnailReady = ({ id }: { id: string }) => {
     if (peopleCards.every((card) => card.person.id !== id)) {
       return;
@@ -80,6 +92,8 @@
     retrying = true;
     try {
       await invalidateAll();
+      // People and Places retry through the facet section, which the loader no longer waits for.
+      await data.facetSection;
     } finally {
       retrying = false;
     }
@@ -157,18 +171,24 @@
   <PlacesRestoringNotice />
   <ExplorePanel
     people={peopleCards}
-    places={data.places}
-    things={data.things}
-    mediaKinds={data.mediaKinds}
+    pending={facetSection === null}
+    places={facetSection?.places ?? []}
+    things={facetSection?.things ?? []}
+    mediaKinds={facetSection?.mediaKinds ?? []}
     landmarks={landmarkSection.cards}
     albumSuggestion={landmarkSection.albumSuggestion}
     recents={data.recentCaptures}
-    libraryTotal={data.libraryTotal}
+    libraryTotal={facetSection?.libraryTotal ?? null}
     {memories}
     albums={data.albums}
     bestPhotos={data.bestPhotosPreview}
-    shortcutCounts={data.shortcutCounts}
-    failed={{ ...data.failed, landmarks: landmarkSection.failed }}
+    shortcutCounts={{ ...data.shortcutCounts, withoutPeople: facetSection?.withoutPeople ?? null }}
+    failed={{
+      ...data.failed,
+      people: facetSection?.failed.people ?? false,
+      places: facetSection?.failed.places ?? false,
+      landmarks: landmarkSection.failed,
+    }}
     {onRetry}
     {retrying}
     {onViewAsset}
