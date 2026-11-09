@@ -34,7 +34,6 @@ import { Backups } from './backups.js';
 import { Releases } from './releases.js';
 import { CommonImportBootstrapCredentials } from './common-import-runtime.js';
 import { Operations, PhotoAppPrepareInput, ReviewInput } from './operations.js';
-import { checkHost } from './server-check.js';
 import { folderImportKinds } from './photo-app-folder.js';
 import { Refusal, containerId, publicSource, redact, releaseTag, secretEnvironmentValues } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
@@ -297,7 +296,7 @@ class Api {
       backupRoot: currentBackupRoot(),
       folderSetup: folderSetup() ? folderDefaults() : null,
       /** FL-1318: whose fix steps and checks Check this server shows, before its first result. */
-      checkHost: checkHost(),
+      checkHost: operations.checkHost(),
       host: {
         name: new URL(security.requestOrigin(request)).hostname,
         available: !!host,

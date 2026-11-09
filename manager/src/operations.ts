@@ -837,7 +837,7 @@ export class Operations {
         })
       : undefined;
     await this.hostNotes(checks, compatibility?.memory, input.ml);
-    const host = checkHost();
+    const host = this.checkHost();
     if (!release || checks.blocked) {
       // A photo-app import has already prepared its bundle: it keeps refusing on the first problem.
       if (common) checks.assert();
@@ -960,6 +960,13 @@ export class Operations {
     await this.downloadsCheck(checks);
     return Object.assign(checks, { compatibility, databaseStorage });
   }
+  /**
+   * The host whose checks and fix steps Check this server shows. MANAGER_PLATFORM first; otherwise Unraid as Manager
+   * detected it at start (its docker.cfg), the same detection the database folder and drive suggestions use.
+   */
+  checkHost() {
+    return checkHost(process.env.MANAGER_PLATFORM || (this.databaseStorage?.unraid ? 'unraid' : undefined));
+  }
   /** FL-1318: room in Docker's own storage for the images this install downloads; less without machine learning. */
   private async roomCheck(checks: ServerCheck, ml: boolean): Promise<void> {
     const needed = dockerRoomNeeded(ml, ml ? await detectAcceleration() : 'cpu');
@@ -1025,7 +1032,7 @@ export class Operations {
       },
       { unknownOnError: true },
     );
-    if (checkHost() === 'unraid')
+    if (this.checkHost() === 'unraid')
       await checks.run(
         'unraid',
         async () => ((await this.probes.dockermanMapped()) ? {} : { outcome: { status: 'warning', code: 'dockerman_templates_unmapped' } }),
@@ -2655,7 +2662,7 @@ export class Operations {
         })
       : undefined;
     await this.hostNotes(checks, compatibility?.memory, recovery.installation.ml);
-    const host = checkHost();
+    const host = this.checkHost();
     if (!release || !databaseStorage || checks.blocked) {
       await rm(checkpoint, { recursive: true, force: true });
       return { ready: false as const, host, port: recovery.installation.port, checks: checks.results };

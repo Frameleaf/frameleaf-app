@@ -441,6 +441,25 @@ test('Unraid’s Docker tab: an unmapped templates folder is a warning; other ho
   }
 });
 
+test('Unraid found from its docker.cfg counts as Unraid when MANAGER_PLATFORM isn’t set', async () => {
+  const f = await fixture();
+  try {
+    delete process.env.MANAGER_PLATFORM;
+    (f.operations as unknown as { databaseStorage: { unraid: boolean } }).databaseStorage.unraid = true;
+    f.state.dockerman = false;
+    const result = await f.operations.review(f.input);
+    assert.equal(result.host, 'unraid');
+    assert.equal(f.operations.checkHost(), 'unraid');
+    assert.deepEqual(result.checks.at(-1), { id: 'unraid', status: 'warning', code: 'dockerman_templates_unmapped' });
+    // An explicit platform still wins.
+    process.env.MANAGER_PLATFORM = 'truenas';
+    assert.equal(f.operations.checkHost(), 'truenas');
+  } finally {
+    delete process.env.MANAGER_PLATFORM;
+    await f.cleanup();
+  }
+});
+
 test('install start repeats the new checks: Docker storage that filled since the review refuses before any download', async () => {
   const f = await fixture();
   try {
