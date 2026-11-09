@@ -528,6 +528,34 @@ describe(SmartInfoService.name, () => {
       expect(mocks.job.queueSelection).toHaveBeenCalled();
     });
 
+    const queueConfig = (name: string) => ({
+      machineLearning: { enabled: true, clip: { enabled: true, modelName: name } },
+    });
+
+    it('repairs a size mismatch left by a failed resize on the next queue-all run', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(queueConfig('ViT-B-32__openai'));
+      mocks.database.getDimensionSize.mockResolvedValueOnce(768).mockResolvedValueOnce(768).mockResolvedValue(512);
+      mocks.assetJob.selectionForEncodeClip.mockReturnValue({} as never);
+
+      await expect(sut.handleQueueEncodeClip({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.database.setDimensionSize).toHaveBeenCalledWith(512);
+      expect(mocks.job.queueSelection).toHaveBeenCalled();
+    });
+
+    it('leaves the index alone when a save changed the model before the retry got the lock', async () => {
+      mocks.systemMetadata.get
+        .mockResolvedValueOnce(queueConfig('ViT-B-32__openai'))
+        .mockResolvedValue(queueConfig('ViT-B-16-SigLIP-384__webli'));
+      mocks.database.getDimensionSize.mockResolvedValue(768);
+
+      await sut.handleQueueEncodeClip({});
+
+      expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+      expect(mocks.database.deleteAllSearchEmbeddings).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
+    });
+
     it('waits instead of breaking startup when the size cannot be learned', async () => {
       mocks.systemMetadata.get.mockResolvedValue({});
       mocks.machineLearning.getCustomClipDimSize.mockRejectedValue(new Error('fetch failed'));

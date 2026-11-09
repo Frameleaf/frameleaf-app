@@ -107,7 +107,7 @@ export class SmartInfoService extends BaseService {
     return known?.[modelName];
   }
 
-  private async init(newConfig: SystemConfig, oldConfig?: SystemConfig) {
+  private async init(newConfig: SystemConfig, oldConfig?: SystemConfig, { onlyIfStillSaved = false } = {}) {
     if (!isSmartSearchEnabled(newConfig.machineLearning)) {
       return;
     }
@@ -115,6 +115,13 @@ export class SmartInfoService extends BaseService {
 
     await this.databaseRepository.withLock(DatabaseLock.CLIPDimSize, async () => {
       const { modelName } = newConfig.machineLearning.clip;
+      if (
+        onlyIfStillSaved &&
+        (await this.getConfig({ withCache: false })).machineLearning.clip.modelName !== modelName
+      ) {
+        // A save got the lock first, and this run's model is no longer the one to size the index for.
+        return;
+      }
       let dimSize = await this.getClipDimSize(modelName);
       if (dimSize === undefined) {
         // Set by a config file or restored from a backup, so it was never checked at save time.
@@ -162,17 +169,20 @@ export class SmartInfoService extends BaseService {
 
     // Configuration initialization owns dimensional DDL. A rerun must retain working vectors
     // until each accepted replacement is ready, rather than clearing the entire index.
-    let dimSize = await this.getClipDimSize(machineLearning.clip.modelName);
-    if (dimSize === undefined) {
-      // A custom model whose size couldn't be learned at startup: the worker may be back by now.
+    const { modelName } = machineLearning.clip;
+    const indexIsReady = async () => {
+      const dimSize = await this.getClipDimSize(modelName);
+      return dimSize !== undefined && (await this.databaseRepository.getDimensionSize('smart_search')) === dimSize;
+    };
+    if (!(await indexIsReady())) {
+      // Startup or the last save couldn't finish (the worker was away, or the resize failed): try again now.
       try {
-        await this.init(config);
+        await this.init(config, undefined, { onlyIfStillSaved: true });
       } catch (error) {
-        this.logger.warn(`Could not learn the size of ${machineLearning.clip.modelName}: ${error}`);
+        this.logger.warn(`Could not prepare smart search for ${modelName}: ${error}`);
       }
-      dimSize = await this.getClipDimSize(machineLearning.clip.modelName);
     }
-    if (dimSize === undefined || (await this.databaseRepository.getDimensionSize('smart_search')) !== dimSize) {
+    if (!(await indexIsReady())) {
       deferJobUntilDependency('destination-configuration');
       return JobStatus.Failed;
     }
