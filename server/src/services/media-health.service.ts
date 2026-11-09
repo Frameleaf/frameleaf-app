@@ -163,6 +163,14 @@ type CandidateValidation = {
 /** A validation that could not reach a verdict (busy, timed out, out of resources): no change this time. */
 type BusyValidation = { busy: true; candidate: CandidateValidation };
 
+const BUSY_REASONS: ReadonlySet<string> = new Set([
+  'validation_busy',
+  'io_failed',
+  'decoder_unavailable',
+  'decoder_resource_limit',
+  'file_changed',
+]);
+
 type ManagedSearchProgress = NonNullable<JobOf<JobName.MediaHealthLocateMissing>['managedSearch']>;
 
 /** One step of a search for originals (FL-69): what it covered, and where to carry on from. */
@@ -1160,7 +1168,10 @@ export class MediaHealthService {
     if (await this.isEncryptedOriginal(asset)) {
       throw new BadRequestException('The original is encrypted in Locked');
     }
-    const result = await this.validateAssetIntegrity(asset);
+    const result = await this.validateAssetIntegrity(asset, { keepBusy: true });
+    if (result && 'busy' in result) {
+      throw new BadRequestException("Frameleaf couldn't check this photo just now. Try again in a few minutes.");
+    }
     if (result?.status === MediaHealthStatus.Missing) {
       throw new BadRequestException('The original file is missing');
     }
@@ -1324,7 +1335,11 @@ export class MediaHealthService {
         resultStatusById.set(finding.id, await this.releaseEncrypted(finding, asset));
         continue;
       }
-      const result = await this.validateAssetIntegrity(asset);
+      const result = await this.validateAssetIntegrity(asset, { keepBusy: true });
+      if (result && 'busy' in result) {
+        // Not a verdict: the finding stays exactly as it is
+        continue;
+      }
 
       if (result?.status === MediaHealthStatus.CorruptConfirmed) {
         queued.push(finding);
@@ -2634,10 +2649,19 @@ export class MediaHealthService {
     return 'corrupt';
   }
 
-  private async validateAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | null> {
+  private async validateAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | null>;
+  private async validateAssetIntegrity(
+    asset: MediaHealthAsset,
+    options: { keepBusy: true },
+  ): Promise<CandidateValidation | BusyValidation | null>;
+  private async validateAssetIntegrity(
+    asset: MediaHealthAsset,
+    options?: { keepBusy?: boolean },
+  ): Promise<CandidateValidation | BusyValidation | null> {
     const result = await this.validateReadableAssetIntegrity(asset);
-    // Callers that act on one finding keep treating "could not check" as a suspect, as before.
-    return result && 'busy' in result ? result.candidate : result;
+    // The trash paths keep treating "could not check" as a suspect, as before. A caller that must
+    // leave things as they are on a busy check asks for the busy outcome itself.
+    return result && 'busy' in result && !options?.keepBusy ? result.candidate : result;
   }
 
   /**
@@ -2882,9 +2906,10 @@ export class MediaHealthService {
       evidence: { reason: result.reason, validationStatus: result.status },
       resolution: { reuploadRecommended: result.status === 'corrupt' },
     };
-    // Busy, timed out or out of resources (including `validation_busy`): not a verdict on the file.
-    // The scan skips the asset this run; one-finding callers read the candidate (a suspect), as before.
-    return result.status === 'transient' || result.status === 'timeout' ? { busy: true, candidate } : candidate;
+    // Busy, timed out, out of resources or still being written: not a verdict on the file. The scan skips
+    // the asset this run. Other transient reasons (an unknown decoder error, a damaged RAW) stay suspects.
+    const busy = result.status === 'timeout' || (result.status === 'transient' && BUSY_REASONS.has(result.reason));
+    return busy ? { busy: true, candidate } : candidate;
   }
 
   /**

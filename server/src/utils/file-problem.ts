@@ -59,6 +59,11 @@ export const readFileShape = async (path: string): Promise<FileShape> => {
   };
 };
 
+const JPEG_EXTENSIONS = new Set(['.jpg', '.jpeg', '.jpe', '.jfif']);
+
+/** Only a JPEG-family name is judged by a start marker: a PSD, TIFF or HEIC can hold a JPEG thumbnail. */
+export const isJpegFileName = (name: string): boolean => JPEG_EXTENSIONS.has(extname(name).toLowerCase());
+
 const NOT_DECODED_EXTENSIONS = new Set(['.psd', '.ai', '.indd']);
 
 const isBusy = (message: string) => /timeout|timed out|busy|\bEIO\b|\bEAGAIN\b|worker.*exit/i.test(message);
@@ -87,8 +92,9 @@ export const classifyFileProblem = ({
     return 'cut-short';
   }
   if (
-    (shape.jpegMarkerAt !== null && shape.jpegMarkerAt > 0) ||
-    (shape.jpegMarkerAt !== null && /unsupported image format|improper image header/i.test(message))
+    JPEG_EXTENSIONS.has(shape.extension) &&
+    shape.jpegMarkerAt !== null &&
+    (shape.jpegMarkerAt > 0 || /unsupported image format|improper image header/i.test(message))
   ) {
     return 'junk-in-front';
   }
@@ -97,7 +103,6 @@ export const classifyFileProblem = ({
   }
   if (
     /unsupported/i.test(message) &&
-    shape.jpegMarkerAt === null &&
     (NOT_DECODED_EXTENSIONS.has(shape.extension) || mimeTypes.isRaw(`file${shape.extension}`))
   ) {
     return 'not-supported';

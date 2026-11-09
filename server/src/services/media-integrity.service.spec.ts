@@ -155,6 +155,15 @@ describe(MediaIntegrityService.name, () => {
     mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
     expect(await sut.validate({ ...input, deep: true })).toEqual({ status: 'corrupt', reason: 'decode_failed' });
   });
+  it('an unsupported-format message on a PSD with an embedded JPEG stays unsupported', async () => {
+    const psd = join(directory, 'original.psd');
+    await writeFile(psd, Buffer.concat([Buffer.alloc(128, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]));
+    mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
+    expect(await sut.validate({ ...input, path: psd, originalFileName: 'original.psd', deep: true })).toEqual({
+      status: 'unsupported',
+      reason: 'decode_unsupported',
+    });
+  });
   it('an unsupported-format message on a file with no JPEG marker stays unsupported', async () => {
     mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
     expect(await sut.validate({ ...input, deep: true })).toEqual({

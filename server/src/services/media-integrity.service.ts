@@ -8,7 +8,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
-import { JPEG_MARKER_WINDOW, findJpegMarker } from 'src/utils/file-problem.js';
+import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -248,7 +248,11 @@ export class MediaIntegrityService {
       const message = error instanceof Error ? error.message : '';
       if (/unsupported|decoder.*not found|unknown decoder/i.test(message)) {
         // "Unsupported" on a file that holds a JPEG start marker is a damaged JPEG, not an unknown format.
-        if (/unsupported/i.test(message) && (await hasJpegMarker(input.path))) {
+        if (
+          /unsupported/i.test(message) &&
+          isJpegFileName(input.originalFileName) &&
+          (await hasJpegMarker(input.path))
+        ) {
           return { status: 'corrupt', reason: 'decode_failed' };
         }
         return { status: 'unsupported', reason: 'decode_unsupported' };

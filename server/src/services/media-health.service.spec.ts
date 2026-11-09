@@ -3197,6 +3197,70 @@ describe(MediaHealthService.name, () => {
       expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
     });
 
+    it.each([
+      [{ status: 'transient', reason: 'decoder_unavailable' }],
+      [{ status: 'transient', reason: 'decoder_resource_limit' }],
+      [{ status: 'transient', reason: 'file_changed' }],
+    ])('also counts %j as busy', async (outcome) => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce(outcome);
+      expect(await (sut as any).validateReadableAssetIntegrity(asset)).toMatchObject({ busy: true });
+    });
+
+    it.each([
+      [{ status: 'transient', reason: 'decode_unverified' }],
+      [{ status: 'transient', reason: 'raw_decode_damaged' }],
+    ])('keeps %j as a suspect, not busy', async (outcome) => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce(outcome);
+      expect(await (sut as any).validateReadableAssetIntegrity(asset)).toMatchObject({
+        status: MediaHealthStatus.CorruptSuspect,
+      });
+    });
+
+    it('a manual repair on a busy check refuses and records no finding', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.spyOn(sut as any, 'requireRepairable').mockReturnValue(undefined);
+      vi.spyOn(sut as any, 'isEncryptedOriginal').mockResolvedValue(false);
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        status: 'transient',
+        reason: 'validation_busy',
+      });
+
+      await expect((sut as any).damageFindingFor(authStub.admin, asset.id)).rejects.toThrow(
+        "Frameleaf couldn't check this photo just now. Try again in a few minutes.",
+      );
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
+    it('a delete revalidation on a busy check leaves the finding as it is', async () => {
+      vi.mocked(mocks.user.getForPinCode).mockResolvedValue({ password: '', pinCode: null });
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        {
+          id: 'health-1',
+          assetId: 'asset-1',
+          category: MediaHealthCategory.Corrupt,
+          status: MediaHealthStatus.CorruptConfirmed,
+          checkedAt: new Date(),
+        },
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([
+        { id: 'asset-1', originalPath: '/library/file.jpg', originalFileName: 'file.jpg', type: AssetType.Image },
+      ] as never);
+      vi.spyOn(sut as any, 'isEncryptedOriginal').mockResolvedValue(false);
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        status: 'timeout',
+        reason: 'decode_timeout',
+      });
+
+      await expect(
+        sut.deleteCorrupt(authStub.user1, { ids: ['health-1'], confirmText: CORRUPT_MEDIA_DELETE_CONFIRM_TEXT }),
+      ).rejects.toThrow('no longer failed deletion revalidation');
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.markStatus).not.toHaveBeenCalled();
+    });
+
     it('a busy validation keeps an open corrupt finding open', async () => {
       const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
