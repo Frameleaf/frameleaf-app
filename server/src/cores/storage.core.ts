@@ -424,8 +424,42 @@ export class StorageCore {
       await this.storageRepository.unlink(from);
       return 'renamed';
     } catch (error: any) {
-      // the file was never anywhere but `from`: the new link is taken back
       this.logger.warn(`Unable to complete move. Error removing ${from} once linked at ${to}: ${error}`);
+      return this.afterFailedUnlink(from, to, error, true);
+    }
+  }
+
+  /**
+   * Removing `from`, once the file was linked at `to`, failed. An unclear failure (a network drive that timed
+   * out after removing the name) may have removed it anyway, leaving `to` the file's only name, so nothing is
+   * taken back on trust:
+   * - `from` is gone: the move is made (`renamed`).
+   * - `from` still names the file: with `takeBack`, the link at `to` is removed (`failed`, as if nothing was
+   *   tried); without, both names stay (`failed`).
+   * - anything else, or it cannot tell: both names stay (`failed`), and the next run finishes the move.
+   */
+  private async afterFailedUnlink(
+    from: string,
+    to: string,
+    error: unknown,
+    takeBack: boolean,
+  ): Promise<'renamed' | 'failed'> {
+    let stillLinked = false;
+    try {
+      stillLinked = await this.storageRepository.isOtherLinkOf(from, to);
+    } catch (checkError: any) {
+      if (checkError?.code === 'ENOENT' && checkError?.path === from) {
+        this.logger.log(`Removed ${from} despite the error (${error}): the file is at ${to}`);
+        return 'renamed';
+      }
+      this.logger.warn(`Unable to tell whether ${from} still names the file at ${to}: ${checkError}`);
+    }
+    if (!stillLinked) {
+      this.logger.warn(`Keeping ${from} and ${to}: ${from} is not known to name the file still`);
+      return 'failed';
+    }
+    if (takeBack) {
+      // the file was never anywhere but `from`: the new link is taken back
       try {
         await this.storageRepository.unlink(to);
       } catch (unlinkError: any) {
@@ -433,8 +467,8 @@ export class StorageCore {
           `Unable to remove ${to}, a second name of ${from}; the recorded move keeps both: ${unlinkError}`,
         );
       }
-      return 'failed';
     }
+    return 'failed';
   }
 
   /** A file is at `to` already: this file under a second name, or another file. */
@@ -451,7 +485,7 @@ export class StorageCore {
       } catch (error: any) {
         // both names stay, as the interrupted move left them, for the next run
         this.logger.warn(`Unable to complete move. Error removing ${from}, linked at ${to} already: ${error}`);
-        return 'failed';
+        return this.afterFailedUnlink(from, to, error, false);
       }
     }
     if (replace) {

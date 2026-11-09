@@ -153,6 +153,21 @@ describe('a move never replaces an original or a sidecar (FL-1333)', () => {
     expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath]]);
   });
 
+  it('finishes an interrupted move whose old name went despite an error removing it', async () => {
+    const { core, mocks } = prepare();
+    mocks.storage.link.mockRejectedValue(error('EEXIST'));
+    mocks.storage.isOtherLinkOf
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(Object.assign(error('ENOENT'), { path: oldPath }));
+    mocks.storage.unlink.mockRejectedValue(error('EIO'));
+
+    await expect(
+      core.moveFile({ entityId: 'asset', pathType: AssetPathType.Original, oldPath, newPath, assetInfo }),
+    ).resolves.toBe(true);
+
+    expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath]]);
+  });
+
   it('replaces a leftover preview, which can be made again', async () => {
     const { core, mocks } = prepare(AssetFileType.Preview);
     mocks.storage.link.mockRejectedValue(error('EEXIST'));
@@ -246,14 +261,90 @@ describe('a move never replaces an original or a sidecar (FL-1333)', () => {
     mocks.storage.unlink.mockImplementation((path) =>
       path === oldPath ? Promise.reject(error('EACCES')) : Promise.resolve(),
     );
+    // the old name still holds the file
+    mocks.storage.isOtherLinkOf.mockResolvedValue(true);
 
     await expect(
       core.moveFile({ entityId: 'asset', pathType: AssetPathType.Original, oldPath, newPath, assetInfo }),
     ).resolves.toBe(false);
 
-    // the link just made is taken back; the file was never anywhere but the old path
+    // only then is the link just made taken back; the file was never anywhere but the old path
+    expect(mocks.storage.isOtherLinkOf).toHaveBeenCalledWith(oldPath, newPath);
     expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath], [newPath]]);
     await expect(mocks.asset.moveFile.mock.results[0].value).resolves.toBe('failed');
+  });
+
+  it('keeps both names when an unclear failure leaves the old name holding something else', async () => {
+    const { core, mocks } = prepare();
+    // a network drive that timed out: the name may be gone, or may name another file now
+    mocks.storage.unlink.mockImplementation((path) =>
+      path === oldPath ? Promise.reject(error('EIO')) : Promise.resolve(),
+    );
+    mocks.storage.isOtherLinkOf.mockResolvedValue(false);
+
+    await expect(
+      core.moveFile({ entityId: 'asset', pathType: AssetPathType.Original, oldPath, newPath, assetInfo }),
+    ).resolves.toBe(false);
+
+    // the new path may be the photo's only name: it is never removed
+    expect(mocks.storage.unlink).not.toHaveBeenCalledWith(newPath);
+    expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath]]);
+  });
+
+  it('keeps both names when it cannot tell whether the old name still holds the file', async () => {
+    const { core, mocks } = prepare();
+    mocks.storage.unlink.mockImplementation((path) =>
+      path === oldPath ? Promise.reject(error('EIO')) : Promise.resolve(),
+    );
+    mocks.storage.isOtherLinkOf.mockRejectedValue(Object.assign(error('EIO'), { path: oldPath }));
+
+    await expect(
+      core.moveFile({ entityId: 'asset', pathType: AssetPathType.Original, oldPath, newPath, assetInfo }),
+    ).resolves.toBe(false);
+
+    expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath]]);
+  });
+
+  it('counts the move as made when the old name went despite the error', async () => {
+    const { core, mocks } = prepare();
+    mocks.storage.unlink.mockImplementation((path) =>
+      path === oldPath ? Promise.reject(error('ETIMEDOUT')) : Promise.resolve(),
+    );
+    // lstat of the old name: no such file
+    mocks.storage.isOtherLinkOf.mockRejectedValue(Object.assign(error('ENOENT'), { path: oldPath }));
+
+    await expect(
+      core.moveFile({ entityId: 'asset', pathType: AssetPathType.Original, oldPath, newPath, assetInfo }),
+    ).resolves.toBe(true);
+
+    expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath]]);
+    await expect(mocks.asset.moveFile.mock.results[0].value).resolves.toBe('moved');
+  });
+
+  it('never takes back a moved file that its new path alone may hold, when putting it back', async () => {
+    const { core, mocks } = prepare();
+    mocks.asset.moveFile.mockImplementationOnce(async (_move, { rename, undo }) => {
+      await rename();
+      await undo();
+      return 'failed';
+    });
+    // the move goes through; putting it back links the old path, then cannot tell whether the new name went
+    mocks.storage.unlink.mockImplementation((path) =>
+      path === newPath ? Promise.reject(error('EIO')) : Promise.resolve(),
+    );
+    mocks.storage.isOtherLinkOf.mockResolvedValue(false);
+
+    await expect(
+      core.moveFile({ entityId: 'asset', pathType: AssetPathType.Original, oldPath, newPath, assetInfo }),
+    ).resolves.toBe(false);
+
+    expect(mocks.storage.link.mock.calls).toEqual([
+      [oldPath, newPath],
+      [newPath, oldPath],
+    ]);
+    expect(mocks.storage.isOtherLinkOf).toHaveBeenCalledWith(newPath, oldPath);
+    // the old path, linked again, is never removed on trust
+    expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath], [newPath]]);
   });
 
   it('puts a moved file back without replacing what is at its old path', async () => {

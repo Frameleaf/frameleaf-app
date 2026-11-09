@@ -446,6 +446,9 @@ describe(StorageRepository.name, () => {
       await expect(sut.isOtherLinkOf(a, b)).resolves.toBe(false);
       await expect(sut.isOtherLinkOf(a, symlink)).resolves.toBe(false);
       await expect(sut.isOtherLinkOf(a, join(directory, 'missing'))).rejects.toMatchObject({ code: 'ENOENT' });
+      // which name is missing is told by the error, as a move that lost its old name needs to know
+      const missing = join(directory, 'missing');
+      await expect(sut.isOtherLinkOf(missing, a)).rejects.toMatchObject({ code: 'ENOENT', path: missing });
     });
 
     it('isOtherLinkOf is false for two spellings of one entry, whose removal would remove the file', async () => {

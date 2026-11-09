@@ -85,7 +85,7 @@ export class StorageRepository {
    * at the new path and stopped before removing the old name). They are one file (same device and inode, read
    * without following a symbolic link) and two separate entries. Two spellings of one entry, such as a folder
    * reached through a symbolic link or another letter case on a case-insensitive drive, are not: removing one
-   * would remove the file. When it cannot tell, it says no.
+   * would remove the file. When it cannot tell, it says no. A missing name rejects with ENOENT and that `path`.
    */
   async isOtherLinkOf(first: string, second: string): Promise<boolean> {
     const [a, b] = await Promise.all([fs.lstat(first, { bigint: true }), fs.lstat(second, { bigint: true })]);
