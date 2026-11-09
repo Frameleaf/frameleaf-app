@@ -1113,12 +1113,13 @@ export class SearchRepository {
   private async facetsOf(matched: MatchedAssets, options: SearchFacetOptions): Promise<SearchFacetResult> {
     const wanted = new Set(options.facets);
     const viewer = asUuidLiteral(options.viewerId);
-    // Explore's covers: the newest match per value, from the same matched set as the count
-    // (the max of a sortable "time + id" key: the same pick as ordering by both for years 1-9999, without
-    // sorting every row)
+    // Explore's covers: the newest match per value, from the same matched set as the count. The max of a
+    // binary "time + id" key is the same pick as ordering by both, without sorting every row: the
+    // timestamp's own 8 bytes with the sign bit flipped (so earlier sorts first, infinities included)
+    // then the uuid's 16. FL-1335: a text key from to_char cost a third of Explore's facet request.
     const cover = options.covers
-      ? sql`right(max(to_char(m."fileCreatedAt" at time zone 'UTC', 'YYYYMMDDHH24MISSUS') || m.id::text collate "C"), 36)`
-      : sql`null::text`;
+      ? sql`max(set_byte(timestamptz_send(m."fileCreatedAt"), 0, get_byte(timestamptz_send(m."fileCreatedAt"), 0) # 128) || uuid_send(m.id))`
+      : sql`null::bytea`;
     const exifFacet = (field: SearchFacetField, column: string, where: RawBuilder<unknown> = sql`true`) =>
       sql`select ${field}::text as field, ${trimmed(column)} as value, null::text as label, count(*) as count,
           ${cover} as cover
@@ -1161,31 +1162,41 @@ export class SearchRepository {
           from matched m
           inner join asset_exif e on e."assetId" = m.id
           cross join lateral unnest(e."mediaKinds") as k(kind)
+          where cardinality(e."mediaKinds") > 0
           group by 2`,
       ],
       [
         SearchFacetField.People,
-        sql`select ${SearchFacetField.People}::text as field, f."personGroupId"::text as value,
-            max(nullif(p.name, '')) as label, count(distinct m.id) as count, ${cover} as cover
-          from matched m
-          inner join asset_face f on f."assetId" = m.id and f."deletedAt" is null and f."isVisible" is true
-          inner join person p on p."personGroupId" = f."personGroupId" and p."ownerId" = ${viewer} and not p."isHidden"
+        // An asset counts once per person even with two of their faces in it: the pairs are made
+        // distinct first (a hash, where count(distinct) sorts every face row and spills to disk)
+        sql`select ${SearchFacetField.People}::text as field, m."personGroupId"::text as value,
+            max(nullif(p.name, '')) as label, count(*) as count, ${cover} as cover
+          from (
+            select distinct f."personGroupId", m.id, m."fileCreatedAt"
+            from matched m
+            inner join asset_face f on f."assetId" = m.id and f."deletedAt" is null and f."isVisible" is true
+          ) m
+          inner join person p on p."personGroupId" = m."personGroupId" and p."ownerId" = ${viewer} and not p."isHidden"
           where ${
             options.suppressedPersonIds.length > 0
-              ? sql`not (f."personGroupId" = ${anyUuid(options.suppressedPersonIds)})`
+              ? sql`not (m."personGroupId" = ${anyUuid(options.suppressedPersonIds)})`
               : sql`true`
           }
-          group by f."personGroupId"`,
+          group by m."personGroupId"`,
       ],
       [
         SearchFacetField.Tags,
-        // a tag counts the assets tagged with it or with any tag under it, as the tag filter matches
+        // a tag counts the assets tagged with it or with any tag under it, as the tag filter matches;
+        // an asset reaches an ancestor once per tag under it, so the pairs are made distinct first
         sql`select ${SearchFacetField.Tags}::text as field, t.id::text as value, max(t.value) as label,
-            count(distinct m.id) as count, ${cover} as cover
-          from matched m
-          inner join tag_asset ta on ta."assetId" = m.id
-          inner join tag_closure tc on tc.id_descendant = ta."tagId"
-          inner join tag t on t.id = tc.id_ancestor and t."userId" = ${viewer}
+            count(*) as count, ${cover} as cover
+          from (
+            select distinct tc.id_ancestor as "tagId", m.id, m."fileCreatedAt"
+            from matched m
+            inner join tag_asset ta on ta."assetId" = m.id
+            inner join tag_closure tc on tc.id_descendant = ta."tagId"
+          ) m
+          inner join tag t on t.id = m."tagId" and t."userId" = ${viewer}
           where ${options.suppressedTagIds.length > 0 ? sql`not ${tagIsSuppressed(sql.ref('t.id'), options.suppressedTagIds)}` : sql`true`}
           group by t.id`,
       ],
@@ -1205,7 +1216,7 @@ export class SearchRepository {
     const selected = parts.filter(([field]) => wanted.has(field)).map(([, query]) => query);
     // the total comes from the same matched set in the same statement, so it never needs its own scan
     const total = sql`select 'total'::text as field, null::text as value, null::text as label, count(*) as count,
-      null::text as cover
+      null::bytea as cover
       from matched`;
 
     const { rows } = await sql<{
@@ -1221,7 +1232,8 @@ export class SearchRepository {
         select *, row_number() over (partition by field order by count desc, value asc) as rank
         from facet_rows
       )
-      select field, value, label, count, cover from ranked where rank <= ${options.limit} order by field, rank
+      select field, value, label, count, encode(substring(cover from 9), 'hex')::uuid::text as cover
+      from ranked where rank <= ${options.limit} order by field, rank
     `.execute(this.db);
     return {
       total: Number(rows.find((row) => row.field === 'total')?.count ?? 0),

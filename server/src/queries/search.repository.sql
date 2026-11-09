@@ -5550,14 +5550,12 @@ with
       m.type::text as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5572,14 +5570,12 @@ with
       )::text as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5594,14 +5590,12 @@ with
       end as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5614,14 +5608,12 @@ with
       nullif(trim("e"."city"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5637,14 +5629,12 @@ with
       nullif(trim("e"."country"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5660,14 +5650,12 @@ with
       nullif(trim("e"."make"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5683,14 +5671,12 @@ with
       nullif(trim("e"."model"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5706,14 +5692,12 @@ with
       nullif(trim("e"."lensModel"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5729,68 +5713,78 @@ with
       k.kind::text as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
       cross join lateral unnest(e."mediaKinds") as k (kind)
+    where
+      cardinality(e."mediaKinds") > 0
     group by
       2
     union all
     select
       $16::text as field,
-      f."personGroupId"::text as value,
+      m."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
-      count(distinct m.id) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      count(*) as count,
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
-      matched m
-      inner join asset_face f on f."assetId" = m.id
-      and f."deletedAt" is null
-      and f."isVisible" is true
-      inner join person p on p."personGroupId" = f."personGroupId"
+      (
+        select distinct
+          f."personGroupId",
+          m.id,
+          m."fileCreatedAt"
+        from
+          matched m
+          inner join asset_face f on f."assetId" = m.id
+          and f."deletedAt" is null
+          and f."isVisible" is true
+      ) m
+      inner join person p on p."personGroupId" = m."personGroupId"
       and p."ownerId" = $17::uuid
       and not p."isHidden"
     where
-      not (f."personGroupId" = any ($18::uuid[]))
+      not (m."personGroupId" = any ($18::uuid[]))
     group by
-      f."personGroupId"
+      m."personGroupId"
     union all
     select
       $19::text as field,
       t.id::text as value,
       max(t.value) as label,
-      count(distinct m.id) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      count(*) as count,
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
-      matched m
-      inner join tag_asset ta on ta."assetId" = m.id
-      inner join tag_closure tc on tc.id_descendant = ta."tagId"
-      inner join tag t on t.id = tc.id_ancestor
+      (
+        select distinct
+          tc.id_ancestor as "tagId",
+          m.id,
+          m."fileCreatedAt"
+        from
+          matched m
+          inner join tag_asset ta on ta."assetId" = m.id
+          inner join tag_closure tc on tc.id_descendant = ta."tagId"
+      ) m
+      inner join tag t on t.id = m."tagId"
       and t."userId" = $20::uuid
     where
       not exists (
@@ -5810,14 +5804,12 @@ with
       pet.id::text as value,
       max(nullif(pet.name, '')) as label,
       count(distinct m.id) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5836,7 +5828,7 @@ with
       null::text as value,
       null::text as label,
       count(*) as count,
-      null::text as cover
+      null::bytea as cover
     from
       matched
   ),
@@ -5858,7 +5850,14 @@ select
   value,
   label,
   count,
-  cover
+  encode(
+    substring(
+      cover
+      from
+        9
+    ),
+    'hex'
+  )::uuid::text as cover
 from
   ranked
 where
@@ -5916,14 +5915,12 @@ with
       m.type::text as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5938,14 +5935,12 @@ with
       )::text as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5960,14 +5955,12 @@ with
       end as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -5980,14 +5973,12 @@ with
       nullif(trim("e"."city"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -6003,14 +5994,12 @@ with
       nullif(trim("e"."country"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -6026,14 +6015,12 @@ with
       nullif(trim("e"."make"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -6049,14 +6036,12 @@ with
       nullif(trim("e"."model"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -6072,14 +6057,12 @@ with
       nullif(trim("e"."lensModel"), '') as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -6095,68 +6078,78 @@ with
       k.kind::text as value,
       null::text as label,
       count(*) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
       cross join lateral unnest(e."mediaKinds") as k (kind)
+    where
+      cardinality(e."mediaKinds") > 0
     group by
       2
     union all
     select
       $18::text as field,
-      f."personGroupId"::text as value,
+      m."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
-      count(distinct m.id) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      count(*) as count,
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
-      matched m
-      inner join asset_face f on f."assetId" = m.id
-      and f."deletedAt" is null
-      and f."isVisible" is true
-      inner join person p on p."personGroupId" = f."personGroupId"
+      (
+        select distinct
+          f."personGroupId",
+          m.id,
+          m."fileCreatedAt"
+        from
+          matched m
+          inner join asset_face f on f."assetId" = m.id
+          and f."deletedAt" is null
+          and f."isVisible" is true
+      ) m
+      inner join person p on p."personGroupId" = m."personGroupId"
       and p."ownerId" = $19::uuid
       and not p."isHidden"
     where
-      not (f."personGroupId" = any ($20::uuid[]))
+      not (m."personGroupId" = any ($20::uuid[]))
     group by
-      f."personGroupId"
+      m."personGroupId"
     union all
     select
       $21::text as field,
       t.id::text as value,
       max(t.value) as label,
-      count(distinct m.id) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      count(*) as count,
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
-      matched m
-      inner join tag_asset ta on ta."assetId" = m.id
-      inner join tag_closure tc on tc.id_descendant = ta."tagId"
-      inner join tag t on t.id = tc.id_ancestor
+      (
+        select distinct
+          tc.id_ancestor as "tagId",
+          m.id,
+          m."fileCreatedAt"
+        from
+          matched m
+          inner join tag_asset ta on ta."assetId" = m.id
+          inner join tag_closure tc on tc.id_descendant = ta."tagId"
+      ) m
+      inner join tag t on t.id = m."tagId"
       and t."userId" = $22::uuid
     where
       not exists (
@@ -6176,14 +6169,12 @@ with
       pet.id::text as value,
       max(nullif(pet.name, '')) as label,
       count(distinct m.id) as count,
-      right(
-        max(
-          to_char(
-            m."fileCreatedAt" at time zone 'UTC',
-            'YYYYMMDDHH24MISSUS'
-          ) || m.id::text collate "C"
-        ),
-        36
+      max(
+        set_byte(
+          timestamptz_send (m."fileCreatedAt"),
+          0,
+          get_byte(timestamptz_send (m."fileCreatedAt"), 0) # 128
+        ) || uuid_send (m.id)
       ) as cover
     from
       matched m
@@ -6202,7 +6193,7 @@ with
       null::text as value,
       null::text as label,
       count(*) as count,
-      null::text as cover
+      null::bytea as cover
     from
       matched
   ),
@@ -6224,7 +6215,14 @@ select
   value,
   label,
   count,
-  cover
+  encode(
+    substring(
+      cover
+      from
+        9
+    ),
+    'hex'
+  )::uuid::text as cover
 from
   ranked
 where

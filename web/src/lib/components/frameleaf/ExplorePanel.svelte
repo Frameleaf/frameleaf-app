@@ -23,7 +23,7 @@
     ExplorePersonCard,
     ExploreShortcutCounts,
   } from '$lib/frameleaf/explore';
-  import { buildExploreShortcuts, captureDay, isVideoAsset } from '$lib/frameleaf/explore';
+  import { buildExploreShortcuts, captureDay, EXPLORE_PLACE_LIMIT, isVideoAsset } from '$lib/frameleaf/explore';
   import {
     createLandmarkAlbum,
     dismissLandmarkAlbum,
@@ -61,6 +61,8 @@
 
   interface Props {
     people: ExplorePersonCard[];
+    /** FL-1335: People and Places arrive after the page opens; their rows are held meanwhile. */
+    pending?: boolean;
     places: ExploreCoverCard[];
     /** FL-354: landmarks and attractions the account has photos at. */
     landmarks?: LandmarkCard[];
@@ -86,6 +88,7 @@
 
   let {
     people,
+    pending = false,
     places,
     landmarks = [],
     albumSuggestion = null,
@@ -133,7 +136,8 @@
   const anyFailed = $derived(Object.values(failed).some(Boolean));
   const hasAnything = $derived(
     libraryTotal === null
-      ? anyFailed ||
+      ? pending ||
+          anyFailed ||
           people.length > 0 ||
           places.length > 0 ||
           landmarks.length > 0 ||
@@ -197,17 +201,28 @@
   {:else}
     {#if failed.people && people.length === 0}
       {@render failure('people', $t('people'), 0)}
-    {:else if people.length > 0}
+    {:else if pending || people.length > 0}
       <section class="el-section el-rise" style="--i: 0" aria-labelledby="explore-people-heading">
         {@render heading('explore-people-heading', $t('people'), Route.people())}
-        <div class="el-people">
-          {#each people as item (item.id)}
-            <a href={item.href} class="el-person">
-              <PersonAvatar person={item.person} size={88} />
-              <strong>{item.label}</strong>
-              <small>{countLabel(item.count)}</small>
-            </a>
-          {/each}
+        <div class="el-people" aria-busy={pending}>
+          {#if pending}
+            <!-- The row's own size, so the cards below do not move when the people arrive. -->
+            {#each Array.from({ length: 8 }, (_, index) => index) as index (index)}
+              <span class="el-person" aria-hidden="true">
+                <span class="el-person-placeholder fl-squircle"></span>
+                <strong>&nbsp;</strong>
+                <small>&nbsp;</small>
+              </span>
+            {/each}
+          {:else}
+            {#each people as item (item.id)}
+              <a href={item.href} class="el-person">
+                <PersonAvatar person={item.person} size={88} />
+                <strong>{item.label}</strong>
+                <small>{countLabel(item.count)}</small>
+              </a>
+            {/each}
+          {/if}
         </div>
       </section>
     {/if}
@@ -256,20 +271,26 @@
 
     {#if failed.places}
       {@render failure('places', $t('places'), 2)}
-    {:else if places.length > 0}
+    {:else if pending || places.length > 0}
       <section class="el-section el-rise" style="--i: 2" aria-labelledby="explore-places-heading">
         {@render heading('explore-places-heading', $t('places'), Route.places())}
-        <div class="el-places">
-          {#each places as place (place.id)}
-            <a href={place.href} class="el-place fl-continuous-corners">
-              {@render cover(place.coverAssetId)}
-              <span class="el-cover-shade"></span>
-              <span>
-                <strong>{place.label}</strong>
-                <small>{countLabel(place.count)}</small>
-              </span>
-            </a>
-          {/each}
+        <div class="el-places" aria-busy={pending}>
+          {#if pending}
+            {#each Array.from({ length: EXPLORE_PLACE_LIMIT }, (_, index) => index) as index (index)}
+              <span class="el-place fl-continuous-corners" aria-hidden="true"></span>
+            {/each}
+          {:else}
+            {#each places as place (place.id)}
+              <a href={place.href} class="el-place fl-continuous-corners">
+                {@render cover(place.coverAssetId)}
+                <span class="el-cover-shade"></span>
+                <span>
+                  <strong>{place.label}</strong>
+                  <small>{countLabel(place.count)}</small>
+                </span>
+              </a>
+            {/each}
+          {/if}
         </div>
       </section>
     {/if}
@@ -574,6 +595,11 @@
   }
   .el-person small {
     margin-top: -2px;
+  }
+  .el-person-placeholder {
+    width: 88px;
+    height: 88px;
+    background: var(--fl-raised);
   }
   .el-highlights {
     display: grid;
