@@ -47,6 +47,8 @@ const config = () =>
       duplicateReview: true,
       incrementalEnrichment: true,
       manualMetadata: true,
+      autoRepair: true,
+      askPhones: true,
     },
   }) as unknown as AdminConfigDto;
 
@@ -392,5 +394,19 @@ describe('File checks (FL-366)', () => {
     await fireEvent.click(await within(dialog).findByRole('radio', { name: /IMG_2291.HEIC/ }));
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Check IMG_2291.HEIC' }));
     await vi.waitFor(() => expect(sdkMock.checkIntegrityOne).toHaveBeenCalledWith({ id: 'a1' }));
+  });
+
+  it('FileChecks turns automatic repair off', async () => {
+    const store = newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    const repair = await screen.findByRole('switch', { name: 'Repair damaged photos by themselves' });
+    expect(repair).toBeChecked();
+    expect(screen.getByText(/A repaired copy takes the damaged one’s place/)).toBeInTheDocument();
+
+    await fireEvent.click(repair);
+
+    expect(store.draft.libraryCare?.autoRepair).toBe(false);
+    expect(screen.getByText('Damaged photos wait for you. You see each repair before choosing it.')).toBeInTheDocument();
   });
 });

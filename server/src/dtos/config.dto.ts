@@ -290,6 +290,8 @@ const libraryCareDefaults = {
   duplicateReview: true,
   incrementalEnrichment: true,
   manualMetadata: true,
+  autoRepair: true,
+  askPhones: true,
 };
 
 /**
@@ -860,6 +862,8 @@ const AdminConfigLibraryCareSchema = z
       'A full description rerun reprocesses only results that are missing, failed or out of date',
     ),
     manualMetadata: configBool.describe('A description rerun replaces only generated text and keeps manual text'),
+    autoRepair: configBool.describe('Repair damaged photos by themselves'),
+    askPhones: configBool.describe('Ask phones for missing photos'),
   })
   .meta({ id: 'AdminConfigLibraryCareDto' });
 

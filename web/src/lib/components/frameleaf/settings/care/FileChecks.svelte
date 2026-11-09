@@ -26,6 +26,9 @@
    * `untrackedFiles.cronExpression`, `libraryCare.healthScanCronExpression`) no longer start
    * anything, so they are not shown. `?report=<type>` opens one check's
    * path-by-path list (Details for support).
+   *
+   * "When a check finds a problem" holds the `libraryCare.autoRepair` switch. Whether phones are asked for
+   * missing photos (`libraryCare.askPhones`) is set on its own page, not here.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -99,6 +102,7 @@
   import { Icon, toastManager } from '@frameleaf/ui';
   import RunOneDialog from '$lib/components/frameleaf/RunOneDialog.svelte';
   import {
+    mdiAutoFix,
     mdiChevronRight,
     mdiClockOutline,
     mdiDownload,
@@ -107,6 +111,7 @@
     mdiFileQuestionOutline,
     mdiFolderAlertOutline,
     mdiHarddiskRemove,
+    mdiMagnify,
     mdiPlayOutline,
     mdiShieldAlertOutline,
     mdiShieldCheckOutline,
@@ -714,6 +719,48 @@
             {/snippet}
           </Item>
         {/each}
+      </ItemList>
+    </Section>
+
+    <Section
+      title={$t('frameleaf_care_fc_when_problem_title')}
+      description={$t('frameleaf_care_fc_when_problem_description')}
+    >
+      {#snippet action()}
+        <Button onclick={() => goto(commandCenterUrl('care', 'repair'))}>
+          {$t('frameleaf_care_fc_when_problem_see_files')}
+        </Button>
+      {/snippet}
+      <ItemList>
+        <Item
+          icon={mdiAutoFix}
+          name={$t('frameleaf_care_fc_when_problem_repair_name')}
+          detail={care?.autoRepair
+            ? $t('frameleaf_care_fc_when_problem_repair_on')
+            : $t('frameleaf_care_fc_when_problem_repair_off')}
+        >
+          {#snippet measure()}
+            <Switch
+              label={$t('frameleaf_care_fc_when_problem_repair_name')}
+              checked={care?.autoRepair ?? true}
+              {held}
+              onChange={(value) => {
+                if (settingsDraft.draft.libraryCare) {
+                  settingsDraft.draft.libraryCare.autoRepair = value;
+                }
+              }}
+            />
+          {/snippet}
+        </Item>
+        <Item
+          icon={mdiMagnify}
+          name={$t('frameleaf_care_fc_when_problem_look_name')}
+          detail={$t('frameleaf_care_fc_when_problem_look_detail')}
+        >
+          {#snippet measure()}
+            <Switch label={$t('frameleaf_care_fc_when_problem_look_name')} checked held />
+          {/snippet}
+        </Item>
       </ItemList>
     </Section>
 

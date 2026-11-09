@@ -604,6 +604,12 @@
   "library.watch.enabled": {
     "type": "boolean"
   },
+  "libraryCare.askPhones": {
+    "type": "boolean"
+  },
+  "libraryCare.autoRepair": {
+    "type": "boolean"
+  },
   "libraryCare.checksumScan": {
     "type": "boolean"
   },

@@ -68134,6 +68134,14 @@
       },
       "AdminConfigLibraryCareDto": {
         "properties": {
+          "askPhones": {
+            "description": "Ask phones for missing photos",
+            "type": "boolean"
+          },
+          "autoRepair": {
+            "description": "Repair damaged photos by themselves",
+            "type": "boolean"
+          },
           "checksumScan": {
             "description": "Health scans verify each original against its recorded checksum",
             "type": "boolean"
@@ -68172,6 +68180,8 @@
           }
         },
         "required": [
+          "askPhones",
+          "autoRepair",
           "checksumScan",
           "duplicateReview",
           "healthScan",
