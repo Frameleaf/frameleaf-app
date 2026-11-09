@@ -19,6 +19,7 @@ import { tryPromise } from 'src/utils/promise.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { notificationStub } from 'test/fixtures/notification.stub.js';
 import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
@@ -76,6 +77,43 @@ describe(NotificationService.name, () => {
     // Existing positive fixtures represent a current authorized owner; individual refusals override it.
     mocks.access.album.checkOwnerAccess.mockImplementation((_user, ids) => Promise.resolve(new Set(ids)));
     mocks.access.asset.checkOwnerAccess.mockImplementation((_user, ids) => Promise.resolve(new Set(ids)));
+  });
+
+  describe('import lost-originals report (FL-1313)', () => {
+    const auth = AuthFactory.create();
+    const report = {
+      ...notificationStub.albumEvent,
+      type: NotificationType.SystemMessage,
+      data: { kind: 'immich-import-lost-originals', total: 2, items: [{ id: 'a' }, { id: 'b' }] },
+    };
+    const summary = { kind: 'immich-import-lost-originals', total: 2 };
+
+    beforeEach(() => {
+      mocks.access.notification.checkOwnerAccess.mockResolvedValue(new Set([report.id]));
+    });
+
+    it('leaves the files out of the list, keeping what the panel links with', async () => {
+      mocks.notification.search.mockResolvedValue([report]);
+      await expect(sut.search(auth, {})).resolves.toEqual([expect.objectContaining({ data: summary })]);
+    });
+
+    it('leaves the files out of the mark-read response', async () => {
+      mocks.notification.update.mockResolvedValue(report);
+      await expect(sut.update(auth, report.id, { readAt: new Date() })).resolves.toEqual(
+        expect.objectContaining({ data: summary }),
+      );
+    });
+
+    it('still returns the files for one notification', async () => {
+      mocks.notification.get.mockResolvedValue(report);
+      await expect(sut.get(auth, report.id)).resolves.toMatchObject({ data: report.data });
+    });
+
+    it('keeps items on other notification kinds', async () => {
+      const other = { ...report, data: { kind: 'noodle-gallery-not-imported', items: ['Spaces'] } };
+      mocks.notification.search.mockResolvedValue([other]);
+      await expect(sut.search(auth, {})).resolves.toEqual([expect.objectContaining({ data: other.data })]);
+    });
   });
 
   it('awaits client restart publication before sending and awaiting the worker restart', async () => {
