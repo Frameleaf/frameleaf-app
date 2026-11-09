@@ -1,7 +1,8 @@
-import { statfs } from 'node:fs/promises';
+import { stat, statfs } from 'node:fs/promises';
 import { RESERVED_TARGETS } from './compose.js';
 import { redact, type Installation } from './contracts.js';
 import type { Container, Docker } from './docker.js';
+import { isLowOnSpace, type DriveUse } from './storage-drives.js';
 
 export type Check = { name: string; ok: boolean | null; detail: string };
 export type Problem = { service: string; problem: string; hint: string; count: number; example: string };
@@ -131,7 +132,7 @@ const LAN_PROBE = `fetch((process.env.FRAMELEAF_DISCOVERY_URL||'http://127.0.0.1
 type Http = { status?: number; date?: string | null; sent?: number; received?: number; error?: string };
 const http = (r: Http | null | undefined) => (r?.status ? `answered (HTTP ${r.status})` : `no answer (${r?.error ?? 'error'})`);
 
-export async function connectionChecks(docker: Docker, installation: Installation | null, containers: Container[], drives: { name: string; path: string }[]): Promise<Check[]> {
+export async function connectionChecks(docker: Docker, installation: Installation | null, containers: Container[], drives: { name: string; path: string; use?: DriveUse }[]): Promise<Check[]> {
   const checks: Check[] = [];
   let start = Date.now();
   const host = await docker.compatibility().then(
@@ -212,17 +213,59 @@ export async function connectionChecks(docker: Docker, installation: Installatio
     });
   } else checks.push({ name: 'Network discovery', ok: null, detail: lan ? 'Stopped: phones on the network will not find this library automatically.' : 'Not installed: Manager only listens on this computer, or the release predates it.' });
 
-  for (const { name, path } of drives) {
-    const fs = await statfs(path).catch(() => null);
-    if (!fs) {
-      checks.push({ name, ok: false, detail: 'Manager cannot read this mounted drive.' });
+  checks.push(...(await driveChecks(drives)));
+  return checks;
+}
+
+const HOLDS: Record<DriveUse, string> = {
+  media: 'photos and videos',
+  thumbnails: 'the thumbnails',
+  database: 'the database',
+  backups: 'the backups',
+};
+const list = (items: string[]) =>
+  items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+
+/**
+ * FL-1324: one check per drive. Places on the same drive (the same `stat.dev`) share its check, which says what
+ * else it holds, so a library on one drive gets one result, and a thumbnail or database drive of its own gets its
+ * own, named.
+ */
+export async function driveChecks(
+  drives: { name: string; path: string; use?: DriveUse }[],
+  fs: { statfs: typeof statfs; stat: typeof stat } = { statfs, stat },
+): Promise<Check[]> {
+  const checks: (Check & { also: string[] })[] = [];
+  const byDevice = new Map<number, Check & { also: string[] }>();
+  for (const { name, path, use } of drives) {
+    const [space, device] = await Promise.all([
+      fs.statfs(path).catch(() => null),
+      fs.stat(path).then((s) => s.dev, () => null),
+    ]);
+    if (!space) {
+      checks.push({ name, ok: false, detail: 'Manager cannot read this mounted drive.', also: [] });
       continue;
     }
-    const free = fs.bavail * fs.bsize,
-      percent = Math.round((100 * fs.bavail) / Math.max(fs.blocks, 1));
-    checks.push({ name, ok: percent >= 5 && free > 2e9, detail: `${(free / 1e9).toFixed(1)} GB free (${percent}%)` });
+    const shared = device === null ? undefined : byDevice.get(device);
+    if (shared) {
+      if (use && !shared.also.includes(HOLDS[use])) shared.also.push(HOLDS[use]);
+      continue;
+    }
+    const free = space.bavail * space.bsize,
+      percent = Math.round((100 * space.bavail) / Math.max(space.blocks, 1)),
+      low = isLowOnSpace(free, space.blocks * space.bsize);
+    const check = {
+      name,
+      ok: !low,
+      detail: `${(free / 1e9).toFixed(1)} GB free (${percent}%)${low ? '. Nearly full: make room on this drive' : ''}`,
+      also: [],
+    };
+    checks.push(check);
+    if (device !== null) byDevice.set(device, check);
   }
-  return checks;
+  return checks.map(({ also, ...check }) =>
+    also.length ? { ...check, detail: `${check.detail}. Also holds ${list(also)}` } : check,
+  );
 }
 
 export type Report = {

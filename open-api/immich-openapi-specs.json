@@ -79649,13 +79649,24 @@
         ],
         "type": "object"
       },
+      "AttentionStorageDrive": {
+        "description": "The drive: the one the library is on, or the one thumbnails are kept on when that is another drive",
+        "enum": [
+          "library",
+          "thumbnails"
+        ],
+        "type": "string"
+      },
       "AttentionStorageDto": {
         "properties": {
           "availableBytes": {
-            "description": "Space left on the drive the library is on",
+            "description": "Space left on the drive",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "drive": {
+            "$ref": "#/components/schemas/AttentionStorageDrive"
           },
           "totalBytes": {
             "description": "Size of that drive",
@@ -79673,6 +79684,7 @@
         },
         "required": [
           "availableBytes",
+          "drive",
           "totalBytes",
           "usedPercent"
         ],

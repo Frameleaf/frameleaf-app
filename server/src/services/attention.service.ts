@@ -22,6 +22,7 @@ import {
   type QueueFacts,
   type SignalResult,
   backupSignal,
+  combineStorage,
   sortAttention,
   storageSignal,
   versionSignal,
@@ -107,11 +108,36 @@ export class AttentionService {
     }
   }
 
+  /**
+   * The drive the library is on, and (FL-1324) the thumbnails' drive when it is another filesystem: a
+   * thumbnails folder mounted from another drive fills up on its own. On one drive there is one item.
+   */
   private async storage(config: SystemConfig): Promise<SignalResult> {
-    return storageSignal(
-      await this.storageRepository.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Library)),
-      config.storageWarning.percent,
-    );
+    const percent = config.storageWarning.percent;
+    const library = StorageCore.getBaseFolder(StorageFolder.Library);
+    const thumbnails = StorageCore.getBaseFolder(StorageFolder.Thumbnails);
+    const [libraryResult, libraryDevice, thumbnailsDevice] = await Promise.all([
+      this.storageRepository
+        .checkDiskUsage(library)
+        .then((disk) => storageSignal(disk, percent, 'library'))
+        .catch((error) => {
+          this.logger.warn(`Could not check the library drive for what needs attention: ${error}`);
+          return { state: 'unknown', items: [] } satisfies SignalResult;
+        }),
+      this.storageRepository.getDevice(library),
+      this.storageRepository.getDevice(thumbnails),
+    ]);
+    if (libraryDevice === null || thumbnailsDevice === null || libraryDevice === thumbnailsDevice) {
+      return libraryResult;
+    }
+    const thumbnailsResult = await this.storageRepository
+      .checkDiskUsage(thumbnails)
+      .then((disk) => storageSignal(disk, percent, 'thumbnails'))
+      .catch((error) => {
+        this.logger.warn(`Could not check the thumbnails drive for what needs attention: ${error}`);
+        return { state: 'unknown', items: [] } satisfies SignalResult;
+      });
+    return combineStorage([libraryResult, thumbnailsResult]);
   }
 
   /**

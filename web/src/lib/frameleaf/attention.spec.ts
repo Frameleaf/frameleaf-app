@@ -4,6 +4,7 @@ import {
   AttentionKind,
   AttentionLevel,
   AttentionReason,
+  AttentionStorageDrive,
   QueueName,
   type AttentionCheckDto,
   type AttentionItemDto,
@@ -125,7 +126,12 @@ describe('what needs attention, in words (FL-421)', () => {
   });
 
   it('says how much room the drive has left, and opens the Overview', () => {
-    const storage = { availableBytes: 74 * GB, totalBytes: 932 * GB, usedPercent: 92.1 };
+    const storage = {
+      drive: AttentionStorageDrive.Library,
+      availableBytes: 74 * GB,
+      totalBytes: 932 * GB,
+      usedPercent: 92.1,
+    };
     expect(
       attentionView(item({ kind: AttentionKind.Storage, reason: AttentionReason.NearlyFull, storage }), say),
     ).toMatchObject({
@@ -137,6 +143,30 @@ describe('what needs attention, in words (FL-421)', () => {
     expect(
       attentionView(item({ kind: AttentionKind.Storage, reason: AttentionReason.OutOfSpace, storage }), say).title.key,
     ).toBe('frameleaf_attention_storage_out_title');
+  });
+
+  it('names the thumbnails drive when thumbnails are on a drive of their own (FL-1324)', () => {
+    const storage = {
+      drive: AttentionStorageDrive.Thumbnails,
+      availableBytes: 5 * GB,
+      totalBytes: 250 * GB,
+      usedPercent: 98,
+    };
+    const out = attentionView(
+      item({ id: 'storage:thumbnails', kind: AttentionKind.Storage, reason: AttentionReason.OutOfSpace, storage }),
+      say,
+    );
+    expect(out).toMatchObject({
+      id: 'storage:thumbnails',
+      title: { key: 'frameleaf_attention_storage_thumbnails_out_title' },
+      detail: { key: 'frameleaf_attention_storage_thumbnails_out', values: { left: '5 GB', total: '250 GB' } },
+    });
+    const nearly = attentionView(
+      item({ kind: AttentionKind.Storage, reason: AttentionReason.NearlyFull, storage }),
+      say,
+    );
+    expect(nearly.title.key).toBe('frameleaf_attention_storage_thumbnails_title');
+    expect(nearly.detail.key).toBe('frameleaf_attention_storage_thumbnails_detail');
   });
 
   it('names the kinds of work that failed or are paused as Background work names them', () => {

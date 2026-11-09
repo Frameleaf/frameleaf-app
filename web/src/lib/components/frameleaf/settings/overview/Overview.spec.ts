@@ -130,7 +130,7 @@ describe('Overview (FL-363)', () => {
           reason: 'out-of-space',
           level: 'now',
           since: null,
-          storage: { availableBytes: 8e9, totalBytes: 500e9, usedPercent: 98 },
+          storage: { drive: 'library', availableBytes: 8e9, totalBytes: 500e9, usedPercent: 98 },
           backup: null,
           work: null,
           version: null,

@@ -62,6 +62,7 @@ import {
   publishJobResult,
   queueExecution,
 } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -147,6 +148,23 @@ import { videoDevelopFilters } from 'src/utils/video-develop.js';
  */
 const FILTER_DECIMAL_PLACES = 4;
 
+/** FL-1324: once the thumbnails drive was full, this much room lets thumbnails carry on. */
+const THUMBNAIL_ROOM_TO_RESUME_BYTES = 1_000_000_000;
+const DRIVE_FULL_CODES = new Set(['ENOSPC', 'EDQUOT']);
+/** Sharp and ffmpeg run in child processes, so a full drive often reaches here only as their message. */
+const DRIVE_FULL_MESSAGE = /\b(ENOSPC|EDQUOT)\b|no space left on device|disk quota exceeded/i;
+
+/** FL-1324: a write that failed because its drive (or the owner's quota on it) is full, anywhere in the cause chain. */
+export const isDriveFullError = (error: unknown): boolean => {
+  for (let current = error, depth = 0; current && depth < 5; current = (current as Error).cause, depth++) {
+    const { code, message } = current as NodeJS.ErrnoException;
+    if ((code && DRIVE_FULL_CODES.has(code)) || (typeof message === 'string' && DRIVE_FULL_MESSAGE.test(message))) {
+      return true;
+    }
+  }
+  return false;
+};
+
 interface UpsertFileOptions {
   assetId: string;
   type: AssetFileType;
@@ -226,6 +244,8 @@ const isEditAction =
 @Injectable()
 export class MediaService extends BaseService {
   videoInterfaces: VideoInterfaces = { dri: [], mali: false };
+  /** FL-1324: when a thumbnail write last found its drive full; null while there is room. */
+  private thumbnailDriveFullSince: number | null = null;
 
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
@@ -461,20 +481,67 @@ export class MediaService extends BaseService {
       }
     });
 
-    // FL-721 (spec §8.2): a sealed original is read from a plain copy; the new files are sealed after
-    const status = await withPlainCopy(asset.originalPath, (originalPath) =>
-      this.generateThumbnailsFrom(
-        originalPath === asset.originalPath ? asset : { ...asset, originalPath },
-        config,
-        // FL-1285: the stored path, where a DJI sidecar sits; `originalPath` may be a plain copy
-        asset.originalPath,
-      ),
-    );
+    // FL-1324: while the thumbnails drive is still full, wait for room instead of trying (and failing) again
+    if (await this.thumbnailDriveStillFull()) {
+      deferJobUntilDependency('local-capacity');
+    }
+
+    let status: JobStatus;
+    try {
+      // FL-721 (spec §8.2): a sealed original is read from a plain copy; the new files are sealed after
+      status = await withPlainCopy(asset.originalPath, (originalPath) =>
+        this.generateThumbnailsFrom(
+          originalPath === asset.originalPath ? asset : { ...asset, originalPath },
+          config,
+          // FL-1285: the stored path, where a DJI sidecar sits; `originalPath` may be a plain copy
+          asset.originalPath,
+        ),
+      );
+    } catch (error) {
+      if (isDriveFullError(error)) {
+        this.noteThumbnailDriveFull(error);
+        deferJobUntilDependency('local-capacity');
+      }
+      throw error;
+    }
     if (status === JobStatus.Success) {
       await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
       await this.shareThumbnailsWithCopies(asset.id);
     }
     return status;
+  }
+
+  /**
+   * FL-1324: after a thumbnail write found its drive full, each later job first checks there is room again,
+   * so a full drive is one warning and waiting work, not a failure for every photo. Room clears the note.
+   */
+  private async thumbnailDriveStillFull(): Promise<boolean> {
+    if (this.thumbnailDriveFullSince === null) {
+      return false;
+    }
+    try {
+      const { available } = await this.storageRepository.checkDiskUsage(
+        StorageCore.getBaseFolder(StorageFolder.Thumbnails),
+      );
+      if (available >= THUMBNAIL_ROOM_TO_RESUME_BYTES) {
+        this.logger.log('The thumbnails drive has room again: thumbnails carry on');
+        this.thumbnailDriveFullSince = null;
+        return false;
+      }
+      return true;
+    } catch {
+      // Could not read the drive: try the job, whose own write says whether there is room.
+      return false;
+    }
+  }
+
+  private noteThumbnailDriveFull(error: unknown) {
+    if (this.thumbnailDriveFullSince === null) {
+      this.logger.warn(
+        `The thumbnails drive is full, so new thumbnails wait until there is room on it (${(error as Error)?.message ?? error})`,
+      );
+    }
+    this.thumbnailDriveFullSince = Date.now();
   }
 
   /** FL-1287: published with the job's own files, so partner copies made before them get them too. */
