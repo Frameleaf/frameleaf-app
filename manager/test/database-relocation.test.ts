@@ -58,6 +58,7 @@ async function relocationFixture(options: Options = {}) {
   const reachedRestore = new Promise<void>((resolve) => (hang = resolve));
   let started: () => void = () => {};
   const reachedStart = new Promise<void>((resolve) => (started = resolve));
+  const extra: any[] = [];
   const docker = {
     compose: async (_dir: string, _project: string, action: string, services: string[] = []) => {
       composed.push([action, ...services]);
@@ -84,6 +85,7 @@ async function relocationFixture(options: Options = {}) {
         Mounts: [{ Type: 'bind', Source: await running(), RW: true, Destination: '/var/lib/postgresql' }] },
       { Id: 'c'.repeat(64), Name: '/frameleaf-test-frameleaf-server-1', State: { Running: serverUp },
         Config: { Labels: { 'app.frameleaf.manager': id, 'com.docker.compose.service': 'frameleaf-server' } }, Mounts: [] },
+      ...extra,
     ],
     sql: async (_db: unknown, query: string) => {
       if (query.includes('pg_database_size')) return String(2 * 1024 ** 3);
@@ -156,7 +158,7 @@ async function relocationFixture(options: Options = {}) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
   };
-  return { reachedStart, stopServer: () => (serverUp = false), directory, store, current, newRoot, oldRoot, previousCompose, folders, composed, restored, allocated, validated,
+  return { extra, reachedStart, stopServer: () => (serverUp = false), directory, store, current, newRoot, oldRoot, previousCompose, folders, composed, restored, allocated, validated,
     reachedRestore, create, begin, settled, escaped,
     attemptPath: (n: number) => join(newRoot, `frameleaf-${id}-postgres-$new${n}`),
     stackNow: async () => JSON.parse(await readFile(stack, 'utf8')),
@@ -375,6 +377,19 @@ test('a retained database folder is removed only on request, and never the one i
     await assert.rejects(operations.removeRetainedDatabase(f.current.databasePath), /operation_in_progress/);
     open.state = 'complete';
     f.store.save(open);
+    // Another container mapping a folder above it, or inside it, may use these files; Manager's own mapping and
+    // this library's stack mapping a folder above it do not.
+    const container = (name: string, source: string, labels: Record<string, string> = {}) =>
+      ({ Id: name.padEnd(64, '0'), Name: `/${name}`, State: { Running: false }, Config: { Labels: labels },
+        Mounts: [{ Type: 'bind', Source: source, Destination: '/data', RW: true }] });
+    for (const [other, source] of [['filebrowser', f.oldRoot], ['backup-tool', join(f.current.databasePath, 'base')]] as const) {
+      f.extra.splice(0, f.extra.length, container(other, source));
+      await assert.rejects(operations.removeRetainedDatabase(f.current.databasePath),
+        (error: Refusal) => error.code === 'database_folder_in_use' && error.detail === `Container ${other} maps this folder.`, other);
+    }
+    f.extra.splice(0, f.extra.length,
+      container('frameleaf-manager', f.directory, { 'app.frameleaf.manager.role': 'controller' }),
+      container('frameleaf-test-frameleaf-server-1', f.oldRoot, { 'app.frameleaf.manager': f.current.id }));
     await operations.removeRetainedDatabase(f.current.databasePath);
     await assert.rejects(stat(f.current.databasePath), /ENOENT/);
     assert.deepEqual(f.store.get('retained-database-directories'), []);

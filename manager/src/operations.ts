@@ -2279,7 +2279,19 @@ export class Operations {
       throw new Refusal('database_folder_in_use');
     if (!/^frameleaf-[a-f0-9]{12}-postgres-[A-Za-z0-9]+$/.test(basename(path)) || !isAbsolute(path))
       throw new Refusal('invalid_database_directory');
-    const user = (await this.docker.inventory()).find((c) => c.Mounts.some((m) => m.Source && inside(m.Source, path)));
+    // Any container (running or stopped: it can start later) that maps this folder, something inside it, or a folder
+    // above it may use these files. Manager's own containers map the database parent and never use PGDATA; this
+    // library's stack maps only its media and the database in use (checked above), so only its mappings of this
+    // folder or inside it count.
+    const user = (await this.docker.inventory()).find(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller' &&
+        c.Mounts.some(
+          (m) =>
+            m.Source?.startsWith('/') &&
+            (inside(m.Source, path) || (c.Config.Labels?.['app.frameleaf.manager'] !== installation.id && inside(path, m.Source))),
+        ),
+    );
     if (user) throw new Refusal('database_folder_in_use', 409, `Container ${user.Name.replace(/^\//, '')} maps this folder.`);
     await this.docker.sql(await this.targetDatabase(installation), 'SELECT 1;').catch(() => {
       throw new Refusal('database_unconfirmed');

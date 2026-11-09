@@ -216,7 +216,8 @@ refused (`database_move_reverse_required`), and resuming starts Frameleaf on the
 `/mnt/diskN`) as the same files. The original folder is retained. `GET
 /manager-api/retained-databases` lists retained folders; `POST /manager-api/remove-retained-database`
 with `{ path }` deletes one, only while no operation is open, the current database answers, and no
-container maps it.
+container maps the folder, a folder inside it or a folder above it (Manager's own containers, and this
+library's stack mapping a folder above it, excepted).
 
 An in-place change needs the same PostgreSQL major and the same on-disk catalog, the installed
 image listed in `databaseImageChange.from`, and a checkpoint backup taken first (Manager always
