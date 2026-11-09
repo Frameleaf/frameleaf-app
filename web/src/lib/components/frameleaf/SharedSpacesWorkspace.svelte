@@ -332,6 +332,8 @@
     flex-direction: column;
     gap: 1.5rem;
     padding: 1rem;
+    /* FL-707 P1: the heading starts where every other library page's does (the page area adds 8px). */
+    padding-top: calc(var(--fl-page-top) - 8px);
     color: var(--fl-text);
   }
   .head {

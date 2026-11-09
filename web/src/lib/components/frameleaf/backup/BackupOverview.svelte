@@ -549,10 +549,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--fl-space-4);
   }
+  /* A column, so each card's button sits at its foot and the two side by side line up. */
   .choice {
-    display: grid;
-    align-content: start;
-    justify-items: start;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     gap: var(--fl-space-3);
     padding: var(--fl-space-6);
     background: var(--fl-panel);
@@ -603,6 +604,9 @@
     display: flex;
     align-items: center;
     gap: var(--fl-space-2);
+  }
+  .choice > .button {
+    margin-block-start: auto;
   }
   .choice li :global(svg) {
     color: var(--fl-accent);

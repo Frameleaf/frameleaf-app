@@ -7,7 +7,7 @@ import { type DesktopClipSpaces, parseDesktopClipSpaces } from 'src/utils/deskto
 import {
   type DesktopModelCatalogue,
   type DesktopModelProfile,
-  desktopImageModelKeys,
+  desktopImageModelKey,
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
@@ -188,7 +188,7 @@ const qualifiedProfile = (
       catalogue.profiles.find(
         (profile) =>
           profile.workload === 'face' &&
-          profile.modelKey === desktopImageModelKeys.face &&
+          profile.modelKey === desktopImageModelKey('face', modelName) &&
           profile.modelName === modelName,
       ) ?? null
     );

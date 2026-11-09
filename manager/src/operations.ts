@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, writeFile, stat, rename, open, realpath, rm } from 'node:fs/promises';
-import { isAbsolute, join, relative } from 'node:path';
+import { lstat, mkdir, readFile, writeFile, stat, statfs, rename, open, realpath, rm } from 'node:fs/promises';
+import { basename, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
 import { Docker, type ImportInspection } from './docker.js';
@@ -8,7 +8,7 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
-import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder } from './folders.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, inside, overlaps } from './folders.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
 import { capturePhotoAppSource, restoreDatabaseUrl, type PhotoAppCapture } from './photo-app-capture.js';
@@ -23,6 +23,7 @@ import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
 import { Retention } from './retention.js';
+import { ServerCheck, checkHost, freeBytes, type CheckFacts } from './server-check.js';
 import { assertMountSources, folderExists, libraryMounts, seedThumbnailMarker, thumbnailFolder, thumbnailMount, withThumbnails } from './mounts.js';
 import { environment } from './docker.js';
 import { elapsed, log } from './banner.js';
@@ -197,7 +198,19 @@ type DatabaseMoveIntent = {
   bytes: number;
   attempts: string[];
 };
-type DatabaseMove = Omit<DatabaseMoveIntent, 'to'> & { to: { image: string; databasePath: string } };
+type DatabaseMove = Omit<DatabaseMoveIntent, 'to'> & { to: { image: string; databaseRoot?: string; databasePath: string } };
+/** Where moveDatabase restores to: an update keeps the folder it is in, a drive move (FL-1322) names another. */
+type DatabaseMoveTarget = { current: Installation; release: VerifiedRelease; databaseRoot: string };
+/** FL-1322: a reviewed move of the database to another folder or drive, on the same release and image. */
+type DatabaseRelocationReview = {
+  id: string;
+  expires: number;
+  current: Installation;
+  release: VerifiedRelease;
+  databaseRoot: string;
+  /** The measured database size: the copy's room, and again for a later engine upgrade's second copy. */
+  bytes: number;
+};
 const DATABASE_INVENTORY = `SELECT json_build_object(
   'version', split_part(current_setting('server_version'), ' ', 1),
   'extensions', (SELECT coalesce(json_agg(extname ORDER BY extname), '[]') FROM pg_extension),
@@ -218,7 +231,7 @@ const updateStarted = (operation: Pick<Operation, 'completed' | 'receipts'>): bo
   operation.completed.includes('apply-release') ||
   ['starting', 'started'].includes(operation.receipts['release-start-state'] as string);
 type Cancellation = {
-  kind: 'backup' | 'update' | 'source' | 'restore' | 'reconfigure';
+  kind: 'backup' | 'update' | 'source' | 'restore' | 'reconfigure' | 'move-database';
   installation: Installation | null;
   archive: string;
 };
@@ -788,10 +801,12 @@ export class Operations {
       this.executing.delete(operationId);
     }
   }
+  /**
+   * FL-1317 Check this server: runs every check and reports them together. With a problem nothing is stored and
+   * only `checks` comes back; the administrator fixes it and checks again. Install start runs the same checks.
+   */
   async review(input: z.infer<typeof ReviewInput>, managerPort?: number, common?: CommonImportReview) {
     if (this.installation()) throw new Refusal('installation_already_exists');
-    const compatibility = await this.docker.compatibility();
-    await this.prepareChosenFolders(input);
     let source: Source | null = null,
       backup: Backup | null = null;
     if (common) {
@@ -801,24 +816,28 @@ export class Operations {
         !common.media.some((mount) => mount.target === '/data' && mount.source === input.mediaPath && !mount.readOnly)
       ) throw new Refusal('invalid_import_authority');
       await this.fencing.verify(common.fence);
-      await storagePath(input.mediaPath, this.roots, common.requiredMediaBytes);
     } else if (input.kind === 'import') {
+      // The source was reviewed on the earlier steps; one that changed since is not a server problem.
       ({ source, backup } = await this.reviewedSource(input.sourceId ?? ''));
-    } else {
-      if (!input.mediaPath) throw new Refusal('media_path_required');
-      await storagePath(input.mediaPath, this.roots, 1024 ** 3);
+    } else if (!input.mediaPath) throw new Refusal('media_path_required');
+    const checks = await this.installChecks(input, 'review', managerPort, common, source);
+    const { compatibility, databaseStorage } = checks;
+    const release = !checks.blocked && compatibility
+      ? await checks.run('release', async () => {
+          const value = await this.releases.acquire(input.tag);
+          if (!value.nas.platforms.includes(compatibility!.platform)) {
+            await rm(value.directory, { recursive: true, force: true });
+            throw new Refusal('release_architecture_unavailable', 409, compatibility!.platform);
+          }
+          return { value, outcome: { facts: { tag: value.nas.tag } } };
+        })
+      : undefined;
+    const host = checkHost();
+    if (!release || checks.blocked) {
+      // A photo-app import has already prepared its bundle: it keeps refusing on the first problem.
+      if (common) checks.assert();
+      return { ready: false as const, kind: input.kind, host, checks: checks.results };
     }
-    await this.checkPort(input.port, null, common?.fence ?? source, managerPort);
-    // The same conflict check the stack generator runs, against the mounts this installation will have.
-    checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {}, this.mountRoots());
-    this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot], input.backupPath);
-    const databaseStorage = await this.databaseStorage.validate(
-      input.databaseRoot,
-      (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
-    );
-    await storagePath(this.store.directory, [this.store.directory], (source?.summary.databaseBytes ?? 1024 ** 3) * 3);
-    const release = await this.releases.acquire(input.tag);
-    if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
     const review: Review = {
       id: common?.binding.operationId ?? randomUUID(),
       expires: Date.now() + 900_000,
@@ -828,12 +847,15 @@ export class Operations {
       source,
       ...(common && { common, approvalToken: randomUUID() }),
       backup,
-      platform: compatibility.platform,
+      platform: compatibility!.platform,
     };
     if (common) {
       if (!this.store.createOnce(`review:${review.id}`, review)) throw new Refusal('invalid_import_authority');
     } else this.store.set(`review:${review.id}`, review);
     return {
+      ready: true as const,
+      host,
+      checks: checks.results,
       id: review.id,
       expires: review.expires,
       kind: input.kind,
@@ -868,6 +890,83 @@ export class Operations {
         ? 'Manager verifies the original files before starting Frameleaf. Automatic rollback ends at the recorded writer boundary.'
         : `Database only. Photos, videos and external libraries stay in place. After Frameleaf writes to media, a database backup alone cannot safely return the library to ${source?.product ?? 'the original app'}.`,
     };
+  }
+  /**
+   * The checks the review reports and install start repeats as its guard. Only the review creates the folders
+   * chosen in setup; at install start they must still be there.
+   */
+  private async installChecks(
+    input: z.infer<typeof ReviewInput>,
+    phase: 'review' | 'start',
+    managerPort?: number,
+    common?: CommonImportReview,
+    source?: Source | null,
+  ) {
+    const checks = new ServerCheck();
+    const broad = broadRoots(this.roots);
+    const backups = input.backupPath ?? process.env.MANAGER_BACKUP_ROOT!;
+    // Each folder by its role: the same path chosen for two roles is still refused.
+    const chosen = Object.entries({ media: input.mediaPath, database: input.databaseRoot, backups, state: this.store.directory })
+      .filter((entry): entry is [string, string] => !!entry[1]);
+    const databaseBytes = (source?.summary.databaseBytes ?? 1024 ** 3) * 3;
+    // A folder chosen in setup must be its own, and exist (the review creates it, empty).
+    const chosenFolder = async (role: string, path: string) => {
+      if (!broad) return;
+      for (const [other, otherPath] of chosen) if (other !== role) assertSeparateFolders([path, otherPath]);
+      if (phase === 'review') await ensureChosenFolder(path);
+    };
+    const compatibility = await checks.run('docker', async () => {
+      const value = await this.docker.compatibility();
+      return { value, outcome: { facts: { version: value.version ?? null } } };
+    });
+    await checks.run('media', async () => {
+      if (source) {
+        // FL-1320: a source folder on a drive that isn't mounted is named plainly.
+        await assertMountSources(source.mounts);
+        return { outcome: { facts: { folders: source.mounts.length } as CheckFacts } };
+      }
+      await chosenFolder('media', input.mediaPath!);
+      const path = await storagePath(input.mediaPath!, this.roots, common?.requiredMediaBytes ?? 1024 ** 3);
+      return { outcome: { facts: { path, free: await freeBytes(path) } } };
+    });
+    const databaseStorage = await checks.run('database', async () => {
+      await chosenFolder('database', input.databaseRoot);
+      const value = await this.databaseStorage.validate(input.databaseRoot, databaseBytes);
+      return { value, outcome: { facts: { path: input.databaseRoot, free: await freeBytes(input.databaseRoot) } } };
+    });
+    await checks.run('backups', async () => {
+      await chosenFolder('backups', backups);
+      return { outcome: { facts: { path: backups, free: await freeBytes(backups) } } };
+    });
+    // Database backups and recovery points are written through Manager's own folder first: its own result, since
+    // choosing another backups folder can't free it.
+    await checks.run('manager', async () => {
+      await storagePath(this.store.directory, [this.store.directory], databaseBytes);
+      return { outcome: { facts: { path: this.store.directory, free: await freeBytes(this.store.directory) } } };
+    });
+    await checks.run(
+      'port',
+      async () => {
+        await this.checkPort(input.port, null, common?.fence ?? source, managerPort);
+        return { outcome: { facts: { port: input.port } } };
+      },
+      { unknownOnError: true },
+    );
+    if (checks.results.at(-1)?.code === 'port_in_use')
+      checks.annotate('port', { port: input.port, free: await this.freePort(input.port, common?.fence ?? source, managerPort) });
+    if (Object.keys(input.services ?? {}).length)
+      await checks.run('containers', async () => {
+        // The same conflict check the stack generator runs, against the mounts this installation will have.
+        checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {}, this.mountRoots());
+        this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot], input.backupPath);
+      });
+    return Object.assign(checks, { compatibility, databaseStorage });
+  }
+  /** The next port after `port` that nothing on this server publishes, for "Use port 2284". Null when none is near. */
+  private async freePort(port: number, source?: Source | SourceFence | null, managerPort?: number): Promise<number | null> {
+    for (let next = port + 1; next <= Math.min(65535, port + 50); next++)
+      if (await this.checkPort(next, null, source, managerPort).then(() => true, () => false)) return next;
+    return null;
   }
   /**
    * An import may reuse its reviewed writers' ports: source fencing stops them before Frameleaf starts.
@@ -1006,6 +1105,11 @@ export class Operations {
         return this.captureForReview(operation);
       }
       if (operation.kind === 'move-library') return this.applyMove(operation);
+      if (operation.kind === 'move-database') {
+        const review = this.store.get<DatabaseRelocationReview>(`database-move:${operation.input.reviewId}`);
+        if (!review) throw new Refusal('review_missing');
+        return this.applyDatabaseRelocation(operation, review);
+      }
       if (operation.kind === 'update') {
         const review = this.store.get<UpdateReview>(`update:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
@@ -1092,12 +1196,8 @@ export class Operations {
       await this.releases.eligible(review.input.tag);
       if (common) await this.fencing.verify(common.fence);
       else if (sourceFence) await this.discovery.revalidate(sourceFence);
-      if (common) await storagePath(review.input.mediaPath!, this.roots, common.requiredMediaBytes);
-      await this.checkPort(review.input.port, null, sourceFence, review.managerPort);
-      await this.databaseStorage.validate(
-        review.input.databaseRoot,
-        (review.source?.summary.databaseBytes ?? 1024 ** 3) * 3,
-      );
+      // FL-1317: the review's checks again, so a change since the review still refuses before any download.
+      (await this.installChecks(review.input, 'start', review.managerPort, common, review.source)).assert();
       return true;
     });
     if (common?.bootstrapAdminId && !operation.completed.includes('preflight-common-import')) {
@@ -1681,13 +1781,6 @@ export class Operations {
    * Host folders an advanced container setting may bind-mount: Manager's media and database roots (mapped
    * into Manager at identical paths) plus MANAGER_MOUNT_ROOTS, the administrator's explicit allow-list.
    */
-  /** On a new install with a broad folder: check the folders chosen in setup and create them. Nothing is adopted until the install starts. */
-  private async prepareChosenFolders(input: z.infer<typeof ReviewInput>): Promise<void> {
-    if (!broadRoots(this.roots)) return;
-    const backups = input.backupPath ?? process.env.MANAGER_BACKUP_ROOT!;
-    assertSeparateFolders([input.mediaPath, input.databaseRoot, backups, this.store.directory].filter((path): path is string => !!path));
-    for (const path of [input.mediaPath, input.databaseRoot, backups]) if (path) await ensureChosenFolder(path);
-  }
   private adoptChosenBackupFolder(backups: string | undefined): void {
     if (!broadRoots(this.roots) || !backups) return;
     process.env.MANAGER_BACKUP_ROOT = backups;
@@ -1922,7 +2015,7 @@ export class Operations {
       .database?.image;
     if (operation.receipts['database-move-intent'] || (installed && databaseImageMove(installed, review.release.nas))) {
       try {
-        await this.moveDatabase(operation, review);
+        await this.moveDatabase(operation, { current: review.current, release: review.release, databaseRoot: review.current.databaseRoot });
       } catch (error) {
         // Before its intent nothing changed but the application is stopped: the update is cancelled and the
         // previous release started again, so no retry reuses this checkpoint after the server wrote again.
@@ -2041,21 +2134,22 @@ export class Operations {
    * new folder beside the current one under the new image and compared with the stopped original (row counts of
    * every table, extensions, server version). apply-release then starts the release on the new folder. The
    * original folder is never written again, so a rollback or cancel puts the previous release back on it.
+   * FL-1322: a drive move runs the same step on the installed release and image, into `move.databaseRoot`.
    */
-  private async moveDatabase(operation: Operation, review: UpdateReview): Promise<DatabaseMove> {
+  private async moveDatabase(operation: Operation, move: DatabaseMoveTarget): Promise<DatabaseMove> {
     return this.step(operation, 'database-move', async () => {
       const dump = join(this.store.directory, 'checkpoints', operation.id, 'database.dump');
       const receipt = operation.receipts['checkpoint-dump'] as { sha256: string } | undefined;
       if (!receipt || (await fileHash(dump)) !== receipt.sha256) throw new Refusal('checkpoint_dump_changed');
       let intent = operation.receipts['database-move-intent'] as DatabaseMoveIntent | undefined;
       if (!intent) {
-        const source = await this.targetDatabase(review.current);
+        const source = await this.targetDatabase(move.current);
         intent = {
           from: {
             image: JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image,
-            databasePath: review.current.databasePath,
+            databasePath: move.current.databasePath,
           },
-          to: { image: review.release.nas.images.postgres },
+          to: { image: move.release.nas.images.postgres },
           // The application stopped before the checkpoint, so the running database still matches its dump.
           source: await this.databaseInventory(source),
           bytes: await this.databaseMoveBytes(source),
@@ -2066,14 +2160,14 @@ export class Operations {
         if (operation.receipts['release-start-state'] === undefined) operation.receipts['release-start-state'] = 'prepared';
         this.store.save(operation);
       }
-      if (intent.to.image !== review.release.nas.images.postgres) throw new Refusal('database_move_target_changed');
+      if (intent.to.image !== move.release.nas.images.postgres) throw new Refusal('database_move_target_changed');
       // Every attempt restores into a folder of its own: an interrupted one may have left a partial restore.
-      const databasePath = await this.databaseStorage.allocate(review.current.databaseRoot, review.current.id, intent.bytes);
+      const databasePath = await this.databaseStorage.allocate(move.databaseRoot, move.current.id, intent.bytes);
       intent.attempts.push(databasePath);
       this.store.save(operation);
-      const target: Installation = { ...review.current, release: review.release.nas.tag, databasePath };
-      await this.docker.compose(this.directory(), review.current.project, 'stop');
-      await renderCompose(review.release, target, this.store.get<string>('database-password')!, this.directory(), this.application());
+      const target: Installation = { ...move.current, release: move.release.nas.tag, databaseRoot: move.databaseRoot, databasePath };
+      await this.docker.compose(this.directory(), move.current.project, 'stop');
+      await renderCompose(move.release, target, this.store.get<string>('database-password')!, this.directory(), this.application());
       await this.docker.compose(this.directory(), target.project, 'up', ['database']);
       const database = await this.targetDatabase(target);
       await this.docker.verifyDump(database, dump);
@@ -2083,7 +2177,7 @@ export class Operations {
       if (version ? moved.version !== version : Number.parseInt(moved.version, 10) !== postgresMajor(intent.to.image))
         throw new Refusal('database_move_version_mismatch', 409, `Expected ${version ?? intent.to.image}, found ${moved.version}.`);
       if (!sameInventory(moved, intent.source)) throw new Refusal('database_move_verification_failed');
-      return { ...intent, to: { image: intent.to.image, databasePath } } satisfies DatabaseMove;
+      return { ...intent, to: { image: intent.to.image, databaseRoot: move.databaseRoot, databasePath } } satisfies DatabaseMove;
     });
   }
   /** FL-1265: room a database move needs for the restored copy, checked at review and allocated by the move. */
@@ -2093,6 +2187,215 @@ export class Operations {
   private async databaseInventory(database: Database): Promise<DatabaseInventory> {
     // Counting every table of a large library can outlast the default 2 minutes; same budget as dump and restore.
     return JSON.parse(await this.docker.sql(database, DATABASE_INVENTORY, 7_200_000));
+  }
+  /**
+   * FL-1322: review moving the installed database to another folder, usually on another drive. The folder must
+   * pass the same checks as a new install's database folder (a host bind on a local disk, outside Docker's
+   * storage, no other container writing there) and hold the database twice: the moved copy, and later the second
+   * copy an engine upgrade restores beside it.
+   */
+  async reviewDatabaseMove(databaseRoot: string) {
+    const current = this.installation();
+    if (!current) throw new Refusal('no_installation');
+    if (this.store.locked()) throw new Refusal('operation_in_progress');
+    if (databaseRoot === current.databaseRoot) throw new Refusal('database_already_in_folder');
+    const binds = current.mounts.filter((m) => m.type === 'bind').map((m) => m.source);
+    const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+    // Apart from the media, backups, Manager's own folder and the database in use. A retained database folder only
+    // blocks a root inside it: a retry into the same root, or a move back to the original one, keeps it beside.
+    for (const other of [current.databasePath, ...binds, process.env.MANAGER_BACKUP_ROOT, this.store.directory])
+      if (other && overlaps(databaseRoot, other)) throw new Refusal('chosen_folders_overlap');
+    if (retained.some((folder) => inside(databaseRoot, folder))) throw new Refusal('chosen_folders_overlap');
+    this.checkExternalFolders(this.application().services ?? {}, [...binds, databaseRoot]);
+    if (broadRoots(this.roots)) await ensureChosenFolder(databaseRoot);
+    const release = await this.releases.acquire(current.release);
+    const image: string = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+    // The move keeps the engine: an installed image the release no longer names is an update's job.
+    if (image !== release.nas.images.postgres) throw new Refusal('database_image_changed');
+    const bytes = await this.databaseMoveBytes(await this.targetDatabase(current));
+    const requiredBytes = 2 * bytes;
+    const { filesystem } = await this.databaseStorage.validate(databaseRoot, requiredBytes, current.id);
+    const space = await statfs(databaseRoot);
+    const id = randomUUID();
+    this.store.set(`database-move:${id}`, {
+      id,
+      expires: Date.now() + 900_000,
+      current,
+      release,
+      databaseRoot,
+      bytes,
+    } satisfies DatabaseRelocationReview);
+    return {
+      id,
+      from: current.databaseRoot,
+      to: databaseRoot,
+      filesystem,
+      databaseBytes: bytes,
+      requiredBytes,
+      availableBytes: space.bavail * space.bsize,
+      recovery:
+        'Frameleaf stops while Manager creates a database recovery point, copies the database into a new folder on the chosen drive and checks every table. If anything goes wrong before Frameleaf starts on the new folder, Manager starts Frameleaf again on the current folder. Once Frameleaf has started on the new folder, it stays there, because new changes may already be saved there: if it does not start properly, choose Resume to try again. The current folder is kept until you remove it.',
+    };
+  }
+  moveDatabaseTo(id: string, key: string): Operation {
+    const prior = this.store.request('move-database', key, { reviewId: id });
+    if (prior) return prior;
+    const review = this.store.get<DatabaseRelocationReview>(`database-move:${id}`);
+    if (!review || review.expires < Date.now() || digest(review.current) !== digest(this.installation()))
+      throw new Refusal('review_expired');
+    const { operation, created } = this.store.start('move-database', key, { reviewId: id });
+    if (created) this.launch(operation, () => this.applyDatabaseRelocation(operation, review));
+    return operation;
+  }
+  /**
+   * FL-1322: stop the application, checkpoint, restore into a new folder in the chosen root and compare it
+   * (moveDatabase), then start the application on it. Until the application is started on the new folder,
+   * any failure puts the original stack back on the original folder, which nothing wrote since the stop.
+   * `start-state` is the barrier: journaled before the server first starts on the new folder, after which the new
+   * database may have taken writes and is kept, whatever happens next.
+   */
+  private async applyDatabaseRelocation(operation: Operation, review: DatabaseRelocationReview): Promise<void> {
+    if (operation.receipts['rollback-intent']) return this.returnToOriginalDatabase(operation, review, 'database_relocation_rolled_back');
+    const fail = async (error: unknown, fallback: string) => {
+      const reason = error instanceof Refusal ? error.code : ((error as Error)?.message ?? String(error));
+      console.error(redact(`manager: the database did not move to ${review.databaseRoot} (${reason}); starting again on ${review.current.databasePath}`));
+      operation.receipts['rollback-intent'] = error instanceof Refusal ? error.code : fallback;
+      this.store.save(operation);
+      return this.returnToOriginalDatabase(operation, review, 'database_relocation_rolled_back');
+    };
+    let moved: DatabaseMove;
+    try {
+      await this.step(operation, 'stop-application', async () => {
+        await this.docker.compose(this.directory(), review.current.project, 'stop', [
+          'frameleaf-server',
+          ...(review.current.ml ? [await this.mlService()] : []),
+        ]);
+        return true;
+      });
+      await this.step(operation, 'database-checkpoint', async () => {
+        await this.backups.initialize();
+        return this.backups.snapshot(await this.checkpoint(operation), operation.id);
+      });
+      const image: string = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+      if (!operation.receipts['database-move-intent'] && image !== review.release.nas.images.postgres)
+        throw new Refusal('database_image_changed');
+      moved = await this.moveDatabase(operation, review);
+    } catch (error) {
+      return fail(error, 'database_move_failed');
+    }
+    const installation: Installation = { ...review.current, databaseRoot: review.databaseRoot, databasePath: moved.to.databasePath };
+    try {
+      await this.step(operation, 'start', async () => {
+        await this.databaseStorage.verify(installation);
+        await this.fencing.assertMedia(installation.mounts, installation);
+        if (!operation.receipts['start-state']) {
+          operation.receipts['start-state'] = 'starting';
+          this.store.save(operation); // Journaled before the server can write to the new folder.
+        }
+        this.store.set('installation', installation);
+        await this.docker.compose(this.directory(), installation.project, 'up');
+        return this.libraryStatus();
+      });
+    } catch (error) {
+      // Past the barrier the server may have written to the new folder, even if it has stopped since: the new
+      // folder is kept and the operation fails, so nothing those writes changed is ever rolled back.
+      if (operation.receipts['start-state']) throw error;
+      return fail(error, 'database_move_start_failed');
+    }
+    // The original folder (and any interrupted attempt's) is kept as it was until the administrator removes it.
+    const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+    const unused = [review.current.databasePath, ...moved.attempts.filter((path) => path !== moved.to.databasePath)];
+    this.store.set('retained-database-directories', [...new Set([...retained, ...unused])]);
+  }
+  private async mlService(): Promise<string> {
+    const compose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
+    return compose.services['frameleaf-machine-learning'] ? 'frameleaf-machine-learning' : 'immich-machine-learning';
+  }
+  /**
+   * Put the stack from before a drive move back: the checkpoint's compose.json (the original folder, which was
+   * never written after the stop), the original installation record, and start it. Attempt folders are retained.
+   */
+  private async returnToOriginalDatabase(operation: Operation, review: DatabaseRelocationReview, code: string): Promise<void> {
+    const previous = review.current;
+    const move = operation.receipts['database-move-intent'] as DatabaseMoveIntent | undefined;
+    await this.step(operation, 'return-original-database', async () => {
+      if (move) {
+        await this.docker.compose(this.directory(), previous.project, 'stop');
+        const compose = JSON.parse(await readFile(join(this.store.directory, 'checkpoints', operation.id, 'compose.json'), 'utf8'));
+        const data = compose.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql');
+        if (data?.source !== previous.databasePath.replaceAll('$', () => '$$') || compose.services.database.image !== move.from.image)
+          throw new Refusal('database_path_changed');
+        const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+        this.store.set('retained-database-directories', [...new Set([...retained, ...move.attempts])]);
+        await atomicJson(join(this.directory(), 'compose.json'), compose);
+      }
+      this.store.set('installation', previous);
+      return true;
+    });
+    await this.step(operation, 'start-original-database', async () => {
+      await this.databaseStorage.verify(previous);
+      await this.fencing.assertMedia(previous.mounts, previous);
+      await this.docker.compose(this.directory(), previous.project, 'up');
+      return true;
+    });
+    operation.receipts['cancelled'] = code;
+  }
+  /** FL-1322: database folders a move, update or restore left behind, for the administrator to remove. */
+  async retainedDatabases(): Promise<{ path: string; present: boolean }[]> {
+    return Promise.all(
+      (this.store.get<string[]>('retained-database-directories') ?? []).map(async (path) => ({
+        path,
+        present: await lstat(path).then(
+          (s) => s.isDirectory(),
+          () => false,
+        ),
+      })),
+    );
+  }
+  /**
+   * FL-1322: delete a retained database folder once the library runs on another one. Only a folder Manager
+   * retained, never the one in use or one any container maps, and only while no operation is open and the
+   * current database answers.
+   */
+  async removeRetainedDatabase(path: string): Promise<void> {
+    const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+    if (!retained.includes(path)) throw new Refusal('database_folder_not_retained');
+    if (this.store.locked()) throw new Refusal('operation_in_progress');
+    const installation = this.installation();
+    if (!installation) throw new Refusal('no_installation');
+    // inside() also matches the same files through another Unraid share view (/mnt/user and /mnt/diskN).
+    if (inside(installation.databasePath, path) || inside(path, installation.databasePath))
+      throw new Refusal('database_folder_in_use');
+    if (!/^frameleaf-[a-f0-9]{12}-postgres-[A-Za-z0-9]+$/.test(basename(path)) || !isAbsolute(path))
+      throw new Refusal('invalid_database_directory');
+    // Any container (running or stopped: it can start later) that maps this folder, something inside it, or a folder
+    // above it may use these files. Manager's own containers map the database parent and never use PGDATA; this
+    // library's stack maps only its media and the database in use (checked above), so only its mappings of this
+    // folder or inside it count.
+    const user = (await this.docker.inventory()).find(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller' &&
+        c.Mounts.some(
+          (m) =>
+            m.Source?.startsWith('/') &&
+            (inside(m.Source, path) || (c.Config.Labels?.['app.frameleaf.manager'] !== installation.id && inside(path, m.Source))),
+        ),
+    );
+    if (user) throw new Refusal('database_folder_in_use', 409, `Container ${user.Name.replace(/^\//, '')} maps this folder.`);
+    await this.docker.sql(await this.targetDatabase(installation), 'SELECT 1;').catch(() => {
+      throw new Refusal('database_unconfirmed');
+    });
+    const folder = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+      return null;
+    });
+    if (folder) {
+      if (!folder.isDirectory() || folder.isSymbolicLink() || (await realpath(path)) !== path)
+        throw new Refusal('database_path_changed');
+      await rm(path, { recursive: true });
+    }
+    const now = this.store.get<string[]>('retained-database-directories') ?? [];
+    this.store.set('retained-database-directories', now.filter((other) => other !== path));
   }
   /**
    * FL-1210: whether the server's `frameleaf-served` marker (written on each boot's first real request)
@@ -2238,11 +2541,6 @@ export class Operations {
    */
   async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number, thumbnailFallback = false) {
     const current = this.installation();
-    if (broadRoots(this.roots)) {
-      assertSeparateFolders([databaseRoot, process.env.MANAGER_BACKUP_ROOT!, this.store.directory]);
-      await ensureChosenFolder(databaseRoot);
-    }
-    await this.databaseStorage.validate(databaseRoot, 1024 ** 3);
     const id = randomUUID(),
       checkpoint = join(this.store.directory, `restore-${id}`);
     await this.backups.restore(snapshot, checkpoint);
@@ -2256,39 +2554,38 @@ export class Operations {
         digest(libraryMounts(current.mounts)) !== digest(libraryMounts(recovery.installation.mounts)))
     )
       throw new Refusal('backup_belongs_to_another_library');
-    // Thumbnails stay where they are now: the current installation's folder, else the backup's.
+    // FL-1320: thumbnails stay where they are now, the current installation's folder, else the backup's. A missing
+    // thumbnail folder is a check result (FL-1317); the administrator may keep thumbnails in the photos folder instead.
     const thumbnails = thumbnailMount(current ? current.mounts : recovery.installation.mounts);
-    let fallback: RestoreReview['thumbnailFallback'];
-    if (thumbnails && !(await folderExists(thumbnails.source))) {
-      const folder = thumbnailFolder(libraryMounts(recovery.installation.mounts));
-      if (!thumbnailFallback || !folder)
-        throw new Refusal(
-          'thumbnail_folder_missing',
-          409,
-          `The thumbnails folder ${thumbnails.source} is not there: its drive may be disconnected or not mounted. Reconnect the drive and review again, or restore with thumbnails in the photos folder (${folder ?? 'unavailable'}); Frameleaf can make them again there. Your photos are untouched either way.`,
-        );
-      fallback = { missing: thumbnails.source, folder };
-    }
-    const mounts = withThumbnails(recovery.installation.mounts, fallback ? null : (thumbnails?.source ?? null));
-    await this.fencing.assertMedia(mounts, current ?? undefined);
-    const containers = await this.docker.inventory();
-    if (broadRoots(this.roots))
-      assertSeparateFolders([databaseRoot, ...mounts.filter((m) => m.type === 'bind').map((m) => m.source)]);
-    for (const mount of mounts) {
-      if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
-      else if (!containers.some((c) => c.Mounts.some((m) => m.Type === 'volume' && m.Name === mount.source)))
-        throw new Refusal('external_media_volume_unavailable');
-      if (/^\/(?:proc|sys|dev|etc|run|var\/run)(?:\/|$)/.test(mount.target) || mount.target.includes('..'))
-        throw new Refusal('unsafe_recovery_mount');
-    }
-    const compatibility = await this.docker.compatibility();
-    const release = await this.releases.acquire(recovery.installation.release);
-    if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
-    await this.checkPort(recovery.installation.port, current, undefined, managerPort);
+    const folder = thumbnailFolder(libraryMounts(recovery.installation.mounts));
+    const thumbnailsMissing = !!thumbnails && !(await folderExists(thumbnails.source));
+    const fallback: RestoreReview['thumbnailFallback'] =
+      thumbnailsMissing && thumbnailFallback && folder ? { missing: thumbnails!.source, folder } : undefined;
+    const mounts = withThumbnails(recovery.installation.mounts, thumbnailsMissing ? null : (thumbnails?.source ?? null));
     const hash = await fileHash(join(checkpoint, 'database.dump'));
     if (hash !== recovery.dumpSha256) throw new Refusal('restore_checkpoint_changed');
     const databaseBytes = Math.max(1024 ** 3, (await stat(join(checkpoint, 'database.dump'))).size * 4);
-    const databaseStorage = await this.databaseStorage.validate(databaseRoot, databaseBytes);
+    // FL-1317: the server checks, reported together. The backup itself was checked above.
+    const checks = await this.restoreChecks(
+      { mounts, port: recovery.installation.port }, databaseRoot, databaseBytes, current, managerPort, 'review',
+      thumbnailsMissing && !fallback ? { missing: thumbnails!.source, folder } : undefined,
+    );
+    const { compatibility, databaseStorage } = checks;
+    const release = !checks.blocked && compatibility
+      ? await checks.run('release', async () => {
+          const value = await this.releases.acquire(recovery.installation.release);
+          if (!value.nas.platforms.includes(compatibility!.platform)) {
+            await rm(value.directory, { recursive: true, force: true });
+            throw new Refusal('release_architecture_unavailable', 409, compatibility!.platform);
+          }
+          return { value, outcome: { facts: { tag: value.nas.tag } } };
+        })
+      : undefined;
+    const host = checkHost();
+    if (!release || !databaseStorage || checks.blocked) {
+      await rm(checkpoint, { recursive: true, force: true });
+      return { ready: false as const, host, port: recovery.installation.port, checks: checks.results };
+    }
     this.store.set(`restore:${id}`, {
       id,
       expires: Date.now() + 900_000,
@@ -2299,12 +2596,15 @@ export class Operations {
       databaseBytes,
       release,
       recovery,
-      platform: compatibility.platform,
+      platform: compatibility!.platform,
       current,
       mounts,
       ...(fallback && { thumbnailFallback: fallback }),
     } satisfies RestoreReview);
     return {
+      ready: true as const,
+      host,
+      checks: checks.results,
       id,
       release: release.nas.tag,
       mounts,
@@ -2314,6 +2614,63 @@ export class Operations {
       mediaIncluded: false,
       replacesInstallation: !!current,
     };
+  }
+  /** The restore review's server checks; the restore repeats them before it downloads anything. */
+  private async restoreChecks(
+    target: { mounts: Mount[]; port: number },
+    databaseRoot: string,
+    databaseBytes: number,
+    current: Installation | null,
+    managerPort: number | undefined,
+    phase: 'review' | 'start',
+    /** FL-1320: the thumbnail folder is gone; `folder` is the photos folder's own `thumbs`, when there is one. */
+    thumbnailsMissing?: { missing: string; folder: string | null },
+  ) {
+    const checks = new ServerCheck();
+    const broad = broadRoots(this.roots);
+    const binds = target.mounts.filter((m) => m.type === 'bind').map((m) => m.source);
+    const compatibility = await checks.run('docker', async () => {
+      const value = await this.docker.compatibility();
+      return { value, outcome: { facts: { version: value.version ?? null } } };
+    });
+    if (thumbnailsMissing) {
+      await checks.run('thumbnails', async () => {
+        throw new Refusal('thumbnail_folder_missing', 409, thumbnailsMissing.missing);
+      });
+      checks.annotate('thumbnails', { missing: thumbnailsMissing.missing, folder: thumbnailsMissing.folder });
+    }
+    await checks.run('media', async () => {
+      // A drive that isn't mounted is named plainly (media_folder_missing) before any other folder check.
+      await assertMountSources(target.mounts);
+      await this.fencing.assertMedia(target.mounts, current ?? undefined);
+      const containers = await this.docker.inventory();
+      for (const mount of target.mounts) {
+        if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
+        else if (!containers.some((c) => c.Mounts.some((m) => m.Type === 'volume' && m.Name === mount.source)))
+          throw new Refusal('external_media_volume_unavailable', 409, mount.source);
+        if (/^\/(?:proc|sys|dev|etc|run|var\/run)(?:\/|$)/.test(mount.target) || mount.target.includes('..'))
+          throw new Refusal('unsafe_recovery_mount', 409, mount.target);
+      }
+      return { outcome: { facts: { folders: target.mounts.length } } };
+    });
+    const databaseStorage = await checks.run('database', async () => {
+      if (broad) {
+        for (const other of [process.env.MANAGER_BACKUP_ROOT!, this.store.directory, ...binds])
+          assertSeparateFolders([databaseRoot, other]);
+        if (phase === 'review') await ensureChosenFolder(databaseRoot);
+      }
+      const value = await this.databaseStorage.validate(databaseRoot, databaseBytes);
+      return { value, outcome: { facts: { path: databaseRoot, free: await freeBytes(databaseRoot) } } };
+    });
+    await checks.run(
+      'port',
+      async () => {
+        await this.checkPort(target.port, current, undefined, managerPort);
+        return { outcome: { facts: { port: target.port } } };
+      },
+      { unknownOnError: true },
+    );
+    return Object.assign(checks, { compatibility, databaseStorage });
   }
   restore(id: string, key: string): Operation {
     const prior = this.store.request('restore', key, { reviewId: id });
@@ -2327,6 +2684,11 @@ export class Operations {
   }
   private async applyRestore(operation: Operation, review: RestoreReview): Promise<void> {
     await this.step(operation, 'download-images', async () => {
+      // FL-1317: the review's checks again, so a change since the review still refuses before any download.
+      (await this.restoreChecks(
+        { mounts: review.mounts ?? review.recovery.installation.mounts, port: review.recovery.installation.port },
+        review.databaseRoot, review.databaseBytes, review.current, undefined, 'start',
+      )).assert();
       await this.releases.eligible(review.release.nas.tag);
       await this.releases.verify(review.release.directory, review.release.nas.tag);
       for (const image of await releaseImages(review.release.nas.images, review.recovery.installation))
@@ -2444,6 +2806,9 @@ export class Operations {
     const operation = this.store.history().find((o) => o.id === id);
     if (!operation || this.executing.has(id) || !['failed', 'interrupted', 'awaiting-review'].includes(operation.state))
       throw new Refusal('operation_not_recoverable');
+    // FL-1322: once started on the new folder the library may have written there; going back would lose that.
+    if (operation.kind === 'move-database' && operation.receipts['start-state'] && !operation.receipts['cancellation-intent'])
+      throw new Refusal('database_move_reverse_required');
     this.executing.add(id); // Claim synchronously, before any external effect or await.
     try {
       if (operation.kind === 'move-library') {
@@ -2464,7 +2829,9 @@ export class Operations {
                 ? 'update'
                 : operation.kind === 'reconfigure'
                   ? 'reconfigure'
-                  : 'source';
+                  : operation.kind === 'move-database'
+                    ? 'move-database'
+                    : 'source';
         if (kind === 'source' && installation?.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
         const restoreReview =
           kind === 'restore' ? this.store.get<RestoreReview>(`restore:${operation.input.reviewId}`) : null;
@@ -2593,6 +2960,11 @@ export class Operations {
       });
       operation.receipts['cancelled'] = 'update_cancelled_previous_release_running';
       return;
+    }
+    if (intent.kind === 'move-database') {
+      const review = this.store.get<DatabaseRelocationReview>(`database-move:${operation.input.reviewId}`);
+      if (!review) throw new Refusal('review_missing');
+      return this.returnToOriginalDatabase(operation, review, 'database_relocation_cancelled');
     }
     if (intent.kind === 'reconfigure') {
       if (!installation) throw new Refusal('no_installation');
@@ -2759,7 +3131,9 @@ export class Operations {
         ['failed', 'interrupted', 'awaiting-review'].includes(operation.state) &&
         (operation.kind === 'move-library'
           ? !receipts['move-writes-intent']
-          : operation.kind === 'backup' ||
+          : operation.kind === 'move-database'
+            ? !receipts['start-state']
+            : operation.kind === 'backup' ||
             operation.kind === 'reconfigure' ||
             (operation.kind === 'update' && !updateStarted({ ...operation, receipts })) ||
             !this.installation()?.mayHaveWrittenMedia ||

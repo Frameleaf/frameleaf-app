@@ -5,11 +5,24 @@ import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 
-// Release-owned defaults; legacy keys remain available for already-bound work.
+// Release-owned defaults per model (runtime f2c451a6); legacy keys remain available for already-bound work.
 export const desktopImageModelKeys = Object.freeze({
-  ocr: 'ocr:533efbe4ddb6ab944a5820269d6ab5e5bc2ba15be6a85ef4c1a9f8e21bfc2dc6',
-  face: 'face:fa45e38988d792cebb928a7a6e6953cd086f5fcc8a2117b476da77f792d95c2c',
+  ocr: Object.freeze({
+    'PP-OCRv5_mobile': 'ocr:533efbe4ddb6ab944a5820269d6ab5e5bc2ba15be6a85ef4c1a9f8e21bfc2dc6',
+    'PP-OCRv5_server': 'ocr:6e38121026683b5b78fc07bf59cb52347b348db1f6868a050a868712d5e4fab3',
+  }),
+  face: Object.freeze({
+    buffalo_l: 'face:fa45e38988d792cebb928a7a6e6953cd086f5fcc8a2117b476da77f792d95c2c',
+    antelopev2: 'face:c0d072bdd543c5576821a851143e1920fdc41a61c2ec5499aec3e2f53c5fb81a',
+    buffalo_s: 'face:99e33c6c4c6d638de1d5226d2c97d10aba31253b5746dd8355548f8ca4b575c9',
+    buffalo_m: 'face:9744ca6f8fb5deea855f25b3affc9078292d1dc8a30d2461a748d449165f3aa1',
+  }),
 });
+/** The released key for `modelName`, or undefined when the release has none (never an inherited property). */
+export const desktopImageModelKey = (workload: 'ocr' | 'face', modelName: string): string | undefined => {
+  const keys: Readonly<Record<string, string>> = desktopImageModelKeys[workload];
+  return Object.hasOwn(keys, modelName) ? keys[modelName] : undefined;
+};
 
 const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const digest = z.string().regex(/^[a-f0-9]{64}$/);

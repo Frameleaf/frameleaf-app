@@ -55,6 +55,8 @@
     mdiArrowUp,
     mdiAutoFix,
     mdiCallMerge,
+    mdiCheckboxMultipleMarkedOutline,
+    mdiClose,
     mdiDeleteOutline,
     mdiDotsHorizontal,
     mdiDownloadOutline,
@@ -443,10 +445,37 @@
         : null;
     return holder && section?.contains(holder) ? holder : null;
   };
+  /** The menu for every chosen album, opened by a right-click on one of them. */
+  let bulkMenuAt = $state<{ x: number; y: number } | null>(null);
   const openContextMenu = (holder: HTMLElement, at?: { x: number; y: number }) => {
     const focused = document.activeElement instanceof HTMLElement && holder.contains(document.activeElement);
     const rect = (focused ? (document.activeElement as HTMLElement) : holder).getBoundingClientRect();
-    contextMenu = { id: holder.dataset.albumId as string, ...(at ?? { x: rect.left, y: rect.bottom }) };
+    const id = holder.dataset.albumId as string;
+    const point = at ?? { x: rect.left, y: rect.bottom };
+    // On one of several chosen albums the menu acts on them all; on any other album, on that one.
+    if (selecting && selected.size > 1 && selected.has(id)) {
+      bulkMenuAt = point;
+      return;
+    }
+    contextMenu = { id, ...point };
+  };
+  /** Ctrl- or Cmd-click on an album tile starts choosing with it, or adds or removes it. */
+  const onClickCapture = (event: MouseEvent) => {
+    if (!(event.metaKey || event.ctrlKey) || event.button !== 0 || !(event.target instanceof Element)) {
+      return;
+    }
+    if (event.target.closest('[role="menu"], .menu-root > button')) {
+      return;
+    }
+    const holder = event.target.closest<HTMLElement>('.cell[data-album-id], [role="listitem"][data-album-id]');
+    const album = holder && section?.contains(holder) ? find(holder.dataset.albumId as string) : undefined;
+    if (!album || !selectable(album)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    selecting = true;
+    toggleSelected(album);
   };
   const onContextMenu = (event: MouseEvent) => {
     const holder = contextHolder(event.target);
@@ -467,6 +496,10 @@
       }
       return;
     }
+    if (event.key === 'Escape' && selecting && !dragged && !document.querySelector('dialog[open], [role="menu"]')) {
+      stopSelecting();
+      return;
+    }
     if (!(event.key === 'Escape' && dragged)) {
       return;
     }
@@ -476,6 +509,52 @@
   };
 
   const draggedParent = $derived(dragged?.parentId ? find(dragged.parentId) : undefined);
+
+  /* ---- choose several albums and act on them together ---- */
+  let selecting = $state(false);
+  const selected = new SvelteSet<string>();
+  /** Spaces stay out: they are never moved, merged or locked from here. */
+  const selectable = (album: AlbumResponseDto) => !isSpace(album);
+  const toggleSelected = (album: AlbumResponseDto) =>
+    selected.has(album.id) ? selected.delete(album.id) : selected.add(album.id);
+  const stopSelecting = () => {
+    selecting = false;
+    selected.clear();
+  };
+  // An album merged or deleted (here or elsewhere) leaves the selection with the directory.
+  $effect(() => {
+    for (const id of selected) {
+      if (!byId.has(id)) {
+        selected.delete(id);
+      }
+    }
+  });
+  const selectedAlbums = $derived(
+    [...selected].map((id) => byId.get(id)).filter((album): album is AlbumResponseDto => !!album),
+  );
+  /** What "Select all" takes: the albums on screen (open shelves and Other albums). */
+  const visibleSelectable = $derived(
+    [
+      ...arrangement.shelves.filter(({ collection }) => !isCollapsed(collection.id)).flatMap(({ albums }) => albums),
+      ...arrangement.albums,
+    ].filter((album) => selectable(album)),
+  );
+  const allVisibleSelected = $derived(
+    visibleSelectable.length > 0 && visibleSelectable.every(({ id }) => selected.has(id)),
+  );
+  const toggleAll = () => {
+    if (allVisibleSelected) {
+      selected.clear();
+    } else {
+      for (const { id } of visibleSelectable) {
+        selected.add(id);
+      }
+    }
+  };
+  const any = $derived(selectedAlbums.length > 0);
+  const allOwned = $derived(any && selectedAlbums.every((album) => isOwner(album, currentUserId)));
+  const allMergeable = $derived(any && selectedAlbums.every((album) => canMerge(album, currentUserId)));
+  const allLockable = $derived(allOwned && selectedAlbums.every((album) => album.kind === AlbumKind.Album));
 </script>
 
 {#snippet menu(album: AlbumResponseDto)}
@@ -583,6 +662,17 @@
 {/snippet}
 
 {#snippet tile(album: AlbumResponseDto, layout: 'grid' | 'list')}
+  {#if selecting && selectable(album)}
+    <!-- While choosing, a click anywhere on the tile picks it; the checkbox is the control itself. -->
+    <label class="pick" class:checked={selected.has(album.id)}>
+      <input
+        type="checkbox"
+        checked={selected.has(album.id)}
+        onchange={() => toggleSelected(album)}
+        aria-label={$t('frameleaf_albums_select_album', { values: { name: nameOf(album) } })}
+      />
+    </label>
+  {/if}
   {#if revealsAll || revealed.has(album.id)}
     {#if album.parentId}
       <small class="album-path"
@@ -624,6 +714,7 @@
       {#each list as album (album.id)}
         <div
           class="cell"
+          class:selected={selecting && selected.has(album.id)}
           data-album-id={album.id}
           class:tile-tinted={!!albumColorStyle(album.color)}
           style={albumColorStyle(album.color)}
@@ -644,6 +735,8 @@
       {#each list as album (album.id)}
         <div
           role="listitem"
+          class="row"
+          class:selected={selecting && selected.has(album.id)}
           data-album-id={album.id}
           class:tile-tinted={!!albumColorStyle(album.color)}
           style={albumColorStyle(album.color)}
@@ -664,7 +757,7 @@
 
 <svelte:document onkeydown={onKeydown} oncontextmenu={onContextMenu} />
 
-<section class="albums" aria-labelledby={headingId} bind:this={section}>
+<section class="albums" aria-labelledby={headingId} bind:this={section} onclickcapture={onClickCapture}>
   <AlbumCleanupBanner />
   <header class="head">
     <div class="heading">
@@ -688,6 +781,15 @@
           {/each}
         </Menu>
       </div>
+      <button
+        type="button"
+        class="select-toggle"
+        aria-pressed={selecting}
+        onclick={() => (selecting ? stopSelecting() : (selecting = true))}
+      >
+        <Icon icon={selecting ? mdiClose : mdiCheckboxMultipleMarkedOutline} size="17" aria-hidden={true} />
+        <span>{selecting ? $t('done') : $t('select')}</span>
+      </button>
       <div class="view" role="group" aria-label={$t('view')}>
         <button
           type="button"
@@ -841,6 +943,69 @@
     </div>
   {/if}
 
+  {#if selecting}
+    <div class="bulk-menu">
+      <Menu
+        label={$t('frameleaf_albums_bulk_actions')}
+        hideTrigger
+        bind:at={() => bulkMenuAt, (point) => (bulkMenuAt = point)}
+      >
+        <MenuItem disabled={!allOwned} onSelect={() => actions?.openMoveMany(selectedAlbums)}>
+          <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
+        </MenuItem>
+        <MenuItem disabled={!allMergeable} onSelect={() => actions?.openMergeInto(selectedAlbums)}>
+          <Icon icon={mdiCallMerge} size="18" aria-hidden={true} />{$t('frameleaf_albums_merge_into')}
+        </MenuItem>
+        {#if !allLockable || selectedAlbums.some((album) => !album.isLocked)}
+          <MenuItem disabled={!allLockable} onSelect={() => actions?.lockMany(selectedAlbums, true)}>
+            <Icon icon={mdiLockOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_lock')}
+          </MenuItem>
+        {/if}
+        {#if allLockable && selectedAlbums.some((album) => album.isLocked)}
+          <MenuItem onSelect={() => actions?.lockMany(selectedAlbums, false)}>
+            <Icon icon={mdiLockOpenVariantOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_unlock')}
+          </MenuItem>
+        {/if}
+        <div class="menu-separator" role="separator"></div>
+        <MenuItem disabled={!allOwned} onSelect={() => actions?.removeMany(selectedAlbums)}>
+          <Icon icon={mdiDeleteOutline} size="18" aria-hidden={true} />{$t('delete')}
+        </MenuItem>
+      </Menu>
+    </div>
+    <div
+      class="bulk-bar fl-material fl-material-capsule"
+      role="toolbar"
+      aria-label={$t('frameleaf_albums_bulk_actions')}
+    >
+      <span class="bulk-count" role="status">
+        {$t('frameleaf_albums_selected_count', { values: { count: selectedAlbums.length } })}
+      </span>
+      <button type="button" onclick={toggleAll} disabled={visibleSelectable.length === 0}>
+        {allVisibleSelected ? $t('frameleaf_albums_select_none') : $t('select_all')}
+      </button>
+      <button type="button" disabled={!allOwned} onclick={() => actions?.openMoveMany(selectedAlbums)}>
+        <Icon icon={mdiFolderMoveOutline} size="17" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
+      </button>
+      <button type="button" disabled={!allMergeable} onclick={() => actions?.openMergeInto(selectedAlbums)}>
+        <Icon icon={mdiCallMerge} size="17" aria-hidden={true} />{$t('frameleaf_albums_merge_into')}
+      </button>
+      {#if !allLockable || selectedAlbums.some((album) => !album.isLocked)}
+        <button type="button" disabled={!allLockable} onclick={() => actions?.lockMany(selectedAlbums, true)}>
+          <Icon icon={mdiLockOutline} size="17" aria-hidden={true} />{$t('frameleaf_albums_lock')}
+        </button>
+      {/if}
+      {#if allLockable && selectedAlbums.some((album) => album.isLocked)}
+        <button type="button" onclick={() => actions?.lockMany(selectedAlbums, false)}>
+          <Icon icon={mdiLockOpenVariantOutline} size="17" aria-hidden={true} />{$t('frameleaf_albums_unlock')}
+        </button>
+      {/if}
+      <button type="button" disabled={!allOwned} onclick={() => actions?.removeMany(selectedAlbums)}>
+        <Icon icon={mdiDeleteOutline} size="17" aria-hidden={true} />{$t('delete')}
+      </button>
+      <button type="button" class="bulk-done" onclick={stopSelecting}>{$t('done')}</button>
+    </div>
+  {/if}
+
   <!--
     Take an album out of its collection: a bar that rises at the foot of the window while such an
     album is being dragged, wherever the page is scrolled to. Pointer only; keyboard and touch use
@@ -911,6 +1076,97 @@
   .cell {
     position: relative;
     min-width: 0;
+  }
+  .row {
+    position: relative;
+  }
+  /* Choosing: the whole tile is the checkbox's label; the box sits on the cover's corner. */
+  .pick {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    cursor: pointer;
+    border-radius: var(--fl-radius-card);
+  }
+  .pick input {
+    position: absolute;
+    inset-block-start: var(--fl-space-2);
+    inset-inline-start: var(--fl-space-2);
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    accent-color: var(--fl-accent);
+    cursor: pointer;
+  }
+  .pick:has(input:focus-visible) {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+  .cell.selected .pick,
+  .row.selected .pick {
+    box-shadow: inset 0 0 0 2px var(--fl-accent);
+    background: color-mix(in srgb, var(--fl-accent) 10%, transparent);
+  }
+  .select-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 44px;
+    padding: 0 0.875rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-panel);
+    color: var(--fl-text);
+  }
+  .select-toggle[aria-pressed='true'] {
+    background: var(--fl-text);
+    color: var(--fl-canvas);
+    border-color: var(--fl-text);
+  }
+  .bulk-bar {
+    position: sticky;
+    bottom: calc(var(--fl-space-4) + var(--fl-tabbar-space, 0px));
+    z-index: var(--fl-z-dock);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--fl-space-2);
+    width: fit-content;
+    max-width: 100%;
+    margin-block-start: var(--fl-space-4);
+    padding: var(--fl-space-2) var(--fl-space-3);
+  }
+  /* Only the popup shows, at the pointer; the menu has no trigger. */
+  .bulk-menu {
+    position: absolute;
+  }
+  .bulk-count {
+    padding-inline: var(--fl-space-2);
+    font-weight: 600;
+    font-size: var(--fl-font-callout);
+  }
+  .bulk-bar button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 40px;
+    padding: 0 0.75rem;
+    border: 0;
+    border-radius: var(--fl-radius-pill);
+    background: transparent;
+    color: inherit;
+    font-size: var(--fl-font-callout);
+  }
+  .bulk-bar button:hover:not(:disabled) {
+    background: var(--fl-raised);
+  }
+  .bulk-bar button:disabled {
+    opacity: 0.45;
+  }
+  .bulk-bar .bulk-done {
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
   }
   /* Exactly a tile's height (AlbumTile: cover, 8px, name, gap, the 28px meta row), so the scrollbar never jumps. */
   .placeholder-link {

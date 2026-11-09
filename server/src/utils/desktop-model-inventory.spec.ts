@@ -62,7 +62,7 @@ it.each(['model', 'options', 'provider', 'source'])('does not substitute another
   const input = setup();
   switch (change) {
     case 'model': {
-      input.config.facialRecognition.modelName = 'buffalo_s';
+      input.config.facialRecognition.modelName = 'yunet_sface';
       break;
     }
     case 'options': {
@@ -157,4 +157,45 @@ it('offers all qualified current-main CPU groups without changing routes or mode
     ['eligible', 1],
   ]);
   expect(input).toEqual(original);
+});
+
+it.each([
+  ['ViT-B-32__openai', 'buffalo_s', 'PP-OCRv5_server'],
+  ['ViT-SO400M-16-SigLIP2-384__webli', 'antelopev2', 'PP-OCRv5_mobile'],
+  ['ViT-B-16-SigLIP-384__webli', 'buffalo_m', 'PP-OCRv5_server'],
+])('offers the released groups of the selected %s, %s and %s', (clip, face, ocr) => {
+  for (const provider of ['CPUExecutionProvider', 'CoreMLExecutionProvider', 'CUDAExecutionProvider']) {
+    const input = { ...setup(), provider };
+    input.config.clip.modelName = clip;
+    input.config.facialRecognition.modelName = face;
+    input.config.ocr.modelName = ocr;
+    const result = selectDesktopModelInventory(input);
+    expect(result.slice(0, 3).map(({ state, modelNames, modelKeys }) => [state, modelNames, modelKeys.length])).toEqual(
+      [
+        ['eligible', [clip], 3],
+        ['eligible', [ocr], 1],
+        ['eligible', [face], 1],
+      ],
+    );
+    for (const key of result.flatMap((item) => item.modelKeys)) {
+      expect(catalogue.profiles.find((p) => p.modelKey === key && p.spec.provider === provider)?.modelName).toBe(
+        key.startsWith('clip:') ? clip : key.startsWith('face:') ? face : ocr,
+      );
+    }
+  }
+});
+it('offers a newly qualified search model to the factory desktop runtime, which still refuses outdated image producers', () => {
+  const input = setup();
+  input.runtimeSourceRevision = '25b22c16e47a27a2eb50017d838497abce850d11';
+  input.config.clip.modelName = 'ViT-SO400M-16-SigLIP2-384__webli';
+  input.config.facialRecognition.modelName = 'antelopev2';
+  expect(
+    selectDesktopModelInventory(input)
+      .slice(0, 3)
+      .map(({ state, modelKeys }) => [state, modelKeys.length]),
+  ).toEqual([
+    ['eligible', 3],
+    ['unsupported', 0],
+    ['unsupported', 0],
+  ]);
 });

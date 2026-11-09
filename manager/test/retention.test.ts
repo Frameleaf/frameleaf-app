@@ -189,6 +189,31 @@ test('an approved captured import pins its release bundle through interruption a
   }
 });
 
+test('a database move to another drive pins its release bundle while its operation can resume', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-retention-database-move-'));
+  const store = new Store(directory);
+  try {
+    const releases = join(directory, 'releases');
+    const release = randomUUID();
+    await bundle(releases, release, 60);
+    const now = Date.now();
+    store.set('database-move:r', { expires: now - 1, release: { directory: join(releases, release) } });
+    const operation = store.start('move-database', 'move', { reviewId: 'r' }).operation;
+    operation.state = 'interrupted';
+    store.save(operation);
+    const retention = new Retention(store, directory, releases, 0);
+    await retention.sweep(now);
+    assert.equal(await exists(join(releases, release)), true);
+    operation.state = 'complete';
+    store.save(operation);
+    await retention.sweep(now);
+    assert.equal(await exists(join(releases, release)), false);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('Manager prunes at start and after every operation settles, and the sweep never fails an operation', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-retention-ops-'));
   const store = new Store(directory);

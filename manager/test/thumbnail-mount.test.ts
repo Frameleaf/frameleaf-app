@@ -345,12 +345,16 @@ test('a backup from before thumbnails moved is still this library, and the resto
 
 test('a restore whose thumbnail folder is gone offers the photos folder, and seeds the marker there before starting', async () => {
   await restoreFixture(async ({ root, store, operations, prior, photos, composeCalls }) => {
-    await assert.rejects(operations.reviewRestore('a'.repeat(64), root), (error: any) => {
-      assert.equal(error.code, 'thumbnail_folder_missing');
-      assert.ok(error.detail.includes(join(photos, 'thumbs')), 'the fallback folder is named');
-      return true;
+    // FL-1317: a check result in the Check this server list, naming the photos folder the restore can fall back to.
+    const missing = await operations.reviewRestore('a'.repeat(64), root);
+    assert.equal(missing.ready, false);
+    assert.deepEqual(missing.checks.find((check) => check.id === 'thumbnails'), {
+      id: 'thumbnails', status: 'problem', code: 'thumbnail_folder_missing', detail: join(root, 'old-fast'),
+      facts: { missing: join(root, 'old-fast'), folder: join(photos, 'thumbs') },
     });
     const review = await operations.reviewRestore('a'.repeat(64), root, undefined, true);
+    assert.equal(review.ready, true);
+    if (!review.ready) return;
     assert.deepEqual(review.mounts, [library(photos)]);
     assert.deepEqual(review.thumbnailFallback, { missing: join(root, 'old-fast'), folder: join(photos, 'thumbs') });
     const saved = store.get<any>(`restore:${review.id}`);
