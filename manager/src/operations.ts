@@ -2145,7 +2145,7 @@ export class Operations {
       requiredBytes,
       availableBytes: space.bavail * space.bsize,
       recovery:
-        'Frameleaf stops while Manager creates a database recovery point, copies the database into a new folder on the chosen drive and checks every table. If anything fails, Frameleaf starts again on the current folder. The current folder is kept until you remove it.',
+        'Frameleaf stops while Manager creates a database recovery point, copies the database into a new folder on the chosen drive and checks every table. If anything goes wrong before Frameleaf starts on the new folder, Manager starts Frameleaf again on the current folder. Once Frameleaf has started on the new folder, it stays there, because new changes may already be saved there: if it does not start properly, choose Resume to try again. The current folder is kept until you remove it.',
     };
   }
   moveDatabaseTo(id: string, key: string): Operation {

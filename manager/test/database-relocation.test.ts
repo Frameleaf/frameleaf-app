@@ -176,6 +176,7 @@ test('reviewing a database move checks the chosen drive has room for the copy an
     assert.equal(review.databaseBytes, 2 * 1024 ** 3);
     assert.equal(review.requiredBytes, 4 * 1024 ** 3);
     assert.equal(typeof review.availableBytes, 'number');
+    assert.match(review.recovery, /Once Frameleaf has started on the new folder, it stays there/);
     assert.deepEqual(f.composed, [], 'a review changes nothing');
     (operations as any).databaseStorage.validate = async () => {
       throw new Refusal('insufficient_database_space');
