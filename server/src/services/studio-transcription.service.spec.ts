@@ -14,6 +14,7 @@ import { TranscriptionUnavailableError } from 'src/repositories/machine-learning
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
+import { CloudMlJobSnapshotSchema } from 'src/utils/cloud-ml-job.js';
 import { selectMlDestination } from 'src/utils/ml-destination.js';
 import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
 import { rational } from 'src/utils/rational-time.js';
@@ -482,6 +483,29 @@ if (process.argv.at(-1) === 'ordinary') {
         result: null,
         status: 'preparing',
       });
+    });
+
+    it('reports where a Frameleaf Cloud clip sat in the transcribed revision', async () => {
+      const { sut, operation, operations } = setup();
+      const clip = {
+        from: 30_000,
+        cadence: { num: 30_000, den: 1001 },
+        sourceStart: rational(3),
+        speed: { num: 3, den: 2 },
+      };
+      const parse = vi.spyOn(CloudMlJobSnapshotSchema, 'safeParse').mockReturnValue({
+        success: true,
+        data: { destinationId, studio: { projectId, revision: 4, clipId: 'clip', language: 'auto', clip } },
+      } as never);
+      operations.getForOwner.mockResolvedValue({
+        ...operation,
+        kind: MediaOperationKind.CloudMlJob,
+        status: MediaOperationStatus.Rendering,
+      });
+      await expect(sut.get(owner, projectId, operationId)).resolves.toMatchObject({
+        placement: { start: rational(1001), sourceStart: rational(3), speed: { num: 3, den: 2 } },
+      });
+      parse.mockRestore();
     });
 
     it('does not find another kind of job or another project', async () => {
