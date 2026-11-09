@@ -237,6 +237,15 @@ describe(AttentionService.name, () => {
       expect(items.map((item) => item.id)).toEqual(['storage']);
     });
 
+    it('still names a low thumbnails drive when the library drive is read but its device is not', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.getDevice.mockImplementation((path: string) => Promise.resolve(path.endsWith('thumbs') ? 7 : null));
+      diskFor(mocks, 400, 5);
+
+      const { items } = await sut.getAttention();
+      expect(items.map((item) => [item.id, item.storage?.drive])).toEqual([['storage:thumbnails', 'thumbnails']]);
+    });
+
     it('says the storage check is unknown when the thumbnails folder cannot be read', async () => {
       const { sut, mocks } = setup();
       mocks.storage.getDevice.mockImplementation((path: string) =>

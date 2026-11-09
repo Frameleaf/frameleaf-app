@@ -19,6 +19,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { isNewerRelease } from 'src/services/version.service.js';
 import {
   type BackupPlaceFacts,
+  type DiskFacts,
   type QueueFacts,
   type SignalResult,
   backupSignal,
@@ -37,6 +38,13 @@ import { serverTimeZone } from 'src/utils/server-time-zone.js';
 /** Queues are read a few at a time, as the queue list does, so a read never fills the database pool. */
 const QUEUE_BATCH = 4;
 const BACKUP_STAMP = /\d{8}T\d{6}/;
+
+/**
+ * FL-1324: two folders whose device can't be told are taken as one drive when it reads the same size and
+ * nearly the same room (writes between the two reads move it a little).
+ */
+const isSameDisk = (a: DiskFacts, b: DiskFacts) =>
+  a.total === b.total && Math.abs(a.available - b.available) <= Math.max(a.total * 0.001, 1);
 
 /**
  * FL-421: "What needs your attention" for administrators. Each read checks the drive the library is
@@ -116,39 +124,42 @@ export class AttentionService {
     const percent = config.storageWarning.percent;
     const library = StorageCore.getBaseFolder(StorageFolder.Library);
     const thumbnails = StorageCore.getBaseFolder(StorageFolder.Thumbnails);
-    const [libraryResult, libraryDevice, thumbnailsDevice] = await Promise.all([
-      this.storageRepository
-        .checkDiskUsage(library)
-        .then((disk) => storageSignal(disk, percent, 'library'))
-        .catch((error) => {
-          this.logger.warn(`Could not check the library drive for what needs attention: ${error}`);
-          return { state: 'unknown', items: [] } satisfies SignalResult;
-        }),
+    const read = (folder: string, name: string) =>
+      this.storageRepository.checkDiskUsage(folder).catch((error) => {
+        this.logger.warn(`Could not check the ${name} drive for what needs attention: ${error}`);
+        return null;
+      });
+    const [libraryDisk, libraryDevice, thumbnailsDevice] = await Promise.all([
+      read(library, 'library'),
       this.storageRepository.getDevice(library),
       this.storageRepository.getDevice(thumbnails),
     ]);
     const unknown: SignalResult = { state: 'unknown', items: [] };
+    const libraryResult = libraryDisk ? storageSignal(libraryDisk, percent, 'library') : unknown;
     // Where the thumbnails are can't be told: their room is unknown, and any library warning still shows.
     if (thumbnailsDevice === null) {
       return combineStorage([libraryResult, unknown]);
     }
     const sameDrive = libraryDevice === thumbnailsDevice;
-    const libraryRead = libraryResult.state !== 'unknown';
-    // One drive, already read: one item. A library read without knowing its device: no second item that
-    // could repeat it.
-    if (libraryRead && (sameDrive || libraryDevice === null)) {
+    // One drive, already read: one item.
+    if (libraryDisk && sameDrive) {
       return libraryResult;
     }
-    // A drive of their own, or a library that couldn't be read: read the thumbnails' drive. On the
-    // library's own drive it speaks for the library (`storage`); otherwise it is named (`storage:thumbnails`).
-    const thumbnailsResult = await this.storageRepository
-      .checkDiskUsage(thumbnails)
-      .then((disk) => storageSignal(disk, percent, sameDrive ? 'library' : 'thumbnails'))
-      .catch((error) => {
-        this.logger.warn(`Could not check the thumbnails drive for what needs attention: ${error}`);
-        return unknown;
-      });
-    return sameDrive ? thumbnailsResult : combineStorage([libraryResult, thumbnailsResult]);
+    // A drive of their own, a library that couldn't be read, or a library whose device couldn't be
+    // told: read the thumbnails' drive too.
+    const thumbnailsDisk = await read(thumbnails, 'thumbnails');
+    if (!thumbnailsDisk) {
+      return combineStorage([libraryResult, unknown]);
+    }
+    // The library's own drive, whose library folder couldn't be read: the thumbnails folder speaks for it.
+    if (sameDrive) {
+      return storageSignal(thumbnailsDisk, percent, 'library');
+    }
+    // The library's device couldn't be told, but the drive reads the same size and room: one drive, one item.
+    if (libraryDisk && libraryDevice === null && isSameDisk(libraryDisk, thumbnailsDisk)) {
+      return libraryResult;
+    }
+    return combineStorage([libraryResult, storageSignal(thumbnailsDisk, percent, 'thumbnails')]);
   }
 
   /**
