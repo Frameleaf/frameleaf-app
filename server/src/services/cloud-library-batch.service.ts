@@ -1543,7 +1543,7 @@ export class CloudLibraryBatchService extends BaseService {
           level: NotificationLevel.Warning,
           title: `${feature} used this server for some photos`,
           description: `A Frameleaf Cloud batch couldn’t finish, so ${count} ${count === 1 ? 'photo is' : 'photos are'} being read on this server instead.`,
-          data: JSON.stringify({ link: '/user-settings?area=processing&section=computers' }),
+          data: { link: '/user-settings?area=processing&section=computers' },
         });
       }
     } catch (error) {

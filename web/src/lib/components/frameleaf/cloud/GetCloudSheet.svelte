@@ -228,7 +228,17 @@
     busy = true;
     failure = '';
     try {
-      const firstTime = isFirstCloudTurnOn(processing);
+      // Decided from what is true now: a stale read could create a second destination.
+      const choicesWere = JSON.stringify(termChoices);
+      processing = await getCloudMlStatus();
+      wallet = processing.wallet ?? null;
+      if (JSON.stringify(termChoices) !== choicesWere) {
+        agreed = false;
+        await loadTerms();
+        return;
+      }
+      // A retry after this sheet already created the destination must not rewrite the routes again.
+      const firstTime = !createdDestinationId && isFirstCloudTurnOn(processing);
       await recordCloudConsent({
         destinationId: processing?.destination?.id ?? createdDestinationId,
         terms,

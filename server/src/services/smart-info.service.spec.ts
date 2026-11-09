@@ -505,6 +505,29 @@ describe(SmartInfoService.name, () => {
       expect(mocks.database.deleteAllSearchEmbeddings).toHaveBeenCalled();
     });
 
+    it('learns the size again when a queue-all run finds none, once the worker is back', async () => {
+      let sizes: Record<string, number> = {};
+      mocks.systemMetadata.get.mockImplementation(
+        (key) =>
+          Promise.resolve(
+            key === CUSTOM_CLIP_MODELS_KEY
+              ? sizes
+              : { machineLearning: { enabled: true, clip: { enabled: true, modelName } } },
+          ) as never,
+      );
+      mocks.systemMetadata.set.mockImplementation((_key, value) => {
+        sizes = value as Record<string, number>;
+        return Promise.resolve();
+      });
+      mocks.database.getDimensionSize.mockResolvedValue(640);
+      mocks.assetJob.selectionForEncodeClip.mockReturnValue({} as never);
+
+      await expect(sut.handleQueueEncodeClip({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.machineLearning.getCustomClipDimSize).toHaveBeenCalled();
+      expect(mocks.job.queueSelection).toHaveBeenCalled();
+    });
+
     it('waits instead of breaking startup when the size cannot be learned', async () => {
       mocks.systemMetadata.get.mockResolvedValue({});
       mocks.machineLearning.getCustomClipDimSize.mockRejectedValue(new Error('fetch failed'));

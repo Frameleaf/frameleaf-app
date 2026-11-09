@@ -153,7 +153,8 @@ export class SmartInfoService extends BaseService {
 
   @OnJob({ name: JobName.SmartSearchQueueAll, queue: QueueName.SmartSearch })
   async handleQueueEncodeClip({ force }: JobOf<JobName.SmartSearchQueueAll>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: false });
+    const config = await this.getConfig({ withCache: false });
+    const { machineLearning } = config;
     if (!isSmartSearchEnabled(machineLearning)) {
       deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
@@ -161,7 +162,16 @@ export class SmartInfoService extends BaseService {
 
     // Configuration initialization owns dimensional DDL. A rerun must retain working vectors
     // until each accepted replacement is ready, rather than clearing the entire index.
-    const dimSize = await this.getClipDimSize(machineLearning.clip.modelName);
+    let dimSize = await this.getClipDimSize(machineLearning.clip.modelName);
+    if (dimSize === undefined) {
+      // A custom model whose size couldn't be learned at startup: the worker may be back by now.
+      try {
+        await this.init(config);
+      } catch (error) {
+        this.logger.warn(`Could not learn the size of ${machineLearning.clip.modelName}: ${error}`);
+      }
+      dimSize = await this.getClipDimSize(machineLearning.clip.modelName);
+    }
     if (dimSize === undefined || (await this.databaseRepository.getDimensionSize('smart_search')) !== dimSize) {
       deferJobUntilDependency('destination-configuration');
       return JobStatus.Failed;

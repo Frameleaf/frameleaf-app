@@ -470,6 +470,11 @@
         >
           {$t('frameleaf_add_ai_credit')}
         </Button>
+      {:else if estimate?.refusal}
+        <!-- The limit or budget may have changed since: the same model is priced again here -->
+        <Button variant="primary" disabled={estimating} onclick={() => void runEstimate(modelSku)}>
+          {$t('frameleaf_cloud_job_check_again')}
+        </Button>
       {:else if estimateError && !pausedMessage}
         <Button
           variant="primary"
