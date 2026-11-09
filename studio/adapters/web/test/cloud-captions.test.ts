@@ -50,17 +50,17 @@ const lines = (id: string, clipId: string, from: number, text: string): Subtitle
   color: '#ffffff',
   fontSize: 50,
 })
-const job = (clipId: string, fromSeconds: number): StudioCloudCaptionJob => ({
+const job = (clipId: string): StudioCloudCaptionJob => ({
   id: 'job-1',
   clipId,
   language: 'auto',
   name: 'Lake.mov',
-  anchor: { fromSeconds, sourceStartSeconds: 0, speed: 1 },
 })
 const done = (start: number, end: number): StudioCloudCaptionState => ({
   status: 'completed',
   error: null,
   cues: [{ start, end, text: 'From the Cloud' }],
+  anchor: { fromSeconds: 0, sourceStartSeconds: 0, speed: 1 },
 })
 const seed = (items: TimelineItem[]) => {
   useItemsStore.getState().setTracks([track('captions', 0), track('v1', 1)])
@@ -118,7 +118,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
   it('adds lines to an empty clip and leaves other clips alone', async () => {
     const other = lines('other', 'b', 400, 'On another clip')
     seed([clip('a', 0), clip('b', 400), other])
-    await resumeWith(job('a', 0), done(1, 3))
+    await resumeWith(job('a'), done(1, 3))
     const added = subtitles().find((item) => item.id !== 'other')
     expect(added?.source).toMatchObject({ type: 'transcript', clipId: 'a' })
     expect(added?.cues.map((cue) => cue.text)).toEqual(['From the Cloud'])
@@ -129,7 +129,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
 
   it('keeps the lines on the words when the clip moved during the job', async () => {
     seed([clip('a', 300)])
-    await resumeWith(job('a', 0), done(1, 3))
+    await resumeWith(job('a'), done(1, 3))
     expect(subtitles()[0]?.from).toBe(330)
   })
 
@@ -137,7 +137,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
     const mine = lines('mine', 'a', 0, 'I edited this')
     const other = lines('other', 'b', 400, 'On another clip')
     seed([clip('a', 0), clip('b', 400), mine, other])
-    await resumeWith(job('a', 0), done(1, 3))
+    await resumeWith(job('a'), done(1, 3))
     expect(subtitles().map((item) => item.id).toSorted()).toEqual(['mine', 'other'])
     expect(toasts.toast).toHaveBeenCalledOnce()
     // A reload before the person answers still brings the choice back.
@@ -153,7 +153,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
 
   it('forgets the job when the person keeps their own lines', async () => {
     seed([clip('a', 0), lines('mine', 'a', 0, 'I edited this')])
-    await resumeWith(job('a', 0), done(1, 3))
+    await resumeWith(job('a'), done(1, 3))
     const options = toasts.toast.mock.calls[0]![1] as { cancel: { onClick: () => void } }
     options.cancel.onClick()
     expect(forget).toHaveBeenCalledExactlyOnceWith('job-1')
@@ -162,11 +162,11 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
 
   it('says so when the clip is gone, and when the job fails', async () => {
     seed([])
-    await resumeWith(job('a', 0), done(1, 3))
+    await resumeWith(job('a'), done(1, 3))
     expect(toasts.toast.error).toHaveBeenCalledOnce()
     vi.clearAllMocks()
     seed([clip('a', 0)])
-    await resumeWith(job('a', 0), { status: 'failed', error: 'no', cues: [] })
+    await resumeWith(job('a'), { status: 'failed', error: 'no', cues: [], anchor: null })
     expect(toasts.toast.error).toHaveBeenCalledOnce()
     expect(subtitles()).toEqual([])
   })
@@ -179,7 +179,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
       {
         start: vi.fn(),
         read,
-        pending: () => Promise.resolve([job('a', 0)]),
+        pending: () => Promise.resolve([job('a')]),
         forget,
         ready: () => new Promise((resolve) => (loaded = resolve)),
       },
@@ -205,7 +205,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
       {
         start: vi.fn(),
         read,
-        pending: () => Promise.resolve([job('a', 0)]),
+        pending: () => Promise.resolve([job('a')]),
         forget,
         ready: () => Promise.resolve(false),
       },
@@ -216,7 +216,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
 
   it('stays quiet about a job the person cancelled', async () => {
     seed([clip('a', 0)])
-    await resumeWith(job('a', 0), { status: 'cancelled', error: null, cues: [] })
+    await resumeWith(job('a'), { status: 'cancelled', error: null, cues: [], anchor: null })
     expect(toasts.toast.error).not.toHaveBeenCalled()
   })
 

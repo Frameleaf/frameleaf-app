@@ -6,6 +6,7 @@ import {
   mapTranscript,
   segmentsOfVtt,
   transcriptionClipOf,
+  transcriptionPlacement,
   transcriptionWindow,
   whisperLanguageOf,
 } from 'src/utils/studio-transcription.js';
@@ -84,6 +85,18 @@ describe('transcriptionWindow', () => {
     expect(() =>
       transcriptionWindow(transcriptionClipOf(graph({ durationInFrames: 30 * 4 * 3600 + 1 }), 'clip')),
     ).toThrow(BadRequestException);
+  });
+});
+
+describe('transcriptionPlacement', () => {
+  it('reports where the clip sits in exact seconds, on an NTSC timeline too', () => {
+    expect(transcriptionPlacement(transcriptionClipOf(graph({ speed: 2, sourceStart: 30 }), 'clip'))).toEqual({
+      start: rational(2),
+      sourceStart: rational(1),
+      speed: rational(2),
+    });
+    const ntsc = transcriptionClipOf(graph({ from: 30_000 }, { fps: 29.97 }), 'clip');
+    expect(transcriptionPlacement(ntsc).start).toEqual(rational(1001));
   });
 });
 

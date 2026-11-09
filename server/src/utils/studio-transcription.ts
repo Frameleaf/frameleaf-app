@@ -131,6 +131,13 @@ const sourceKeyOf = (clip: RecordValue): string | null => {
   return null;
 };
 
+/** Where the clip sits in its revision. A client needs it to place cues if the clip has moved since. */
+export const transcriptionPlacement = (clip: TranscriptionClip) => ({
+  start: frameStartTime(clip.from, clip.cadence),
+  sourceStart: clip.sourceStart,
+  speed: clip.speed,
+});
+
 /** The source seconds the clip shows: from its source start, for its timeline length at its speed. */
 export const transcriptionWindow = (clip: TranscriptionClip) => {
   const duration = multiply(frameStartTime(clip.durationInFrames, clip.cadence), clip.speed);

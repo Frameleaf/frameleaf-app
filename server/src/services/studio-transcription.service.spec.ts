@@ -470,6 +470,7 @@ if (process.argv.at(-1) === 'ordinary') {
         destinationId,
         status: MediaOperationStatus.Completed,
         progress: 100,
+        placement: null,
         error: null,
         result,
       });

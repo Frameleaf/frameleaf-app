@@ -21,6 +21,7 @@ import {
   getClipSourceBounds,
 } from '@/features/media-library/utils/caption-items'
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store'
+import type { MediaTranscriptSegment } from '@/types/storage'
 import type { AudioItem, TimelineItem, VideoItem } from '@/types/timeline'
 
 export interface CloudCaptionCalls {
@@ -45,7 +46,7 @@ const findClip = (clipId: string) => {
   return isClip(item) ? item : null
 }
 
-/** Cues are timeline seconds at pricing; source seconds keep them on the words if the clip moves or is trimmed. */
+/** Cues are timeline seconds in the transcribed revision; source seconds keep them on the words if the clip has moved or been trimmed since. */
 export function cuesToSegments(cues: StudioCloudCaptionCue[], anchor: StudioCloudCaptionAnchor) {
   const source = (seconds: number) =>
     anchor.sourceStartSeconds + (seconds - anchor.fromSeconds) * anchor.speed
@@ -82,7 +83,7 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
 
   const forget = (job: StudioCloudCaptionJob) => calls.forget(job.id).catch(() => {})
 
-  const add = async (job: StudioCloudCaptionJob, cues: StudioCloudCaptionCue[]) => {
+  const add = async (job: StudioCloudCaptionJob, segments: MediaTranscriptSegment[]) => {
     const clip = findClip(job.clipId)
     if (!clip?.mediaId) {
       toast.error(i18n.t('transcript.cloud.gone', { name: job.name }))
@@ -98,27 +99,27 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
     await mediaTranscriptionService.insertTranscriptAsCaptions(clip.mediaId, {
       clipIds: [clip.id],
       replaceExisting: true,
-      segments: cuesToSegments(cues, job.anchor),
+      segments,
     })
     await forget(job)
     toast.success(i18n.t('transcript.cloud.added', { name: job.name }))
   }
 
-  const finish = async (job: StudioCloudCaptionJob, cues: StudioCloudCaptionCue[]) => {
+  const finish = async (job: StudioCloudCaptionJob, segments: MediaTranscriptSegment[]) => {
     const clip = findClip(job.clipId)
     const { items, fps } = useTimelineStore.getState()
     const existing = clip ? existingLineCount(items, clip, fps) : 0
     if (!existing) {
-      await add(job, cues)
+      await add(job, segments)
       return
     }
     // The person may have edited those lines, so replacing them is their call.
     toast(i18n.t('transcript.cloud.readyTitle', { name: job.name }), {
-      description: i18n.t('transcript.cloud.readyBody', { lines: cues.length, existing }),
+      description: i18n.t('transcript.cloud.readyBody', { lines: segments.length, existing }),
       duration: Infinity,
       action: {
         label: i18n.t('transcript.cloud.replace'),
-        onClick: () => void add(job, cues).catch(() => failed(job)),
+        onClick: () => void add(job, segments).catch(() => failed(job)),
       },
       cancel: { label: i18n.t('transcript.cloud.keep'), onClick: () => void forget(job) },
     })
@@ -146,7 +147,9 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
       }
       if (state.status === 'completed') {
         // The project can be reloading under the job (a restored version, say).
-        if (await calls.ready()) await finish(job, state.cues).catch(() => failed(job))
+        if (state.anchor && (await calls.ready())) {
+          await finish(job, cuesToSegments(state.cues, state.anchor)).catch(() => failed(job))
+        }
         return
       }
       if (state.status === 'failed') {

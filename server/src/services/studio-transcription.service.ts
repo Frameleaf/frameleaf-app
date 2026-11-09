@@ -44,6 +44,7 @@ import {
   TranscriptionClip,
   mapTranscript,
   transcriptionClipOf,
+  transcriptionPlacement,
   transcriptionWindow,
   whisperLanguageOf,
 } from 'src/utils/studio-transcription.js';
@@ -250,6 +251,7 @@ export class StudioTranscriptionService {
       progress: operation.progress,
       error: operation.error ?? null,
       result: parsed?.success ? parsed.data : null,
+      placement: null,
     };
   }
 
@@ -275,6 +277,7 @@ export class StudioTranscriptionService {
       progress: operation.progress,
       error: operation.error ?? null,
       result: result?.success ? result.data : null,
+      placement: transcriptionPlacement(studio.clip),
     };
   }
 
