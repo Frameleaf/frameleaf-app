@@ -2098,7 +2098,7 @@ export type AdminConfigSmartAlbumsDto = {
 export type AdminConfigStorageTemplateDto = {
     /** Enabled */
     enabled: boolean;
-    /** Hash verification enabled */
+    /** Deprecated: ignored, every copied original is always checked */
     hashVerificationEnabled: boolean;
     /** Template */
     template: string;

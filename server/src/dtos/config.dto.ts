@@ -1198,7 +1198,7 @@ const AdminConfigSchemaWithVisibility = z
     storageTemplate: z
       .object({
         enabled: configBool.describe('Enabled'),
-        hashVerificationEnabled: configBool.describe('Hash verification enabled'),
+        hashVerificationEnabled: configBool.describe('Deprecated: ignored, every copied original is always checked'),
         template: z.string().describe('Template'),
       })
       .meta({ id: 'AdminConfigStorageTemplateDto' }),
