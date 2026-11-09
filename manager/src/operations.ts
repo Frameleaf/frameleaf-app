@@ -50,6 +50,17 @@ import {
 } from './contracts.js';
 
 const importNames: Record<PhotoAppKind | FolderImportKind, string> = { ...photoAppNames, ...folderImportNames };
+/** The promise's value, or undefined when it fails or `ms` passes first. For hints the review must never wait on. */
+async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work.catch(() => undefined), new Promise<undefined>((done) => {
+      timer = setTimeout(() => done(undefined), ms);
+    })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 export const ReviewInput = z
   .object({
     kind: z.enum(['install', 'import']),
@@ -254,7 +265,9 @@ export class Operations {
   /** How often an update's start polls Docker for the new server's health. Docker keeps its last five probes. */
   serverWatchMs = 5000;
   /** FL-1321: the drives under Manager's folders and the fast drive it suggests; unset where Manager can't tell. */
-  driveReport?: () => Promise<DriveReport>;
+  driveReport?: (sizes: { databaseBytes?: number }) => Promise<DriveReport>;
+  /** How long the review waits for the drive report before carrying on without it. */
+  driveReportMs = 8000;
   constructor(
     readonly store: Store,
     readonly docker: Docker,
@@ -920,9 +933,13 @@ export class Operations {
       backups,
       state: this.store.directory,
     }).filter((entry): entry is [string, string] => !!entry[1]);
-    // FL-1321: what the review says about drives. Detection is a hint: without it the checks stay as they were.
-    const report = phase === 'review' && this.driveReport ? await this.driveReport().catch(() => undefined) : undefined;
     const databaseBytes = (source?.summary.databaseBytes ?? 1024 ** 3) * 3;
+    // FL-1321: what the review says about drives. Detection is a hint: without it, or past its deadline (a drive whose
+    // statfs hangs), the checks stay as they were. An import's suggestion needs room for its own database.
+    const report =
+      phase === 'review' && this.driveReport
+        ? await withDeadline(this.driveReport(source ? { databaseBytes } : {}), this.driveReportMs)
+        : undefined;
     // A folder chosen in setup must be its own, and exist (the review creates it, empty).
     const chosenFolder = async (role: string, path: string) => {
       if (!broad) return;

@@ -208,7 +208,7 @@ async function driveReport(sizes: Parameters<typeof suggestFolders>[1]) {
   return suggestFolders(await findDrives({ roots, dockerRoot, platform: process.env.MANAGER_PLATFORM || defaults.platform }), sizes);
 }
 // FL-1321: Check this server says when the database is on hard drives and a faster drive is there.
-operations.driveReport = () => driveReport({});
+operations.driveReport = (sizes) => driveReport(sizes);
 /** The port the administrator reached Manager on: never offered to, or accepted for, the Frameleaf stack. */
 const managerPort = (request: Request) => Number(new URL(security.requestOrigin(request)).port || 443);
 const RequestKey = z.string().uuid();

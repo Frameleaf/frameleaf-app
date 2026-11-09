@@ -90,7 +90,11 @@ const fastReport = (root: string) => suggestFolders([drive(join(root, 'array'), 
 test('a database on hard drives is worth knowing only when a faster drive with room is there', async () => {
   const f = await fixture(fastReport);
   try {
+    const asked: { databaseBytes?: number }[] = [];
+    const report = f.operations.driveReport!;
+    f.operations.driveReport = (sizes) => (asked.push(sizes), report(sizes));
     const result = await f.operations.review(f.input);
+    assert.deepEqual(asked, [{}], 'a new library uses the fixed new-library sizes');
     assert.equal(result.ready, true, 'a warning never blocks the install');
     const database = result.checks.find((check) => check.id === 'database')!;
     assert.equal(database.status, 'warning');
@@ -122,6 +126,21 @@ test('no faster drive, a full one, or no drive report: the database on hard driv
     } finally {
       await f.cleanup();
     }
+  }
+});
+
+test('a drive report that never answers does not hold up the review', async () => {
+  const f = await fixture();
+  try {
+    f.operations.driveReport = () => new Promise(() => {});
+    f.operations.driveReportMs = 50;
+    const result = await f.operations.review(f.input);
+    assert.equal(result.ready, true);
+    const database = result.checks.find((check) => check.id === 'database')!;
+    assert.equal(database.status, 'ok', 'no warning without a report');
+    assert.equal(database.facts?.drive, undefined);
+  } finally {
+    await f.cleanup();
   }
 });
 
