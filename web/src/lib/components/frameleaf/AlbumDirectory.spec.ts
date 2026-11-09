@@ -338,6 +338,143 @@ describe('AlbumDirectory', () => {
     expect(await screen.findByRole('menu', { name: 'Actions for Family' })).toBeInTheDocument();
   });
 
+  describe('Move to… in a large library', () => {
+    it('lists only the ten most recently changed albums until the person types, then searches them all', async () => {
+      const many = Array.from({ length: 15 }, (_, index) =>
+        owned({
+          id: `old-${index}`,
+          albumName: `Trip ${String(index).padStart(2, '0')}`,
+          updatedAt: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+        }),
+      );
+      renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: many, spaces: [] }, onRefresh: vi.fn() });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Trip 14' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for Trip 14' }));
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Move to…' }));
+      const dialog = within(await screen.findByRole('dialog', { name: /Move “Trip 14”/ }));
+
+      // Top level, then the newest ten: Trip 14 down to Trip 05.
+      expect(dialog.getAllByRole('radio')).toHaveLength(11);
+      expect(dialog.queryByRole('radio', { name: /Trip 04/ })).toBeNull();
+
+      await fireEvent.input(dialog.getByRole('searchbox', { name: 'Find a collection' }), {
+        target: { value: 'trip 04' },
+      });
+      expect(dialog.getByRole('radio', { name: /Trip 04/ })).toBeEnabled();
+    });
+  });
+
+  describe('choosing several albums', () => {
+    const choose = async (...names: string[]) => {
+      await fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+      for (const name of names) {
+        await fireEvent.click(screen.getByRole('checkbox', { name: `Select “${name}”` }));
+      }
+      const bar = within(screen.getByRole('toolbar', { name: 'Actions for the chosen albums' }));
+      expect(bar.getByRole('status')).toHaveTextContent(`${names.length} selected`);
+      return bar;
+    };
+
+    it('moves every chosen album into the collection picked once', async () => {
+      const onRefresh = vi.fn();
+      const trips = owned({ id: 'trips', albumName: 'Trips', kind: AlbumKind.Collection });
+      sdkMock.moveAlbumToCollection.mockResolvedValue(rockies);
+      renderWithTooltips(AlbumDirectory, {
+        tree: {
+          ...tree,
+          collections: [...tree.collections, { collection: trips, albums: [], albumCount: 0, assetCount: 0 }],
+        },
+        onRefresh,
+      });
+
+      const bar = await choose('Summer in the Rockies', 'Winter 2026');
+      await fireEvent.click(bar.getByRole('button', { name: /Move to…/ }));
+      const dialog = within(await screen.findByRole('dialog', { name: 'Move 2 albums' }));
+      await fireEvent.input(dialog.getByRole('searchbox', { name: 'Find a collection' }), {
+        target: { value: 'trips' },
+      });
+      await fireEvent.click(dialog.getByRole('radio', { name: /Trips/ }));
+      await fireEvent.submit(dialog.getByRole('button', { name: 'Move here' }).closest('form')!);
+
+      await waitFor(() => expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledTimes(2));
+      expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
+        id: 'winter',
+        moveAlbumDto: { collectionId: 'trips', expectedParentId: 'family' },
+      });
+      // One refresh for the lot, not one per album.
+      await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+    });
+
+    it('merges the chosen albums into one of them, leaving that one out of the merge', async () => {
+      sdkMock.mergeAlbumsInto.mockResolvedValue({ runId: 'run-many', winnerId: 'winter' });
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+      const bar = await choose('Summer in the Rockies', 'Winter 2026');
+      await fireEvent.click(bar.getByRole('button', { name: /Merge into…/ }));
+      const dialog = within(await screen.findByRole('dialog', { name: 'Merge 2 albums into…' }));
+      await fireEvent.click(dialog.getByRole('radio', { name: /Winter 2026/ }));
+      await fireEvent.submit(dialog.getByRole('button', { name: 'Merge 1 album' }).closest('form')!);
+
+      await waitFor(() =>
+        expect(sdkMock.mergeAlbumsInto).toHaveBeenCalledWith({
+          id: 'winter',
+          albumMergeIntoDto: { otherIds: ['rockies'] },
+        }),
+      );
+    });
+
+    it('opens one menu for all the chosen albums on a right-click on one of them', async () => {
+      sdkMock.mergeAlbumsInto.mockResolvedValue({ runId: 'run-many', winnerId: 'rockies' });
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+      await choose('Summer in the Rockies', 'Winter 2026');
+
+      const tile = document.querySelector('article[aria-label="Winter 2026"]') as HTMLElement;
+      await fireEvent.contextMenu(tile, { clientX: 60, clientY: 90 });
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for the chosen albums' }));
+      expect(screen.queryByRole('menu', { name: 'Actions for Winter 2026' })).toBeNull();
+      await fireEvent.click(menu.getByRole('menuitem', { name: /Merge into…/ }));
+
+      expect(await screen.findByRole('dialog', { name: 'Merge 2 albums into…' })).toBeInTheDocument();
+    });
+
+    it('keeps an album’s own menu on a right-click on an album that is not chosen', async () => {
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+      await choose('Summer in the Rockies', 'Winter 2026');
+
+      const tile = document.querySelector('article[aria-label="Trail camera"]') as HTMLElement;
+      await fireEvent.contextMenu(tile, { clientX: 60, clientY: 90 });
+
+      expect(await screen.findByRole('menu', { name: 'Actions for Trail camera' })).toBeInTheDocument();
+      expect(screen.queryByRole('menu', { name: 'Actions for the chosen albums' })).toBeNull();
+    });
+
+    it('starts choosing with a Ctrl- or Cmd-click on a tile, without opening the album', async () => {
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+      const cover = within(screen.getByRole('article', { name: 'Summer in the Rockies' })).getAllByRole('link')[0];
+      const opened = fireEvent.click(cover, { metaKey: true });
+      expect(await opened).toBe(false);
+      await fireEvent.click(screen.getByRole('article', { name: 'Winter 2026' }), { ctrlKey: true });
+
+      const bar = within(screen.getByRole('toolbar', { name: 'Actions for the chosen albums' }));
+      expect(bar.getByRole('status')).toHaveTextContent('2 selected');
+      expect(screen.getByRole('checkbox', { name: 'Select “Summer in the Rockies”' })).toBeChecked();
+
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select “Winter 2026”' }), { metaKey: true });
+      expect(bar.getByRole('status')).toHaveTextContent('1 selected');
+    });
+
+    it('offers no merge or lock while a smart album someone else owns is chosen', async () => {
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+      const bar = await choose('Summer in the Rockies', 'Trail camera');
+      expect(bar.getByRole('button', { name: /Merge into…/ })).toBeDisabled();
+      expect(bar.getByRole('button', { name: /Move to…/ })).toBeDisabled();
+      expect(bar.getByRole('button', { name: /Lock album…/ })).toBeDisabled();
+    });
+  });
+
   describe('Merge with…', () => {
     const openMenu = async (name: string) => {
       await fireEvent.click(screen.getByRole('button', { name: `Actions for ${name}` }));
@@ -798,7 +935,7 @@ describe('AlbumDirectory', () => {
     await fireEvent.click(menu.getByRole('menuitem', { name: 'Move to…' }));
     const dialog = within(await screen.findByRole('dialog', { name: /Move “Family”/ }));
 
-    const self = dialog.getByRole('radio', { name: /^Family/ });
+    const self = dialog.getByRole('radio', { name: /^Family This is the one/ });
     expect(self).toBeDisabled();
     expect(self).toHaveAccessibleDescription('This is the one you’re moving');
     const inside = dialog.getByRole('radio', { name: /Summer in the Rockies/ });

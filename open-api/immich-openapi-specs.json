@@ -13074,6 +13074,73 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/albums/{id}/merge-into": {
+      "post": {
+        "description": "Merge other albums you own into this album, which keeps its name and icon whatever its size. No photos leave your library. One Undo brings them all back for 30 days.",
+        "operationId": "mergeAlbumsInto",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumMergeIntoDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumMergeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Merge albums into this one",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/{id}/merge/{otherId}": {
       "get": {
         "description": "Which album will keep its name and icon, how many photos the merged album will hold that this session may see, and whether either is shared.",
@@ -70301,6 +70368,25 @@
         },
         "required": [
           "otherId"
+        ],
+        "type": "object"
+      },
+      "AlbumMergeIntoDto": {
+        "properties": {
+          "otherIds": {
+            "description": "The albums to merge into this one. This album may be listed too; it is left out.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "otherIds"
         ],
         "type": "object"
       },

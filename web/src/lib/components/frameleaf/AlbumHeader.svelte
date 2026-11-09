@@ -1085,7 +1085,7 @@
 {#if moveOpen}
   <AlbumMoveDialog
     bind:open={moveOpen}
-    {album}
+    moving={[album]}
     albums={collections}
     busy={moving}
     onMove={(parentId) => void moveCollection(parentId)}

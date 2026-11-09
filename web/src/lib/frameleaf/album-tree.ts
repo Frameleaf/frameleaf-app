@@ -144,7 +144,12 @@ export const descendantIds = (albums: Pick<AlbumResponseDto, 'id' | 'parentId'>[
   const children = new Map<string, string[]>();
   for (const album of albums) {
     if (album.parentId) {
-      children.set(album.parentId, [...(children.get(album.parentId) ?? []), album.id]);
+      const siblings = children.get(album.parentId);
+      if (siblings) {
+        siblings.push(album.id);
+      } else {
+        children.set(album.parentId, [album.id]);
+      }
     }
   }
   const found = new Set<string>();
@@ -161,12 +166,14 @@ export const descendantIds = (albums: Pick<AlbumResponseDto, 'id' | 'parentId'>[
 };
 
 /** The names above an album, outermost first, for a search result's path ("Brand › Spring"). */
+type AncestorRow = Pick<AlbumResponseDto, 'id' | 'parentId' | 'albumName'>;
 export const albumAncestorNames = (
-  albums: Pick<AlbumResponseDto, 'id' | 'parentId' | 'albumName'>[],
+  albums: AncestorRow[] | ReadonlyMap<string, AncestorRow>,
   albumId: string,
   unnamed = '',
 ): string[] => {
-  const byId = new Map(albums.map((album) => [album.id, album]));
+  // A picker listing many results passes one map, so each path is a short walk, not a rebuild.
+  const byId = albums instanceof Map ? albums : new Map((albums as AncestorRow[]).map((album) => [album.id, album]));
   const names: string[] = [];
   const seen = new Set([albumId]);
   let parentId = byId.get(albumId)?.parentId;
@@ -208,7 +215,12 @@ export const albumPickerTree = (albums: AlbumResponseDto[]): AlbumPickerNode[] =
   const byParent = new Map<string | null, AlbumResponseDto[]>();
   for (const album of albums) {
     const key = album.parentId && ids.has(album.parentId) ? album.parentId : null;
-    byParent.set(key, [...(byParent.get(key) ?? []), album]);
+    const siblings = byParent.get(key);
+    if (siblings) {
+      siblings.push(album);
+    } else {
+      byParent.set(key, [album]);
+    }
   }
   const build = (parentId: string | null, seen: Set<string>): AlbumPickerNode[] =>
     (byParent.get(parentId) ?? [])

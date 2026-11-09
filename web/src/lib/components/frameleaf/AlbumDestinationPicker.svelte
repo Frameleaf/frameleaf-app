@@ -28,7 +28,15 @@
     refusal?: (album: AlbumResponseDto) => string | null;
     name?: string;
     label?: string;
+    /**
+     * Large libraries: before anything is typed, list only this many most recently changed albums
+     * (and the current choice) instead of the whole tree; typing searches every album.
+     */
+    recent?: number;
   }
+
+  /** Search results drawn at once; typing more narrows them. */
+  const RESULT_LIMIT = 50;
 
   let {
     albums,
@@ -39,12 +47,28 @@
     refusal = () => null,
     name = 'album-destination',
     label,
+    recent,
   }: Props = $props();
 
   let query = $state('');
-  const tree = $derived(albumPickerTree(albums));
+  const byId = $derived(new Map(albums.map((album) => [album.id, album])));
+  const parentIds = $derived(new Set(albums.map(({ parentId }) => parentId)));
+  const tree = $derived(recent ? [] : albumPickerTree(albums));
   const searching = $derived(query.trim().length > 0);
-  const matches = $derived(searching ? searchAlbums(albums, query) : []);
+  const allMatches = $derived(searching ? searchAlbums(albums, query) : []);
+  const matches = $derived(allMatches.slice(0, RESULT_LIMIT));
+  /** The current choice first, then the most recently changed albums. */
+  const recentAlbums = $derived.by(() => {
+    if (!recent) {
+      return [];
+    }
+    const current = value ? byId.get(value) : undefined;
+    const latest = albums
+      .filter(({ id }) => id !== current?.id)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, recent);
+    return current ? [current, ...latest] : latest;
+  });
 
   /** Open by default: the top level, and every collection above the current choice. */
   const open = new SvelteSet<string>();
@@ -55,7 +79,6 @@
       for (const root of roots) {
         open.add(root.album.id);
       }
-      const byId = new Map(albums.map((album) => [album.id, album]));
       let parentId = current ? byId.get(current)?.parentId : undefined;
       const seen = new Set<string>();
       while (parentId && !seen.has(parentId)) {
@@ -146,20 +169,29 @@
         </label>
       </div>
     {/if}
-    {#if searching}
+    {#snippet flat(list: AlbumResponseDto[])}
       <ul class="tree">
-        {#each matches as album (album.id)}
+        {#each list as album (album.id)}
           <li>
-            {@render choice(
-              album,
-              albums.some(({ parentId }) => parentId === album.id),
-              albumAncestorNames(albums, album.id, unnamed),
-            )}
+            {@render choice(album, parentIds.has(album.id), albumAncestorNames(byId, album.id, unnamed))}
           </li>
-        {:else}
-          <li class="empty" role="status">{$t('frameleaf_boards_no_collection_called', { values: { query } })}</li>
         {/each}
       </ul>
+    {/snippet}
+    {#if searching}
+      {#if matches.length > 0}
+        {@render flat(matches)}
+        {#if allMatches.length > matches.length}
+          <p class="empty" role="status">
+            {$t('frameleaf_albums_picker_more', { values: { count: allMatches.length - matches.length } })}
+          </p>
+        {/if}
+      {:else}
+        <p class="empty" role="status">{$t('frameleaf_boards_no_collection_called', { values: { query } })}</p>
+      {/if}
+    {:else if recent && recentAlbums.length > 0}
+      <p class="hint">{$t('frameleaf_albums_picker_recent')}</p>
+      {@render flat(recentAlbums)}
     {:else if tree.length > 0}
       {@render branch(tree, 0)}
     {:else}
@@ -311,6 +343,12 @@
   }
   .count {
     flex-shrink: 0;
+  }
+  .hint {
+    margin: 0;
+    padding: 0.5rem 0.5rem 0.25rem;
+    color: var(--fl-muted);
+    font-size: 0.75rem;
   }
   .empty {
     margin: 0;

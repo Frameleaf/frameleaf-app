@@ -7,6 +7,7 @@ import {
   AlbumChangeUndoDto,
   AlbumChangeUndoResponseDto,
   AlbumMergeDto,
+  AlbumMergeIntoDto,
   AlbumMergePreviewParamDto,
   AlbumMergePreviewResponseDto,
   AlbumMergeResponseDto,
@@ -85,5 +86,22 @@ export class AlbumMergeController {
     @Body() dto: AlbumMergeDto,
   ): Promise<AlbumMergeResponseDto> {
     return this.merge.merge(auth, id, dto);
+  }
+
+  @Post(':id/merge-into')
+  @Authenticated({ permission: Permission.AlbumDelete })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Merge albums into this one',
+    description:
+      'Merge other albums you own into this album, which keeps its name and icon whatever its size. No photos leave your library. One Undo brings them all back for 30 days.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  mergeAlbumsInto(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AlbumMergeIntoDto,
+  ): Promise<AlbumMergeResponseDto> {
+    return this.merge.mergeMany(auth, id, dto);
   }
 }
