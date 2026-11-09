@@ -144,6 +144,22 @@ test('a drive report that never answers does not hold up the review', async () =
   }
 });
 
+test('an import asks for a suggested drive with room for its own database', async () => {
+  const f = await fixture(fastReport);
+  try {
+    const asked: { databaseBytes?: number }[] = [];
+    const report = f.operations.driveReport!;
+    f.operations.driveReport = (sizes) => (asked.push(sizes), report(sizes));
+    // The reviewed source stands in for discovery: a 7 GB database, with its photos in a folder that exists.
+    const source = { summary: { databaseBytes: 7 * GB }, mounts: [{ type: 'bind', source: f.array, target: '/data', readOnly: false }] };
+    (f.operations as unknown as { reviewedSource: () => Promise<unknown> }).reviewedSource = async () => ({ source, backup: null });
+    await f.operations.review({ ...f.input, kind: 'import', sourceId: 'a'.repeat(64), mediaPath: undefined });
+    assert.deepEqual(asked, [{ databaseBytes: 21 * GB }], 'three times the source database, as the database check needs');
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('thumbnails: with the photos by default, or a folder of their own the review creates and checks', async () => {
   const f = await fixture(fastReport);
   try {
