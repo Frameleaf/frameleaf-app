@@ -100,8 +100,8 @@ export class StudioTranscriptionDto extends createZodDto(
           sourceStart: Seconds.describe('Where the clip started in its source, in seconds'),
           speed: Seconds.describe("The clip's speed factor"),
         })
-        .nullable()
         .meta({ id: 'StudioTranscriptionPlacement' })
+        .nullable()
         .describe('Where the clip sat in the transcribed revision; present for Frameleaf Cloud jobs'),
     })
     .meta({ id: 'StudioTranscriptionDto' }),

@@ -149852,8 +149852,13 @@
             "type": "string"
           },
           "placement": {
-            "$ref": "#/components/schemas/StudioTranscriptionPlacement",
-            "description": "Where the clip sat in the transcribed revision; present for Frameleaf Cloud jobs"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioTranscriptionPlacement"
+              }
+            ],
+            "description": "Where the clip sat in the transcribed revision; present for Frameleaf Cloud jobs",
+            "nullable": true
           },
           "progress": {
             "format": "double",
@@ -149933,7 +149938,6 @@
         "type": "object"
       },
       "StudioTranscriptionPlacement": {
-        "nullable": true,
         "properties": {
           "sourceStart": {
             "$ref": "#/components/schemas/StudioTranscriptionTime",

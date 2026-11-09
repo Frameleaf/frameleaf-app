@@ -17677,7 +17677,7 @@ export type StudioTranscriptionPlacement = {
     speed: StudioTranscriptionTime;
     /** Where the clip started on the main sequence */
     start: StudioTranscriptionTime;
-} | null;
+};
 export type StudioTranscriptionCue = {
     end: StudioTranscriptionTime;
     start: StudioTranscriptionTime;
@@ -17710,7 +17710,7 @@ export type StudioTranscriptionDto = {
     /** The language asked for (`auto` or a BCP 47 tag) */
     language: string;
     /** Where the clip sat in the transcribed revision; present for Frameleaf Cloud jobs */
-    placement: StudioTranscriptionPlacement;
+    placement: (StudioTranscriptionPlacement) | null;
     progress: number;
     projectId: string;
     /** Present once the job has completed */
