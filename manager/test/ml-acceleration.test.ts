@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { configureUnraidCompose, detectAcceleration, detectTranscoding, releaseImages, renderCompose } from '../src/compose.js';
+import { checkHost, detectPlatform } from '../src/server-check.js';
 import type { Installation } from '../src/contracts.js';
 import type { VerifiedRelease } from '../src/releases.js';
 
@@ -124,7 +125,18 @@ test('the ML service uses the attested variant digest with its device passthroug
     const transcoding = await detectTranscoding();
     assert.deepEqual(unraid.services['frameleaf-server'].devices, transcoding.devices ?? []);
     assert.deepEqual(unraid.services['frameleaf-server'].deploy, transcoding.deploy);
+    // FL-1318: Unraid found from docker.cfg, without MANAGER_PLATFORM, gets the same Unraid stack as Check this server.
+    delete process.env.MANAGER_PLATFORM;
+    await ml('openvino');
+    const plain = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
+    assert.equal(plain.services['frameleaf-server'].labels['net.unraid.docker.managed'], undefined);
+    detectPlatform('unraid');
+    assert.equal(checkHost(), 'unraid');
+    await ml('openvino');
+    const detected = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
+    assert.equal(detected.services['frameleaf-server'].labels['net.unraid.docker.managed'], 'dockerman');
   } finally {
+    detectPlatform(undefined);
     delete process.env.MANAGER_PLATFORM;
     await rm(folder, { recursive: true, force: true });
   }

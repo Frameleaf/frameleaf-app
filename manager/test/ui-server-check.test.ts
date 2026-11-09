@@ -1,7 +1,7 @@
 // FL-1317 Check this server wording: fixes the owner can actually make, for every host.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkRows, checkSummary, type CheckContext, type CheckHost } from '../ui/src/server-check.js';
+import { checkOrder, checkRows, checkSummary, type CheckContext, type CheckHost } from '../ui/src/server-check.js';
 
 const context = (host: CheckHost, chosen: CheckContext['chosen'], folderSetup = true): CheckContext => ({
   host,
@@ -82,4 +82,58 @@ test('warnings and unknowns never block; problems lead the summary', () => {
   assert.equal(rows[0].value, 'Docker 27.5');
   assert.equal(rows[1].title, 'Couldn’t check the port');
   assert.deepEqual(checkSummary(rows), { problems: 0, notes: 1, title: 'This server is ready', lead: 'Frameleaf can install. There’s one thing worth knowing first.' });
+});
+
+// FL-1318: the prototype's rows for Docker's storage, downloads, memory and Unraid's Docker tab.
+const GB = 1024 ** 3;
+test('Docker’s storage: what is needed and free, the fix for each host, and “couldn’t check”', () => {
+  const [ok] = checkRows([{ id: 'room', status: 'ok', facts: { needed: 8 * GB, free: 31 * GB } }], context('unraid', []));
+  assert.deepEqual([ok.label, ok.value], ['Room for Frameleaf', '8 GB needed · 31 GB free']);
+  for (const host of ['unraid', 'truenas', 'hexos', 'linux'] as const) {
+    const [full] = checkRows([{ id: 'room', status: 'problem', code: 'insufficient_docker_space', facts: { needed: 8 * GB, free: 3.1 * GB } }], context(host, []));
+    assert.equal(full.title, 'Not enough room in Docker’s storage');
+    assert.equal(full.detail, 'Frameleaf needs about 8 GB there, and only 3.1 GB is free.');
+    assert.ok(full.steps?.length, host);
+  }
+  const [unraid] = checkRows([{ id: 'room', status: 'problem', code: 'insufficient_docker_space', facts: { needed: 4 * GB, free: GB } }], context('unraid', []));
+  assert.match(unraid.steps![1], /Docker vDisk size/);
+  const [unknown] = checkRows([{ id: 'room', status: 'unknown', code: 'docker_storage_unreadable', facts: { needed: 4 * GB } }], context('linux', []));
+  assert.equal(unknown.title, 'Couldn’t check Docker’s storage');
+  assert.equal(unknown.action?.kind, 'recheck');
+});
+
+test('downloads name the host that didn’t answer', () => {
+  const [ok] = checkRows([{ id: 'downloads', status: 'ok' }], context('linux', []));
+  assert.equal(ok.value, 'Frameleaf’s download server answered');
+  for (const host of ['ghcr.io', 'github.com']) {
+    const [row] = checkRows([{ id: 'downloads', status: 'problem', code: 'download_host_unreachable', detail: host }], context('truenas', []));
+    assert.equal(row.title, 'Manager can’t reach Frameleaf’s downloads');
+    assert.equal(row.detail, `This server couldn’t connect to ${host}, where Frameleaf is downloaded from.`);
+    assert.deepEqual(row.steps, ['Check this server is connected to the internet.', 'If your network uses a VPN, DNS filter or ad blocker, allow ghcr.io and github.com.']);
+  }
+});
+
+test('low memory offers to turn off faces and smart search, except on a restore', () => {
+  const low = { id: 'memory', status: 'warning' as const, code: 'low_memory', facts: { bytes: 3.8 * GB, ml: true } };
+  const [row] = checkRows([low], context('hexos', []));
+  assert.equal(row.title, 'This server has 4 GB of memory');
+  assert.equal(row.detail, 'Frameleaf will work, but faces and smart search can run out of memory with less than 8 GB.');
+  assert.deepEqual(row.action, { kind: 'ml', label: 'Turn off faces and smart search' });
+  assert.equal(checkRows([low], { ...context('hexos', []), fixedMl: true })[0].action, undefined);
+  assert.equal(checkRows([{ id: 'memory', status: 'ok', facts: { bytes: 32 * GB } }], context('linux', []))[0].value, '32 GB');
+  assert.equal(checkRows([{ id: 'memory', status: 'unknown', code: 'memory_unknown' }], context('linux', []))[0].title, 'Couldn’t check memory');
+  assert.equal(checkSummary(checkRows([low], context('hexos', []))).problems, 0);
+});
+
+test('Unraid’s Docker tab is a warning with the path to add', () => {
+  const [row] = checkRows([{ id: 'unraid', status: 'warning', code: 'dockerman_templates_unmapped' }], context('unraid', []));
+  assert.equal(row.label, 'Unraid Docker tab');
+  assert.equal(row.title, 'Frameleaf won’t be editable from Unraid’s Docker tab');
+  assert.match(row.steps!.at(-1)!, /\/run\/frameleaf-host\/templates-user/);
+  assert.equal(checkRows([{ id: 'unraid', status: 'ok' }], context('unraid', []))[0].value, 'Ready');
+});
+
+test('the running list follows the prototype’s order and shows Unraid’s Docker tab only on Unraid', () => {
+  assert.deepEqual(checkOrder('install', false, 'unraid'), ['docker', 'room', 'media', 'database', 'backups', 'manager', 'port', 'downloads', 'release', 'memory', 'unraid']);
+  assert.deepEqual(checkOrder('restore', false, 'linux'), ['docker', 'room', 'media', 'database', 'port', 'downloads', 'release', 'memory']);
 });
