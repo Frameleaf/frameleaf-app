@@ -343,11 +343,13 @@ export class Docker {
     for (const service of services) delete service.container_name;
     await atomicJson(path, compose);
   }
-  async inventory(): Promise<Container[]> {
+  /** Every container, mounts as Manager sees them; `onHost` keeps Docker's own host paths (FL-1322). */
+  async inventory(onHost = false): Promise<Container[]> {
     const ids = (await this.execute('docker', ['ps', '-aq', '--no-trunc'])).trim().split('\n').filter(Boolean);
     if (!ids.length) return [];
     ids.forEach((id) => containerId.parse(id));
-    return (JSON.parse(await this.execute('docker', ['inspect', ...ids])) as Container[]).map(containerView);
+    const containers = JSON.parse(await this.execute('docker', ['inspect', ...ids])) as Container[];
+    return onHost ? containers : containers.map(containerView);
   }
   async inspect(id: string): Promise<Container> {
     containerId.parse(id);

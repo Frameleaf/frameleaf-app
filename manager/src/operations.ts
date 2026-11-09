@@ -21,7 +21,7 @@ import { containerNumber } from './dockerman.js';
 import { ApplicationConfig, checkServiceOverrides, detectAcceleration, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
-import { toContainer, toHost } from './host-paths.js';
+import { toHost } from './host-paths.js';
 import { hostRealpaths, type HostRealpaths } from './host-realpath.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
 import { Retention } from './retention.js';
@@ -2453,12 +2453,13 @@ export class Operations {
     // Any container (running or stopped: it can start later) that maps this folder, something inside it, or a folder
     // above it may use these files. Manager's own containers map the database parent and never use PGDATA; this
     // library's stack maps only its media and the database in use (checked above), so only its mappings of this
-    // folder or inside it count. Each side is compared as reported, as the host and Manager name it, Manager's view
-    // with links resolved, and the host's own resolution, which follows links outside Manager's mappings. A path
-    // the host can't resolve could lead anywhere, so the folder is kept rather than compared by its spelling.
-    const containers = (await this.docker.inventory()).filter((c) => c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller');
+    // folder or inside it count. Everything is compared on the host: the folder's host path and each container's
+    // own host source (Docker's, never Manager's translation of it), both resolved by the host with links followed.
+    // A path the host can't resolve could lead anywhere, so the folder is kept rather than compared by spelling.
+    const containers = (await this.docker.inventory(true)).filter((c) => c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller');
     const sources = [...new Set(containers.flatMap((c) => c.Mounts.map((m) => m.Source).filter((source) => source?.startsWith('/'))))];
-    const resolved = await this.hostRealpaths([path, ...sources]);
+    const onHost = toHost(path);
+    const resolved = await this.hostRealpaths([onHost, ...sources]);
     const unresolved = resolved && containers.find((c) => c.Mounts.some((m) => resolved[sources.indexOf(m.Source) + 1] === null));
     if (!resolved || resolved[0] === null || unresolved)
       throw new Refusal(
@@ -2466,19 +2467,17 @@ export class Operations {
         409,
         unresolved ? `Manager could not tell where a folder container ${unresolved.Name.replace(/^\//, '')} maps really is.` : undefined,
       );
-    const onHost = new Map(sources.map((source, i) => [source, resolved[i + 1]!]));
-    const spellings = async (value: string, host: string) => [
-      ...new Set([value, toHost(value), toContainer(value), host, ...(await Promise.all([value, toContainer(value)].map((v) => realpath(v).catch(() => v))))]),
-    ];
-    const names = await spellings(path, resolved[0]);
-    let user: (typeof containers)[number] | undefined;
-    for (const c of containers) {
+    const names = [onHost, resolved[0]];
+    const user = containers.find((c) => {
       const own = c.Config.Labels?.['app.frameleaf.manager'] === installation.id;
-      for (const m of c.Mounts)
-        if (m.Source?.startsWith('/'))
-          for (const source of await spellings(m.Source, onHost.get(m.Source)!))
-            if (names.some((f) => inside(source, f) || (!own && inside(f, source)))) user ??= c;
-    }
+      return c.Mounts.some(
+        (m) =>
+          m.Source?.startsWith('/') &&
+          [m.Source, resolved[sources.indexOf(m.Source) + 1]!].some((source) =>
+            names.some((f) => inside(source, f) || (!own && inside(f, source))),
+          ),
+      );
+    });
     if (user) throw new Refusal('database_folder_in_use', 409, `Container ${user.Name.replace(/^\//, '')} maps this folder.`);
     await this.docker.sql(await this.targetDatabase(installation), 'SELECT 1;').catch(() => {
       throw new Refusal('database_unconfirmed');
