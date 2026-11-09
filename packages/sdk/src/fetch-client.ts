@@ -5114,6 +5114,10 @@ export type AlbumMergeResponseDto = {
     /** The album that stayed */
     winnerId: string;
 };
+export type AlbumMergeIntoDto = {
+    /** The albums to merge into this one. This album may be listed too; it is left out. */
+    otherIds: string[];
+};
 export type AlbumMergePreviewResponseDto = {
     /** Of those, how many are in both albums */
     inBoth: number;
@@ -24456,6 +24460,22 @@ export function mergeAlbum({ id, albumMergeDto }: {
         ...opts,
         method: "POST",
         body: albumMergeDto
+    })));
+}
+/**
+ * Merge albums into this one
+ */
+export function mergeAlbumsInto({ id, albumMergeIntoDto }: {
+    id: string;
+    albumMergeIntoDto: AlbumMergeIntoDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumMergeResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/merge-into`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumMergeIntoDto
     })));
 }
 /**

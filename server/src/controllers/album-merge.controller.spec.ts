@@ -72,6 +72,29 @@ describe(AlbumMergeController.name, () => {
     });
   });
 
+  describe('POST /albums/:id/merge-into', () => {
+    it('requires at least one album', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post(`/albums/${newUuid()}/merge-into`)
+        .send({ otherIds: [] });
+      expect(status).toBe(400);
+      expect(merge.mergeMany).not.toHaveBeenCalled();
+    });
+
+    it('passes the album that stays and the others through', async () => {
+      const [id, otherId, runId] = [newUuid(), newUuid(), newUuid()];
+      merge.mergeMany.mockResolvedValue({ runId, winnerId: id });
+
+      const { status, body } = await request(ctx.getHttpServer())
+        .post(`/albums/${id}/merge-into`)
+        .send({ otherIds: [id, otherId] });
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ runId, winnerId: id });
+      expect(merge.mergeMany).toHaveBeenCalledWith(undefined, id, { otherIds: [id, otherId] });
+    });
+  });
+
   it('POST /albums/change-runs/latest/undo answers 200 with what it did', async () => {
     runs.undoLatest.mockResolvedValue({ reversed: 3, skipped: ['Beach'] });
 

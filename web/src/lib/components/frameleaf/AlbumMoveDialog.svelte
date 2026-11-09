@@ -1,54 +1,70 @@
 <script lang="ts">
   import AlbumDestinationPicker from '$lib/components/frameleaf/AlbumDestinationPicker.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { moveRefusal } from '$lib/frameleaf/album-tree';
+  import { descendantIds } from '$lib/frameleaf/album-tree';
   import type { AlbumResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   /**
    * Keyboard and touch alternative to dragging (prototype `MoveCollectionDialog`, README point 2):
-   * move an album or collection into another one the user can edit, or up to the top level.
-   * The same searchable tree as every other picker, each in its own icon and colour. The album
-   * itself and everything inside it stay listed but cannot be chosen, and say why.
+   * move one album or collection, or several chosen on the Albums page, into another one the user
+   * can edit, or up to the top level. Before anything is typed it lists the most recently changed
+   * albums, so a library of thousands opens at once; typing searches them all. The albums being
+   * moved and everything inside them stay listed but cannot be chosen, and say why.
    */
   interface Props {
-    album: AlbumResponseDto;
-    /** Albums and collections the user may move into (the album and its own descendants included). */
+    /** The albums being moved (one from a menu, several from a selection). */
+    moving: AlbumResponseDto[];
+    /** Albums and collections the user may move into (the albums and their own descendants included). */
     albums: AlbumResponseDto[];
     open?: boolean;
     busy?: boolean;
     onMove: (collectionId: string | null) => void;
   }
 
-  let { album, albums, open = $bindable(false), busy = false, onMove }: Props = $props();
+  /** Albums listed before the person types. */
+  const RECENT = 10;
 
-  let selected = $state<string | null>(album.parentId);
-  const name = $derived(album.albumName || $t('unnamed_album'));
-  const unchanged = $derived(selected === album.parentId);
-  const candidates = $derived(albums.some(({ id }) => id === album.id) ? albums : [...albums, album]);
+  let { moving, albums, open = $bindable(false), busy = false, onMove }: Props = $props();
+
+  let selected = $state<string | null>(null);
+  const title = $derived(
+    moving.length === 1
+      ? $t('frameleaf_albums_move_title', { values: { name: moving[0].albumName || $t('unnamed_album') } })
+      : $t('frameleaf_albums_move_many_title', { values: { count: moving.length } }),
+  );
+  const unchanged = $derived(moving.every(({ parentId }) => parentId === selected));
+  const candidates = $derived.by(() => {
+    const ids = new Set(albums.map(({ id }) => id));
+    return [...albums, ...moving.filter(({ id }) => !ids.has(id))];
+  });
+  const movingIds = $derived(new Set(moving.map(({ id }) => id)));
+  /** Worked out once per open, not once per row: thousands of rows would make it slow. */
+  const inside = $derived.by(() => {
+    const found = new Set<string>();
+    for (const { id } of moving) {
+      for (const child of descendantIds(candidates, id)) {
+        found.add(child);
+      }
+    }
+    return found;
+  });
 
   $effect(() => {
     if (open) {
-      selected = album.parentId;
+      selected = moving[0]?.parentId ?? null;
     }
   });
 
-  const refusal = (target: AlbumResponseDto) => {
-    switch (moveRefusal(candidates, album.id, target.id)) {
-      case 'self': {
-        return $t('frameleaf_boards_move_refuse_self');
-      }
-      case 'inside': {
-        return $t('frameleaf_boards_move_refuse_inside');
-      }
-      default: {
-        return null;
-      }
-    }
-  };
+  const refusal = (target: AlbumResponseDto) =>
+    movingIds.has(target.id)
+      ? $t('frameleaf_boards_move_refuse_self')
+      : inside.has(target.id)
+        ? $t('frameleaf_boards_move_refuse_inside')
+        : null;
 </script>
 
-<Dialog title={$t('frameleaf_albums_move_title', { values: { name } })} closeLabel={$t('close')} bind:open>
+<Dialog {title} closeLabel={$t('close')} bind:open>
   <form
     class="move"
     onsubmit={(event) => {
@@ -62,7 +78,8 @@
       onChange={(id) => (selected = id)}
       allowTop
       {refusal}
-      name="album-move-{album.id}"
+      recent={RECENT}
+      name="album-move-{moving[0]?.id ?? 'none'}"
       label={$t('frameleaf_albums_move_to')}
     />
     <p class="note">{$t('frameleaf_boards_move_note')}</p>

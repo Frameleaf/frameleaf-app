@@ -4,6 +4,7 @@
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumMergeDialog from '$lib/components/frameleaf/AlbumMergeDialog.svelte';
+  import AlbumMergeIntoDialog from '$lib/components/frameleaf/AlbumMergeIntoDialog.svelte';
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
   import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
@@ -40,7 +41,11 @@
     createClassificationRule,
     isHttpError,
     getClassificationRule,
+    deleteAlbum,
     mergeAlbum,
+    mergeAlbumsInto,
+    moveAlbumToCollection,
+    updateAlbumInfo,
     undoLatestAlbumChangeRun,
     type AlbumResponseDto,
     type AlbumTreeResponseDto,
@@ -101,7 +106,10 @@
     parentId: null,
     smart: false,
   });
-  let moveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
+  let moveDialog = $state<{ open: boolean; albums: AlbumResponseDto[] }>({ open: false, albums: [] });
+  let mergeIntoDialog = $state<{ open: boolean; albums: AlbumResponseDto[] }>({ open: false, albums: [] });
+  let bulkDeleteDialog = $state<{ open: boolean; albums: AlbumResponseDto[] }>({ open: false, albums: [] });
+  let bulkLockDialog = $state<{ open: boolean; albums: AlbumResponseDto[] }>({ open: false, albums: [] });
   let mergeDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let deleteDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let leaveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
@@ -202,7 +210,7 @@
       const moved = await handleMoveAlbumToCollection(album, parentId);
       if (moved === 'stale') {
         onStale?.();
-        moveDialog = { open: false };
+        moveDialog = { open: false, albums: [] };
         await refresh();
         return;
       }
@@ -217,7 +225,7 @@
         // Undo moves it back from where it now is; the refreshed tree has the album's new parent.
         undoable ? () => void move({ ...album, parentId }, previousParentId, false) : undefined,
       );
-      moveDialog = { open: false };
+      moveDialog = { open: false, albums: [] };
       await refresh();
     } finally {
       busy = false;
@@ -225,7 +233,120 @@
   };
 
   export const openMove = (album: AlbumResponseDto) => {
-    moveDialog = { open: true, album };
+    moveDialog = { open: true, albums: [album] };
+  };
+
+  /* ---- several albums chosen on the Albums page ---- */
+  /**
+   * Runs one change per album, then refreshes once. The SDK is called directly so the page is not
+   * re-fetched after every album. Returns the albums it changed; a failure stops there and says so.
+   * ponytail: one request per album; a bulk endpoint if people routinely pick hundreds.
+   */
+  const eachAlbum = async (albums: AlbumResponseDto[], change: (album: AlbumResponseDto) => Promise<unknown>) => {
+    const done: AlbumResponseDto[] = [];
+    busy = true;
+    try {
+      for (const album of albums) {
+        await change(album);
+        done.push(album);
+      }
+    } catch (error) {
+      handleError(error, $t('frameleaf_albums_bulk_failed', { values: { done: done.length, count: albums.length } }));
+    } finally {
+      busy = false;
+      await refresh();
+    }
+    return done;
+  };
+
+  export const openMoveMany = (albums: AlbumResponseDto[]) => {
+    moveDialog = { open: true, albums };
+  };
+  /** Moves each chosen album that is not already there; Undo puts each back where it was. */
+  const moveMany = async (albums: AlbumResponseDto[], parentId: string | null, undoable = true) => {
+    const moving = albums.filter((album) => album.parentId !== parentId);
+    const before = new Map(moving.map((album) => [album.id, album.parentId ?? null]));
+    const moved = await eachAlbum(moving, (album) =>
+      moveAlbumToCollection({
+        id: album.id,
+        moveAlbumDto: { collectionId: parentId, expectedParentId: album.parentId },
+      }),
+    );
+    moveDialog = { open: false, albums: [] };
+    if (moved.length === 0) {
+      return;
+    }
+    const destination = parentId ? find(parentId) : undefined;
+    announce(
+      destination
+        ? $t('frameleaf_albums_moved_many_into', { values: { count: moved.length, collection: nameOf(destination) } })
+        : $t('frameleaf_albums_moved_many_out', { values: { count: moved.length } }),
+      undoable
+        ? async () => {
+            // Each goes back to its own old parent; group them so every group is one moveMany.
+            for (const previous of new Set(before.values())) {
+              const group = moved
+                .filter(({ id }) => before.get(id) === previous)
+                .map((album) => ({ ...album, parentId }));
+              await moveMany(group, previous, false);
+            }
+          }
+        : undefined,
+    );
+  };
+
+  export const openMergeInto = (albums: AlbumResponseDto[]) => {
+    mergeIntoDialog = { open: true, albums };
+  };
+  const mergeInto = async (target: AlbumResponseDto, albums: AlbumResponseDto[]) => {
+    const otherIds = albums.filter(({ id }) => id !== target.id).map(({ id }) => id);
+    busy = true;
+    try {
+      const { runId } = await mergeAlbumsInto({ id: target.id, albumMergeIntoDto: { otherIds } });
+      announce(
+        $t('frameleaf_albums_merged_many', { values: { count: otherIds.length, winner: nameOf(target) } }),
+        () => void undoMerge(runId),
+      );
+      mergeIntoDialog = { open: false, albums: [] };
+      if (otherIds.some((id) => page.url.pathname.includes(id))) {
+        await goto(Route.viewAlbum({ id: target.id }));
+      }
+      await refresh();
+    } catch (error) {
+      handleError(error, $t('frameleaf_albums_merge_failed'));
+    } finally {
+      busy = false;
+    }
+  };
+
+  /** Locking asks first (it moves the owner's items into Locked); unlocking moves nothing. */
+  export const lockMany = (albums: AlbumResponseDto[], isLocked: boolean) => {
+    const changing = albums.filter((album) => album.isLocked !== isLocked);
+    if (isLocked) {
+      bulkLockDialog = { open: true, albums: changing };
+      return;
+    }
+    void setLockedMany(changing, false);
+  };
+  const setLockedMany = async (albums: AlbumResponseDto[], isLocked: boolean) => {
+    const done = await eachAlbum(albums, (album) => updateAlbumInfo({ id: album.id, updateAlbumDto: { isLocked } }));
+    if (done.length > 0) {
+      announce(
+        $t(isLocked ? 'frameleaf_albums_locked_many' : 'frameleaf_albums_unlocked_many', {
+          values: { count: done.length },
+        }),
+      );
+    }
+  };
+
+  export const removeMany = (albums: AlbumResponseDto[]) => {
+    bulkDeleteDialog = { open: true, albums };
+  };
+  const confirmDeleteMany = async () => {
+    const done = await eachAlbum(bulkDeleteDialog.albums, (album) => deleteAlbum({ id: album.id }));
+    if (done.length > 0) {
+      announce($t('frameleaf_albums_deleted_many', { values: { count: done.length } }));
+    }
   };
 
   export const openMerge = (album: AlbumResponseDto) => {
@@ -392,13 +513,47 @@
   onCreateSmart={createSmart}
 />
 
-{#if moveDialog.album}
+{#if moveDialog.albums.length > 0}
+  {@const albums = moveDialog.albums}
   <AlbumMoveDialog
     bind:open={moveDialog.open}
-    album={moveDialog.album}
+    moving={albums}
     albums={moveCandidates}
     {busy}
-    onMove={(parentId) => moveDialog.album && void move(moveDialog.album, parentId)}
+    onMove={(parentId) => void (albums.length === 1 ? move(albums[0], parentId) : moveMany(albums, parentId))}
+  />
+{/if}
+
+{#if mergeIntoDialog.albums.length > 0}
+  {@const albums = mergeIntoDialog.albums}
+  <AlbumMergeIntoDialog
+    bind:open={mergeIntoDialog.open}
+    merging={albums}
+    albums={mergeCandidates}
+    {busy}
+    onMerge={(target) => mergeInto(target, albums)}
+  />
+{/if}
+
+{#if bulkDeleteDialog.albums.length > 0}
+  {@const count = bulkDeleteDialog.albums.length}
+  <AlbumConfirmDialog
+    title={$t('frameleaf_albums_delete_many_title', { values: { count } })}
+    body={$t('frameleaf_albums_delete_many_body')}
+    confirmLabel={$t('frameleaf_albums_delete_many', { values: { count } })}
+    bind:open={bulkDeleteDialog.open}
+    onConfirm={confirmDeleteMany}
+  />
+{/if}
+
+{#if bulkLockDialog.albums.length > 0}
+  {@const albums = bulkLockDialog.albums}
+  <AlbumConfirmDialog
+    title={$t('frameleaf_albums_lock_many_title', { values: { count: albums.length } })}
+    body={$t('frameleaf_album_lock_body')}
+    confirmLabel={$t('frameleaf_album_options_locked')}
+    bind:open={bulkLockDialog.open}
+    onConfirm={() => setLockedMany(albums, true)}
   />
 {/if}
 

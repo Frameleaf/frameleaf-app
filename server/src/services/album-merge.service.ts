@@ -1,6 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Transaction } from 'kysely';
-import type { AlbumMergeDto, AlbumMergePreviewResponseDto, AlbumMergeResponseDto } from 'src/dtos/album-merge.dto.js';
+import type {
+  AlbumMergeDto,
+  AlbumMergeIntoDto,
+  AlbumMergePreviewResponseDto,
+  AlbumMergeResponseDto,
+} from 'src/dtos/album-merge.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AlbumChangeReversal, AlbumChangeRow } from 'src/repositories/album-change-run.repository.js';
 import type { DB } from 'src/schema/index.js';
@@ -200,6 +205,60 @@ export class AlbumMergeService extends BaseService {
     return { runId, winnerId: winner.id };
   }
 
+  /** Merge many albums into `id`, which stays whatever its size: one run, so one Undo brings them all back. */
+  async mergeMany(auth: AuthDto, id: string, dto: AlbumMergeIntoDto): Promise<AlbumMergeResponseDto> {
+    // Choosing the album that stays among the ones to merge is fine; it is simply not merged with itself.
+    const otherIds = [...new Set(dto.otherIds)].filter((otherId) => otherId !== id);
+    if (otherIds.length === 0) {
+      throw new BadRequestException('Choose at least one other album to merge');
+    }
+    // ponytail: one pair check per album (a few queries each); fine for the 100 the DTO allows.
+    const pairs = [];
+    for (const otherId of otherIds) {
+      pairs.push(await this.loadPair(auth, id, otherId));
+    }
+    const { runId, winner, losers, added } = await this.albumChangeRunRepository.transaction(async (tx) => {
+      const runId = await this.albumChangeRunRepository.createRun(tx, {
+        userId: auth.user.id,
+        kind: AlbumChangeRunKind.Merge,
+      });
+      let added = 0;
+      const losers: MergeAlbumRow[] = [];
+      let winner: MergeAlbumRow | undefined;
+      for (const otherId of otherIds) {
+        const result = await this.mergeInto(tx, auth, runId, id, otherId, true);
+        winner = result.winner;
+        losers.push(result.loser);
+        added += result.added;
+      }
+      await this.albumChangeRunRepository.finishRun(tx, runId, AlbumChangeRunStatus.Done, {
+        winnerId: id,
+        winnerName: winner!.albumName,
+        loserIds: losers.map((loser) => loser.id),
+        loserNames: losers.map((loser) => loser.albumName),
+        added,
+      });
+      return { runId, winner: winner!, losers, added };
+    });
+
+    const loserIds = new Set(losers.map((loser) => loser.id));
+    const members = new Map<string, string[]>();
+    for (const { id: albumId, albumUsers } of pairs.flat()) {
+      if (albumId === winner.id || loserIds.has(albumId)) {
+        members.set(
+          albumId,
+          albumUsers.map(({ user }) => user.id),
+        );
+      }
+    }
+    await this.afterMerge(
+      winner.id,
+      [...members].map(([albumId, userIds]) => ({ id: albumId, userIds })),
+      added,
+    );
+    return { runId, winnerId: winner.id };
+  }
+
   /**
    * One merge inside a run, in the caller's transaction, so cleanup can do many in one record. Re-reads both
    * albums and decides the winner under the locks: what the preview showed may be out of date.
@@ -210,6 +269,8 @@ export class AlbumMergeService extends BaseService {
     runId: string,
     id: string,
     otherId: string,
+    /** `id` stays whatever its size ("Merge into…" a chosen album). */
+    keepFirst = false,
   ): Promise<{ winner: MergeAlbumRow; loser: MergeAlbumRow; added: number }> {
     await lockAlbumHierarchy(tx);
     const merge = new AlbumMergeRepository(tx);
@@ -218,8 +279,11 @@ export class AlbumMergeService extends BaseService {
     const runs = this.runs;
 
     const [first, second] = await merge.lockPair(id, otherId, auth.user.id);
-    const counts = await albums.getOwnerAssetCounts([id, otherId], auth.user.id);
-    const { winner, loser } = chooseMergeWinner(first, second, counts);
+    const { winner, loser } = keepFirst
+      ? first.id === id
+        ? { winner: first, loser: second }
+        : { winner: second, loser: first }
+      : chooseMergeWinner(first, second, await albums.getOwnerAssetCounts([id, otherId], auth.user.id));
 
     // Nested inside the album going away, the winner would disappear with it.
     if (await merge.isInside(loser.id, winner.id)) {

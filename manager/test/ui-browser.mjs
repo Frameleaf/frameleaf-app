@@ -144,8 +144,22 @@ let backupAction = 'reuse',
   failCredential = false,
   commonReview = null,
   photoAppSources = [],
-  photoAppInspection = null;
+  photoAppInspection = null,
+  // FL-1317: the next review reports these problems once, then the server is ready.
+  reviewProblems = null,
+  reviewFails = false,
+  // FL-1320 in the FL-1317 list: the first restore review finds the thumbnails drive gone.
+  restoreThumbnailsGone = true;
+const okChecks = (restore = false) => [
+  { id: 'docker', status: 'ok', facts: { version: '28.4' } },
+  { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
+  { id: 'database', status: 'ok', facts: { free: 200 * 1024 ** 3 } },
+  ...(restore ? [] : [{ id: 'backups', status: 'ok', facts: { free: 3 * 1024 ** 4 } }, { id: 'manager', status: 'ok', facts: { free: 200 * 1024 ** 3 } }]),
+  { id: 'port', status: 'ok', facts: { port: 2283 } },
+  { id: 'release', status: 'ok', facts: { tag: 'frameleaf-v3.2.1-1' } },
+];
 const snapshot = { id: 'd'.repeat(64), time: '2026-10-07T02:00:00Z' };
+let snapshots = [snapshot];
 const containerSettings = {
   'frameleaf-server': { environment: { TZ: 'America/Toronto' }, mounts: [{ source: '/fixture/archive', target: '/old-archive', readOnly: true }], memory: '4g' },
 };
@@ -208,7 +222,7 @@ await page.route('**/manager-api/**', async (route) => {
       { path: '/fixture/media', totalBytes: 4 * 1024 ** 4, freeBytes: 3 * 1024 ** 4, availableBytes: 3 * 1024 ** 4 },
     ];
   else if (path === 'backup-status')
-    value = { configured: true, unlocked: true, keyAvailable: true, snapshots: [snapshot] };
+    value = { configured: true, unlocked: true, keyAvailable: true, snapshots };
   else if (path === 'releases')
     value = [
       {
@@ -263,17 +277,41 @@ await page.route('**/manager-api/**', async (route) => {
     value = { requested: true };
   } else if (path === 'review-update')
     value = { id: 'update-review', from: installation.release, to: body.tag, recovery: 'Database only' };
+  else if (path === 'review-restore' && restoreThumbnailsGone && !body.thumbnailFallback)
+    value = {
+      ready: false,
+      host: 'unraid',
+      port: 2283,
+      checks: [
+        { id: 'docker', status: 'ok', facts: { version: '28.4' } },
+        { id: 'thumbnails', status: 'problem', code: 'thumbnail_folder_missing', facts: { missing: '/fixture/fast/thumbs', folder: '/fixture/media/thumbs' } },
+        ...okChecks(true).slice(1),
+      ],
+    };
   else if (path === 'review-restore')
     value = {
+      ...(body.thumbnailFallback && { thumbnailFallback: { missing: '/fixture/fast/thumbs', folder: '/fixture/media/thumbs' } }),
+      ready: true,
+      host: 'linux',
+      checks: okChecks(true),
       id: 'restore-review',
       release: installation.release,
       mounts: installation.mounts,
       databaseStorage: { root: body.databaseRoot },
       replacesInstallation: true,
     };
-  else if (path === 'review') {
+  else if (path === 'review' && reviewFails) {
+    reviewFails = false;
+    expectedHttpErrors++;
+    return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'installation_already_exists' }) });
+  } else if (path === 'review') {
     await new Promise((done) => setTimeout(done, 300));
-    value = commonReview ?? {
+    const problems = reviewProblems;
+    reviewProblems = null;
+    value = commonReview ?? (problems ? { ready: false, host: 'unraid', kind: body.kind, checks: problems } : {
+      ready: true,
+      host: 'linux',
+      checks: okChecks(),
       id: 'install-review',
       tag: body.tag,
       databaseStorage: { root: body.databaseRoot },
@@ -281,7 +319,7 @@ await page.route('**/manager-api/**', async (route) => {
       source: body.kind === 'import' ? source : null,
       backup: { action: backupAction },
       recovery: 'Database only; original media stays in place',
-    };
+    });
   } else if (['control', 'update', 'restore', 'install', 'container-settings'].includes(path)) {
     const kind =
       path === 'control'
@@ -522,6 +560,10 @@ try {
     await refresh();
   });
   await check('backups, protected downloads and installed restore review', async () => {
+    // A container setting left invalid on Services never blocks a restore, which sends none.
+    await nav('Services');
+    await page.getByText('Advanced container settings', { exact: true }).click();
+    await page.getByLabel('Environment variables').first().fill('POSTGRES_DB=nope');
     await nav('Backups');
     await mainButton('Export recovery key').click();
     await page.getByLabel('Current Manager password').fill('fixture proof password');
@@ -531,6 +573,32 @@ try {
     assert.ok(requests.some((r) => r.path === 'backup-key' && r.body.password === 'fixture proof password'));
     await mainButton('Restore').click();
     await mainButton('Choose a recovery point').click();
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: '1 thing to fix before restoring' }).waitFor();
+    await page.getByRole('heading', { name: 'The thumbnails drive isn’t connected' }).waitFor();
+    await mainButton('Keep thumbnails with your photos').click();
+    await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review-restore').body.thumbnailFallback, true);
+    await mainButton('Review restore').click();
+    await page.getByText('Thumbnails go back in the photos folder', { exact: true }).waitFor();
+    // Another recovery point's missing thumbnails folder is checked again, never kept with the photos unasked.
+    snapshots = [snapshot, { id: 'e'.repeat(64), time: '2026-10-06T02:00:00Z' }];
+    await nav('Backups');
+    await mainButton('Restore').first().click();
+    await mainButton('Choose a recovery point').click();
+    await page.getByRole('radio').last().check();
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: 'The thumbnails drive isn’t connected' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review-restore').body.thumbnailFallback, undefined);
+    await mainButton('Keep thumbnails with your photos').click();
+    await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    await mainButton('Back').click();
+    await page.getByRole('radio').first().check();
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: 'The thumbnails drive isn’t connected' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review-restore').body.thumbnailFallback, undefined);
+    snapshots = [snapshot];
+    await mainButton('Keep thumbnails with your photos').click();
     await mainButton('Review restore').click();
     assert.equal(await mainButton('Restore database').isDisabled(), true);
     await page.getByRole('checkbox').check();
@@ -654,12 +722,14 @@ try {
     assert.doesNotMatch(await page.locator('main').innerText(), /Immich/u);
     await mainButton('Review library & settings').click();
     await page.getByRole('heading', { name: 'Your library, in the same place' }).waitFor();
-    assert.equal(await page.locator('.setup-rail ul li').count(), 3);
-    await page.getByRole('checkbox').check();
-    await mainButton('Review cutover').click();
+    assert.equal(await page.locator('.setup-rail ul li').count(), 4);
+    await page.getByRole('checkbox', { name: /reviewed the mappings/ }).check();
     await page.getByLabel('Library name', { exact: true }).fill('Family library');
     await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
-    await mainButton('Check and review cutover').click();
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    await screenshot('import-checks');
+    await mainButton('Review the switch').click();
     await page.getByText('Preflight passed', { exact: true }).waitFor();
     assert.doesNotMatch(await page.locator('main').innerText(), /Immich/u);
     assert.equal(await mainButton('Start import').isDisabled(), true);
@@ -674,8 +744,9 @@ try {
     await page.getByRole('radio').last().check();
     await mainButton('Review library & settings').click();
     await page.getByRole('heading', { name: 'Your library, in the same place' }).waitFor();
-    assert.equal(await page.locator('.setup-rail ul li').count(), 4);
-    await page.getByRole('checkbox').check();
+    assert.equal(await page.locator('.setup-rail ul li').count(), 5);
+    await page.getByRole('checkbox', { name: /reviewed the mappings/ }).check();
+    await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
     await mainButton('Review database backup').click();
     await page.getByRole('heading', { name: 'Back up the source database' }).waitFor();
     sources = [{ ...source, settings: ['forkOnly', 'oauth'], unsupportedSettings: ['forkOnly'] }];
@@ -686,7 +757,8 @@ try {
     const editor = page.getByLabel('Settings JSON');
     await page.waitForFunction(() => document.querySelector('.settings-editor')?.value.includes('forkOnly'));
     assert.match(await editor.inputValue(), /\[unchanged\]/);
-    await page.getByRole('checkbox').check();
+    await page.getByRole('checkbox', { name: /reviewed the mappings/ }).check();
+    await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
     assert.equal(await page.locator('.wizard-footer .button.primary').isDisabled(), true);
     await editor.fill('{"oauth":{"clientSecret":"[unchanged]"}}');
     await mainButton('Save settings').click();
@@ -725,7 +797,7 @@ try {
     await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
     await page.getByLabel('Frameleaf port').fill('12');
     const count = requests.filter((r) => r.path === 'review').length;
-    await mainButton('Check this configuration').click();
+    await mainButton('Check this server').click();
     assert.equal(requests.filter((r) => r.path === 'review').length, count);
     await page.getByLabel('Frameleaf port').fill('2283');
     // Advanced container settings reach the review as structured overrides; a bad line keeps the review local.
@@ -733,15 +805,40 @@ try {
     const serverEnvironment = page.getByLabel('Environment variables').first();
     await serverEnvironment.fill('TZ=America/Toronto\nDB_PASSWORD=nope');
     await page.getByLabel('Memory limit').first().fill('4g');
-    await mainButton('Check this configuration').click();
+    await mainButton('Check this server').click();
     await page.getByText('DB_PASSWORD is set by Manager', { exact: true }).waitFor();
     assert.equal(requests.filter((r) => r.path === 'review').length, count);
     await serverEnvironment.fill('TZ=America/Toronto');
     await screenshot('install-advanced');
-    await mainButton('Check this configuration').click();
+    // FL-1317: every problem at once, problems first; a fix in place checks again.
+    const twoProblems = [
+      { id: 'docker', status: 'ok', facts: { version: '28.4' } },
+      { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
+      { id: 'database', status: 'problem', code: 'insufficient_database_space' },
+      { id: 'backups', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
+      { id: 'port', status: 'problem', code: 'port_in_use', facts: { port: 2283, free: 2287 } },
+    ];
+    reviewProblems = twoProblems;
+    await mainButton('Check this server').click();
     // The slow server check shows it is still working.
-    await page.getByRole('status').filter({ hasText: 'can take up to a minute' }).waitFor();
+    await page.getByRole('heading', { name: 'Checking this server' }).waitFor();
     assert.equal(await mainButton('Checking…').getAttribute('aria-busy'), 'true');
+    await page.getByRole('heading', { name: '2 things to fix before installing' }).waitFor();
+    assert.deepEqual(await page.locator('.check-issue h2').allInnerTexts(), ['Not enough room in the database folder', 'Port 2283 is in use']);
+    assert.equal(await mainButton('Review installation').count(), 0);
+    await mainButton('Check again').waitFor();
+    await screenshot('install-checks-problems');
+    // A recheck that can't finish returns to the step before the checks, never a Checking… screen with no way out.
+    reviewFails = true;
+    await mainButton('Check again').click();
+    await page.getByRole('heading', { name: 'Give your library a home' }).waitFor();
+    assert.equal(await mainButton('Check this server').isEnabled(), true);
+    reviewProblems = twoProblems;
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: '2 things to fix before installing' }).waitFor();
+    await mainButton('Use port 2287').click();
+    await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review').body.port, 2287);
     await mainButton('Review installation').click();
     await screenshot('install-review');
     await page.getByText('Intel GPU · Machine learning on', { exact: true }).waitFor();
@@ -797,11 +894,10 @@ try {
     await page.goto(origin);
     await mainButton('Review import').click();
     await mainButton('Review library & settings').click();
-    await page.getByRole('checkbox').check();
-    await mainButton('Review cutover').click();
+    await page.getByRole('checkbox', { name: /reviewed the mappings/ }).check();
     await page.getByLabel('Library name', { exact: true }).fill('Captured library');
     await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
-    await mainButton('Check and review cutover').click();
+    await mainButton('Check this server').click();
     await page.getByRole('heading', { name: 'Review library import', exact: true }).waitFor();
     const capture = { id: commonReview.id, kind: 'import', state: 'awaiting-review', completed: [], canCancel: true };
     dashboard.operations = [{ ...capture, id: 'another-capture' }];
