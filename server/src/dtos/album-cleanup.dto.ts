@@ -13,6 +13,8 @@ const CleanupAlbumFactSchema = z
     createdAt: z.string().describe('When the album was created'),
     locked: z.boolean().describe('The album is locked'),
     shared: z.boolean().describe('The album is shared with people, by a public link or through a shared space'),
+    parentId: z.uuidv4().nullable().describe('The collection it sits in'),
+    readOnly: z.boolean().describe("Listed but never changed: a collection, a partner copy, or someone else's album"),
     gps: z
       .object({
         city: z.string().describe('The city most located photos were taken in'),
@@ -87,7 +89,7 @@ const CleanupLostDatesSchema = z
 
 const AlbumCleanupFactsSchema = z
   .object({
-    albums: z.array(CleanupAlbumFactSchema).describe('Your top-level albums'),
+    albums: z.array(CleanupAlbumFactSchema).describe('Everything on your Albums page except smart albums'),
     collections: z.array(CleanupCollectionFactSchema).describe('Your existing collections, to reuse as structure'),
     sameName: z.array(CleanupSameNameSchema).describe('Albums sharing a name'),
     samePhotos: z.array(CleanupPairSchema).describe('Albums holding nearly the same photos under different names'),

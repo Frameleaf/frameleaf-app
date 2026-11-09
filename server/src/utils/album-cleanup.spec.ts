@@ -47,6 +47,18 @@ describe('countCleanupSuggestions', () => {
     expect(countCleanupSuggestions({ ...none, albums: [{ id: 'a', name: 'Holiday' }] })).toBe(0);
   });
 
+  it('does not count albums the review leaves where they are', () => {
+    expect(
+      countCleanupSuggestions({
+        ...none,
+        albums: [
+          { id: 'a', name: 'May 24, 2020', parentId: 'collection' },
+          { id: 'b', name: 'May 25, 2020', readOnly: true },
+        ],
+      }),
+    ).toBe(0);
+  });
+
   it('reads a date as one piece', () => {
     expect(
       countCleanupSuggestions({

@@ -12,6 +12,8 @@ const fact = (id: string, name: string, count = 3) => ({
   createdAt: '2020-01-01T00:00:00.000Z',
   locked: false,
   shared: false,
+  parentId: null,
+  readOnly: false,
   gps: null,
   span: null,
   coverAssetId: null,

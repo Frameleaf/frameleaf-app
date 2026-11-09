@@ -4497,6 +4497,10 @@ export type AlbumCleanupAlbumFactDto = {
     locked: boolean;
     /** Album name */
     name: string;
+    /** The collection it sits in */
+    parentId: string | null;
+    /** Listed but never changed: a collection, a partner copy, or someone else's album */
+    readOnly: boolean;
     /** The album is shared with people, by a public link or through a shared space */
     shared: boolean;
     /** When the photos were taken, leaving out estimated dates */
@@ -4583,7 +4587,7 @@ export type AlbumCleanupPairDto = {
     winnerId: string;
 };
 export type AlbumCleanupFactsDto = {
-    /** Your top-level albums */
+    /** Everything on your Albums page except smart albums */
     albums: AlbumCleanupAlbumFactDto[];
     /** Your existing collections, to reuse as structure */
     collections: AlbumCleanupCollectionFactDto[];

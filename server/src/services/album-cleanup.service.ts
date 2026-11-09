@@ -35,6 +35,7 @@ import {
   SAME_PHOTOS_MIN_SHARED,
   SAME_PHOTOS_SHARE,
   albumNameKey,
+  albumPlaceKey,
   countCleanupSuggestions,
   detectHomeAreas,
   isDateOnlyName,
@@ -264,9 +265,15 @@ export class AlbumCleanupService extends BaseService {
     });
   }
 
-  /** Top-level albums the cleanup may read: owned and plain, never smart albums or a partner's copy. */
+  /** The albums the cleanup may change: owned and plain, at any depth. */
   private async loadCandidates(userId: string): Promise<CleanupAlbumRow[]> {
-    const albums = await this.albumCleanupRepository.getTopLevelAlbums(userId);
+    const albums = await this.loadScanAlbums(userId);
+    return albums.filter(({ readOnly }) => !readOnly);
+  }
+
+  /** Everything the review lists: the whole Albums page except smart albums. */
+  private async loadScanAlbums(userId: string): Promise<CleanupAlbumRow[]> {
+    const albums = await this.albumCleanupRepository.getScanAlbums(userId);
     if (albums.length === 0) {
       return [];
     }
@@ -280,11 +287,13 @@ export class AlbumCleanupService extends BaseService {
 
   @OnJob({ name: JobName.AlbumCleanupScan, queue: QueueName.BackgroundTask })
   async handleScan({ userId }: JobOf<JobName.AlbumCleanupScan>): Promise<JobStatus> {
-    const [albums, collections, metadata] = await Promise.all([
-      this.loadCandidates(userId),
+    const [scanned, collections, metadata] = await Promise.all([
+      this.loadScanAlbums(userId),
       this.albumCleanupRepository.getCollections(userId),
       this.userRepository.getMetadata(userId),
     ]);
+    const albums = scanned.filter(({ readOnly }) => !readOnly);
+    const readOnly = scanned.filter((album) => album.readOnly);
     const filter = { userId, includeNsfw: false, ...getPreferences(metadata).privacy.suppression };
     const ordinary: AlbumReadOptions = {
       ...(hasHiddenContentFilter(filter) ? { hiddenContent: filter } : {}),
@@ -305,6 +314,7 @@ export class AlbumCleanupService extends BaseService {
     const { facts: ordinaryFacts, healSkippedIds } = await this.scanVariant({
       userId,
       albums,
+      readOnly,
       collections,
       trueCounts,
       options: ordinary,
@@ -313,6 +323,7 @@ export class AlbumCleanupService extends BaseService {
     const { facts: elevatedFacts } = await this.scanVariant({
       userId,
       albums,
+      readOnly,
       collections,
       trueCounts,
       options: elevated,
@@ -330,6 +341,7 @@ export class AlbumCleanupService extends BaseService {
   private async scanVariant({
     userId,
     albums,
+    readOnly,
     collections,
     trueCounts,
     options,
@@ -337,19 +349,22 @@ export class AlbumCleanupService extends BaseService {
   }: {
     userId: string;
     albums: CleanupAlbumRow[];
+    readOnly: CleanupAlbumRow[];
     collections: CleanupCollectionRow[];
     trueCounts: Map<string, number>;
     options: AlbumReadOptions;
     reuse?: { facts: AlbumCleanupFacts; healSkippedIds: Set<string>; withLocked: Set<string> };
   }): Promise<{ facts: AlbumCleanupFacts; healSkippedIds: Set<string> }> {
     const ids = albums.map(({ id }) => id);
+    const listed = [...albums, ...readOnly];
+    const listedIds = listed.map(({ id }) => id);
     const structure = collections.map(({ id, name, parentId, createdAt }) => ({
       id,
       name,
       parentId,
       createdAt: new Date(createdAt).toISOString(),
     }));
-    if (ids.length === 0) {
+    if (listedIds.length === 0) {
       return {
         facts: {
           albums: [],
@@ -367,11 +382,11 @@ export class AlbumCleanupService extends BaseService {
 
     const repository = this.albumCleanupRepository;
     const [stats, locations, overlaps, bins, covers] = await Promise.all([
-      repository.getAlbumStats(ids, options),
+      repository.getAlbumStats(listedIds, options),
       repository.getAlbumLocations(ids, options),
       repository.getOverlaps(ids, options),
       repository.getHomeBins(userId, options),
-      repository.getVisibleCovers(ids, options),
+      repository.getVisibleCovers(listedIds, options),
     ]);
 
     const statsById = new Map(stats.map((row) => [row.albumId, row]));
@@ -383,7 +398,7 @@ export class AlbumCleanupService extends BaseService {
       }
     }
 
-    const facts = albums.map((album) => {
+    const facts = listed.map((album) => {
       const stat = statsById.get(album.id);
       const place = topCity.get(album.id);
       return {
@@ -393,6 +408,8 @@ export class AlbumCleanupService extends BaseService {
         createdAt: new Date(album.createdAt).toISOString(),
         locked: album.isLocked,
         shared: album.shared,
+        parentId: album.parentId,
+        readOnly: album.readOnly,
         gps:
           place && stat && stat.located > 0
             ? { city: place.city!, share: place.count / stat.located, lat: place.lat, lon: place.lon }
@@ -408,8 +425,8 @@ export class AlbumCleanupService extends BaseService {
     const nameOf = (id: string) => albumNameKey(factById.get(id)!.name);
     const winner = (group: CleanupAlbumRow[]) => largestByTrueCount(group, trueCounts);
 
-    // Rule 5: exact-name duplicates.
-    const byName = Map.groupBy(albums, ({ name }) => albumNameKey(name));
+    // Rule 5: exact-name duplicates, side by side. "Day 1" in two different collections is two different days.
+    const byName = Map.groupBy(albums, ({ name, parentId }) => albumPlaceKey(name, parentId));
     const duplicateGroups = [...byName].filter(([, group]) => group.length > 1);
     const unions = await repository.getUnionCounts(
       duplicateGroups.map(([key, group]) => ({ key, albumIds: group.map(({ id }) => id) })),

@@ -207,6 +207,8 @@ export type PlanAlbum = {
   count: number;
   locked: boolean;
   shared: boolean;
+  /** Already filed: stays in its collection, and only matches duplicates beside it. */
+  parentId?: string | null;
   createdAt: string;
   gps: Gps | null;
   realDay: CleanupDay | null;
@@ -425,18 +427,21 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   // Grows as the plan is built: leaving out a row that stands for several albums leaves all of them as they are.
   const leftOut = new Set(chosenLeftOut);
 
-  const albums: PlanAlbum[] = facts.albums.map((album) => ({
+  const toPlanAlbum = (album: AlbumCleanupFactsDto['albums'][number]): PlanAlbum => ({
     id: album.id,
     name: album.name,
     originalName: album.name,
     count: album.count,
     locked: album.locked,
     shared: album.shared,
+    parentId: album.parentId,
     createdAt: album.createdAt,
     gps: album.gps ?? null,
     realDay: album.span ? fromSerial(album.span.middle) : null,
     coverAssetId: album.coverAssetId ?? null,
-  }));
+  });
+  const albums = facts.albums.filter(({ readOnly }) => !readOnly).map((album) => toPlanAlbum(album));
+  const readOnlyAlbums = facts.albums.filter(({ readOnly }) => readOnly).map((album) => toPlanAlbum(album));
 
   const home = facts.homeAreas[homeArea] ?? facts.homeAreas[0] ?? null;
   const isHome = (gps: Gps) => !!home && distanceKm(gps, home) <= HOME_RADIUS_KM;
@@ -444,7 +449,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
 
   const sameName = new Map<string, PlanAlbum[]>();
   for (const album of albums) {
-    const key = albumNameKey(album.name);
+    const key = album.parentId ? `${album.parentId}>${albumNameKey(album.name)}` : albumNameKey(album.name);
     if (!sameName.has(key)) {
       sameName.set(key, []);
     }
@@ -544,7 +549,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
       return { album, when: null, prefix: null };
     }
     let prefix: string[] | null = nameIsDate ? null : segments.slice(0, -1);
-    if (usePhotoData && nameIsDate && when && album.gps?.city) {
+    if (usePhotoData && nameIsDate && when && album.gps?.city && !album.parentId) {
       const kept = keptPlaces.has(album.id);
       placed.push({ key: album.id, album, city: album.gps.city, share: album.gps.share, kept });
       if (!kept) {
@@ -620,7 +625,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   };
   if (usePhotoData) {
     const away = entries
-      .filter(({ album, when }) => when && !album.shared && album.gps?.city && !isHome(album.gps))
+      .filter(({ album, when }) => when && !album.shared && !album.parentId && album.gps?.city && !isHome(album.gps))
       .sort((a, b) => a.when!.serial - b.when!.serial);
     let run: Entry[] = [];
     for (const item of away) {
@@ -642,7 +647,13 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   // Back-to-back days in one place become one album. A place has to tie them together, and a shared album stays out.
   const places = new Map<string, Entry[]>();
   for (const entry of entries) {
-    if (inTrip.has(entry.album.id) || entry.album.shared || !entry.when || !entry.prefix?.length) {
+    if (
+      inTrip.has(entry.album.id) ||
+      entry.album.shared ||
+      entry.album.parentId ||
+      !entry.when ||
+      !entry.prefix?.length
+    ) {
       continue;
     }
     const key = entry.prefix.join('>').toLowerCase();
@@ -726,7 +737,12 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   };
   const root: TrieNode = { path: '', name: '', children: new Map(), albums: [], total: 0 };
   const dates: PlanAlbum[] = [];
+  const staysFiled: PlanAlbum[] = [];
   for (const album of shaped) {
+    if (album.parentId) {
+      staysFiled.push(album);
+      continue;
+    }
     if (!album.segments && isDateOnly(album.name)) {
       dates.push(album);
       continue;
@@ -782,7 +798,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   };
 
   let structure: PlanNode[] = [];
-  let untouched: PlanNode[] = [];
+  let untouched: PlanNode[] = [...staysFiled, ...readOnlyAlbums].map((album) => leafFor(album, album.name));
   for (const child of root.children.values()) {
     for (const node of shape(child, '')) {
       if (node.kind === 'collection') {
@@ -966,7 +982,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     home,
     leftOutIds,
     summary: {
-      albumsBefore: albums.length,
+      albumsBefore: facts.albums.length,
       topLevelAfter: structure.length + untouched.length,
       duplicateGroups: activeDuplicates.length,
       albumsMerged,
