@@ -27,6 +27,7 @@ import { DesktopGrants } from './desktop-grants.js';
 import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
 import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
+import { findDrives, suggestFolders } from './drives.js';
 import { applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, listFolders } from './folders.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
@@ -190,6 +191,14 @@ async function troubleshootingScope() {
   );
   const clean = (text: string) => redactPaths(redact(text, secrets), roots);
   return { installation, containers, self, clean };
+}
+/** The drives under Manager's folders, with the drive suggested for the database and for thumbnails. */
+async function driveReport(sizes: Parameters<typeof suggestFolders>[1]) {
+  if (runtime !== 'docker') throw new Refusal('drive_detection_unavailable');
+  const dockerRoot = await docker.compatibility().then((c) => c.dataRoot, () => undefined);
+  const roots = [...new Set([...storageRoots(), ...defaults.roots])];
+  // Unraid is recognised from its docker.cfg even when the template doesn't name the platform.
+  return suggestFolders(await findDrives({ roots, dockerRoot, platform: process.env.MANAGER_PLATFORM || defaults.platform }), sizes);
 }
 /** The port the administrator reached Manager on: never offered to, or accepted for, the Frameleaf stack. */
 const managerPort = (request: Request) => Number(new URL(security.requestOrigin(request)).port || 443);
@@ -394,6 +403,18 @@ class Api {
           return { path, totalBytes: null, availableBytes: null, freeBytes: null };
         }
       }),
+    );
+  }
+  @Get('drives') driveList() {
+    return driveReport({});
+  }
+  @Post('drives') driveListFor(@Body() input: unknown) {
+    const size = z.number().int().positive().max(2 ** 53 - 1);
+    return driveReport(
+      z
+        .object({ databaseBytes: size.optional(), thumbsBytes: size.optional(), databasePath: z.string().min(1).max(4096).optional() })
+        .strict()
+        .parse(input ?? {}),
     );
   }
   @Get('releases') available() {
