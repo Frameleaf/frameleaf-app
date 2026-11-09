@@ -549,6 +549,9 @@ export class Docker {
         'compose.json',
         'run',
         '--rm',
+        // Manager's distro Compose is older than the releases known to give `run` its own name; never borrow container_name.
+        '--name',
+        `${project}-media-check-${Date.now()}`,
         '--no-deps',
         '-T',
         '--entrypoint',

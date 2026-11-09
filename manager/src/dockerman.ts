@@ -8,6 +8,14 @@ export const DOCKERMAN_TEMPLATES = '/run/frameleaf-host/templates-user';
 const SERVICES = ['database', 'frameleaf-server', 'frameleaf-machine-learning'];
 const LAN_DISCOVERY = 'frameleaf-lan-discovery';
 
+/** The 100-999 number in an installation's container names. Derived from its random id, so nothing extra is saved. */
+export const containerNumber = (installation: string) => 100 + (Number.parseInt(installation, 16) % 900);
+/** `frameleaf-server` becomes `Frameleaf-Server-843`. Docker container names cannot contain spaces. */
+export const containerName = (installation: string, service: string) =>
+  [...`frameleaf-${service.replace(/^frameleaf-/, '')}`.split('-'), containerNumber(installation)]
+    .map((word) => `${word}`.charAt(0).toUpperCase() + `${word}`.slice(1))
+    .join('-');
+
 type DockerManContainer = {
   Name: string;
   Config: {
@@ -106,7 +114,9 @@ export async function saveDockermanTemplates(containers: DockerManContainer[], p
     const name = container.Name.replace(/^\//, '');
     if (container.Config.Labels['com.docker.compose.project'] !== project ||
       container.Config.Labels['app.frameleaf.manager'] !== project.slice('frameleaf-'.length) ||
-      ![...SERVICES, LAN_DISCOVERY].includes(service) || name !== `${project}-${service}-1`)
+      // Stacks that have not been re-rendered since friendly names arrived still use Compose's default.
+      ![...SERVICES, LAN_DISCOVERY].includes(service) ||
+      ![`${project}-${service}-1`, containerName(project.slice('frameleaf-'.length), service)].includes(name))
       throw new Refusal('dockerman_container_identity');
     // The LAN companion's entrypoint, user, read-only root and host network do not survive a template; Manager owns it.
     return service === LAN_DISCOVERY ? [] : [[join(directory, `my-${name}.xml`), dockermanTemplate(container)]];
@@ -118,7 +128,9 @@ export async function saveDockermanTemplates(containers: DockerManContainer[], p
     await publishFile(temporary, destination);
   }
   for (const service of SERVICES) {
-    const path = join(directory, `my-${project}-${service}-1.xml`);
-    if (!templates.some(([destination]) => destination === path)) await rm(path, { force: true });
+    for (const name of [`${project}-${service}-1`, containerName(project.slice('frameleaf-'.length), service)]) {
+      const path = join(directory, `my-${name}.xml`);
+      if (!templates.some(([destination]) => destination === path)) await rm(path, { force: true });
+    }
   }
 }

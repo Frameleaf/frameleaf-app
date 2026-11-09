@@ -9,7 +9,7 @@ import type { VerifiedRelease } from './releases.js';
 import { atomicJson, atomicSecret } from './files.js';
 import { command, environment, type Container } from './docker.js';
 import { folderDetail } from './host-paths.js';
-import { UNRAID_ICON } from './dockerman.js';
+import { UNRAID_ICON, containerName } from './dockerman.js';
 
 export type Acceleration = 'cpu' | 'cuda' | 'rocm' | 'openvino';
 /** Match hwaccel.transcoding.yml; video acceleration does not require an ML variant or AMD's KFD. */
@@ -608,6 +608,7 @@ export async function renderCompose(
     };
   }
   applyServiceOverrides(services, application.services);
+  for (const [name, service] of Object.entries(services)) (service as any).container_name = containerName(installation.id, name);
   tuneDatabase(services.database as Record<string, any>, memory ?? (await hostMemory()));
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const compose = JSON.parse(

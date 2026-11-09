@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { dockermanTemplate, saveDockermanTemplates } from '../src/dockerman.js';
+import { containerName, dockermanTemplate, saveDockermanTemplates } from '../src/dockerman.js';
 
 const project = 'frameleaf-aaaaaaaaaaaa';
 function fixture() {
@@ -25,6 +25,25 @@ function fixture() {
     NetworkSettings: { Networks: { [`${project}_default`]: { Aliases: ['database', 'original-name'] } } },
   };
 }
+
+test('friendly container names are stable, three digits, and accepted by the DockerMan identity check', async () => {
+  assert.equal(containerName('166c6341ee54', 'frameleaf-server'), containerName('166c6341ee54', 'frameleaf-server'));
+  assert.match(containerName('166c6341ee54', 'frameleaf-server'), /^Frameleaf-Server-[1-9]\d{2}$/);
+  assert.match(containerName('ffffffffffff', 'frameleaf-machine-learning'), /^Frameleaf-Machine-Learning-[1-9]\d{2}$/);
+  assert.match(containerName('000000000000', 'database'), /^Frameleaf-Database-100$/);
+  const directory = await mkdtemp(join(tmpdir(), 'dockerman-friendly-'));
+  try {
+    const container = fixture();
+    const name = containerName('aaaaaaaaaaaa', 'database');
+    container.Name = `/${name}`;
+    await saveDockermanTemplates([container], project, directory);
+    await stat(join(directory, `my-${name}.xml`));
+    container.Name = '/Frameleaf-Database-1000';
+    await assert.rejects(saveDockermanTemplates([container], project, directory), /dockerman_container_identity/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('DockerMan templates preserve identity, secrets, storage, devices, networking and health checks', () => {
   const xml = dockermanTemplate(fixture());

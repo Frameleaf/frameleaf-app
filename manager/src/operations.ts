@@ -16,6 +16,7 @@ import { IMPORT_PREPARATION_TARGET, commonImportBootstrapStaged, prepareCommonIm
 import { rollbackCommonImport } from './common-import-lifecycle.js';
 import type { ImportPreparationSeal, ImportSourceAuthoritySeal } from './import-source-authority.js';
 import type { AutostartFile } from './unraid-autostart.js';
+import { containerNumber } from './dockerman.js';
 import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
@@ -308,6 +309,16 @@ export class Operations {
   /** Removes dumps, recovery records, restore reviews and old release bundles no open operation needs. */
   prune(): Promise<string[]> {
     return this.retention.sweep();
+  }
+  /** A new installation id whose container number no other installation on this host uses. */
+  private async newInstallationId(): Promise<string> {
+    const used = new Set(
+      (await this.docker.inventory()).map((c) => containerNumber(c.Config.Labels?.['app.frameleaf.manager'] ?? '')),
+    );
+    for (;;) {
+      const id = randomBytes(6).toString('hex');
+      if (!used.has(containerNumber(id))) return id;
+    }
   }
   directory(): string {
     return join(this.store.directory, 'stack');
@@ -1102,7 +1113,7 @@ export class Operations {
       let intent = operation.receipts['configuration-intent'] as
         { installation: Installation; password: string } | undefined;
       if (!intent) {
-        const id = randomBytes(6).toString('hex');
+        const id = await this.newInstallationId();
         const databasePath = await this.databaseStorage.allocate(
           review.input.databaseRoot,
           id,
@@ -2283,7 +2294,7 @@ export class Operations {
       let intent = operation.receipts['configuration-intent'] as
         { installation: Installation; password: string } | undefined;
       if (!intent) {
-        const suffix = randomBytes(6).toString('hex');
+        const suffix = await this.newInstallationId();
         const databasePath = await this.databaseStorage.allocate(review.databaseRoot, suffix, review.databaseBytes);
         const installation: Installation = {
           ...review.recovery.installation,
