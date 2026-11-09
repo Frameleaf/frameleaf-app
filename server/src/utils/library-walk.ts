@@ -87,16 +87,16 @@ export async function* walkLibraryPaths(
         const frame = stack.at(-1)!;
         const entry: Dirent | null = await frame.directory.read();
         signal?.throwIfAborted();
+        // A share that stops answering sends nothing here, so the job deadline still catches a real hang.
+        if (Date.now() - reportedAt >= LIBRARY_WALK_LIVENESS_MS) {
+          reportedAt = Date.now();
+          advanceJobProgress(1);
+        }
         if (!entry) {
           await frame.directory.close();
           stack.pop();
           ancestors.delete(frame.real);
           continue;
-        }
-        // A share that stops answering sends nothing here, so the job deadline still catches a real hang.
-        if (Date.now() - reportedAt >= LIBRARY_WALK_LIVENESS_MS) {
-          reportedAt = Date.now();
-          advanceJobProgress(1);
         }
         if (!includeHidden && entry.name.startsWith('.')) continue;
         const file = path.join(frame.folder, entry.name);

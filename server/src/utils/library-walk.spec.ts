@@ -53,9 +53,24 @@ describe('bounded library source walk', () => {
       clock.mockRestore();
     }
 
-    // two slow entries, far fewer than any batch, each still counts as the walk moving
-    expect(progress).toHaveBeenCalledTimes(2);
+    // two slow entries and the end-of-directory read, far fewer than any batch, each count as the walk moving
+    expect(progress).toHaveBeenCalledTimes(3);
   });
+
+  it.each(['FRAMELEAF_JOB_DEADLINE_MS', 'FRAMELEAF_JOB_IDLE_DEADLINE_MS'])(
+    'reports liveness well inside a short %s',
+    async (name) => {
+      vi.stubEnv(name, '20000');
+      vi.resetModules();
+      try {
+        const walk = await import('src/utils/library-walk.js');
+        expect(walk.LIBRARY_WALK_LIVENESS_MS).toBe(5000);
+      } finally {
+        vi.unstubAllEnvs();
+        vi.resetModules();
+      }
+    },
+  );
 
   it('does not report liveness until the interval has passed', async () => {
     await write(path.join(root, 'a.txt'));
