@@ -59,7 +59,7 @@
   import { onMount, tick } from 'svelte';
   import FolderPicker from './FolderPicker.svelte';
   import Icon from './Icon.svelte';
-  import { requestKey } from './request-key';
+  import { startKey } from './request-key';
   import { formatBytes, readable } from './presentation';
   import { driveHint, fastFolderIssue, gigabytes, type Drive, type Suggestion } from './drives';
 
@@ -158,8 +158,11 @@
       reviewError = readable(e instanceof Error ? e.message : 'request_failed', (e as { detail?: string }).detail);
     }
   }
+  /** A start retried after a lost response sends the same key, so Manager returns the operation it started. */
+  const keys = new Map<string, string>();
   function close() {
     if (starting) return;
+    if (review) keys.delete(review.id);
     dialog?.close();
     moving = null;
     review = null;
@@ -169,7 +172,8 @@
     starting = true;
     reviewError = '';
     try {
-      const { id } = await api(ROUTES[moving.kind].start, { id: review.id, key: requestKey() });
+      const { id } = await api(ROUTES[moving.kind].start, { id: review.id, key: startKey(keys, review.id) });
+      keys.delete(review.id);
       dialog?.close();
       moving = null;
       review = null;

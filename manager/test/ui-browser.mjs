@@ -251,6 +251,9 @@ await page.route('**/manager-api/**', async (route) => {
     value = { available: true, id: '019aa111-1111-7111-8111-111111111111', root: body.root, files: 2, bytes: 4096 };
   else if (path === 'review-thumbnail-move')
     value = { available: true, id: '019aa111-1111-7111-8111-111111111113', root: body.root, files: 412880, bytes: 86 * GB };
+  else if (path === 'move-thumbnails' && requests.filter((r) => r.path === 'move-thumbnails').length === 1)
+    // The start is recorded, but its answer is lost on the way back.
+    return route.fulfill({ status: 502, contentType: 'text/html', body: '<html><body>Bad gateway</body></html>' });
   else if (path === 'move-thumbnails') value = storageOperation('thumbnail-operation', 'move-thumbnails', 'move-freeze', ['move-stop-writers', 'move-checkpoint', 'move-fence-stack']);
   else if (path === 'review-thumbnails-home')
     value = { id: '019aa111-1111-7111-8111-111111111114', missing: thumbnails.path, folder: '/fixture/media/thumbs', assets: 412880 };
@@ -533,8 +536,15 @@ try {
     assert.ok((await review.innerText()).includes('/fixture/appdata/frameleaf-thumbnails'));
     assert.equal(requests.findLast((r) => r.path === 'review-thumbnail-move').body.root, '/fixture/appdata/frameleaf-thumbnails');
     await screenshot('storage-move-thumbnails');
+    expectedHttpErrors = 1;
+    await review.getByRole('button', { name: 'Move thumbnails' }).click();
+    await review.getByRole('alert').waitFor();
+    // Trying again sends the same key, so Manager answers with the move it already started.
     await review.getByRole('button', { name: 'Move thumbnails' }).click();
     await page.getByRole('heading', { name: 'Moving thumbnails' }).waitFor();
+    const starts = requests.filter((r) => r.path === 'move-thumbnails');
+    assert.equal(starts.length, 2);
+    assert.equal(starts[0].body.key, starts[1].body.key);
     const steps = await page.locator('ol.timeline li strong').allInnerTexts();
     assert.deepEqual(steps, ['Pause uploads and background work', 'Copy thumbnails', 'Check every file', 'Switch to the new folder', 'Start Frameleaf']);
     dashboard.operations = [];

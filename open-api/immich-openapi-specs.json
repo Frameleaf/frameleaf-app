@@ -48091,7 +48091,16 @@
     "/server/library-move/manager/thumbnails": {
       "post": {
         "operationId": "queueManagerThumbnails",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-frameleaf-manager",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

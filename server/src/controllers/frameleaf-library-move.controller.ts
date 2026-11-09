@@ -79,7 +79,7 @@ export class FrameleafLibraryMoveController {
     summary: 'Manager machine-authenticated rebuild of every thumbnail, after thumbnails lost their own drive',
     history,
   })
-  async thumbnails(@Headers(MANAGER_TOKEN_HEADER) token: string | undefined): Promise<LibraryMoveThumbnailsDto> {
+  async thumbnails(@Headers(MANAGER_TOKEN_HEADER) token?: string): Promise<LibraryMoveThumbnailsDto> {
     await this.setup.authorizeManager(token);
     return this.move.queueThumbnails();
   }

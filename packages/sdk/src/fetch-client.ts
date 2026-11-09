@@ -33079,13 +33079,18 @@ export function resumeManagerLibraryMove({ libraryMoveResumeDto }: {
 /**
  * Manager machine-authenticated rebuild of every thumbnail, after thumbnails lost their own drive
  */
-export function queueManagerThumbnails(opts?: Oazapfts.RequestOpts) {
+export function queueManagerThumbnails({ xFrameleafManager }: {
+    xFrameleafManager: string;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: LibraryMoveThumbnailsDto;
     }>("/server/library-move/manager/thumbnails", {
         ...opts,
-        method: "POST"
+        method: "POST",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-manager": xFrameleafManager
+        })
     }));
 }
 /**
