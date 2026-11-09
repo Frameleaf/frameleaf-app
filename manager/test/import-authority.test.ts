@@ -567,10 +567,11 @@ test('the media check asks the server image, with its own mounts and user, which
     ['/data/library'],
   );
   const [command] = commands;
-  assert.deepEqual(command.slice(0, 12), [
+  assert.deepEqual(command.slice(0, 14), [
     'compose', '--project-name', `frameleaf-${'a'.repeat(12)}`, '--file', 'compose.json', 'run', '--rm',
-    '--no-deps', '-T', '--entrypoint', 'sh', 'frameleaf-server',
+    '--name', command[8], '--no-deps', '-T', '--entrypoint', 'sh', 'frameleaf-server',
   ]);
+  assert.match(command[8], /^frameleaf-a{12}-media-check-\d+$/);
   assert.deepEqual(command.slice(-3), ['sh', '/data', '/data/library']);
   await assert.rejects(docker.unwritableMedia('/fixture/manager', 'not-a-project', ['/data']), /invalid_media_check/);
   await assert.rejects(

@@ -6,7 +6,7 @@ import { access, open, readFile, rename, rm } from 'node:fs/promises';
 import { z } from 'zod';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
-import { publishFile } from './files.js';
+import { atomicJson, publishFile } from './files.js';
 import { containerView, dockerArguments, toHost } from './host-paths.js';
 import { completeCommonImport } from './common-import-lifecycle.js';
 import { COMMON_IMPORT_CONFIG, IMPORT_PREPARATION_TARGET, writeCommonImportCompose } from './common-import-runtime.js';
@@ -311,6 +311,28 @@ export function sharesMedia(c: Container, media: Mount[], all: Container[] = [])
 }
 export class Docker {
   constructor(private execute: typeof command = command) {}
+  /**
+   * If anything else on the host owns one of this stack's friendly names, the whole stack keeps Compose's default
+   * names: a less readable name beats an install, restore or upgrade that cannot start.
+   */
+  private async releaseTakenContainerNames(directory: string, project: string): Promise<void> {
+    const path = join(directory, 'compose.json');
+    const compose = await readFile(path, 'utf8').then(JSON.parse, () => null);
+    const services = Object.values(compose?.services ?? {}) as { container_name?: string }[];
+    if (!services.some((service) => service.container_name)) return;
+    // One `ps`, not inventory(): a container removed between its list and inspect steps would fail this start.
+    const listing = await this.execute('docker', ['ps', '--all', '--format', '{{.Names}}\t{{.Label "com.docker.compose.project"}}']);
+    const taken = new Set(
+      listing
+        .split('\n')
+        .map((line) => line.split('\t'))
+        .filter(([, owner]) => owner !== project)
+        .map(([name]) => name),
+    );
+    if (!services.some((service) => service.container_name && taken.has(service.container_name))) return;
+    for (const service of services) delete service.container_name;
+    await atomicJson(path, compose);
+  }
   async inventory(): Promise<Container[]> {
     const ids = (await this.execute('docker', ['ps', '-aq', '--no-trunc'])).trim().split('\n').filter(Boolean);
     if (!ids.length) return [];
@@ -485,6 +507,8 @@ export class Docker {
     if (action === 'up') {
       if (unraid) await configureUnraidCompose(directory);
       await this.pullMissing(directory, services);
+      // After the pull, which can take minutes, so the check is as fresh as possible.
+      await this.releaseTakenContainerNames(directory, project);
     }
     await this.execute(
       'docker',
@@ -549,6 +573,9 @@ export class Docker {
         'compose.json',
         'run',
         '--rm',
+        // Manager's distro Compose is older than the releases known to give `run` its own name; never borrow container_name.
+        '--name',
+        `${project}-media-check-${Date.now()}`,
         '--no-deps',
         '-T',
         '--entrypoint',
