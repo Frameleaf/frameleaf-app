@@ -34,7 +34,7 @@ const saveButton = () => screen.getByRole('button', { name: en.save });
 const EMAIL = 'Send me emails';
 const SHARES = 'Email me: When someone shares with you';
 const UPDATES = 'Email me: Album updates';
-const NEW_SIGN_INS = 'Email me: Sign-ins on new devices';
+const NEW_SIGN_INS = 'Email me: Sign-ins from unfamiliar devices or networks';
 
 beforeEach(() => {
   vi.clearAllMocks();

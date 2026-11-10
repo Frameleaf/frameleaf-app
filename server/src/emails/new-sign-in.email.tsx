@@ -15,7 +15,7 @@ export const NewSignInEmail = ({ baseUrl, showBranding, ...data }: NewSignInEmai
   >
     {data.kind === 'new-device' ? (
       <>
-        <Text>Your Frameleaf Library account signed in from a device it hasn’t seen before.</Text>
+        <Text>Your Frameleaf Library account signed in from a device or network this server didn’t recognize.</Text>
         <Text>
           Device: {data.device}
           <br />

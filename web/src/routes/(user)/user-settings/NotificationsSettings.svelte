@@ -34,11 +34,11 @@
   const serverSends = $derived(featureFlagsManager.value.email);
   const mine = $derived(draft['emailNotifications.enabled']);
 
-  const EMAILED = {
-    shares: 'emailNotifications.albumInvite',
-    updates: 'emailNotifications.albumUpdate',
-    newSignIn: 'emailNotifications.newSignIn',
-  } as const;
+  const emailed = new Map<string, (typeof SECTION_KEYS.notifications)[number]>([
+    ['shares', 'emailNotifications.albumInvite'],
+    ['updates', 'emailNotifications.albumUpdate'],
+    ['newSignIn', 'emailNotifications.newSignIn'],
+  ]);
   const rows = $derived<TellRow[]>([
     { id: 'shares', label: $t('frameleaf_notify_yours_shares'), help: $t('frameleaf_notify_yours_shares_help') },
     { id: 'updates', label: $t('frameleaf_notify_yours_updates'), help: $t('frameleaf_notify_yours_updates_help') },
@@ -91,10 +91,10 @@
         {rows}
       >
         {#snippet cell(row, column)}
+          {@const key = emailed.get(row.id)}
           {#if column === 0}
             {row.id === 'newSignIn' ? '—' : $t('frameleaf_notify_yours_always')}
-          {:else if row.id === 'shares' || row.id === 'updates' || row.id === 'newSignIn'}
-            {@const key = EMAILED[row.id]}
+          {:else if key}
             <Switch
               label={$t('frameleaf_notify_yours_email_label', { values: { kind: row.label } })}
               checked={draft[key]}
