@@ -5,6 +5,7 @@ import { ApiModule } from 'src/app.module.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ApiService } from 'src/services/api.service.js';
 import { isRetryableStartupError, isStartUpError } from 'src/utils/misc.js';
+import { stopPrivateLogs } from 'src/utils/private-log-runtime.js';
 import { API_STARTUP_RETRY_EXIT_CODE, HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
 async function bootstrap() {
@@ -22,7 +23,16 @@ async function bootstrap() {
   });
   const http = new HttpRequestTracker(app.getHttpServer());
   const appRepository = app.get(AppRepository);
-  appRepository.setCloseFn((graceMs) => closeGracefully({ http, close: () => app.close(), graceMs }));
+  appRepository.setCloseFn((graceMs) =>
+    closeGracefully({
+      http,
+      close: async () => {
+        await app.close();
+        await stopPrivateLogs();
+      },
+      graceMs,
+    }),
+  );
   stop = () => appRepository.stop(0);
 
   await configureExpress(app, {

@@ -38,6 +38,7 @@ export interface EnvData {
   logFormat?: LogFormat;
   /** FRAMELEAF_LOG_REQUESTS: API request lines at `log` level (true) or `debug` (false). */
   logRequests: boolean;
+  logRetentionDays: number;
 
   buildMetadata: {
     build?: string;
@@ -186,6 +187,14 @@ const resolveHelmetFile = (helmetFile: 'true' | 'false' | string | undefined) =>
   }
 };
 
+const parseLogRetentionDays = (value: string | undefined) => {
+  const days = value?.trim() ? Number(value) : 7;
+  if (!Number.isSafeInteger(days) || days < 1 || days > 30) {
+    throw new Error('FRAMELEAF_LOG_RETENTION_DAYS must be an integer between 1 and 30');
+  }
+  return days;
+};
+
 /** Validates the environment once and maps it to the server's settings. */
 const getEnv = (): EnvData => {
   // FL-294: deprecated IMMICH_ names are resolved to their FRAMELEAF_ names before validation, and a
@@ -242,6 +251,7 @@ const getEnv = (): EnvData => {
     logLevel: dto.FRAMELEAF_LOG_LEVEL,
     logFormat: dto.FRAMELEAF_LOG_FORMAT || LogFormat.Console,
     // Read directly, not through EnvSchema: its keys are a response enum the native apps decode strictly.
+    logRetentionDays: parseLogRetentionDays(process.env.FRAMELEAF_LOG_RETENTION_DAYS),
     logRequests: !/^(?:false|0|no|off)$/i.test(process.env.FRAMELEAF_LOG_REQUESTS?.trim() ?? ''),
 
     buildMetadata: {

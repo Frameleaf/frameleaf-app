@@ -11,6 +11,7 @@ import { DatabaseService } from 'src/services/database.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { attachLockedKeyIpc } from 'src/utils/locked-key-ipc.js';
 import { isStartUpError } from 'src/utils/misc.js';
+import { startPrivateLogs, stopPrivateLogs } from 'src/utils/private-log-runtime.js';
 import { closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
 /** Starts the microservices worker (job queues, no HTTP) and logs its ready line. */
@@ -29,20 +30,24 @@ export async function bootstrap() {
   appRepository.setCloseFn((graceMs) =>
     closeGracefully({
       stopJobs: (grace) => jobRepository.stopWorkers(grace),
-      close: () => app.close(),
+      close: async () => {
+        await app.close();
+        await stopPrivateLogs();
+      },
       graceMs,
       debug: (message) => logger.debug(message),
     }),
   );
   stop = () => appRepository.stop(0);
 
-  const { environment, host } = configRepository.getEnv();
+  const { environment, host, logRetentionDays, storage } = configRepository.getEnv();
 
   logger.setContext('Bootstrap');
   app.useLogger(logger);
   try {
     // Gateway attachment precedes AppBootstrap during listen(), so migrate and check import activation first.
     await app.get(DatabaseService).initialize();
+    startPrivateLogs('microservices', logRetentionDays, storage.mediaLocation);
     app.useWebSocketAdapter(new WebSocketAdapter(app));
 
     await (host ? app.listen(0, host) : app.listen(0));

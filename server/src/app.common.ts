@@ -15,6 +15,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ApiService } from 'src/services/api.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { useSwagger } from 'src/utils/misc.js';
+import { privateLogContext, startPrivateLogs } from 'src/utils/private-log-runtime.js';
 
 /** Sets up middleware (request log, cookies, body parsing, web assets) and starts listening, then logs the ready line. */
 export async function configureExpress(
@@ -29,8 +30,20 @@ export async function configureExpress(
   },
 ) {
   const configRepository = app.get(ConfigRepository);
-  const { environment, host, port, helmet, resourcePaths, network, frameleafCloud, logRequests } =
-    configRepository.getEnv();
+  const {
+    environment,
+    host,
+    port,
+    helmet,
+    resourcePaths,
+    network,
+    frameleafCloud,
+    logRequests,
+    logRetentionDays,
+    storage,
+  } = configRepository.getEnv();
+
+  app.use(privateLogContext);
 
   const logger = await app.resolve(LoggingRepository);
   logger.setContext('Bootstrap');
@@ -74,6 +87,7 @@ export async function configureExpress(
   if (ssr === ApiService) {
     await app.get(DatabaseService).initialize();
   }
+  startPrivateLogs(ssr === ApiService ? 'api' : 'maintenance', logRetentionDays, storage.mediaLocation);
   app.useWebSocketAdapter(new WebSocketAdapter(app));
 
   // Serve the live specification only. The tracked open-api/immich-openapi-specs.json is regenerated

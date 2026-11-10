@@ -2837,6 +2837,22 @@ export type LicenseCheckoutResponseDto = {
     /** The Frameleaf store page to open; the buyer signs into the account that owns this server */
     url: string;
 };
+export type PrivateLogPageDto = {
+    entries: {
+        assetId?: string;
+        at: string;
+        context: string;
+        id: string;
+        jobId?: string;
+        jobName?: string;
+        level: Level;
+        message: string;
+        requestId?: string;
+        route?: string;
+        worker: Worker;
+    }[];
+    nextCursor: string | null;
+};
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** A verified, locally staged Buddy recovery */
@@ -23286,6 +23302,64 @@ export function refreshLicense(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List recent local server logs
+ */
+export function listServerLogs({ before, level, limit, q, since, worker }: {
+    before?: string;
+    level?: "verbose" | "debug" | "log" | "warn" | "error" | "fatal";
+    limit?: number;
+    q?: string;
+    since?: string;
+    worker?: "api" | "microservices" | "maintenance" | "machine-learning";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PrivateLogPageDto;
+    }>(`/admin/logs${QS.query(QS.explode({
+        before,
+        level,
+        limit,
+        q,
+        since,
+        worker
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Download local server logs
+ */
+export function downloadServerLogs({ hours }: {
+    hours?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/admin/logs/download${QS.query(QS.explode({
+        hours
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Follow local server logs
+ */
+export function streamServerLogs({ level, q, since, worker }: {
+    level?: "verbose" | "debug" | "log" | "warn" | "error" | "fatal";
+    q?: string;
+    since?: string;
+    worker?: "api" | "microservices" | "maintenance" | "machine-learning";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/logs/stream${QS.query(QS.explode({
+        level,
+        q,
+        since,
+        worker
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Set maintenance mode
  */
 export function setMaintenanceMode({ setMaintenanceModeDto }: {
@@ -38217,6 +38291,20 @@ export enum Licence {
 export enum Plan {
     CloudMonthly = "cloud-monthly",
     CloudAnnual = "cloud-annual"
+}
+export enum Level {
+    Verbose = "verbose",
+    Debug = "debug",
+    Log = "log",
+    Warn = "warn",
+    Error = "error",
+    Fatal = "fatal"
+}
+export enum Worker {
+    Api = "api",
+    Microservices = "microservices",
+    Maintenance = "maintenance",
+    MachineLearning = "machine-learning"
 }
 export enum MaintenanceAction {
     Start = "start",
