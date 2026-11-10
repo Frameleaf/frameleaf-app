@@ -85,7 +85,7 @@ describe('Library care fix queue', () => {
     });
 
     // the fix of a Try again that already waited for the running one (it started before the cancel)
-    await fix({ from: 'person', attempt: 0, requeue: 1, delay: 60_000 });
+    await fix({ from: 'person', attempt: 0, requeue: 1, delay: 60_000, retry: 'try-1' });
 
     await jobs.cancelWaitingFixes(asset);
 
@@ -96,9 +96,21 @@ describe('Library care fix queue', () => {
       // a running fix settles by itself; the per-photo guard holds Try again back meanwhile
       [`fix-${asset}/r1`]: 'active',
       // the Try again's own fix waiting its turn stays
-      [`fix-${asset}/p1`]: 'pending',
+      [`fix-${asset}/ptry-1-1`]: 'pending',
       [`fix-${other}/r1`]: 'pending',
     });
+  });
+
+  it('keeps a later Try again’s fix that waits behind an earlier Try again’s running one', async () => {
+    // the earlier Try again's fix put itself back once and is running now
+    await fix({ from: 'person', attempt: 0, requeue: 1, retry: 'try-1' });
+    await start(`fix-${asset}/ptry-1-1`);
+    // the later Try again's fix waits for it: its put-back is a row of its own, not dropped
+    await fix({ from: 'person', attempt: 0, requeue: 1, delay: 60_000, retry: 'try-2' });
+    await jobs.cancelWaitingFixes(asset);
+
+    const states = Object.fromEntries((await rows()).map((job) => [job.externalId, job.state]));
+    expect(states).toEqual({ [`fix-${asset}/ptry-1-1`]: 'active', [`fix-${asset}/ptry-2-1`]: 'pending' });
   });
 
   it('lets one fix of a photo run at a time: the one that started first', async () => {

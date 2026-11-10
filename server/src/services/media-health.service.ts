@@ -2688,7 +2688,7 @@ export class MediaHealthService {
     const retriedAt = new Date().toISOString();
     await this.jobRepository.queue({
       name: JobName.MediaHealthFixAsset,
-      data: { id: record.assetId, from: 'person', attempt: 0 },
+      data: { id: record.assetId, from: 'person', attempt: 0, retry: randomUUID() },
     });
     await this.jobRepository.cancelWaitingFixes(record.assetId);
     await this.mediaHealthRepository.settleFinding({ healthId: record.id, evidence: { retriedAt } });

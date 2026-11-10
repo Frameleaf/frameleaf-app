@@ -6595,7 +6595,7 @@ describe(MediaHealthService.name, () => {
 
         expect(mocks.job.queue).toHaveBeenCalledWith({
           name: JobName.MediaHealthFixAsset,
-          data: { id: 'asset-1', from: 'person', attempt: 0 },
+          data: { id: 'asset-1', from: 'person', attempt: 0, retry: expect.any(String) },
         });
         // only the time of the choice is recorded; the decline and the fix state stay as they are
         expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
@@ -6635,7 +6635,7 @@ describe(MediaHealthService.name, () => {
         await expect(sut.tryFileProblemAgain(admin, 'health-1')).resolves.toMatchObject({ canAct: false });
         expect(mocks.job.queue).toHaveBeenCalledWith({
           name: JobName.MediaHealthFixAsset,
-          data: { id: 'asset-1', from: 'person', attempt: 0 },
+          data: { id: 'asset-1', from: 'person', attempt: 0, retry: expect.any(String) },
         });
         await expect(sut.lookInFolderForFileProblem(admin, 'health-1', { folderId: MANAGED_ROOT_ID })).rejects.toThrow(
           "Only the photo's owner can do that",

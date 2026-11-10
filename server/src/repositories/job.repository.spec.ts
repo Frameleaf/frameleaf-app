@@ -67,7 +67,7 @@ describe(JobRepository.name, () => {
     await sut.queue({ name: JobName.MediaHealthFixAsset, data: { id: 'asset', from: 'person', attempt: 0 } });
     await sut.queue({
       name: JobName.MediaHealthFixAsset,
-      data: { id: 'asset', from: 'person', requeue: 1, delay: 60_000 },
+      data: { id: 'asset', from: 'person', requeue: 1, delay: 60_000, retry: 'try-2' },
     });
     expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
       // every feed of one photo collapses onto the fix that is queued or running
@@ -78,7 +78,7 @@ describe(JobRepository.name, () => {
       // a person's Try again takes a queued feed's place, or runs after the one running, never dropped
       { jobId: 'fix-asset', deduplication: { id: 'fix-asset', keepLastIfActive: true } },
       // and once it waits for another fix it puts itself back under a person's key, which Try again never cancels
-      { jobId: 'fix-asset/p1', delay: 60_000 },
+      { jobId: 'fix-asset/ptry-2-1', delay: 60_000 },
     ]);
   });
 

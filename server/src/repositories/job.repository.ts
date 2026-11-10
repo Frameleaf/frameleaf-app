@@ -1331,10 +1331,13 @@ export class JobRepository {
         // running. A fix that puts itself back carries its own key: the store drops a job whose key
         // matches a live row, and the live row is the fix that is queuing it.
         // The shared search's feed has its own key too, so a fix queued meanwhile cannot swallow it.
-        // A person's fix that puts itself back has a key of its own too (`/pN`), which a later Try again's
-        // cancellation of the waiting fixes never matches: it is that Try again's own fix.
+        // A person's fix that puts itself back has a key of its own too (`/p<its Try again>-N`): a later Try
+        // again's cancellation of the waiting fixes never matches it, and it never collides with the put-back of
+        // an earlier Try again's fix that is still running.
         const jobId = item.data.requeue
-          ? `fix-${item.data.id}/${item.data.from === 'person' ? 'p' : 'r'}${item.data.requeue}`
+          ? item.data.from === 'person'
+            ? `fix-${item.data.id}/p${item.data.retry ?? ''}-${item.data.requeue}`
+            : `fix-${item.data.id}/r${item.data.requeue}`
           : item.data.searched
             ? `fix-${item.data.id}/searched`
             : `fix-${item.data.id}`;
