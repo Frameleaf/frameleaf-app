@@ -410,6 +410,12 @@ export class PersonRepository {
             .where('asset_face.deletedAt', 'is', null)
             .where('asset_face.isVisible', '=', true)
             .where((eb) => isNotLockedAsset(eb))
+            // FL-795: an archived face only when the owner includes archived photos in People, or when it
+            // is already the person's featured face (one picked by hand stays)
+            .where(
+              (eb) =>
+                sql<boolean>`(${archivedAllowedInPeople(sql.ref('person.ownerId'))} or ${eb.ref('asset_face.id')} = ${eb.ref('person.faceAssetId')})`,
+            )
             .orderBy(sql`(asset_face.id = person."faceAssetId") desc nulls last`)
             .orderBy(sql`${nsfwAssetIdExists(sql.ref('asset_face.assetId'))} asc`)
             .orderBy('asset_face.id')

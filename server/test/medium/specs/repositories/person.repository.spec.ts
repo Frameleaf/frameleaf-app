@@ -468,6 +468,40 @@ describe(PersonRepository.name, () => {
       await includeArchived(ctx.database, user.id, true);
       await expect(sut.getRandomFace(person.personGroupId, user.id)).resolves.toMatchObject({ id: assetFace.id });
     });
+
+    it('keeps a cleared person without a thumbnail when only archived faces are left, unless archived are included', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      // what createNewFeaturePhoto leaves when no face qualifies: no featured face, no thumbnail
+      const { person } = await ctx.newPerson({ ownerId: user.id, faceAssetId: null, thumbnailPath: '' });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+
+      // the next thumbnail scan does not bring the archived face back
+      await expect(sut.selectionForThumbnails(false, user.id).execute()).resolves.toEqual([]);
+
+      await includeArchived(ctx.database, user.id, true);
+      await expect(sut.selectionForThumbnails(false, user.id).execute()).resolves.toEqual([
+        expect.objectContaining({ data: expect.objectContaining({ selectionFaceId: assetFace.id }) }),
+      ]);
+    });
+
+    it('keeps an archived featured face someone picked by hand when thumbnails are regenerated', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      await ctx.database
+        .updateTable('person')
+        .set({ faceAssetId: assetFace.id })
+        .where('personGroupId', '=', person.personGroupId)
+        .execute();
+
+      await expect(sut.selectionForThumbnails(true, user.id).execute()).resolves.toEqual([
+        expect.objectContaining({ data: expect.objectContaining({ selectionFaceId: assetFace.id }) }),
+      ]);
+    });
   });
 
   describe('getFeaturedAsset (FL-37)', () => {
