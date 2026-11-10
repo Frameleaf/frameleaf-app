@@ -16,6 +16,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LOCKED_TEMP_NAME } from 'src/utils/locked-backup.js';
+import { LIBRARY_CARE_FOLDER } from 'src/utils/media-health-roots.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -525,6 +526,37 @@ describe(LockedFileRepository.name, () => {
       expect(paths).not.toContain(locked.originalPath);
       expect(paths).not.toContain(external.originalPath);
       expect(paths).not.toContain(theirs.originalPath);
+    });
+
+    it('adds the paths Library care records only inside the owner’s own folders, in normal form (FL-1364)', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const upload = join(media, 'upload', user.id);
+      // gone from disk: still cleaned beside
+      const kept = join(upload, 'ab', 'cd', LIBRARY_CARE_FOLDER, `${asset.id}-1.damaged.jpg`);
+      const outside = `/srv/elsewhere/${randomUUID()}.jpg`;
+      const crooked = `${upload}/x/../${randomUUID()}.jpg`;
+      const { rows } = await sql<{ id: string }>`
+        INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName",
+          evidence, resolution, "checkedAt")
+        VALUES (${asset.id}::uuid, 'corrupt', 'resolved', 'info', ${asset.originalPath}, 'x.jpg',
+          ${JSON.stringify({ retainedPath: kept })}::text::jsonb, '{}'::jsonb, now())
+        RETURNING id`.execute(db);
+      for (const previousPath of [outside, crooked]) {
+        await sql`INSERT INTO public.asset_health_step ("healthId", "assetId", step, outcome, undo)
+          VALUES (${rows[0].id}::uuid, ${asset.id}::uuid, 'put-back', 'ok',
+            ${JSON.stringify({ kind: 'relink', previousPath, originalPath: asset.originalPath })}::text::jsonb)`.execute(
+          db,
+        );
+      }
+
+      const paths = await new LockedEncryptionRepository(db).getUnlockedFilePaths(user.id);
+
+      expect(paths).toContain(kept);
+      expect(paths).toContain(asset.originalPath);
+      expect(paths).not.toContain(outside);
+      expect(paths).not.toContain(crooked);
     });
   });
 
