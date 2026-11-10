@@ -49,6 +49,8 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     values: ($t, value) => (value === 0 ? $t('frameleaf_bgwork_capacity_automatic') : undefined),
   },
   'nightlyTasks.reprocessUnfinished': { label: 'frameleaf_overnight_reprocess_unfinished' },
+  // Intelligence › Faces (FL-927)
+  'metadata.faces.write': { label: 'frameleaf_intel_faces_write' },
   // People & sharing
   'server.publicUsers': { label: 'frameleaf_sharing_find_label' },
   // Server & updates › Server name & welcome
@@ -187,6 +189,7 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     label: 'frameleaf_prefs_tools_people_minimum',
     values: count('frameleaf_prefs_tools_photos'),
   },
+  'people.includeArchived': { label: 'frameleaf_prefs_tools_people_archived' },
   'albums.defaultAssetOrder': {
     label: 'frameleaf_prefs_look_albums',
     values: { desc: 'newest_first', asc: 'oldest_first' },

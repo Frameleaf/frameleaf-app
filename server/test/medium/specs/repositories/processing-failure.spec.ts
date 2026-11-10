@@ -91,11 +91,16 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
   ]);
   expect(await repository.getProcessingFailures(other, { ...query, userId: user.id })).toEqual([]);
   expect(await repository.getProcessingFailures(admin, { ...query, userId: user.id })).toHaveLength(1);
+  // FL-862: the count under the same rules, once per file, steps it doesn't know left out
+  expect(await repository.countProcessingFailures(auth)).toEqual({ count: 1, setAside: 1 });
+  expect(await repository.countProcessingFailures(other)).toEqual({ count: 0, setAside: 0 });
+  expect(await repository.countProcessingFailures(admin)).toEqual({ count: 1, setAside: 1 });
 
   const action = { items: [{ assetId: corrupt.id, step: JobName.AssetGenerateThumbnails as const }] };
   await expect(repository.updateProcessingFailures(other, action)).rejects.toThrow('Processing failure not found');
   await repository.updateProcessingFailures(auth, action);
   expect(await repository.getProcessingFailures(auth, query)).toEqual([]);
+  expect(await repository.countProcessingFailures(auth)).toEqual({ count: 0, setAside: 0 });
 
   const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
   jobs['handlers'][JobName.AssetGenerateThumbnails] = { queueName: queue } as never;

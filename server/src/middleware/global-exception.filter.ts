@@ -79,8 +79,11 @@ export class GlobalExceptionFilter implements ExceptionFilter<Error> {
         }
       }
 
-      // remove fields injected by NestJS that duplicate the HTTP response line
-      delete body['error'];
+      // remove fields injected by NestJS that duplicate the HTTP response line; an OAuth error
+      // (FL-803, RFC 6749 §5.2) keeps `error`, which there is the error code apps read
+      if (!('error_description' in body)) {
+        delete body['error'];
+      }
       delete body['statusCode'];
       return { status, body: { ...body, displayError: serverErrorDisplay(status, body) } };
     }

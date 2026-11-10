@@ -307,7 +307,7 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
         hidden: undefined,
       });
       // the target had no featured face yet
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(target.personGroupId);
+      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(target.personGroupId, target.ownerId);
     });
 
     it('refuses reassignment to a person the caller cannot update', async () => {
@@ -423,7 +423,7 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
         box: undefined,
         hidden: true,
       });
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId);
+      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
     });
 
     it('shows a hidden face again', async () => {

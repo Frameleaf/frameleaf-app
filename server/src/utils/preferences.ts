@@ -152,6 +152,8 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       minimumFaces: 3,
       // ACCOUNT-P2, prototype `settings-v2/server/sharing.jsx`: "Suggest matching people in shared Spaces" off
       suggestInSpaces: false,
+      // FL-795: People shows timeline photos only, as before the option existed
+      includeArchived: false,
     },
     sharedLinks: {
       enabled: true,

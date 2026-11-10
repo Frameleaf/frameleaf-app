@@ -1,7 +1,8 @@
-import type { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import {
   FRAMELEAF_VIA_UNVERIFIED,
   type FrameleafRequest,
+  expressTrustProxy,
   frameleafViaMiddleware,
   readFrameleafArrival,
   requestSecurityAddress,
@@ -70,35 +71,50 @@ describe('frameleafViaMiddleware (FL-161)', () => {
     expect(requestSecurityAddress(request)).toBe('198.51.100.20');
   });
 
-  it.each([
-    { configured: false, expected: '192.168.1.20' },
-    { configured: true, expected: '203.0.113.7' },
-  ])('uses the correct security address with configured proxy trust $configured', ({ configured, expected }) => {
-    const request = {
-      headers: { 'x-forwarded-for': '203.0.113.7' },
-      ip: '203.0.113.7',
-      socket: { remoteAddress: '192.168.1.20' },
-    } as unknown as FrameleafRequest;
-    frameleafViaMiddleware(secret, configured)(request, {} as Response, vi.fn());
+  describe('security address behind a reverse proxy (FL-850)', () => {
+    /** A request whose `ip` is computed by real Express with the server's `trust proxy` setting. */
+    const viaExpress = (trustedProxies: string[], peer: string, forwardedFor?: string) => {
+      const app = express();
+      app.set('trust proxy', expressTrustProxy(trustedProxies));
+      const socket = { remoteAddress: peer };
+      const request = Object.create(app.request) as FrameleafRequest;
+      Object.assign(request, {
+        headers: forwardedFor ? { 'x-forwarded-for': forwardedFor } : {},
+        socket,
+        connection: socket,
+      });
+      frameleafViaMiddleware(secret)(request, {} as Response, vi.fn());
+      return requestSecurityAddress(request);
+    };
+    const defaults = ['linklocal', 'uniquelocal'];
 
-    expect(requestSecurityAddress(request)).toBe(expected);
-  });
+    it.each([
+      { proxy: 'loopback', peer: '127.0.0.1' },
+      { proxy: 'private-range', peer: '172.18.0.2' },
+      { proxy: 'IPv6 unique-local', peer: 'fd00::2' },
+    ])('gives each visitor their own address behind an unconfigured $proxy proxy', ({ peer }) => {
+      expect(viaExpress(defaults, peer, '203.0.113.7')).toBe('203.0.113.7');
+      expect(viaExpress(defaults, peer, '203.0.113.8')).toBe('203.0.113.8');
+    });
 
-  it('warns once about private forwarded traffic without trusting the header', () => {
-    const warn = vi.fn();
-    const middleware = frameleafViaMiddleware(secret, false, warn);
-    const peer = '192.168.1.20';
-    for (const address of ['203.0.113.7', '203.0.113.8']) {
-      const request = {
-        headers: { 'x-forwarded-for': address },
-        ip: address,
-        socket: { remoteAddress: peer },
-      } as unknown as FrameleafRequest;
-      middleware(request, {} as Response, vi.fn());
+    it('never trusts X-Forwarded-For from a public peer', () => {
+      expect(viaExpress(defaults, '198.51.100.9', '203.0.113.7')).toBe('198.51.100.9');
+      expect(viaExpress(['198.51.100.0/24'], '203.0.113.50', '192.168.1.2')).toBe('203.0.113.50');
+    });
 
-      expect(requestSecurityAddress(request)).toBe(peer);
-    }
-    expect(warn).toHaveBeenCalledTimes(1);
+    it('takes the first untrusted hop, not an address the visitor put first', () => {
+      expect(viaExpress(defaults, '172.18.0.2', '192.0.2.1, 203.0.113.7')).toBe('203.0.113.7');
+    });
+
+    it('trusts only FRAMELEAF_TRUSTED_PROXIES (plus loopback) when it is set', () => {
+      expect(viaExpress(['100.64.0.0/10'], '100.100.1.1', '203.0.113.7')).toBe('203.0.113.7');
+      expect(viaExpress(['100.64.0.0/10'], '172.18.0.2', '203.0.113.7')).toBe('172.18.0.2');
+      expect(viaExpress(['100.64.0.0/10'], '127.0.0.1', '203.0.113.7')).toBe('203.0.113.7');
+    });
+
+    it('uses the socket address when nothing forwards one', () => {
+      expect(viaExpress(defaults, '192.168.1.20')).toBe('192.168.1.20');
+    });
   });
 
   it('leaves a request that claims nothing unmarked', () => {

@@ -5,9 +5,9 @@ import cookieParser from 'cookie-parser';
 import helmetMiddleware from 'helmet';
 import { existsSync } from 'node:fs';
 import sirv from 'sirv';
-import { IMMICH_SERVER_START, excludePaths, serverVersion } from 'src/constants.js';
+import { IMMICH_SERVER_START, excludePaths, excludeRoutePatterns, serverVersion } from 'src/constants.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
-import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
+import { expressTrustProxy, frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
 import { requestLogMiddleware } from 'src/middleware/logging.interceptor.js';
 import { WebSocketAdapter } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -49,7 +49,7 @@ export async function configureExpress(
   logger.setContext('Bootstrap');
   app.useLogger(logger);
 
-  app.set('trust proxy', ['loopback', ...network.trustedProxies]);
+  app.set('trust proxy', expressTrustProxy(network.trustedProxies));
   app.set('etag', 'strong');
 
   if (helmet.config) {
@@ -64,13 +64,7 @@ export async function configureExpress(
   app.use(cookieParser());
   // FL-161: record how the request arrived (vouched for by the edge worker's per-boot secret) and
   // drop every client-supplied `X-Frameleaf-*` claim before anything else reads the request.
-  app.use(
-    frameleafViaMiddleware(frameleafCloud.edge.secret, network.trustConfiguredProxies, () =>
-      logger.warn(
-        'Forwarded addresses are ignored for per-address rate limits. If using a reverse proxy, configure its address in FRAMELEAF_TRUSTED_PROXIES.',
-      ),
-    ),
-  );
+  app.use(frameleafViaMiddleware(frameleafCloud.edge.secret));
   app.use(
     json({
       limit: '10mb',
@@ -87,7 +81,7 @@ export async function configureExpress(
     app.enableCors();
   }
 
-  app.setGlobalPrefix('api', { exclude: excludePaths });
+  app.setGlobalPrefix('api', { exclude: [...excludePaths, ...excludeRoutePatterns] });
   // Nest initializes gateways before AppBootstrap; their PostgreSQL transport needs the schema first.
   // Maintenance deliberately remains available without the normal database/import activation gate.
   if (ssr === ApiService) {

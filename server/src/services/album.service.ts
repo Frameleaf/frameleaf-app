@@ -20,6 +20,7 @@ import {
   AlbumHierarchyResponseDto,
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
+  AlbumPersonResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
@@ -80,6 +81,8 @@ export const ALBUM_MOVE_OWNER_ONLY =
   'Only the album owner can move it. Editors can change what is in the album, but not where it is kept.';
 
 /** When each person's album covers were last repaired; see `refreshCoversInBackground`. */
+/** FL-809: the most people an album offers as chips. */
+const ALBUM_PEOPLE_LIMIT = 50;
 const coverRefreshAt = new Map<string, number>();
 /** People whose cover repair is still running: a slow one never overlaps the next. */
 const coverRefreshRunning = new Set<string>();
@@ -867,6 +870,31 @@ export class AlbumService extends BaseService {
       afterAssetId = batch.at(-1)!.assetId;
     }
     if (firstError) throw firstError;
+  }
+
+  /**
+   * FL-809: the named people in an album, for its people chips. Any member reads them; a shared link only
+   * when it shows metadata, since a link that hides it never names anyone on its items.
+   */
+  async getPeople(auth: AuthDto, id: string): Promise<AlbumPersonResponseDto[]> {
+    await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
+    if (auth.sharedLink && !auth.sharedLink.showExif) {
+      throw new ForbiddenException('This shared link does not show people');
+    }
+    // A link reads as its owner, but its visitors are not the owner: every owner's Locked rules apply,
+    // the owner's own included, so a name never points at an item the link does not show.
+    const people = await this.personRepository.getAlbumPeople(
+      id,
+      auth.user.id,
+      { ...this.nsfwOptions(auth), ...(auth.sharedLink ? everyOwnersRules : {}) },
+      ALBUM_PEOPLE_LIMIT,
+    );
+    return people.map(({ id, name, count, updatedAt }) => ({
+      id,
+      name,
+      count,
+      updatedAt: asDateTimeString(updatedAt),
+    }));
   }
 
   async getDescendantCount(auth: AuthDto, id: string): Promise<AlbumDescendantCountResponseDto> {

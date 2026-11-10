@@ -19,6 +19,7 @@
   import ImageSettings from '../../admin/system-settings/ImageSettings.svelte';
   import LibrarySettings from '../../admin/system-settings/LibrarySettings.svelte';
   import LoggingSettings from '../../admin/system-settings/LoggingSettings.svelte';
+  import LogViewer from '$lib/components/frameleaf/settings/server-settings/LogViewer.svelte';
   import MapSettings from '../../admin/system-settings/MapSettings.svelte';
   import NewVersionCheckSettings from '../../admin/system-settings/NewVersionCheckSettings.svelte';
   import NotificationSettings from '../../admin/system-settings/NotificationSettings.svelte';
@@ -94,6 +95,7 @@
     mdiDatabaseOutline,
     mdiFileCheckOutline,
     mdiFileDocumentOutline,
+    mdiTextBoxSearchOutline,
     mdiFolderOutline,
     mdiImageEditOutline,
     mdiImageMultipleOutline,
@@ -263,6 +265,16 @@
       subtitle: $t('frameleaf_cc_section_diagnostics_description'),
       key: 'logging',
       icon: mdiFileDocumentOutline,
+    },
+    {
+      // FL-893: Server & updates › Advanced › Server logs (prototype `server/operator.jsx` Logs).
+      admin: true,
+      component: LogViewer,
+      title: $t('frameleaf_cc_section_logs'),
+      subtitle: $t('frameleaf_cc_section_logs_description'),
+      key: 'logs',
+      icon: mdiTextBoxSearchOutline,
+      keywords: (SETTINGS_SECTION_KEYWORDS.logs ?? []).map((keyword) => $t(keyword)),
     },
     // FL-366: Search & intelligence, one page per feature under the area's landing page.
     {

@@ -312,6 +312,8 @@ describe('Frameleaf settings areas', () => {
         'repair',
         // FL-1338: Damaged and missing files, an account page every account has
         'files',
+        // FL-862: Couldn't process, an account page every account has
+        'couldnt-process',
         'duplicates',
         'enrichment-care',
         'unused-files',

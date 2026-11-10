@@ -163,6 +163,12 @@ import { MlWorkloadRouteOriginTable } from 'src/schema/tables/ml-workload-route-
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { NotificationTable } from 'src/schema/tables/notification.table.js';
+import {
+  OAuthAuthorizationCodeTable,
+  OAuthClientTable,
+  OAuthGrantTable,
+  OAuthSpentRefreshTokenTable,
+} from 'src/schema/tables/oauth-app.table.js';
 import { OcrSearchTable } from 'src/schema/tables/ocr-search.table.js';
 import { OperationalMetricSampleTable } from 'src/schema/tables/operational-metric-sample.table.js';
 import { PartnerAuditTable } from 'src/schema/tables/partner-audit.table.js';
@@ -337,6 +343,10 @@ export class ImmichDatabase {
     CaptureReceiptTable,
     BrowserExtensionSignInCodeTable,
     BrowserExtensionAccessTable,
+    OAuthClientTable,
+    OAuthGrantTable,
+    OAuthAuthorizationCodeTable,
+    OAuthSpentRefreshTokenTable,
     BookmarkTable,
     AlbumBookmarkTable,
     AlbumChangeRunTable,
@@ -634,6 +644,10 @@ export interface DB extends QueueDatabase {
   capture_receipt: CaptureReceiptTable;
   browser_extension_sign_in_code: BrowserExtensionSignInCodeTable;
   browser_extension_access: BrowserExtensionAccessTable;
+  oauth_client: OAuthClientTable;
+  oauth_grant: OAuthGrantTable;
+  oauth_authorization_code: OAuthAuthorizationCodeTable;
+  oauth_spent_refresh_token: OAuthSpentRefreshTokenTable;
   bookmark: BookmarkTable;
   album_bookmark: AlbumBookmarkTable;
   album_change_run: AlbumChangeRunTable;

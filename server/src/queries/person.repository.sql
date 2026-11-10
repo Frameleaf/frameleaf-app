@@ -108,29 +108,58 @@ from
   inner join "asset" on "asset_face"."assetId" = "asset"."id"
   and "asset"."ownerId" = "person"."ownerId"
   and (
-    "asset"."visibility" = 'timeline'
-    and not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
+    (
+      "asset"."visibility" = 'timeline'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+    or (
+      (
+        "asset"."visibility" = 'archive'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and coalesce(
+        (
+          select
+            (
+              user_metadata.value -> 'people' ->> 'includeArchived'
+            )::boolean
+          from
+            user_metadata
+          where
+            user_metadata."userId" = $1
+            and user_metadata.key = 'preferences'
+        ),
+        false
+      )
     )
   )
   and "asset"."deletedAt" is null
 where
-  "person"."ownerId" = $1
-  and "asset"."libraryScope" in ($2, $3)
+  "person"."ownerId" = $2
+  and "asset"."libraryScope" in ($3, $4)
   and "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
-  and "person"."isHidden" = $4
+  and "person"."isHidden" = $5
 group by
   "person"."ownerId",
   "person"."personGroupId"
 having
   (
-    "person"."name" != $5
+    "person"."name" != $6
     or count("asset_face"."assetId") >= COALESCE(
       (
         SELECT
@@ -138,7 +167,7 @@ having
         FROM
           user_metadata
         WHERE
-          "userId" = $6
+          "userId" = $7
           AND key = 'preferences'
       ),
       '3'
@@ -152,9 +181,9 @@ order by
   NULLIF(person.name, '') asc nulls last,
   "person"."createdAt"
 limit
-  $7
-offset
   $8
+offset
+  $9
 
 -- PersonRepository.getAllWithoutFaces
 select
@@ -339,6 +368,47 @@ set
 where
   "asset_face"."id" = $2
 
+-- PersonRepository.getAlbumPeople
+select
+  "person"."personGroupId" as "id",
+  "person"."name",
+  "person"."updatedAt",
+  count(distinct "asset"."id")::int as "count"
+from
+  "asset"
+  inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
+  inner join "asset_face" on "asset_face"."assetId" = "asset"."id"
+  inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+  and "person"."ownerId" = $1
+where
+  (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "album_asset"."albumId" = $2
+  and "asset"."deletedAt" is null
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+  and "person"."isHidden" is false
+  and "person"."name" != $3
+group by
+  "person"."personGroupId",
+  "person"."name",
+  "person"."updatedAt"
+order by
+  "count" desc,
+  "person"."name" asc,
+  "person"."personGroupId" asc
+limit
+  $4
+
 -- PersonRepository.getByGroupId
 select
   "person".*
@@ -368,27 +438,56 @@ where
       "asset_face"
       inner join "asset" on "asset"."id" = "asset_face"."assetId"
       and (
-        "asset"."visibility" = 'timeline'
-        and not exists (
-          select
-            1
-          from
-            asset_lock
-          where
-            asset_lock."assetId" = "asset"."id"
+        (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
+        or (
+          (
+            "asset"."visibility" = 'archive'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
+          and coalesce(
+            (
+              select
+                (
+                  user_metadata.value -> 'people' ->> 'includeArchived'
+                )::boolean
+              from
+                user_metadata
+              where
+                user_metadata."userId" = $3
+                and user_metadata.key = 'preferences'
+            ),
+            false
+          )
         )
       )
       and "asset"."deletedAt" is null
     where
-      "asset"."libraryScope" in ($3, $4)
+      "asset"."libraryScope" in ($4, $5)
       and "asset_face"."personGroupId" = "person"."personGroupId"
       and "asset_face"."deletedAt" is null
       and "asset_face"."isVisible" is true
   )
 order by
-  f_unaccent ("person"."name") <->>> f_unaccent ($5)
+  f_unaccent ("person"."name") <->>> f_unaccent ($6)
 limit
-  $6
+  $7
 
 -- PersonRepository.getDistinctNames
 select distinct
@@ -417,19 +516,48 @@ from
   "asset_face"
   left join "asset" on "asset"."id" = "asset_face"."assetId"
   and (
-    "asset"."visibility" = 'timeline'
-    and not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
+    (
+      "asset"."visibility" = 'timeline'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+    or (
+      (
+        "asset"."visibility" = 'archive'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and coalesce(
+        (
+          select
+            (
+              user_metadata.value -> 'people' ->> 'includeArchived'
+            )::boolean
+          from
+            user_metadata
+          where
+            user_metadata."userId" = $1
+            and user_metadata.key = 'preferences'
+        ),
+        false
+      )
     )
   )
   and "asset"."deletedAt" is null
   and (
-    "asset"."ownerId" = $1::uuid
+    "asset"."ownerId" = $2::uuid
     or exists (
       select
         1 as "exists"
@@ -438,7 +566,7 @@ from
         inner join "album" on "album"."id" = "album_asset"."albumId"
         and "album"."deletedAt" is null
         inner join "album_user" on "album_user"."albumId" = "album"."id"
-        and "album_user"."userId" = $2::uuid
+        and "album_user"."userId" = $3::uuid
       where
         "album_asset"."assetId" = "asset"."id"
     )
@@ -446,7 +574,7 @@ from
 where
   "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
-  and "asset_face"."personGroupId" = $3
+  and "asset_face"."personGroupId" = $4
 
 -- PersonRepository.getNumberOfPeople
 select
@@ -476,20 +604,49 @@ where
         where
           "asset"."id" = "asset_face"."assetId"
           and (
-            "asset"."visibility" = 'timeline'
-            and not exists (
-              select
-                1
-              from
-                asset_lock
-              where
-                asset_lock."assetId" = "asset"."id"
+            (
+              "asset"."visibility" = 'timeline'
+              and not exists (
+                select
+                  1
+                from
+                  asset_lock
+                where
+                  asset_lock."assetId" = "asset"."id"
+              )
+            )
+            or (
+              (
+                "asset"."visibility" = 'archive'
+                and not exists (
+                  select
+                    1
+                  from
+                    asset_lock
+                  where
+                    asset_lock."assetId" = "asset"."id"
+                )
+              )
+              and coalesce(
+                (
+                  select
+                    (
+                      user_metadata.value -> 'people' ->> 'includeArchived'
+                    )::boolean
+                  from
+                    user_metadata
+                  where
+                    user_metadata."userId" = $3
+                    and user_metadata.key = 'preferences'
+                ),
+                false
+              )
             )
           )
           and "asset"."deletedAt" is null
       )
   )
-  and "person"."ownerId" = $3
+  and "person"."ownerId" = $4
 
 -- PersonRepository.createGroup
 insert into
@@ -735,8 +892,25 @@ from
       asset_lock."assetId" = "asset"."id"
   )
 where
-  "asset"."libraryScope" in ($1, $2)
-  and "asset_face"."personGroupId" = $3
+  (
+    "asset"."visibility" != 'archive'
+    or coalesce(
+      (
+        select
+          (
+            user_metadata.value -> 'people' ->> 'includeArchived'
+          )::boolean
+        from
+          user_metadata
+        where
+          user_metadata."userId" = $1
+          and user_metadata.key = 'preferences'
+      ),
+      false
+    )
+  )
+  and "asset"."libraryScope" in ($2, $3)
+  and "asset_face"."personGroupId" = $4
   and "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
 order by

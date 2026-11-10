@@ -1207,7 +1207,7 @@ describe(PersonService.name, () => {
         boundingBoxY2: 130,
         sourceType: SourceType.Manual,
       });
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId);
+      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
@@ -1256,7 +1256,10 @@ describe(PersonService.name, () => {
       expect(mocks.person.createAssetFace).toHaveBeenCalledOnce();
       expect(mocks.person.getRandomFace).not.toHaveBeenCalled();
       expect(mocks.person.update).not.toHaveBeenCalled();
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      // FL-927: only the face sidecar refresh is queued, no feature photo job
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([
+        { name: JobName.SidecarWrite, data: { id: asset.id, facesOnly: true } },
+      ]);
     });
 
     it('should reject creating a face on an asset the user does not own', async () => {
@@ -1296,6 +1299,22 @@ describe(PersonService.name, () => {
           data: { ownerId: person.ownerId, personGroupId: person.personGroupId },
         },
       ]);
+    });
+
+    it('clears the featured face when no other face qualifies, e.g. only archived ones are left (FL-795)', async () => {
+      const person = PersonFactory.create();
+      mocks.person.getRandomFace.mockResolvedValue(undefined);
+
+      await sut.createNewFeaturePhoto([person]);
+
+      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
+      expect(mocks.person.update).toHaveBeenCalledWith({
+        ownerId: person.ownerId,
+        personGroupId: person.personGroupId,
+        faceAssetId: null,
+        thumbnailPath: '',
+      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
     });
   });
 
@@ -2520,7 +2539,7 @@ describe(PersonService.name, () => {
         newPersonGroupId: personGroupId,
         onlyUndecided: true,
       });
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(personGroupId);
+      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(personGroupId, asset.ownerId);
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: asset.ownerId,
         personGroupId,

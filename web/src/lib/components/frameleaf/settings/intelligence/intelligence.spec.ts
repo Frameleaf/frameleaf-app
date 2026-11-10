@@ -93,7 +93,7 @@ const config = () =>
         device: 'AUTO',
       },
     },
-    metadata: { faces: { import: false } },
+    metadata: { faces: { import: false, write: true } },
     localFeatures: { askSearch: { enabled: true, maxResults: 100 } },
     libraryCare: { manualMetadata: true },
     smartAlbums: {

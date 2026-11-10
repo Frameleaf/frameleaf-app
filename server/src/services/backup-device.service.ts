@@ -16,7 +16,7 @@ import {
 import { PushEventType } from 'src/enum.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { requireReconciliationScope } from 'src/utils/backup-reconciliation.js';
+import { hasReconciliationScope, requireReconciliationScope } from 'src/utils/backup-reconciliation.js';
 
 type LastCheck = Pick<
   Selectable<BackupReconciliationTable>,
@@ -78,6 +78,8 @@ export class BackupDeviceService {
     if (dto.lastSuccessfulBackupAt && new Date(dto.lastSuccessfulBackupAt).getTime() > Date.now())
       throw new BadRequestException('Backup success cannot be in the future');
     const row = await this.repository.register(auth.user.id, dto);
+    // FL-771: check counts are receipt data, so they need the same scope as the receipt endpoint.
+    if (!hasReconciliationScope(auth)) return mapDevice(row);
     const [lastCheck] = await this.repository.lastChecks([row.id]);
     return mapDevice(row, lastCheck);
   }
@@ -86,9 +88,9 @@ export class BackupDeviceService {
     if (admin && !auth.user.isAdmin) throw new ForbiddenException('Admin access required');
     const rows = await this.repository.list(admin ? undefined : auth.user.id, page);
     const devices = rows.slice(0, page.limit);
-    const checks = new Map(
-      (await this.repository.lastChecks(devices.map(({ id }) => id))).map((run) => [run.deviceId, run]),
-    );
+    // FL-771: without the receipt scope a check's counts would reveal hidden items, so leave them out.
+    const runs = hasReconciliationScope(auth) ? await this.repository.lastChecks(devices.map(({ id }) => id)) : [];
+    const checks = new Map(runs.map((run) => [run.deviceId, run]));
     return {
       devices: devices.map((row) => mapDevice(row, checks.get(row.id))),
       nextOffset: rows.length > page.limit ? page.offset + page.limit : null,

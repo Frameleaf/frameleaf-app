@@ -79,3 +79,49 @@ test("manual full RAW validation builds candidate production native runtime on b
   assert.match(stage, /import.*darktable-renderer\.js/);
   assert.doesNotMatch(stage, /--from=(web|studio-engine)/);
 });
+
+test("the format matrix runs the inventory and the manifest inside the production native runtime", () => {
+  const workflow = load(
+    readFileSync(resolve(__dirname, "workflows/frameleaf-quality.yml"), "utf8"),
+  );
+  const commands = workflow.jobs["native-raw"].steps
+    .filter(
+      ({ if: condition }) => condition === "inputs.raw_engine == 'formats'",
+    )
+    .map(({ run }) => run || "")
+    .join("\n");
+  assert.ok(commands, "no step runs only for raw_engine == 'formats'");
+  assert.match(commands, /--target native-raw-validation/);
+  assert.match(commands, /--network none/);
+  assert.match(commands, /verify-decoders\.mjs/);
+  assert.match(
+    commands,
+    /verify-formats\.mjs \/fixtures\/generated\/manifest\.json/,
+  );
+  assert.doesNotMatch(commands, /continue-on-error|\|\| true/);
+  const manifest = JSON.parse(
+    readFileSync(
+      resolve(__dirname, "../server/test/fixtures/formats/manifest.json"),
+      "utf8",
+    ),
+  );
+  // The three RAW checks verify-raw.mjs made stay first, and every expected failure says why.
+  assert.deepEqual(
+    manifest.fixtures
+      .slice(0, 3)
+      .map(({ file, width, height }) => [file, width, height]),
+    [
+      ["formats/raw/Canon/EOS_70D.CR2", 5496, 3670],
+      ["formats/raw/Ricoh/GR3/Ricoh_GR3-450.DNG", 6020, 4024],
+      ["formats/raw/Nikon/D80/glarus.nef", 3900, 2613],
+    ],
+  );
+  for (const fixture of manifest.fixtures) {
+    assert.ok(
+      fixture.expectedFailure === undefined
+        ? fixture.failsOn === undefined
+        : fixture.expectedFailure.length > 20 && fixture.failsOn?.length > 0,
+      fixture.file,
+    );
+  }
+});
