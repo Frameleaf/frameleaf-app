@@ -485,8 +485,14 @@ describe('a lost Immich original records what Immich knew', () => {
     };
     const importer = new ImmichImportService(destination, source, { ...config, mediaRoots: roots });
     const lost = (importer as unknown as { lostOriginals: Map<string, unknown> }).lostOriginals;
-    lost.set('asset-moved', { reason: 'missing', immichPath: join(directory, 'source', 'library', 'admin', 'IMG_1.jpg') });
-    lost.set('asset-plain', { reason: 'missing', immichPath: join(directory, 'source', 'library', 'admin', 'IMG_2.jpg') });
+    lost.set('asset-moved', {
+      reason: 'missing',
+      immichPath: join(directory, 'source', 'library', 'admin', 'IMG_1.jpg'),
+    });
+    lost.set('asset-plain', {
+      reason: 'missing',
+      immichPath: join(directory, 'source', 'library', 'admin', 'IMG_2.jpg'),
+    });
     const record = () =>
       (importer as unknown as { recordLostOriginalProblems(): Promise<void> }).recordLostOriginalProblems();
     return { importer, record, written, sourceQueries };

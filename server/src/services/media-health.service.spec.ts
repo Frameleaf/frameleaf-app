@@ -5792,12 +5792,14 @@ describe(MediaHealthService.name, () => {
           originalPath: join(StorageCore.getFolderLocation(StorageFolder.Upload, 'user-id'), 'IMG_3310.jpg'),
           checksum: sha1('the photo'),
         });
-        vi.mocked(mocks.systemMetadata.get).mockImplementation((async (key: SystemMetadataKey) =>
-          key === SystemMetadataKey.FileFixSourceRoots ? ['/mnt/immich/library', '/mnt/unplugged'] : undefined) as never);
-        vi.mocked(mocks.storage.stat).mockImplementation((async (path: string) => {
-          if (path === '/mnt/unplugged') throw Object.assign(new Error('gone'), { code: 'ENOENT' });
-          return settledStat({ size: 10 });
-        }) as never);
+        vi.mocked(mocks.systemMetadata.get).mockImplementation(((key: SystemMetadataKey) =>
+          Promise.resolve(
+            key === SystemMetadataKey.FileFixSourceRoots ? ['/mnt/immich/library', '/mnt/unplugged'] : undefined,
+          )) as never);
+        vi.mocked(mocks.storage.stat).mockImplementation(((path: string) =>
+          path === '/mnt/unplugged'
+            ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+            : Promise.resolve(settledStat({ size: 10 }))) as never);
         const walk = vi
           .spyOn(sut as any, 'locateManagedCandidates')
           .mockResolvedValue({ candidates: new Map(), continuation: undefined });

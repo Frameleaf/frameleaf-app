@@ -1,7 +1,13 @@
 import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { v5 } from 'uuid';
-import { AssetLockReason, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus, SystemMetadataKey } from 'src/enum.js';
+import {
+  AssetLockReason,
+  MediaHealthCategory,
+  MediaHealthSeverity,
+  MediaHealthStatus,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import {
   CONTENT_TABLES,
   DEFERRED_COLUMNS,
@@ -644,14 +650,12 @@ export class ImmichImportService {
       const lost = this.lostOriginals.get(id);
       if (!lost) continue;
       const within = (side: 'source' | 'target') =>
-        this.config.mediaRoots.flatMap((root) =>
-          [
-            join(root[side], 'library', String(asset.storageLabel || asset.ownerId)),
-            join(root[side], 'upload', String(asset.ownerId)),
-            join(root[side], String(asset.storageLabel || asset.ownerId)),
-            join(root[side], String(asset.ownerId)),
-          ],
-        );
+        this.config.mediaRoots.flatMap((root) => [
+          join(root[side], 'library', String(asset.storageLabel || asset.ownerId)),
+          join(root[side], 'upload', String(asset.ownerId)),
+          join(root[side], String(asset.storageLabel || asset.ownerId)),
+          join(root[side], String(asset.ownerId)),
+        ]);
       // only inside the owner's own folders, else just the file name: nothing here names another account
       const relative = (roots: string[], path: string) => {
         const { folder, name } = folderFacts(roots, path);
@@ -674,10 +678,9 @@ export class ImmichImportService {
         }
       }
       if (intended) {
-        const exists = await stat(intended).then(
-          () => true,
-          () => false,
-        );
+        const exists = await stat(intended)
+          .then(() => true)
+          .catch(() => false);
         const facts = folderFacts(within('target'), intended);
         (steps[0].facts as Record<string, unknown>).intendedPath = relative(within('target'), intended);
         steps.push({ step: 'looked-where-moving', outcome: exists ? 'ok' : 'not-found', facts });
