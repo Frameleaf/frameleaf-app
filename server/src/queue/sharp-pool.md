@@ -20,7 +20,9 @@ PID. Cancellation and execution deadlines send SIGTERM, escalate to SIGKILL
 using the existing cancellation grace, and await actual close before rejecting
 the caller or freeing the slot. An unkillable OS process therefore retains its
 slot; a timeout is never treated as proof of termination. Idle children retire
-after 30 seconds. Module shutdown closes the pool. Child IPC disconnect also
+after 30 seconds. A child that drew a font's specimen picture (`renderFontSpecimen`, FL-1359) is retired
+at once and never reused: the font stays registered with its text renderer, and the file is untrusted
+input to a native font parser. Module shutdown closes the pool. Child IPC disconnect also
 exits the child; the existing parent supervisor owns hung children if an
 executor cannot run its own cancellation code.
 
