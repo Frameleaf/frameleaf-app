@@ -28,8 +28,9 @@ const bothAttempts = (address: SignInAttempt, account: SignInAttempt): SignInAtt
   clearFailures: async () => {
     await Promise.all([address.clearFailures(), account.clearFailures()]);
   },
+  // Both locks are let go even when one connection already ended: a release never stops the other one.
   release: async () => {
-    await Promise.all([address.release(), account.release()]);
+    await Promise.allSettled([address.release(), account.release()]);
   },
 });
 

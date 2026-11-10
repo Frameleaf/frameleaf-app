@@ -94,4 +94,23 @@ describe(SignInSecurityService.name, () => {
     // and lets go of the other address's counter it took
     await expect(wrongPassword('password', 'owner@example.com', '203.0.113.2')).resolves.toBe('checked');
   });
+
+  it('lets go of the address counter even when the account counter’s connection already ended', async () => {
+    const acquire = counters.acquireSignInAttempt;
+    vi.spyOn(counters, 'acquireSignInAttempt').mockImplementation(async (key: string) => {
+      const attempt = await acquire(key);
+      return key.includes(':account:') && attempt
+        ? {
+            ...attempt,
+            release: () => Promise.reject(new Error('Release called on client which has already been released')),
+          }
+        : attempt;
+    });
+
+    await expect(wrongPassword('password', 'owner@example.com', '203.0.113.1')).resolves.toBe('checked');
+
+    // the address counter (the one key that is not the account's) is free again
+    const addressKey = counters.failures.keys().find((key) => !key.includes(':account:'))!;
+    await expect(acquire(addressKey)).resolves.toBeDefined();
+  });
 });
