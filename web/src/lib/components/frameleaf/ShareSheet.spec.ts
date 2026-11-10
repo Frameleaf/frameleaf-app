@@ -25,8 +25,6 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
 }));
 
 vi.mock('$lib/services/shared-link.service', () => ({
-  asDirectImageUrl: (link: { directUrl?: string | null }) =>
-    link.directUrl ? `https://frameleaf.local${link.directUrl}` : '',
   asUrl: (link: { slug?: string | null }) => `https://frameleaf.local/s/${link.slug}`,
   handleCreateSharedLink: vi.fn(),
   handleUpdateSharedLink: vi.fn(),

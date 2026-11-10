@@ -22,17 +22,6 @@ export const asUrl = (sharedLink: SharedLinkResponseDto) => {
   return new URL(path, serverConfigManager.value.externalDomain || location.origin).href;
 };
 
-/**
- * FL-788: the address of a single-photo link's image file, for embedding in forums and websites; empty
- * when the link has none (more than one item, a video, a password, downloads off or expired).
- */
-export const asDirectImageUrl = (sharedLink: SharedLinkResponseDto) => {
-  if (!sharedLink.directUrl) {
-    return '';
-  }
-  return new URL(sharedLink.directUrl, serverConfigManager.value.externalDomain || location.origin).href;
-};
-
 /** The server's refusal when a custom address (slug) is held by another link (FL-83 AL-26). */
 export const SHARED_LINK_SLUG_TAKEN = 'Shared link slug is already in use';
 
