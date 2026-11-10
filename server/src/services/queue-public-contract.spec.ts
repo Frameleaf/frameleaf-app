@@ -41,6 +41,8 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.LockedRewrap,
       JobName.LockedSweep,
       JobName.MediaHealthFixAsset,
+      JobName.WorkflowEventDispatch,
+      JobName.WorkflowEventTrigger,
     ]);
     const legacyNames = Object.values(JobName).filter((name) => !internal.has(name));
     const schema = QueueJobResponseDto.schema.shape.name;
