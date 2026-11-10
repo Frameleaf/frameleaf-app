@@ -1,7 +1,8 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runConverter, stillConverters } from 'src/utils/still-converters.js';
+import { CAPPED, runConverter, stillConverters } from 'src/utils/still-converters.js';
 
 describe('stillConverters (FL-1356)', () => {
   it.each([
@@ -34,6 +35,16 @@ describe('stillConverters (FL-1356)', () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it('lowers the file-size limit to the cap, and leaves a limit that is already lower alone', () => {
+    // the wrapper's own script, run under a soft limit set first; the "converter" prints the limit it got
+    const limitUnder = (soft: string, cap: string) =>
+      execFileSync('sh', ['-c', `ulimit -S -f ${soft}; ${CAPPED}`, cap, 'sh', '-c', 'ulimit -f'], {
+        encoding: 'utf8',
+      }).trim();
+    expect(limitUnder('50', '100')).toBe('50');
+    expect(limitUnder('200', '100')).toBe('100');
   });
 
   it('reports a decoder that is not installed as a failure of that rung only', async () => {

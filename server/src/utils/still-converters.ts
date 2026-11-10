@@ -45,7 +45,7 @@ const MAGICK_CODERS: Record<string, string> = {
 const JPEG_XR = new Set(['.jxr', '.wdp', '.hdp']);
 
 // Lowers the file-size limit to "$0" blocks, never raises one already lower, then becomes the converter.
-const CAPPED =
+export const CAPPED =
   'current=$(ulimit -f); if [ "$current" = unlimited ] || [ "$current" -gt "$0" ]; then ulimit -f "$0" 2>/dev/null; fi; exec "$@"';
 
 // A decoded surface over a gibibyte is refused by the image worker anyway, so no copy needs to be larger.
