@@ -14,4 +14,17 @@ describe('animation stand-in', () => {
     vi.unstubAllGlobals();
     expect(onfinish).not.toHaveBeenCalled();
   });
+
+  it('does not finish once the document has been deleted', async () => {
+    const onfinish = vi.fn();
+    document.createElement('div').animate([], 100).onfinish = onfinish;
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')!;
+    Reflect.deleteProperty(globalThis, 'document');
+    try {
+      await Promise.resolve();
+    } finally {
+      Object.defineProperty(globalThis, 'document', descriptor);
+    }
+    expect(onfinish).not.toHaveBeenCalled();
+  });
 });

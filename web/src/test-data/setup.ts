@@ -36,7 +36,8 @@ const animateAtOnce = Object.assign(
         handler = next;
         if (next) {
           queueMicrotask(() => {
-            if (handler === next && document === setupDocument) {
+            // eslint-disable-next-line unicorn/no-unnecessary-global-this -- teardown deletes `document`; a bare reference would throw
+            if (handler === next && globalThis.document === setupDocument) {
               next({} as AnimationPlaybackEvent);
             }
           });
