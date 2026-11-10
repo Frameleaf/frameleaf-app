@@ -12,6 +12,13 @@ describe(redactPrivateLog.name, () => {
     ['privateKey: -----BEGIN PRIVATE KEY-----\nreally-private-key\n-----END PRIVATE KEY-----', 'really-private-key'],
     ['https://example.org/s3?X-Amz-Credential=private-url&other=also-private', 'also-private'],
     ['Failed login for somebody@example.org', 'somebody@example.org'],
+    ['x-immich-share-key: private-share-key', 'private-share-key'],
+    ['x-frameleaf-share-key=private-share-key', 'private-share-key'],
+    ['{"shareKey":"private-share-key"}', 'private-share-key'],
+    ['sharedLinkKey=private-share-key', 'private-share-key'],
+    ['shared_link_key: private-share-key', 'private-share-key'],
+    ['GET /api/shared-links/me?key=private-share-key&slug=private-slug', 'private-share-key'],
+    ['GET /api/shared-links/me?key=private-share-key&slug=private-slug', 'private-slug'],
   ])('redacts secrets from %s', (message, secret) => {
     expect(redactPrivateLog(message)).toContain('[redacted]');
     expect(redactPrivateLog(message)).not.toContain(secret);

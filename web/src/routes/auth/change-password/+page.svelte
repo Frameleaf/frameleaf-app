@@ -2,6 +2,7 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline } from '@mdi/js';
   import { goto, invalidateAll } from '$app/navigation';
+  import { page } from '$app/state';
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
   import AuthPasswordQuality from '$lib/components/frameleaf/AuthPasswordQuality.svelte';
@@ -20,6 +21,7 @@
   let passwordConfirm = $state('');
   let loading = $state(false);
   let errorMessage = $state('');
+  const warnAboutHttp = $derived(data.local && page.url.protocol === 'http:');
   const mismatch = $derived(passwordConfirm.length > 0 && password !== passwordConfirm);
   // FL-708: the one rule is length (the server enforces the same minimum); the meter only advises.
   const ready = $derived(passwordStrength(password).acceptable && password === passwordConfirm);
@@ -76,12 +78,18 @@
           autocomplete="username"
         />
       </div>
+      {#if warnAboutHttp}
+        <p class="auth-info" id="http-password-warning" role="note">
+          <Icon icon={mdiAlertCircleOutline} size="16" />
+          <span>{$t('frameleaf_auth_local_password_http_warning')}</span>
+        </p>
+      {/if}
       <AuthPasswordField
         id="new-password"
         label={$t('frameleaf_auth_new_password')}
         autofocus
         bind:value={password}
-        describedBy="new-password-quality"
+        describedBy={warnAboutHttp ? 'http-password-warning new-password-quality' : 'new-password-quality'}
       />
       <AuthPasswordQuality id="new-password-quality" {password} />
       <AuthPasswordField
@@ -94,7 +102,11 @@
       {#if mismatch}<span class="auth-field-hint" id="new-password-match"
           >{$t('frameleaf_auth_passwords_mismatch_hint')}</span
         >{/if}
-      <button type="submit" class="button primary auth-submit" disabled={!ready || loading}
+      <button
+        type="submit"
+        class="button primary auth-submit"
+        disabled={!ready || loading}
+        aria-describedby={warnAboutHttp ? 'http-password-warning' : undefined}
         >{loading
           ? $t('frameleaf_auth_saving')
           : $t(data.local ? 'frameleaf_auth_local_password_continue' : 'frameleaf_auth_save_and_sign_in')}</button

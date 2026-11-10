@@ -1,7 +1,9 @@
 import json
 import logging
 
-from frameleaf_ml.worker_logs import WorkerLogs, initialize_worker_log_spool, local_log_reader
+import pytest
+
+from frameleaf_ml.worker_logs import WorkerLogs, initialize_worker_log_spool, local_log_reader, redact_worker_message
 
 
 def test_recent_worker_logs_redact_secrets_and_filter_by_time():
@@ -20,6 +22,24 @@ def test_recent_worker_logs_redact_secrets_and_filter_by_time():
     assert row["level"] == "warn"
     assert row["message"] == "Request from [redacted] with token=[redacted]"
     assert not logs.recent("2999-01-01T00:00:00.000Z")
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "x-immich-share-key: private-share-key",
+        "x-frameleaf-share-key=private-share-key",
+        '{"shareKey": "private-share-key"}',
+        "sharedLinkKey=private-share-key",
+        "shared_link_key: private-share-key",
+        "GET /api/shared-links/me?key=private-share-key&slug=private-slug",
+    ],
+)
+def test_share_keys_are_redacted(message: str) -> None:
+    redacted = redact_worker_message(message)
+    assert "[redacted]" in redacted
+    assert "private-share-key" not in redacted
+    assert "private-slug" not in redacted
 
 
 def test_public_address_cannot_read_worker_logs():

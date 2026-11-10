@@ -65,4 +65,29 @@ describe(PrivateLogStore.name, () => {
     const second = await store.list({ limit: 2, before: result.nextCursor! }, now);
     expect(second.entries[0]?.message).toBe('job-9 password=[redacted]');
   });
+  it('finds a line by the photo, request or job it names', async () => {
+    const store = new PrivateLogStore(root);
+    const now = new Date('2026-11-09T12:00:05.000Z');
+    const assetId = '7b1f2c9e-4d3a-4f7e-9c1d-2a3b4c5d6e7f';
+    const jobId = '0f0e0d0c-0b0a-4908-8706-050403020100';
+    await store.append(
+      'microservices',
+      [
+        {
+          level: 'error',
+          context: 'Thumbnails',
+          message: 'Could not read the file',
+          assetId,
+          at: '2026-11-09T12:00:00.000Z',
+        },
+        { level: 'log', context: 'Thumbnails', message: 'Made previews', jobId, at: '2026-11-09T12:00:01.000Z' },
+        { level: 'log', context: 'Thumbnails', message: 'Unrelated', at: '2026-11-09T12:00:02.000Z' },
+      ],
+      now,
+    );
+    const messages = async (q: string) =>
+      (await store.list({ limit: 10, q }, now)).entries.map((entry) => entry.message);
+    expect(await messages(assetId.toUpperCase())).toEqual(['Could not read the file']);
+    expect(await messages(jobId)).toEqual(['Made previews']);
+  });
 });

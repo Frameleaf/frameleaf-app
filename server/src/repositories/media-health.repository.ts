@@ -199,7 +199,7 @@ const FIXED_TAB_DAYS = 30;
  * The missing and damaged findings a person keeps with Keep (FL-1337). A RAW the decoder cannot read is not one:
  * the fix leaves it as it is, and it still counts as an unreadable RAW.
  */
-const KEPT_STATUSES = [
+export const KEPT_STATUSES = [
   MediaHealthStatus.Missing,
   MediaHealthStatus.Candidate,
   MediaHealthStatus.Found,
@@ -207,6 +207,9 @@ const KEPT_STATUSES = [
   MediaHealthStatus.CorruptConfirmed,
   MediaHealthStatus.TrashQueued,
 ];
+/** A finding that is not one a person kept as it is with Keep (FL-1337 W3, with the N1/N2 status guard). */
+const notKept = sql<boolean>`((asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
+  OR asset_health.status NOT IN (${sql.join(KEPT_STATUSES)}))`;
 /** A search id as a claim names it: compared as a uuid, so the job's primary key is used. */
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 @Injectable()
@@ -299,7 +302,10 @@ export class MediaHealthRepository {
     ownerId?: string;
     privacy?: MediaHealthPrivacy;
     status?: MediaHealthStatus;
-    /** Library Care's "needs attention" (FL-69): any of these statuses. */
+    /**
+     * Library Care's "needs attention" (FL-69): any of these statuses. A photo its owner kept as it is waits for no
+     * one, so it is left out (FL-1347).
+     */
     statuses?: readonly MediaHealthStatus[];
     size: number;
     offset?: number;
@@ -313,7 +319,7 @@ export class MediaHealthRepository {
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
       .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
       .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
-      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]))
+      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]).where(notKept))
       .orderBy('asset_health.checkedAt', 'desc')
       .orderBy('asset_health.id', 'desc')
       .limit(options.size)
@@ -336,7 +342,7 @@ export class MediaHealthRepository {
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
       .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
       .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
-      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]))
+      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]).where(notKept))
       .executeTakeFirstOrThrow();
     return Number(row.count);
   }
@@ -359,10 +365,7 @@ export class MediaHealthRepository {
       .select(['asset_health.category', 'asset_health.status'])
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .where('asset.deletedAt', 'is', null)
-      .where(
-        sql<boolean>`((asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
-          OR asset_health.status NOT IN (${sql.join(KEPT_STATUSES)}))`,
-      )
+      .where(notKept)
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
       .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
@@ -1532,8 +1535,9 @@ export class MediaHealthRepository {
 
   /**
    * The owner's open Missing findings a phone may be able to answer (FL-1337): the photo is in the
-   * library, not in the Trash, not external and not Locked, and its checksum is the SHA-1 of its
-   * contents, which is how phones match. Only the owner's own rows, whoever asks.
+   * library, not in the Trash, not external and not Locked, and its checksum is the SHA-1 or (FL-1347, every
+   * upload since FL-1108) SHA-256 of its contents, which is how phones match. Only the owner's own rows, whoever
+   * asks.
    */
   private lostOriginals(ownerId: string) {
     return this.db
@@ -1547,14 +1551,24 @@ export class MediaHealthRepository {
       .where('asset.deletedAt', 'is', null)
       .where('asset.libraryId', 'is', null)
       .where('asset.isExternal', '=', false)
-      .where('asset.checksumAlgorithm', '=', ChecksumAlgorithm.sha1File)
+      .where('asset.checksumAlgorithm', 'in', [ChecksumAlgorithm.sha1File, ChecksumAlgorithm.sha256File])
       .where(isNotLocked('asset'));
   }
 
-  /** A page of the owner's lost originals, in a stable order; one more than `take` says there is a next page. */
+  /**
+   * A page of the owner's lost originals, in a stable order; one more than `take` says there is a next page. Each
+   * carries its file size when one is on record (FL-1347), for a phone to narrow its search by exact size.
+   */
   listLostOriginals(ownerId: string, take: number, skip: number) {
     return this.lostOriginals(ownerId)
-      .select(['asset.id as assetId', 'asset.checksum', 'asset.originalFileName', 'asset.fileCreatedAt'])
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select([
+        'asset.id as assetId',
+        'asset.checksum',
+        'asset.originalFileName',
+        'asset.fileCreatedAt',
+        'asset_exif.fileSizeInByte as fileSize',
+      ])
       .orderBy('asset_health.id')
       .limit(take + 1)
       .offset(skip)
@@ -1573,7 +1587,7 @@ export class MediaHealthRepository {
     return !!row;
   }
 
-  /** The owner's lost originals among these SHA-1 checksums, with where each one stands. */
+  /** The owner's lost originals among these SHA-1 or SHA-256 checksums, with where each one stands. */
   findLostOriginals(ownerId: string, checksums: Buffer[]) {
     if (checksums.length === 0) {
       return Promise.resolve([]);

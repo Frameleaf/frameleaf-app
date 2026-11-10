@@ -14,6 +14,7 @@ import {
   AssetVisibility,
   JobName,
   LibraryScope,
+  MediaHealthCategory,
   QueueName,
 } from 'src/enum.js';
 import { processingFailureSteps } from 'src/queue/processing-failure.js';
@@ -28,6 +29,7 @@ import {
   withExif,
   withExifInner,
   withFaces,
+  withFacesAndPeople,
   withFilePath,
   withFiles,
   withHiddenContentFilter,
@@ -78,6 +80,17 @@ const notInLibraryCare = sql<boolean>`not exists (
     offset 0
   )`;
 
+/**
+ * FL-1347: a photo whose original Library care has open as missing. There is no file to read its metadata from or
+ * encode, so the overnight check (FL-811) leaves both steps to Library care, which reads the photo again once the
+ * original is back. A damaged original is still there, so it is not left out here.
+ */
+const originalNotMissing = sql<boolean>`not exists (
+    select 1 from public.asset_health health
+    where health."assetId" = asset.id and health.category = ${sql.lit(MediaHealthCategory.Missing)}
+      and health."resolvedAt" is null and health."dismissedAt" is null
+  )`;
+
 type ProcessingFailureStep = ProcessingFailureActionDto['items'][number]['step'];
 
 type ReconciledJob =
@@ -100,7 +113,8 @@ export class AssetJobRepository {
     options: { queue: QueueName; fullsizeEnabled: boolean; videoPolicy: string; after?: string | null },
   ) {
     const selection = {
-      [JobName.AssetExtractMetadata]: () => this.selectionForMetadataExtraction(false, false, true),
+      [JobName.AssetExtractMetadata]: () =>
+        this.selectionForMetadataExtraction(false, false, true).where(originalNotMissing),
       [JobName.AssetGenerateThumbnails]: () =>
         this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }).where(
           notInLibraryCare,
@@ -110,8 +124,11 @@ export class AssetJobRepository {
           .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
           .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
           .where('asset_job_status.metadataExtractedAt', 'is not', null)
-          .where(sql<boolean>`"asset_job_status"."transcodeSkippedFor" is distinct from
-            (encode(asset.checksum, 'hex') || ':' || ${options.videoPolicy})`),
+          .where(
+            sql<boolean>`"asset_job_status"."transcodeSkippedFor" is distinct from
+            (encode(asset.checksum, 'hex') || ':' || ${options.videoPolicy})`,
+          )
+          .where(originalNotMissing),
       [JobName.SmartSearch]: () => this.selectionForEncodeClip(false),
       [JobName.AssetDetectFaces]: () => this.selectionForDetectFacesJob(false).clearOrderBy(),
       [JobName.Ocr]: () => this.assetsWithPreviews().select('asset.id').where('job_status.ocrAt', 'is', null),
@@ -143,6 +160,21 @@ export class AssetJobRepository {
         }),
       )
       .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!));
+  }
+
+  /** FL-862: how many files the reader may see that are waiting on a decision, and how many of them are set aside. */
+  async countProcessingFailures(auth: AuthDto) {
+    const row = await this.visibleProcessingFailures(auth, this.db)
+      .where('failure.dismissedAt', 'is', null)
+      .where('failure.step', 'in', processingFailureSteps)
+      .select([
+        sql<number>`count(distinct failure."assetId")::int`.as('count'),
+        sql<number>`count(distinct failure."assetId") filter (where failure."quarantinedAt" is not null)::int`.as(
+          'setAside',
+        ),
+      ])
+      .executeTakeFirst();
+    return { count: row?.count ?? 0, setAside: row?.setAside ?? 0 };
   }
 
   getProcessingFailures(auth: AuthDto, { userId, take, skip }: ProcessingFailureQueryDto) {
@@ -262,6 +294,19 @@ export class AssetJobRepository {
       .select((eb) => withFiles(eb, AssetFileType.Sidecar))
       .$call(withExifInner)
       .limit(1)
+      .executeTakeFirst();
+  }
+
+  getForSidecarFaces(id: string, kysely: Kysely<DB>) {
+    return kysely
+      .selectFrom('asset')
+      .select(withFacesAndPeople({}))
+      .where('asset.id', '=', asUuid(id))
+      .where('asset.type', '=', AssetType.Image)
+      .where('asset.libraryScope', '=', LibraryScope.Personal)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+      .where(isNotLocked('asset'))
       .executeTakeFirst();
   }
 
@@ -412,7 +457,7 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .select(columns.asset)
       .select(isLocked('asset').as('isLocked'))
-      .select(withFaces)
+      .select(withFacesAndPeople({}))
       .select((eb) => withFiles(eb, AssetFileType.Sidecar))
       .innerJoin('user', 'user.id', 'asset.ownerId')
       .select(['user.clusterGroupId'])

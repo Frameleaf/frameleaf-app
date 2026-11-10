@@ -3386,6 +3386,118 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarWrite', () => {
+    it('writes a rotated face to XMP and clears its name when the face is removed', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'frameleaf-face-xmp-'));
+      const originalPath = join(root, 'photo.jpg');
+      const sidecar = originalPath + '.xmp';
+      const asset = AssetFactory.from({ originalPath })
+        .file({ type: AssetFileType.Sidecar, path: sidecar })
+        .exif({ orientation: ExifOrientation.Rotate90CW.toString(), exifImageWidth: 400, exifImageHeight: 200 })
+        .face(
+          {
+            boundingBoxX1: 20,
+            boundingBoxX2: 60,
+            boundingBoxY1: 80,
+            boundingBoxY2: 160,
+            imageWidth: 200,
+            imageHeight: 400,
+          },
+          (face) => face.person({ name: 'Alice' }),
+        )
+        .build();
+      const metadata = new MetadataRepository(
+        automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false }),
+      );
+      try {
+        await metadata.writeTags(sidecar, { Artist: 'Source author' });
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+        mocks.assetJob.getForSidecarFaces.mockResolvedValue({ faces: getForMetadataExtraction(asset).faces });
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        mocks.metadata.writeTags.mockImplementation((path, tags) => metadata.writeTags(path, tags));
+        // beforeEach queues two empty one-off reads; drop them so every read hits the real sidecar.
+        // The original is not on disk: it reports the orientation a metadata read would use.
+        mocks.metadata.readTags
+          .mockReset()
+          .mockImplementation((path) =>
+            path === originalPath
+              ? Promise.resolve({ Orientation: ExifOrientation.Rotate90CW })
+              : metadata.readTags(path),
+          );
+
+        await expect(sut.handleSidecarWrite({ id: asset.id, facesOnly: true })).resolves.toBe(JobStatus.Success);
+        const written = await metadata.readTags(sidecar);
+        expect([written.PersonInImage].flat()).toEqual(['Alice']);
+        expect(written).toMatchObject({
+          Artist: 'Source author',
+          RegionInfo: {
+            AppliedToDimensions: { W: 400, H: 200 },
+            RegionList: [{ Type: 'Face', Name: 'Alice', Area: { X: 0.3, Y: 0.8, W: 0.2, H: 0.2 } }],
+          },
+        });
+
+        mocks.assetJob.getForSidecarFaces.mockResolvedValue({ faces: [] });
+        await expect(sut.handleSidecarWrite({ id: asset.id, facesOnly: true })).resolves.toBe(JobStatus.Success);
+        const tags = await metadata.readTags(sidecar);
+        expect(tags.Artist).toBe('Source author');
+        expect(tags.PersonInImage).toBeUndefined();
+        expect(tags.RegionInfo?.RegionList ?? []).toEqual([]);
+      } finally {
+        await metadata.teardown();
+        await rm(root, { recursive: true, force: true });
+      }
+    }, 20_000);
+
+    it('writes face regions in the orientation the next metadata read applies, not the stored one', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'frameleaf-face-xmp-'));
+      const originalPath = join(root, 'photo.heic');
+      const sidecar = originalPath + '.xmp';
+      // A copy kept its source sidecar's orientation, but not the sidecar; its HEIF has no rotation.
+      const asset = AssetFactory.from({ originalPath })
+        .exif({ orientation: ExifOrientation.Rotate90CW.toString(), exifImageWidth: 200, exifImageHeight: 400 })
+        .face(
+          {
+            boundingBoxX1: 20,
+            boundingBoxX2: 60,
+            boundingBoxY1: 80,
+            boundingBoxY2: 160,
+            imageWidth: 200,
+            imageHeight: 400,
+          },
+          (face) => face.person({ name: 'Alice' }),
+        )
+        .build();
+      const metadata = new MetadataRepository(
+        automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false }),
+      );
+      try {
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+        mocks.assetJob.getForSidecarFaces.mockResolvedValue({ faces: getForMetadataExtraction(asset).faces });
+        mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path !== sidecar));
+        mocks.metadata.writeTags.mockImplementation((path, tags) => metadata.writeTags(path, tags));
+        mocks.metadata.readTags
+          .mockReset()
+          .mockImplementation((path) =>
+            path === originalPath
+              ? Promise.resolve({ Orientation: ExifOrientation.Rotate90CW, Rotation: 0 })
+              : metadata.readTags(path),
+          );
+
+        await expect(sut.handleSidecarWrite({ id: asset.id, facesOnly: true })).resolves.toBe(JobStatus.Success);
+        expect(mocks.metadata.writeTags).toHaveBeenCalledWith(sidecar, expect.anything());
+        const written = await metadata.readTags(sidecar);
+        // HEIF `irot` 0 is upright, so the region is the displayed box as it is
+        expect(written).toMatchObject({
+          RegionInfo: {
+            AppliedToDimensions: { W: 200, H: 400 },
+            RegionList: [{ Type: 'Face', Name: 'Alice', Area: { X: 0.2, Y: 0.3, W: 0.2, H: 0.2 } }],
+          },
+        });
+      } finally {
+        await metadata.teardown();
+        await rm(root, { recursive: true, force: true });
+      }
+    }, 20_000);
+
     it('edits a sealed sidecar through a plain copy and queues LockedSeal afterwards (FL-721)', async () => {
       const asset0 = AssetFactory.create();
       const locked = await lockedFixture(asset0.ownerId);

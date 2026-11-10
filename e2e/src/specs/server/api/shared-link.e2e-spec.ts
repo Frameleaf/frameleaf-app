@@ -23,6 +23,13 @@ const uploadWithKey = (key: string) =>
     .field('fileCreatedAt', new Date().toISOString())
     .field('fileModifiedAt', new Date().toISOString());
 
+/** FL-788: the status of a link's direct image address. */
+const directStatus = async (link: SharedLinkResponseDto) => {
+  expect(link.directUrl).toBeTruthy();
+  const { status } = await request(baseUrl).get(new URL(link.directUrl!, baseUrl).pathname);
+  return status;
+};
+
 describe('/shared-links', () => {
   let admin: LoginResponseDto;
   let asset1: AssetMediaResponseDto;
@@ -608,6 +615,77 @@ describe('/shared-links', () => {
         .set('Authorization', `Bearer ${user1.accessToken}`);
 
       expect(status).toBe(204);
+    });
+  });
+
+  describe('GET /shared-links/direct/{s,key}/:x.jpg (FL-788)', () => {
+    beforeAll(async () => {
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+    });
+
+    it('serves the photo of a single-photo link to anyone, cacheable for an hour', async () => {
+      const link = await utils.createSharedLink(user1.accessToken, {
+        type: SharedLinkType.Individual,
+        assetIds: [asset1.id],
+        showMetadata: true,
+        slug: 'direct-image',
+      });
+      expect(link.directUrl).toMatch(/\/api\/shared-links\/direct\/s\/direct-image\.jpg$/);
+
+      const { status, headers } = await request(baseUrl).get(new URL(link.directUrl!, baseUrl).pathname);
+      expect(status).toBe(200);
+      expect(headers['content-type']).toMatch(/^image\//);
+      expect(headers['cache-control']).toBe('public, max-age=3600');
+      expect(headers['content-disposition']).toMatch(/^inline;/);
+    });
+
+    it('stops serving once the link gets a password, and once it is removed', async () => {
+      const link = await utils.createSharedLink(user1.accessToken, {
+        type: SharedLinkType.Individual,
+        assetIds: [asset1.id],
+        showMetadata: true,
+      });
+      await expect(directStatus(link)).resolves.toBe(200);
+
+      await request(app)
+        .patch(`/shared-links/${link.id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ password: 'secret' })
+        .expect(200);
+      await expect(directStatus(link)).resolves.toBe(404);
+
+      await request(app)
+        .patch(`/shared-links/${link.id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ password: null })
+        .expect(200);
+      await expect(directStatus(link)).resolves.toBe(200);
+
+      await request(app).delete(`/shared-links/${link.id}`).set('Authorization', `Bearer ${user1.accessToken}`);
+      await expect(directStatus(link)).resolves.toBe(404);
+    });
+
+    it('offers no image address for a link to more than one item or without downloads', async () => {
+      const [several, noDownloads] = await Promise.all([
+        utils.createSharedLink(user1.accessToken, {
+          type: SharedLinkType.Individual,
+          assetIds: [asset1.id, asset2.id],
+          showMetadata: true,
+        }),
+        utils.createSharedLink(user1.accessToken, {
+          type: SharedLinkType.Individual,
+          assetIds: [asset1.id],
+          showMetadata: true,
+          allowDownload: false,
+        }),
+      ]);
+      expect(several.directUrl).toBeNull();
+      expect(noDownloads.directUrl).toBeNull();
+
+      for (const link of [several, noDownloads]) {
+        const { status } = await request(baseUrl).get(`/api/shared-links/direct/key/${link.key}.jpg`);
+        expect(status).toBe(404);
+      }
     });
   });
 });

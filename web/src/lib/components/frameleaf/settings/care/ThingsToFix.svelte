@@ -27,6 +27,7 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
+  import { processingFailureCounts } from '$lib/frameleaf/processing-failures';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { utilitiesUrl } from '$lib/frameleaf/utilities';
@@ -49,6 +50,7 @@
     mdiCheckCircleOutline,
     mdiChevronRight,
     mdiFileAlertOutline,
+    mdiFileClockOutline,
     mdiFileQuestionOutline,
     mdiImageMultipleOutline,
     mdiMotionPlayOutline,
@@ -72,6 +74,8 @@
   /** How many are on the Needs you list. */
   let needsYou = $state(0);
   let loaded = $state(false);
+  /** FL-862: files Frameleaf couldn't process, and how many of them are set aside. */
+  let processing = $state<{ count: number; setAside: number }>();
 
   /** FL-520: the one source of findings, or nothing when it cannot be read. */
   const overviewOf = async () => {
@@ -110,7 +114,8 @@
       getLivePhotoCandidates().catch(() => undefined),
       admin ? fixedThisWeek() : Promise.resolve(0),
       totalOf(FileProblemTab.Needs),
-    ]).then(([health, reports, pairs, fixed, needs]) => {
+      processingFailureCounts(),
+    ]).then(([health, reports, pairs, fixed, needs, failures]) => {
       if (!current) {
         return;
       }
@@ -119,6 +124,7 @@
       live = pairs;
       fixedFiles = fixed;
       needsYou = needs;
+      processing = failures;
       loaded = true;
     });
     return () => {
@@ -155,6 +161,7 @@
 
   const attention = $derived(missing + damaged);
   const suggestions = $derived(pairs + lookAlikes);
+  const unprocessed = $derived(processing?.count ?? 0);
 
   const hero = $derived.by(() => {
     if (attention > 0) {
@@ -171,7 +178,21 @@
             ? $t('frameleaf_care_fix_fixed_hero_body', { values: { fixed: fixedFiles, missing, damaged } })
             : $t('frameleaf_care_fix_hero_attention_body', { values: { missing, damaged } }),
           suggestions > 0 ? $t('frameleaf_care_fix_hero_also', { values: { count: suggestions } }) : '',
+          unprocessed > 0 ? $t('frameleaf_care_fix_hero_process_also', { values: { count: unprocessed } }) : '',
           $t('frameleaf_care_fix_nothing_changes'),
+        ]
+          .filter(Boolean)
+          .join(' '),
+      };
+    }
+    if (unprocessed > 0) {
+      return {
+        tone: 'warn' as const,
+        icon: mdiFileClockOutline,
+        title: $t('frameleaf_processing_failure_hero', { values: { count: unprocessed } }),
+        body: [
+          $t('frameleaf_care_fix_hero_process_body'),
+          suggestions > 0 ? $t('frameleaf_care_fix_hero_also', { values: { count: suggestions } }) : '',
         ]
           .filter(Boolean)
           .join(' '),
@@ -200,7 +221,7 @@
     detail: string;
     /** Undefined when the app keeps no count for this kind. */
     count?: number;
-    unit: 'found' | 'waiting' | 'groups' | 'week';
+    unit: 'found' | 'waiting' | 'groups' | 'week' | 'files';
     note: string;
     tone: KitTone;
     /** The row's switch, for an administrator. */
@@ -235,6 +256,20 @@
         note: $t('frameleaf_care_fix_from_checks'),
         tone: 'warn',
         href: needing,
+      },
+      // FL-862: files Frameleaf couldn't finish (FL-845), including the ones set aside after 3 tries.
+      {
+        id: 'process',
+        icon: mdiFileClockOutline,
+        name: $t('frameleaf_care_fix_process_name'),
+        detail: $t('frameleaf_care_fix_process_detail'),
+        count: processing?.count,
+        unit: 'files',
+        note: processing?.setAside
+          ? $t('frameleaf_care_fix_process_note', { values: { count: processing.setAside } })
+          : '',
+        tone: 'warn',
+        href: commandCenterUrl('care', 'couldnt-process'),
       },
       // the 7-day count is an administrator's reading, like the Overview it matches
       isAdmin && {

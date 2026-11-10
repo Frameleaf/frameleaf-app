@@ -152,6 +152,12 @@ export type AttentionItemDto = {
     /** The kinds of work, for a work item */
     work: (AttentionWorkDto) | null;
 };
+export type AttentionProcessingFailuresDto = {
+    /** Files with a step Frameleaf could not finish, not kept as they are */
+    count: number;
+    /** Of those, files set aside after repeated tries; they are not tried again by themselves */
+    setAside: number;
+};
 export type AttentionResponseDto = {
     /** When the checks were made */
     checkedAt: string;
@@ -163,6 +169,8 @@ export type AttentionResponseDto = {
     fileProblems: AttentionFileProblemsDto;
     /** What needs attention, the most urgent first */
     items: AttentionItemDto[];
+    /** FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check. */
+    processingFailures: AttentionProcessingFailuresDto;
 };
 export type AttentionDismissDto = {
     /** True dismisses it; false brings it back */
@@ -681,6 +689,14 @@ export type CloudBackupGeneratedKeyDto = {
 export type CloudBackupUnlockDto = {
     /** The key file, the base64 key or the recovery code. Kept in memory only */
     key: string;
+};
+export type CloudBackupLicensedAccountDto = {
+    name: string;
+    userId: string;
+};
+export type CloudBackupLicenceCoverageResponseDto = {
+    accounts: CloudBackupLicensedAccountDto[];
+    scope: CloudBackupLicenceScope;
 };
 export type CloudBackupManifestDto = {
     assets: number;
@@ -1512,6 +1528,10 @@ export type AdminConfigBackupsDto = {
     database: AdminConfigDatabaseBackupDto;
     schedule: AdminConfigBackupScheduleDto;
 };
+export type AdminConfigConnectedAppsDto = {
+    /** Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything. */
+    allowRegistration: boolean;
+};
 export type AdminConfigEditingRestorationDto = {
     style: RestorationStyle;
 };
@@ -1990,6 +2010,8 @@ export type AdminConfigMapDto = {
 export type AdminConfigFacesDto = {
     /** Import */
     "import": boolean;
+    /** Save people’s names in XMP sidecars */
+    write?: boolean;
 };
 export type AdminConfigMetadataDto = {
     faces: AdminConfigFacesDto;
@@ -2221,6 +2243,7 @@ export type AdminConfigUserDto = {
 export type AdminConfigDto = {
     analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
+    connectedApps?: AdminConfigConnectedAppsDto;
     editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
@@ -2255,6 +2278,7 @@ export type AdminConfigDto = {
 export type AdminConfigDtoRead = {
     analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
+    connectedApps?: AdminConfigConnectedAppsDto;
     editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
@@ -3087,6 +3111,28 @@ export type TemplateResponseDto = {
 export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
+};
+export type OAuthAppClientDto = {
+    /** The app’s client id */
+    id: string;
+    /** Free text naming a verified app for its icon (claude, chatgpt, homeassistant); null otherwise */
+    knownApp: string | null;
+    /** Who made a verified app; null otherwise */
+    maker: string | null;
+    /** For a verified app the name Frameleaf knows it by; otherwise the name the app gave itself (plain text) */
+    name: string;
+    /** Where the app sends you back to, such as claude.ai or localhost:33418 */
+    returnTo: string;
+    /** Frameleaf checked who made this app (every return address is that app’s own) */
+    verified: boolean;
+};
+export type OAuthAppAdminClientDto = {
+    /** How many people currently allow it */
+    activeUsers: number;
+    client: OAuthAppClientDto;
+    createdAt: string;
+    /** The app registered itself */
+    selfRegistered: boolean;
 };
 export type OvernightResultsDto = {
     cleanup?: OvernightStepResult;
@@ -3984,6 +4030,8 @@ export type MemoriesResponse = {
 export type PeopleResponse = {
     /** Whether people are enabled */
     enabled: boolean;
+    /** Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice */
+    includeArchived: boolean;
     /** People face threshold */
     minimumFaces?: number;
     /** Whether people appear in web sidebar */
@@ -4137,6 +4185,8 @@ export type MemoriesUpdate = {
 export type PeopleUpdate = {
     /** Whether people are enabled */
     enabled?: boolean;
+    /** Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice */
+    includeArchived?: boolean;
     /** People face threshold */
     minimumFaces?: number;
     /** Whether people appear in web sidebar */
@@ -5281,6 +5331,16 @@ export type AlbumMergePreviewResponseDto = {
     /** The album that stays is shared, by people, a public link or a shared space, who will see both */
     winnerShared: boolean;
 };
+export type AlbumPersonResponseDto = {
+    /** Number of album items showing this person */
+    count: number;
+    /** Person ID */
+    id: string;
+    /** Person name */
+    name: string;
+    /** Last update date, for the thumbnail cache */
+    updatedAt: string;
+};
 export type AlbumSuggestionReasonDto = {
     /** The album photo it matches, for same-scene, near-identical and same-outfit */
     assetId?: string;
@@ -6001,10 +6061,12 @@ export type AssetJobsDto = {
 export type LostOriginalDto = {
     /** The photo or video */
     assetId: string;
-    /** SHA-1 of the lost file, base64: what the phone matches its own file by */
+    /** SHA-1 (20 bytes) or SHA-256 (32 bytes) of the lost file's contents, base64: what the phone matches its own file by */
     checksum: string;
     /** When the file was created */
     fileCreatedAt: string;
+    /** Size of the lost file in bytes, or null when unknown: a phone may look only at its files of exactly this size */
+    fileSize: number | null;
     /** The name the file had */
     originalFileName: string;
 };
@@ -6017,7 +6079,7 @@ export type LostOriginalsResponseDto = {
 export type LostOriginalsCheckedDto = {
     /** The phone or tablet that looked */
     deviceId: string;
-    /** Checksums (base64) of lost originals this device does not have */
+    /** Checksums (base64, SHA-1 or SHA-256, as listed) of lost originals this device does not have */
     notHere: string[];
 };
 export type AssetMetadataBulkDeleteItemDto = {
@@ -11437,6 +11499,66 @@ export type NotificationUpdateDto = {
     /** Date when notification was read */
     readAt?: string | null;
 };
+export type OAuthAppAuthorizeDto = {
+    /** true for Allow, false for Deny */
+    allow: boolean;
+    /** The app’s client id */
+    clientId: string;
+    /** The base64url SHA-256 of the app’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: string;
+    /** The return address, exactly as the app registered it */
+    redirectUri: string;
+    /** The resource (RFC 8707) the app wants access to */
+    resource?: string;
+    /** Must be `code` */
+    responseType: string;
+    /** Space-separated scopes; empty means `library:read` */
+    scope?: string;
+    /** Returned unchanged to the app */
+    state?: string;
+};
+export type OAuthAppAuthorizeResponseDto = {
+    /** Where the browser goes next: the app’s return address with the code (or access_denied), state and iss */
+    redirectUrl: string;
+};
+export type OAuthAppAuthorizeStartDto = {
+    /** The app’s client id */
+    clientId: string;
+    /** The base64url SHA-256 of the app’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: string;
+    /** The return address, exactly as the app registered it */
+    redirectUri: string;
+    /** The resource (RFC 8707) the app wants access to */
+    resource?: string;
+    /** Must be `code` */
+    responseType: string;
+    /** Space-separated scopes; empty means `library:read` */
+    scope?: string;
+    /** Returned unchanged to the app */
+    state?: string;
+};
+export type OAuthAppAuthorizeStartResponseDto = {
+    client: OAuthAppClientDto;
+    /** The scopes the app asked for, all of which this server offers */
+    scopes: string[];
+};
+export type OAuthAppGrantDto = {
+    client: OAuthAppClientDto;
+    /** When you chose Allow */
+    createdAt: string;
+    /** The grant id; Remove revokes it */
+    id: string;
+    /** When the app last used its access, to the hour; null if never */
+    lastUsedAt: string | null;
+    /** How it last connected, as free text: home, direct or relay (remote access); null if unknown */
+    lastUsedVia: string | null;
+    /** What you allowed */
+    scopes: string[];
+};
 export type OAuthConfigDto = {
     /** OAuth code challenge (PKCE) */
     codeChallenge?: string;
@@ -16466,6 +16588,8 @@ export type SharedLinkResponseDto = {
     createdAt: string;
     /** Link description */
     description: string | null;
+    /** FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root: /api/shared-links/direct/s/<slug>.jpg for a link with a slug, /api/shared-links/direct/key/<key>.jpg otherwise. */
+    directUrl: string | null;
     /** Expiration date */
     expiresAt: string | null;
     /** Shared link ID */
@@ -20586,6 +20710,9 @@ export type SearchSuggestionRequestDto = {
     state?: string;
     "type": SearchSuggestionType;
 };
+export type SharedLinkDirectImageDto = {
+    size?: SharedLinkDirectImageSize;
+};
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
     albumId?: string;
@@ -22167,6 +22294,17 @@ export function unlockCloudBackupKey({ cloudBackupUnlockDto }: {
         method: "POST",
         body: cloudBackupUnlockDto
     })));
+}
+/**
+ * Get the accounts currently covered for Cloud Backup
+ */
+export function getCloudBackupLicenceCoverage(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupLicenceCoverageResponseDto;
+    }>("/admin/cloud/backup/licence-coverage", {
+        ...opts
+    }));
 }
 /**
  * List the kept backups
@@ -23810,6 +23948,28 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
     })));
 }
 /**
+ * List registered apps
+ */
+export function getOAuthAppClients(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAdminClientDto[];
+    }>("/admin/oauth/apps", {
+        ...opts
+    }));
+}
+/**
+ * Remove a registered app
+ */
+export function deleteOAuthAppClient({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/oauth/apps/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Get the overnight schedule
  */
 export function getOvernight(opts?: Oazapfts.RequestOpts) {
@@ -24911,6 +25071,24 @@ export function getAlbumMergePreview({ id, otherId }: {
         status: 200;
         data: AlbumMergePreviewResponseDto;
     }>(`/albums/${encodeURIComponent(id)}/merge/${encodeURIComponent(otherId)}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve the people in an album
+ */
+export function getAlbumPeople({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumPersonResponseDto[];
+    }>(`/albums/${encodeURIComponent(id)}/people${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
         ...opts
     }));
 }
@@ -30678,6 +30856,58 @@ export function updateNotification({ id, notificationUpdateDto }: {
     })));
 }
 /**
+ * Allow or deny an app
+ */
+export function authorizeOAuthApp({ oAuthAppAuthorizeDto }: {
+    oAuthAppAuthorizeDto: OAuthAppAuthorizeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAuthorizeResponseDto;
+    }>("/oauth/apps/authorize", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthAppAuthorizeDto
+    })));
+}
+/**
+ * Check an app’s request before Allow
+ */
+export function startOAuthAppAuthorization({ oAuthAppAuthorizeStartDto }: {
+    oAuthAppAuthorizeStartDto: OAuthAppAuthorizeStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAuthorizeStartResponseDto;
+    }>("/oauth/apps/authorize/start", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthAppAuthorizeStartDto
+    })));
+}
+/**
+ * List your connected apps
+ */
+export function getOAuthAppGrants(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppGrantDto[];
+    }>("/oauth/apps/grants", {
+        ...opts
+    }));
+}
+/**
+ * Remove a connected app’s access
+ */
+export function revokeOAuthAppGrant({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/oauth/apps/grants/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Start OAuth
  */
 export function startOAuth({ oAuthConfigDto }: {
@@ -34087,6 +34317,38 @@ export function createSharedLink({ sharedLinkCreateDto }: {
         method: "POST",
         body: sharedLinkCreateDto
     })));
+}
+/**
+ * View the image of a single-photo shared link, by its key
+ */
+export function getSharedLinkDirectImageByKey({ key, size }: {
+    key: string;
+    size?: SharedLinkDirectImageSize;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-links/direct/key/${encodeURIComponent(key)}.jpg${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * View the image of a single-photo shared link, by its slug
+ */
+export function getSharedLinkDirectImageBySlug({ size, slug }: {
+    size?: SharedLinkDirectImageSize;
+    slug: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-links/direct/s/${encodeURIComponent(slug)}.jpg${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Shared link login
@@ -38272,6 +38534,12 @@ export enum CloudBackupCoverageReportState {
     Local = "local",
     Unknown = "unknown"
 }
+export enum CloudBackupLicenceScope {
+    Unknown = "unknown",
+    None = "none",
+    All = "all",
+    Users = "users"
+}
 export enum CloudBackupManifestStatus {
     Complete = "complete",
     Degraded = "degraded"
@@ -41844,6 +42112,10 @@ export enum ReleaseType {
 export enum SharedLinkType {
     Album = "ALBUM",
     Individual = "INDIVIDUAL"
+}
+export enum SharedLinkDirectImageSize {
+    Preview = "preview",
+    Fullsize = "fullsize"
 }
 export enum AssetIdErrorReason {
     Duplicate = "duplicate",

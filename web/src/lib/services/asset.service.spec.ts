@@ -1,5 +1,5 @@
 import { AssetTypeEnum, getAssetInfo, type AlbumResponseDto } from '@frameleaf/sdk';
-import { toastManager } from '@frameleaf/ui';
+import { modalManager, toastManager } from '@frameleaf/ui';
 import { mdiTune } from '@mdi/js';
 import { get } from 'svelte/store';
 import { vitest } from 'vitest';
@@ -19,6 +19,7 @@ import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 
 vitest.mock('@frameleaf/ui', () => ({
+  modalManager: { show: vitest.fn() },
   toastManager: {
     primary: vitest.fn(),
     show: vitest.fn(),
@@ -140,6 +141,30 @@ describe('AssetService', () => {
       const send = getAssetActions(say as never, damaged).SendCopy;
       send.onAction(send);
       expect(sendCopiesWithFeedback).toHaveBeenCalledWith([damaged.id]);
+    });
+
+    it('Share hands its sheet the same explanation for a missing original, for Download and Send a copy (FL-1347)', () => {
+      setOwnerUser();
+      const say = (key: string) => key;
+      const shareSheetOf = (asset: ReturnType<typeof assetFactory.build>) => {
+        vitest.mocked(modalManager.show).mockClear();
+        const action = getAssetActions(say as never, asset).Share;
+        action.onAction(action);
+        return vitest.mocked(modalManager.show).mock.calls[0][1] as { onlyPreview?: () => boolean };
+      };
+
+      const missing = assetFactory.build({ ownerId, fileProblem: { findingId: 'finding-1', missing: true } });
+      expect(shareSheetOf(missing).onlyPreview?.()).toBe(true);
+      expect(toastManager.show).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'frameleaf_viewer_file_only_preview' }),
+        expect.anything(),
+      );
+
+      // a damaged file is still there: the sheet downloads and sends it
+      vitest.mocked(toastManager.show).mockClear();
+      const damaged = assetFactory.build({ ownerId, fileProblem: { findingId: 'finding-2', missing: false } });
+      expect(shareSheetOf(damaged).onlyPreview?.()).toBe(false);
+      expect(toastManager.show).not.toHaveBeenCalled();
     });
 
     it('offers no Share inside a public link, even to a signed-in visitor (FL-56)', () => {
