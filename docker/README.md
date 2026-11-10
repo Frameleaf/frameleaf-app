@@ -114,7 +114,17 @@ services:
 
 The example uses HTTP for scrapes on a trusted private network. Other services on that network can read unauthenticated metrics.
 
-For credential-bearing scrapes, use HTTPS from Prometheus to each worker. Terminate TLS on the worker or in a proxy that forwards over loopback within the worker's network namespace. Set `scheme: https` for each protected job in `prometheus.yml`, and configure `tls_config.ca_file` if the worker uses a private certificate authority.
+For credential-bearing scrapes, use a dedicated private TLS listener for each worker. A proxy can bind a separate port in the worker's network namespace and forward only `GET /metrics` over loopback to the worker's HTTP port. Restrict the proxy listener to the scraper's private network and remove `Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Frameleaf-Via` and `X-Frameleaf-Via-Auth` before forwarding. The metrics listeners return 404 when they receive any of these headers.
+
+Change each protected job in `prometheus.yml` to `scheme: https` and replace its target port with the one configured on its TLS proxy. For example, if the proxies bind the following ports and use the Compose service names in their certificates, set these targets.
+
+| Job | HTTPS target | Loopback upstream |
+| --- | --- | --- |
+| `frameleaf_api` | `frameleaf-server:8443` | `127.0.0.1:8081` |
+| `frameleaf_microservices` | `frameleaf-server:8444` | `127.0.0.1:8082` |
+| `frameleaf_ml` | `frameleaf-machine-learning:3443` | `127.0.0.1:3003` |
+
+If the proxies use a private certificate authority, mount its CA certificate in Prometheus and set `tls_config.ca_file` on the protected jobs.
 
 Set `FRAMELEAF_METRICS_TOKEN` on the server and add `authorization.credentials_file` to the `frameleaf_api` and `frameleaf_microservices` jobs. If the ML worker uses `FRAMELEAF_ML_AUTH_TOKEN`, use its own credential file on the `frameleaf_ml` job. Mount the credential files read-only in Prometheus and keep these scrape endpoints on the private network.
 

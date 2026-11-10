@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -74,7 +75,7 @@ async def test_stream_request_duration_waits_for_the_last_body_chunk():
     assert metrics.registry.get_sample_value(count, {"task": "transcribe"}) == 1
 
 
-def test_predict_records_metrics_for_a_parsed_task_string(deployed_app, mocker):
+def test_predict_records_one_request_and_both_stages_for_a_parsed_task(deployed_app, mocker):
     metrics = InferenceMetrics()
     model = SimpleNamespace(
         depends=[],
@@ -87,10 +88,9 @@ def test_predict_records_metrics_for_a_parsed_task_string(deployed_app, mocker):
     mocker.patch.object(main.model_cache, "get", return_value=model)
     mocker.patch.object(main, "load", return_value=model)
 
-    response = deployed_app.post(
-        "/predict",
-        data={"entries": '{"clip":{"textual":{"modelName":"ViT-B-32__openai"}}}', "text": "test"},
-    )
+    entry = {"modelName": "ViT-B-32__openai"}
+    entries = json.dumps({"clip": {"textual": entry, "visual": entry}})
+    response = deployed_app.post("/predict", data={"entries": entries, "text": "test"})
     assert response.status_code == 200
     assert response.json() == {"clip": [1.0, 0.0]}
     assert metrics.registry.get_sample_value("frameleaf_ml_request_duration_seconds_count", {"task": "clip"}) == 1
@@ -98,5 +98,5 @@ def test_predict_records_metrics_for_a_parsed_task_string(deployed_app, mocker):
         metrics.registry.get_sample_value(
             "frameleaf_ml_inference_duration_seconds_count", {"task": "clip", "model": "other", "provider": "onnx"}
         )
-        == 1
+        == 2
     )
