@@ -1600,7 +1600,9 @@ describe(DatabaseBackupService.name, () => {
         `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`,
         `DROP ROLE IF EXISTS "${role}"`,
         expect.stringMatching(
-          new RegExp(`^CREATE ROLE "${role}" LOGIN PASSWORD '[0-9a-f]{48}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS$`),
+          new RegExp(
+            `^CREATE ROLE "${role}" LOGIN PASSWORD '[0-9a-f]{48}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS$`,
+          ),
         ),
         `CREATE DATABASE "${name}" OWNER "${role}"`,
         "SELECT extname FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql'",
@@ -1614,7 +1616,9 @@ describe(DatabaseBackupService.name, () => {
       const restore = calls[6];
       expect(restore.args).toContain('--no-psqlrc');
       // psql signs in as the scratch role, which is not a superuser, so the dump has no superuser to switch back to
-      expect(restore.args.some((arg) => arg.startsWith(`postgresql://${role}:`) && arg.endsWith(`@db:5432/${name}`))).toBe(true);
+      expect(
+        restore.args.some((arg) => arg.startsWith(`postgresql://${role}:`) && arg.endsWith(`@db:5432/${name}`)),
+      ).toBe(true);
       expect(restore.input).not.toContain('SET ROLE');
       expect(restore.input).toContain('CREATE TABLE asset');
       expect(restore.input).not.toContain('CREATE EXTENSION');
