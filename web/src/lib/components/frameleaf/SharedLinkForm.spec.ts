@@ -9,6 +9,8 @@ import en from '../../../../../i18n/en.json';
 import SharedLinkForm from './SharedLinkForm.svelte';
 
 vi.mock('$lib/services/shared-link.service', () => ({
+  asDirectImageUrl: (link: { directUrl?: string | null }) =>
+    link.directUrl ? `https://frameleaf.local${link.directUrl}` : '',
   asUrl: () => 'https://frameleaf.local/s/test',
   handleCreateSharedLink: vi.fn(),
   handleUpdateSharedLink: vi.fn().mockResolvedValue(true),
@@ -134,6 +136,39 @@ describe('SharedLinkForm', () => {
     expect(screen.getByLabelText(en.frameleaf_sharing.link_address)).toHaveValue('https://frameleaf.local/s/test');
     expect(screen.getByRole('button', { name: en.frameleaf_sharing.qr_code })).toHaveAttribute('aria-pressed', 'false');
   });
+
+  it('offers the image link on the Link ready step for a single photo, and only then (FL-788)', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    vi.mocked(handleCreateSharedLink).mockResolvedValue(
+      sharedLinkFactory.build({
+        type: SharedLinkType.Individual,
+        assets: [],
+        password: null,
+        directUrl: '/api/shared-links/direct/lake.jpg',
+      }),
+    );
+    const view = render(SharedLinkForm, {
+      props: { open: true, target: { type: SharedLinkType.Individual, assetIds: ['a1'], name: '1 item' } },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_sharing.copy_image_link }));
+
+    expect(writeText).toHaveBeenCalledWith('https://frameleaf.local/api/shared-links/direct/lake.jpg');
+    expect(await screen.findByText(en.frameleaf_sharing.image_link_copied)).toBeInTheDocument();
+
+    view.unmount();
+    vi.mocked(handleCreateSharedLink).mockResolvedValue(
+      sharedLinkFactory.build({ type: SharedLinkType.Album, assets: [], password: null }),
+    );
+    render(SharedLinkForm, {
+      props: { open: true, target: { type: SharedLinkType.Album, albumId: 'album-1', name: 'Summer trip' } },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
+    await screen.findByRole('heading', { name: en.frameleaf_sharing.link_ready_title });
+    expect(screen.queryByRole('button', { name: en.frameleaf_sharing.copy_image_link })).toBeNull();
+  });
+
   describe('link preview (FL-83 AL-25)', () => {
     it('shows the items as a collage of real thumbnails with live badges, expiry and a viewer summary', async () => {
       render(SharedLinkForm, {
