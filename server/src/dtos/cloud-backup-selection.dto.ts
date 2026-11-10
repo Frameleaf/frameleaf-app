@@ -82,6 +82,16 @@ export class CloudBackupCoverageResponseDto extends createZodDto(
     .meta({ id: 'CloudBackupCoverageResponseDto' }),
 ) {}
 
+/** Current licence scope from Cloud's grant, independent of the last backup inventory. */
+export class CloudBackupLicenceCoverageResponseDto extends createZodDto(
+  z
+    .object({
+      scope: z.enum(['unknown', 'none', 'all', 'users']).meta({ id: 'CloudBackupLicenceScope' }),
+      accounts: z.array(z.object({ userId: z.uuid(), name: z.string() }).meta({ id: 'CloudBackupLicensedAccountDto' })),
+    })
+    .meta({ id: 'CloudBackupLicenceCoverageResponseDto' }),
+) {}
+
 export const CloudBackupExclusionReasonSchema = z
   .enum(['selection', 'licence', 'not-committed', 'unknown'])
   .describe(

@@ -89,8 +89,8 @@ export const showsEdit = (asset: Pick<AssetResponseDto, 'id' | 'ownerId' | 'isEd
 
 /**
  * Only the preview of a photo whose original is missing can be shown, so what needs the original (Download,
- * Download original, Edit, Send a copy, the still exports) says so and points to what happened (Damaged and missing
- * files) instead of failing. Returns true when it did.
+ * Download original, Edit, Send a copy, the still exports, and the Share sheet's Download and Send a copy) says so and
+ * points to what happened (Damaged and missing files) instead of failing. Returns true when it did.
  */
 export const explainOnlyPreview = (asset: Pick<AssetResponseDto, 'fileProblem'>, $t: MessageFormatter): boolean => {
   const problem = asset.fileProblem;
@@ -134,6 +134,8 @@ export const getAssetActions = (
             ownerId: asset.ownerId,
           },
         ],
+        // the sheet's Download and Send a copy need the original too (FL-1347)
+        onlyPreview: () => explainOnlyPreview(asset, $t),
       }),
   };
 

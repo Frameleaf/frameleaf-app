@@ -5,6 +5,7 @@ import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { canSendCopies, sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
 import { handleCreateSharedLink } from '$lib/services/shared-link.service';
 import {
   canCopyImageToClipboard,
@@ -29,6 +30,12 @@ vi.mock('$lib/services/shared-link.service', () => ({
   handleUpdateSharedLink: vi.fn(),
 }));
 
+vi.mock(import('$lib/frameleaf/send-copy'), async (original) => ({
+  ...(await original()),
+  canSendCopies: vi.fn(() => false),
+  sendCopiesWithFeedback: vi.fn(() => Promise.resolve()),
+}));
+
 vi.mock(import('$lib/utils/asset-utils'), async (original) => ({
   ...(await original()),
   canCopyImageToClipboard: vi.fn(() => true),
@@ -40,6 +47,7 @@ vi.mock(import('$lib/utils/asset-utils'), async (original) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(canCopyImageToClipboard).mockReturnValue(true);
+  vi.mocked(canSendCopies).mockReturnValue(false);
   sdkMock.getAssetThumbnailPath.mockImplementation((id: string) => `/assets/${id}/thumbnail`);
   sdkMock.getAllSharedLinks.mockResolvedValue([]);
   sdkMock.searchUsers.mockResolvedValue([]);
@@ -436,6 +444,31 @@ describe('ShareSheet', () => {
       render(ShareSheet, { open: true, assetIds: ['a1', 'a2'], assets: [photo('a1'), video('a2')] });
       await fireEvent.click(screen.getByRole('button', { name: en.download }));
       expect(downloadArchive).toHaveBeenCalledWith(expect.any(String), { assetIds: ['a1', 'a2'] });
+    });
+
+    it('lets the viewer say only a preview is left of a missing original, instead of downloading or sending (FL-1347)', async () => {
+      vi.mocked(canSendCopies).mockReturnValue(true);
+      // the viewer's check: it explains (a toast pointing to what happened) and answers true
+      const onlyPreview = vi.fn(() => true);
+      const first = render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')], onlyPreview });
+      await fireEvent.click(screen.getByRole('button', { name: en.download }));
+      expect(onlyPreview).toHaveBeenCalledTimes(1);
+      expect(downloadAssetFile).not.toHaveBeenCalled();
+      expect(downloadArchive).not.toHaveBeenCalled();
+      first.unmount();
+
+      render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')], onlyPreview });
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_send_copy }));
+      expect(onlyPreview).toHaveBeenCalledTimes(2);
+      expect(sendCopiesWithFeedback).not.toHaveBeenCalled();
+    });
+
+    it('downloads and sends as usual when the original is there (FL-1347)', async () => {
+      vi.mocked(canSendCopies).mockReturnValue(true);
+      const onlyPreview = vi.fn(() => false);
+      render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')], onlyPreview });
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_send_copy }));
+      expect(sendCopiesWithFeedback).toHaveBeenCalledWith(['a1']);
     });
   });
 });

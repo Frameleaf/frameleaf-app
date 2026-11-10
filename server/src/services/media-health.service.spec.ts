@@ -5484,14 +5484,15 @@ describe(MediaHealthService.name, () => {
     });
 
     describe('listLostOriginals', () => {
-      const row = (n: number) => ({
+      const row = (n: number, fileSize: number | null = 1_048_576 * n) => ({
         assetId: `asset-${n}`,
         checksum: sha1,
         originalFileName: `IMG_${n}.jpg`,
         fileCreatedAt: new Date('2025-01-02T03:04:05.000Z'),
+        fileSize,
       });
 
-      it('lists only the caller’s own, with base64 checksums', async () => {
+      it('lists only the caller’s own, with base64 checksums and file sizes', async () => {
         vi.mocked(mediaHealthRepository.listLostOriginals).mockResolvedValue([row(1)] as never);
 
         await expect(sut.listLostOriginals(owner, { take: 500, skip: 0 })).resolves.toEqual({
@@ -5501,11 +5502,20 @@ describe(MediaHealthService.name, () => {
               checksum: sha1.toString('base64'),
               originalFileName: 'IMG_1.jpg',
               fileCreatedAt: '2025-01-02T03:04:05.000Z',
+              fileSize: 1_048_576,
             },
           ],
           hasNextPage: false,
         });
         expect(mediaHealthRepository.listLostOriginals).toHaveBeenCalledWith(owner.user.id, 500, 0);
+      });
+
+      it('gives no file size for a photo whose size was never read (FL-1347)', async () => {
+        vi.mocked(mediaHealthRepository.listLostOriginals).mockResolvedValue([row(1, null)] as never);
+
+        const { items } = await sut.listLostOriginals(owner, { take: 500, skip: 0 });
+
+        expect(items).toEqual([expect.objectContaining({ assetId: 'asset-1', fileSize: null })]);
       });
 
       it('pages: one row beyond the page says there is more', async () => {
@@ -5559,16 +5569,33 @@ describe(MediaHealthService.name, () => {
         expect(mediaHealthRepository.recordPhoneReport).toHaveBeenCalledTimes(2);
       });
 
-      it('ignores checksums that are not the caller’s open lost originals, and anything not SHA-1', async () => {
+      it('ignores checksums that are not the caller’s open lost originals, and anything not SHA-1 or SHA-256', async () => {
         // the repository finds only the caller's own open ones
         vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([]);
+        const sha256 = createHash('sha256').update('lost').digest();
 
         await expect(
-          report([sha1.toString('base64'), 'not base64 !', Buffer.alloc(32).toString('base64')]),
+          report([
+            sha1.toString('base64'),
+            'not base64 !',
+            Buffer.alloc(16).toString('base64'),
+            sha256.toString('base64'),
+            Buffer.alloc(48).toString('base64'),
+          ]),
         ).resolves.toBeUndefined();
 
-        expect(mediaHealthRepository.findLostOriginals).toHaveBeenCalledWith(owner.user.id, [sha1]);
+        expect(mediaHealthRepository.findLostOriginals).toHaveBeenCalledWith(owner.user.id, [sha1, sha256]);
         expect(mediaHealthRepository.recordPhoneReport).not.toHaveBeenCalled();
+      });
+
+      it('hands over a report by SHA-256, as current uploads are stored (FL-1347)', async () => {
+        const sha256 = createHash('sha256').update('uploaded').digest();
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
+
+        await report([sha256.toString('base64')]);
+
+        expect(mediaHealthRepository.findLostOriginals).toHaveBeenCalledWith(owner.user.id, [sha256]);
+        expect(reported()).toMatchObject({ findings: [open()], sessionId: 'session-iphone' });
       });
 
       it('records nothing for a session that is not a phone or tablet', async () => {
