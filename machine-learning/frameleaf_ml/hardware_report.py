@@ -19,6 +19,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from frameleaf_ml.container_resources import container_resources
+
 PCI_VENDORS = {"0x10de": "NVIDIA", "0x1002": "AMD", "0x8086": "Intel"}
 GIB = 1024**3
 
@@ -334,4 +336,5 @@ def container_report(providers: list[str], openvino_device_ids: list[str]) -> di
         "host": host_facts(),
         "computeCapability": _compute_capability() if backend == "CUDA" else None,
         "rocm": rocm_facts() if os.environ.get("DEVICE", "cpu") == "rocm" else None,
+        "resources": container_resources(),
     }

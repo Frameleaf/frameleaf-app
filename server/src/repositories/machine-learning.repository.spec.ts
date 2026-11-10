@@ -32,6 +32,7 @@ import {
   ModelTask,
   ModelType,
   RestorationWorkerError,
+  parseMlContainerReport,
 } from 'src/repositories/machine-learning.repository.js';
 import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
@@ -110,6 +111,47 @@ const selection = (
   workload: MlWorkload.Enrichment,
   endpoint: authToken ? { url, authToken } : { url },
   record,
+});
+
+describe('ML container resource limits', () => {
+  const container = {
+    image: 'cpu',
+    backend: 'CPU',
+    gpus: [],
+    driver: null,
+    devices: { renderNodes: [], kfd: false, kfdAccessible: false, nvidia: false, nvidiaRequested: false },
+  };
+
+  it('preserves limited, unlimited and unavailable reports without inferring host capacity', () => {
+    for (const memoryBytes of [
+      { status: 'limited', value: 2 ** 30 },
+      { status: 'limited', value: 0 },
+      { status: 'unlimited', value: null },
+      { status: 'unavailable', value: null },
+    ]) {
+      const resources = { memoryBytes, cpuCores: { status: 'limited', value: 0.5 } };
+      expect(parseMlContainerReport({ container: { ...container, resources } })?.resources).toEqual(resources);
+    }
+  });
+
+  it('accepts older workers without a resource report', () => {
+    expect(parseMlContainerReport({ container })).toEqual({ ...container, nvidiaError: null });
+  });
+
+  it.each([
+    { status: 'limited', value: null },
+    { status: 'limited', value: -1 },
+    { status: 'limited', value: Infinity },
+    { status: 'limited', value: 2 ** 63 },
+    { status: 'unavailable', value: 1024 },
+    { status: 'unlimited', value: 0 },
+  ])('refuses an inconsistent resource report: %j', (memoryBytes) => {
+    expect(
+      parseMlContainerReport({
+        container: { ...container, resources: { memoryBytes, cpuCores: { status: 'unavailable', value: null } } },
+      }),
+    ).toBeNull();
+  });
 });
 
 describe(MachineLearningRepository.name, () => {
