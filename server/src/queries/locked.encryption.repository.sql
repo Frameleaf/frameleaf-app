@@ -42,7 +42,8 @@ where
 
 -- LockedEncryptionRepository.getUnlockedFilePaths
 select
-  a."originalPath" as path
+  a."originalPath" as path,
+  false as kept
 from
   public.asset a
 where
@@ -66,7 +67,8 @@ where
   )
 union
 select
-  f.path
+  f.path,
+  false
 from
   public.asset_file f
   join public.asset a on a.id = f."assetId"
@@ -91,7 +93,8 @@ where
   )
 union
 select
-  kept.path
+  kept.path,
+  true
 from
   public.asset_health h
   join public.asset a on a.id = h."assetId"
