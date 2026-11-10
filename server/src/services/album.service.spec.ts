@@ -2323,6 +2323,52 @@ describe(AlbumService.name, () => {
     });
   });
 
+  describe('getPeople (FL-809)', () => {
+    const albumId = newUuid();
+    const updatedAt = new Date('2026-11-01T10:00:00.000Z');
+    const person = { id: newUuid(), name: 'Jamie', count: 3, updatedAt };
+
+    it('lists the named people for an owner, editor or viewer member', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([albumId]));
+      mocks.person.getAlbumPeople.mockResolvedValue([person]);
+
+      await expect(sut.getPeople(auth, albumId)).resolves.toEqual([
+        { id: person.id, name: 'Jamie', count: 3, updatedAt: '2026-11-01T10:00:00.000Z' },
+      ]);
+      expect(mocks.person.getAlbumPeople).toHaveBeenCalledWith(
+        albumId,
+        auth.user.id,
+        expect.objectContaining({ othersRulesViewerId: auth.user.id }),
+        50,
+      );
+    });
+
+    it('refuses someone who is not a member', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+
+      await expect(sut.getPeople(AuthFactory.create(), albumId)).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.person.getAlbumPeople).not.toHaveBeenCalled();
+    });
+
+    it('names people to a shared link that shows metadata', async () => {
+      const auth = AuthFactory.from().sharedLink({ showExif: true }).build();
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
+      mocks.person.getAlbumPeople.mockResolvedValue([person]);
+
+      await expect(sut.getPeople(auth, albumId)).resolves.toHaveLength(1);
+    });
+
+    it('never names anyone to a shared link that hides metadata', async () => {
+      const auth = AuthFactory.from().sharedLink({ showExif: false }).build();
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
+
+      await expect(sut.getPeople(auth, albumId)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.person.getAlbumPeople).not.toHaveBeenCalled();
+    });
+  });
+
   describe('addAssets', () => {
     it.each(['add', 'remove', 'bulk-add'] as const)(
       'keeps %s membership writes behind origin edit admission',

@@ -5281,6 +5281,16 @@ export type AlbumMergePreviewResponseDto = {
     /** The album that stays is shared, by people, a public link or a shared space, who will see both */
     winnerShared: boolean;
 };
+export type AlbumPersonResponseDto = {
+    /** Number of album items showing this person */
+    count: number;
+    /** Person ID */
+    id: string;
+    /** Person name */
+    name: string;
+    /** Last update date, for the thumbnail cache */
+    updatedAt: string;
+};
 export type AlbumSuggestionReasonDto = {
     /** The album photo it matches, for same-scene, near-identical and same-outfit */
     assetId?: string;
@@ -24911,6 +24921,24 @@ export function getAlbumMergePreview({ id, otherId }: {
         status: 200;
         data: AlbumMergePreviewResponseDto;
     }>(`/albums/${encodeURIComponent(id)}/merge/${encodeURIComponent(otherId)}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve the people in an album
+ */
+export function getAlbumPeople({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumPersonResponseDto[];
+    }>(`/albums/${encodeURIComponent(id)}/people${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
         ...opts
     }));
 }

@@ -339,6 +339,47 @@ set
 where
   "asset_face"."id" = $2
 
+-- PersonRepository.getAlbumPeople
+select
+  "person"."personGroupId" as "id",
+  "person"."name",
+  "person"."updatedAt",
+  count(distinct "asset"."id")::int as "count"
+from
+  "asset"
+  inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
+  inner join "asset_face" on "asset_face"."assetId" = "asset"."id"
+  inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+  and "person"."ownerId" = $1
+where
+  (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "album_asset"."albumId" = $2
+  and "asset"."deletedAt" is null
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+  and "person"."isHidden" is false
+  and "person"."name" != $3
+group by
+  "person"."personGroupId",
+  "person"."name",
+  "person"."updatedAt"
+order by
+  "count" desc,
+  "person"."name" asc,
+  "person"."personGroupId" asc
+limit
+  $4
+
 -- PersonRepository.getByGroupId
 select
   "person".*
