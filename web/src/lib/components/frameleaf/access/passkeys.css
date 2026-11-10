@@ -1,0 +1,191 @@
+/*
+ * FL-859: passkeys (the approved FL-767 prototype's `passkeys.css` and the `ts-` dialog classes of
+ * `two-step.css`). Unscoped, so every class is prefixed `pk-` or belongs to the sign-in screen.
+ */
+
+/* ---------------------------------------------------------------- dialogs */
+
+.pk-dialog {
+  display: grid;
+  gap: var(--fl-space-6);
+  padding: var(--fl-space-1) 0 var(--fl-space-2);
+  font-size: var(--fl-font-size);
+  line-height: 1.55;
+}
+.pk-dialog > p {
+  max-width: 600px;
+  margin: 0;
+  color: var(--fl-muted);
+}
+.pk-step {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.pk-field {
+  display: grid;
+  gap: var(--fl-space-2);
+  font-weight: 600;
+}
+.pk-field small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-weight: 400;
+}
+.pk-field input {
+  width: min(360px, 100%);
+  min-height: var(--fl-control-height);
+  padding: 0 var(--fl-space-3);
+  font-size: var(--fl-font-size);
+  font-weight: 400;
+}
+.pk-error {
+  display: flex;
+  gap: var(--fl-space-3);
+  align-items: flex-start;
+  margin: 0;
+  padding: var(--fl-space-3) var(--fl-space-4);
+  border-radius: var(--fl-radius-control);
+  background: color-mix(in srgb, var(--fl-danger) 12%, var(--fl-panel));
+}
+.pk-error svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fl-danger);
+}
+.pk-quiet {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.55;
+}
+.pk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--fl-space-2);
+}
+
+/* What the browser's own window asks, as a numbered list. */
+.pk-browser {
+  display: grid;
+  gap: var(--fl-space-4);
+  margin: 0;
+  padding: var(--fl-space-5) var(--fl-space-6);
+  list-style: none;
+  counter-reset: pk;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-raised);
+}
+.pk-browser li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  column-gap: var(--fl-space-3);
+  row-gap: 2px;
+  counter-increment: pk;
+}
+.pk-browser li::before {
+  content: counter(pk);
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--fl-accent);
+  background: var(--fl-accent-soft);
+  font-size: var(--fl-font-small);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pk-browser span {
+  color: var(--fl-muted);
+}
+.pk-waiting,
+.pk-made {
+  display: flex;
+  align-items: center;
+  gap: var(--fl-space-3);
+  margin: 0;
+  font-weight: 500;
+}
+.pk-made svg {
+  flex: none;
+  color: var(--fl-success);
+}
+.pk-spinner {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 2px solid var(--fl-border);
+  border-top-color: var(--fl-accent);
+  border-radius: 50%;
+  animation: pk-spin 0.9s linear infinite;
+}
+@keyframes pk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------------------------------------------------------------- settings page */
+
+.pk-loading {
+  display: grid;
+  gap: var(--fl-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pk-loading li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) minmax(0, 0.6fr);
+  align-items: center;
+  gap: var(--fl-space-4);
+  min-height: 64px;
+}
+.pk-loading li > span {
+  height: 14px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  animation: pk-pulse 1.4s ease-in-out infinite;
+}
+.pk-loading li > span:first-child {
+  height: 44px;
+}
+@keyframes pk-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.pk-row-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+}
+
+/* ---------------------------------------------------------------- sign-in screen */
+
+.auth-passkey-wait {
+  display: grid;
+  gap: var(--fl-space-3);
+  padding: var(--fl-space-4) var(--fl-space-5);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  line-height: 1.5;
+}
+.auth-passkey-wait .pk-waiting {
+  color: var(--fl-text);
+}
+.auth-passkey-wait .auth-link {
+  justify-self: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pk-spinner,
+  .pk-loading li > span {
+    animation: none;
+  }
+}
