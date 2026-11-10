@@ -54,7 +54,7 @@ export async function configureExpress(
   app.use(
     frameleafViaMiddleware(frameleafCloud.edge.secret, network.trustConfiguredProxies, () =>
       logger.warn(
-        'Forwarded addresses are ignored for sign-in limits. If using a reverse proxy, configure its address in FRAMELEAF_TRUSTED_PROXIES.',
+        'Forwarded addresses are ignored for per-address rate limits. If using a reverse proxy, configure its address in FRAMELEAF_TRUSTED_PROXIES.',
       ),
     ),
   );
