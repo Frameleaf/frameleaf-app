@@ -94,6 +94,11 @@ test("the format matrix runs the inventory and the manifest inside the productio
   assert.match(commands, /--target native-raw-validation/);
   assert.match(commands, /--network none/);
   assert.match(commands, /verify-decoders\.mjs/);
+  // Every root the manifest names is mounted, so no fixture is skipped in CI.
+  assert.match(commands, /fetch-fate\.sh "\$RUNNER_TEMP\/fate"/);
+  for (const root of ["generated", "test-assets", "resources", "fate"]) {
+    assert.match(commands, new RegExp(`${root}=/fixtures/${root}\\b`));
+  }
   assert.match(
     commands,
     /verify-formats\.mjs \/fixtures\/generated\/manifest\.json/,

@@ -24,9 +24,16 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { getAuthStatus, type AuthStatusResponseDto, type FrameleafAccountLinkResponseDto } from '@frameleaf/sdk';
-  import { modalManager } from '@frameleaf/ui';
-  import { mdiEmailOutline, mdiFormTextboxPassword, mdiLoginVariant } from '@mdi/js';
+  import { passkeysInThisBrowser } from '$lib/frameleaf/passkeys';
+  import {
+    getAuthStatus,
+    getPasskeys,
+    type AuthStatusResponseDto,
+    type FrameleafAccountLinkResponseDto,
+    type PasskeyResponseDto,
+  } from '@frameleaf/sdk';
+  import { Icon, modalManager } from '@frameleaf/ui';
+  import { mdiChevronRight, mdiEmailOutline, mdiFingerprint, mdiFormTextboxPassword, mdiLoginVariant } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -36,10 +43,51 @@
   let link = $state<FrameleafAccountLinkResponseDto | null>(null);
   let frameleaf = $state<ReturnType<typeof FrameleafAccountSection>>();
 
+  let passkeys = $state<PasskeyResponseDto[] | null>(null);
   onMount(() => {
     void getAuthStatus()
       .then((value) => (auth = value))
       .catch(() => {});
+    void getPasskeys()
+      .then((value) => (passkeys = value))
+      .catch(() => {});
+  });
+
+  /** FL-859: the Passkeys row (FL-767 prototype `passkeyRow`). */
+  const passkeysHere = passkeysInThisBrowser();
+  const lastUsed = $derived.by(() => {
+    let latest: string | undefined;
+    for (const { lastUsedAt } of passkeys ?? []) {
+      if (lastUsedAt && (!latest || lastUsedAt > latest)) {
+        latest = lastUsedAt;
+      }
+    }
+    return latest;
+  });
+  const passkeyRow = $derived.by(() => {
+    const count = passkeys?.length ?? 0;
+    if (passkeys && count === 0) {
+      return {
+        off: true,
+        tone: 'off' as const,
+        status: $t('frameleaf_passkey_row_none'),
+        note: $t('frameleaf_passkey_row_none_note'),
+        button: $t('frameleaf_passkey_row_add'),
+      };
+    }
+    return {
+      off: false,
+      tone: passkeys ? ('good' as const) : ('off' as const),
+      status: passkeys ? $t('frameleaf_passkey_count', { values: { count } }) : undefined,
+      note: !passkeysHere.ok
+        ? $t(passkeysHere.reason === 'http' ? 'frameleaf_passkey_row_http' : 'frameleaf_passkey_row_unsupported')
+        : lastUsed
+          ? $t('frameleaf_passkey_row_last_used', {
+              values: { when: new Intl.DateTimeFormat($locale, { dateStyle: 'medium' }).format(new Date(lastUsed)) },
+            })
+          : undefined,
+      button: $t('frameleaf_security_who_open'),
+    };
   });
 
   const passwordOn = $derived(featureFlagsManager.value.passwordLogin);
@@ -49,6 +97,7 @@
   /** The ways that work for this account today, in the prototype's order. */
   const ways = $derived(
     [
+      passwordOn && (passkeys?.length ?? 0) > 0 ? $t('frameleaf_how_way_passkey') : '',
       passwordOn && hasPassword ? $t('frameleaf_how_way_password') : '',
       providerOn && authManager.user.oauthId ? $t('frameleaf_how_way_provider') : '',
       link?.linked ? $t('frameleaf_how_way_frameleaf') : '',
@@ -143,6 +192,25 @@
           {/if}
         {/snippet}
       </Item>
+      {#if passwordOn}
+        <Item
+          icon={mdiFingerprint}
+          name={$t('frameleaf_passkey_title')}
+          detail={$t('frameleaf_passkey_row_detail')}
+          off={passkeyRow.off}
+          tone={passkeyRow.tone}
+          status={passkeyRow.status}
+          note={passkeyRow.note}
+        >
+          {#snippet action()}
+            <Button
+              label={$t('frameleaf_passkey_row_open')}
+              onclick={() => goto(commandCenterUrl('privacy', 'passkeys'))}
+              >{passkeyRow.button}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+            >
+          {/snippet}
+        </Item>
+      {/if}
       <FrameleafAccountSection view="row" bind:link bind:this={frameleaf} />
       {#if providerOn}
         <SignInProviderSection />
