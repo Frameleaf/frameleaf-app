@@ -8,7 +8,15 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   getAuthStatus: vi.fn(),
 }));
 
-const locked = { isElevated: false, pinCode: true, password: true, twoFactorEnabled: false, recoveryCodesRemaining: 0, passkeysAvailable: false, hasPasskeys: false };
+const locked = {
+  isElevated: false,
+  pinCode: true,
+  password: true,
+  twoFactorEnabled: false,
+  recoveryCodesRemaining: 0,
+  passkeysAvailable: false,
+  hasPasskeys: false,
+};
 
 describe('readAuthStatus (FL-647)', () => {
   beforeEach(() => {
