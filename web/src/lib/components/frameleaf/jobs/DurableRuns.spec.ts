@@ -11,6 +11,12 @@ beforeAll(async () => {
   register('en', () => Promise.resolve(en));
   await init({ fallbackLocale: 'en', initialLocale: 'en' });
   await waitLocale();
+  HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+    this.open = false;
+  };
 });
 beforeEach(() => {
   vi.clearAllMocks();
@@ -58,6 +64,11 @@ describe('recent work', () => {
     expect(screen.getByText('Damaged file · 5')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Review what failed' })).toHaveLength(1);
     expect(screen.queryByRole('link', { name: /See what failed/ })).not.toBeInTheDocument();
+
+    sdkMock.getJobRunFailures.mockResolvedValue({ photos: 0, countsPhotos: true, causes: [] });
+    await fireEvent.click(screen.getByRole('button', { name: 'Review what failed' }));
+    expect(await screen.findByText('What failed in Thumbnails')).toBeInTheDocument();
+    expect(sdkMock.getJobRunFailures).toHaveBeenCalledWith({ id: '0195e2a0-0000-7000-8000-000000000001' });
   });
   it('a paused run shows Paused and one reason, not Running', async () => {
     sdkMock.listDurableJobRuns.mockResolvedValue({

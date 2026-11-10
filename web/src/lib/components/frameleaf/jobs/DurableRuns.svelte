@@ -9,6 +9,7 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiPlay } from '@mdi/js';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import RunFailuresSheet from '$lib/components/frameleaf/jobs/RunFailuresSheet.svelte';
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import type { ActivityFilter } from '$lib/frameleaf/activity';
   import { isRunSettled, matchesRunFilter, runTitleKey, settledItems } from '$lib/frameleaf/durable-runs';
@@ -206,7 +207,11 @@
               {#if causes.length > 0}
                 <small>
                   {#each causes as { cause, count } (cause)}
-                    <span>{$t(CAUSE_VIEW[cause].title)} · {number(count)}</span>
+                    <span
+                      >{$t('frameleaf_job_runs_cause_count_line', {
+                        values: { title: $t(CAUSE_VIEW[cause].title), count: number(count) },
+                      })}</span
+                    >
                   {/each}
                 </small>
               {/if}
@@ -252,6 +257,16 @@
       </li>
     {/each}
   </ol>
+  {#if reviewing}
+    {#key reviewing.id}
+      <RunFailuresSheet
+        run={reviewing}
+        name={title(reviewing)}
+        onChanged={() => void load()}
+        onClose={() => (reviewing = null)}
+      />
+    {/key}
+  {/if}
   {#if offset > 0 || hasNext}
     <div class="pager">
       <Button disabled={loading || offset === 0} onclick={() => void load(Math.max(0, offset - PAGE_SIZE))}
