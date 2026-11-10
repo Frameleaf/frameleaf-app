@@ -1647,7 +1647,12 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafDesktopAssistance]: import('src/services/desktop-assistance-policy.service.js').DesktopAssistancePolicyRegistry;
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
-  [SystemMetadataKey.PeopleCareState]: { uprightPassAt?: string; mergeCandidatesAt?: string };
+  [SystemMetadataKey.PeopleCareState]: {
+    uprightPassAt?: string;
+    mergeCandidatesAt?: string;
+    /** The recognition distance the stored merge candidates were kept under. */
+    mergeCandidatesDistance?: number;
+  };
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
   [SystemMetadataKey.FrameleafLibraryMovePause]: LibraryMovePauseState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;

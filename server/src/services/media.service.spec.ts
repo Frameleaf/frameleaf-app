@@ -51,7 +51,7 @@ import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
 import { readFontFacts } from 'src/utils/font-file.js';
-import { LockedKeyUnavailableError, withPlainCopy } from 'src/utils/locked-read.js';
+import { LockedKeyUnavailableError, isPlainCopyPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
@@ -73,7 +73,7 @@ const getFilterOption = (outputOptions: string[], option = '-vf') => outputOptio
 
 vi.mock('src/utils/locked-read.js', async (original) => {
   const actual = await original<typeof import('src/utils/locked-read.js')>();
-  return { ...actual, withPlainCopy: vi.fn(actual.withPlainCopy) };
+  return { ...actual, withPlainCopy: vi.fn(actual.withPlainCopy), isPlainCopyPath: vi.fn(actual.isPlainCopyPath) };
 });
 
 vi.mock('src/utils/raw-renderer.js', async (original) => ({
@@ -3635,6 +3635,15 @@ describe(MediaService.name, () => {
         mocks.machineLearning.detectFaces.mockRejectedValue(new Error('offline'));
 
         expect((await generate()).edits).toEqual([expect.objectContaining({ action: 'crop' })]);
+      });
+
+      it('never checks a sealed source: nothing decrypted from a Locked file is written to scratch (FL-721)', async () => {
+        vi.mocked(isPlainCopyPath).mockReturnValueOnce(true);
+
+        expect((await generate()).edits).toEqual([expect.objectContaining({ action: 'crop' })]);
+        expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
+        // only the thumbnail itself was written, no probe crops
+        expect(mocks.media.generateThumbnail).toHaveBeenCalledTimes(1);
       });
 
       it('does not ask the face detector about an upright face', async () => {

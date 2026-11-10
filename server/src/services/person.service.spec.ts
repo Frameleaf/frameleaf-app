@@ -1526,7 +1526,11 @@ describe(PersonService.name, () => {
       });
 
       it('leaves the pairs alone on a night no face changed since the last run', async () => {
-        mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: lastRun, mergeCandidatesAt: lastRun });
+        mocks.systemMetadata.get.mockResolvedValue({
+          uprightPassAt: lastRun,
+          mergeCandidatesAt: lastRun,
+          mergeCandidatesDistance: 0.5,
+        });
         mocks.person.hasFaceChangesSince.mockResolvedValue(false);
 
         await sut.handlePersonCleanup();
@@ -1535,8 +1539,31 @@ describe(PersonService.name, () => {
         expect(mocks.person.refreshMergeCandidates).not.toHaveBeenCalled();
       });
 
+      it('works them out again when the recognition distance was widened, even with no face changed', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          uprightPassAt: lastRun,
+          mergeCandidatesAt: lastRun,
+          mergeCandidatesDistance: 0.4,
+        });
+        mocks.person.hasFaceChangesSince.mockResolvedValue(false);
+        mocks.person.getPersonOwnerIds.mockResolvedValue(['owner-1']);
+        mocks.person.refreshMergeCandidates.mockResolvedValue(0);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledWith('owner-1', 0.5);
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+          SystemMetadataKey.PeopleCareState,
+          expect.objectContaining({ mergeCandidatesDistance: 0.5 }),
+        );
+      });
+
       it('works them out again once a face changed since', async () => {
-        mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: lastRun, mergeCandidatesAt: lastRun });
+        mocks.systemMetadata.get.mockResolvedValue({
+          uprightPassAt: lastRun,
+          mergeCandidatesAt: lastRun,
+          mergeCandidatesDistance: 0.5,
+        });
         mocks.person.hasFaceChangesSince.mockResolvedValue(true);
         mocks.person.getPersonOwnerIds.mockResolvedValue(['owner-1']);
         mocks.person.refreshMergeCandidates.mockResolvedValue(0);

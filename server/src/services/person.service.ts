@@ -998,23 +998,28 @@ export class PersonService extends BaseService {
    */
   private async refreshMergeCandidates() {
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    const { maxDistance } = machineLearning.facialRecognition;
+    // the stored pairs were kept under the distance of that night: a wider one since can add pairs
     if (
       state?.mergeCandidatesAt &&
+      (state.mergeCandidatesDistance ?? 0) >= maxDistance &&
       !(await this.personRepository.hasFaceChangesSince(new Date(state.mergeCandidatesAt)))
     ) {
       return;
     }
     const mergeCandidatesAt = new Date().toISOString();
-    const { machineLearning } = await this.getConfig({ withCache: true });
     let pairs = 0;
     for (const ownerId of await this.personRepository.getPersonOwnerIds()) {
-      pairs +=
-        (await this.personRepository.refreshMergeCandidates(ownerId, machineLearning.facialRecognition.maxDistance)) ??
-        0;
+      pairs += (await this.personRepository.refreshMergeCandidates(ownerId, maxDistance)) ?? 0;
     }
     // read again: the main photo pass above may have set its own date meanwhile
     const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
-    await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, { ...latest, mergeCandidatesAt });
+    await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, {
+      ...latest,
+      mergeCandidatesAt,
+      mergeCandidatesDistance: maxDistance,
+    });
     this.logger.debug(`Found ${pairs} pairs of people that may be the same person`);
   }
 
