@@ -141,6 +141,8 @@ import { PinnedCollectionService } from 'src/services/pinned-collection.service.
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
 import { PreservationService } from 'src/services/preservation.service.js';
+import { PrivateLogsService } from 'src/services/private-logs.service.js';
+import { PrivateMlLogsService } from 'src/services/private-ml-logs.service.js';
 import { PushService } from 'src/services/push.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { RawSupportService } from 'src/services/raw-support.service.js';
@@ -154,6 +156,7 @@ import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
@@ -204,6 +207,8 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  PrivateLogsService,
+  PrivateMlLogsService,
   PhotoLocationsService,
   SpeechService,
   LibraryItemService,
@@ -354,6 +359,7 @@ export const services = [
   SearchService,
   ServerService,
   SessionService,
+  SignInSecurityService,
   SharedLinkService,
   ItemShareService,
   AlbumSourceService,

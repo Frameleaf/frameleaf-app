@@ -2,6 +2,7 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -45,6 +46,7 @@ import {
   loginEventDetails,
 } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
@@ -187,6 +189,9 @@ const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode, message?: string
  */
 @Injectable()
 export class FrameleafAuthService extends BaseService {
+  @Inject(SignInSecurityService)
+  private signInSecurity!: SignInSecurityService;
+
   /** `POST oauth/frameleaf/authorize`: the authorization URL for a registered callback. */
   async authorize(dto: OAuthConfigDto) {
     const config = await this.requireConfig();
@@ -615,9 +620,9 @@ export class FrameleafAuthService extends BaseService {
     return response;
   }
 
-  /** FL-808: a Sign in with Frameleaf session, in the account's activity log. */
-  private recordFrameleafSignIn(user: { id: string; name: string }, sessionId: string, details: LoginDetails) {
-    return this.recordAccountEvent({
+  /** Record a successful Sign in with Frameleaf for account activity and new-device alerts. */
+  private async recordFrameleafSignIn(user: UserAdmin, sessionId: string, details: LoginDetails) {
+    await this.recordAccountEvent({
       userId: user.id,
       sessionId,
       action: AccountEventAction.SignedIn,
@@ -625,6 +630,8 @@ export class FrameleafAuthService extends BaseService {
       detail: 'frameleaf',
       ...loginEventDetails(details),
     });
+    // Device observation and mail do not need to keep the Frameleaf authority locks held.
+    void this.signInSecurity.signedIn(user, details);
   }
 
   /** `GET oauth/frameleaf/link`: this person's Frameleaf account link. */

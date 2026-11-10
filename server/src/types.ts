@@ -399,6 +399,7 @@ export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
   notify?: boolean;
+  reconcileUnfinished?: boolean;
 }
 
 export interface IGenerateThumbnailsJob extends IEntityJob {
@@ -1660,6 +1661,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
   [SystemMetadataKey.BackupSequence]: BackupSequenceState;
   [SystemMetadataKey.ApiKeyLastUsed]: Record<string, string>;
+  [SystemMetadataKey.ProcessingReconcileLastRun]: import('src/dtos/queue-legacy.dto.js').ProcessingReconcileSummary;
   [SystemMetadataKey.OvernightSequence]: import('src/utils/overnight.js').OvernightState;
   [SystemMetadataKey.OverviewDismissed]: { ids: string[] };
   [SystemMetadataKey.FileFixSourceRoots]: string[];
@@ -1758,6 +1760,7 @@ export type UserPreferences = {
     enabled: boolean;
     albumInvite: boolean;
     albumUpdate: boolean;
+    newSignIn: boolean;
   };
   download: {
     archiveSize: number;

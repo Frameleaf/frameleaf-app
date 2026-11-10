@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PostgresError } from 'postgres';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { LoginDetails } from 'src/services/auth.service.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { SharedLink } from 'src/database.js';
 import { AssetIdErrorReason, AssetIdsResponseDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -16,6 +17,7 @@ import {
 } from 'src/dtos/shared-link.dto.js';
 import { AccountEventAction, Permission, SharedLinkType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   type HiddenContentQueryOptions,
@@ -42,6 +44,9 @@ export const isBcryptHash = (value: string) => BCRYPT_HASH.test(value);
  */
 @Injectable()
 export class SharedLinkService extends BaseService {
+  @Inject(SignInSecurityService)
+  private signInSecurity!: SignInSecurityService;
+
   async getAll(auth: AuthDto, { id, albumId }: SharedLinkSearchDto): Promise<SharedLinkResponseDto[]> {
     const searchOptions = { userId: auth.user.id, id, albumId };
     const nsfwOptions = this.nsfwOptions(auth);
@@ -51,7 +56,7 @@ export class SharedLinkService extends BaseService {
     return Promise.all(links.map((link) => this.mapSharedLink(auth, link, { stripAssetMetadata: false })));
   }
 
-  async login(auth: AuthDto, dto: SharedLinkLoginDto) {
+  async login(auth: AuthDto, dto: SharedLinkLoginDto, details?: LoginDetails) {
     if (!auth.sharedLink) {
       throw new ForbiddenException();
     }
@@ -64,13 +69,16 @@ export class SharedLinkService extends BaseService {
     }
 
     const legacy = !isBcryptHash(password);
-    const valid = legacy
-      ? sharedLinkSecretEqual(dto.password, password)
-      : await this.cryptoRepository.compareBcrypt(dto.password, password);
-    if (!valid) {
-      throw new UnauthorizedException('Invalid password');
-    }
-
+    await this.signInSecurity.attempt('shared-link', id, details, async (backoff) => {
+      const valid = legacy
+        ? sharedLinkSecretEqual(dto.password, password)
+        : await this.cryptoRepository.compareBcrypt(dto.password, password);
+      if (!valid) {
+        await this.signInSecurity.failed(backoff);
+        throw new UnauthorizedException('Invalid password');
+      }
+      await this.signInSecurity.succeeded(backoff);
+    });
     const stored = legacy ? await this.hashLegacyPassword(auth, id, password, dto.password) : password;
 
     return {

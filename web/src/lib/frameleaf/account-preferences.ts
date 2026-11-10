@@ -49,6 +49,7 @@ export type AccountPreferencesDraft = {
   'emailNotifications.enabled': boolean;
   'emailNotifications.albumInvite': boolean;
   'emailNotifications.albumUpdate': boolean;
+  'emailNotifications.newSignIn': boolean;
   /** Exact bytes; `null` while the field is empty or does not resolve to a byte count. */
   'download.archiveSize': number | null;
   'download.includeEmbeddedVideos': boolean;
@@ -121,7 +122,12 @@ export const SECTION_KEYS: Record<AccountPreferencesSection, readonly AccountPre
     'purchase.showSupportBadge',
     'purchase.hideBuyButtonUntil',
   ],
-  notifications: ['emailNotifications.enabled', 'emailNotifications.albumInvite', 'emailNotifications.albumUpdate'],
+  notifications: [
+    'emailNotifications.enabled',
+    'emailNotifications.albumInvite',
+    'emailNotifications.albumUpdate',
+    'emailNotifications.newSignIn',
+  ],
 };
 
 export const ALL_PREFERENCE_KEYS: readonly AccountPreferenceKey[] = ACCOUNT_PREFERENCES_SECTIONS.flatMap(
@@ -160,6 +166,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'emailNotifications.enabled': true,
   'emailNotifications.albumInvite': true,
   'emailNotifications.albumUpdate': true,
+  'emailNotifications.newSignIn': true,
   'download.archiveSize': 4 * GB,
   'download.includeEmbeddedVideos': false,
   'download.includeSidecar': true,
@@ -193,6 +200,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'emailNotifications.enabled': preferences.emailNotifications.enabled,
   'emailNotifications.albumInvite': preferences.emailNotifications.albumInvite,
   'emailNotifications.albumUpdate': preferences.emailNotifications.albumUpdate,
+  'emailNotifications.newSignIn': preferences.emailNotifications.newSignIn ?? true,
   'download.archiveSize': preferences.download.archiveSize,
   'download.includeEmbeddedVideos': preferences.download.includeEmbeddedVideos,
   'download.includeSidecar': preferences.download.includeSidecar,

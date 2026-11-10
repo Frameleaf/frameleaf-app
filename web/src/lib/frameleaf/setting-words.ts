@@ -48,6 +48,7 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     label: 'frameleaf_bgwork_capacity',
     values: ($t, value) => (value === 0 ? $t('frameleaf_bgwork_capacity_automatic') : undefined),
   },
+  'nightlyTasks.reprocessUnfinished': { label: 'frameleaf_overnight_reprocess_unfinished' },
   // People & sharing
   'server.publicUsers': { label: 'frameleaf_sharing_find_label' },
   // Server & updates › Server name & welcome
@@ -209,6 +210,7 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'emailNotifications.enabled': { label: 'frameleaf_notify_yours_send' },
   'emailNotifications.albumInvite': { label: 'frameleaf_notify_yours_shares' },
   'emailNotifications.albumUpdate': { label: 'frameleaf_notify_yours_updates' },
+  'emailNotifications.newSignIn': { label: 'frameleaf_notify_yours_new_sign_in' },
   'avatar.color': { label: 'frameleaf_prefs_colour' },
   'purchase.showSupportBadge': { label: 'frameleaf_words_support_badge' },
 });

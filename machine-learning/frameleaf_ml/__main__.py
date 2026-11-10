@@ -1,5 +1,6 @@
 import os
 import signal
+import sqlite3
 import subprocess
 from ipaddress import ip_address
 from pathlib import Path
@@ -8,6 +9,7 @@ from tempfile import TemporaryDirectory
 from .config import DEPRECATED_ENV, log, non_prefixed_settings, settings
 from .env_aliases import deprecated_env_warning, read_env
 from .studio_worker import start_studio_worker
+from .worker_logs import initialize_worker_log_spool
 
 if source_ref := os.getenv("FRAMELEAF_SOURCE_REF"):
     log.info(f"Initializing Frameleaf ML [{source_ref}]")
@@ -48,6 +50,16 @@ mimalloc_preload = Path("/etc/frameleaf-mimalloc-preload")
 if mimalloc_preload.is_file() and (library := mimalloc_preload.read_text().strip()):
     inference_env["LD_PRELOAD"] = library
 
+log_directory = None
+if settings.workers > 1:
+    try:
+        log_directory = TemporaryDirectory(prefix="frameleaf-ml-logs-")
+        log_spool = Path(log_directory.name) / "recent.sqlite3"
+        initialize_worker_log_spool(log_spool)
+        inference_env["FRAMELEAF_INTERNAL_ML_LOG_SPOOL"] = str(log_spool)
+    except (OSError, sqlite3.Error):
+        log.warning("Could not initialize the shared worker log spool")
+
 metrics_dir = None
 if read_env(os.environ, "FRAMELEAF_ML_METRICS_ENABLED").strip().lower() in {"1", "true", "yes", "on"}:
     # Each supervisor launch gets fresh counter storage shared by all its inference workers.
@@ -85,6 +97,8 @@ try:
 except KeyboardInterrupt:
     cmd.send_signal(signal.SIGINT)
 finally:
+    if log_directory is not None:
+        log_directory.cleanup()
     if metrics_dir is not None:
         metrics_dir.cleanup()
     if studio_worker is not None:

@@ -951,6 +951,9 @@
   "nightlyTasks.quietHours": {
     "type": "boolean"
   },
+  "nightlyTasks.reprocessUnfinished": {
+    "type": "boolean"
+  },
   "nightlyTasks.startTime": {
     "type": "string"
   },
@@ -1173,6 +1176,9 @@
     "type": "boolean"
   },
   "preferences.emailNotifications.enabled": {
+    "type": "boolean"
+  },
+  "preferences.emailNotifications.newSignIn": {
     "type": "boolean"
   },
   "preferences.expectedRevision": {

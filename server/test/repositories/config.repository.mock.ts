@@ -9,6 +9,7 @@ export const envData: EnvData = {
   environment: FrameleafEnvironment.Production,
   logFormat: LogFormat.Console,
   logRequests: true,
+  logRetentionDays: 7,
 
   buildMetadata: {},
   cls: {
@@ -38,6 +39,7 @@ export const envData: EnvData = {
   },
 
   network: {
+    trustConfiguredProxies: false,
     trustedProxies: [],
   },
 

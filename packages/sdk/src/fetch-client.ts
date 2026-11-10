@@ -2029,6 +2029,8 @@ export type AdminConfigNightlyTasksDto = {
     missingThumbnails: boolean;
     /** Heavy background work (beyond thumbnails) waits for the overnight window */
     quietHours?: boolean;
+    /** Finish anything that did not process overnight */
+    reprocessUnfinished?: boolean;
     /** Start time (HH:MM) */
     startTime: string;
     /** When each step runs: every night, once a week, or only when started */
@@ -2939,6 +2941,22 @@ export type LicenseCheckoutResponseDto = {
     expiresAt: string;
     /** The Frameleaf store page to open; the buyer signs into the account that owns this server */
     url: string;
+};
+export type PrivateLogPageDto = {
+    entries: {
+        assetId?: string;
+        at: string;
+        context: string;
+        id: string;
+        jobId?: string;
+        jobName?: string;
+        level: Level;
+        message: string;
+        requestId?: string;
+        route?: string;
+        worker: Worker;
+    }[];
+    nextCursor: string | null;
 };
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
@@ -3942,6 +3960,8 @@ export type EmailNotificationsResponse = {
     albumUpdate: boolean;
     /** Whether email notifications are enabled */
     enabled: boolean;
+    /** Whether to receive email when a new device signs in */
+    newSignIn?: boolean;
 };
 export type FoldersResponse = {
     /** Whether folders are enabled */
@@ -4093,6 +4113,8 @@ export type EmailNotificationsUpdate = {
     albumUpdate?: boolean;
     /** Whether email notifications are enabled */
     enabled?: boolean;
+    /** Whether to receive email when a new device signs in */
+    newSignIn?: boolean;
 };
 export type FoldersUpdate = {
     /** Whether folders are enabled */
@@ -9788,6 +9810,15 @@ export type ItemShareReceivedResponseDto = {
     /** The address of this list, as sent in share notifications */
     link: string | null;
 };
+export type ProcessingReconcileSummary = {
+    completedAt: string;
+    faces: number;
+    metadata: number;
+    search: number;
+    text: number;
+    thumbnails: number;
+    video: number;
+};
 export type QueueStatusLegacyDto = {
     /** Whether the queue is currently active (has running jobs) */
     isActive: boolean;
@@ -9796,6 +9827,7 @@ export type QueueStatusLegacyDto = {
 };
 export type QueueResponseLegacyDto = {
     jobCounts: QueueStatisticsDto;
+    processingReconcileLastRun?: ProcessingReconcileSummary;
     queueStatus: QueueStatusLegacyDto;
     /** Durable run created by a batch start */
     runId?: string;
@@ -23548,6 +23580,64 @@ export function refreshLicense(opts?: Oazapfts.RequestOpts) {
     }>("/admin/license/refresh", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List recent local server logs
+ */
+export function listServerLogs({ before, level, limit, q, since, worker }: {
+    before?: string;
+    level?: "verbose" | "debug" | "log" | "warn" | "error" | "fatal";
+    limit?: number;
+    q?: string;
+    since?: string;
+    worker?: "api" | "microservices" | "maintenance" | "machine-learning";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PrivateLogPageDto;
+    }>(`/admin/logs${QS.query(QS.explode({
+        before,
+        level,
+        limit,
+        q,
+        since,
+        worker
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Download local server logs
+ */
+export function downloadServerLogs({ hours }: {
+    hours?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/admin/logs/download${QS.query(QS.explode({
+        hours
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Follow local server logs
+ */
+export function streamServerLogs({ level, q, since, worker }: {
+    level?: "verbose" | "debug" | "log" | "warn" | "error" | "fatal";
+    q?: string;
+    since?: string;
+    worker?: "api" | "microservices" | "maintenance" | "machine-learning";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/logs/stream${QS.query(QS.explode({
+        level,
+        q,
+        since,
+        worker
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -38642,6 +38732,20 @@ export enum Licence {
 export enum Plan {
     CloudMonthly = "cloud-monthly",
     CloudAnnual = "cloud-annual"
+}
+export enum Level {
+    Verbose = "verbose",
+    Debug = "debug",
+    Log = "log",
+    Warn = "warn",
+    Error = "error",
+    Fatal = "fatal"
+}
+export enum Worker {
+    Api = "api",
+    Microservices = "microservices",
+    Maintenance = "maintenance",
+    MachineLearning = "machine-learning"
 }
 export enum MaintenanceAction {
     Start = "start",

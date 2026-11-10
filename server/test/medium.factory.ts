@@ -113,13 +113,14 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 import { BASE_SERVICE_DEPENDENCIES, BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types.js';
 import { getConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory.js';
-import { automock, wait } from 'test/utils.js';
+import { automock, newSignInSecurityMock, wait } from 'test/utils.js';
 
 // eslint-disable-next-line unicorn/prefer-module
 export const testAssetsDir = resolve(__dirname, '../../e2e/test-assets');
@@ -176,6 +177,8 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     for (const { key, type } of properties) {
       if (type === LockedEncryptionService) {
         Object.assign(this.sut, { [key]: this.newLockedEncryptionService() });
+      } else if (type === SignInSecurityService) {
+        Object.assign(this.sut, { [key]: newSignInSecurityMock() });
       }
     }
   }

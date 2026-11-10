@@ -108,6 +108,7 @@ import { AuthService } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { LockedSealService } from 'src/services/locked-seal.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { RepositoryInterface } from 'src/types.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { renderSystemNotification } from 'src/utils/notification-locale.js';
@@ -281,6 +282,7 @@ export type ServiceOverrides = {
   activity: ActivityRepository;
   adminAudit: AdminAuditRepository;
   accountEvent: AccountEventRepository;
+  signInSecurity: Pick<SignInSecurityService, 'attempt' | 'failed' | 'succeeded' | 'signedIn'>;
   album: AlbumRepository;
   albumSummary: AlbumSummaryRepository;
   albumUser: AlbumUserRepository;
@@ -409,6 +411,7 @@ export const getMocks = () => {
     adminAudit: automock(AdminAuditRepository, { strict: false }),
     // FL-808: recording account activity is incidental to most tests
     accountEvent: automock(AccountEventRepository, { strict: false }),
+    signInSecurity: newSignInSecurityMock(),
     album: automock(AlbumRepository, { args: [database], strict: false }),
     albumSummary: automock(AlbumSummaryRepository, { args: [database], strict: false }),
     albumUser: automock(AlbumUserRepository),
@@ -568,6 +571,15 @@ export const getMocks = () => {
   return mocks;
 };
 
+export const newSignInSecurityMock = () => ({
+  attempt: vitest.fn<SignInSecurityService['attempt']>(async (_kind, _principal, _details, verify) =>
+    verify(),
+  ) as Mocked<Pick<SignInSecurityService, 'attempt'>>['attempt'],
+  failed: vitest.fn<SignInSecurityService['failed']>(),
+  succeeded: vitest.fn<SignInSecurityService['succeeded']>(),
+  signedIn: vitest.fn<SignInSecurityService['signedIn']>(),
+});
+
 export const newTestService = <T extends BaseService>(
   Service: Constructor<T, BaseServiceArgs>,
   overrides: Partial<ServiceOverrides> = {},
@@ -662,6 +674,8 @@ export const newTestService = <T extends BaseService>(
   for (const { key, type } of properties) {
     if (type === LockedEncryptionService) {
       Object.assign(sut, { [key]: newLockedEncryptionService(mocks) });
+    } else if (type === SignInSecurityService) {
+      Object.assign(sut, { [key]: overrides.signInSecurity ?? mocks.signInSecurity });
     }
     if (type === MediaHealthRepository) {
       Object.assign(sut, { [key]: mocks.mediaHealth });

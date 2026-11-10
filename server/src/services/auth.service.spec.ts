@@ -9,7 +9,7 @@ import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
 import { AdminAuditAction, AuthCookie, AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { ImportedPassword } from 'src/library-import/passwords.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
-import { AuthService, emailVerificationProblem } from 'src/services/auth.service.js';
+import { AuthService, emailVerificationProblem, loginEventDetails } from 'src/services/auth.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -67,6 +67,31 @@ describe(AuthService.name, () => {
   });
 
   describe('login', () => {
+    it('checks the address-scoped wait before looking up an account', async () => {
+      const wait = new Error('Wait before trying again');
+      mocks.signInSecurity.attempt.mockRejectedValue(wait);
+      await expect(sut.login(dto, loginDetails)).rejects.toBe(wait);
+      expect(mocks.signInSecurity.attempt).toHaveBeenCalledWith(
+        'password',
+        dto.email,
+        loginDetails,
+        expect.any(Function),
+      );
+      expect(mocks.user.getByEmail).not.toHaveBeenCalled();
+    });
+
+    it('counts an actual failure and supplies an owner only for a known account', async () => {
+      const user = UserFactory.create({ password: 'hashed-password' });
+      const attempt = { getWait: vi.fn(), recordFailure: vi.fn(), clearFailures: vi.fn(), release: vi.fn() };
+      mocks.signInSecurity.attempt.mockImplementationOnce(async (_kind, _principal, _details, verify) =>
+        verify(attempt),
+      );
+      mocks.user.getByEmail.mockResolvedValue(user);
+      mocks.crypto.compareBcrypt.mockResolvedValue(false);
+      await expect(sut.login(dto, loginDetails)).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.signInSecurity.failed).toHaveBeenCalledWith(attempt, user);
+    });
+
     it('signs in with a preserved source password and can replace it with a native password', async () => {
       const password = 'synthetic imported password';
       const user = UserFactory.create({ importClaimPending: false });
@@ -153,6 +178,8 @@ describe(AuthService.name, () => {
       expect(mocks.session.create).toHaveBeenCalledWith(expect.objectContaining({ userId: user.id }), user.password);
 
       expect(mocks.user.getByEmail).toHaveBeenCalledTimes(1);
+      expect(mocks.signInSecurity.succeeded).toHaveBeenCalled();
+      expect(mocks.signInSecurity.signedIn).toHaveBeenCalledWith(user, loginDetails);
     });
   });
 
@@ -3163,6 +3190,10 @@ describe(AuthService.name, () => {
       via: 'relay' as const,
     };
     const device = { deviceOS: 'iOS', deviceType: 'Safari', via: 'relay', ipPrefix: '203.0.113.0/24' };
+
+    it('keeps the activity address unknown if the request had no verified address', () => {
+      expect(loginEventDetails({ ...details, securityClientIp: '' }).ipPrefix).toBeNull();
+    });
 
     it('records one signed-in row with device and via', async () => {
       const user = UserFactory.create({ password: 'hash-password' });

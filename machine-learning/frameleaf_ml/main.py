@@ -74,6 +74,7 @@ from .schemas import (
     validate_options,
 )
 from .transcription_memory import AudioMemoryBudget
+from .worker_logs import WorkerLogs, local_log_reader
 
 MultiPartParser.spool_max_size = 2**26  # spools to disk if payload is 64 MiB or larger
 
@@ -347,6 +348,25 @@ if not _expected_token:
     )
 
 app.add_middleware(BearerAuthMiddleware, expected_token=_expected_token)
+worker_log_path = os.environ.get("FRAMELEAF_INTERNAL_ML_LOG_SPOOL")
+worker_logs = WorkerLogs(Path(worker_log_path) if worker_log_path else None)
+log.addHandler(worker_logs)
+
+
+@app.get("/logs", include_in_schema=False)
+def get_worker_logs(request: Request, since: str = "") -> Response:
+    if not local_log_reader(request.client.host if request.client else None) or any(
+        header in request.headers
+        for header in ("x-frameleaf-via", "x-frameleaf-via-auth", "forwarded", "x-forwarded-for", "x-forwarded-host")
+    ):
+        raise HTTPException(404)
+    return Response(
+        worker_logs.recent(since[:24]),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 inference_metrics = InferenceMetrics() if metrics_enabled() else None
 
 

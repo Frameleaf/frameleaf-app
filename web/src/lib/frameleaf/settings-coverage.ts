@@ -1135,6 +1135,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: "'missingThumbnails'",
   },
   {
+    pattern: 'nightlyTasks.reprocessUnfinished',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.reprocessUnfinished',
+  },
+  {
     pattern: 'nightlyTasks.startTime',
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
@@ -1626,6 +1632,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/routes/(user)/user-settings/NotificationsSettings.svelte',
     evidence: 'emailNotifications.albumUpdate',
+  },
+  {
+    pattern: 'emailNotifications.newSignIn',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/NotificationsSettings.svelte',
+    evidence: 'emailNotifications.newSignIn',
   },
   {
     pattern: 'emailNotifications.enabled',

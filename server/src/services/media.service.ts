@@ -142,6 +142,7 @@ import {
   toStitchedStream,
 } from 'src/utils/video-360.js';
 import { videoDevelopFilters } from 'src/utils/video-develop.js';
+import { videoProcessingPolicy } from 'src/utils/video-processing-policy.js';
 
 /**
  * Decimal places in a generated ffmpeg filter argument. Four has always been this service's
@@ -1451,6 +1452,7 @@ export class MediaService extends BaseService {
     }
 
     let { ffmpeg } = await this.getConfig({ withCache: true });
+    const processingPolicy = videoProcessingPolicy(ffmpeg);
 
     // FL-101: classify the source before the output directory exists, so a refusal leaves any
     // existing proxy untouched and the original is never the thing that changes.
@@ -1502,6 +1504,14 @@ export class MediaService extends BaseService {
         this.logger.verbose(`Asset ${asset.id} does not require transcoding based on current policy, skipping`);
       }
 
+      // A playable original is complete even without an encoded file. A source or policy change
+      // invalidates the decision so the overnight check can try it again.
+      await publishJobResult(() =>
+        this.assetRepository.upsertJobStatus({
+          assetId: asset.id,
+          transcodeSkippedFor: `${asset.checksum.toString('hex')}:${processingPolicy}`,
+        }),
+      );
       return JobStatus.Skipped;
     }
 

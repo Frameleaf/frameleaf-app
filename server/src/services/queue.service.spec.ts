@@ -68,6 +68,66 @@ describe(QueueService.name, () => {
   });
 
   describe('handleNightlyJobs', () => {
+    beforeEach(() => {
+      mocks.job.queueSelection.mockImplementation((_name, selection) => {
+        if (typeof selection === 'function') selection(null);
+        return Promise.resolve({ runId: factory.uuid(), inserted: 0 });
+      });
+      mocks.assetJob.selectionForUnfinished.mockReturnValue({} as never);
+      mocks.job.getQueueName.mockReturnValue(QueueName.BackgroundTask);
+      mocks.systemMetadata.set.mockResolvedValue();
+    });
+
+    it('reconciles missing outputs even on nights without the tidy-up', async () => {
+      mocks.job.queueSelection.mockImplementation((_name, selection) => {
+        if (typeof selection === 'function') selection(null);
+        return Promise.resolve({ runId: factory.uuid(), inserted: 3 });
+      });
+      await sut.handleNightlyJobs({ cleanup: false });
+
+      expect(mocks.assetJob.selectionForUnfinished.mock.calls.map(([name]) => name)).toEqual([
+        JobName.AssetExtractMetadata,
+        JobName.AssetGenerateThumbnails,
+        JobName.AssetEncodeVideo,
+        JobName.SmartSearch,
+        JobName.AssetDetectFaces,
+        JobName.Ocr,
+      ]);
+      for (const name of [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails]) {
+        expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+          name,
+          expect.any(Function),
+          { reconcileUnfinished: true },
+          1000,
+        );
+      }
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.ProcessingReconcileLastRun, {
+        completedAt: expect.any(String),
+        metadata: 3,
+        thumbnails: 3,
+        video: 3,
+        search: 3,
+        faces: 3,
+        text: 3,
+      });
+    });
+
+    it('only reconciles local processing when machine learning is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { enabled: false } });
+      await sut.handleNightlyJobs();
+      expect(mocks.assetJob.selectionForUnfinished.mock.calls.map(([name]) => name)).toEqual([
+        JobName.AssetExtractMetadata,
+        JobName.AssetGenerateThumbnails,
+        JobName.AssetEncodeVideo,
+      ]);
+    });
+
+    it('leaves unfinished work alone when the overnight setting is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ nightlyTasks: { reprocessUnfinished: false } });
+      await sut.handleNightlyJobs();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
+    });
+
     it('should run the scheduled jobs', async () => {
       await sut.handleNightlyJobs();
 
