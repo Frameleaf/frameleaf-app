@@ -251,7 +251,8 @@ export class PasskeyService extends BaseService {
 
   /** Removes a passkey of the account; the sessions it started are signed out. */
   async remove(auth: AuthDto, id: string): Promise<void> {
-    const removed = await this.passkeyRepository.delete(auth.user.id, id);
+    // the device removing it stays signed in; any other it signed in (a lost phone) is signed out
+    const removed = await this.passkeyRepository.delete(auth.user.id, id, auth.session?.id);
     if (!removed) {
       throw new NotFoundException('Passkey not found');
     }
@@ -260,7 +261,7 @@ export class PasskeyService extends BaseService {
     }
     await this.recordAccountEvent({
       userId: auth.user.id,
-      sessionId: removed.sessionIds.includes(auth.session?.id ?? '') ? null : (auth.session?.id ?? null),
+      sessionId: auth.session?.id ?? null,
       action: AccountEventAction.PasskeyRemoved,
       subject: removed.name,
     });
@@ -343,8 +344,8 @@ export class PasskeyService extends BaseService {
         !!result?.verified &&
         (await this.passkeyRepository.recordUse(
           passkey.id,
-          passkey.counter,
-          String(result.authenticationInfo.newCounter),
+          Number(passkey.counter),
+          result.authenticationInfo.newCounter,
           result.authenticationInfo.credentialBackedUp,
         ));
       if (ok) {

@@ -49,10 +49,10 @@ const AT = 0x40;
 export type SoftPasskeyOptions = { origin: string; userVerified?: boolean; aaguid?: string };
 
 export class SoftPasskey {
-  readonly credentialId = randomBytes(16);
   private readonly privateKey: KeyObject;
   private readonly x: Buffer;
   private readonly y: Buffer;
+  readonly credentialId = randomBytes(16);
   counter = 0;
   /** The user handle the server gave when the passkey was made. */
   userHandle?: string;
@@ -63,10 +63,6 @@ export class SoftPasskey {
     const jwk = publicKey.export({ format: 'jwk' });
     this.x = Buffer.from(jwk.x!, 'base64url');
     this.y = Buffer.from(jwk.y!, 'base64url');
-  }
-
-  get id() {
-    return b64url(this.credentialId);
   }
 
   private clientData(type: string, challenge: string, origin = this.config.origin) {
@@ -81,6 +77,10 @@ export class SoftPasskey {
     const buffer = Buffer.alloc(4);
     buffer.writeUInt32BE(this.counter);
     return buffer;
+  }
+
+  get id() {
+    return b64url(this.credentialId);
   }
 
   /** The browser's answer to registration options (`navigator.credentials.create`). */

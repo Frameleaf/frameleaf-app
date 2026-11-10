@@ -33,7 +33,7 @@
     secureUrl = null,
     onSignedIn,
     onBusy,
-    shown = $bindable(false),
+    shown = $bindable(),
   }: {
     rememberMe: boolean;
     disabled?: boolean;
@@ -99,12 +99,12 @@
     let credential;
     try {
       credential = await ceremony;
-    } catch (problem) {
+    } catch (error_) {
       if (!current()) {
         return;
       }
       setView('ready');
-      if (ceremonyProblem(problem) !== 'cancelled') {
+      if (ceremonyProblem(error_) !== 'cancelled') {
         error = $t('frameleaf_passkey_login_failed');
       }
       return;
@@ -120,10 +120,10 @@
       if (current()) {
         await onSignedIn(user);
       }
-    } catch (problem) {
+    } catch (error_) {
       if (current()) {
         setView('ready');
-        error = messageFor(problem);
+        error = messageFor(error_);
       }
     }
   };
@@ -176,10 +176,10 @@
     let optionsJSON;
     try {
       optionsJSON = await options();
-    } catch (problem) {
+    } catch (error_) {
       if (alive) {
         setView('ready');
-        error = messageFor(problem);
+        error = messageFor(error_);
       }
       return;
     }

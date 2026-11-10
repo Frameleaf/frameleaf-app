@@ -37,6 +37,8 @@ describe('suppressed content page load', () => {
     pinCode: true,
     twoFactorEnabled: false,
     recoveryCodesRemaining: 0,
+    passkeysAvailable: false,
+    hasPasskeys: false,
     ...overrides,
   });
 

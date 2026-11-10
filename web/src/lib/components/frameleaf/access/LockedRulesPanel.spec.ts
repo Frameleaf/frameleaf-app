@@ -41,7 +41,7 @@ const authStatus = (overrides: Partial<AuthStatusResponseDto> = {}): AuthStatusR
   password: true,
   pinCode: true,
   twoFactorEnabled: false,
-  recoveryCodesRemaining: 0,
+  recoveryCodesRemaining: 0, passkeysAvailable: false, hasPasskeys: false,
   ...overrides,
 });
 

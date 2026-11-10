@@ -40,7 +40,7 @@ it('saves a credential once, for one account only', async () => {
   expect(saved).toMatchObject({
     userId,
     name: 'Chrome on Mac',
-    counter: '0',
+    counter: 0,
     transports: ['internal'],
     backedUp: false,
   });
@@ -54,11 +54,11 @@ it('moves the counter on only from the value just checked', async () => {
   const { sut, userId } = await setup();
   const saved = (await sut.create(passkey(userId)))!;
 
-  const results = await Promise.all([sut.recordUse(saved.id, '0', '1', true), sut.recordUse(saved.id, '0', '1', true)]);
+  const results = await Promise.all([sut.recordUse(saved.id, 0, 1, true), sut.recordUse(saved.id, 0, 1, true)]);
   expect(results.filter(Boolean)).toHaveLength(1);
-  await expect(sut.recordUse(saved.id, '0', '2', true)).resolves.toBe(false);
+  await expect(sut.recordUse(saved.id, 0, 2, true)).resolves.toBe(false);
   const [row] = await sut.getByUser(userId);
-  expect(row).toMatchObject({ counter: '1', backedUp: true });
+  expect(row).toMatchObject({ counter: 1, backedUp: true });
   expect(row.lastUsedAt).toBeInstanceOf(Date);
 });
 
@@ -75,13 +75,16 @@ it('renames and removes only the account’s own passkeys, signing out the sessi
   await expect(sut.rename(userId, saved.id, 'Work laptop')).resolves.toMatchObject({ name: 'Work laptop' });
 
   await expect(sut.delete(other.id, saved.id)).resolves.toBeUndefined();
-  await expect(sut.delete(userId, saved.id)).resolves.toEqual({
+  // the session removing it is kept
+  const { session: removing } = await ctx.newSession({ userId });
+  await sut.linkSession(removing.id, saved.id);
+  await expect(sut.delete(userId, saved.id, removing.id)).resolves.toEqual({
     name: 'Work laptop',
     count: 1,
     sessionIds: [started.id],
   });
   const sessions = await db.selectFrom('session').select('id').where('userId', '=', userId).execute();
-  expect(sessions.map(({ id }) => id)).toEqual([sessionId]);
+  expect(sessions.map(({ id }) => id).toSorted()).toEqual([sessionId, removing.id].toSorted());
   await expect(sut.getByUser(userId)).resolves.toEqual([]);
 });
 

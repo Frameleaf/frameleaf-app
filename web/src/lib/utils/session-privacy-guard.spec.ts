@@ -28,7 +28,7 @@ const status = (active: boolean) => ({
   pinCode: true,
   password: true,
   twoFactorEnabled: false,
-  recoveryCodesRemaining: 0,
+  recoveryCodesRemaining: 0, passkeysAvailable: false, hasPasskeys: false,
   pinExpiresAt: active ? new Date(Date.now() + 10_000).toISOString() : undefined,
 });
 

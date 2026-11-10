@@ -7,7 +7,13 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { PASSKEY_NAME_LENGTH, PASSWORD_PROOF_MINUTES, ceremonyProblem, cleanName, serverCode } from '$lib/frameleaf/passkeys';
+  import {
+    PASSKEY_NAME_LENGTH,
+    PASSWORD_PROOF_MINUTES,
+    ceremonyProblem,
+    cleanName,
+    serverCode,
+  } from '$lib/frameleaf/passkeys';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
     getPasskeyRegistrationOptions,
@@ -18,7 +24,11 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiCheckCircleOutline } from '@mdi/js';
-  import { WebAuthnAbortService, startRegistration, type PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser';
+  import {
+    WebAuthnAbortService,
+    startRegistration,
+    type PublicKeyCredentialCreationOptionsJSON,
+  } from '@simplewebauthn/browser';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import './passkeys.css';
@@ -177,7 +187,9 @@
           />
         </label>
         {#if passwordError}
-          <p class="pk-error" role="alert"><Icon icon={mdiAlertCircleOutline} size="18" /><span>{passwordError}</span></p>
+          <p class="pk-error" role="alert">
+            <Icon icon={mdiAlertCircleOutline} size="18" /><span>{passwordError}</span>
+          </p>
         {/if}
       </form>
     {:else if step === 'browser'}
@@ -229,7 +241,9 @@
         </label>
       </form>
     {:else}
-      <p class="pk-waiting" role="status"><span class="pk-spinner" aria-hidden="true"></span>{$t('frameleaf_passkey_add_starting')}</p>
+      <p class="pk-waiting" role="status">
+        <span class="pk-spinner" aria-hidden="true"></span>{$t('frameleaf_passkey_add_starting')}
+      </p>
     {/if}
   </div>
 
@@ -241,7 +255,9 @@
       >
     {:else if step === 'exists' || step === 'failed'}
       <Button onclick={() => (open = false)}>{$t('close')}</Button>
-      <Button variant="primary" disabled={working} onclick={() => void ceremony()}>{$t('frameleaf_passkey_try_again')}</Button>
+      <Button variant="primary" disabled={working} onclick={() => void ceremony()}
+        >{$t('frameleaf_passkey_try_again')}</Button
+      >
     {:else if step === 'name'}
       <Button variant="primary" disabled={!name.trim() || working} onclick={() => void save()}>{$t('save')}</Button>
     {:else}

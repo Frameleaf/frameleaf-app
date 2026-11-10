@@ -8,8 +8,7 @@
   import { t } from 'svelte-i18n';
   import './passkeys.css';
 
-  let { passkey, onClose }: { passkey: PasskeyResponseDto; onClose: (renamed?: PasskeyResponseDto) => void } =
-    $props();
+  let { passkey, onClose }: { passkey: PasskeyResponseDto; onClose: (renamed?: PasskeyResponseDto) => void } = $props();
 
   let open = $state(true);
   let name = $state(passkey.name);

@@ -85,23 +85,31 @@ export class PasskeyRepository {
   }
 
   /**
-   * A sign-in with the passkey: the new signature count, conditional on the one just checked, so two
+   * A sign-in with the passkey: the new signature count (`counter` is a bigint, which the database
+   * driver reads back as a number), conditional on the one just checked, so two
    * sign-ins racing with one assertion cannot both pass.
    */
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, DummyValue.STRING, DummyValue.BOOLEAN] })
-  async recordUse(id: string, counter: string, newCounter: string, backedUp: boolean): Promise<boolean> {
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.NUMBER, DummyValue.NUMBER, DummyValue.BOOLEAN] })
+  async recordUse(id: string, counter: number, newCounter: number, backedUp: boolean): Promise<boolean> {
     const row = await this.db
       .updateTable('user_passkey')
-      .set({ counter: newCounter, backedUp, lastUsedAt: new Date() })
+      .set({ counter: String(newCounter), backedUp, lastUsedAt: new Date() })
       .where('id', '=', id)
-      .where('counter', '=', counter)
+      .where('counter', '=', String(counter))
       .returning('id')
       .executeTakeFirst();
     return !!row;
   }
 
-  /** One passkey of the account, and the sessions it started; nothing when it isn't theirs. */
-  async delete(userId: string, id: string): Promise<(RemovedPasskeys & { name: string }) | undefined> {
+  /**
+   * One passkey of the account, and the sessions it started other than `keepSessionId` (the one
+   * removing it); nothing when it isn't theirs.
+   */
+  async delete(
+    userId: string,
+    id: string,
+    keepSessionId?: string,
+  ): Promise<(RemovedPasskeys & { name: string }) | undefined> {
     return this.db.transaction().execute(async (trx) => {
       const owned = await trx
         .selectFrom('user_passkey')
@@ -114,7 +122,7 @@ export class PasskeyRepository {
         return;
       }
       // before the passkey goes: its link to the sessions it started goes with it
-      const sessionIds = await deleteSessions(trx, userId, [id]);
+      const sessionIds = await deleteSessions(trx, userId, [id], keepSessionId);
       const row = await trx.deleteFrom('user_passkey').where('id', '=', id).returning('name').executeTakeFirstOrThrow();
       return { name: row.name, count: 1, sessionIds };
     });
@@ -181,13 +189,19 @@ export class PasskeyRepository {
 }
 
 /** Signs out the account's sessions that these passkeys started. */
-const deleteSessions = async (trx: Kysely<DB>, userId: string, passkeyIds: string[]): Promise<string[]> => {
+const deleteSessions = async (
+  trx: Kysely<DB>,
+  userId: string,
+  passkeyIds: string[],
+  keepSessionId?: string,
+): Promise<string[]> => {
   if (passkeyIds.length === 0) {
     return [];
   }
   const rows = await trx
     .deleteFrom('session')
     .where('userId', '=', userId)
+    .$if(!!keepSessionId, (qb) => qb.where('id', '!=', keepSessionId!))
     .where('id', 'in', (eb) =>
       eb.selectFrom('session_passkey').select('sessionId').where('passkeyId', 'in', passkeyIds),
     )

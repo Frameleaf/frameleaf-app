@@ -59,8 +59,7 @@
     (passkeys ?? [])
       .map(({ lastUsedAt }) => lastUsedAt)
       .filter((value): value is string => !!value)
-      .toSorted()
-      .at(-1),
+      .reduce<string | undefined>((latest, value) => (!latest || value > latest ? value : latest), undefined),
   );
   const passkeyRow = $derived.by(() => {
     const count = passkeys?.length ?? 0;
@@ -201,7 +200,9 @@
           note={passkeyRow.note}
         >
           {#snippet action()}
-            <Button label={$t('frameleaf_passkey_row_open')} onclick={() => goto(commandCenterUrl('privacy', 'passkeys'))}
+            <Button
+              label={$t('frameleaf_passkey_row_open')}
+              onclick={() => goto(commandCenterUrl('privacy', 'passkeys'))}
               >{passkeyRow.button}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
             >
           {/snippet}

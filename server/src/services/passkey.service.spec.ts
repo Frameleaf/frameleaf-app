@@ -114,20 +114,22 @@ describe(PasskeyService.name, () => {
       return Promise.resolve(row as never);
     });
     repo.recordUse.mockImplementation((id, counter, newCounter) => {
-      const row = passkeys.find((passkey) => passkey.id === id && passkey.counter === counter);
+      const row = passkeys.find((passkey) => passkey.id === id && passkey.counter === String(counter));
       if (row) {
-        row.counter = newCounter;
+        row.counter = String(newCounter);
         row.lastUsedAt = new Date();
       }
       return Promise.resolve(!!row);
     });
-    repo.delete.mockImplementation((userId, id) => {
+    repo.delete.mockImplementation((userId, id, keepSessionId) => {
       const row = passkeys.find((passkey) => passkey.id === id && passkey.userId === userId);
       if (!row) {
         return Promise.resolve(undefined);
       }
       passkeys = passkeys.filter((passkey) => passkey !== row);
-      const sessionIds = sessionLinks.filter((link) => link.passkeyId === id).map(({ sessionId }) => sessionId);
+      const sessionIds = sessionLinks
+        .filter((link) => link.passkeyId === id && link.sessionId !== keepSessionId)
+        .map(({ sessionId }) => sessionId);
       return Promise.resolve({ name: row.name, count: 1, sessionIds });
     });
     repo.linkSession.mockImplementation((sessionId, passkeyId) => {

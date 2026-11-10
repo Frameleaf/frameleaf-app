@@ -12234,6 +12234,8 @@
   "frameleaf_passkey_hero_loading": "Getting your passkeys…",
   "frameleaf_passkey_hero_none": "You don’t have a passkey yet",
   "frameleaf_passkey_hero_none_body": "A passkey lets you sign in with your face, your fingerprint or your phone’s screen lock instead of typing your password. There’s nothing to remember, and nobody can trick you into giving it away.",
+  "frameleaf_passkey_hero_none_now": "You don’t have a passkey any more",
+  "frameleaf_passkey_hero_none_now_body": "You sign in with your password again. Add a passkey whenever you like.",
   "frameleaf_passkey_hero_some": "{count, plural, one {You can sign in with a passkey} other {You can sign in with # passkeys}}",
   "frameleaf_passkey_hero_some_body": "Signing in with a passkey skips your password and the two-step code. Your password still works too.",
   "frameleaf_passkey_hero_unsupported": "This browser can’t make passkeys",

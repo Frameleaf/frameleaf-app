@@ -10,11 +10,8 @@
   import { t } from 'svelte-i18n';
   import './passkeys.css';
 
-  let {
-    passkey,
-    last,
-    onClose,
-  }: { passkey: PasskeyResponseDto; last: boolean; onClose: (removed?: boolean) => void } = $props();
+  let { passkey, last, onClose }: { passkey: PasskeyResponseDto; last: boolean; onClose: (removed?: boolean) => void } =
+    $props();
 
   let open = $state(true);
   let working = $state(false);

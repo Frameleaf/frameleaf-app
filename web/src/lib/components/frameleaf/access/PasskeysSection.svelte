@@ -43,6 +43,8 @@
   let failed = $state(false);
   let said = $state('');
   let fresh = $state<string | null>(null);
+  /** The last passkey was just removed here (the prototype's "You don’t have a passkey any more"). */
+  let removedAll = $state(false);
 
   const here = passkeysInThisBrowser();
   const canAdd = here.ok;
@@ -70,9 +72,10 @@
   });
 
   const date = (value: string, withTime = false) =>
-    new Intl.DateTimeFormat($locale, withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' }).format(
-      new Date(value),
-    );
+    new Intl.DateTimeFormat(
+      $locale,
+      withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' },
+    ).format(new Date(value));
 
   /** Where a passkey is saved, as the list says it. */
   const savedIn = (passkey: PasskeyResponseDto) =>
@@ -116,8 +119,8 @@
       return {
         tone: 'quiet' as const,
         icon: mdiFingerprint,
-        title: $t('frameleaf_passkey_hero_none'),
-        body: $t('frameleaf_passkey_hero_none_body'),
+        title: removedAll ? $t('frameleaf_passkey_hero_none_now') : $t('frameleaf_passkey_hero_none'),
+        body: removedAll ? $t('frameleaf_passkey_hero_none_now_body') : $t('frameleaf_passkey_hero_none_body'),
         add: true,
       };
     }
@@ -133,6 +136,7 @@
     const added = await modalManager.show(PasskeyAddDialog, {});
     if (added) {
       fresh = added.id;
+      removedAll = false;
       said = $t('frameleaf_passkey_added', { values: { name: added.name } });
       await load();
     }
@@ -154,6 +158,7 @@
         values: { name: passkey.name },
       });
       passkeys = (passkeys ?? []).filter((item) => item.id !== passkey.id);
+      removedAll = passkeys.length === 0;
     }
   };
 
@@ -174,7 +179,9 @@
     <Button onclick={() => void load()}>{$t('frameleaf_passkey_try_again')}</Button>
   {:else if hero.open && secureUrl}
     <Button variant="primary" onclick={openSecure}
-      ><Icon icon={mdiOpenInNew} size="1.1em" aria-hidden />{$t('frameleaf_passkey_open_secure', { values: { address: secureUrl.origin } })}</Button
+      ><Icon icon={mdiOpenInNew} size="1.1em" aria-hidden />{$t('frameleaf_passkey_open_secure', {
+        values: { address: secureUrl.origin },
+      })}</Button
     >
   {:else if hero.add}
     {@render addButton()}

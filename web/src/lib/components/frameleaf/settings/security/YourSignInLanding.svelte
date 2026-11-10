@@ -107,7 +107,9 @@
         // FL-859: a passkey is a way in too (FL-767 prototype: "Passkey, password and Frameleaf account")
         if (auth.hasPasskeys) {
           return $t(
-            frameleaf?.linked ? 'frameleaf_privacy_ways_passkey_password_frameleaf' : 'frameleaf_privacy_ways_passkey_password',
+            frameleaf?.linked
+              ? 'frameleaf_privacy_ways_passkey_password_frameleaf'
+              : 'frameleaf_privacy_ways_passkey_password',
           );
         }
         return frameleaf?.linked
