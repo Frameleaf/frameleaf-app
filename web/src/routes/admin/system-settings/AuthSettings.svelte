@@ -20,6 +20,7 @@
   import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import Steps from '$lib/components/frameleaf/settings/kit/Steps.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import RegisteredApps from '$lib/components/frameleaf/settings/security/RegisteredApps.svelte';
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { mdiAccountKeyOutline, mdiAlertCircleOutline, mdiChevronRight } from '@mdi/js';
@@ -461,6 +462,23 @@
       </Section>
     {/if}
 
+    <!-- FL-860: apps people connect through OAuth (FL-803), such as AI assistants and Home Assistant. -->
+    <Section title={$t('frameleaf_apps_admin_title')} description={$t('frameleaf_apps_admin_description')}>
+      <Row
+        label={$t('frameleaf_apps_admin_allow_registration')}
+        help={$t('frameleaf_apps_admin_allow_registration_description')}
+      >
+        <!-- The server always returns `connectedApps`; the DTO marks it optional only because it has a default. -->
+        <Switch
+          label={$t('frameleaf_apps_admin_allow_registration')}
+          checked={configToEdit.connectedApps?.allowRegistration ?? true}
+          held={disabled}
+          onChange={(value) => (configToEdit.connectedApps = { allowRegistration: value })}
+        />
+      </Row>
+      <RegisteredApps />
+    </Section>
+
     <Section title={$t('frameleaf_signin_recover')} description={$t('frameleaf_signin_recover_description')}>
       <Steps
         stacked
@@ -485,7 +503,7 @@
       </Advanced>
     </Section>
 
-    <SettingActions keys={['passwordLogin', 'oauth']} {disabled} />
+    <SettingActions keys={['passwordLogin', 'oauth', 'connectedApps']} {disabled} />
   </KitPage>
 </form>
 

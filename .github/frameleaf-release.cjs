@@ -388,6 +388,7 @@ const REQUIRED_TEST_JOBS = Object.freeze([
   "End-to-End Tests (Web) (ubuntu-24.04-arm, icloud)",
   "End-to-End Tests Success",
   "Unit Test ML",
+  "Test Home Assistant integration",
   ".github Files Formatting",
   "ShellCheck",
   "OpenAPI Clients",

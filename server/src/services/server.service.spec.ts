@@ -440,6 +440,7 @@ describe(ServerService.name, () => {
         },
         smartSearch: true,
         askSearch: true,
+        assistant: true,
         duplicateDetection: true,
         facialRecognition: true,
         importFaces: false,

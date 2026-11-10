@@ -1539,6 +1539,128 @@ describe(DatabaseBackupService.name, () => {
     });
   });
 
+  describe('rehearseRestore (FL-879)', () => {
+    const name = `frameleaf_drill_${'a'.repeat(32)}`;
+    const assetId = '00000000-0000-4000-8000-000000000001';
+    let calls: { command: string; args: readonly string[]; input: string }[];
+
+    beforeEach(() => {
+      calls = [];
+      const env = mocks.config.getEnv();
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        database: {
+          ...env.database,
+          config: { connectionType: 'url', url: 'postgresql://frameleaf:pw@db:5432/frameleaf' },
+        },
+      });
+      mocks.database.getPostgresVersion.mockResolvedValue('19.0');
+      mocks.storage.createPlainReadStream.mockImplementation(() =>
+        Readable.from([
+          gzipSync(
+            'CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;\nCREATE TABLE asset (id uuid);\nCOPY public.asset (id) FROM stdin;\n\\N\n\\.\n',
+          ),
+        ]),
+      );
+      mocks.storage.createGunzip.mockImplementation(() => createGunzip());
+    });
+
+    const spawnWith = (restoreExit = 0) =>
+      mocks.process.spawnDuplexStream.mockImplementation((command, args = []) => {
+        const call = { command, args, input: '' };
+        calls.push(call);
+        const command_ = args.at(-1) ?? '';
+        const stdout = command_.includes('count(*)')
+          ? '5,1,2\n'
+          : command_.includes('SELECT id')
+            ? `${assetId}\n`
+            : command_.includes('pg_extension')
+              ? 'vector\nnot ok!\n'
+              : '';
+        const isRestore = !args.includes('--command');
+        return mockDuplex((chunk) => (call.input += chunk.toString()))(
+          command,
+          isRestore ? restoreExit : 0,
+          stdout,
+          '',
+        );
+      });
+
+    it('rebuilds the dump in a scratch database, counts it, and drops it again; the library database is never the target', async () => {
+      spawnWith();
+      await expect(
+        sut.rehearseRestore('/backups/dump.sql.gz', { name, assetIds: [assetId, 'not-a-uuid'] }),
+      ).resolves.toEqual({
+        counts: { asset: 5, user: 1, album: 2 },
+        presentAssetIds: [assetId],
+      });
+      const commands = calls.map(({ args }) => (args.includes('--command') ? args.at(-1) : 'restore'));
+      const role = `${name}_restore`;
+      expect(commands).toEqual([
+        `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`,
+        `DROP ROLE IF EXISTS "${role}"`,
+        expect.stringMatching(
+          new RegExp(
+            `^CREATE ROLE "${role}" LOGIN PASSWORD '[0-9a-f]{48}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS$`,
+          ),
+        ),
+        `CREATE DATABASE "${name}" OWNER "${role}"`,
+        "SELECT extname FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql'",
+        'CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA public CASCADE',
+        'restore',
+        expect.stringContaining('count(*)'),
+        `SELECT id FROM public.asset WHERE id IN ('${assetId}')`,
+        `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`,
+        `DROP ROLE IF EXISTS "${role}"`,
+      ]);
+      const restore = calls[6];
+      expect(restore.args).toContain('--no-psqlrc');
+      // psql signs in as the scratch role, which is not a superuser, so the dump has no superuser to switch back to
+      expect(
+        restore.args.some((arg) => arg.startsWith(`postgresql://${role}:`) && arg.endsWith(`@db:5432/${name}`)),
+      ).toBe(true);
+      expect(restore.input).not.toContain('SET ROLE');
+      expect(restore.input).toContain('CREATE TABLE asset');
+      expect(restore.input).not.toContain('CREATE EXTENSION');
+    });
+
+    it('drops the scratch database when the rebuild fails', async () => {
+      spawnWith(3);
+      await expect(sut.rehearseRestore('/backups/dump.sql.gz', { name, assetIds: [] })).rejects.toThrow();
+      expect(calls.at(-2)?.args.at(-1)).toBe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      expect(calls.at(-1)?.args.at(-1)).toBe(`DROP ROLE IF EXISTS "${name}_restore"`);
+    });
+
+    it('refuses a dump that would run a program, and still removes the scratch database and role', async () => {
+      spawnWith();
+      mocks.storage.createPlainReadStream.mockImplementation(() =>
+        Readable.from([gzipSync('CREATE TABLE asset (id uuid);\n\\! touch /tmp/x\n')]),
+      );
+      await expect(sut.rehearseRestore('/backups/dump.sql.gz', { name, assetIds: [] })).rejects.toThrow(
+        'not library data',
+      );
+      expect(calls.find(({ args }) => !args.includes('--command'))?.input ?? '').not.toContain('touch');
+      expect(calls.at(-1)?.args.at(-1)).toBe(`DROP ROLE IF EXISTS "${name}_restore"`);
+    });
+
+    it('refuses a name that is not a scratch database', async () => {
+      await expect(sut.rehearseRestore('/backups/dump.sql.gz', { name: 'frameleaf', assetIds: [] })).rejects.toThrow(
+        'Invalid scratch database name',
+      );
+      expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalled();
+    });
+
+    it('records a passing drill as the restore test', async () => {
+      await sut.recordDrillVerification('report-id', 'admin-id', new Date('2026-11-08T03:00:00.000Z'));
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.BackupRestoreVerification, {
+        metadataVerifiedAt: '2026-11-08T03:00:00.000Z',
+        originalsVerifiedAt: '2026-11-08T03:00:00.000Z',
+        verifiedBy: 'admin-id',
+        drillReportId: 'report-id',
+      });
+    });
+  });
+
   describe('restore verification (FL-71 CC-9)', () => {
     const day = 24 * 60 * 60 * 1000;
     const now = new Date('2026-09-24T12:00:00.000Z');
@@ -1579,6 +1701,7 @@ describe(DatabaseBackupService.name, () => {
         overdue: true,
         dueAt: null,
         intervalDays: 90,
+        drillReportId: null,
       });
     });
 
@@ -1599,6 +1722,7 @@ describe(DatabaseBackupService.name, () => {
         metadataVerifiedAt: '2026-01-01T00:00:00.000Z',
         originalsVerifiedAt: expect.any(String),
         verifiedBy: authStub.admin.user.id,
+        drillReportId: null,
       });
       // FL-71 (CC-10): the review lands in the change history as "Reviewed: Recovery readiness".
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfigHistory, {

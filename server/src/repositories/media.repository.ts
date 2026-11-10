@@ -3,7 +3,7 @@ import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
 import { camelCase, upperFirst } from 'lodash-es';
 import { Duration } from 'luxon';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -46,6 +46,13 @@ import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import {
+  DESIGN_PREVIEW_TAGS,
+  DesignPreviewUnavailableError,
+  DesignRung,
+  extractContainerPreview,
+  isRenderedDesign,
+} from 'src/utils/design-preview.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { ContainerLogSignals, readContainerLogSignals } from 'src/utils/log-video-container.js';
@@ -131,6 +138,32 @@ export class MediaRepository {
     return value;
   }
 
+  private libplaceboProbe?: Promise<boolean>;
+
+  /**
+   * FL-1357: whether this ffmpeg can really run libplacebo, found by pushing one frame through it. The filter
+   * being compiled in says nothing: it needs a Vulkan device, which most containers do not have.
+   * ponytail: an answer is kept for the life of the process; a graphics card added later is seen after a restart.
+   */
+  hasLibplacebo(): Promise<boolean> {
+    this.libplaceboProbe ??= new Promise((resolve) =>
+      execFile(
+        'ffmpeg',
+        // one 64x64 frame through the filter, thrown away
+        '-nostdin -v error -f lavfi -i color=s=64x64:d=0.04 -vf libplacebo -frames:v 1 -f null -'.split(' '),
+        { timeout: 15_000 },
+        (error) => {
+          // Only ffmpeg's own answer is kept: a probe that timed out or could not start is asked again next time.
+          if (error && (error.killed || typeof error.code !== 'number')) {
+            this.libplaceboProbe = undefined;
+          }
+          resolve(!error);
+        },
+      ),
+    );
+    return this.libplaceboProbe;
+  }
+
   inspectImageEncoding(input: string | Buffer) {
     return sharpProcessPool.run('inspectImageEncoding', [input]);
   }
@@ -199,6 +232,56 @@ export class MediaRepository {
       }
     }
     return null;
+  }
+
+  /** FL-1358: the picture a design file carries: its container's preview, else one ExifTool finds inside. */
+  private async extractDesignPreview(input: string): Promise<{ buffer: Buffer; rung: DesignRung } | null> {
+    const container = await extractContainerPreview(input);
+    if (container) {
+      return { buffer: container, rung: 'container' };
+    }
+    for (const tag of DESIGN_PREVIEW_TAGS) {
+      try {
+        return { buffer: await exiftool.extractBinaryTagToBuffer(tag, input), rung: 'embedded' };
+      } catch (error: any) {
+        this.logger.debug(`Could not extract ${tag} from design file: ${error}`);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * FL-1358: the one ladder a design file is shown by. A format libvips opens is rendered; when that fails, or
+   * for any other format, the picture the file carries is used; with neither there is nothing to show, which is
+   * `DesignPreviewUnavailableError` and never damage.
+   */
+  private async onDesignLadder<T extends object>(
+    input: string,
+    run: (source: string | Buffer) => Promise<T>,
+    /** Whether the operation only decodes, so that any failure of its own is the file not opening. */
+    decodeOnly: boolean,
+  ): Promise<T & { designRung: DesignRung }> {
+    if (isRenderedDesign(input)) {
+      try {
+        return { ...(await run(input)), designRung: 'rendered' };
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        // Only a file the renderer could not open, or one too large for it, steps down. A worker that stopped,
+        // or a thumbnail that could not be written, is not the file's doing and is retried as it is.
+        const stepsDown =
+          error instanceof SharpResourceLimitError ||
+          (error instanceof SharpOperationError && (decodeOnly || error.decodeFailure));
+        if (!stepsDown) {
+          throw error;
+        }
+        this.logger.debug(`Design file was not rendered, looking for its own preview: ${error.message}`);
+      }
+    }
+    const preview = await this.extractDesignPreview(input);
+    if (!preview) {
+      throw new DesignPreviewUnavailableError(input);
+    }
+    return { ...(await run(preview.buffer)), designRung: preview.rung };
   }
 
   async writeExif(tags: Partial<Exif>, output: string): Promise<boolean> {
@@ -275,7 +358,10 @@ export class MediaRepository {
   async decodeImage(
     input: string | Buffer,
     options: DecodeToBufferOptions,
-  ): Promise<Omit<SharpResult<'decodeImage'>, 'rung'> & { rung?: StillRung }> {
+  ): Promise<Omit<SharpResult<'decodeImage'>, 'rung'> & { rung?: StillRung; designRung?: DesignRung }> {
+    if (typeof input === 'string' && !options.raw && mimeTypes.isDesign(input)) {
+      return this.onDesignLadder(input, (source) => sharpProcessPool.run('decodeImage', [source, options]), true);
+    }
     return this.stillLadder(
       input,
       options,
@@ -290,8 +376,15 @@ export class MediaRepository {
 
   async generateImageThumbnails(
     ...args: SharpArguments<'generateImageThumbnails'>
-  ): Promise<Omit<SharpResult<'generateImageThumbnails'>, 'rung'> & { rung?: StillRung }> {
+  ): Promise<Omit<SharpResult<'generateImageThumbnails'>, 'rung'> & { rung?: StillRung; designRung?: DesignRung }> {
     const [input, options, batch] = args;
+    if (typeof input === 'string' && !options.raw && mimeTypes.isDesign(input)) {
+      return this.onDesignLadder(
+        input,
+        (source) => sharpProcessPool.run('generateImageThumbnails', [source, options, batch]),
+        false,
+      );
+    }
     return this.stillLadder(
       input,
       options,

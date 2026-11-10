@@ -26,7 +26,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from frameleaf_ml import allocator
-from frameleaf_ml.models import get_model_deps
+from frameleaf_ml.models import assistant_planner, get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.clip.hugging_face import inspect_custom_clip_model
 from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS, get_model_source, is_custom_clip_model
@@ -60,6 +60,7 @@ from .metrics import InferenceMetrics, metrics_enabled, private_scraper
 from .models.cache import ModelCache
 from .producer_binding import BoundPredictor
 from .schemas import (
+    AssistantPlanRequest,
     ImageDescriptionAcceleration,
     InferenceEntries,
     InferenceEntry,
@@ -466,7 +467,15 @@ PREDICT_PROTOCOL = "predict-v1"
 
 @app.get("/capabilities")
 def capabilities() -> ORJSONResponse:
-    return ORJSONResponse({"protocol": PREDICT_PROTOCOL, "workloads": list(SERVED_WORKLOADS)})
+    # FL-847: text-only tasks report their own availability beside the workloads list, so a host below a
+    # model's memory floor says so here instead of failing on its first request.
+    return ORJSONResponse(
+        {
+            "protocol": PREDICT_PROTOCOL,
+            "workloads": list(SERVED_WORKLOADS),
+            "tasks": {ModelTask.ASSISTANT_PLAN.value: assistant_planner.planner_status()},
+        }
+    )
 
 
 @app.get("/hardware")
@@ -932,6 +941,55 @@ async def translate(request: Request) -> ORJSONResponse:
     finally:
         active_requests -= 1
     return ORJSONResponse(result)
+
+
+@app.post("/assistant/plan")
+async def assistant_plan(body: AssistantPlanRequest) -> ORJSONResponse:
+    """Library Assistant planner (FL-847): a question and the library's name catalogue in, one
+    `search_library` tool call (`{"tool", "arguments", "confidence"}`) or `{"clarify"}` out.
+
+    Only text arrives here. The answer is validated against the caller's tool schema and catalogue, with one
+    retry; a model that still writes something else is answered with 422 `invalid_plan`, never passed on.
+    503 `assistant_planner_unavailable` means this worker has no planner model, runtime or memory for it.
+    """
+    try:
+        assistant_planner.check_schema(body.tool_schema)
+    except assistant_planner.SchemaError as error:
+        raise HTTPException(400, str(error)) from error
+    status = assistant_planner.planner_status(body.model_name)
+    if not status["available"]:
+        return ORJSONResponse({"detail": "assistant_planner_unavailable", "reason": status["reason"]}, status_code=503)
+    question = assistant_planner.clean_text(body.question, assistant_planner.MAX_QUESTION_CHARS)
+    if not question:
+        raise HTTPException(400, "The question is empty")
+    catalog = assistant_planner.clean_catalog(body.catalog.model_dump())
+    messages = assistant_planner.build_messages(question, body.language, body.today, catalog, body.tool_schema)
+    model = await model_cache.get(status["model"], ModelType.TEXTUAL, ModelTask.ASSISTANT_PLAN, ttl=settings.model_ttl)
+    try:
+        model = await load(model)
+    except HTTPException as error:
+        # repeated load failures still mean "no planner here now": the server answers with its rules
+        if error.status_code == 500:
+            return ORJSONResponse({"detail": "assistant_planner_unavailable", "reason": "load-failed"}, 503)
+        raise
+    global active_requests, last_called
+    active_requests += 1
+    last_called = time.time()
+    try:
+        for _attempt in range(2):
+            raw = await run(model.predict, messages, body.tool_schema)
+            plan = assistant_planner.validate_plan(str(raw), body.tool_schema, catalog)
+            if plan is not None:
+                return ORJSONResponse(plan)
+            messages = [
+                *messages,
+                {"role": "assistant", "content": str(raw)[:2000]},
+                {"role": "user", "content": assistant_planner.RETRY_PROMPT},
+            ]
+    finally:
+        active_requests -= 1
+    log.debug("The assistant planner answered with an invalid plan twice")
+    return ORJSONResponse({"detail": "invalid_plan"}, status_code=422)
 
 
 @app.post("/subject-matte")

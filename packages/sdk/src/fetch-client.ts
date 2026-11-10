@@ -487,6 +487,8 @@ export type CloudBackupActiveRunDto = {
     bytesUploaded: number;
     /** verify: files checked so far */
     checked: number;
+    /** FL-879: this is a restore drill (its task reads as verify, which it is a kind of) */
+    drill: boolean;
     operationId: string;
     phase: CloudBackupRunPhase;
     /** 0 to 100 */
@@ -509,6 +511,42 @@ export type CloudBackupEscrowStatusDto = {
     outdated: boolean;
     stored: boolean;
     storedAt: string | null;
+};
+export type CloudBackupDrillDto = {
+    /** When the backup that was used was made */
+    backupFrom: string | null;
+    checked: number;
+    durationSeconds: number | null;
+    failedStep: CloudBackupDrillStep | null;
+    finishedAt: string | null;
+    id: string;
+    /** The signing key (RFC 7638 thumbprint of the Ed25519 key) */
+    keyFingerprint: string | null;
+    /** What the backup holds */
+    library: {
+        albums: number;
+        items: number;
+        photos: number;
+        videos: number;
+    } | null;
+    matched: number;
+    mismatches: {
+        assetId: string;
+        problem: CloudBackupDrillProblem;
+    }[];
+    /** Rows the rebuilt library data holds */
+    restored: {
+        album: number;
+        asset: number;
+        user: number;
+    } | null;
+    result: CloudBackupDrillResult;
+    sampleSize: number;
+    signed: boolean;
+    startedAt: string;
+    /** managed or byo-s3 */
+    target: string;
+    trigger: CloudBackupDrillTrigger;
 };
 export type CloudBackupLastPruneDto = {
     at: string;
@@ -602,6 +640,10 @@ export type CloudBackupStatusResponseDto = {
     configured: boolean;
     /** The newest run's coverage report (FL-362) */
     coverage: (CloudBackupCoverageStatusDto) | null;
+    /** FL-879: a restore drill runs after the next scheduled backup */
+    drillDue: boolean;
+    /** FL-879: the newest restore drill failed */
+    drillNeedsAttention: boolean;
     endpoint: string | null;
     escrow: CloudBackupEscrowStatusDto;
     instanceId: string | null;
@@ -609,6 +651,8 @@ export type CloudBackupStatusResponseDto = {
     /** The key is available to this server; false in own-memory mode until unlocked */
     keyLoaded: boolean;
     keyMode: (CloudBackupKeyMode) | null;
+    /** FL-879: the newest finished restore drill */
+    lastDrill: (CloudBackupDrillDto) | null;
     lastManifestKey: string | null;
     lastPrune: (CloudBackupLastPruneDto) | null;
     lastRestore: (CloudBackupLastRestoreDto) | null;
@@ -619,6 +663,8 @@ export type CloudBackupStatusResponseDto = {
     managed: (CloudBackupManagedDto) | null;
     /** Frameleaf-managed storage can be chosen: this server is linked to Frameleaf Cloud */
     managedAvailable: boolean;
+    /** FL-879: when the next restore drill is due; null when it is due now or backup is off */
+    nextDrillAt: string | null;
     region: string | null;
     target: CloudBackupTargetSetting;
     /** Unique files this server has in the bucket and their size */
@@ -664,6 +710,20 @@ export type CloudBackupCoverageResponseDto = {
     inventoryAt: string | null;
     runId: string | null;
     state: CloudBackupCoverageReportState;
+};
+export type CloudBackupDrillReportDto = {
+    report: {
+        [key: string]: any;
+    };
+    signature: {
+        algorithm: Algorithm;
+        keyFingerprint: string;
+        prefix: string;
+        publicKey: {
+            [key: string]: any;
+        };
+        value: string;
+    };
 };
 export type CloudBackupEscrowDto = {
     /** Wraps the bucket key before it is sent; never stored and never sent to Frameleaf Cloud */
@@ -1840,8 +1900,17 @@ export type AdminConfigAskSearchDto = {
     /** Maximum number of Ask Search results */
     maxResults: number;
 };
+export type AdminConfigAssistantDto = {
+    /** Enable the Library Assistant in search */
+    enabled: boolean;
+    /** Maximum number of Library Assistant results */
+    maxResults: number;
+    /** Plan questions with an installed planner model before the rules */
+    planner: boolean;
+};
 export type AdminConfigLocalFeaturesDto = {
     askSearch: AdminConfigAskSearchDto;
+    assistant?: AdminConfigAssistantDto;
 };
 export type AdminConfigLoggingDto = {
     /** Enabled */
@@ -2389,6 +2458,8 @@ export type DatabaseBackupListResponseDto = {
     backups: DatabaseBackupDto[];
 };
 export type BackupRestoreVerificationResponseDto = {
+    /** FL-879: the restore drill that recorded the last test; null when an administrator recorded it */
+    drillReportId: string | null;
     /** When the next test is due; null when a part has never been proved */
     dueAt: string | null;
     /** How often a restore test is due */
@@ -5027,12 +5098,16 @@ export type ImageEncodingInfo = {
     gainMap: string;
     height?: number;
     inspectionStatus?: InspectionStatus;
+    /** Pages in a PDF or Illustrator document; the first is shown */
+    pages?: number;
     /** Decoder can reconstruct this source; does not imply a published HDR rendition or qualified display */
     reconstructionAvailable: boolean;
     /** Processing reference white in cd/m²; not measured display brightness */
     referenceWhite?: number;
     renderingPolicy?: string;
     transfer?: number | "adaptive";
+    /** A named flavour of the container, such as "fireworks-png"; unknown values are ignored */
+    variant?: string;
     width?: number;
 };
 export type LandmarkIconDto = {
@@ -7034,6 +7109,110 @@ export type AssetWaveformResponseDto = {
     hasAudio: boolean;
     /** Changes whenever the video changes */
     version: string;
+};
+export type AssistantAskDto = {
+    /** Language of the question */
+    language?: string;
+    /** The question, as the person typed it */
+    query: string;
+    /** Most results to return */
+    size?: number;
+};
+export type AssistantPlanFiltersDto = {
+    /** Albums holding the item, by name */
+    albums?: string[];
+    /** City the item was taken in */
+    city?: string;
+    /** A phrase in the description */
+    description?: string;
+    /** Favorites only */
+    favorite?: boolean;
+    /** Text visible in the photo */
+    ocr?: string;
+    /** People in the photo, by name */
+    people?: string[];
+    /** Pets in the photo, by name */
+    pets?: string[];
+    /** Words spoken in the video */
+    spoken?: string;
+    /** Tags on the item, by name */
+    tags?: string[];
+    /** Taken at or after this time */
+    takenAfter?: string;
+    /** Taken at or before this time */
+    takenBefore?: string;
+    /** Photos or videos only */
+    "type"?: AssistantMediaType;
+    /** What the photo looks like, for visual search */
+    visual?: string;
+};
+export type AssistantReasonItemDto = {
+    /** What the reason rests on: person, pet, place, date, favorite, type, album, tag, text, speech, description or visual. Plain string; new kinds may appear */
+    kind: string;
+    /** The reason as a short sentence, from the stored data of this item */
+    text: string;
+    /** The stored value the reason names (a name, place, date or quoted text) */
+    value?: string;
+};
+export type AssistantReasonDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Why this item matched, most specific first */
+    items: AssistantReasonItemDto[];
+};
+export type SearchFacetCountResponseDto = {
+    /** Number of assets with this facet value */
+    count: number;
+    /** The newest matching asset with this value (by capture time), when `facetCovers` was asked for */
+    coverAssetId?: string | null;
+    /** Display name when the value is an id (a person or a tag); the viewer's own name for it */
+    label?: string | null;
+    /** Facet value */
+    value: string;
+};
+export type SearchFacetResponseDto = {
+    counts: SearchFacetCountResponseDto[];
+    /** Facet field name */
+    fieldName: string;
+};
+export type SearchAlbumResponseDto = {
+    /** Number of albums in this page */
+    count: number;
+    facets: SearchFacetResponseDto[];
+    items: AlbumResponseDto[];
+    /** Total number of matching albums */
+    total: number;
+};
+export type SearchAssetResponseDto = {
+    /** Number of assets in this page */
+    count: number;
+    facets: SearchFacetResponseDto[];
+    items: AssetResponseDto[];
+    /** Cursor for the next page of results */
+    nextCursor: string | null;
+    /** Next page token */
+    nextPage: string | null;
+    /** Total number of matching assets */
+    total: number;
+};
+export type SearchResponseDto = {
+    albums: SearchAlbumResponseDto;
+    assets: SearchAssetResponseDto;
+};
+export type AssistantAskResponseDto = {
+    /** What planned the search: `planner` (a planner model) or `rules`. Plain string; new values may appear */
+    answeredBy: string;
+    /** The search that was run */
+    plan: AssistantPlanFiltersDto;
+    /** The question as asked */
+    query: string;
+    /** Why each result matched, one entry per result */
+    reasons: AssistantReasonDto[];
+    results: SearchResponseDto;
+    /** One line describing what was searched */
+    summary: string;
+    /** Parts of the question that could not be used */
+    warnings: string[];
 };
 export type SignUpDto = {
     /** User email */
@@ -15562,45 +15741,6 @@ export type AskSearchPlanDto = {
     /** Normalized query text */
     normalizedQuery: string;
 };
-export type SearchFacetCountResponseDto = {
-    /** Number of assets with this facet value */
-    count: number;
-    /** The newest matching asset with this value (by capture time), when `facetCovers` was asked for */
-    coverAssetId?: string | null;
-    /** Display name when the value is an id (a person or a tag); the viewer's own name for it */
-    label?: string | null;
-    /** Facet value */
-    value: string;
-};
-export type SearchFacetResponseDto = {
-    counts: SearchFacetCountResponseDto[];
-    /** Facet field name */
-    fieldName: string;
-};
-export type SearchAlbumResponseDto = {
-    /** Number of albums in this page */
-    count: number;
-    facets: SearchFacetResponseDto[];
-    items: AlbumResponseDto[];
-    /** Total number of matching albums */
-    total: number;
-};
-export type SearchAssetResponseDto = {
-    /** Number of assets in this page */
-    count: number;
-    facets: SearchFacetResponseDto[];
-    items: AssetResponseDto[];
-    /** Cursor for the next page of results */
-    nextCursor: string | null;
-    /** Next page token */
-    nextPage: string | null;
-    /** Total number of matching assets */
-    total: number;
-};
-export type SearchResponseDto = {
-    albums: SearchAlbumResponseDto;
-    assets: SearchAssetResponseDto;
-};
 export type AskSearchResponseDto = {
     /** Short explanation of how the query was interpreted */
     explanation: string;
@@ -16297,6 +16437,8 @@ export type ServerJobCapacityDto = {
 export type ServerFeaturesDto = {
     /** Whether Ask Search (natural-language questions about the library) is enabled and can answer */
     askSearch: boolean;
+    /** Whether the Library Assistant answers search questions (POST /assistant/ask) */
+    assistant: boolean;
     /** Whether the Frameleaf Cloud plan includes cloud backup (FL-156) */
     cloudBackup: boolean;
     /** Whether the Frameleaf Cloud plan includes cloud processing (FL-156) */
@@ -22307,6 +22449,55 @@ export function getCloudBackupCoverage(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List restore drills
+ */
+export function listCloudBackupDrills(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupDrillDto[];
+    }>("/admin/cloud/backup/drills", {
+        ...opts
+    }));
+}
+/**
+ * Run a restore drill
+ */
+export function startCloudBackupDrill(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/drills", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Get a restore drill
+ */
+export function getCloudBackupDrill({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupDrillDto;
+    }>(`/admin/cloud/backup/drills/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a restore drill report
+ */
+export function getCloudBackupDrillReport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupDrillReportDto;
+    }>(`/admin/cloud/backup/drills/${encodeURIComponent(id)}/report.json`, {
+        ...opts
+    }));
+}
+/**
  * Remove the key copy from Frameleaf Cloud
  */
 export function removeCloudBackupEscrow(opts?: Oazapfts.RequestOpts) {
@@ -26954,6 +27145,21 @@ export function getAssetWaveform({ buckets, channels, id, key, slug }: {
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Ask the Library Assistant
+ */
+export function askAssistant({ assistantAskDto }: {
+    assistantAskDto: AssistantAskDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssistantAskResponseDto;
+    }>("/assistant/ask", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantAskDto
+    })));
 }
 /**
  * Register admin
@@ -38682,6 +38888,26 @@ export enum CloudBackupKeyMode {
     OwnStored = "own-stored",
     OwnMemory = "own-memory"
 }
+export enum CloudBackupDrillStep {
+    Fetch = "fetch",
+    Unlock = "unlock",
+    Rebuild = "rebuild",
+    Compare = "compare"
+}
+export enum CloudBackupDrillProblem {
+    Different = "different",
+    Missing = "missing",
+    NotInLibraryData = "not-in-library-data"
+}
+export enum CloudBackupDrillResult {
+    Running = "running",
+    Passed = "passed",
+    Failed = "failed"
+}
+export enum CloudBackupDrillTrigger {
+    Scheduled = "scheduled",
+    Manual = "manual"
+}
 export enum CloudBackupRestoreStatus {
     Completed = "completed",
     Failed = "failed",
@@ -38719,6 +38945,9 @@ export enum CloudBackupCoverageReportState {
     NotReported = "not-reported",
     Local = "local",
     Unknown = "unknown"
+}
+export enum Algorithm {
+    Ed25519 = "Ed25519"
 }
 export enum CloudBackupLicenceScope {
     Unknown = "unknown",
@@ -40543,6 +40772,10 @@ export enum AssetMediaSize {
 export enum AssetWaveformChannelMode {
     Mono = "mono",
     All = "all"
+}
+export enum AssistantMediaType {
+    Image = "IMAGE",
+    Video = "VIDEO"
 }
 export enum BrowserExtensionClient {
     Chrome = "chrome",

@@ -408,6 +408,48 @@ describe(MetadataService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
+    it('names a Fireworks PNG from its own chunks and leaves an ordinary PNG alone (FL-1358)', async () => {
+      const encoding = { dynamicRange: 'sdr' as const, gainMap: 'none', reconstructionAvailable: false };
+      mocks.media.inspectImageEncoding.mockResolvedValue(encoding);
+      for (const [originalPath, variant] of [
+        ['test/fixtures/formats/design/fireworks.png', { variant: 'fireworks-png' }],
+        ['/data/library/plain.png', {}],
+      ] as const) {
+        const asset = AssetFactory.create({ originalFileName: 'mockup.fw.png', originalPath });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.asset.upsertExif.mockClear();
+        await sut.handleMetadataExtraction({ id: asset.id, source: 'upload' });
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exif: expect.objectContaining({
+              imageEncoding: { ...encoding, inspectionStatus: 'identified', ...variant },
+            }),
+          }),
+        );
+      }
+    });
+
+    it('records how many pages a PDF holds and inspects no encoding for a design file (FL-1358)', async () => {
+      for (const [originalFileName, tags, imageEncoding] of [
+        [
+          'brochure.pdf',
+          { PageCount: 12 },
+          { dynamicRange: 'unknown', gainMap: 'none', reconstructionAvailable: false, pages: 12 },
+        ],
+        ['layers.psd', {}, null],
+      ] as const) {
+        const asset = AssetFactory.create({ originalFileName });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags(tags);
+        mocks.asset.upsertExif.mockClear();
+        await sut.handleMetadataExtraction({ id: asset.id, source: 'upload' });
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ imageEncoding }) }),
+        );
+      }
+      expect(mocks.media.inspectImageEncoding).not.toHaveBeenCalled();
+    });
+
     it('records a sanitized unknown result when HDR inspection fails instead of assuming SDR', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));

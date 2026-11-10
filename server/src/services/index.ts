@@ -22,6 +22,7 @@ import { AssetSourceService } from 'src/services/asset-source.service.js';
 import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { AssistantService } from 'src/services/assistant.service.js';
 import { AttentionService } from 'src/services/attention.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -284,6 +285,7 @@ export const services = [
   ArchiveOperationService,
   ActivityService,
   AlbumService,
+  AssistantService,
   AlbumSuggestionService,
   ApiService,
   AssetDevelopService,

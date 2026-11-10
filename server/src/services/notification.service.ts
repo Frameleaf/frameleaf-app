@@ -46,6 +46,7 @@ import {
 } from 'src/utils/notification-locale.js';
 import { isEqualObject } from 'src/utils/object.js';
 import { getPreferences } from 'src/utils/preferences.js';
+import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 /** The notice, and its dedupe key, for a library data snapshot that didn't finish (FL-657). */
 const LIBRARY_SNAPSHOT_FAILED = 'library-snapshot-failed';
@@ -512,6 +513,69 @@ export class NotificationService extends BaseService {
     }
   }
 
+  /**
+   * FL-900: after each scheduled restore drill, every administrator who gets emails hears how it went,
+   * with a link to the signed report (or, when the backup could not be unlocked, to the recovery key).
+   */
+  @OnEvent({ name: 'RestoreDrillFinished' })
+  async onRestoreDrillFinished(drill: ArgOf<'RestoreDrillFinished'>) {
+    try {
+      const { notifications, server, templates } = await this.getConfig({ withCache: false });
+      if (!notifications.smtp.enabled) {
+        return;
+      }
+      const baseUrl = await this.getPublicUrl(server);
+      const timeZone = serverTimeZone(server);
+      const when = (iso: string) =>
+        new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone }).format(new Date(iso));
+      const minutes = Math.floor(drill.durationSeconds / 60);
+      const seconds = drill.durationSeconds % 60;
+      const duration = [
+        minutes > 0 ? `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}` : '',
+        `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const passed = drill.result === 'passed';
+      const { html, text } = await this.emailRepository.renderEmail({
+        template: EmailTemplate.RESTORE_REPORT,
+        data: {
+          baseUrl,
+          showBranding: templates.email.showBranding,
+          result: drill.result,
+          source: drill.target === 'managed' ? 'Frameleaf Cloud' : 'own storage',
+          ranAt: when(drill.startedAt),
+          backupFrom: drill.backupFrom ? when(drill.backupFrom) : null,
+          sample: drill.sample,
+          matched: drill.matched,
+          duration,
+          failure: drill.failure,
+          stoppedAt: drill.failedStep ? (RESTORE_DRILL_STEP_WORDS[drill.failedStep] ?? null) : null,
+          link:
+            passed || drill.failedStep !== 'unlock'
+              ? `/user-settings?area=backups&section=restore&drill=${encodeURIComponent(drill.reportId)}`
+              : '/user-settings?area=backups&section=cloud',
+        },
+      });
+      for (const admin of await this.userRepository.getAdmins()) {
+        if (!getPreferences(admin.metadata).emailNotifications.enabled) {
+          continue;
+        }
+        await this.jobRepository.queue({
+          name: JobName.SendMail,
+          data: {
+            to: admin.email,
+            subject: passed ? 'Your backup restored correctly' : 'Your backup didn’t restore: please look',
+            html,
+            text,
+          },
+        });
+      }
+    } catch (error) {
+      this.logger.warn(`Unable to email the restore drill report: ${error}`);
+    }
+  }
+
   @OnEvent({ name: 'SessionDelete' })
   onSessionDelete({ sessionId }: ArgOf<'SessionDelete'>) {
     // after the response is sent
@@ -878,3 +942,11 @@ export class NotificationService extends BaseService {
     return { title, description: body };
   }
 }
+
+/** FL-900: the drill's steps as the report names them (FL-879). */
+const RESTORE_DRILL_STEP_WORDS: Record<string, string> = {
+  fetch: 'Fetch a sample from your backup',
+  unlock: 'Unlock it with your recovery key',
+  rebuild: 'Rebuild the library data in a scratch copy',
+  compare: 'Compare the photos and videos with the originals',
+};
