@@ -26,11 +26,6 @@ import { BackupDeviceAdminController, BackupDeviceController } from 'src/control
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
 import { BookmarkController } from 'src/controllers/bookmark.controller.js';
 import { BrowserExtensionSignInController } from 'src/controllers/browser-extension-sign-in.controller.js';
-import {
-  OAuthAppAdminController,
-  OAuthAppController,
-  OAuthAppWellKnownController,
-} from 'src/controllers/oauth-app.controller.js';
 import { BuddyBackupPeerController } from 'src/controllers/buddy-backup-peer.controller.js';
 import { BuddyBackupAdminController, BuddyBackupOwnerController } from 'src/controllers/buddy-backup.controller.js';
 import { CaptureController } from 'src/controllers/capture.controller.js';
@@ -87,6 +82,11 @@ import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
+import {
+  OAuthAppAdminController,
+  OAuthAppController,
+  OAuthAppWellKnownController,
+} from 'src/controllers/oauth-app.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
 import { OvernightController } from 'src/controllers/overnight.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';

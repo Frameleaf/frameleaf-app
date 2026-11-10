@@ -124,6 +124,43 @@ describe(`${OAuthAppService.name} (database)`, () => {
     );
   });
 
+  it('lets only one of two concurrent refreshes with the same token succeed', async () => {
+    const { sut, connect } = setup();
+    const { client, tokens } = await connect();
+    const body = { grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.client_id };
+    const results = await Promise.allSettled([sut.token(body), sut.token(body)]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  });
+
+  it('lets only one of two concurrent exchanges of one code succeed', async () => {
+    const { sut, signedIn } = setup();
+    const auth = await signedIn();
+    const client = await sut.register({ client_name: 'App', redirect_uris: [REDIRECT] });
+    const { redirectUrl } = await sut.authorize(
+      auth,
+      {
+        responseType: 'code',
+        clientId: client.client_id,
+        redirectUri: REDIRECT,
+        codeChallenge,
+        codeChallengeMethod: 'S256',
+        allow: true,
+      },
+      ISSUER,
+    );
+    const body = {
+      grant_type: 'authorization_code',
+      code: new URL(redirectUrl).searchParams.get('code')!,
+      client_id: client.client_id,
+      redirect_uri: REDIRECT,
+      code_verifier: verifier,
+    };
+    const results = await Promise.allSettled([sut.token(body), sut.token(body)]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  });
+
   it('removes access at once and lists only active apps', async () => {
     const { sut, connect } = setup();
     const { auth, tokens } = await connect();
