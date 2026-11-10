@@ -9,7 +9,7 @@
 //   design   the same as still (ImageMagick behind libvips today)           strict | lenient
 //   raw      renderRawWithLibRaw, then a full 16-bit decode of its TIFF     libraw
 //   video    MediaRepository.probe, then ffmpeg decodes the first frame     ffmpeg
-//   font     libvips text with the font file (no server entry point yet)    specimen
+//   font     facts read, then the specimen picture set in the font file    specimen
 //
 // `integrity` is MediaIntegrityService.validate({ deep: true }) said in the product's words:
 //   healthy | cut-short (service: corrupt) | unsupported | couldnt-check (transient, timeout)
@@ -21,9 +21,10 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -50,6 +51,8 @@ const { StorageRepository } = await load('repositories/storage.repository.js');
 const { CryptoRepository } = await load('repositories/crypto.repository.js');
 const { MediaIntegrityService } = await load('services/media-integrity.service.js');
 const { renderRawWithLibRaw } = await load('utils/raw-renderer.js');
+const { readFontFacts } = await load('utils/font-file.js');
+const { SharpOperations } = await load('queue/sharp-operations.js');
 
 const logger = LoggingRepository.create();
 const media = new MediaRepository(logger);
@@ -106,11 +109,19 @@ const decoders = {
     return { rung: 'ffmpeg', width: stream.width, height: stream.height, codec: stream.codecName };
   },
   async font(file) {
-    // ponytail: proves libvips can open the font file; swap for the specimen renderer when FL-1359 adds it.
-    const { info } = await sharp({ text: { text: 'Aa', fontfile: file, dpi: 144 } })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    assert.ok(info.width > 0 && info.height > 0);
+    // FL-1359: the product's own path. The facts are read, then the specimen is set in the font file.
+    const { facts, sample } = readFontFacts(readFileSync(file), basename(file));
+    const folder = mkdtempSync(join(tmpdir(), 'font-specimen-'));
+    try {
+      const output = join(folder, 'preview.jpeg');
+      await new SharpOperations().renderFontSpecimen(file, { family: facts.family, text: sample }, [
+        { path: output, size: 1440, format: 'jpeg', quality: 80 },
+      ]);
+      const { width, height } = await sharp(output).metadata();
+      assert.deepEqual([width, height], [1440, 1080]);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
     return { rung: 'specimen' };
   },
 };
