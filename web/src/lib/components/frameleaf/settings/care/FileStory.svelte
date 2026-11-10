@@ -28,6 +28,7 @@
     offersRepair,
     problemKind,
     storyWords,
+    type ProblemKind,
   } from '$lib/frameleaf/file-steps';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -322,6 +323,8 @@
     }
   };
 
+  /** The kinds the Needs you list holds: only these have anything left for Try again to try. */
+  const NEEDS_YOU_KINDS: ReadonlySet<ProblemKind> = new Set(['missing', 'unrepairable', 'unchecked']);
   type Action = { id: string; label: string; primary?: boolean; run: () => unknown };
   const closeSheet = () => (open = false);
   /** The sheet's buttons by how the fixes left the file, left to right, the primary one last (design §7). */
@@ -333,7 +336,7 @@
     if (!own) {
       // another account's file: an administrator may only ask Frameleaf to try again, and only while it needs
       // someone; a fixed or kept one has nothing left to try
-      const needing = kind === 'missing' || kind === 'unrepairable' || kind === 'unchecked';
+      const needing = !!kind && NEEDS_YOU_KINDS.has(kind);
       return isAdmin && needing
         ? [{ id: 'again', label: $t('frameleaf_files_try_again'), run: tryAgain }, done]
         : [done];
