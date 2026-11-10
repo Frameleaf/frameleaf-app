@@ -70,8 +70,11 @@ source. Manager's TrueNAS installer is a Custom App, not a catalog listing.
    `catalog-source.json` and `SHA256SUMS`) and commits them. The Manager template
    and listing copy come from the Manager release's commit; the manual Server and
    ML templates come from `build.cjs` at the Frameleaf release's commit. Run it by
-   hand to publish at once. Listing changes on `main` reach Community Apps with the
-   next release. Screenshots in `images/` are updated by hand.
+   hand to publish at once. Listing copy and the Manager template on `main` reach
+   Community Apps with the next Manager release; Server and ML template changes
+   reach it with the next Frameleaf release. An application release alone keeps
+   the listing copy from the unchanged Manager release. Screenshots in `images/`
+   are updated by hand.
 2. Check the published raw TemplateURL, icon, support and WebUI links. The public
    repository needs its root OSI license, `ca_profile.xml` and rendered XML files.
    Publish `.xml`, never the `.xml.in` source templates.
