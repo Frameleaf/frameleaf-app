@@ -598,6 +598,12 @@ describe(SharedLinkService.name, () => {
       password: link.password,
       user: factory.auth({ user: { id: link.userId } }).user,
     });
+    /** A link as the list loads it, with its real count (the list's own cover is not used here). */
+    const listedWithCount = (link: ReturnType<typeof singlePhoto>) => ({
+      ...link,
+      assetCount: link.assets.length,
+      coverAssets: [],
+    });
     const lease = { path: '/clean/preview.jpg', release: vi.fn() };
     const serve = (link: ReturnType<typeof singlePhoto>) => {
       mocks.sharedLink.getBySlug.mockResolvedValue(found(link) as never);
@@ -623,7 +629,7 @@ describe(SharedLinkService.name, () => {
         getForSharedLink(SharedLinkFactory.from().asset({}, withExif).asset({}, withExif).build()),
         getForSharedLink(SharedLinkFactory.from({ type: SharedLinkType.Album }).album().build()),
       ];
-      mocks.sharedLink.getAll.mockResolvedValue([eligible, byKey, ...ineligible]);
+      mocks.sharedLink.getAll.mockResolvedValue([eligible, byKey, ...ineligible].map((link) => listedWithCount(link)));
 
       const [first, second, ...rest] = await sut.getAll(authStub.user1, {});
 
@@ -633,7 +639,7 @@ describe(SharedLinkService.name, () => {
     });
 
     it('gives a path from the server root when no external domain is set', async () => {
-      mocks.sharedLink.getAll.mockResolvedValue([singlePhoto({ slug: 'summer trip/2026' })]);
+      mocks.sharedLink.getAll.mockResolvedValue([listedWithCount(singlePhoto({ slug: 'summer trip/2026' }))]);
       const [link] = await sut.getAll(authStub.user1, {});
       expect(link.directUrl).toBe('/api/shared-links/direct/summer%20trip%2F2026.jpg');
     });
