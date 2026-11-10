@@ -8,8 +8,14 @@ import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { WorkflowExecutionService, getAutomaticRetryExecutionId } from 'src/services/workflow-execution.service.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
+import { sendWebhook } from 'src/utils/public-fetch.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+vitest.mock('src/utils/public-fetch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('src/utils/public-fetch.js')>();
+  return { ...actual, sendWebhook: vitest.fn(actual.sendWebhook) };
+});
 
 describe(WorkflowExecutionService.name, () => {
   let sut: WorkflowExecutionService;
@@ -1412,17 +1418,28 @@ describe('Frameleaf events (FL-819)', () => {
       return JSON.parse(store.mock.calls.at(-1)![0]);
     };
 
-    it('signs the timestamp and exact body with the stored secret, which is never sent', async () => {
-      const fetchMock = vitest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
+    it('signs the timestamp, delivery id and exact body, and sends it under the event rules', async () => {
+      const sendMock = vitest.mocked(sendWebhook).mockResolvedValueOnce({ ok: true, status: 200, body: 'ok' });
+      (sut as unknown as { getConfig: () => Promise<unknown> }).getConfig = vitest
+        .fn()
+        .mockResolvedValue({ server: { automationsLocalNetwork: false } });
       const body = '{"type":"AssetV1"}';
       expect(
-        await send({ allowedHosts: ['*'] }, { method: 'POST', body, signingSecret: 'shh-secret', headers: { a: 'b' } }),
+        await send(
+          { allowedHosts: ['*'], deliveryId: 'run-1:0:step-1' },
+          { method: 'POST', body, signingSecret: 'shh-secret', headers: { a: 'b', 'X-Frameleaf-Signature': 'forged' } },
+        ),
       ).toMatchObject({ success: true });
-      const headers = fetchMock.mock.calls[0]![1]!.headers as Headers;
-      const timestamp = headers.get('x-frameleaf-timestamp')!;
-      const expected = createHmac('sha256', 'shh-secret').update(`${timestamp}.${body}`).digest('hex');
-      expect(headers.get('x-frameleaf-signature')).toBe(`sha256=${expected}`);
-      expect(JSON.stringify(fetchMock.mock.calls[0])).not.toContain('shh-secret');
+      const [address, message, rules] = sendMock.mock.calls[0]!;
+      expect(address).toBe('https://hooks.example.test/x');
+      // a signed asset message is never sent over plain http to a private address or redirected
+      expect(rules).toEqual({ allowHomeNetwork: false });
+      const timestamp = message.headers.get('x-frameleaf-timestamp')!;
+      expect(message.headers.get('x-frameleaf-delivery')).toBe('run-1:0:step-1');
+      const expected = createHmac('sha256', 'shh-secret').update(`${timestamp}.run-1:0:step-1.${body}`).digest('hex');
+      expect(message.headers.get('x-frameleaf-signature')).toBe(`sha256=${expected}`);
+      expect(message.headers.get('a')).toBe('b');
+      expect(JSON.stringify([...message.headers.entries()])).not.toContain('shh-secret');
     });
 
     it('refuses a private address for an event unless the administrator allows the home network', async () => {

@@ -164,16 +164,21 @@ export const fetchPublic = async (
  * Loopback, link-local (where cloud metadata services answer) and other reserved addresses stay out
  * of reach even then.
  */
-const homeNetwork = new BlockList();
-for (const [network, prefix] of [
-  ['10.0.0.0', 8],
-  ['100.64.0.0', 10],
-  ['172.16.0.0', 12],
-  ['192.168.0.0', 16],
-] as const) {
-  homeNetwork.addSubnet(network, prefix, 'ipv4');
-}
-homeNetwork.addSubnet('fc00::', 7, 'ipv6');
+const subnets = (ranges: ReadonlyArray<readonly [string, number, 'ipv4' | 'ipv6']>) => {
+  const list = new BlockList();
+  for (const [network, prefix, family] of ranges) {
+    list.addSubnet(network, prefix, family);
+  }
+  return list;
+};
+
+const homeNetwork = subnets([
+  ['10.0.0.0', 8, 'ipv4'],
+  ['100.64.0.0', 10, 'ipv4'],
+  ['172.16.0.0', 12, 'ipv4'],
+  ['192.168.0.0', 16, 'ipv4'],
+  ['fc00::', 7, 'ipv6'],
+]);
 
 /** `::ffff:a.b.c.d` (either spelling) as `a.b.c.d`; any other address as it is. */
 const unmapped = (address: string): string => {
@@ -190,9 +195,10 @@ const unmapped = (address: string): string => {
 };
 
 /** Cloud metadata services that sit inside private ranges (Alibaba, AWS over IPv6): never reachable. */
-const metadataAddresses = new BlockList();
-metadataAddresses.addAddress('100.100.100.200', 'ipv4');
-metadataAddresses.addAddress('fd00:ec2::254', 'ipv6');
+const metadataAddresses = subnets([
+  ['100.100.100.200', 32, 'ipv4'],
+  ['fd00:ec2::254', 128, 'ipv6'],
+]);
 
 /** Whether an automation may send to `address`: anywhere public, a home address only when allowed. */
 export const isWebhookAddressAllowed = (address: string, allowHomeNetwork: boolean): boolean => {
@@ -303,8 +309,8 @@ export const sendWebhook = async (
     return { ok: false, status: response.status, body: '' };
   }
   const chunks: Buffer[] = [];
-  let size = 0;
   if (response.body) {
+    let size = 0;
     for await (const chunk of response.body) {
       size += chunk.byteLength;
       if (size > WEBHOOK_RESPONSE_BYTES) {

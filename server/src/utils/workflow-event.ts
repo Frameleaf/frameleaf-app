@@ -92,6 +92,9 @@ export const eventRunIds = (workflowId: string, deliveryId: string) => ({
   executionId: derivedId('workflow-event-execution', workflowId, deliveryId),
 });
 
-/** Signs `${timestamp}.${body}`, the way a receiver checks a delivery (`X-Frameleaf-Signature`). */
-export const signEventBody = (secret: string, timestamp: string, body: string) =>
-  `sha256=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`;
+/**
+ * Signs `${timestamp}.${deliveryId}.${body}` (`X-Frameleaf-Signature`), so a receiver can check the
+ * message, when it was sent and which delivery it is; a replay cannot change any of them.
+ */
+export const signEventBody = (secret: string, timestamp: string, deliveryId: string, body: string) =>
+  `sha256=${createHmac('sha256', secret).update(`${timestamp}.${deliveryId}.${body}`).digest('hex')}`;

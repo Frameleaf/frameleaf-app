@@ -1941,7 +1941,7 @@ describe(CloudMlJobService.name, () => {
         expect.objectContaining({ acknowledged: true }),
       );
       // FL-819: workflows hear what kind of job finished, never which photo (gated on it instead)
-      const [[dispatch]] = mocks.job.queue.mock.calls.filter(([item]) => item.name === JobName.WorkflowEventDispatch);
+      const [dispatch] = mocks.job.queue.mock.calls.find(([item]) => item.name === JobName.WorkflowEventDispatch)!;
       expect(dispatch).toEqual({
         name: JobName.WorkflowEventDispatch,
         data: {

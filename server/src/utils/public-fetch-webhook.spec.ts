@@ -38,6 +38,7 @@ describe('sendWebhook', () => {
   });
 
   it.each([
+    // eslint-disable-next-line unicorn/prefer-https -- plain http is what is being refused
     ['http://example.com/hook', false],
     ['https://user:pass@example.com/hook', false],
     ['https://192.168.1.20/hook', false],

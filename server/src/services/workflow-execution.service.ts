@@ -92,6 +92,8 @@ type HostContext = {
    * occurrence, so a receiver can ignore a second delivery of it.
    */
   event?: { deliveryId: string; allowHomeNetwork: boolean };
+  /** Names this run's messages (`X-Frameleaf-Delivery`); signed with them when the step has a secret. */
+  deliveryId?: string;
 };
 
 type HttpRequestOptions = {
@@ -348,30 +350,29 @@ export class WorkflowExecutionService extends BaseService {
       );
       let url = new URL(args[0]);
       const { signingSecret, ...request } = args[1] ?? {};
-      const headers = new Headers(request.headers);
-      for (const name of [...headers.keys()]) {
-        if (name.startsWith('x-frameleaf-')) {
-          headers.delete(name);
-        }
-      }
-      if (context.event) {
-        headers.set('X-Frameleaf-Delivery', context.event.deliveryId);
+      // the X-Frameleaf-* headers are this server's own; a step cannot set them
+      const headers = new Headers(
+        Object.entries(request.headers ?? {}).filter(([name]) => !name.toLowerCase().startsWith('x-frameleaf-')),
+      );
+      const deliveryId = context.event?.deliveryId ?? context.deliveryId ?? crypto.randomUUID();
+      if (context.event || signingSecret) {
+        headers.set('X-Frameleaf-Delivery', deliveryId);
       }
       if (signingSecret) {
-        // FL-819: the receiver recomputes this over the timestamp and the exact body it received
+        // FL-819: the receiver recomputes this over the timestamp, the delivery id and the exact body
         const timestamp = Math.floor(Date.now() / 1000).toString();
         headers.set('X-Frameleaf-Timestamp', timestamp);
-        headers.set('X-Frameleaf-Signature', signEventBody(signingSecret, timestamp, request.body ?? ''));
+        headers.set('X-Frameleaf-Signature', signEventBody(signingSecret, timestamp, deliveryId, request.body ?? ''));
       }
-      if (context.event) {
+      // an event, and any signed message, goes out under the event rules: https only (home addresses only
+      // when the administrator allows them), never redirected, so a signature reaches only its address
+      if (context.event || signingSecret) {
         if (allowedHosts.every((pattern) => !pattern.test(url.hostname))) {
           throw new Error('Hostname did not match any listed in methods[].allowedHosts in the plugin manifest');
         }
-        return sendWebhook(
-          url.href,
-          { method: request.method, headers, body: request.body },
-          { allowHomeNetwork: context.event.allowHomeNetwork },
-        );
+        const allowHomeNetwork =
+          context.event?.allowHomeNetwork ?? (await this.getConfig({ withCache: true })).server.automationsLocalNetwork;
+        return sendWebhook(url.href, { method: request.method, headers, body: request.body }, { allowHomeNetwork });
       }
       const options: RequestInit = { ...request, headers, redirect: 'manual' };
 
@@ -1222,6 +1223,7 @@ export class WorkflowExecutionService extends BaseService {
         const context: HostContext = {
           allowedHosts: step.allowedHosts,
           causation: workflowCausation.getStore(),
+          deliveryId: `${runId}:${attempt}:${step.id}`,
         };
 
         if (step.methodName.startsWith('noop')) {

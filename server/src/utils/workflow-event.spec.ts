@@ -2,13 +2,12 @@ import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { eventRunIds, isFrameleafEventTrigger, signEventBody, toEventPayload } from 'src/utils/workflow-event.js';
 
 describe('Frameleaf events (FL-819)', () => {
-  it('signs the timestamp and body as HMAC-SHA256 (known vector)', () => {
-    expect(signEventBody('my-secret', '1700000000', '{"event":"cloud.backup.failed"}')).toBe(
-      'sha256=a7c8f58a2ed23ca10051f5c824003a8445bce7114f4ccb22b65e69ab010a00ba',
+  it('signs the timestamp, delivery id and body as HMAC-SHA256 (known vector)', () => {
+    const vector = 'sha256=9cd2af4efc0ad7feb339dc6ab001fc96bc4253d5ebd2dd7a9206a5b31a99b4c6';
+    expect(signEventBody('my-secret', '1700000000', 'cloud-backup:run-1:failed', '{"event":"cloud.backup.failed"}')).toBe(
+      vector,
     );
-    expect(signEventBody('my-secret', '1700000000', '{"event":"cloud.backup.completed"}')).not.toBe(
-      'sha256=a7c8f58a2ed23ca10051f5c824003a8445bce7114f4ccb22b65e69ab010a00ba',
-    );
+    expect(signEventBody('my-secret', '1700000000', 'another', '{"event":"cloud.backup.failed"}')).not.toBe(vector);
   });
 
   it('sends only the listed detail fields and never the photos the event is about', () => {
