@@ -40,10 +40,11 @@ const trustedProxiesSchema = z
   .pipe(z.union([z.undefined(), IsIPRange({ requireCIDR: false })]));
 
 // EnvSchema keys are also a recovery API enum that existing native apps decode strictly.
+const emptyMetricsValue = (value: unknown) => (value === '' ? undefined : value);
 export const MetricsEnvSchema = z.object({
-  FRAMELEAF_METRICS_ENABLED: stringBool.optional(),
-  FRAMELEAF_METRICS_PORT: z.coerce.number().int().min(1).max(65_534).optional(),
-  FRAMELEAF_METRICS_TOKEN: z.string().min(1).max(1024).optional(),
+  FRAMELEAF_METRICS_ENABLED: z.preprocess(emptyMetricsValue, stringBool.optional()),
+  FRAMELEAF_METRICS_PORT: z.preprocess(emptyMetricsValue, z.coerce.number().int().min(1).max(65_534).optional()),
+  FRAMELEAF_METRICS_TOKEN: z.preprocess(emptyMetricsValue, z.string().min(1).max(1024).optional()),
 });
 
 /**

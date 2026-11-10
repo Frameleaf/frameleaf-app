@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.formparsers import MultiPartParser
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
@@ -361,20 +361,29 @@ _INFERENCE_ROUTES = {
 }
 
 
-class InferenceMetricsMiddleware(BaseHTTPMiddleware):
+class InferenceMetricsMiddleware:
     def __init__(self, app: ASGIApp, metrics: InferenceMetrics) -> None:
-        super().__init__(app)
+        self.app = app
         self.metrics = metrics
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        task = _INFERENCE_ROUTES.get(request.url.path)
-        if request.method != "POST" or task is None:
-            return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        task = _INFERENCE_ROUTES.get(scope["path"]) if scope["type"] == "http" and scope["method"] == "POST" else None
+        if task is None:
+            await self.app(scope, receive, send)
+            return
+        status = 200
+
+        async def observe(message: Message) -> None:
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            await send(message)
+
+        # ASGI returns after the last streaming chunk, not when the headers are sent.
         with self.metrics.request(task.value):
-            response = await call_next(request)
-            if response.status_code >= 400:
+            await self.app(scope, receive, observe)
+            if status >= 400:
                 self.metrics.request_errors.labels(task=task.value).inc()
-            return response
 
 
 if inference_metrics is not None:

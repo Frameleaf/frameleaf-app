@@ -38,3 +38,34 @@ def test_http_metrics_respect_opt_in_and_reject_proxy_headers(monkeypatch):
         response = client.get("/metrics")
         assert response.status_code == 200
         assert 'frameleaf_ml_request_duration_seconds_count{task="clip"} 1.0' in response.text
+
+
+def test_long_model_duration_has_finite_buckets():
+    metrics = InferenceMetrics()
+    metrics.inference_duration.labels("transcribe", "other", "CPUExecutionProvider").observe(75)
+    body, _ = metrics.scrape()
+    assert b'le="60.0",model="other",provider="CPUExecutionProvider",task="transcribe"} 0.0' in body
+    assert b'le="120.0",model="other",provider="CPUExecutionProvider",task="transcribe"} 1.0' in body
+
+
+@pytest.mark.asyncio
+async def test_stream_request_duration_waits_for_the_last_body_chunk():
+    metrics = InferenceMetrics()
+    count = "frameleaf_ml_request_duration_seconds_count"
+
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"chunk", "more_body": True})
+        assert metrics.registry.get_sample_value(count, {"task": "transcribe"}) == 0
+        await send({"type": "http.response.body", "body": b"end", "more_body": False})
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        pass
+
+    await main.InferenceMetricsMiddleware(app, metrics)(
+        {"type": "http", "path": "/transcribe", "method": "POST"}, receive, send
+    )
+    assert metrics.registry.get_sample_value(count, {"task": "transcribe"}) == 1

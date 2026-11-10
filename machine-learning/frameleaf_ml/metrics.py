@@ -28,6 +28,10 @@ def private_scraper(host: str | None) -> bool:
     return address.is_loopback or (address.is_private and not address.is_unspecified and not address.is_link_local)
 
 
+# The same worker handles short embeddings and long audio and video jobs.
+_DURATION_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 900, 1800)
+
+
 class InferenceMetrics:
     def __init__(self) -> None:
         self.registry = CollectorRegistry()
@@ -36,6 +40,7 @@ class InferenceMetrics:
             "Inference request duration by task",
             ("task",),
             registry=self.registry,
+            buckets=_DURATION_BUCKETS,
         )
         self.request_errors = Counter(
             "frameleaf_ml_request_errors_total",
@@ -48,6 +53,7 @@ class InferenceMetrics:
             "Model prediction duration by task, model and preferred execution provider",
             ("task", "model", "provider"),
             registry=self.registry,
+            buckets=_DURATION_BUCKETS,
         )
 
     @contextmanager

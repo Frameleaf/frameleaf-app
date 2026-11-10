@@ -3,10 +3,22 @@ import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { JobName } from 'src/enum.js';
 import { MetricsRepository } from 'src/repositories/metrics.repository.js';
+import { MetricsEnvSchema } from 'src/utils/environment-schema.js';
 
 describe(MetricsRepository.name, () => {
   const metrics = new MetricsRepository();
   afterEach(() => metrics.close());
+
+  it('treats empty Compose substitutions as unset and still rejects invalid nonempty values', () => {
+    const values = { FRAMELEAF_METRICS_ENABLED: '', FRAMELEAF_METRICS_PORT: '', FRAMELEAF_METRICS_TOKEN: '' };
+    expect(MetricsEnvSchema.parse(values)).toEqual({
+      FRAMELEAF_METRICS_ENABLED: undefined,
+      FRAMELEAF_METRICS_PORT: undefined,
+      FRAMELEAF_METRICS_TOKEN: undefined,
+    });
+    expect(MetricsEnvSchema.safeParse({ ...values, FRAMELEAF_METRICS_PORT: '65535' }).success).toBe(false);
+    expect(MetricsEnvSchema.safeParse({ ...values, FRAMELEAF_METRICS_ENABLED: 'maybe' }).success).toBe(false);
+  });
 
   it('scrapes only the private listener, with a bearer token when configured', async () => {
     const url = await metrics.listen(0, '127.0.0.1', 'scrape-token');
