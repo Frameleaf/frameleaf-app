@@ -3,6 +3,7 @@ import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
 import { isImportRunKind, isRunSettled, runStateKey, settledItems } from '$lib/frameleaf/durable-runs';
 import { JOB_QUEUES } from '$lib/frameleaf/job-queues';
+import { WORK_FEATURES, type WorkFeature } from '$lib/frameleaf/work-features';
 
 /**
  * Activity's "Background work" cards (SHARING-P1; prototype Activity.jsx `BackgroundRow` and
@@ -39,6 +40,9 @@ export type BackgroundWorkCard = {
   running: number;
   /** 0–100 while running, when the server counts a total; otherwise null. */
   progress: number | null;
+  /** Items finished and in all, when the server counts them; null when it does not. */
+  done: number | null;
+  total: number | null;
   /**
    * FL-711: quiet hours saved this work for the overnight window, and when it starts again by itself
    * (null when the schedule never starts). Absent for work nothing is holding back for the night.
@@ -140,6 +144,8 @@ const fromQueue = (queue: DurableQueueRun): BackgroundWorkCard | null => {
     waiting,
     running,
     progress: stage === 'running' && !queue.unavailable ? percent(Math.min(queue.processed, total), total) : null,
+    done: queue.unavailable ? null : Math.min(queue.processed, total),
+    total: queue.unavailable ? null : total,
     ...(tonight && { tonight: { startsAt: queue.resumesAt ?? null } }),
   };
 };
@@ -164,6 +170,8 @@ const fromImportRun = (run: DurableJobRun): BackgroundWorkCard | null => {
     waiting: held,
     running: 0,
     progress: null,
+    done: null,
+    total: null,
   };
 };
 
@@ -189,6 +197,8 @@ const fromRun = (run: DurableJobRun): BackgroundWorkCard | null => {
     waiting,
     running,
     progress: stage === 'running' && run.enumerationDone ? percent(settledItems(run), run.total) : null,
+    done: run.enumerationDone ? settledItems(run) : null,
+    total: run.enumerationDone ? run.total : null,
   };
 };
 
@@ -244,8 +254,134 @@ export const buildBackgroundWorkCards = (summary: DurableRunningJobs | null | un
         waiting: existing.waiting + card.waiting,
         running: existing.running + card.running,
         progress: stage === 'running' && totals.enumerated ? percent(totals.settled, totals.total) : null,
+        done: totals.enumerated ? totals.settled : null,
+        total: totals.enumerated ? totals.total : null,
       });
     }
   }
   return [...byKind.values()].sort((a, b) => order(a.queueName) - order(b.queueName));
+};
+
+/**
+ * Activity's In progress, by feature (UI review 2026-11-10, A1; prototype `ActivityWorkV3.jsx` "By feature").
+ *
+ * People see the eight features of Settings › Background work ("Faces & identity"), never the server's own
+ * kinds of work: each row adds up the cards of its feature's tasks. The prototype's other view, "By what came
+ * in", is not built: the server keeps no record of what a batch came in as (FL-1388 says what is missing).
+ */
+export type WorkFeatureState = 'stuck' | 'running' | 'waiting' | 'tonight' | 'paused' | 'idle';
+
+export type WorkFeatureRow = {
+  feature: WorkFeature;
+  /** The most telling state of its tasks: stuck, then running, waiting, saved for tonight, paused. */
+  state: WorkFeatureState;
+  /** What a stuck or waiting feature says when the server knows more than "waiting". */
+  statusKey: Translations | null;
+  /** Items finished and in all across its counted tasks; null when none is counted. */
+  done: number | null;
+  total: number | null;
+  /** Items still running or waiting. */
+  left: number;
+  /** FL-711: when quiet hours start its saved work again (the earliest of its tasks). */
+  tonight?: { startsAt: string | null };
+};
+
+const featureOfCard = (card: BackgroundWorkCard) =>
+  WORK_FEATURES.find((feature) => feature.queues.includes(card.queueName));
+
+/**
+ * Work that is no feature's task: a run with no task of its own (FL-1177: a Manager import; a folder scan).
+ * It keeps its own row and name under the features.
+ */
+export const otherWorkCards = (cards: readonly BackgroundWorkCard[]) => cards.filter((card) => !featureOfCard(card));
+
+/** One row per feature, in the order people meet them; a feature with nothing to do is idle. */
+export const buildWorkFeatureRows = (cards: readonly BackgroundWorkCard[]): WorkFeatureRow[] =>
+  WORK_FEATURES.map((feature) => {
+    const own = cards.filter((card) => featureOfCard(card)?.id === feature.id);
+    if (own.length === 0) {
+      return { feature, state: 'idle', statusKey: null, done: null, total: null, left: 0 };
+    }
+    const stuck = own.find((card) => card.stuck);
+    const queued = own.filter((card) => card.stage === 'queued');
+    const waiting = queued.filter((card) => !card.tonight);
+    const state: WorkFeatureState = stuck
+      ? 'stuck'
+      : own.some((card) => card.stage === 'running')
+        ? 'running'
+        : waiting.length > 0
+          ? 'waiting'
+          : queued.length > 0
+            ? 'tonight'
+            : 'paused';
+    // A waiting task that says more than "queued": retrying, scheduled, waiting for another step.
+    const says =
+      stuck ??
+      (state === 'waiting' ? waiting.find((card) => card.statusKey !== ACTIVITY_STAGE_KEYS.queued) : undefined);
+    const counted = own.filter((card) => card.total !== null);
+    const starts = queued.flatMap((card) => (card.tonight?.startsAt ? [card.tonight.startsAt] : [])).sort();
+    return {
+      feature,
+      state,
+      statusKey: says?.statusKey ?? null,
+      done: counted.length > 0 ? counted.reduce((sum, card) => sum + (card.done ?? 0), 0) : null,
+      total: counted.length > 0 ? counted.reduce((sum, card) => sum + (card.total ?? 0), 0) : null,
+      left: own.reduce((sum, card) => sum + card.waiting + card.running, 0),
+      ...(state === 'tonight' && { tonight: { startsAt: starts[0] ?? null } }),
+    };
+  });
+
+/** What Activity's first line says, most urgent first (prototype `summaryFor`). */
+export type ActivityWorkStatus = 'paused' | 'attention' | 'working' | 'unread' | 'tonight' | 'jobs' | 'idle';
+
+export const activityWorkStatus = ({
+  rows,
+  needsLook,
+  jobs,
+}: {
+  rows: readonly WorkFeatureRow[];
+  /** Jobs that failed. */
+  needsLook: number;
+  /** The viewer's own jobs in progress, and cloud backups or restores. */
+  jobs: number;
+}): ActivityWorkStatus => {
+  const busy = rows.filter((row) => row.state !== 'idle');
+  if (busy.length > 0 && busy.every((row) => row.state === 'paused')) {
+    return 'paused';
+  }
+  if (needsLook > 0) {
+    return 'attention';
+  }
+  const moving = busy.filter((row) => row.state !== 'paused' && row.state !== 'tonight');
+  if (moving.some((row) => row.left > 0)) {
+    return 'working';
+  }
+  // Only work whose counts the server could not read: never "up to date", and never "0 items".
+  if (moving.length > 0) {
+    return 'unread';
+  }
+  if (busy.some((row) => row.state === 'tonight')) {
+    return 'tonight';
+  }
+  return jobs > 0 ? 'jobs' : 'idle';
+};
+
+/**
+ * About how long the moving work will take, at the pace each task has kept since it started. Tasks run side by
+ * side, so the slowest one is the answer. Null when a moving task has not finished an item yet (a guess is not
+ * an estimate); paused work and work saved for tonight is not moving and is left out.
+ */
+export const workEtaSeconds = (summary: DurableRunningJobs | null | undefined, now: number = Date.now()) => {
+  const moving = (summary?.canManageQueues ? summary.queues : []).filter(
+    (queue) => !queue.unavailable && !queue.isPaused && !queue.heldForNight && queue.active + queue.waiting > 0,
+  );
+  let slowest = 0;
+  for (const queue of moving) {
+    const elapsed = (now - (queue.startedAt ? Date.parse(queue.startedAt) : NaN)) / 1000;
+    if (!(queue.processed > 0) || !(elapsed > 0)) {
+      return null;
+    }
+    slowest = Math.max(slowest, (elapsed * (queue.active + queue.waiting)) / queue.processed);
+  }
+  return moving.length > 0 ? Math.ceil(slowest) : null;
 };

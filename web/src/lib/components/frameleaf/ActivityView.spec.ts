@@ -260,7 +260,7 @@ describe('Frameleaf Activity page', () => {
 
   it('shows a job queued elsewhere as soon as the server says it changed (FL-43)', async () => {
     await mount([]);
-    await screen.findByRole('heading', { name: 'Nothing in progress' });
+    await screen.findByRole('heading', { name: 'Everything is up to date' });
 
     sdkMock.searchMediaOperations.mockResolvedValue({
       items: [
@@ -344,7 +344,7 @@ describe('Frameleaf Activity page', () => {
   });
 
   it('draws the prototype job card: status chip, progress bar and status line (FL-43)', async () => {
-    const { container } = await mount([operation()]);
+    await mount([operation()]);
 
     const heading = await screen.findByRole('heading', { name: 'Summer in the Rockies' });
     const card = heading.closest('article');
@@ -355,8 +355,8 @@ describe('Frameleaf Activity page', () => {
     // A legacy Studio worker supplies counted percent, but no measured frame rate or render ETA.
     expect(card?.querySelector(':scope .fla-status')?.textContent?.trim()).toBe('Rendering · 42%');
     expect(card?.querySelector(':scope .fla-chip .fla-dot')).not.toBeNull();
-    // The prototype's summary names only what is not zero.
-    expect(container.querySelector('.fla-summary')?.textContent).toBe('1 running');
+    // FL-1388: the page opens on one sentence about how the work is going.
+    expect(screen.getByRole('heading', { name: '1 job in progress' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^in progress/i }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: /^all/i }).getAttribute('aria-pressed')).toBe('true');
   });
@@ -377,8 +377,8 @@ describe('Frameleaf Activity page', () => {
     expect(card.querySelector(':scope .fla-thumb svg')).not.toBeNull();
   });
 
-  it('shows a finished result by thumbnail and clears it with a labelled icon button', async () => {
-    await mount([
+  it('shows a finished job as one line, with its result to open (FL-1388)', async () => {
+    const { container } = await mount([
       operation({
         status: MediaOperationStatus.Completed,
         progress: 100,
@@ -387,39 +387,100 @@ describe('Frameleaf Activity page', () => {
       }),
     ]);
 
-    const heading = await screen.findByRole('heading', { name: 'Summer in the Rockies' });
-    const card = heading.closest('article')!;
-    // The SDK is mocked here, so only the presence of the result's picture is asserted.
-    expect(card.querySelector(':scope .fla-thumb img')).not.toBeNull();
-    expect(screen.getByRole('button', { name: /open result/i })).toBeInTheDocument();
-    const clear = screen.getByRole('button', { name: /summer in the rockies/i });
-    expect(clear.textContent?.trim()).toBe('');
+    const finished = await screen.findByRole('region', { name: 'Finished' });
+    const [line] = within(finished).getAllByRole('listitem');
+    expect(within(line).getByText('Summer in the Rockies')).toBeInTheDocument();
+    // Cloud work is never implicit, and the result says more than "Done".
+    expect(within(line).getByText('Export · Frameleaf Cloud · 3840×2160 · Done in 20 minutes')).toBeInTheDocument();
+    expect(line.querySelector('time')?.getAttribute('datetime')).toBe('2026-09-22T10:10:00.000Z');
+    // A line, not a card: no picture, no bar, no chip, no clear button of its own.
+    expect(container.querySelector('article')).toBeNull();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+
+    await fireEvent.click(within(line).getByRole('button', { name: /open the result of “summer in the rockies”/i }));
+    expect(goto).toHaveBeenCalledWith(expect.stringContaining('0195e2a0-0000-7000-8000-0000000000bb'));
   });
 
-  it('says nothing is processing when there are no tasks', async () => {
+  it('puts every run of the same job on one line (FL-1388)', async () => {
+    const scans = Array.from({ length: 79 }, (_, index) =>
+      operation({
+        id: `0195e2a0-0000-7000-8000-${String(index).padStart(12, '0')}`,
+        kind: MediaOperationKind.MediaHealth,
+        status: MediaOperationStatus.Completed,
+        destination: MediaOperationDestination.Local,
+        label: 'Scheduled library health scan',
+        settings: {},
+        progress: 100,
+        pausable: false,
+        startedAt: new Date(Date.UTC(2026, 8, 22, 3) - index * 86_400_000).toISOString(),
+        finishedAt: new Date(Date.UTC(2026, 8, 22, 3, 12) - index * 86_400_000).toISOString(),
+      }),
+    );
+    const { container } = await mount(scans);
+
+    const finished = await screen.findByRole('region', { name: 'Finished' });
+    const lines = within(finished).getAllByRole('listitem');
+    expect(lines).toHaveLength(1);
+    expect(within(lines[0]).getByText('Scheduled library health scan')).toBeInTheDocument();
+    expect(within(lines[0]).getByText('Library Care · 79 times')).toBeInTheDocument();
+    // The newest run's time.
+    expect(lines[0].querySelector('time')?.getAttribute('datetime')).toBe('2026-09-22T03:12:00.000Z');
+    expect(container.querySelector('article')).toBeNull();
+    // The Done chip counts lines, as the list shows them.
+    expect(screen.getByRole('button', { name: /^done/i })).toHaveTextContent(/^Done\s*1/);
+    // Clear finished still clears every run.
+    expect(screen.getByRole('button', { name: 'Clear finished' })).toBeInTheDocument();
+  });
+
+  it('keeps a failure as a card under Needs a look, with its reason and Retry (FL-1388)', async () => {
+    await mount([
+      operation({
+        kind: MediaOperationKind.Restoration,
+        status: MediaOperationStatus.Failed,
+        label: 'IMG_4821.MOV',
+        error: 'The file is damaged near the end.',
+        finishedAt: '2026-09-22T10:10:00.000Z',
+      }),
+    ]);
+
+    const section = await screen.findByRole('region', { name: /needs a look/i });
+    const card = within(section).getByRole('article', { name: 'IMG_4821.MOV' });
+    expect(within(card).getByText('The file is damaged near the end.')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '1 thing needs a look' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Finished' })).not.toBeInTheDocument();
+  });
+
+  it('says everything is up to date when there are no tasks', async () => {
     await mount([]);
 
-    // The prototype's words (Activity.jsx).
-    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Nothing in progress' })).toBeInTheDocument());
-    expect(screen.getByText('Nothing running')).toBeInTheDocument();
+    // The prototype's words (work-v3.mjs `summaryFor`).
+    await vi.waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Everything is up to date' })).toBeInTheDocument(),
+    );
+    expect(screen.getByText('Nothing is running.')).toBeInTheDocument();
     const filters = screen.getByRole('group', { name: 'Filter jobs' });
     expect(filters.querySelectorAll('button')).toHaveLength(4);
     expect(screen.getByRole('button', { name: 'Failed' })).toBeInTheDocument();
+    // Nobody who may not pause the server's work is offered it.
+    expect(screen.queryByRole('button', { name: 'Pause all' })).not.toBeInTheDocument();
   });
 
-  it('shows busy server work as one simple card per kind, never with the empty state (SHARING-P1)', async () => {
-    const queue = (name: QueueName, overrides: Partial<QueueRunDto> = {}): QueueRunDto => ({
-      name,
-      isPaused: false,
-      canPause: true,
-      active: 0,
-      waiting: 0,
-      processed: 0,
-      total: 0,
-      startedAt: '2026-10-16T06:21:07.685Z',
-      unavailable: false,
-      ...overrides,
-    });
+  const queue = (name: QueueName, overrides: Partial<QueueRunDto> = {}): QueueRunDto => ({
+    name,
+    isPaused: false,
+    canPause: true,
+    active: 0,
+    waiting: 0,
+    processed: 0,
+    total: 0,
+    startedAt: '2026-10-16T06:21:07.685Z',
+    unavailable: false,
+    ...overrides,
+  });
+  const idle = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
+
+  it('shows busy server work by feature, never by the server’s own names (FL-1388)', async () => {
     sdkMock.getRunningJobs.mockResolvedValue({
       operations: [],
       memoryExports: [],
@@ -427,6 +488,7 @@ describe('Frameleaf Activity page', () => {
       canReadJobRuns: true,
       queues: [
         queue(QueueName.ThumbnailGeneration, { active: 2, waiting: 18, processed: 30, total: 50 }),
+        queue(QueueName.MetadataExtraction, { active: 1, waiting: 9, processed: 40, total: 50 }),
         queue(QueueName.FaceDetection, { isPaused: true, waiting: 52, total: 52 }),
         queue(QueueName.Ocr),
       ],
@@ -435,25 +497,87 @@ describe('Frameleaf Activity page', () => {
     try {
       await mount([]);
 
-      const group = await screen.findByRole('group', { name: /background work/i });
-      const cards = within(group).getAllByRole('link', { name: /open background work/i });
-      // The idle queue makes no card.
-      expect(cards).toHaveLength(2);
-      expect(cards[0]).toHaveAccessibleName(
-        'Thumbnails: Running · 18 waiting · 2 running · 60% · This server. Open Background work.',
+      const section = await screen.findByRole('region', { name: 'In progress' });
+      const rows = within(section).getAllByRole('listitem');
+      // Every feature while any is busy: two tasks of one feature are one row.
+      expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual([
+        'Ready to browse',
+        'Faces & identity',
+        'Visual search',
+        'Text, documents & receipts',
+        'Descriptions & tags',
+        'Transcripts & captions',
+        'Studio export',
+        'Upkeep',
+      ]);
+      expect(within(rows[0]).getByText('70 of 100')).toBeInTheDocument();
+      expect(within(rows[0]).getByRole('progressbar', { name: /ready to browse/i })).toHaveAttribute(
+        'aria-valuenow',
+        '70',
       );
-      expect(cards[1]).toHaveAccessibleName('Face detection: Paused · 52 waiting · This server. Open Background work.');
-      expect(screen.getByText('2 background tasks busy')).toBeInTheDocument();
-      // UI review 2026-10-30 #18: one link to where background work is managed, no "read-only" hint.
-      expect(within(group).getByRole('link', { name: 'Manage background work' })).toHaveAttribute(
+      expect(within(rows[1]).getByText('Paused · 52 left')).toBeInTheDocument();
+      expect(within(rows[3]).getByText('Up to date')).toBeInTheDocument();
+      // The server's names stay under Technical details.
+      expect(within(rows[1]).getByText('Technical details')).toBeInTheDocument();
+      expect(within(rows[1]).getByText(/The server’s tasks: Face detection, /)).toBeInTheDocument();
+      // One sentence at the top, with Pause all and the settings.
+      expect(screen.getByRole('heading', { name: 'Working through 82 items' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Background work settings' })).toHaveAttribute(
         'href',
         expect.stringContaining('area=processing'),
       );
-      expect(screen.queryByText(/read-only/i)).not.toBeInTheDocument();
-      expect(screen.queryByRole('heading', { name: 'Nothing in progress' })).not.toBeInTheDocument();
-      expect(screen.queryByText(/stage|prerequisite/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/stage|prerequisite|queue/i)).not.toBeInTheDocument();
+
+      // Pause all is a request to the server for every task that can pause; the rows wait for its answer.
+      await fireEvent.click(screen.getByRole('button', { name: 'Pause all' }));
+      await vi.waitFor(() =>
+        expect(sdkMock.updateQueue).toHaveBeenCalledWith({
+          name: QueueName.ThumbnailGeneration,
+          queueUpdateDto: { isPaused: true },
+        }),
+      );
+      expect(sdkMock.updateQueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: QueueName.BackgroundTask }));
+      expect(within(rows[0]).getByText('70 of 100')).toBeInTheDocument();
+
+      // A feature's own control resumes just its tasks, once the page is done asking.
+      await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Pause all' })).toBeEnabled());
+      sdkMock.updateQueue.mockClear();
+      await fireEvent.click(within(rows[1]).getByRole('button', { name: 'Resume Faces & identity' }));
+      await vi.waitFor(() =>
+        expect(sdkMock.updateQueue).toHaveBeenCalledWith({
+          name: QueueName.FaceDetection,
+          queueUpdateDto: { isPaused: false },
+        }),
+      );
+      expect(sdkMock.updateQueue).not.toHaveBeenCalledWith(
+        expect.objectContaining({ name: QueueName.ThumbnailGeneration }),
+      );
     } finally {
-      runningJobsSession.summary = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
+      runningJobsSession.summary = idle;
+    }
+  });
+
+  it('says background work is paused, and resumes it, when every busy feature is paused (FL-1388)', async () => {
+    sdkMock.getRunningJobs.mockResolvedValue({
+      operations: [],
+      memoryExports: [],
+      canManageQueues: true,
+      queues: [queue(QueueName.FaceDetection, { isPaused: true, waiting: 52, total: 52 })],
+    });
+    try {
+      await mount([]);
+
+      expect(await screen.findByRole('heading', { name: 'Background work is paused' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Pause all' })).not.toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+      await vi.waitFor(() =>
+        expect(sdkMock.updateQueue).toHaveBeenCalledWith({
+          name: QueueName.FaceDetection,
+          queueUpdateDto: { isPaused: false },
+        }),
+      );
+    } finally {
+      runningJobsSession.summary = idle;
     }
   });
 
@@ -478,15 +602,14 @@ describe('Frameleaf Activity page', () => {
     });
     try {
       await mount([]);
-      const group = await screen.findByRole('group', { name: /background work/i });
-      const [card] = within(group).getAllByRole('link', { name: /open background work/i });
-      expect(card).toHaveAccessibleName(
-        'Library import: Waiting for the file check · 40 waiting · This server. Open Background work.',
-      );
-      expect(card).toHaveAttribute('href', expect.stringContaining('section=queues'));
-      expect(card.getAttribute('href')).not.toContain('immich-import-derived');
+      const section = await screen.findByRole('region', { name: 'In progress' });
+      const row = within(section).getByText('Library import').closest('li')!;
+      const link = within(row).getByRole('link');
+      expect(link).toHaveAccessibleName('Library import: Waiting for the file check · 40 left. Open Background work.');
+      expect(link).toHaveAttribute('href', expect.stringContaining('section=queues'));
+      expect(link.getAttribute('href')).not.toContain('immich-import-derived');
     } finally {
-      runningJobsSession.summary = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
+      runningJobsSession.summary = idle;
     }
   });
 
@@ -535,7 +658,7 @@ describe('Frameleaf Activity page', () => {
     await mount([]);
 
     await vi.waitFor(() => expect(screen.getByText(en.frameleaf_activity_empty_help_own)).toBeInTheDocument());
-    expect(screen.queryByText(en.frameleaf_activity_empty_help)).not.toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_activity_work_quiet)).not.toBeInTheDocument();
   });
 
   it('keeps a cloud backup in the list until the cloud status shows it, and asks for that status again', async () => {

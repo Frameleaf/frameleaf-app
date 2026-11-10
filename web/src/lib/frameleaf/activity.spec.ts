@@ -21,7 +21,9 @@ import {
   activityStatusText,
   activitySettingsDetails,
   buildActivityList,
+  buildFinishedRows,
   formatActivityDuration,
+  formatFinishedTime,
   fromBulkOperation,
   fromDownload,
   fromMediaOperation,
@@ -1027,5 +1029,96 @@ describe('stages and Frameleaf Cloud jobs (FL-162)', () => {
   it('gives every other job a stage too', () => {
     expect(fromMediaOperation(operation()).stage).toBe('running');
     expect(fromMediaOperation(operation({ status: MediaOperationStatus.Failed })).stage).toBe('failed');
+  });
+});
+
+describe('buildFinishedRows (FL-1388)', () => {
+  const scan = (index: number, patch: Partial<MediaOperationDto> = {}) =>
+    operation({
+      id: `0195e2a0-0000-7000-8000-${String(index).padStart(12, '0')}`,
+      kind: MediaOperationKind.MediaHealth,
+      status: MediaOperationStatus.Completed,
+      label: 'Scheduled library health scan',
+      settings: {},
+      progress: 100,
+      startedAt: `2026-09-${String(index).padStart(2, '0')}T03:00:00.000Z`,
+      finishedAt: `2026-09-${String(index).padStart(2, '0')}T03:12:00.000Z`,
+      ...patch,
+    });
+  const rowsOf = (operations: MediaOperationDto[]) => buildFinishedRows(buildActivityList({ operations }));
+
+  it('puts every run of the same job on one line, with the newest run and how many there were', () => {
+    const rows = rowsOf([scan(20), scan(22), scan(21)]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: 'job:0195e2a0-0000-7000-8000-000000000022',
+      count: 3,
+      at: Date.parse('2026-09-22T03:12:00.000Z'),
+    });
+    expect(rows[0].item.title).toBe('Scheduled library health scan');
+  });
+
+  it('keeps jobs of another name, another kind or another ending on their own lines, newest first', () => {
+    const rows = rowsOf([
+      scan(20),
+      scan(21),
+      scan(19, { label: 'Library health scan' }),
+      scan(23, { kind: MediaOperationKind.LibraryScan, label: 'Scheduled library health scan' }),
+      scan(22, { status: MediaOperationStatus.Cancelled }),
+    ]);
+    expect(rows.map(({ item, count }) => [item.kindKey, item.title, item.stage, count])).toEqual([
+      ['frameleaf_activity_kind_library_scan', 'Scheduled library health scan', 'done', 1],
+      ['frameleaf_activity_kind_media_health', 'Scheduled library health scan', 'cancelled', 1],
+      ['frameleaf_activity_kind_media_health', 'Scheduled library health scan', 'done', 2],
+      ['frameleaf_activity_kind_media_health', 'Library health scan', 'done', 1],
+    ]);
+  });
+
+  it('never folds away something of a job’s own: a result, a bundle, a bulk job’s counts, a cost, a warning', () => {
+    const twice = <T>(make: (index: number) => T) => [make(20), make(21)];
+    const bulk = { action: MediaOperationBulkAction.Favorite, requested: 4, succeeded: 4, failed: 0, skipped: 0 };
+    for (const operations of [
+      twice((index) => scan(index, { kind: MediaOperationKind.Restoration, resultAssetId: `asset-${index}` })),
+      twice((index) => scan(index, { kind: MediaOperationKind.StudioBundleExport })),
+      twice((index) => scan(index, { kind: MediaOperationKind.Bulk, bulk } as Partial<MediaOperationDto>)),
+      twice((index) => scan(index, { kind: MediaOperationKind.CloudRestore, encryptedWithOlderKey: 2 })),
+    ]) {
+      expect(rowsOf(operations).map(({ count }) => count)).toEqual([1, 1]);
+    }
+  });
+
+  it('lists only what ended well: failures and work in progress are not lines', () => {
+    const rows = rowsOf([
+      scan(20),
+      scan(21, { status: MediaOperationStatus.Failed, error: 'The drive is not mounted.' }),
+      scan(22, { status: MediaOperationStatus.Rendering, finishedAt: null }),
+      scan(23, { status: MediaOperationStatus.Paused, finishedAt: null }),
+    ]);
+    expect(rows.map(({ id }) => id)).toEqual(['job:0195e2a0-0000-7000-8000-000000000020']);
+  });
+
+  it('times a line by when the run ended, else when it started, and says nothing when neither is known', () => {
+    const [ended] = rowsOf([scan(20)]);
+    expect(ended.at).toBe(Date.parse('2026-09-20T03:12:00.000Z'));
+    const [started] = rowsOf([scan(20, { finishedAt: null })]);
+    expect(started.at).toBe(Date.parse('2026-09-20T03:00:00.000Z'));
+    const [download] = buildFinishedRows([fromDownload('archive', { status: 'ready', progress: 100 } as never)]);
+    expect(download.at).toBeNull();
+  });
+});
+
+describe('formatFinishedTime (FL-1388)', () => {
+  const at = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute).getTime();
+  const now = at(10, 15);
+
+  it('says today and yesterday by the calendar, then the date', () => {
+    expect(formatFinishedTime(at(10, 3, 12), 'en-US', now)).toBe('Today, 3:12 AM');
+    // Yesterday evening is yesterday, however few hours ago.
+    expect(formatFinishedTime(at(9, 20, 46), 'en-US', now)).toBe('Yesterday, 8:46 PM');
+    expect(formatFinishedTime(at(8, 2, 2), 'en-US', now)).toBe('Nov 8, 2:02 AM');
+  });
+
+  it('uses the reader’s language', () => {
+    expect(formatFinishedTime(at(10, 3, 12), 'fr-FR', now)).toMatch(/^Aujourd’hui, 0?3:12$/);
   });
 });

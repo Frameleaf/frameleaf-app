@@ -4,7 +4,7 @@
   import CloudGpuUpgrade from '$lib/components/frameleaf/cloud/CloudGpuUpgrade.svelte';
   import StudioRenderProgress from '$lib/components/frameleaf/StudioRenderProgress.svelte';
   import SpokenWordsActivity from '$lib/components/frameleaf/SpokenWordsActivity.svelte';
-  import BackgroundWorkRows from '$lib/components/frameleaf/BackgroundWorkRows.svelte';
+  import ActivityWorkFeatures from '$lib/components/frameleaf/ActivityWorkFeatures.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import {
@@ -16,21 +16,34 @@
     activityCounts,
     activityStatusText,
     buildActivityList,
+    buildFinishedRows,
     formatActivityDuration,
+    formatFinishedTime,
     isProgressStage,
     isShownAsCloudWork,
     isUnfinishedCloudWork,
     matchesActivityFilter,
     type ActivityFilter,
+    type ActivityFinishedRow,
     type ActivityItem,
   } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
-  import { buildBackgroundWorkCards } from '$lib/frameleaf/background-work';
+  import {
+    activityWorkStatus,
+    buildBackgroundWorkCards,
+    buildWorkFeatureRows,
+    otherWorkCards,
+    tonightLabel,
+    workEtaSeconds,
+  } from '$lib/frameleaf/background-work';
   import { cloudWorkSession } from '$lib/frameleaf/cloud-work-session.svelte';
   import { cloudCostFacts } from '$lib/frameleaf/cloud-jobs';
+  import { JOB_QUEUES, jobQueue } from '$lib/frameleaf/job-queues';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import '$lib/frameleaf/tokens.css';
+  import type { WorkFeature } from '$lib/frameleaf/work-features';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
   import { studioBundleDownloadPath } from '$lib/frameleaf/studio/bundles';
@@ -39,25 +52,29 @@
   import { downloadUrl, getAssetMediaUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, getBaseUrl, getStudioBundleOperation } from '@frameleaf/sdk';
+  import { AssetMediaSize, getBaseUrl, getStudioBundleOperation, updateQueue, type QueueName } from '@frameleaf/sdk';
   import { Icon, Theme, themeManager } from '@frameleaf/ui';
   import {
+    mdiAlertCircleOutline,
     mdiAutoFix,
     mdiCancel,
     mdiCheckAll,
+    mdiCheckCircle,
     mdiCheckCircleOutline,
     mdiClose,
+    mdiCogOutline,
     mdiDownloadOutline,
     mdiExportVariant,
     mdiImageMultipleOutline,
     mdiLockAlertOutline,
     mdiMovieEditOutline,
-    mdiOpenInApp,
     mdiPause,
+    mdiPauseCircleOutline,
     mdiPlay,
     mdiProgressClock,
     mdiRefresh,
     mdiUploadOutline,
+    mdiWeatherNight,
     mdiWifi,
     mdiWifiOff,
   } from '@mdi/js';
@@ -67,6 +84,11 @@
   /**
    * The Activity page (FL-104), ported from the prototype's `Processing` screen
    * (template/src/Activity.jsx and activity.css, FL-43).
+   *
+   * UI review 2026-11-10, A1 (FL-1388; prototype `ActivityWorkV3.jsx`): the page opens on one sentence
+   * about how the work is going, with Pause all; then what needs a look (failures, as cards with their
+   * reason and Retry), what is in progress (the server's work by feature, then the viewer's own jobs),
+   * and what finished, one line each, with runs of the same job on one line.
    *
    * Everything the prototype simulated with a timer is real here. A render's progress, its
    * destination, its failure and its cancellation all come from the durable job row; Cancel and
@@ -119,9 +141,14 @@
   });
   const counts = $derived(activityCounts(items));
   const visible = $derived(items.filter((item) => matchesActivityFilter(item, filter)));
-  /* FL-162, prototype Activity.jsx: In progress, grouped by stage in the order jobs run, then Recent. */
+  /* FL-162, prototype Activity.jsx: In progress, the viewer's own jobs grouped by stage in the order they run. */
   const inProgress = $derived(visible.filter((item) => isProgressStage(item.stage)));
-  const recent = $derived(visible.filter((item) => !isProgressStage(item.stage)));
+  /* FL-1388: what ended well is one line each; everything else that ended keeps its card, reason and Retry. */
+  const ended = $derived(visible.filter((item) => !isProgressStage(item.stage)));
+  const finishedRows = $derived(buildFinishedRows(ended));
+  const needsLook = $derived(ended.filter((item) => !matchesActivityFilter(item, 'done')));
+  /** What the Done chip counts whatever the filter: lines, not runs. */
+  const finishedCount = $derived(buildFinishedRows(items.filter((item) => !isProgressStage(item.stage))).length);
   /**
    * SHARING-P1: the server's busy kinds of work, one card each (prototype `BackgroundRow`). The
    * server sends queues and runs to administrators only. The notifications panel no longer lists
@@ -129,23 +156,137 @@
    */
   const serverWork = $derived(buildBackgroundWorkCards(runningJobsSession.summary));
   const busyServer = $derived(serverWork.length + cloudWork.length);
-  /** Background work belongs to In progress, so it shows under All and In progress (the `running` filter). */
-  const showBackground = $derived(filter === 'all' || filter === 'running');
-  const backgroundCount = $derived(showBackground ? busyServer : 0);
-  /** A chip counts what its filter shows, background work included (All and In progress list it). */
-  const chipCount = (name: ActivityFilter) => counts[name] + (name === 'all' || name === 'running' ? busyServer : 0);
-  const hasFinished = $derived(items.some((item) => item.source === 'job' && item.finished));
-  /** The prototype's summary: only the counts that are not zero, or "nothing" when idle. */
-  const summary = $derived(
-    [
-      counts.running ? $t('frameleaf_activity_summary_running', { values: { count: counts.running } }) : null,
-      counts.done ? $t('frameleaf_activity_summary_done', { values: { count: counts.done } }) : null,
-      counts.failed ? $t('frameleaf_activity_summary_failed', { values: { count: counts.failed } }) : null,
-      busyServer ? $t('frameleaf_activity_summary_background', { values: { count: busyServer } }) : null,
-    ]
-      .filter(Boolean)
-      .join(' · ') || $t('frameleaf_activity_summary_idle'),
+  /** FL-1388: the same work as people know it, one row for each feature of Settings › Background work. */
+  const features = $derived(buildWorkFeatureRows(serverWork));
+  /** Pausing the server's work is an administrator's: the server says who may, and sends its work to nobody else. */
+  const canManage = $derived(runningJobsSession.summary.canManageQueues);
+  /** In progress shows under All and In progress (the `running` filter). */
+  const showProgress = $derived(filter === 'all' || filter === 'running');
+  const backgroundCount = $derived(showProgress ? busyServer : 0);
+  /** A chip counts what its filter shows: background work under All and In progress, and finished lines, not runs. */
+  const chipCount = (name: ActivityFilter) =>
+    name === 'done'
+      ? finishedCount
+      : name === 'failed'
+        ? counts.failed
+        : (name === 'all' ? counts.all - counts.done + finishedCount : counts.running) + busyServer;
+  const hasFinished = $derived(items.some((item) => item.canDismiss));
+
+  /** The one sentence the page opens on (prototype `summaryFor`): how the work is going, most urgent first. */
+  const status = $derived(
+    activityWorkStatus({ rows: features, needsLook: counts.failed, jobs: counts.running + cloudWork.length }),
   );
+  const banner = $derived.by(() => {
+    const left = features.reduce((sum, row) => sum + row.left, 0);
+    switch (status) {
+      case 'paused': {
+        return {
+          warn: true,
+          icon: mdiPauseCircleOutline,
+          title: $t('frameleaf_bgwork_all_paused'),
+          body: $t('frameleaf_bgwork_all_paused_body'),
+        };
+      }
+      case 'attention': {
+        return {
+          warn: true,
+          icon: mdiAlertCircleOutline,
+          title: $t('frameleaf_activity_work_attention', { values: { count: counts.failed } }),
+          body: $t('frameleaf_activity_work_attention_body'),
+        };
+      }
+      case 'working': {
+        const eta = workEtaSeconds(runningJobsSession.summary);
+        return {
+          warn: false,
+          icon: mdiProgressClock,
+          title: $t('frameleaf_bgwork_working', { values: { count: left } }),
+          body:
+            eta === null
+              ? $t('frameleaf_activity_work_working_body')
+              : $t('frameleaf_activity_work_working_eta', {
+                  values: { time: formatActivityDuration(eta, $locale ?? undefined) },
+                }),
+        };
+      }
+      case 'unread': {
+        return {
+          warn: true,
+          icon: mdiAlertCircleOutline,
+          title: $t('frameleaf_computers_cover_unknown'),
+          body: $t('frameleaf_activity_background_stale'),
+        };
+      }
+      case 'tonight': {
+        const saved = features.filter((row) => row.state === 'tonight');
+        const starts = saved.flatMap((row) => (row.tonight?.startsAt ? [row.tonight.startsAt] : [])).sort();
+        return {
+          warn: false,
+          icon: mdiWeatherNight,
+          title: tonightLabel(starts[0] ?? null, $t, $locale ?? undefined),
+          body: $t('frameleaf_activity_work_tonight_body', {
+            values: {
+              count: saved.reduce((sum, row) => sum + row.left, 0),
+              features: new Intl.ListFormat($locale ?? undefined, { type: 'conjunction' }).format(
+                saved.map((row) => $t(`frameleaf_work_feature_${row.feature.id}` as Translations)),
+              ),
+            },
+          }),
+        };
+      }
+      case 'jobs': {
+        return {
+          warn: false,
+          icon: mdiProgressClock,
+          title: $t('frameleaf_activity_work_jobs', { values: { count: counts.running + cloudWork.length } }),
+          body: $t('frameleaf_activity_work_jobs_body'),
+        };
+      }
+      default: {
+        return {
+          warn: false,
+          icon: mdiCheckCircleOutline,
+          title: $t('frameleaf_activity_work_idle'),
+          body: $t('frameleaf_activity_work_idle_body'),
+        };
+      }
+    }
+  });
+
+  /**
+   * Pause all, and a feature's own pause (prototype `ActivityWorkV3.jsx`). Each is the same request Settings ›
+   * Background work sends, for every task that can pause: nothing new starts, and what is running finishes.
+   * The rows change when the server's next answer says so, never before.
+   */
+  let pausing = $state(false);
+  const setPaused = async (names: readonly QueueName[], isPaused: boolean, said: string) => {
+    pausing = true;
+    try {
+      for (const name of names) {
+        await updateQueue({ name, queueUpdateDto: { isPaused } });
+      }
+      announcement = said;
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+    } finally {
+      pausing = false;
+      await runningJobsSession.refresh();
+    }
+  };
+  const pauseAll = (isPaused: boolean) =>
+    void setPaused(
+      JOB_QUEUES.filter((queue) => queue.canPause).map((queue) => queue.name),
+      isPaused,
+      $t(isPaused ? 'frameleaf_activity_work_paused_all' : 'frameleaf_activity_work_resumed_all'),
+    );
+  const pauseFeature = (feature: WorkFeature, isPaused: boolean) =>
+    void setPaused(
+      feature.queues.filter((name) => jobQueue(name)?.canPause),
+      isPaused,
+      $t(isPaused ? 'frameleaf_activity_pause_requested' : 'frameleaf_activity_resumed', {
+        values: { name: $t(`frameleaf_work_feature_${feature.id}` as Translations) },
+      }),
+    );
 
   onMount(() => activitySession.watch());
   onMount(() => runningJobsSession.watch());
@@ -208,6 +349,28 @@
       formatDuration: (seconds) => formatActivityDuration(seconds, $locale ?? undefined),
       formatSize: (bytes) => getByteUnitString(bytes, $locale ?? undefined),
     });
+
+  /**
+   * A Finished line's short result: the kind of work, how many times it ran, and how it ended where that says
+   * more than the tick does ("Done in 3 minutes · 12 MB", "Cancelled at 40%"). Work that left this server
+   * says where it ran, so cloud work is never implicit.
+   */
+  const finishedDetail = ({ item, count }: ActivityFinishedRow) => {
+    const kind = $t(item.kindKey);
+    const result = item.bulk ? $t('frameleaf_activity_bulk_counts', { values: item.bulk }) : statusLine(item);
+    return [
+      kind === nameOf(item) ? null : kind,
+      item.destinationKey && item.destinationKey !== 'frameleaf_activity_destination_local'
+        ? $t(item.destinationKey)
+        : null,
+      ...item.details,
+      count > 1 ? $t('frameleaf_activity_finished_times', { values: { count } }) : null,
+      item.stage === 'done' && result === $t(item.statusKey) ? null : result,
+      item.browserLocal ? $t('frameleaf_activity_this_tab_only') : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  };
 
   let retrying = $state(false);
   /** Ask the server again now, rather than waiting for the next poll (FL-43). */
@@ -336,6 +499,12 @@
 
   const clearFinished = async () => {
     try {
+      // A bulk change this tab started is a record of the library session, not a server job.
+      for (const item of items) {
+        if (item.source === 'bulk' && item.canDismiss) {
+          dismiss(item);
+        }
+      }
       await activitySession.dismissFinished();
       announcement = $t('frameleaf_activity_cleared_all');
     } catch (error) {
@@ -352,7 +521,6 @@
       <p class="eyebrow">{$t('frameleaf_activity_eyebrow')}</p>
       <h1 id="fl-activity-title">{$t('frameleaf_activity_title')}</h1>
       <p class="fla-intro">{$t('frameleaf_activity_intro')}</p>
-      <p class="fla-summary">{summary}</p>
     </div>
 
     <div class="fla-head-actions">
@@ -402,24 +570,46 @@
     </div>
   {/if}
 
+  <!-- The page's answer (prototype `.fw3-status`): how the work is going, Pause all, and its settings. -->
+  <section class="fw3-status" class:is-warn={banner.warn} aria-label={$t('frameleaf_activity_work_status')}>
+    <Icon icon={banner.icon} size="28" aria-hidden={true} />
+    <div class="fw3-status-text">
+      <h2>{banner.title}</h2>
+      <p>{banner.body}</p>
+    </div>
+    {#if canManage}
+      <div class="fw3-status-actions">
+        {#if status === 'paused'}
+          <Button variant="primary" disabled={pausing} onclick={() => pauseAll(false)}>
+            <Icon icon={mdiPlay} size="1.125rem" aria-hidden={true} />{$t('resume')}
+          </Button>
+        {:else if serverWork.length > 0}
+          <Button disabled={pausing} onclick={() => pauseAll(true)}>
+            <Icon icon={mdiPause} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_work_pause_all')}
+          </Button>
+        {/if}
+        <IconButton
+          variant="default"
+          href={commandCenterUrl('processing', 'queues')}
+          label={$t('frameleaf_activity_work_settings')}
+        >
+          <Icon icon={mdiCogOutline} size="1.125rem" />
+        </IconButton>
+      </div>
+    {/if}
+  </section>
+
   {#if activitySession.loading && items.length === 0}
     <p class="fla-empty" role="status" aria-busy="true">{$t('loading')}</p>
-  {:else if visible.length === 0 && backgroundCount === 0}
+  {:else if !showProgress && visible.length === 0}
     <div class="fla-empty">
       <Icon icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock} size="2.25rem" aria-hidden={true} />
-      <h2>{$t(`frameleaf_activity_empty_${filter}`)}</h2>
-      {#if filter === 'all' || filter === 'running'}
-        <!-- Only administrators see the server's background work here. -->
-        <p>{$t(isAdmin ? 'frameleaf_activity_empty_help' : 'frameleaf_activity_empty_help_own')}</p>
-        <!-- Nothing is running, so the way on is back to the photos, not into another workspace. -->
-        <Button onclick={() => void goto(Route.photos())}>{$t('frameleaf_activity_back_to_library')}</Button>
-      {:else}
-        <p>{$t('frameleaf_activity_empty_help_finished')}</p>
-      {/if}
+      <h2>{$t(filter === 'failed' ? 'frameleaf_activity_empty_failed' : 'frameleaf_activity_empty_done')}</h2>
+      {#if filter === 'done'}<p>{$t('frameleaf_activity_empty_help_finished')}</p>{/if}
     </div>
   {/if}
 
-  <!-- A card's title is one level below the heading it sits under: a stage group's, or Recent's. -->
+  <!-- A job in progress, or one that failed. Its title is one level below the heading it sits under. -->
   {#snippet card(item: ActivityItem, index: number, level: 'h3' | 'h4')}
     {@const thumbnail = thumbnailOf(item)}
     <article
@@ -572,27 +762,11 @@
             <Icon icon={mdiRefresh} size="1.125rem" aria-hidden={true} />{$t('retry')}
           </Button>
         {/if}
-        {#if item.finished && !item.failed && item.studioBundle === 'export'}
-          <Button variant="primary" onclick={() => void downloadBundle(item)}>
-            <Icon icon={mdiDownloadOutline} size="1.125rem" aria-hidden={true} />{$t(
-              'frameleaf_studio_bundle_download',
-            )}
-          </Button>
-        {:else if item.finished && !item.failed && item.studioBundle === 'import'}
-          <Button variant="primary" onclick={() => void openImportedProject(item)}>
-            <Icon icon={mdiOpenInApp} size="1.125rem" aria-hidden={true} />{$t('frameleaf_studio_library_open')}
-          </Button>
-        {/if}
         {#if item.projectId}
           <Button onclick={() => openInStudio(item)}>
             <Icon icon={mdiMovieEditOutline} size="1.125rem" aria-hidden={true} />{$t(
               'frameleaf_activity_open_in_studio',
             )}
-          </Button>
-        {/if}
-        {#if item.finished && !item.failed && item.assetId}
-          <Button variant="primary" onclick={() => openResult(item)}>
-            <Icon icon={mdiOpenInApp} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_open_result')}
           </Button>
         {/if}
         {#if item.canDismiss}
@@ -609,12 +783,35 @@
     </article>
   {/snippet}
 
-  {#if inProgress.length + backgroundCount > 0}
+  {#if needsLook.length > 0}
+    <section class="fla-section" aria-labelledby="{rowIdPrefix}-needs-look">
+      <h2 id="{rowIdPrefix}-needs-look" class="fla-section-title">
+        {$t('frameleaf_activity_section_needs_look')} <span class="fla-count">{needsLook.length}</span>
+      </h2>
+      <div class="fla-list">
+        {#each needsLook as item (item.id)}
+          {@render card(item, visible.indexOf(item), 'h3')}
+        {/each}
+      </div>
+    </section>
+  {/if}
+
+  {#if showProgress && !(activitySession.loading && items.length === 0)}
     <section class="fla-section" aria-labelledby="{rowIdPrefix}-in-progress">
       <h2 id="{rowIdPrefix}-in-progress" class="fla-section-title">
         {$t('frameleaf_activity_section_in_progress')}
-        <span class="fla-count">{inProgress.length + backgroundCount}</span>
       </h2>
+      {#if backgroundCount > 0}
+        <!-- Every feature while any of them is busy, so what is up to date shows beside what is not. -->
+        <ActivityWorkFeatures
+          rows={serverWork.length > 0 ? features : []}
+          others={otherWorkCards(serverWork)}
+          cloudStatus={isAdmin ? cloudWorkSession.status : null}
+          canPause={canManage}
+          busy={pausing}
+          onPause={pauseFeature}
+        />
+      {/if}
       {#each ACTIVITY_PROGRESS_STAGES as stage (stage)}
         {@const group = inProgress.filter((item) => item.stage === stage)}
         {#if group.length > 0}
@@ -632,26 +829,91 @@
           </div>
         {/if}
       {/each}
-      {#if backgroundCount > 0}
-        <BackgroundWorkRows
-          cards={serverWork}
-          cloudStatus={isAdmin ? cloudWorkSession.status : null}
-          showCount={inProgress.length > 0}
-        />
+      {#if inProgress.length + backgroundCount === 0}
+        <!-- Only administrators see the server's background work here. -->
+        <p class="fw3-quiet">
+          {$t(isAdmin ? 'frameleaf_activity_work_quiet' : 'frameleaf_activity_empty_help_own')}
+        </p>
       {/if}
     </section>
   {/if}
 
-  {#if recent.length > 0}
-    <section class="fla-section" aria-labelledby="{rowIdPrefix}-recent">
-      <h2 id="{rowIdPrefix}-recent" class="fla-section-title">
-        {$t('frameleaf_activity_section_recent')} <span class="fla-count">{recent.length}</span>
-      </h2>
-      <div class="fla-list">
-        {#each recent as item (item.id)}
-          {@render card(item, visible.indexOf(item), 'h3')}
+  {#if finishedRows.length > 0}
+    <section class="fla-section" aria-labelledby="{rowIdPrefix}-finished">
+      <h2 id="{rowIdPrefix}-finished" class="fla-section-title">{$t('frameleaf_activity_section_finished')}</h2>
+      <ul class="fw3-finished">
+        {#each finishedRows as row (row.id)}
+          {@const item = row.item}
+          {@const name = nameOf(item)}
+          <li>
+            <span class="fw3-finished-icon" class:is-cancelled={item.stage === 'cancelled'} aria-hidden="true">
+              <Icon icon={item.stage === 'cancelled' ? mdiCancel : mdiCheckCircle} size="16" />
+            </span>
+            <strong>{name}</strong>
+            <span class="fw3-finished-detail">{finishedDetail(row)}</span>
+            <span class="fw3-finished-end">
+              {#if item.studioBundle === 'export'}
+                <button type="button" class="fw3-link" onclick={() => void downloadBundle(item)}
+                  >{$t('frameleaf_studio_bundle_download')}</button
+                >
+              {:else if item.studioBundle === 'import'}
+                <button type="button" class="fw3-link" onclick={() => void openImportedProject(item)}
+                  >{$t('frameleaf_studio_library_open')}</button
+                >
+              {/if}
+              {#if item.projectId}
+                <button type="button" class="fw3-link" onclick={() => openInStudio(item)}
+                  >{$t('frameleaf_activity_open_in_studio')}</button
+                >
+              {/if}
+              {#if item.assetId && item.stage === 'done'}
+                <button
+                  type="button"
+                  class="fw3-link"
+                  aria-label={$t('frameleaf_activity_open_result_of', { values: { name } })}
+                  onclick={() => openResult(item)}>{$t('frameleaf_activity_open_result')}</button
+                >
+              {/if}
+              {#if item.canRetry}
+                <button
+                  type="button"
+                  class="fw3-link"
+                  disabled={busyId === item.id}
+                  aria-label={$t('frameleaf_activity_retry_of', { values: { name } })}
+                  onclick={() => retry(item)}>{$t('retry')}</button
+                >
+              {/if}
+              {#if row.at}
+                <time datetime={new Date(row.at).toISOString()}>{formatFinishedTime(row.at, $locale ?? undefined)}</time
+                >
+              {/if}
+            </span>
+            {#if item.cloud}
+              <!-- FL-162: what a Frameleaf Cloud job cost, settled. -->
+              <dl class="fla-cost" aria-label={$t('frameleaf_activity_cloud_cost')}>
+                {#each cloudCostFacts(item.cloud, item.stage) as fact (fact.labelKey)}
+                  <div>
+                    <dt>{$t(fact.labelKey)}</dt>
+                    <dd>{fact.valueKey ? $t(fact.valueKey) : fact.value}</dd>
+                  </div>
+                {/each}
+              </dl>
+            {/if}
+            {#if item.bulk && item.bulk.retried > 0}
+              <p class="fla-status">
+                {$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}
+              </p>
+            {/if}
+            {#if item.encryptedWithOlderKey}
+              <!-- some restored items can't be opened here: a warning, not a status -->
+              <p class="fla-warn" role="note">
+                <Icon icon={mdiLockAlertOutline} size="16" aria-hidden={true} />
+                <span>{$t('frameleaf_le_activity_older_key', { values: { count: item.encryptedWithOlderKey } })}</span>
+              </p>
+            {/if}
+          </li>
         {/each}
-      </div>
+      </ul>
     </section>
   {/if}
 
@@ -703,11 +965,6 @@
     font-size: var(--fl-font-callout);
     line-height: 1.5;
     color: var(--fl-text);
-  }
-  .fla-summary {
-    color: var(--fl-muted);
-    font-size: 13px;
-    margin: 0;
   }
   .fla-head-actions {
     display: flex;
@@ -772,10 +1029,133 @@
   .grow {
     flex: 1;
   }
-  /* activity.css: the In progress and Recent sections, and a stage's group inside In progress. */
+  /* activity.css `.fw3-status`: the page's answer, with what to do about it. */
+  .fw3-status {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--fl-space-4);
+    margin: 0 0 28px;
+    padding: 18px 20px;
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .fw3-status > :global(svg) {
+    color: var(--fl-accent);
+  }
+  .fw3-status.is-warn {
+    background:
+      linear-gradient(
+        color-mix(in srgb, var(--fl-warning) 14%, transparent),
+        color-mix(in srgb, var(--fl-warning) 14%, transparent)
+      ),
+      var(--fl-panel);
+    border-color: color-mix(in srgb, var(--fl-warning) 45%, var(--fl-border));
+  }
+  .fw3-status.is-warn > :global(svg) {
+    color: var(--fl-warning);
+  }
+  .fw3-status h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .fw3-status p {
+    margin: 2px 0 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+  }
+  .fw3-status-actions {
+    display: flex;
+    gap: var(--fl-space-2);
+  }
+  /* activity.css `.fw3-quiet`: nothing is in progress. */
+  .fw3-quiet {
+    margin: 0;
+    padding: var(--fl-space-4);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    border: 1px dashed var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  /* activity.css `.fw3-finished`: one line per thing that finished, a rule between them. */
+  .fw3-finished {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .fw3-finished li {
+    display: grid;
+    grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 2px 10px;
+    padding: 9px 2px;
+    font-size: var(--fl-font-callout);
+  }
+  .fw3-finished li + li {
+    border-top: 1px solid var(--fl-border);
+  }
+  .fw3-finished-icon {
+    display: inline-flex;
+    align-self: center;
+    color: var(--fl-accent);
+  }
+  .fw3-finished-icon.is-cancelled {
+    color: var(--fl-muted);
+  }
+  .fw3-finished strong {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fw3-finished-detail {
+    color: var(--fl-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fw3-finished-end {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--fl-space-3);
+    color: var(--fl-muted);
+  }
+  .fw3-finished time {
+    font-size: var(--fl-font-small);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  /* What a line can't hold sits under it, in line with its name. */
+  .fw3-finished li > :is(dl, p) {
+    grid-column: 2 / -1;
+  }
+  .fw3-link {
+    min-height: 0;
+    padding: 0;
+    color: var(--fl-accent);
+    font: inherit;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .fw3-link:hover:not(:disabled) {
+    text-decoration: underline;
+  }
+  .fw3-link:disabled {
+    color: var(--fl-muted);
+    cursor: default;
+  }
+  /* activity.css `.fw3`: the sections run the page's width; job cards keep their 900px measure (`.fla-list`). */
   .fla-section {
-    max-width: 900px;
     margin-bottom: 28px;
+  }
+  /* The feature list, then the viewer's own jobs by stage. */
+  .fla-section > :global(.fw3-features) {
+    margin-bottom: var(--fl-space-4);
   }
   .fla-section-title {
     font-size: 15px;
@@ -783,7 +1163,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 0 var(--fl-space-2);
+    margin: 0 0 var(--fl-space-3);
   }
   .fla-count {
     font-size: 11px;
@@ -1092,14 +1472,38 @@
       grid-column: 1 / -1;
       justify-content: flex-start;
     }
+    .fw3-status {
+      grid-template-columns: auto minmax(0, 1fr);
+      padding: var(--fl-space-4);
+    }
+    .fw3-status-actions {
+      grid-column: 1 / -1;
+    }
+    /* A finished line stacks: its name, then its result, then what to do with it and when. */
+    .fw3-finished li {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+    .fw3-finished-detail,
+    .fw3-finished-end {
+      grid-column: 2;
+      white-space: normal;
+    }
+    .fw3-finished-end {
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .fw3-link {
+      min-height: var(--fl-control-height);
+    }
     .fla-head-actions {
       width: 100%;
     }
     .fla-filters {
       flex: 1;
     }
+    /* Each segment takes what its label and count need, then shares the rest, so "In progress 5" isn't squeezed. */
     .fla-filters button {
-      flex: 1;
+      flex: 1 1 auto;
       justify-content: center;
       padding: 0 8px;
     }

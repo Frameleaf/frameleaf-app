@@ -1,6 +1,13 @@
 import { QueueName, type DurableJobRun, type DurableQueueRun, type DurableRunningJobs } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
-import { buildBackgroundWorkCards, tonightStart } from '$lib/frameleaf/background-work';
+import {
+  activityWorkStatus,
+  buildBackgroundWorkCards,
+  buildWorkFeatureRows,
+  otherWorkCards,
+  tonightStart,
+  workEtaSeconds,
+} from '$lib/frameleaf/background-work';
 
 const queue = (name: QueueName, patch: Partial<DurableQueueRun> = {}): DurableQueueRun => ({
   name,
@@ -149,6 +156,8 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
       waiting: 20,
       running: 0,
       progress: null,
+      done: 84,
+      total: 104,
     });
     // The face detection queue speaks for its kind; the run of the same kind adds nothing.
     expect(cards[1]).toMatchObject({ queueName: QueueName.FaceDetection, waiting: 52 });
@@ -242,6 +251,8 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
         waiting: 100,
         running: 0,
         progress: null,
+        done: null,
+        total: null,
       });
     });
 
@@ -296,5 +307,184 @@ describe('tonightStart (FL-711)', () => {
   it('says nothing about a time when the schedule never starts', () => {
     expect(tonightStart(null, evening)).toBe('unscheduled');
     expect(tonightStart('not a date', evening)).toBe('unscheduled');
+  });
+});
+
+describe('buildWorkFeatureRows (FL-1388)', () => {
+  const rowsOf = (patch: Partial<DurableRunningJobs>) => buildWorkFeatureRows(buildBackgroundWorkCards(summary(patch)));
+  const row = (rows: ReturnType<typeof buildWorkFeatureRows>, id: string) =>
+    rows.find(({ feature }) => feature.id === id)!;
+
+  it('lists every feature in the order people meet them, idle ones too', () => {
+    const rows = rowsOf({});
+    expect(rows.map(({ feature }) => feature.id)).toEqual([
+      'ready',
+      'faces',
+      'search',
+      'text',
+      'descriptions',
+      'transcripts',
+      'export',
+      'upkeep',
+    ]);
+    expect(rows.every(({ state, left, total }) => state === 'idle' && left === 0 && total === null)).toBe(true);
+  });
+
+  it('adds up the tasks of one feature: what is done, what is left, and the most telling state', () => {
+    const rows = rowsOf({
+      queues: [
+        queue(QueueName.ThumbnailGeneration, { active: 4, waiting: 120, processed: 1116, total: 1240 }),
+        queue(QueueName.MetadataExtraction, { waiting: 10, processed: 1230, total: 1240 }),
+        queue(QueueName.FaceDetection, { active: 2, waiting: 858, processed: 380, total: 1240 }),
+        queue(QueueName.DuplicateDetection, { waiting: 3, total: 3 }),
+      ],
+    });
+    // Thumbnails is running, Metadata only waiting: the feature is running, and counts both.
+    expect(row(rows, 'ready')).toMatchObject({ state: 'running', done: 2346, total: 2480, left: 134 });
+    expect(row(rows, 'faces')).toMatchObject({ state: 'running', done: 380, total: 1240, left: 860 });
+    // A task named by no feature is upkeep.
+    expect(row(rows, 'upkeep')).toMatchObject({ state: 'waiting', statusKey: null, left: 3 });
+    expect(row(rows, 'search').state).toBe('idle');
+  });
+
+  it('says paused only when nothing of the feature is moving or waiting its turn', () => {
+    const paused = rowsOf({
+      queues: [
+        queue(QueueName.FaceDetection, { isPaused: true, waiting: 52, total: 52 }),
+        queue(QueueName.FacialRecognition, { isPaused: true, waiting: 8, total: 8 }),
+      ],
+    });
+    expect(row(paused, 'faces')).toMatchObject({ state: 'paused', left: 60 });
+
+    const mixed = rowsOf({
+      queues: [
+        queue(QueueName.FaceDetection, { isPaused: true, waiting: 52, total: 52 }),
+        queue(QueueName.FacialRecognition, { waiting: 8, total: 8 }),
+      ],
+    });
+    expect(row(mixed, 'faces').state).toBe('waiting');
+  });
+
+  it('says work saved for tonight waits for tonight, with the earliest start (FL-711)', () => {
+    const rows = rowsOf({
+      queues: [
+        queue(QueueName.ImageDescription, {
+          waiting: 214,
+          total: 214,
+          heldForNight: true,
+          resumesAt: '2026-11-11T07:00:00.000Z',
+        }),
+        queue(QueueName.NsfwDetection, {
+          waiting: 214,
+          total: 214,
+          heldForNight: true,
+          resumesAt: '2026-11-11T06:00:00.000Z',
+        }),
+      ],
+    });
+    expect(row(rows, 'descriptions')).toMatchObject({
+      state: 'tonight',
+      left: 428,
+      tonight: { startsAt: '2026-11-11T06:00:00.000Z' },
+    });
+  });
+
+  it('says a feature is stuck, in the server’s words, when one of its tasks cannot be read', () => {
+    const rows = rowsOf({
+      queues: [
+        queue(QueueName.SmartSearch, { unavailable: true }),
+        queue(QueueName.Search, { active: 1, waiting: 4, processed: 5, total: 10 }),
+      ],
+    });
+    expect(row(rows, 'search')).toMatchObject({ state: 'stuck', statusKey: 'frameleaf_activity_bg_unreadable' });
+    // Only the task that could be read is counted.
+    expect(row(rows, 'search')).toMatchObject({ done: 5, total: 10 });
+  });
+
+  it('keeps a run that is no feature’s task out of the features, on its own row (FL-1177)', () => {
+    const cards = buildBackgroundWorkCards(
+      summary({
+        durableRuns: [
+          run('library-import-derived' as QueueName, { state: 'waiting', held: 40, total: 40, completed: 0 }),
+        ],
+      }),
+    );
+    expect(otherWorkCards(cards).map(({ queueName }) => queueName)).toEqual(['library-import-derived']);
+    expect(buildWorkFeatureRows(cards).every(({ state }) => state === 'idle')).toBe(true);
+  });
+});
+
+describe('activityWorkStatus (FL-1388)', () => {
+  const rowsOf = (queues: DurableQueueRun[]) => buildWorkFeatureRows(buildBackgroundWorkCards(summary({ queues })));
+  const working = [queue(QueueName.ThumbnailGeneration, { active: 1, waiting: 9, processed: 10, total: 20 })];
+  const paused = [queue(QueueName.FaceDetection, { isPaused: true, waiting: 52, total: 52 })];
+  const tonight = [queue(QueueName.ImageDescription, { waiting: 5, total: 5, heldForNight: true })];
+
+  it.each([
+    ['idle', [], 0, 0],
+    ['jobs', [], 0, 2],
+    ['working', working, 0, 0],
+    ['working', [...working, ...paused], 0, 0],
+    ['tonight', tonight, 0, 0],
+    ['tonight', [...tonight, ...paused], 0, 0],
+    ['paused', paused, 0, 3],
+    ['attention', working, 1, 0],
+    ['attention', [], 2, 0],
+    // Work the server could not count is neither up to date nor "0 items".
+    ['unread', [queue(QueueName.SmartSearch, { unavailable: true })], 0, 0],
+    ['working', [queue(QueueName.SmartSearch, { unavailable: true }), ...working], 0, 0],
+    // Paused says why nothing moves; a failure keeps its card either way.
+    ['paused', paused, 1, 0],
+  ] as const)('says %s', (expected, queues, needsLook, jobs) => {
+    expect(activityWorkStatus({ rows: rowsOf([...queues]), needsLook, jobs })).toBe(expected);
+  });
+});
+
+describe('workEtaSeconds (FL-1388)', () => {
+  const now = Date.parse('2026-11-10T10:00:00.000Z');
+  const tenMinutesAgo = '2026-11-10T09:50:00.000Z';
+
+  it('is the slowest moving task at the pace it has kept', () => {
+    const eta = workEtaSeconds(
+      summary({
+        queues: [
+          // 100 done in 600 s, 50 left: 300 s.
+          queue(QueueName.ThumbnailGeneration, { active: 2, waiting: 48, processed: 100, startedAt: tenMinutesAgo }),
+          // 10 done in 600 s, 20 left: 1,200 s.
+          queue(QueueName.FaceDetection, { active: 1, waiting: 19, processed: 10, startedAt: tenMinutesAgo }),
+        ],
+      }),
+      now,
+    );
+    expect(eta).toBe(1200);
+  });
+
+  it('leaves out work that is not moving: paused, or saved for tonight', () => {
+    const eta = workEtaSeconds(
+      summary({
+        queues: [
+          queue(QueueName.ThumbnailGeneration, { active: 2, waiting: 48, processed: 100, startedAt: tenMinutesAgo }),
+          queue(QueueName.FaceDetection, { isPaused: true, waiting: 500 }),
+          queue(QueueName.ImageDescription, { heldForNight: true, waiting: 500 }),
+        ],
+      }),
+      now,
+    );
+    expect(eta).toBe(300);
+  });
+
+  it('gives no estimate while a moving task has finished nothing, or when nothing moves', () => {
+    const waiting = queue(QueueName.FaceDetection, { waiting: 20, startedAt: tenMinutesAgo });
+    const moving = queue(QueueName.ThumbnailGeneration, {
+      active: 2,
+      waiting: 48,
+      processed: 100,
+      startedAt: tenMinutesAgo,
+    });
+    expect(workEtaSeconds(summary({ queues: [moving, waiting] }), now)).toBeNull();
+    expect(workEtaSeconds(summary({ queues: [{ ...moving, startedAt: null }] }), now)).toBeNull();
+    expect(workEtaSeconds(summary({ queues: [] }), now)).toBeNull();
+    expect(workEtaSeconds(summary({ queues: [moving], canManageQueues: false }), now)).toBeNull();
+    expect(workEtaSeconds(null, now)).toBeNull();
   });
 });
