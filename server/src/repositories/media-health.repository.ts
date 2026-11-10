@@ -331,6 +331,8 @@ export class MediaHealthRepository {
   /**
    * Library Care's queue sizes (FL-69): open findings by category and status, read with the same
    * owner scope and privacy as the list, so a count never reveals an item the list would hide.
+   * FL-1337: a photo its owner chose to keep as it is (`fixState` `left-as-is`) waits for no one, so it is not
+   * counted.
    */
   async countByStatus(options: { ownerId?: string; privacy: MediaHealthPrivacy }): Promise<
     Array<{
@@ -345,6 +347,7 @@ export class MediaHealthRepository {
       .select(['asset_health.category', 'asset_health.status'])
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .where('asset.deletedAt', 'is', null)
+      .where(sql<boolean>`(asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'`)
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
       .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))

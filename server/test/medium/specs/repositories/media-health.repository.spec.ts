@@ -1404,6 +1404,26 @@ describe(MediaHealthRepository.name, () => {
       });
     });
 
+    it('leaves a photo kept as it is out of the queue counts (W3)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const photo = async () => (await ctx.newAsset({ ownerId: user.id })).result;
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'missing' } });
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'left-as-is' } });
+      await arrangeProblem(sut, await photo(), { category: MediaHealthCategory.Corrupt, evidence: {} });
+      await arrangeProblem(sut, await photo(), {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'left-as-is' },
+      });
+
+      const counts = await sut.countByStatus({ ownerId: user.id, privacy: {} });
+      // findingDto writes the missing status for both categories; only the not-kept one of each is counted
+      expect(counts.toSorted((a, b) => a.category.localeCompare(b.category))).toEqual([
+        { category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.Missing, count: 1 },
+        { category: MediaHealthCategory.Missing, status: MediaHealthStatus.Missing, count: 1 },
+      ]);
+    });
+
     it('puts each problem in its tab, newest first, part-saved first among the fixed', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

@@ -188,6 +188,44 @@ describe(IntegrityService.name, () => {
     });
   });
 
+  describe('getIntegrityOverview (FL-1337 W3)', () => {
+    it('no longer counts a photo kept as it is, whichever checker reports it', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(StorageRepository).stat.mockResolvedValue({} as never);
+      const {
+        result: { id: ownerId },
+      } = await ctx.newUser();
+      const { asset: keptMissing } = await ctx.newAsset({ ownerId, originalFileName: 'IMG_1.CR2' });
+      const { asset: keptDamaged } = await ctx.newAsset({ ownerId, originalFileName: 'IMG_2.JPG' });
+      const { asset: missing } = await ctx.newAsset({ ownerId, originalFileName: 'IMG_3.JPG' });
+      const { asset: damaged } = await ctx.newAsset({ ownerId, originalFileName: 'IMG_4.JPG' });
+      const { asset: keptLongAgo } = await ctx.newAsset({ ownerId, originalFileName: 'IMG_5.JPG' });
+      await ctx.get(IntegrityRepository).create([
+        { type: IntegrityReport.MissingFile, path: '/a', assetId: keptMissing.id },
+        { type: IntegrityReport.ChecksumFail, path: '/b', assetId: keptDamaged.id },
+        { type: IntegrityReport.MissingFile, path: '/c', assetId: missing.id },
+        { type: IntegrityReport.ChecksumFail, path: '/d', assetId: damaged.id },
+        // kept once, and that problem settled: a new report on the photo counts again
+        { type: IntegrityReport.ChecksumFail, path: '/e', assetId: keptLongAgo.id },
+      ]);
+      const health = (assetId: string, category: string, status: string, evidence: object, resolved = false) =>
+        sql`INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName", evidence, resolution, "checkedAt", "resolvedAt")
+          VALUES (${assetId}, ${category}, ${status}, 'warning', '/x', 'x', ${JSON.stringify(evidence)}::text::jsonb, '{}', now(), ${resolved ? new Date() : null})`.execute(
+          defaultDatabase,
+        );
+      await health(keptMissing.id, 'missing', 'missing', { fixState: 'left-as-is' });
+      await health(keptDamaged.id, 'corrupt', 'corrupt_confirmed', { fixState: 'left-as-is' });
+      await health(missing.id, 'missing', 'missing', { fixState: 'missing' });
+      await health(damaged.id, 'corrupt', 'corrupt_confirmed', {});
+      await health(keptLongAgo.id, 'corrupt', 'healthy', { fixState: 'left-as-is' }, true);
+
+      await expect(sut.getIntegrityOverview()).resolves.toEqual(
+        expect.objectContaining({ missing: 1, damaged: 2, rawToMatch: 0 }),
+      );
+      await sql`DELETE FROM public.asset_health`.execute(defaultDatabase);
+    });
+  });
+
   describe('deleteIntegrityReport', () => {
     it('deletes asset if one is present', async () => {
       const { sut, ctx } = setup();
