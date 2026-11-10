@@ -41,7 +41,7 @@
     canNavigateCollection: boolean;
     canShowFilmstrip: boolean;
     hasStack: boolean;
-    /** The photo viewer is showing, so the zoom controls act on something. */
+    /** The photo viewer or a zoomable video is showing, so the zoom controls act on something. */
     zoomable: boolean;
     isPlayingOriginalVideo: boolean;
     setPlayOriginalVideo: (value: boolean) => void;
@@ -71,6 +71,8 @@
   // The same gates as the menu's and the shared link's Play slideshow: never Locked, downloads on a link.
   const canPlay = $derived(canNavigateCollection && canPlaySlideshow(asset));
   const zoom = $derived(assetViewerManager.zoom);
+  /** FL-801: the zoom controls act on a playing or paused video. */
+  const videoZoom = $derived(zoomable && isVideoAsset(asset));
   const lookingAround = $derived(!assetViewerManager.isPanoramaFlattened);
   const fullscreenEnabled = typeof document !== 'undefined' && !!document.fullscreenEnabled;
 
@@ -82,7 +84,7 @@
   const setZoom = (value: number) => assetViewerManager.animatedZoom(Math.min(MAX_ZOOM, Math.max(1, value)));
 </script>
 
-<footer class="fl-viewer-foot dark" data-testid="viewer-footer">
+<footer class="fl-viewer-foot dark" class:with-video-zoom={videoZoom} data-testid="viewer-footer">
   <div class="fl-foot-group">
     <button
       type="button"
@@ -174,8 +176,9 @@
       </button>
     {/if}
     {#if zoomable}
-      <!-- Pinch and double-tap cover zoom on a phone, so these three stay off its footer. -->
-      <span class="fl-zoom">
+      <!-- Pinch and double-tap cover a photo's zoom on a phone, so these three stay off its footer. A video's
+           zoom is new to people, so on a phone it keeps them, on a row of their own (prototype FL-801). -->
+      <span class="fl-zoom" class:fl-video-zoom={videoZoom}>
         <button
           type="button"
           class="fl-tool"
@@ -186,10 +189,19 @@
         >
           <Icon icon={mdiMagnifyMinusOutline} size="21" aria-hidden />
         </button>
-        <button type="button" class="fl-fit" title={$t('frameleaf_viewer_fit_title')} onclick={() => setZoom(1)}>
-          {zoom <= 1
-            ? $t('frameleaf_viewer_fit')
-            : $t('frameleaf_viewer_percent_of_fit', { values: { percent: Math.round(zoom * 100) } })}
+        <button
+          type="button"
+          class="fl-fit"
+          title={videoZoom ? $t('frameleaf_viewer_fit_video_title') : $t('frameleaf_viewer_fit_title')}
+          onclick={() => setZoom(1)}
+        >
+          {#if zoom <= 1}
+            {$t('frameleaf_viewer_fit')}
+          {:else if videoZoom}
+            {$t('frameleaf_viewer_percent', { values: { percent: Math.round(zoom * 100) } })}
+          {:else}
+            {$t('frameleaf_viewer_percent_of_fit', { values: { percent: Math.round(zoom * 100) } })}
+          {/if}
         </button>
         <button
           type="button"
@@ -379,6 +391,20 @@
      */
     .fl-zoom {
       display: none;
+    }
+
+    /* media-viewer.css `.with-video-zoom`: the video's zoom wraps onto a centred row of its own. */
+    .with-video-zoom {
+      flex-wrap: wrap;
+      row-gap: 12px;
+    }
+
+    .fl-zoom.fl-video-zoom {
+      display: flex;
+      flex: 1 1 100%;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
 
     .fl-segment button {

@@ -30,7 +30,8 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
   import { isDialogOpen, isTypingTarget } from '$lib/frameleaf/viewer-keys';
-  import { isPanorama } from '$lib/frameleaf/viewer-media';
+  import { isPanorama, isPanoramaVideoProjection } from '$lib/frameleaf/viewer-media';
+  import { castManager } from '$lib/managers/cast-manager.svelte';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -1622,6 +1623,12 @@
     infoAssetId = id;
   });
 
+  /** FL-801: the open video zooms and pans, unless it is a 360 video or is playing on a cast device. */
+  const videoZoomable = $derived(
+    viewerKind === 'VideoViewer' &&
+      !isPanoramaVideoProjection(asset.exifInfo?.projectionType) &&
+      !castManager.isCasting,
+  );
   const VIDEO_VIEWERS = new Set(['VideoViewer', 'StackVideoViewer', 'LiveVideoViewer']);
 
   // FL-36 / V-18: the footer stays while an inline slideshow plays, so Pause and the settings are
@@ -1820,6 +1827,7 @@
           projectionType={asset.exifInfo?.projectionType}
           loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
           extendedControls
+          zoomable={videoZoomable}
           onPreviousAsset={() => navigateAsset('previous')}
           onNextAsset={() => navigateAsset('next')}
           onClose={closeViewer}
@@ -2073,7 +2081,7 @@
         canNavigateCollection={!!(nextAsset || previousAsset)}
         canShowFilmstrip={filmstripAssets.length > 1}
         hasStack={!!stack && withStacked}
-        zoomable={viewerKind === 'PhotoViewer' && !previewStackedAsset}
+        zoomable={(viewerKind === 'PhotoViewer' && !previewStackedAsset) || videoZoomable}
         {isPlayingOriginalVideo}
         {setPlayOriginalVideo}
         fullscreen={isFullScreen}
