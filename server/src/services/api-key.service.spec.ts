@@ -5,7 +5,7 @@ import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { SessionFactory } from 'test/factories/session.factory.js';
 import { newUuid } from 'test/small.factory.js';
-import { ServiceMocks, newTestService } from 'test/utils.js';
+import { ServiceMocks, expectNoSecretsInAccountEvents, newTestService } from 'test/utils.js';
 
 describe(ApiKeyService.name, () => {
   let sut: ApiKeyService;
@@ -35,6 +35,11 @@ describe(ApiKeyService.name, () => {
       });
       expect(mocks.crypto.randomBytesAsText).toHaveBeenCalled();
       expect(mocks.crypto.hashSha256).toHaveBeenCalled();
+      // FL-808: the key's name, never its secret
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: auth.user.id, action: 'api-key-created', subject: apiKey.name }),
+      );
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, ['super-secret']);
     });
 
     it('should not require a name', async () => {
@@ -257,6 +262,9 @@ describe(ApiKeyService.name, () => {
       await sut.delete(auth, apiKey.id);
 
       expect(mocks.apiKey.delete).toHaveBeenCalledWith(auth.user.id, apiKey.id);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'api-key-deleted', subject: apiKey.name }),
+      );
     });
   });
 

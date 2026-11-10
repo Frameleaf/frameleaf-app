@@ -25,7 +25,14 @@ import {
   UserAdminUpdateDto,
   mapUserAdmin,
 } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
+import {
+  AccountEventAction,
+  AdminAuditAction,
+  AssetVisibility,
+  JobName,
+  UserMetadataKey,
+  UserStatus,
+} from 'src/enum.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -400,6 +407,18 @@ export class UserAdminService extends BaseService {
       await this.recordAdminEvents([
         accountEvent(auth, user, AdminAuditAction.AccountUpdated, TWO_FACTOR_RESET_DETAIL),
       ]);
+      // FL-808: the owner's own log shows it too
+      await this.recordAccountEvent({
+        userId: id,
+        action: AccountEventAction.TwoFactorChanged,
+        subject: user.name,
+        detail: 'admin-reset',
+        // not the administrator's device
+        deviceType: null,
+        deviceOS: null,
+        via: null,
+        ipPrefix: null,
+      });
     }
     // the password-change handler is what signs an account out everywhere (and drops Locked access)
     await this.eventRepository.emit('AuthChangePassword', { userId: id, invalidateSessions: true });

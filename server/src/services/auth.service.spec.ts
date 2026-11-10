@@ -20,7 +20,7 @@ import { sharedLinkStub } from 'test/fixtures/shared-link.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
 import { newUuid } from 'test/small.factory.js';
-import { ServiceMocks, newTestService } from 'test/utils.js';
+import { ServiceMocks, expectNoSecretsInAccountEvents, newTestService } from 'test/utils.js';
 
 const email = 'test@immich.com';
 const loginDetails = {
@@ -3104,6 +3104,134 @@ describe(AuthService.name, () => {
       });
 
       expect(lockedKeys.expiresAt(user.id)).toEqual(new Date('2026-05-08T13:00:00.000Z'));
+    });
+  });
+
+  describe('account activity (FL-808)', () => {
+    const details = {
+      isSecure: true,
+      clientIp: '203.0.113.77',
+      deviceOS: 'iOS',
+      deviceType: 'Safari',
+      appVersion: null,
+      via: 'relay' as const,
+    };
+    const device = { deviceOS: 'iOS', deviceType: 'Safari', via: 'relay', ipPrefix: '203.0.113.0/24' };
+
+    it('records one signed-in row with device and via', async () => {
+      const user = UserFactory.create({ password: 'hash-password' });
+      const session = SessionFactory.create({ userId: user.id });
+      mocks.user.getByEmail.mockResolvedValue(user);
+      mocks.session.create.mockResolvedValue(session);
+      mocks.systemMetadata.get.mockResolvedValue({
+        frameleafCloud: { remoteAccess: { allowPasswordOverRelay: true } },
+      });
+
+      await sut.login({ email: user.email, password: 'the-password' }, details);
+
+      expect(mocks.accountEvent.create).toHaveBeenCalledTimes(1);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith({
+        userId: user.id,
+        sessionId: session.id,
+        action: 'signed-in',
+        subject: user.name,
+        detail: 'password',
+        ...device,
+      });
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, ['the-password', 'hash-password', 'cmFuZG9tLWJ5dGVz']);
+    });
+
+    it('records one sign-in-failed row for a known account, none for an unknown email', async () => {
+      const user = UserFactory.create({ password: 'hash-password' });
+      mocks.systemMetadata.get.mockResolvedValue({
+        frameleafCloud: { remoteAccess: { allowPasswordOverRelay: true } },
+      });
+      mocks.user.getByEmail.mockResolvedValueOnce(user);
+      mocks.crypto.compareBcrypt.mockResolvedValueOnce(false);
+
+      await expect(sut.login({ email: user.email, password: 'wrong-guess' }, details)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+
+      expect(mocks.accountEvent.create).toHaveBeenCalledTimes(1);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith({
+        userId: user.id,
+        action: 'sign-in-failed',
+        subject: user.name,
+        detail: 'password',
+        ...device,
+      });
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, ['wrong-guess', 'hash-password']);
+
+      mocks.user.getByEmail.mockResolvedValueOnce(void 0);
+      mocks.crypto.compareBcrypt.mockResolvedValueOnce(false);
+      await expect(sut.login({ email: 'nobody@example.test', password: 'x' }, details)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(mocks.accountEvent.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('records one signed-out row for the ended session', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.enabled);
+      mocks.session.get.mockResolvedValue({
+        id: auth.session!.id,
+        expiresAt: null,
+        oauthBearerToken: 'id-token-secret',
+        pinExpiresAt: null,
+      });
+      mocks.session.delete.mockResolvedValue();
+
+      await sut.logout(auth, AuthType.Password);
+
+      expect(mocks.accountEvent.create).toHaveBeenCalledTimes(1);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith({
+        userId: auth.user.id,
+        sessionId: auth.session!.id,
+        action: 'signed-out',
+        subject: auth.user.name,
+      });
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, ['id-token-secret']);
+    });
+
+    it('records password and PIN changes without their values', async () => {
+      const user = UserFactory.create();
+      const auth = AuthFactory.create(user);
+      mocks.user.getForChangePassword.mockResolvedValue({ id: user.id, password: 'hash-password' });
+      mocks.user.update.mockResolvedValue(user);
+      await sut.changePassword(auth, { password: 'old-password', newPassword: 'new-password' });
+
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: null, password: '' });
+      mocks.user.setPinCodeAndLockSessions.mockResolvedValue(true);
+      await sut.setupPinCode(auth, { pinCode: '123456' });
+
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.crypto.compareBcrypt.mockImplementation((a, b) => Promise.resolve(`${a} (hashed)` === b));
+      await sut.changePinCode(auth, { pinCode: '123456', newPinCode: '654321' });
+
+      expect(mocks.accountEvent.create.mock.calls.map(([event]) => [event.action, event.detail])).toEqual([
+        ['password-changed', undefined],
+        ['pin-changed', 'set'],
+        ['pin-changed', 'changed'],
+      ]);
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, [
+        'old-password',
+        'new-password',
+        'hash-password',
+        '123456',
+        '654321',
+      ]);
+    });
+
+    it('does not fail the change when the row cannot be written', async () => {
+      const user = UserFactory.create();
+      mocks.user.getForChangePassword.mockResolvedValue({ id: user.id, password: 'hash-password' });
+      mocks.user.update.mockResolvedValue(user);
+      mocks.accountEvent.create.mockRejectedValue(new Error('database down'));
+
+      await expect(
+        sut.changePassword(AuthFactory.create(user), { password: 'old-password', newPassword: 'new-password' }),
+      ).resolves.toBeDefined();
     });
   });
 });

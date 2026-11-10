@@ -10,7 +10,7 @@ import { authStub } from 'test/fixtures/auth.stub.js';
 import { sharedLinkStub } from 'test/fixtures/shared-link.stub.js';
 import { getForSharedLink } from 'test/mappers.js';
 import { factory, newUuid } from 'test/small.factory.js';
-import { ServiceMocks, newTestService } from 'test/utils.js';
+import { ServiceMocks, expectNoSecretsInAccountEvents, newTestService } from 'test/utils.js';
 
 /** A link as the list of links loads it: its count and cover, not its contents. */
 const listed = (link: Parameters<typeof getForSharedLink>[0]) => ({
@@ -259,6 +259,11 @@ describe(SharedLinkService.name, () => {
         showExif: true,
         key: Buffer.from('random-bytes', 'utf8'),
       });
+      // FL-808: the album name and link type; never the key, password or slug
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'shared-link-created', subject: album.albumName, detail: 'ALBUM' }),
+      );
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, ['random-bytes', sharedLink.key.toString('base64url')]);
     });
 
     it('should create an individual shared link', async () => {
@@ -468,6 +473,10 @@ describe(SharedLinkService.name, () => {
 
       expect(mocks.sharedLink.get).toHaveBeenCalledWith(authStub.user1.user.id, sharedLink.id);
       expect(mocks.sharedLink.remove).toHaveBeenCalledWith(sharedLink.id);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: authStub.user1.user.id, action: 'shared-link-removed' }),
+      );
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, [sharedLink.key.toString('base64url')]);
     });
   });
 

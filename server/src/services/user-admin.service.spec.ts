@@ -1088,6 +1088,17 @@ describe(UserAdminService.name, () => {
           detail: 'two-factor-reset',
         }),
       ]);
+      // FL-808: the owner's own activity log shows it, without the administrator's device
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith({
+        userId: user.id,
+        action: 'two-factor-changed',
+        subject: user.name,
+        detail: 'admin-reset',
+        deviceType: null,
+        deviceOS: null,
+        via: null,
+        ipPrefix: null,
+      });
     });
 
     it('records the reset even when the sign-out then fails', async () => {
