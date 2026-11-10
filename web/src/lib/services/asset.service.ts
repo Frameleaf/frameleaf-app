@@ -88,10 +88,11 @@ export const showsEdit = (asset: Pick<AssetResponseDto, 'id' | 'ownerId' | 'isEd
   asset.isEdited || currentDevelopPlaybackRevision(asset) !== null;
 
 /**
- * Only the preview of a photo whose original is missing can be shown, so what needs the original says so
- * and points to what happened (Damaged and missing files) instead of failing. Returns true when it did.
+ * Only the preview of a photo whose original is missing can be shown, so what needs the original (Download,
+ * Download original, Edit, Send a copy, the still exports) says so and points to what happened (Damaged and missing
+ * files) instead of failing. Returns true when it did.
  */
-const explainOnlyPreview = (asset: Pick<AssetResponseDto, 'fileProblem'>, $t: MessageFormatter): boolean => {
+export const explainOnlyPreview = (asset: Pick<AssetResponseDto, 'fileProblem'>, $t: MessageFormatter): boolean => {
   const problem = asset.fileProblem;
   if (!problem?.missing) {
     return false;
@@ -167,7 +168,11 @@ export const getAssetActions = (
     title: $t('frameleaf_send_copy'),
     icon: mdiExportVariant,
     $if: () => sendCopyPermitted(sharedLink) && isSendable(asset) && canSendCopies(),
-    onAction: () => void sendCopiesWithFeedback([asset.id]),
+    onAction: () => {
+      if (!explainOnlyPreview(asset, $t)) {
+        void sendCopiesWithFeedback([asset.id]);
+      }
+    },
   };
 
   const PlayMotionPhoto: ActionItem = {

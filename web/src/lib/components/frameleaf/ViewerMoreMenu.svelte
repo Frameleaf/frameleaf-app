@@ -49,7 +49,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getAlbumAssetActions } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
-  import { getAssetActions, showsEdit } from '$lib/services/asset.service';
+  import { explainOnlyPreview, getAssetActions, showsEdit } from '$lib/services/asset.service';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getSharedLink } from '$lib/utils';
   import { downloadAssetFile } from '$lib/utils/asset-utils';
@@ -220,13 +220,18 @@
         ] as ('sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic')[])
       : [],
   );
-  const exportStill = (format: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic') =>
+  const exportStill = (format: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic') => {
+    // a still is made from the original: with only a preview left, it says so instead (FL-1338)
+    if (explainOnlyPreview(asset, $t)) {
+      return;
+    }
     downloadAssetFile({
       id: asset.id,
       edited: false,
       format,
       filename: `${asset.originalFileName.replace(/\.[^.]+$/, '')}_still_${format}.${format === 'hdr-heic' ? 'heic' : 'jpg'}`,
     });
+  };
 
   const groups: ViewerMenuGroup[] = $derived(viewerMenuGroups(context));
 

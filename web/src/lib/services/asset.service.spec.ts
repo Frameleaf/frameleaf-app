@@ -4,6 +4,7 @@ import { mdiTune } from '@mdi/js';
 import { get } from 'svelte/store';
 import { vitest } from 'vitest';
 import { resetPlaybackRevisions, setDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
+import { sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { getAssetActions, handleDownloadAsset } from '$lib/services/asset.service';
@@ -20,7 +21,13 @@ import { userAdminFactory } from '@test-data/factories/user-factory';
 vitest.mock('@frameleaf/ui', () => ({
   toastManager: {
     primary: vitest.fn(),
+    show: vitest.fn(),
   },
+}));
+
+vitest.mock('$lib/frameleaf/send-copy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/frameleaf/send-copy')>()),
+  sendCopiesWithFeedback: vitest.fn(),
 }));
 
 vitest.mock('$lib/utils/i18n', () => ({
@@ -114,6 +121,25 @@ describe('AssetService', () => {
       } finally {
         vitest.unstubAllGlobals();
       }
+    });
+
+    it('Send a copy explains that only a preview is left of a missing original, and sends nothing (FL-1338)', () => {
+      setOwnerUser();
+      const say = (key: string) => key;
+      const missing = assetFactory.build({ ownerId, fileProblem: { findingId: 'finding-1', missing: true } });
+      const action = getAssetActions(say as never, missing).SendCopy;
+      action.onAction(action);
+      expect(toastManager.show).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'frameleaf_viewer_file_only_preview' }),
+        expect.anything(),
+      );
+      expect(sendCopiesWithFeedback).not.toHaveBeenCalled();
+
+      // a damaged file is still there: it is sent
+      const damaged = assetFactory.build({ ownerId, fileProblem: { findingId: 'finding-2', missing: false } });
+      const send = getAssetActions(say as never, damaged).SendCopy;
+      send.onAction(send);
+      expect(sendCopiesWithFeedback).toHaveBeenCalledWith([damaged.id]);
     });
 
     it('offers no Share inside a public link, even to a signed-in visitor (FL-56)', () => {

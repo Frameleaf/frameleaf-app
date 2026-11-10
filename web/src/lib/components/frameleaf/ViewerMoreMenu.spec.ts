@@ -1,5 +1,5 @@
 import { AssetTypeEnum, AssetVisibility, DynamicRange } from '@frameleaf/sdk';
-import { modalManager } from '@frameleaf/ui';
+import { modalManager, toastManager } from '@frameleaf/ui';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -55,6 +55,31 @@ it('exports an unedited Live Photo as a separate still through the download mana
     format: 'sdr-jpeg',
   });
   expect(asset.livePhotoVideoId).toBe('motion');
+});
+
+it('explains that only a preview is left instead of exporting a still of a missing original (FL-1338)', async () => {
+  const asset = assetFactory.build({
+    ownerId: 'owner',
+    originalFileName: 'IMG.HEIC',
+    type: AssetTypeEnum.Image,
+    isEdited: false,
+    fileProblem: { findingId: 'finding-1', missing: true },
+  });
+  const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({ id: 't', close: () => {} }) as never);
+  try {
+    render(ViewerMoreMenu, { asset, preAction: vi.fn(), onAction: vi.fn() });
+    await fireEvent.click(screen.getByText('frameleaf_editor_export_sdr_jpeg'));
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: 'frameleaf_viewer_file_only_preview',
+        button: expect.objectContaining({ label: 'frameleaf_viewer_file_see_what_happened' }),
+      }),
+      expect.anything(),
+    );
+    expect(downloadAssetFile).not.toHaveBeenCalled();
+  } finally {
+    show.mockRestore();
+  }
 });
 
 it.each([
