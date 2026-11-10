@@ -3984,7 +3984,7 @@ export type MemoriesResponse = {
 export type PeopleResponse = {
     /** Whether people are enabled */
     enabled: boolean;
-    /** Whether archived photos appear on person pages and count in People (counts, the People page and the featured photo it picks). Off by default: People shows only photos on the timeline. Each viewer's own choice, partners included. Clients apply it on the person page by naming no visibility; the server applies it to counts and featured photos */
+    /** Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice */
     includeArchived: boolean;
     /** People face threshold */
     minimumFaces?: number;
@@ -4139,7 +4139,7 @@ export type MemoriesUpdate = {
 export type PeopleUpdate = {
     /** Whether people are enabled */
     enabled?: boolean;
-    /** Whether archived photos appear on person pages and count in People (counts, the People page and the featured photo it picks). Off by default: People shows only photos on the timeline. Each viewer's own choice, partners included. Clients apply it on the person page by naming no visibility; the server applies it to counts and featured photos */
+    /** Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice */
     includeArchived?: boolean;
     /** People face threshold */
     minimumFaces?: number;

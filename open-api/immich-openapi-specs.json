@@ -114937,7 +114937,7 @@
             "type": "boolean"
           },
           "includeArchived": {
-            "description": "Whether archived photos appear on person pages and count in People (counts, the People page and the featured photo it picks). Off by default: People shows only photos on the timeline. Each viewer's own choice, partners included. Clients apply it on the person page by naming no visibility; the server applies it to counts and featured photos",
+            "description": "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
             "type": "boolean",
             "x-immich-history": [
               {
@@ -115026,7 +115026,7 @@
             "type": "boolean"
           },
           "includeArchived": {
-            "description": "Whether archived photos appear on person pages and count in People (counts, the People page and the featured photo it picks). Off by default: People shows only photos on the timeline. Each viewer's own choice, partners included. Clients apply it on the person page by naming no visibility; the server applies it to counts and featured photos",
+            "description": "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
             "type": "boolean",
             "x-immich-history": [
               {
