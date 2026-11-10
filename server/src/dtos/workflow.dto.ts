@@ -29,8 +29,8 @@ const WorkflowTriggerResponseSchema = z
 const WorkflowSearchSchema = z
   .object({
     id: z.uuidv4().optional().describe('Workflow ID'),
-    // FL-819: a plain string, so a Frameleaf event trigger from discovery's `eventTriggers` can be searched too
-    trigger: z.string().min(1).max(100).optional().describe('Workflow trigger type'),
+    // FL-819: Frameleaf event triggers are WorkflowTrigger values too, so the enum already covers them
+    trigger: WorkflowTriggerSchema.optional().describe('Workflow trigger type'),
     name: z.string().optional().describe('Workflow name'),
     description: z.string().optional().describe('Workflow description'),
     enabled: z.boolean().optional().describe('Workflow enabled'),
