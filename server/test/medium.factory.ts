@@ -73,6 +73,7 @@ import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -190,6 +191,11 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
         }
         case MediaHealthRepository: {
           Object.assign(this.sut, { [key]: this.get(MediaHealthRepository) });
+          break;
+        }
+        case PasskeyRepository: {
+          // FL-836: AuthService and UserAdminService read passkeys from the spec's database
+          Object.assign(this.sut, { [key]: new PasskeyRepository(this.database) });
           break;
         }
       }

@@ -49425,6 +49425,497 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "user_passkey",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "credentialId",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "publicKey",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "counter",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "transports",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::text[]",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "name",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "rpId",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "aaguid",
+          "tableName": "user_passkey",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "backedUp",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "user_passkey",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastUsedAt",
+          "tableName": "user_passkey",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "user_passkey_userId_idx",
+          "definition": "CREATE INDEX \"user_passkey_userId_idx\" ON public.user_passkey USING btree (\"userId\")",
+          "tableName": "user_passkey",
+          "columnNames": [
+            "userId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "user_passkey_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "user_passkey",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "user_passkey_credentialId_uq",
+          "definition": "UNIQUE (\"credentialId\")",
+          "tableName": "user_passkey",
+          "columnNames": [
+            "credentialId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "user_passkey_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "user_passkey",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "auth_challenge",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "auth_challenge",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "purpose",
+          "tableName": "auth_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "challenge",
+          "tableName": "auth_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "auth_challenge",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
+          "tableName": "auth_challenge",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "origin",
+          "tableName": "auth_challenge",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "rpId",
+          "tableName": "auth_challenge",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "credentialVersion",
+          "tableName": "auth_challenge",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "auth_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "auth_challenge",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "auth_challenge_sessionId_idx",
+          "definition": "CREATE INDEX \"auth_challenge_sessionId_idx\" ON public.auth_challenge USING btree (\"sessionId\")",
+          "tableName": "auth_challenge",
+          "columnNames": [
+            "sessionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "auth_challenge_expiresAt_idx",
+          "definition": "CREATE INDEX \"auth_challenge_expiresAt_idx\" ON public.auth_challenge USING btree (\"expiresAt\")",
+          "tableName": "auth_challenge",
+          "columnNames": [
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "auth_challenge_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "auth_challenge",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "auth_challenge_challenge_uq",
+          "definition": "UNIQUE (challenge)",
+          "tableName": "auth_challenge",
+          "columnNames": [
+            "challenge"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "auth_challenge_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "auth_challenge",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "auth_challenge_sessionId_fkey",
+          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "auth_challenge",
+          "columnNames": [
+            "sessionId"
+          ],
+          "referenceTableName": "session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "user_credential_version",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "user_credential_version",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "version",
+          "tableName": "user_credential_version",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "user_credential_version_pkey",
+          "definition": "PRIMARY KEY (\"userId\")",
+          "tableName": "user_credential_version",
+          "columnNames": [
+            "userId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "user_credential_version_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "user_credential_version",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "session_passkey",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
+          "tableName": "session_passkey",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "passkeyId",
+          "tableName": "session_passkey",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "session_passkey_passkeyId_idx",
+          "definition": "CREATE INDEX \"session_passkey_passkeyId_idx\" ON public.session_passkey USING btree (\"passkeyId\")",
+          "tableName": "session_passkey",
+          "columnNames": [
+            "passkeyId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "session_passkey_pkey",
+          "definition": "PRIMARY KEY (\"sessionId\")",
+          "tableName": "session_passkey",
+          "columnNames": [
+            "sessionId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "session_passkey_sessionId_fkey",
+          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "session_passkey",
+          "columnNames": [
+            "sessionId"
+          ],
+          "referenceTableName": "session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "session_passkey_passkeyId_fkey",
+          "definition": "FOREIGN KEY (\"passkeyId\") REFERENCES user_passkey(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "session_passkey",
+          "columnNames": [
+            "passkeyId"
+          ],
+          "referenceTableName": "user_passkey",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [

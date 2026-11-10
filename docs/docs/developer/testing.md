@@ -45,17 +45,18 @@ Medium tests (`server/test/medium`) run against a real PostgreSQL container star
 
 ```bash
 bash scripts/checkout-test-assets.sh
+sh server/test/fixtures/formats/fetch-fate.sh /tmp/fate # FFmpeg samples with no stated licence, checked against pinned hashes
 docker build --target native-raw-validation -f server/Dockerfile -t frameleaf-native-raw:formats .
 run() { docker run --rm --network none --entrypoint node \
   -v "$PWD/server/base-image:/harness:ro" -v "$PWD/server/test/fixtures/formats:/fixtures/generated:ro" \
-  -v "$PWD/e2e/test-assets:/fixtures/test-assets:ro" -v "$PWD/server/resources:/fixtures/resources:ro" \
+  -v "$PWD/e2e/test-assets:/fixtures/test-assets:ro" -v "$PWD/server/resources:/fixtures/resources:ro" -v /tmp/fate:/fixtures/fate:ro \
   frameleaf-native-raw:formats "$@"; }
 run /harness/verify-decoders.mjs
 run /harness/verify-formats.mjs /fixtures/generated/manifest.json \
-  generated=/fixtures/generated test-assets=/fixtures/test-assets resources=/fixtures/resources
+  generated=/fixtures/generated test-assets=/fixtures/test-assets resources=/fixtures/resources fate=/fixtures/fate
 ```
 
-Add `--actual` to print what the image does with each fixture today. A fixture that lands before its fix carries `expectedFailure` with the reason and `failsOn` with the keys that differ today; update or remove them as the fix lands, because a marked fixture that passes, or fails on other keys, fails the run. In CI the same two commands run from the manual `Frameleaf quality` dispatch with `raw_engine=formats`. `SOURCES.md` beside the manifest says where each fixture comes from.
+Fixtures whose root is left off the command line are not run, and the summary names the roots it skipped. Add `--actual` to print what the image does with each fixture today. A fixture that lands before its fix carries `expectedFailure` with the reason and `failsOn` with the keys that differ today; update or remove them as the fix lands, because a marked fixture that passes, or fails on other keys, fails the run. In CI the same two commands run from the manual `Frameleaf quality` dispatch with `raw_engine=formats`. `SOURCES.md` beside the manifest says where each fixture comes from.
 
 ## Container images and mirrors
 

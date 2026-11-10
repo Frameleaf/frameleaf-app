@@ -3154,9 +3154,9 @@ export const AdminAuditActionSchema = z
  * key secret or file path.
  */
 export enum AccountEventAction {
-  /** `detail` is how: `password`, `two-factor`, `oauth` or `frameleaf`. */
+  /** `detail` is how: `password`, `two-factor`, `passkey`, `oauth` or `frameleaf`. */
   SignedIn = 'signed-in',
-  /** `detail` is the step that failed: `password` or `two-factor`. */
+  /** `detail` is the step that failed: `password`, `two-factor` or `passkey`. */
   SignInFailed = 'sign-in-failed',
   SignedOut = 'signed-out',
   /** `subject` is the signed-out device, as the session list names it. */
@@ -3166,6 +3166,11 @@ export enum AccountEventAction {
   PinChanged = 'pin-changed',
   /** `detail` is `enabled`, `disabled`, `moved` or `admin-reset`. */
   TwoFactorChanged = 'two-factor-changed',
+  /** FL-836: `subject` is the passkey's name. */
+  PasskeyAdded = 'passkey-added',
+  PasskeyRemoved = 'passkey-removed',
+  /** FL-836: an administrator removed every passkey; `detail` is how many. */
+  PasskeysRemovedByAdmin = 'passkeys-removed-by-admin',
   /** `subject` is the key's name. */
   ApiKeyCreated = 'api-key-created',
   ApiKeyDeleted = 'api-key-deleted',
