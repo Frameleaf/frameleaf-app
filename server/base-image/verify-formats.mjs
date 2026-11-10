@@ -5,7 +5,8 @@
 // points the server itself uses, and the result is compared with what the manifest expects:
 //
 //   kind     decode entry point                                             rungs
-//   still    MediaRepository.decodeImage, strict then lenient               strict | lenient
+//   still    MediaRepository.decodeImage: the still ladder (FL-1356)        strict | lenient | djpeg | jxrlib |
+//                                                                           magick | ffmpeg | embedded
 //   design   MediaRepository.decodeImage, which runs the design ladder      rendered | container | embedded | placeholder
 //            (FL-1358); a rendering that comes out one flat colour is a failure
 //   raw      renderRawWithLibRaw, then a full 16-bit decode of its TIFF     libraw
@@ -17,6 +18,9 @@
 //
 // `integrity` is MediaIntegrityService.validate({ deep: true }) said in the product's words:
 //   healthy | cut-short (service: corrupt) | unsupported | couldnt-check (transient, timeout)
+//
+// `matches: "<fixture>"` also compares the decoded picture, shrunk to 8x8, with that fixture's (same root):
+// a wrong colour conversion, a dark 12-bit read or a turned picture decodes at the right size and still fails.
 //
 // A fixture whose fix has not landed carries `expectedFailure: "<why, and which story fixes it>"`.
 // with `failsOn`, the keys that differ today. It must fail on exactly those keys: once it passes, or
@@ -63,14 +67,32 @@ const run = promisify(execFile);
 const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
 
 const decoders = {
-  async still(file) {
-    try {
-      const { info } = await media.decodeImage(file, { colorspace: 'srgb', processInvalidImages: false });
-      return { rung: 'strict', width: info.width, height: info.height };
-    } catch {
-      const { info } = await media.decodeImage(file, { colorspace: 'srgb', processInvalidImages: true });
-      return { rung: 'lenient', width: info.width, height: info.height };
+  async still(file, { matches } = {}) {
+    const decode = (path) => media.decodeImage(path, { colorspace: 'srgb', processInvalidImages: false });
+    const { data, info, rung, designRung } = await decode(file);
+    if (designRung) {
+      // A document saved without its flat picture must still show its layers, not the white stand-in.
+      assert.ok(
+        data.some((value) => value !== data[0]),
+        'rendered as one flat colour',
+      );
     }
+    const decoded = { rung: designRung ?? rung, width: info.width, height: info.height };
+    if (matches) {
+      const small = (pixels) =>
+        sharp(pixels.data, {
+          raw: { width: pixels.info.width, height: pixels.info.height, channels: pixels.info.channels },
+        })
+          .resize(8, 8, { fit: 'fill' })
+          .removeAlpha()
+          .raw()
+          .toBuffer();
+      const [actual, wanted] = await Promise.all([small({ data, info }), decode(matches).then(small)]);
+      const difference = actual.reduce((sum, value, index) => sum + Math.abs(value - wanted[index]), 0) / actual.length;
+      // A CMYK original read through a generic profile sits about 15 away; inverted or dark is 70 and more.
+      decoded.matches = difference < 24 ? true : `no (differs by ${difference.toFixed(1)} of 255)`;
+    }
+    return decoded;
   },
   async raw(file) {
     // The checks verify-raw.mjs makes: LibRaw from /usr/local, real 16-bit TIFF bytes with a profile,
@@ -119,24 +141,15 @@ const decoders = {
     return { rung: 'specimen' };
   },
 };
-decoders.design = async (file) => {
-  let decoded;
-  try {
-    decoded = await media.decodeImage(file, { colorspace: 'srgb', processInvalidImages: false });
-  } catch (error) {
+// FL-1358: a design file goes down its own ladder inside decodeImage; one with no picture inside is kept
+// and shown by the plain tile, which is a result, not a failure.
+decoders.design = (file, options) =>
+  decoders.still(file, options).catch((error) => {
     if (error instanceof DesignPreviewUnavailableError) {
       return { rung: 'placeholder' };
     }
     throw error;
-  }
-  const { data, info, designRung } = decoded;
-  // A document saved without its flat picture must still show its layers, not the white stand-in.
-  assert.ok(
-    data.some((value) => value !== data[0]),
-    'rendered as one flat colour',
-  );
-  return { rung: designRung, width: info.width, height: info.height };
-};
+  });
 
 const verdicts = {
   healthy: 'healthy',
@@ -168,7 +181,7 @@ for (const fixture of manifest.fixtures) {
 
   let decoded, error;
   try {
-    decoded = await decoders[kind](path);
+    decoded = await decoders[kind](path, { matches: expected.matches && resolve(roots[root], expected.matches) });
   } catch (caught) {
     error = caught;
   }
@@ -196,7 +209,7 @@ for (const fixture of manifest.fixtures) {
       JSON.stringify({ file, root, kind, ...actual, detail: [result.reason, error?.message.split('\n')[0]] }),
     );
   }
-  const mismatches = Object.keys(expected).filter((key) => expected[key] !== actual[key]);
+  const mismatches = Object.keys(expected).filter((key) => (key === 'matches' ? true : expected[key]) !== actual[key]);
   const detail = [
     result.status === 'healthy' ? '' : `integrity: ${result.status}/${result.reason}`,
     error ? `decode: ${String(error.message).split('\n')[0]}` : '',

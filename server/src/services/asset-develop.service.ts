@@ -2015,6 +2015,8 @@ export class AssetDevelopService {
     const { data, info } = await this.mediaRepository.decodeImage(revision.masterPath, {
       colorspace: image.colorspace,
       processInvalidImages: false,
+      // An edit brought back from another app must be whole: a cut-off one fails here, it is not shown half grey.
+      ladder: 'strict',
       size: image.preview.size * 2,
     });
     await this.progress(revision.id, 60);

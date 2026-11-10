@@ -4,7 +4,7 @@
 
 | Root          | Location                                         | Origin                                                      |
 | ------------- | ------------------------------------------------ | ----------------------------------------------------------- |
-| `generated`   | this folder (`jpeg/ still/ design/ video/`)       | Made by `generate.sh` from test patterns. No third-party rights. |
+| `generated`   | this folder (`jpeg/ still/ design/ video/`)       | Made by `generate.sh` and `generate-more-stills.sh` from test patterns. No third-party rights. |
 | `test-assets` | `e2e/test-assets` (`Frameleaf/frameleaf-test-assets`, pinned in `scripts/checkout-test-assets.sh`) | Third-party samples, each with its own licence. |
 | `resources`   | `server/resources`                               | Files the server already ships (the bundled OFL Studio fonts). |
 | `fate`        | downloaded by `fetch-fate.sh`, never committed   | FFmpeg FATE samples, pinned by SHA-256 in `fate.sha256`. |
