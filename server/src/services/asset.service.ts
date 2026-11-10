@@ -1315,9 +1315,10 @@ export class AssetService extends BaseService {
   }
 
   retryProcessingFailures(auth: AuthDto, dto: ProcessingFailureActionDto) {
-    return this.assetJobRepository.updateProcessingFailures(auth, dto, (tx, name, id) =>
-      this.jobRepository.queueInTransaction(tx, { name, data: { id } }),
-    );
+    return this.assetJobRepository.updateProcessingFailures(auth, dto, {
+      queueName: (name) => this.jobRepository.getQueueName(name),
+      enqueue: (tx, name, id) => this.jobRepository.queueInTransaction(tx, { name, data: { id } }),
+    });
   }
 
   dismissProcessingFailures(auth: AuthDto, dto: ProcessingFailureActionDto) {

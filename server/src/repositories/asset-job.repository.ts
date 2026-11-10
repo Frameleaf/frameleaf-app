@@ -63,6 +63,8 @@ const keepsOwnCopyThumbnails = sql<boolean>`EXISTS (
     AND copy_file.path <> source_file.path
 )`;
 
+type ProcessingFailureStep = ProcessingFailureActionDto['items'][number]['step'];
+
 type ReconciledJob =
   | JobName.AssetExtractMetadata
   | JobName.AssetGenerateThumbnails
@@ -153,13 +155,23 @@ export class AssetJobRepository {
   async updateProcessingFailures(
     auth: AuthDto,
     { items }: ProcessingFailureActionDto,
-    enqueue?: (
-      tx: Transaction<DB>,
-      step: ProcessingFailureActionDto['items'][number]['step'],
-      id: string,
-    ) => Promise<void>,
+    retry?: {
+      queueName: (step: ProcessingFailureStep) => QueueName;
+      enqueue: (tx: Transaction<DB>, step: ProcessingFailureStep, id: string) => Promise<void>;
+    },
   ) {
     await this.db.transaction().execute(async (tx) => {
+      if (retry) {
+        const queues = [...new Set(items.map(({ step }) => retry.queueName(step)))];
+        // Claim holds the queue row until a pending job becomes active or blocked.
+        await tx
+          .selectFrom('job_queue')
+          .select('name')
+          .where('name', 'in', queues)
+          .orderBy('name')
+          .forNoKeyUpdate()
+          .execute();
+      }
       // Stable locking order makes two overlapping bulk actions safe.
       const ordered = items.toSorted((a, b) => a.assetId.localeCompare(b.assetId) || a.step.localeCompare(b.step));
       for (const { assetId, step } of ordered) {
@@ -174,7 +186,7 @@ export class AssetJobRepository {
           .updateTable('asset_processing_failure')
           .where('assetId', '=', assetId)
           .where('step', '=', step);
-        if (!enqueue) {
+        if (!retry) {
           await update.set({ dismissedAt: new Date() }).execute();
           continue;
         }
@@ -183,12 +195,13 @@ export class AssetJobRepository {
         const live = await tx
           .selectFrom('job')
           .select('id')
+          .where('queue', '=', retry.queueName(step))
           .where('name', '=', step)
           .where('state', 'in', ['pending', 'waiting', 'active'])
-          .where(sql<boolean>`lower(data->>'id') = ${assetId.toLowerCase()}`)
+          .where(sql<boolean>`lower(data->>'id') collate "C" = ${assetId.toLowerCase()}`)
           .limit(1)
           .executeTakeFirst();
-        if (!live) await enqueue(tx, step, assetId.toLowerCase());
+        if (!live) await retry.enqueue(tx, step, assetId.toLowerCase());
       }
     });
   }

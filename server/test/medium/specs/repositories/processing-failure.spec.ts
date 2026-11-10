@@ -107,9 +107,10 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
   expect(await repository.getProcessingFailures(auth, query)).toMatchObject([{ assetId: corrupt.id, attempts: 4 }]);
 
   const retry = () =>
-    repository.updateProcessingFailures(auth, action, (tx, name, id) =>
-      jobs.queueInTransaction(tx, { name, data: { id } }),
-    );
+    repository.updateProcessingFailures(auth, action, {
+      queueName: (name) => jobs.getQueueName(name),
+      enqueue: (tx, name, id) => jobs.queueInTransaction(tx, { name, data: { id } }),
+    });
   await Promise.all([retry(), retry()]);
   const [claim] = await store.claim(queue, worker, 1);
   expect(claim.data.id).toBe(corrupt.id);
@@ -123,6 +124,77 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
   expect(await db.selectFrom('asset').select('originalPath').where('id', '=', corrupt.id).executeTakeFirst()).toEqual({
     originalPath: corrupt.originalPath,
   });
+});
+
+it('retries an item even when a concurrent claim is about to block its pending job', async () => {
+  const db = await getKyselyDB();
+  onTestFinished(() => db.destroy());
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id });
+  const queue = QueueName.ThumbnailGeneration;
+  const step = JobName.AssetGenerateThumbnails;
+  const worker = randomUUID();
+  const store = new SqlQueueStore(db);
+  const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+  jobs['handlers'][step] = { queueName: queue } as never;
+  await store.initialize([queue], worker);
+  await jobs.queue({ name: step, data: { id: asset.id } });
+  const pending = await db.selectFrom('job').select('id').where('queue', '=', queue).executeTakeFirstOrThrow();
+  await db
+    .insertInto('asset_processing_failure')
+    .values({
+      assetId: asset.id,
+      step,
+      attempts: 3,
+      lastError: 'unreadable',
+      lastFailedAt: new Date(),
+      quarantinedAt: new Date(),
+    })
+    .execute();
+
+  const blocked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const claim = db.transaction().execute(async (tx) => {
+    await tx.selectFrom('job_queue').select('name').where('name', '=', queue).forNoKeyUpdate().execute();
+    await tx
+      .updateTable('job')
+      .set({ state: 'blocked', finishedAt: new Date(), error: 'Processing set aside' })
+      .where('id', '=', pending.id)
+      .execute();
+    blocked.resolve();
+    await release.promise;
+  });
+  await Promise.race([blocked.promise, claim]);
+  const auth = factory.auth({ user: { id: user.id, isAdmin: false } });
+  const retry = ctx.get(AssetJobRepository).updateProcessingFailures(
+    auth,
+    { items: [{ assetId: asset.id, step }] },
+    {
+      queueName: (name) => jobs.getQueueName(name),
+      enqueue: (tx, name, id) => jobs.queueInTransaction(tx, { name, data: { id } }),
+    },
+  );
+  try {
+    await vi.waitFor(async () => {
+      const {
+        rows: [wait],
+      } = await sql<{ waiting: boolean }>`select exists (
+        select 1 from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid()
+        and wait_event_type = 'Lock' and query like 'select "name" from "job_queue" %for no key update'
+      ) as waiting`.execute(db);
+      expect(wait.waiting).toBe(true);
+    });
+  } finally {
+    release.resolve();
+    await Promise.all([claim, retry]);
+  }
+
+  const [replacement] = await store.claim(queue, worker, 1);
+  expect(replacement).toMatchObject({ data: { id: asset.id } });
+  expect(replacement.id).not.toBe(pending.id);
+  expect(await store.complete(replacement, [])).toBe(true);
+  expect(await store.claim(queue, worker, 1)).toEqual([]);
 });
 
 it('records real decoder failures and an expired worker claim without changing either original', async () => {
