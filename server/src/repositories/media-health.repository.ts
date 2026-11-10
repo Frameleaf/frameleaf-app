@@ -189,7 +189,7 @@ export type UndoFileFix = {
  * What `undoFix` did: `undone`; `changed`, when the photo is no longer as the fix left it; `open`, when the
  * same photo has another problem open (Review Focus 5). Nothing is written or moved unless `undone`.
  */
-export type UndoFileFixResult = 'undone' | 'changed' | 'open';
+export type UndoFileFixResult = 'undone' | 'changed' | 'open' | 'locked';
 /** The fix states of each tab of Damaged and missing files (FL-1337 ruling 1). */
 const NEEDS_FIX_STATES = ['missing', 'waiting-phone', 'cant-repair', 'couldnt-check'];
 const FIXED_FIX_STATES = ['repaired', 'part-saved', 'found-again', 'restored'];
@@ -1814,9 +1814,10 @@ export class MediaHealthRepository {
    * Undo one fix (FL-1337, design §5) in one transaction, holding the owner, both paths, the asset and the
    * problem in the order a relink holds them. `changed`, with nothing written or moved, when the photo is no
    * longer as the fix left it (Review Focus 3): another file or checksum, in the Trash, an edit saved or removed
-   * since the fix, or a later fix or Undo; `open` while the photo has another problem open (Review Focus 5).
-   * Then a repair or relink points the photo back at the file it used before, a restore moves its files, and
-   * the problem is reopened with the `undone` step.
+   * since the fix, or a later fix or Undo; `open` while the photo has another problem open (Review Focus 5);
+   * `locked` when the photo is Locked now (Task 11b), read under its row lock. Then a repair or relink points the
+   * photo back at the file it used before, a restore moves its files, and the problem is reopened with the
+   * `undone` step.
    */
   async undoFix(input: UndoFileFix): Promise<UndoFileFixResult> {
     const target = input.relinkTo && path.normalize(input.relinkTo.path);
@@ -1839,9 +1840,14 @@ export class MediaHealthRepository {
         .withSchema('public')
         .selectFrom('asset')
         .selectAll()
+        .select(isLocked('asset').as('isLocked'))
         .where('id', '=', asUuid(input.assetId))
         .forUpdate()
         .executeTakeFirst();
+      if (asset?.isLocked) {
+        // Task 11b: put in Locked since the caller looked; nothing is relinked or moved
+        return 'locked';
+      }
       const health = await trx
         .withSchema('public')
         .selectFrom('asset_health')

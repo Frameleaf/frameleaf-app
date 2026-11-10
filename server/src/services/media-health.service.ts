@@ -2494,6 +2494,10 @@ export class MediaHealthService {
     if (result === 'open') {
       throw new ConflictException(OTHER_PROBLEM_OPEN);
     }
+    if (result === 'locked') {
+      // put in Locked after the check above, before the undo held the photo: nothing was moved or relinked
+      throw new ConflictException(UNDO_LOCKED);
+    }
     if (result === 'changed') {
       throw new ConflictException(UNDO_CHANGED);
     }

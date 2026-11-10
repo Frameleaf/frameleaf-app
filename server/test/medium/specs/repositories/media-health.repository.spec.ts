@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import {
+  AssetLockReason,
   AssetStatus,
   AssetVisibility,
   ChecksumAlgorithm,
@@ -1700,6 +1701,29 @@ describe(MediaHealthRepository.name, () => {
       await defaultDatabase.deleteFrom('asset_edit').where('assetId', '=', asset.id).execute();
       await expect(sut.undoFix(undo)).resolves.toBe('changed');
       await unchanged();
+    });
+
+    it('undoFix moves and relinks nothing for a photo locked meanwhile (Task 11b)', async () => {
+      const { sut, asset, finding, repairedPath, undo, assetRow } = await arrangeRepaired();
+      // the photo was put in Locked after the service looked, before the undo took its lock
+      await defaultDatabase
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Marked })
+        .execute();
+      const moveFiles = vi.fn();
+
+      await expect(sut.undoFix({ ...undo, moveFiles })).resolves.toBe('locked');
+
+      expect(moveFiles).not.toHaveBeenCalled();
+      await expect(assetRow()).resolves.toMatchObject({ originalPath: repairedPath });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({ status: MediaHealthStatus.Resolved, resolvedAt: expect.any(Date) }),
+      ]);
+      expect((await sut.listSteps(finding.id)).map(({ step }) => step)).toEqual(['repaired', 'kept-damaged']);
+
+      // unlocked again, the same undo goes through
+      await defaultDatabase.deleteFrom('asset_lock').where('assetId', '=', asset.id).execute();
+      await expect(sut.undoFix(undo)).resolves.toBe('undone');
     });
 
     it('undoFix leaves a fix that a later fix or an undo replaced', async () => {

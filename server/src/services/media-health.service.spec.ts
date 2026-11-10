@@ -6184,6 +6184,32 @@ describe(MediaHealthService.name, () => {
         expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
       });
 
+      it('refuses to undo a fix of a photo put in Locked while the undo waited for it (Task 11b)', async () => {
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        await writeFile(damaged, 'the damaged file');
+        await writeFile(repaired, 'the repaired file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+        shows(problem({ originalPath: repaired, evidence: { fixState: 'repaired', retainedPath: damaged } }));
+        history(
+          step('step-1', 'repaired', 'ok'),
+          step('step-2', 'kept-damaged', 'info', {
+            undo: {
+              kind: 'repair',
+              previousPath: damaged,
+              originalPath: repaired,
+              checksum: sha256('the repaired file').toString('hex'),
+            },
+          }),
+        );
+        // the repository holds the photo and finds it Locked now
+        vi.mocked(mediaHealthRepository.undoFix).mockResolvedValue('locked');
+
+        await refused(sut.undoFileProblemFix(owner, 'health-1'), "This photo is locked, so this fix can't be undone.");
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+      });
+
       it('refuses to undo a restore while the drive that keeps the copies is not there', async () => {
         const original = join(root, 'library', 'IMG_5520.jpg');
         await mkdir(join(root, 'library'), { recursive: true });
