@@ -28,8 +28,8 @@ const luminance = (rgb: number[]) => {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 const contrast = (a: number[], b: number[]) => {
-  const [high, low] = [luminance(a), luminance(b)].toSorted((x, y) => y - x);
-  return (high + 0.05) / (low + 0.05);
+  const [x, y] = [luminance(a), luminance(b)];
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 };
 /** `color-mix(in srgb, a p%, b)` */
 const mix = (a: number[], b: number[], percent: number) =>
