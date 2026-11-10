@@ -264,6 +264,7 @@ export class JobService extends BaseService {
       }
 
       case JobName.SidecarWrite: {
+        if (item.data.facesOnly) break;
         await this.jobRepository.queue({
           name: JobName.AssetExtractMetadata,
           data: { id: item.data.id, source: 'sidecar-write' },

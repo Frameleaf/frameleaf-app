@@ -8975,6 +8975,8 @@
   "frameleaf_intel_faces_import_help": "If Lightroom, digiKam or another app saved who is in a photo, show those people here.",
   "frameleaf_intel_faces_import_new_body": "To include the photos you already have, read their details again from Background work after saving.",
   "frameleaf_intel_faces_import_new_title": "This applies to photos added from now on",
+  "frameleaf_intel_faces_write": "Save people’s names in XMP sidecars",
+  "frameleaf_intel_faces_write_help": "Save names and face positions beside photos so other photo apps can read them.",
   "frameleaf_intel_faces_model": "Face model",
   "frameleaf_intel_faces_model_antelopev2": "antelopev2 (largest)",
   "frameleaf_intel_faces_model_buffalo_l": "buffalo_l (large)",

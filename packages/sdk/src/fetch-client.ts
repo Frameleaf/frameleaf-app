@@ -1923,6 +1923,8 @@ export type AdminConfigMapDto = {
 export type AdminConfigFacesDto = {
     /** Import */
     "import": boolean;
+    /** Save people’s names in XMP sidecars */
+    write?: boolean;
 };
 export type AdminConfigMetadataDto = {
     faces: AdminConfigFacesDto;

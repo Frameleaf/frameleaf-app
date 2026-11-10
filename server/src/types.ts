@@ -632,7 +632,7 @@ export type JobItem =
   | {
       name: JobName.SidecarWrite;
       /** `releaseDateLock`: FL-1299's Undo. The date goes into the sidecar, then stops being locked. */
-      data: IEntityJob & { releaseDateLock?: boolean };
+      data: IEntityJob & { releaseDateLock?: boolean; facesOnly?: boolean };
     }
   | { name: JobName.DuplicateResolutionLifecycle; data: IDuplicateResolutionLifecycleJob }
 

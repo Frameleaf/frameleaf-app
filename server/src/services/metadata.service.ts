@@ -36,7 +36,7 @@ import { afterJobCommit, attemptOutputPath, jobSignal, publishJobResult, queueEx
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
-import { ImmichTags } from 'src/repositories/metadata.repository.js';
+import { ImmichTags, SidecarTags } from 'src/repositories/metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -46,6 +46,7 @@ import { resolveCameraIdentification } from 'src/utils/camera-identification.js'
 import { captureDetails } from 'src/utils/capture-details.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { DJI_SRT_READ_BYTES, getDjiSrtCandidates, parseDjiSrtLocation } from 'src/utils/dji-srt.js';
+import { boxIou, fractionBox, normalizedBox } from 'src/utils/face-anchor.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { detectMediaKinds } from 'src/utils/media-kinds.js';
@@ -640,7 +641,7 @@ export class MetadataService extends BaseService {
         this.hasTaggedFaces(exifTags) &&
         !imported
       ) {
-        tasks.push(() => this.applyTaggedFaces(asset, exifTags));
+        tasks.push(() => this.applyTaggedFaces(current, exifTags));
       }
 
       await Promise.all(tasks.map((task) => task()));
@@ -794,6 +795,9 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.SidecarWrite, queue: QueueName.Sidecar })
   async handleSidecarWrite(job: JobOf<JobName.SidecarWrite>): Promise<JobStatus> {
+    if (job.facesOnly && (await this.getConfig({ withCache: true })).metadata.faces.write === false) {
+      return JobStatus.Skipped;
+    }
     const status = await this.databaseRepository.withAssetSidecarLock(job.id, (kysely) =>
       this.writeSidecar(job, kysely),
     );
@@ -813,7 +817,13 @@ export class MetadataService extends BaseService {
       return (await this.assetJobRepository.getForSidecarCheckJob(id, kysely)) ? JobStatus.Failed : JobStatus.Skipped;
     }
 
-    const lockedProperties = await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(id, kysely);
+    const faceData = job.facesOnly ? await this.assetJobRepository.getForSidecarFaces(id, kysely) : undefined;
+    if (job.facesOnly && !faceData) {
+      return JobStatus.Skipped;
+    }
+    const lockedProperties = job.facesOnly
+      ? []
+      : await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(id, kysely);
 
     const { sidecarFile } = getAssetFiles(asset.files);
     const sidecarPath =
@@ -860,25 +870,37 @@ export class MetadataService extends BaseService {
       isUndefined,
     );
 
-    if (Object.keys(exif).length === 0) {
-      return JobStatus.Skipped;
-    }
-
-    this.storageCore.ensureFolders(sidecarPath);
-    if (
+    const copySource =
       asset.libraryReadOnly &&
       sidecarFile?.path &&
       sidecarFile.path !== sidecarPath &&
       (await this.canUseExistingSidecarPath(asset, sidecarFile.path, kysely))
-    ) {
+        ? sidecarFile.path
+        : undefined;
+    const tagsToWrite = faceData
+      ? await this.getSidecarFaceTags(
+          this.sidecarFaceRegions(faceData.faces, asset.exifInfo),
+          copySource ?? sidecarPath,
+        )
+      : exif;
+    if (!tagsToWrite || Object.keys(tagsToWrite).length === 0) {
+      return JobStatus.Skipped;
+    }
+
+    this.storageCore.ensureFolders(sidecarPath);
+    if (copySource) {
       // Preserve unedited source-XMP fields while applying edits only to our independent copy.
-      await this.storageRepository.copyFile(sidecarFile.path, sidecarPath);
+      await this.storageRepository.copyFile(copySource, sidecarPath);
     }
     // FL-721: exiftool edits a sealed sidecar through a plain copy; the result is sealed again after
-    await rewriteThroughPlainCopy(sidecarPath, (path) => this.metadataRepository.writeTags(path, exif));
+    await rewriteThroughPlainCopy(sidecarPath, (path) => this.metadataRepository.writeTags(path, tagsToWrite));
 
     if (!sidecarFile || sidecarFile.path !== sidecarPath) {
       await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath }, kysely);
+    }
+
+    if (job.facesOnly) {
+      return JobStatus.Success;
     }
 
     // FL-36 (V-24): the sidecar has no place names, so a typed city, state or country stays locked.
@@ -907,6 +929,77 @@ export class MetadataService extends BaseService {
     );
 
     return JobStatus.Success;
+  }
+
+  private async getSidecarFaceTags(
+    faceRegions: ImmichTags['RegionInfo'],
+    path: string,
+  ): Promise<SidecarTags | undefined> {
+    const previous = (await this.storageRepository.checkFileExists(path))
+      ? await withPlainCopy(path, (plain) => this.metadataRepository.readTags(plain))
+      : undefined;
+    if (!faceRegions && !previous?.RegionInfo && !previous?.PersonInImage) {
+      return;
+    }
+
+    // Other tools also use MWG regions for things besides faces.
+    const otherRegions = (previous?.RegionInfo?.RegionList ?? []).filter(
+      (region) => region.Type && region.Type !== 'Face',
+    );
+    const dimensions = otherRegions.length
+      ? previous?.RegionInfo?.AppliedToDimensions
+      : (faceRegions ?? previous?.RegionInfo)?.AppliedToDimensions;
+    const regions = [...otherRegions, ...(faceRegions?.RegionList ?? [])];
+    const names = [...new Set(faceRegions?.RegionList.flatMap(({ Name }) => (Name ? [Name] : [])))];
+    return {
+      // Keep dimensions after the last face is removed so the sidecar overrides any embedded regions.
+      'XMP-mwg-rs:RegionInfo': dimensions ? { AppliedToDimensions: dimensions, RegionList: regions } : null,
+      'XMP-iptcExt:PersonInImage': names.length ? names : null,
+    };
+  }
+
+  private sidecarFaceRegions(
+    faces: NonNullable<Awaited<ReturnType<AssetJobRepository['getForSidecarFaces']>>>['faces'],
+    exif: Pick<AssetExifTable, 'exifImageWidth' | 'exifImageHeight' | 'orientation'>,
+  ): ImmichTags['RegionInfo'] {
+    const first = faces.find((face) => !!fractionBox(face) && face.person?.name.trim() && !face.person.isHidden);
+    if (!first) {
+      return;
+    }
+    const orientation = Number(exif.orientation) as ExifOrientation;
+    const sidewards = this.isOrientationSidewards(orientation);
+    const rawWidth = exif.exifImageWidth || (sidewards ? first.imageHeight : first.imageWidth);
+    const rawHeight = exif.exifImageHeight || (sidewards ? first.imageWidth : first.imageHeight);
+    const regions: ImmichTagsWithFaces['RegionInfo'] = {
+      AppliedToDimensions: { W: sidewards ? rawHeight : rawWidth, H: sidewards ? rawWidth : rawHeight, Unit: 'pixel' },
+      RegionList: faces.flatMap((face) => {
+        const box = fractionBox(face);
+        if (!box || !face.person?.name.trim() || face.person.isHidden) {
+          return [];
+        }
+        return [
+          {
+            Type: 'Face',
+            Name: face.person.name,
+            Area: {
+              X: box.x + box.width / 2,
+              Y: box.y + box.height / 2,
+              W: box.width,
+              H: box.height,
+              Unit: 'normalized',
+            },
+          },
+        ];
+      }),
+    };
+    // The stored boxes follow the displayed image. XMP uses the original image's orientation.
+    const inverse =
+      orientation === ExifOrientation.Rotate90CW
+        ? ExifOrientation.Rotate270CW
+        : orientation === ExifOrientation.Rotate270CW
+          ? ExifOrientation.Rotate90CW
+          : orientation;
+    return this.orientRegionInfo(regions, inverse);
   }
 
   private async getSidecarWritePath(
@@ -1304,7 +1397,7 @@ export class MetadataService extends BaseService {
 
   private hasTaggedFaces(tags: ImmichTags): tags is ImmichTagsWithFaces {
     return (
-      tags.RegionInfo !== undefined && tags.RegionInfo.AppliedToDimensions && tags.RegionInfo.RegionList.length > 0
+      tags.RegionInfo !== undefined && tags.RegionInfo.AppliedToDimensions && tags.RegionInfo.RegionList?.length > 0
     );
   }
 
@@ -1378,14 +1471,14 @@ export class MetadataService extends BaseService {
       id: string;
       ownerId: string;
       clusterGroupId: string;
-      faces: { id: string; sourceType: SourceType }[];
+      faces: NonNullable<Awaited<ReturnType<AssetJobRepository['getForMetadataExtraction']>>>['faces'];
       originalPath: string;
       visibility: AssetVisibility;
       isLocked?: boolean | null;
     },
     tags: ImmichTags,
   ) {
-    if (!tags.RegionInfo?.AppliedToDimensions || tags.RegionInfo.RegionList.length === 0) {
+    if (!tags.RegionInfo?.AppliedToDimensions || !tags.RegionInfo.RegionList?.length) {
       return;
     }
 
@@ -1394,6 +1487,7 @@ export class MetadataService extends BaseService {
     const existingNameMap = new Map(
       existingNames.map(({ personGroupId, name }) => [name.toLowerCase(), personGroupId]),
     );
+    const matchedFaces = new Set<string>();
     const missing: { name: string; ownerId: string; personGroupId: string; clusterGroupId: string }[] = [];
     const missingWithFaceAsset: { personGroupId: string; ownerId: string; faceAssetId: string }[] = [];
 
@@ -1402,18 +1496,30 @@ export class MetadataService extends BaseService {
     const imageHeight = adjustedRegionInfo.AppliedToDimensions.H;
 
     for (const region of adjustedRegionInfo.RegionList) {
-      if (!region.Name) {
+      if (!region.Name || (region.Type && region.Type !== 'Face')) {
         continue;
       }
 
       const loweredName = region.Name.toLowerCase();
-      const personGroupId = existingNameMap.get(loweredName) || this.cryptoRepository.randomUUID();
-
       const X = Number(region.Area.X);
       const Y = Number(region.Area.Y);
       const W = Number(region.Area.W);
       const H = Number(region.Area.H);
 
+      if (![X, Y, W, H].every(Number.isFinite) || W <= 0 || H <= 0) {
+        continue;
+      }
+
+      const box = { x1: X - W / 2, y1: Y - H / 2, x2: X + W / 2, y2: Y + H / 2 };
+      const existing = asset.faces.find(
+        (face) => face.person?.name.toLowerCase() === loweredName && boxIou(box, normalizedBox(face)) > 0.8,
+      );
+      if (existing) {
+        matchedFaces.add(existing.id);
+        continue;
+      }
+
+      const personGroupId = existingNameMap.get(loweredName) || this.cryptoRepository.randomUUID();
       const face = {
         id: this.cryptoRepository.randomUUID(),
         personGroupId,
@@ -1460,7 +1566,9 @@ export class MetadataService extends BaseService {
       await this.jobRepository.queueAll(jobs);
     }
 
-    const facesToRemove = asset.faces.filter((face) => face.sourceType === SourceType.Exif).map((face) => face.id);
+    const facesToRemove = asset.faces
+      .filter((face) => face.sourceType === SourceType.Exif && !matchedFaces.has(face.id))
+      .map((face) => face.id);
     if (facesToRemove.length > 0) {
       this.logger.debug(`Removing ${facesToRemove.length} faces for asset ${asset.id}: ${asset.originalPath}`);
     }

@@ -67195,6 +67195,10 @@
           "import": {
             "description": "Import",
             "type": "boolean"
+          },
+          "write": {
+            "description": "Save people’s names in XMP sidecars",
+            "type": "boolean"
           }
         },
         "required": [

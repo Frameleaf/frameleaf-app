@@ -3386,6 +3386,59 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarWrite', () => {
+    it('writes a rotated face to XMP and clears its name when the face is removed', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'frameleaf-face-xmp-'));
+      const originalPath = join(root, 'photo.jpg');
+      const sidecar = originalPath + '.xmp';
+      const asset = AssetFactory.from({ originalPath })
+        .file({ type: AssetFileType.Sidecar, path: sidecar })
+        .exif({ orientation: ExifOrientation.Rotate90CW.toString(), exifImageWidth: 400, exifImageHeight: 200 })
+        .face(
+          {
+            boundingBoxX1: 20,
+            boundingBoxX2: 60,
+            boundingBoxY1: 80,
+            boundingBoxY2: 160,
+            imageWidth: 200,
+            imageHeight: 400,
+          },
+          (face) => face.person({ name: 'Alice' }),
+        )
+        .build();
+      const metadata = new MetadataRepository(
+        automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false }),
+      );
+      try {
+        await metadata.writeTags(sidecar, { Artist: 'Source author' });
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+        mocks.assetJob.getForSidecarFaces.mockResolvedValue({ faces: getForMetadataExtraction(asset).faces });
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        mocks.metadata.writeTags.mockImplementation((path, tags) => metadata.writeTags(path, tags));
+        mocks.metadata.readTags.mockImplementation((path) => metadata.readTags(path));
+
+        await expect(sut.handleSidecarWrite({ id: asset.id, facesOnly: true })).resolves.toBe(JobStatus.Success);
+        const written = await metadata.readTags(sidecar);
+        expect([written.PersonInImage].flat()).toEqual(['Alice']);
+        expect(written).toMatchObject({
+          Artist: 'Source author',
+          RegionInfo: {
+            AppliedToDimensions: { W: 400, H: 200 },
+            RegionList: [{ Type: 'Face', Name: 'Alice', Area: { X: 0.3, Y: 0.8, W: 0.2, H: 0.2 } }],
+          },
+        });
+
+        mocks.assetJob.getForSidecarFaces.mockResolvedValue({ faces: [] });
+        await expect(sut.handleSidecarWrite({ id: asset.id, facesOnly: true })).resolves.toBe(JobStatus.Success);
+        const tags = await metadata.readTags(sidecar);
+        expect(tags.Artist).toBe('Source author');
+        expect(tags.PersonInImage).toBeUndefined();
+        expect(tags.RegionInfo?.RegionList ?? []).toEqual([]);
+      } finally {
+        await metadata.teardown();
+        await rm(root, { recursive: true, force: true });
+      }
+    }, 20_000);
+
     it('edits a sealed sidecar through a plain copy and queues LockedSeal afterwards (FL-721)', async () => {
       const asset0 = AssetFactory.create();
       const locked = await lockedFixture(asset0.ownerId);
