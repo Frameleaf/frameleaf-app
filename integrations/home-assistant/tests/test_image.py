@@ -35,3 +35,17 @@ async def test_private_photo_is_never_shown(hass: HomeAssistant, aioclient_mock,
     response = await client.get(state.attributes["entity_picture"])
     assert response.status != 200
     assert not any("/thumbnail" in str(call[1]) for call in aioclient_mock.mock_calls)
+
+
+async def test_photo_locked_after_it_was_chosen_is_not_served(hass: HomeAssistant, aioclient_mock, hass_client) -> None:
+    mock_server(aioclient_mock, served={**FAVORITE, "visibility": "locked"})
+    entry = api_key_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("image.frameleaf_taylor_picture")
+    client = await hass_client()
+    response = await client.get(state.attributes["entity_picture"])
+    assert response.status != 200
+    assert not any("/thumbnail" in str(call[1]) for call in aioclient_mock.mock_calls)

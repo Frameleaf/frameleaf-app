@@ -30,7 +30,9 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     yield
 
 
-def mock_server(aioclient_mock, *, user: dict[str, Any] = ADMIN, admin_pages: bool = True, picture=FAVORITE) -> None:
+def mock_server(
+    aioclient_mock, *, user: dict[str, Any] = ADMIN, admin_pages: bool = True, picture=FAVORITE, served=None
+) -> None:
     aioclient_mock.get(f"{API}/server/ping", json={"res": "pong"})
     aioclient_mock.get(f"{API}/users/me", json=user)
     aioclient_mock.get(f"{API}/assets/statistics", json={"images": 1200, "videos": 34, "total": 1234})
@@ -41,6 +43,8 @@ def mock_server(aioclient_mock, *, user: dict[str, Any] = ADMIN, admin_pages: bo
     aioclient_mock.get(f"{API}/memories", json=[])
     aioclient_mock.post(f"{API}/search/random", json=[picture] if picture else [])
     aioclient_mock.get(f"{API}/assets/asset-1/thumbnail?size=preview", content=b"jpeg-bytes")
+    if picture:
+        aioclient_mock.get(f"{API}/assets/{picture['id']}", json=served or picture)
     if admin_pages:
         aioclient_mock.get(
             f"{API}/server/storage",

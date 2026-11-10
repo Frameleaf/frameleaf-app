@@ -84,6 +84,9 @@ class FrameleafApi:
             json={"isFavorite": True, "type": "IMAGE", "visibility": "timeline", "size": 1},
         )
 
+    async def get_asset(self, asset_id: str) -> dict[str, Any]:
+        return await self._request("GET", f"/assets/{asset_id}")
+
     async def thumbnail(self, asset_id: str) -> bytes:
         return await self._request("GET", f"/assets/{asset_id}/thumbnail?size=preview", expect="bytes")
 

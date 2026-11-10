@@ -50,6 +50,9 @@ class FrameleafPicture(FrameleafEntity, ImageEntity):
         if self._asset_id is None:
             return None
         try:
+            # checked again when it is shown: a photo Locked, hidden, archived or removed since is not served
+            if not is_shareable(await self.coordinator.api.get_asset(self._asset_id)):
+                return None
             return await self.coordinator.api.thumbnail(self._asset_id)
         except FrameleafError:
             return None
