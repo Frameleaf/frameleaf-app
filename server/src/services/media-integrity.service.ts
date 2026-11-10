@@ -319,7 +319,13 @@ export class MediaIntegrityService {
           : null;
       const picture =
         size !== null && size <= sharpConfiguration().maxBytes
-          ? await this.mediaRepository.renderRaw(path, { signal, halfSize: true }).catch(() => null)
+          ? await this.mediaRepository.renderRaw(path, { signal, halfSize: true }).catch((error_: unknown) => {
+              // a rung that could not run (the second decoder was busy) leaves the check undecided
+              if (error_ instanceof RawRenderError && error_.reason !== 'unsupported') {
+                throw error_;
+              }
+              return null;
+            })
           : null;
       if (!picture) {
         throw error;

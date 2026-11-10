@@ -420,6 +420,14 @@ describe(MediaIntegrityService.name, () => {
     });
     expect(mocks.media.renderRaw).not.toHaveBeenCalled();
   });
+  it('leaves the check undecided while the second decoder is busy (FL-1355)', async () => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED'));
+    mocks.media.renderRaw.mockRejectedValueOnce(new RawRenderError('resource_limit', 'ERR_RAW_DEVELOPER_BUSY'));
+    expect(await sut.validate({ ...input, originalFileName: 'original.gpr', deep: true })).toEqual({
+      status: 'transient',
+      reason: 'decoder_resource_limit',
+    });
+  });
   it('decodes a half-size sensor render of a RAW (FL-1355)', async () => {
     vi.mocked(renderRawWithLibRaw).mockResolvedValue(bytes);
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toMatchObject({

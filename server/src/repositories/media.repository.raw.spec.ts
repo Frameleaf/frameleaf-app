@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -167,6 +168,28 @@ describe('MediaRepository.renderRaw (FL-1355 ladder)', () => {
     expect(failure.ladderExhausted).toBe(false);
     expect(renderDarktable).not.toHaveBeenCalled();
     expect(sut.extract).not.toHaveBeenCalled();
+  });
+
+  it('asks for another try, without a lower rung, while the second decoder is busy with someone else', async () => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
+    vi.mocked(renderDarktable).mockRejectedValue(new ServiceUnavailableException('Native development is busy'));
+    const result = sut.renderRaw('a.gpr');
+    await expect(result).rejects.toMatchObject({ reason: 'resource_limit', ladderExhausted: false });
+    expect(sut.extract).not.toHaveBeenCalled();
+  });
+
+  it("takes turns at the second decoder for the ladder's own calls", async () => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
+    let active = 0;
+    let most = 0;
+    vi.mocked(renderDarktable).mockImplementation(async () => {
+      most = Math.max(most, ++active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return developed;
+    });
+    await Promise.all([sut.renderRaw('a.gpr'), sut.renderRaw('b.gpr'), sut.renderRaw('c.gpr')]);
+    expect(most).toBe(1);
   });
 
   it('stops when cancelled during the second decoder', async () => {

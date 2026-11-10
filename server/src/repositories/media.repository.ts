@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
 import { camelCase, upperFirst } from 'lodash-es';
@@ -205,6 +205,8 @@ export class MediaRepository {
     return null;
   }
 
+  private developerTurn: Promise<void> = Promise.resolve();
+
   /**
    * FL-1355: the RAW ladder, the one place a RAW original becomes a picture. LibRaw renders the sensor; a
    * camera or compression it cannot read goes to darktable's decoder; failing that, the picture the camera
@@ -226,11 +228,20 @@ export class MediaRepository {
     }
     // Out of time or memory in LibRaw would be the same, slower, in a full-resolution development.
     if (developer && failure.reason !== 'timeout' && failure.reason !== 'resource_limit') {
+      // The engine renders one file at a time in a process, so the ladder's own calls take turns.
+      const turn = this.developerTurn.then(() =>
+        renderDarktable(input, { version: 2, renderer: 'darktable/5.6.1' }, signal),
+      );
+      this.developerTurn = turn.then(() => {}).catch(() => {});
       try {
-        const buffer = await renderDarktable(input, { version: 2, renderer: 'darktable/5.6.1' }, signal);
-        return { rung: 'darktable', buffer, failure };
+        return { rung: 'darktable', buffer: await turn, failure };
       } catch (error) {
         signal?.throwIfAborted();
+        if (error instanceof ServiceUnavailableException) {
+          // Someone is developing a photo right now. That says nothing about this file: try again later,
+          // without settling for a lower rung or calling the file unsupported.
+          throw new RawRenderError('resource_limit', 'ERR_RAW_DEVELOPER_BUSY', error);
+        }
         this.logger.debug(`RAW development engine could not render either: ${error}`);
       }
     }
