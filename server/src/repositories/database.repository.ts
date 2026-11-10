@@ -692,6 +692,27 @@ export class DatabaseRepository {
     });
   }
 
+  async hasSignInNotice(key: string): Promise<boolean> {
+    const { rows } = await sql`
+      SELECT 1 FROM public.frameleaf_rate_limit WHERE key = ${key} AND expires_at > statement_timestamp()
+    `.execute(this.db);
+    return rows.length > 0;
+  }
+
+  /** Commit the daily limit together with one channel's durable notice. */
+  async publishSignInNotice<R>(key: string, publish: (db: Transaction<DB>) => Promise<R>): Promise<R | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      const { rows } = await sql`
+        INSERT INTO public.frameleaf_rate_limit AS notice (key, count, expires_at)
+        VALUES (${key}, 1, statement_timestamp() + interval '24 hours')
+        ON CONFLICT (key) DO UPDATE SET count = 1, expires_at = excluded.expires_at
+        WHERE notice.expires_at <= statement_timestamp()
+        RETURNING key
+      `.execute(tx);
+      if (rows.length > 0) return publish(tx);
+    });
+  }
+
   /**
    * FL-721: one change of a person's Locked key file at a time across every process (the API's
    * settings and PIN hooks, and the job worker that finishes turning encryption off). A

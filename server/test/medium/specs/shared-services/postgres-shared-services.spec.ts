@@ -10,7 +10,9 @@ import type { DB } from 'src/schema/index.js';
 import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { type RateLimitHit, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { type RateLimitHit, RateLimitRepository, type SignInAttempt } from 'src/repositories/rate-limit.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { getKyselyConfig } from 'src/utils/database.js';
@@ -158,6 +160,20 @@ describe('PostgreSQL shared services', () => {
     }
   });
 
+  it('keeps distinct sign-in checks available while other checks hold connections', async () => {
+    const counters = admission();
+    const attempts: SignInAttempt[] = [];
+    try {
+      for (const address of ['a', 'b', 'c']) {
+        const attempt = await counters.acquireSignInAttempt(`sign-in-backoff:parallel-${address}`);
+        if (attempt) attempts.push(attempt);
+      }
+      expect(attempts).toHaveLength(3);
+    } finally {
+      await Promise.all(attempts.map((attempt) => attempt.release()));
+    }
+  });
+
   it('counts a rolling hour of failures and stores at most twenty timestamps', async () => {
     const counters = admission();
     const key = 'sign-in-burst:account';
@@ -191,10 +207,21 @@ describe('PostgreSQL shared services', () => {
         .executeTakeFirstOrThrow();
       const first = Buffer.alloc(32, 1);
       const second = Buffer.alloc(32, 2);
-      expect(await sessions.observeKnownDevice(user.id, first)).toBe(false);
-      expect(await sessions.observeKnownDevice(user.id, first)).toBe(false);
-      const results = await Promise.all(Array.from({ length: 3 }, () => sessions.observeKnownDevice(user.id, second)));
+      const publish = vi.fn(() => Promise.resolve());
+      const prepare = vi.fn(() => Promise.resolve(publish));
+      expect(await sessions.observeKnownDevice(user.id, first, prepare)).toBe(false);
+      expect(await sessions.observeKnownDevice(user.id, first, prepare)).toBe(false);
+      expect(prepare).not.toHaveBeenCalled();
+      await expect(
+        sessions.observeKnownDevice(user.id, second, () =>
+          Promise.resolve(() => Promise.reject(new Error('queue unavailable'))),
+        ),
+      ).rejects.toThrow('queue unavailable');
+      const results = await Promise.all(
+        Array.from({ length: 3 }, () => sessions.observeKnownDevice(user.id, second, prepare)),
+      );
       expect(results.filter(Boolean)).toHaveLength(1);
+      expect(publish).toHaveBeenCalledTimes(1);
       expect(await db.selectFrom('user_known_device').selectAll().where('userId', '=', user.id).execute()).toHaveLength(
         2,
       );
@@ -203,6 +230,30 @@ describe('PostgreSQL shared services', () => {
       await db.deleteFrom('cluster_group').where('id', '=', group.id).execute();
     } finally {
       await db.destroy();
+    }
+  });
+
+  it('retries failed sign-in notice channels without publishing completed channels twice', async () => {
+    const db = new Kysely<DB>(getKyselyConfig(config.getEnv().database.config));
+    const notices = new DatabaseRepository(db, LoggingRepository.create(), config);
+    const notification = vi.fn(() => Promise.resolve('notice'));
+    const email = vi.fn(() => Promise.resolve('email'));
+    const notificationKey = 'sign-in-notice:in-app:account';
+    const emailKey = 'sign-in-notice:email:account';
+    try {
+      await expect(notices.publishSignInNotice(notificationKey, notification)).resolves.toBe('notice');
+      await expect(
+        notices.publishSignInNotice(emailKey, () => Promise.reject(new Error('queue unavailable'))),
+      ).rejects.toThrow('queue unavailable');
+      expect(await notices.hasSignInNotice(notificationKey)).toBe(true);
+      expect(await notices.hasSignInNotice(emailKey)).toBe(false);
+      await expect(notices.publishSignInNotice(notificationKey, notification)).resolves.toBeUndefined();
+      const results = await Promise.all(Array.from({ length: 3 }, () => notices.publishSignInNotice(emailKey, email)));
+      expect(results.filter(Boolean)).toEqual(['email']);
+      expect(notification).toHaveBeenCalledTimes(1);
+      expect(email).toHaveBeenCalledTimes(1);
+    } finally {
+      await notices.shutdown();
     }
   });
 

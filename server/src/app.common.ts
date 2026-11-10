@@ -51,7 +51,13 @@ export async function configureExpress(
   app.use(cookieParser());
   // FL-161: record how the request arrived (vouched for by the edge worker's per-boot secret) and
   // drop every client-supplied `X-Frameleaf-*` claim before anything else reads the request.
-  app.use(frameleafViaMiddleware(frameleafCloud.edge.secret, network.trustConfiguredProxies));
+  app.use(
+    frameleafViaMiddleware(frameleafCloud.edge.secret, network.trustConfiguredProxies, () =>
+      logger.warn(
+        'Forwarded addresses are ignored for sign-in limits. If using a reverse proxy, configure its address in FRAMELEAF_TRUSTED_PROXIES.',
+      ),
+    ),
+  );
   app.use(
     json({
       limit: '10mb',

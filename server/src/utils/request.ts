@@ -26,20 +26,19 @@ const appUserAgentPattern = /^(?:(?:frameleaf|immich)-(?:android|ios|unknown)\/|
 export const getAppVersionFromUA = (ua: string) => appUserAgentPattern.exec(ua)?.[1] ?? null;
 
 export const getUserAgentDetails = (headers: IncomingHttpHeaders) => {
-  const userAgent = UAParser(headers['user-agent']);
-  const appVersion = getAppVersionFromUA(headers['user-agent'] ?? '');
+  const rawUserAgent = headers['user-agent'] ?? '';
+  const userAgent = UAParser(rawUserAgent);
+  const appVersion = getAppVersionFromUA(rawUserAgent);
 
   return {
     deviceType: userAgent.browser.name || userAgent.device.type || (headers['devicemodel'] as string) || '',
     deviceOS: userAgent.os.name || (headers['devicetype'] as string) || '',
     appVersion,
     browserFamily: userAgent.browser.name,
-    deviceOSFamily:
-      userAgent.os.name ??
-      (/^(?:frameleaf-ios\/|Immich_iOS_)/.test(headers['user-agent'] ?? '')
-        ? 'iOS'
-        : /^(?:frameleaf-android\/|Immich_Android_)/.test(headers['user-agent'] ?? '')
-          ? 'Android'
-          : undefined),
+    deviceOSFamily: /^(?:(?:frameleaf|immich)-ios\/|Immich_iOS_)/.test(rawUserAgent)
+      ? 'iOS'
+      : /^(?:(?:frameleaf|immich)-android\/|Immich_Android_)/.test(rawUserAgent)
+        ? 'Android'
+        : userAgent.os.name,
   };
 };
