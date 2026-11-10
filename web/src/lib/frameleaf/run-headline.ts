@@ -15,7 +15,8 @@ export type Headline = {
   tone: KitTone;
   why: Translations | null;
   values?: Record<string, string | number>;
-  action: 'resume' | 'release' | null;
+  /** Resume its paused steps, release its held setup, or (paused where the card can't resume it) the task list. */
+  action: 'resume' | 'release' | 'tasks' | null;
 };
 
 const ML_WAITS: readonly DurableJobReason[] = [
@@ -35,7 +36,7 @@ const isPaused = (run: DurableJobRun) =>
   run.stageTotals.paused > 0;
 
 /**
- * The single state, in this order: settled (left over, cancelled or finished), paused, waiting for a drive, held
+ * The single state, in this order: settled (stopped, needs attention, left over or finished), paused, waiting for a drive, held
  * for setup, machine learning off, waiting on machine learning, the night window, not started yet, and running.
  */
 export const runHeadline = (run: DurableJobRun): Headline => {
@@ -50,25 +51,37 @@ export const runHeadline = (run: DurableJobRun): Headline => {
           values: { count: streak.photos, nights: streak.nights },
         }
       : { why: null };
-    if (leftOver(run) > 0) {
-      return { status: 'frameleaf_job_runs_status_left_over', tone: 'warn', ...why, action: null };
-    }
+    // A stopped run, or one that needs attention, says so first; its left-over photos still show beneath.
     if (run.state === 'cancelled') {
-      return { status: 'frameleaf_job_runs_state_cancelled', tone: 'off', why: null, action: null };
+      return { status: 'frameleaf_job_runs_status_stopped', tone: 'off', why: null, action: null };
     }
     if (run.state === 'needs_attention') {
-      return { status: 'frameleaf_job_runs_state_needs_attention', tone: 'warn', why: null, action: null };
+      return {
+        status: 'frameleaf_job_runs_state_needs_attention',
+        tone: 'warn',
+        why: 'frameleaf_job_runs_why_needs_attention',
+        action: null,
+      };
+    }
+    if (leftOver(run) > 0) {
+      return {
+        status: photos ? 'frameleaf_job_runs_status_left_over' : 'frameleaf_job_runs_status_left_over_tasks',
+        tone: 'warn',
+        ...why,
+        action: null,
+      };
     }
     return { status: 'frameleaf_job_runs_status_finished', tone: 'good', why: null, action: null };
   }
 
   if (isPaused(run)) {
-    return {
-      status: 'frameleaf_job_runs_state_paused',
-      tone: 'warn',
-      why: 'frameleaf_job_runs_why_paused',
-      action: (run.pausedQueues?.length ?? 0) > 0 ? 'resume' : run.canRelease ? 'release' : null,
-    };
+    const paused = { status: 'frameleaf_job_runs_state_paused' as Translations, tone: 'warn' as const };
+    if ((run.pausedQueues?.length ?? 0) > 0) {
+      return { ...paused, why: 'frameleaf_job_runs_why_paused', action: 'resume' };
+    }
+    return run.canRelease
+      ? { ...paused, why: 'frameleaf_job_runs_why_paused_hold', action: 'release' }
+      : { ...paused, why: 'frameleaf_job_runs_why_paused_elsewhere', action: 'tasks' };
   }
 
   if (has('source-unavailable')) {

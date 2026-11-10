@@ -3,7 +3,8 @@
    * Recent work (FL-1265, FL-1349, after the prototype `RecentWork.jsx`): one card per piece of server work. What it
    * is, its one state and the one reason for it, how far it has got in photos (or tasks, for work that is not about
    * photos), and the photos it left over, by plain cause, with Review what failed. Nightly runs come folded into one
-   * card that lists the earlier nights. Resume or Release sits beside the reason when the work waits on it.
+   * card that lists the earlier nights. Resume or Release sits beside the reason when the work waits on it; paused work
+   * the card can't resume links to the task list instead.
    */
   import { isHttpError, listDurableJobRuns, releaseJobRun, type DurableJobRun } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -14,8 +15,10 @@
   import type { ActivityFilter } from '$lib/frameleaf/activity';
   import { isRunSettled, matchesRunFilter, runTitleKey, settledItems } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
-  import { CAUSE_VIEW, leftOver, runCauses } from '$lib/frameleaf/run-failures';
+  import { backupWhen } from '$lib/frameleaf/backup-overview';
+  import { CAUSE_VIEW, knowsCauses, leftOver, runCauses } from '$lib/frameleaf/run-failures';
   import { runHeadline } from '$lib/frameleaf/run-headline';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { handleResumeQueue } from '$lib/services/queue.service';
   import { handleError } from '$lib/utils/handle-error';
   import { untrack } from 'svelte';
@@ -41,8 +44,12 @@
   let reviewing = $state<DurableJobRun | null>(null);
   const visible = $derived(runs.filter((run) => matchesRunFilter(run, filter)));
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
-  const when = (iso: string) =>
-    new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  /** As the rest of the app says a moment: "today at 4:06 AM", "Nov 9, 4:06 AM", the year only when it isn't this one. */
+  const when = (iso: string, sentence = true) => {
+    const words = backupWhen(new Date(iso), { locale: $locale ?? undefined, sentence });
+    return $t(words.key, { values: words.values });
+  };
+  const TASK_LIST = commandCenterUrl('processing', 'queues');
   const ownQueue = (run: DurableJobRun) => jobQueue(run.kind as Parameters<typeof jobQueue>[0]);
   const title = (run: DurableJobRun) =>
     run.nightly
@@ -105,6 +112,9 @@
     }
   };
   const release = async (run: DurableJobRun) => {
+    if (acting) {
+      return;
+    }
     acting = run.id;
     notice = '';
     try {
@@ -123,12 +133,16 @@
   };
   /** Resume: every paused step this work waits on carries on, as the Job manager's Resume does. */
   const resume = async (run: DurableJobRun) => {
+    if (acting) {
+      return;
+    }
     acting = run.id;
     notice = '';
     try {
       for (const name of new Set(run.pausedQueues)) {
         await handleResumeQueue({ name });
       }
+      notice = $t('frameleaf_job_runs_resumed', { values: { name: title(run) } });
     } catch (error) {
       handleError(error, $t('frameleaf_job_runs_resume_failed'));
     } finally {
@@ -140,6 +154,8 @@
     void refreshToken;
     untrack(() => void load(0));
   });
+  /** Unfinished work is read every 5 seconds, finished work every 30; the timer restarts only when that changes. */
+  const live = $derived(runs.some((run) => !isRunSettled(run)));
   $effect(() => {
     // A hidden tab is not polled; the next tick after it shows again catches up.
     const timer = setInterval(
@@ -148,7 +164,7 @@
           void load();
         }
       },
-      runs.some((run) => !isRunSettled(run)) ? 5000 : 30_000,
+      live ? 5000 : 30_000,
     );
     return () => clearInterval(timer);
   });
@@ -170,7 +186,7 @@
       <li class="run" class:is-focused={focusRunId === run.id} data-tone={headline.tone}>
         <div class="head">
           <strong>{title(run)}</strong>
-          <Pill tone={headline.tone}>{$t(headline.status)}</Pill>
+          <span class="status"><Pill tone={headline.tone}>{$t(headline.status)}</Pill></span>
         </div>
         <p class="far">{howFar(run)}</p>
         {#if run.enumerationDone && run.total > 0 && !isRunSettled(run)}
@@ -179,13 +195,12 @@
         {#if headline.why}
           <div class="why">
             <p>{$t(headline.why, { values: headline.values })}</p>
-            {#if headline.action}
-              <!-- Paused work resumes (its steps, or its held setup); setup holds are released. -->
-              <Button
-                disabled={acting !== null}
-                onclick={() => void (headline.action === 'resume' ? resume(run) : release(run))}
-              >
-                {#if headline.status === 'frameleaf_job_runs_state_paused'}
+            {#if headline.action === 'tasks'}
+              <a class="link" href={TASK_LIST}>{$t('frameleaf_job_runs_see_paused')}</a>
+            {:else if headline.action}
+              {@const resumes = headline.action === 'resume'}
+              <Button disabled={acting !== null} onclick={() => void (resumes ? resume(run) : release(run))}>
+                {#if resumes}
                   <Icon icon={mdiPlay} size="16" aria-hidden />
                   {$t('resume')}
                 {:else}
@@ -204,7 +219,9 @@
                   values: { count: over },
                 })}
               </span>
-              {#if causes.length > 0}
+              {#if !knowsCauses(run)}
+                <small>{$t('frameleaf_job_runs_causes_unknown')}</small>
+              {:else if causes.length > 0}
                 <small>
                   {#each causes as { cause, count } (cause)}
                     <span
@@ -216,7 +233,12 @@
                 </small>
               {/if}
             </p>
-            <Button onclick={() => (reviewing = run)}>{$t('frameleaf_job_runs_review')}</Button>
+            {#if knowsCauses(run)}
+              <Button onclick={() => (reviewing = run)}>{$t('frameleaf_job_runs_review')}</Button>
+            {:else}
+              <!-- Recorded before causes were kept: the per-photo lists are the only place to look. -->
+              <a class="fl-control button" href={TASK_LIST}>{$t('frameleaf_job_runs_open_task_list')}</a>
+            {/if}
           </div>
         {/if}
         <div class="foot">
@@ -246,7 +268,7 @@
             <tbody>
               {#each nights(run) as night (night.id)}
                 <tr>
-                  <th scope="row"><time datetime={night.at}>{when(night.at)}</time></th>
+                  <th scope="row"><time datetime={night.at}>{when(night.at, false)}</time></th>
                   <td>{number(night.total)}</td>
                   <td>{number(night.leftOver)}</td>
                 </tr>
@@ -325,7 +347,6 @@
   .run.is-focused {
     border-color: var(--fl-accent);
   }
-  .head,
   .foot,
   .why,
   .over {
@@ -335,8 +356,25 @@
     justify-content: space-between;
     gap: var(--fl-space-2) var(--fl-space-3);
   }
+  /* Title and status share a row while they fit: the title gives way first, then the status takes its own row. */
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-2) var(--fl-space-3);
+  }
   .head strong {
+    flex: 1 1 9rem;
+    min-width: 9rem;
+    overflow: hidden;
     font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .status {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
   .far {
     font-size: var(--fl-font-callout);
@@ -364,7 +402,6 @@
   }
   /* `.rw-over`: what is left over, on a faint warning wash, with Review what failed at its end. */
   .over {
-    flex-wrap: nowrap;
     padding: 10px var(--fl-space-3);
     border-radius: var(--fl-radius-control);
     background: color-mix(in srgb, var(--fl-warning) 9%, transparent);
@@ -382,10 +419,18 @@
     gap: var(--fl-space-half);
     min-width: 0;
   }
+  /* `.rw-over small`: the causes run on as text and wrap between causes, never inside "cause · count". */
+  /*
+   * Each "cause · count" is one inline box, so the line wraps between causes; only a cause too long for a line of its
+   * own wraps inside, and its count stays with its last word (non-breaking spaces in the key).
+   */
+  .over small span {
+    display: inline-block;
+    max-width: 100%;
+    margin-inline-end: var(--fl-space-3);
+  }
   .over small {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0 var(--fl-space-3);
+    display: block;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
@@ -404,6 +449,11 @@
   }
   .link:hover {
     text-decoration: underline;
+  }
+  @media (pointer: fine) {
+    .link {
+      min-height: 0;
+    }
   }
   .nights {
     width: 100%;
@@ -436,10 +486,8 @@
     .run {
       padding: 14px;
     }
-    .over {
-      flex-wrap: wrap;
-    }
-    .over :global(button) {
+    .over :global(button),
+    .over > a {
       width: 100%;
     }
   }

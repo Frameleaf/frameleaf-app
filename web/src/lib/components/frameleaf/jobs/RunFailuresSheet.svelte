@@ -47,15 +47,28 @@
   let failures = $state<JobRunFailuresResponseDto>();
   let failed = $state(false);
   let acting = $state<string | null>(null);
-  /** What each cause's action did, said in its place. */
-  let said = $state<Record<string, string>>({});
+  /** What each cause's action did, said in its place, with the cause as it was when acted on. */
+  let said = $state<Record<string, { words: string; group: JobRunFailureCauseDto }>>({});
+  /** Pictures that wouldn't load (a damaged file often has none): their rows keep the plain tile. */
+  let broken = $state<Record<string, boolean>>({});
   /** The causes whose photos are shown. */
   let shown = $state<Record<string, boolean>>({});
 
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
   /** Only causes with photos still needing a look; stopped ones have nothing left to do. */
-  const causes = $derived((failures?.causes ?? []).filter((group) => group.count > 0));
-  const total = $derived(causes.reduce((sum, group) => sum + group.count, 0));
+  const live = $derived((failures?.causes ?? []).filter((group) => group.count > 0));
+  const total = $derived(live.reduce((sum, group) => sum + group.count, 0));
+  /**
+   * The causes listed: those still needing a look, and those just acted on (as they were, with what was done), so the
+   * confirmation stays in place after the sheet reads again. In the server's order: drive, missing, damaged,
+   * unsupported, other.
+   */
+  const causes = $derived(
+    (Object.keys(CAUSE_VIEW) as JobRunFailureCauseDto['cause'][]).flatMap((cause) => {
+      const group = said[cause]?.group ?? live.find((item) => item.cause === cause);
+      return group ? [group] : [];
+    }),
+  );
   const photos = $derived(failures?.countsPhotos !== false);
   const queueTitle = (queue: JobRunFailureCauseDto['queues'][number]) => {
     const key = jobQueue(queue)?.key;
@@ -72,22 +85,32 @@
       failures = await getJobRunFailures({ id: run.id });
       failed = false;
     } catch {
-      failed = true;
+      // A read again after an action that fails keeps what is shown; only a first read says it couldn't load.
+      failed = !failures;
     }
   };
 
   const act = async (group: JobRunFailureCauseDto, action: JobRunFailureAction) => {
+    if (acting) {
+      return;
+    }
     acting = group.cause;
     try {
       const { count } = await actOnJobRunFailures({
         id: run.id,
         jobRunFailureActionDto: { cause: group.cause, action },
       });
-      said[group.cause] = $t(
-        action === JobRunFailureAction.Stop ? 'frameleaf_job_runs_stopped_said' : 'frameleaf_job_runs_retry_said',
-        { values: { count } },
-      );
+      const stop = action === JobRunFailureAction.Stop;
+      const key = photos
+        ? stop
+          ? 'frameleaf_job_runs_stopped_said'
+          : 'frameleaf_job_runs_retry_said'
+        : stop
+          ? 'frameleaf_job_runs_stopped_said_tasks'
+          : 'frameleaf_job_runs_retry_said_tasks';
+      said[group.cause] = { words: $t(key, { values: { count } }), group };
       onChanged();
+      await load();
     } catch (error) {
       handleError(error, $t('frameleaf_job_runs_act_failed'));
     } finally {
@@ -111,15 +134,17 @@
     <p class="lead">{$t('frameleaf_job_runs_review_empty')}</p>
   {:else}
     <p class="lead">
-      {$t(photos ? 'frameleaf_job_runs_review_lead' : 'frameleaf_job_runs_review_lead_tasks', {
-        values: { count: total, causes: causes.length },
-      })}
+      {live.length === 0
+        ? $t('frameleaf_job_runs_review_empty')
+        : $t(photos ? 'frameleaf_job_runs_review_lead' : 'frameleaf_job_runs_review_lead_tasks', {
+            values: { count: total, causes: live.length },
+          })}
     </p>
     <ul class="causes">
       {#each causes as group (group.cause)}
         {@const view = CAUSE_VIEW[group.cause]}
         {@const body = causeBody(group)}
-        {@const done = said[group.cause]}
+        {@const done = said[group.cause]?.words}
         {@const revealed = shown[group.cause] ?? false}
         <li class="cause" data-tone={view.tone}>
           <span class="cause-icon" aria-hidden="true"><Icon icon={view.icon} size="18" /></span>
@@ -173,12 +198,15 @@
                 <ul>
                   {#each group.samples as sample (sample.assetId)}
                     <li>
-                      {#if sample.pictureAllowed}
+                      {#if sample.pictureAllowed && broken[sample.assetId]}
+                        <span class="picture"></span>
+                      {:else if sample.pictureAllowed}
                         <span class="picture" class:is-missing={group.cause === 'missing'}>
                           <img
                             src={getAssetMediaUrl({ id: sample.assetId, size: AssetMediaSize.Thumbnail })}
                             alt=""
                             loading="lazy"
+                            onerror={() => (broken[sample.assetId] = true)}
                           />
                         </span>
                       {:else}
@@ -191,7 +219,8 @@
                           <small>{$t('frameleaf_files_private_note', { values: { owner: sample.ownerName } })}</small>
                         {/if}
                       </span>
-                      <small>{sample.ownerName}</small>
+                      <!-- Another account's row already names its owner in the note. -->
+                      {#if sample.pictureAllowed}<small>{sample.ownerName}</small>{/if}
                     </li>
                   {/each}
                 </ul>
@@ -260,7 +289,7 @@
     width: 36px;
     height: 36px;
     border-radius: var(--fl-radius-control);
-    background: var(--fl-canvas);
+    background: var(--fl-panel);
     color: var(--fl-warning);
   }
   .cause[data-tone='quiet'] .cause-icon {
@@ -375,7 +404,10 @@
   .more {
     margin: 0;
   }
+  /* `.rw-technical`: what the server reported and the full lists, with nothing left below the last of them. */
   .technical {
+    display: grid;
+    gap: 6px;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
@@ -383,21 +415,26 @@
     cursor: pointer;
   }
   .technical p {
-    margin: var(--fl-space-2) 0 6px;
+    margin: var(--fl-space-1) 0 0;
   }
   .technical code {
     display: block;
-    margin-bottom: var(--fl-space-2);
     padding: var(--fl-space-2) 10px;
     border-radius: var(--fl-radius-sm);
-    background: var(--fl-canvas);
+    background: var(--fl-panel);
     color: var(--fl-text);
     overflow-wrap: anywhere;
   }
   .technical .link {
-    display: block;
-    margin-top: var(--fl-space-1);
+    justify-self: start;
     font-size: var(--fl-font-small);
+  }
+  /* With a mouse, text links and the disclosure take their text's height, as in the mock; touch keeps 44px. */
+  @media (pointer: fine) {
+    .link,
+    .technical summary {
+      min-height: 0;
+    }
   }
   @media (max-width: 600px) {
     .cause {

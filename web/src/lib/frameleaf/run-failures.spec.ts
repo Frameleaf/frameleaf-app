@@ -2,7 +2,7 @@ import { JobRunFailureCause, type JobRunFailureCauseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import en from '$i18n/en.json';
 import { durableRun } from '$lib/__mocks__/durable-runs.mock';
-import { CAUSE_VIEW, causeBody, leftOver, runCauses } from '$lib/frameleaf/run-failures';
+import { CAUSE_VIEW, causeBody, knowsCauses, leftOver, runCauses } from '$lib/frameleaf/run-failures';
 
 const group = (overrides: Partial<JobRunFailureCauseDto> = {}): JobRunFailureCauseDto => ({
   cause: JobRunFailureCause.Drive,
@@ -37,6 +37,9 @@ describe('left-over photos by cause (FL-1349)', () => {
     expect(leftOver(durableRun({ state: 'completed_with_errors', failed: 5, needsAttention: 1 }))).toBe(6);
     expect(leftOver(durableRun({ state: 'running', failed: 5 }))).toBe(0);
     expect(leftOver(durableRun({ state: 'completed_with_errors', failed: 5, failureCauses: [] }))).toBe(0);
+    expect(knowsCauses(durableRun({ state: 'completed_with_errors', failed: 5 }))).toBe(false);
+    expect(knowsCauses(durableRun({ failureCauses: [] }))).toBe(true);
+    expect(knowsCauses(durableRun({ leftOver: 0 }))).toBe(true);
   });
   it('gives every cause one action that fits it', () => {
     expect(Object.fromEntries(Object.entries(CAUSE_VIEW).map(([cause, view]) => [cause, view.action]))).toEqual({

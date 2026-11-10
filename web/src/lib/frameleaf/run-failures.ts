@@ -68,6 +68,12 @@ export const CAUSE_VIEW: Record<
   },
 };
 
+/**
+ * The server kept this run's causes: always for work since FL-1349, never for a run summarised before it. Without
+ * them there is nothing to review by cause, only the per-photo lists.
+ */
+export const knowsCauses = (run: DurableJobRun) => run.failureCauses !== undefined || run.leftOver !== undefined;
+
 /** The run's left-over photos by cause, as the server counted them (stopped ones aside). */
 export const runCauses = (run: DurableJobRun): RunCauseCount[] => run.failureCauses ?? [];
 

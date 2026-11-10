@@ -6,6 +6,7 @@ import en from '$i18n/en.json';
 import { durableRun } from '$lib/__mocks__/durable-runs.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import DurableRuns from '$lib/components/frameleaf/jobs/DurableRuns.svelte';
+import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 
 beforeAll(async () => {
   register('en', () => Promise.resolve(en));
@@ -86,7 +87,7 @@ describe('recent work', () => {
     sdkMock.updateQueue.mockResolvedValue({} as never);
     render(DurableRuns);
     expect(await screen.findByText('Paused')).toBeInTheDocument();
-    expect(screen.getByText('Paused. It carries on when you resume it.')).toBeInTheDocument();
+    expect(screen.getByText('You paused this. It carries on when you resume it.')).toBeInTheDocument();
     expect(screen.queryByText('Running')).not.toBeInTheDocument();
     expect(screen.queryByText(/night window/)).not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
@@ -97,6 +98,55 @@ describe('recent work', () => {
       }),
     );
     await waitFor(() => expect(sdkMock.listDurableJobRuns).toHaveBeenCalledTimes(2));
+    // The confirmation matches the button pressed.
+    expect(await screen.findByText('Thumbnails is resumed.')).toBeInTheDocument();
+  });
+  it('paused work the card cannot resume links to the task list instead of asking for Resume', async () => {
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [durableRun({ state: 'paused', reasons: [], failed: 0, needsAttention: 0 })],
+      hasNextPage: false,
+    });
+    render(DurableRuns);
+    expect(await screen.findByRole('link', { name: 'See what is paused' })).toHaveAttribute(
+      'href',
+      commandCenterUrl('processing', 'queues'),
+    );
+    expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/when you resume it/);
+  });
+  it('a paused setup hold offers Release, labelled Release, and says released', async () => {
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [durableRun({ state: 'paused', reasons: [], canRelease: true, failed: 0, needsAttention: 0 })],
+      hasNextPage: false,
+    });
+    sdkMock.releaseJobRun.mockResolvedValue(undefined as never);
+    render(DurableRuns);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Release' }));
+    expect(await screen.findByText('Thumbnails is released. It starts as soon as there’s room.')).toBeInTheDocument();
+  });
+  it('a run recorded before causes were kept shows its count and the task list, not an empty review', async () => {
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [durableRun({ state: 'completed_with_errors', active: 0, failed: 5, needsAttention: 1 })],
+      hasNextPage: false,
+    });
+    render(DurableRuns);
+    expect(await screen.findByText('6 photos need a look')).toBeInTheDocument();
+    expect(screen.getByText('Recorded before Frameleaf kept the causes.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open the task list' })).toHaveAttribute(
+      'href',
+      commandCenterUrl('processing', 'queues'),
+    );
+    expect(screen.queryByRole('button', { name: 'Review what failed' })).not.toBeInTheDocument();
+  });
+  it('says when work started or finished the way the rest of the app does', async () => {
+    const now = new Date();
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [durableRun({ createdAt: now.toISOString(), failed: 0, needsAttention: 0 })],
+      hasNextPage: false,
+    });
+    render(DurableRuns);
+    expect(await screen.findByText(/^Started today at /)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(String(now.getFullYear()));
   });
   it('three nightly runs show as one card; Earlier nights lists two', async () => {
     sdkMock.listDurableJobRuns.mockResolvedValue({
@@ -142,6 +192,7 @@ describe('recent work', () => {
     const rows = within(screen.getByRole('table')).getAllByRole('row');
     // A heading row, this night, then the two earlier ones.
     expect(rows).toHaveLength(4);
+    expect(rows[1]).toHaveTextContent(/^(Today|Yesterday|\w{3} \d{1,2}), \d{1,2}:\d{2}/);
     expect(rows[2]).toHaveTextContent('2,177861');
     expect(rows[3]).toHaveTextContent('2,10012');
     expect(screen.getByRole('button', { name: 'Hide earlier nights' })).toHaveAttribute('aria-expanded', 'true');
@@ -175,7 +226,14 @@ describe('recent work', () => {
     expect(await screen.findByText('14,990 of 15,000 tasks')).toBeInTheDocument();
   });
   it.each([
-    [{ state: 'paused' as const, reasons: ['queue_paused' as const] }, 'Paused. It carries on when you resume it.'],
+    [
+      { state: 'paused' as const, reasons: ['queue_paused' as const], pausedQueues: [QueueName.MetadataExtraction] },
+      'You paused this. It carries on when you resume it.',
+    ],
+    [
+      { state: 'needs_attention' as const, reasons: [], active: 0 },
+      'This stopped before it finished. Start it again from the task list when you’re ready.',
+    ],
     [{ state: 'delayed' as const, reasons: ['scheduled_delay' as const] }, /Waiting for the night window/],
     [
       { state: 'blocked' as const, reasons: ['destination-unavailable' as const] },

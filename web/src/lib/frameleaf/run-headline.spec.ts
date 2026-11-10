@@ -22,9 +22,17 @@ describe('one state and one reason per piece of work (FL-1349)', () => {
       action: 'resume',
     });
   });
-  it('a paused hold resumes by releasing it', () => {
-    expect(runHeadline(durableRun({ state: 'paused', reasons: [], canRelease: true })).action).toBe('release');
-    expect(runHeadline(durableRun({ state: 'paused', reasons: [] })).action).toBeNull();
+  it('a paused hold is released, and paused work with nothing to resume here points to the task list', () => {
+    expect(runHeadline(durableRun({ state: 'paused', reasons: [], canRelease: true }))).toMatchObject({
+      why: 'frameleaf_job_runs_why_paused_hold',
+      action: 'release',
+    });
+    // Nothing on the card can resume it: the reason doesn't ask for Resume, and the card links to the tasks.
+    expect(runHeadline(durableRun({ state: 'paused', reasons: [] }))).toMatchObject({
+      status: 'frameleaf_job_runs_state_paused',
+      why: 'frameleaf_job_runs_why_paused_elsewhere',
+      action: 'tasks',
+    });
   });
   it('a source-unavailable import reads Waiting for a drive with the library name', () => {
     const headline = runHeadline(
@@ -66,8 +74,33 @@ describe('one state and one reason per piece of work (FL-1349)', () => {
       'frameleaf_job_runs_status_finished',
     );
     expect(runHeadline(durableRun({ ...settled, state: 'cancelled' })).status).toBe(
-      'frameleaf_job_runs_state_cancelled',
+      'frameleaf_job_runs_status_stopped',
     );
+    // Work that counts tasks says tasks.
+    expect(runHeadline({ ...run, countsPhotos: false }).status).toBe('frameleaf_job_runs_status_left_over_tasks');
+  });
+  it('a stopped run with photos left over reads Stopped, not Finished', () => {
+    const run = durableRun({
+      ...settled,
+      state: 'cancelled',
+      failureCauses: [{ cause: JobRunFailureCause.Damaged, count: 3 }],
+    });
+    expect(runHeadline(run)).toEqual({
+      status: 'frameleaf_job_runs_status_stopped',
+      tone: 'off',
+      why: null,
+      action: null,
+    });
+  });
+  it('a run that needs attention says why, with or without photos left over', () => {
+    for (const failureCauses of [[], [{ cause: JobRunFailureCause.Drive, count: 2 }]]) {
+      expect(runHeadline(durableRun({ ...settled, state: 'needs_attention', failureCauses }))).toEqual({
+        status: 'frameleaf_job_runs_state_needs_attention',
+        tone: 'warn',
+        why: 'frameleaf_job_runs_why_needs_attention',
+        action: null,
+      });
+    }
   });
   it('a nightly run that leaves the same photos over two nights says so', () => {
     const run = durableRun({

@@ -1,11 +1,9 @@
-import type { DurableJobCounts, DurableJobRun, DurableJobState, DurableJobReason } from '@frameleaf/sdk';
+import type { DurableJobCounts, DurableJobRun, DurableJobState } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import type { ActivityFilter, ActivityTone } from '$lib/frameleaf/activity';
 
 export const runStateKey = (state: DurableJobState): Translations =>
   `frameleaf_job_runs_state_${state}` as Translations;
-export const runReasonKey = (reason: DurableJobReason): Translations =>
-  `frameleaf_job_runs_reason_${reason}` as Translations;
 /** FL-1177: a Frameleaf Manager import's run. It has no queue of its own: its work runs on the queues it feeds. */
 export const isImportRunKind = (kind: string) => kind === 'immich-import-derived' || kind === 'library-import-derived';
 /** What a run is called: its queue's name, a Manager import, a folder scan, or plain server processing. */

@@ -117,6 +117,13 @@ describe('review what failed (FL-1349)', () => {
     expect(document.body.getHTML()).not.toContain('theirs-1');
     expect(screen.getByText('IMG_3310.PNG')).toBeInTheDocument();
     expect(screen.getByText('Only Jamie sees this photo and can undo or replace it.')).toBeInTheDocument();
+    // The owner is said once: in the note, not again as a column.
+    expect(screen.queryByText('Jamie')).not.toBeInTheDocument();
+    expect(screen.getByText('Taylor')).toBeInTheDocument();
+    // A damaged photo often has no thumbnail: the row falls back to the plain tile.
+    await fireEvent.error(images[0]);
+    expect(document.querySelectorAll('img')).toHaveLength(0);
+    expect(screen.getByText('scan-014.jpg')).toBeInTheDocument();
     expect(screen.getByText('and 9 more')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hide photos' })).toHaveAttribute('aria-expanded', 'true');
   });
@@ -138,6 +145,26 @@ describe('review what failed (FL-1349)', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Stop trying' })).not.toBeInTheDocument();
     expect(onChanged).toHaveBeenCalledTimes(1);
+    // The sheet reads again, so its totals and stopped lines are current.
+    await waitFor(() => expect(sdkMock.getJobRunFailures).toHaveBeenCalledTimes(2));
+  });
+  it('says tasks when the work counts tasks', async () => {
+    sdkMock.getJobRunFailures.mockResolvedValue({
+      ...failures([
+        group({ cause: JobRunFailureCause.Other, count: 3 }),
+        group({ cause: JobRunFailureCause.Unsupported, count: 2 }),
+      ]),
+      countsPhotos: false,
+    });
+    sdkMock.actOnJobRunFailures.mockResolvedValueOnce({ count: 3 }).mockResolvedValueOnce({ count: 2 });
+    open();
+    await fireEvent.click(await screen.findByRole('button', { name: 'Try again now' }));
+    expect(await screen.findByText('Trying 3 tasks again.')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop trying' }));
+    expect(await screen.findByText('Stopped. These 2 tasks won’t be tried again.')).toBeInTheDocument();
+    // Nothing in the sheet's own words says photos (the run's name is the caller's).
+    expect(document.querySelector('.lead')?.textContent).not.toMatch(/photo/);
+    expect(document.querySelector('.causes')?.textContent).not.toMatch(/photo/);
   });
 
   it('Try again now says how many photos go back', async () => {
