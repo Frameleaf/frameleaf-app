@@ -246,24 +246,24 @@ export class AuthService extends BaseService {
   async login(dto: LoginCredentialDto, details: LoginDetails, trustToken?: string): Promise<LoginResponseDto> {
     await this.requirePasswordLogin(details);
 
-    const backoff = await this.signInSecurity.check('password', dto.email, details);
-    const user = await this.userRepository.getByEmail(dto.email, { withPassword: true });
-    // Always run bcrypt so response time is constant regardless of whether the email
-    // is registered, preventing timing-based user enumeration.
-    const isAuthenticated = await this.cryptoRepository.compareBcrypt(dto.password, user?.password ?? LOGIN_DUMMY_HASH);
+    const { user, password } = await this.signInSecurity.attempt('password', dto.email, details, async (backoff) => {
+      const user = await this.userRepository.getByEmail(dto.email, { withPassword: true });
+      // Always run bcrypt so response time is constant regardless of whether the email is registered.
+      const isAuthenticated = await this.cryptoRepository.compareBcrypt(
+        dto.password,
+        user?.password ?? LOGIN_DUMMY_HASH,
+      );
+      if (!user || !user.password || !isAuthenticated || user.importClaimPending) {
+        await this.signInSecurity.failed(backoff, user?.importClaimPending ? undefined : user);
+        this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
+        throw new UnauthorizedException('Incorrect email or password');
+      }
 
-    if (!user || !user.password || !isAuthenticated || user.importClaimPending) {
-      await this.signInSecurity.failed(backoff, user?.importClaimPending ? undefined : user);
-      this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
-      throw new UnauthorizedException('Incorrect email or password');
-    }
-
-    await this.signInSecurity.succeeded(backoff);
+      await this.signInSecurity.succeeded(backoff);
+      return { user, password: user.password };
+    });
     const twoFactor = await this.userRepository.getTwoFactor(user.id);
-    if (
-      twoFactor?.enabledAt &&
-      !(await this.isTrustedBrowser(user.id, user.password, twoFactor.enabledAt, trustToken))
-    ) {
+    if (twoFactor?.enabledAt && !(await this.isTrustedBrowser(user.id, password, twoFactor.enabledAt, trustToken))) {
       // FL-793: a client that can't show the code step gets a clear refusal, never an empty session
       // (403, not 401: today's apps read 401 as a wrong password)
       if (!dto.twoFactor) {
@@ -283,11 +283,11 @@ export class AuthService extends BaseService {
       return {
         ...mapLoginResponse(user, ''),
         twoFactorRequired: true,
-        twoFactorToken: await signToken(this.twoFactorMac('challenge'), challenge, user.password),
+        twoFactorToken: await signToken(this.twoFactorMac('challenge'), challenge, password),
       };
     }
 
-    return this.createLoginResponse(user, details, { passwordHash: user.password });
+    return this.createLoginResponse(user, details, { passwordHash: password });
   }
 
   private async requirePasswordLogin(details: LoginDetails) {
@@ -329,15 +329,16 @@ export class AuthService extends BaseService {
       throw new UnauthorizedException(TWO_FACTOR_EXPIRED);
     }
 
-    const backoff = await this.signInSecurity.check('two-factor', user.id, details);
-    if (!(await this.checkSecondFactor(user.id, twoFactor.secret, dto, now))) {
-      await this.signInSecurity.failed(backoff, user);
-      this.logger.warn(`Failed two-step sign-in for user ${user.email} from ip address ${details.clientIp}`);
-      throw new UnauthorizedException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
-    }
+    await this.signInSecurity.attempt('two-factor', user.id, details, async (backoff) => {
+      if (!(await this.checkSecondFactor(user.id, twoFactor.secret, dto, now))) {
+        await this.signInSecurity.failed(backoff, user);
+        this.logger.warn(`Failed two-step sign-in for user ${user.email} from ip address ${details.clientIp}`);
+        throw new UnauthorizedException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
+      }
+      await this.signInSecurity.succeeded(backoff);
+    });
 
     const response = await this.createLoginResponse(user, details, { passwordHash: password });
-    await this.signInSecurity.succeeded(backoff);
     const trust: TwoFactorTrust = {
       sub: user.id,
       en: twoFactor.enabledAt.getTime(),

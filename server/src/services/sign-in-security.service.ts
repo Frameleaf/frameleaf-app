@@ -5,7 +5,7 @@ import { mapNotification } from 'src/dtos/notification.dto.js';
 import { FrameleafEnvironment, JobName, NotificationLevel, NotificationType } from 'src/enum.js';
 import { RATE_LIMITED_MESSAGE, rateLimitAddress } from 'src/middleware/rate-limit.guard.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
-import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { RateLimitRepository, type SignInAttempt } from 'src/repositories/rate-limit.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isHomeAddress, isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
@@ -24,25 +24,41 @@ export class SignInSecurityService extends BaseService {
   @Inject(RateLimitRepository)
   private counters!: RateLimitRepository;
 
-  async check(kind: BackoffKind, principal: string, details: LoginDetails): Promise<string | undefined> {
+  async attempt<T>(
+    kind: BackoffKind,
+    principal: string,
+    details: LoginDetails | undefined,
+    verify: (attempt?: SignInAttempt) => Promise<T>,
+  ): Promise<T> {
+    const attempt = details && (await this.check(kind, principal, details));
+    try {
+      return await verify(attempt);
+    } finally {
+      await attempt?.release();
+    }
+  }
+
+  private async check(kind: BackoffKind, principal: string, details: LoginDetails): Promise<SignInAttempt | undefined> {
     if (this.configRepository.getEnv().environment === FrameleafEnvironment.Testing) return;
 
-    let key: string;
+    let attempt: SignInAttempt | undefined;
     let wait: number;
     try {
       const hash = await this.key(
         'sign-in-backoff',
         JSON.stringify([kind, principal, rateLimitAddress(details.securityClientIp ?? details.clientIp)]),
       );
-      key = `sign-in-backoff:${hash}`;
-      wait = await this.counters.getSignInWait(key);
+      attempt = await this.counters.acquireSignInAttempt(`sign-in-backoff:${hash}`);
+      wait = attempt ? await attempt.getWait() : 1;
     } catch {
+      await attempt?.release();
       this.logger.warn('Sign-in backoff counters are unavailable');
       if (isRemoteVia(details.via))
         throw new ServiceUnavailableException('This server is busy. Try again in a moment.');
       return;
     }
     if (wait > 0) {
+      await attempt?.release();
       throw new HttpException(
         {
           message: RATE_LIMITED_MESSAGE,
@@ -53,12 +69,12 @@ export class SignInSecurityService extends BaseService {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    return key;
+    return attempt;
   }
 
-  async failed(key?: string, user?: AlertUser): Promise<void> {
-    if (!key) return;
-    await this.counters.recordSignInFailure(key).catch(() => this.logger.warn('Could not record sign-in backoff'));
+  async failed(attempt?: SignInAttempt, user?: AlertUser): Promise<void> {
+    if (!attempt) return;
+    await attempt.recordFailure().catch(() => this.logger.warn('Could not record sign-in backoff'));
     if (user) {
       // Finish before responding only for address-scoped backoff. Account-specific notices must not reveal
       // that the email exists through different response timing.
@@ -66,9 +82,10 @@ export class SignInSecurityService extends BaseService {
     }
   }
 
-  async succeeded(key?: string): Promise<void> {
-    if (key)
-      await this.counters.clearSignInFailures(key).catch(() => this.logger.warn('Could not clear sign-in backoff'));
+  async succeeded(attempt?: SignInAttempt): Promise<void> {
+    if (attempt) {
+      await attempt.clearFailures().catch(() => this.logger.warn('Could not clear sign-in backoff'));
+    }
   }
 
   async signedIn(user: AlertUser, details: LoginDetails): Promise<void> {

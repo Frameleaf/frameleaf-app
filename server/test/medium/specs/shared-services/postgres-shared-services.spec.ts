@@ -130,6 +130,34 @@ describe('PostgreSQL shared services', () => {
     expect(await counters.getSignInWait(key)).toBe(0);
   });
 
+  it('holds one sign-in attempt per key across admission workers and exposes the recorded result', async () => {
+    const first = admission();
+    const second = admission();
+    const key = 'sign-in-backoff:concurrent-a';
+    const other = 'sign-in-backoff:concurrent-b';
+    for (let attempt = 0; attempt < 4; attempt++) await first.recordSignInFailure(key);
+
+    const owner = await first.acquireSignInAttempt(key);
+    expect(owner).toBeDefined();
+    try {
+      expect(await second.acquireSignInAttempt(key)).toBeUndefined();
+      const unrelated = await second.acquireSignInAttempt(other);
+      expect(unrelated).toBeDefined();
+      await unrelated?.release();
+      expect(await owner?.getWait()).toBe(0);
+      await owner?.recordFailure();
+    } finally {
+      await owner?.release();
+    }
+
+    const later = await second.acquireSignInAttempt(key);
+    try {
+      expect(await later?.getWait()).toBeGreaterThanOrEqual(28);
+    } finally {
+      await later?.release();
+    }
+  });
+
   it('counts a rolling hour of failures and stores at most twenty timestamps', async () => {
     const counters = admission();
     const key = 'sign-in-burst:account';

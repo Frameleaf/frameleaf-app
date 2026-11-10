@@ -22,14 +22,19 @@ describe('/auth', () => {
   describe('POST /auth/login', () => {
     // Run this case alone against a disposable server with FRAMELEAF_ENV=production.
     it.runIf(process.env.FRAMELEAF_E2E_SIGN_IN_BACKOFF === '1')(
-      'waits after five actual password failures',
+      'waits after five actual password failures, including a burst of concurrent attempts',
       async () => {
-        for (let attempt = 0; attempt < 5; attempt++) {
-          await request(app)
+        const fail = () =>
+          request(app)
             .post('/auth/login')
-            .send({ ...loginDto.admin, password: 'incorrect-password' })
-            .expect(401);
+            .send({ ...loginDto.admin, password: 'incorrect-password' });
+        for (let attempt = 0; attempt < 4; attempt++) {
+          await fail().expect(401);
         }
+        const results = await Promise.all(Array.from({ length: 5 }, fail));
+        expect(results.map(({ status }) => status).toSorted((left, right) => left - right)).toEqual([
+          401, 429, 429, 429, 429,
+        ]);
         const { body, headers } = await request(app).post('/auth/login').send(loginDto.admin).expect(429);
         expect(body).toMatchObject({ code: 'rate_limited', retryAfter: expect.any(Number) });
         expect(body.retryAfter).toBeGreaterThan(0);

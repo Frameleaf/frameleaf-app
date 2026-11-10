@@ -69,19 +69,27 @@ describe(AuthService.name, () => {
   describe('login', () => {
     it('checks the address-scoped wait before looking up an account', async () => {
       const wait = new Error('Wait before trying again');
-      mocks.signInSecurity.check.mockRejectedValue(wait);
+      mocks.signInSecurity.attempt.mockRejectedValue(wait);
       await expect(sut.login(dto, loginDetails)).rejects.toBe(wait);
-      expect(mocks.signInSecurity.check).toHaveBeenCalledWith('password', dto.email, loginDetails);
+      expect(mocks.signInSecurity.attempt).toHaveBeenCalledWith(
+        'password',
+        dto.email,
+        loginDetails,
+        expect.any(Function),
+      );
       expect(mocks.user.getByEmail).not.toHaveBeenCalled();
     });
 
     it('counts an actual failure and supplies an owner only for a known account', async () => {
       const user = UserFactory.create({ password: 'hashed-password' });
-      mocks.signInSecurity.check.mockResolvedValue('address-scoped-counter');
+      const attempt = { getWait: vi.fn(), recordFailure: vi.fn(), clearFailures: vi.fn(), release: vi.fn() };
+      mocks.signInSecurity.attempt.mockImplementationOnce(async (_kind, _principal, _details, verify) =>
+        verify(attempt),
+      );
       mocks.user.getByEmail.mockResolvedValue(user);
       mocks.crypto.compareBcrypt.mockResolvedValue(false);
       await expect(sut.login(dto, loginDetails)).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(mocks.signInSecurity.failed).toHaveBeenCalledWith('address-scoped-counter', user);
+      expect(mocks.signInSecurity.failed).toHaveBeenCalledWith(attempt, user);
     });
 
     it('signs in with a preserved source password and can replace it with a native password', async () => {

@@ -68,17 +68,17 @@ export class SharedLinkService extends BaseService {
       throw new BadRequestException('Shared link is not password protected');
     }
 
-    const backoff = details && (await this.signInSecurity.check('shared-link', id, details));
     const legacy = !isBcryptHash(password);
-    const valid = legacy
-      ? sharedLinkSecretEqual(dto.password, password)
-      : await this.cryptoRepository.compareBcrypt(dto.password, password);
-    if (!valid) {
-      await this.signInSecurity.failed(backoff);
-      throw new UnauthorizedException('Invalid password');
-    }
-
-    await this.signInSecurity.succeeded(backoff);
+    await this.signInSecurity.attempt('shared-link', id, details, async (backoff) => {
+      const valid = legacy
+        ? sharedLinkSecretEqual(dto.password, password)
+        : await this.cryptoRepository.compareBcrypt(dto.password, password);
+      if (!valid) {
+        await this.signInSecurity.failed(backoff);
+        throw new UnauthorizedException('Invalid password');
+      }
+      await this.signInSecurity.succeeded(backoff);
+    });
     const stored = legacy ? await this.hashLegacyPassword(auth, id, password, dto.password) : password;
 
     return {

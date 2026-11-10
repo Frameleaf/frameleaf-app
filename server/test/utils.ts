@@ -279,7 +279,7 @@ export type ServiceOverrides = {
   access: AccessRepository;
   activity: ActivityRepository;
   adminAudit: AdminAuditRepository;
-  signInSecurity: Pick<SignInSecurityService, 'check' | 'failed' | 'succeeded' | 'signedIn'>;
+  signInSecurity: Pick<SignInSecurityService, 'attempt' | 'failed' | 'succeeded' | 'signedIn'>;
   album: AlbumRepository;
   albumSummary: AlbumSummaryRepository;
   albumUser: AlbumUserRepository;
@@ -564,7 +564,9 @@ export const getMocks = () => {
 };
 
 export const newSignInSecurityMock = () => ({
-  check: vitest.fn<SignInSecurityService['check']>(),
+  attempt: vitest.fn<SignInSecurityService['attempt']>(async (_kind, _principal, _details, verify) =>
+    verify(),
+  ) as Mocked<Pick<SignInSecurityService, 'attempt'>>['attempt'],
   failed: vitest.fn<SignInSecurityService['failed']>(),
   succeeded: vitest.fn<SignInSecurityService['succeeded']>(),
   signedIn: vitest.fn<SignInSecurityService['signedIn']>(),
