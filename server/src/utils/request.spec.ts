@@ -95,6 +95,13 @@ describe(getUserAgentDetails.name, () => {
     });
   });
 
+  it.each([
+    ['immich-ios/1.123.4', 'iOS'],
+    ['immich-android/1.123.4', 'Android'],
+  ])('recognizes the operating system in %s', (agent, family) => {
+    expect(getUserAgentDetails({ 'user-agent': agent }).deviceOSFamily).toBe(family);
+  });
+
   it('retains empty details when user-agent and device headers are absent', () => {
     expect(getUserAgentDetails({})).toEqual({
       deviceType: '',

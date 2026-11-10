@@ -40,7 +40,7 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
   private getSignInClient(): Pool {
     if (!this.signInPool) {
       // Credential checks can wait for bcrypt. Keep those connections separate from route admission.
-      const pool = createSharedServicePool(this.configRepository, 'sign-in-backoff');
+      const pool = createSharedServicePool(this.configRepository, 'sign-in-backoff', 8);
       this.signInPool = { pool, clients: trackPoolClients(pool) };
     }
     return this.signInPool.pool;

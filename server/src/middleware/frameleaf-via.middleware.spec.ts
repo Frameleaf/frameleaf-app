@@ -84,6 +84,23 @@ describe('frameleafViaMiddleware (FL-161)', () => {
     expect(requestSecurityAddress(request)).toBe(expected);
   });
 
+  it('warns once about private forwarded traffic without trusting the header', () => {
+    const warn = vi.fn();
+    const middleware = frameleafViaMiddleware(secret, false, warn);
+    const peer = '192.168.1.20';
+    for (const address of ['203.0.113.7', '203.0.113.8']) {
+      const request = {
+        headers: { 'x-forwarded-for': address },
+        ip: address,
+        socket: { remoteAddress: peer },
+      } as unknown as FrameleafRequest;
+      middleware(request, {} as Response, vi.fn());
+
+      expect(requestSecurityAddress(request)).toBe(peer);
+    }
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves a request that claims nothing unmarked', () => {
     const request = run({ 'x-forwarded-for': '192.168.1.2' });
     expect(request.frameleafVia).toBeNull();

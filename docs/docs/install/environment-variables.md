@@ -58,6 +58,8 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 
 \*3: The [default configuration](https://helmetjs.github.io/#content-security-policy) sets `upgrade-insecure-requests`, which tells the browser to upgrade all requests to HTTPS. This breaks on HTTP-only deployments. If you cannot use HTTPS, you should use a custom helmet config file with `"upgrade-insecure-requests": null`.
 
+If you upgrade a Library behind nginx, Traefik, or another reverse proxy, set `FRAMELEAF_TRUSTED_PROXIES` to the proxy addresses before restarting. Sign-in limits no longer use forwarded addresses from implicitly trusted private proxies. Without this setting, requests through the same proxy share its address for sign-in limits. The authenticated Frameleaf edge continues to supply the visitor address automatically.
+
 ## Library Care
 
 | Variable                   | Description                                                                                                              | Default | Containers | Workers            |

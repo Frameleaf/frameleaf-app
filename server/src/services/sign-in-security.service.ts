@@ -104,16 +104,17 @@ export class SignInSecurityService extends BaseService {
           network,
         ]),
       );
-      if (!(await this.sessionRepository.observeKnownDevice(user.id, Buffer.from(fingerprint, 'base64url')))) return;
-
-      const home = !isRemoteVia(details.via) && isHomeAddress(clientIp, frameleafCloud.trustedLanCidrs);
-      // Browser and OS families come from the UA parser, not the arbitrary device request headers.
-      const device = [details.browserFamily, details.deviceOSFamily].filter(Boolean).join(' on ') || 'Unknown device';
-      await this.sendAlert(user, {
-        kind: 'new-device',
-        device,
-        place: home ? 'Home network' : 'Away',
-        time: new Date().toISOString(),
+      await this.sessionRepository.observeKnownDevice(user.id, Buffer.from(fingerprint, 'base64url'), async () => {
+        const home = !isRemoteVia(details.via) && isHomeAddress(clientIp, frameleafCloud.trustedLanCidrs);
+        // Browser and OS families come from the UA parser, not the arbitrary device request headers.
+        const device = [details.browserFamily, details.deviceOSFamily].filter(Boolean).join(' on ') || 'Unknown device';
+        const alert = await this.prepareAlert(user, {
+          kind: 'new-device',
+          device,
+          place: home ? 'Home network' : 'Away',
+          time: new Date().toISOString(),
+        });
+        return alert ? (db) => this.jobRepository.queueInTransaction(db, alert) : undefined;
       });
     } catch {
       this.logger.warn('Could not record or notify a new sign-in');
@@ -123,20 +124,38 @@ export class SignInSecurityService extends BaseService {
   private async failedAccount(user: AlertUser) {
     const hash = await this.key('sign-in-burst', user.id);
     if (!(await this.counters.recordSignInBurst(`sign-in-burst:${hash}`))) return;
-    if ((await this.counters.hit(`sign-in-notice:${hash}`, 24 * 60 * 60)).count !== 1) return;
-    const notice = await this.notificationRepository.create({
-      userId: user.id,
-      type: NotificationType.Custom,
-      level: NotificationLevel.Warning,
-      title: SIGN_IN_FAILURE_TITLE,
-      description: SIGN_IN_FAILURE_DESCRIPTION,
-      data: { link: SIGN_IN_SECURITY_URL },
-    });
-    this.websocketRepository.clientSend('on_notification', user.id, mapNotification(notice));
-    await this.sendAlert(user, { kind: 'attempts' });
+    await Promise.all([
+      this.publishBurstNotification(user, `sign-in-notice:in-app:${hash}`),
+      this.publishBurstEmail(user, `sign-in-notice:email:${hash}`),
+    ]);
   }
 
-  private async sendAlert(
+  private async publishBurstNotification(user: AlertUser, key: string) {
+    const notice = await this.databaseRepository.publishSignInNotice(key, (db) =>
+      this.notificationRepository.create(
+        {
+          userId: user.id,
+          type: NotificationType.Custom,
+          level: NotificationLevel.Warning,
+          title: SIGN_IN_FAILURE_TITLE,
+          description: SIGN_IN_FAILURE_DESCRIPTION,
+          data: { link: SIGN_IN_SECURITY_URL },
+        },
+        db,
+      ),
+    );
+    if (notice) this.websocketRepository.clientSend('on_notification', user.id, mapNotification(notice));
+  }
+
+  private async publishBurstEmail(user: AlertUser, key: string) {
+    if (await this.databaseRepository.hasSignInNotice(key)) return;
+    const alert = await this.prepareAlert(user, { kind: 'attempts' });
+    await this.databaseRepository.publishSignInNotice(key, async (db) => {
+      if (alert) await this.jobRepository.queueInTransaction(db, alert);
+    });
+  }
+
+  private async prepareAlert(
     user: AlertUser,
     data: { kind: 'attempts' } | { kind: 'new-device'; device: string; place: string; time: string },
   ) {
@@ -153,15 +172,15 @@ export class SignInSecurityService extends BaseService {
         showBranding: templates.email.showBranding,
       },
     });
-    await this.jobRepository.queue({
-      name: JobName.SendMail,
+    return {
+      name: JobName.SendMail as const,
       data: {
         to: user.email,
         subject: data.kind === 'new-device' ? NEW_SIGN_IN_TITLE : SIGN_IN_FAILURE_TITLE,
         html,
         text,
       },
-    });
+    };
   }
 
   private key(purpose: string, value: string) {
