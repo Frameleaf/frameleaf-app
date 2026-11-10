@@ -15,6 +15,7 @@
   import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
   import { describeVideoFailure, type VideoFailure } from '$lib/frameleaf/video-failure';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
+  import { VIDEO_MAX_ZOOM, VIDEO_POINT_ZOOM, videoZoomAction } from '$lib/frameleaf/video-zoom';
   import '$lib/frameleaf/tokens.css';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { castManager } from '$lib/managers/cast-manager.svelte';
@@ -93,6 +94,8 @@
     onClose?: () => void;
     /** Switches an original that cannot play to the encoded rendition (FL-35). */
     onPlayEncoded?: () => void;
+    /** FL-801: the picture zooms and pans (the open video in the viewer, not a 360 video or a cast). */
+    zoomable?: boolean;
   }
 
   let {
@@ -108,6 +111,7 @@
     onVideoStarted = () => {},
     onClose = () => {},
     onPlayEncoded,
+    zoomable = false,
   }: Props = $props();
 
   let videoPlayer: HTMLVideoElement | undefined = $state();
@@ -676,7 +680,41 @@
     }
   };
 
+  // FL-801: every video opens at fit, and a zoomed picture is left at fit when the viewer moves on.
+  let zoomedAssetId: string | undefined;
+  $effect.pre(() => {
+    const id = assetId;
+    if (id !== zoomedAssetId) {
+      zoomedAssetId = id;
+      untrack(() => zoomable && assetViewerManager.resetZoomState());
+    }
+  });
+  onDestroy(() => {
+    if (zoomable) {
+      assetViewerManager.resetZoomState();
+    }
+  });
+  const canZoom = $derived(zoomable && !castManager.isCasting);
+  // Casting (or anything else that ends zoom) takes the local player away before its frame can return to
+  // fit, so the shared zoom is reset here: a zoom left above 1 would block swipes and drag-to-close.
+  let couldZoom = false;
+  $effect(() => {
+    const now = canZoom;
+    if (couldZoom && !now) {
+      untrack(() => assetViewerManager.resetZoomState());
+    }
+    couldZoom = now;
+  });
+  // The keyboard steps of the photo viewer (PhotoViewer.svelte); 0 returns to fit (RatingAction).
+  const zoomBy = (factor: number) =>
+    assetViewerManager.animatedZoom(Math.min(VIDEO_MAX_ZOOM, Math.max(1, assetViewerManager.zoom * factor)));
+  const toggleZoom = () => assetViewerManager.animatedZoom(assetViewerManager.zoom > 1 ? 1 : VIDEO_POINT_ZOOM);
+
   const onSwipe = (event: SwipeCustomEvent) => {
+    // A drag on a zoomed picture moves it, never to the next item.
+    if (assetViewerManager.zoom > 1) {
+      return;
+    }
     if (event.detail.direction === 'left') {
       onNextAsset();
     } else if (event.detail.direction === 'right') {
@@ -718,6 +756,15 @@
           ? (videoPlayer.currentTime = Math.min(videoPlayer.currentTime + 0.4, videoPlayer.duration))
           : undefined,
     },
+    ...(canZoom
+      ? [
+          { shortcut: { key: 'z' }, onShortcut: toggleZoom, preventDefault: true },
+          { shortcut: { key: '=' }, onShortcut: () => zoomBy(1.25), preventDefault: true },
+          { shortcut: { key: '+' }, onShortcut: () => zoomBy(1.25), preventDefault: true },
+          { shortcut: { key: '+', shift: true }, onShortcut: () => zoomBy(1.25), preventDefault: true },
+          { shortcut: { key: '-' }, onShortcut: () => zoomBy(1 / 1.25), preventDefault: true },
+        ]
+      : []),
   ]}
 />
 
@@ -745,6 +792,7 @@
         style:aspect-ratio={aspectRatio}
         defaultduration={asset.duration! / 1000}
         onmediarenditionrequest={onRenditionRequest}
+        use:videoZoomAction={{ target: videoPlayer, enabled: canZoom }}
       >
         {#if useHls}
           <hls-video

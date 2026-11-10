@@ -29,6 +29,7 @@ import {
   withExif,
   withExifInner,
   withFaces,
+  withFacesAndPeople,
   withFilePath,
   withFiles,
   withHiddenContentFilter,
@@ -281,6 +282,19 @@ export class AssetJobRepository {
       .executeTakeFirst();
   }
 
+  getForSidecarFaces(id: string, kysely: Kysely<DB>) {
+    return kysely
+      .selectFrom('asset')
+      .select(withFacesAndPeople({}))
+      .where('asset.id', '=', asUuid(id))
+      .where('asset.type', '=', AssetType.Image)
+      .where('asset.libraryScope', '=', LibraryScope.Personal)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+      .where(isNotLocked('asset'))
+      .executeTakeFirst();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   getForSidecarCheckJob(id: string, kysely: Kysely<DB> = this.db) {
     return kysely
@@ -428,7 +442,7 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .select(columns.asset)
       .select(isLocked('asset').as('isLocked'))
-      .select(withFaces)
+      .select(withFacesAndPeople({}))
       .select((eb) => withFiles(eb, AssetFileType.Sidecar))
       .innerJoin('user', 'user.id', 'asset.ownerId')
       .select(['user.clusterGroupId'])

@@ -443,8 +443,8 @@
     .fl-viewer-toolbar {
       position: fixed;
       inset-inline: 0;
-      /* Above the 60px footer (apple-style.css:760-763). */
-      bottom: calc(60px + env(safe-area-inset-bottom));
+      /* Above the footer (apple-style.css:760-763): 60px, or taller when a video's zoom row wraps it (FL-801). */
+      bottom: var(--fl-viewer-footer-height, calc(60px + env(safe-area-inset-bottom)));
       z-index: 3;
       isolation: isolate;
       display: block;
