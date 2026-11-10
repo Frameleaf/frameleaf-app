@@ -35,8 +35,11 @@ const ALIASES: Record<string, ReasonKey> = {
   lowpowermode: 'low_power',
   deleted: 'skipped_deleted',
 };
-export const reasonKey = (code: string): ReasonKey =>
-  ALIASES[code.toLowerCase().replaceAll(/[^a-z0-9]/g, '')] ?? 'unknown';
+export const reasonKey = (code: string): ReasonKey => {
+  const key = code.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
+  // own keys only: a phone-sent code like "constructor" must not reach Object.prototype
+  return Object.hasOwn(ALIASES, key) ? ALIASES[key] : 'unknown';
+};
 
 export type ReceiptReason = { key: ReasonKey; count: number };
 

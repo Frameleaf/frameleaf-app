@@ -27,6 +27,9 @@ describe('backup receipt (FL-792)', () => {
     expect(reasonKey('too_large')).toBe('too_large');
     expect(reasonKey('quantum-flux')).toBe('unknown');
     expect(reasonKey('')).toBe('unknown');
+    expect(reasonKey('constructor')).toBe('unknown');
+    expect(reasonKey('toString')).toBe('unknown');
+    expect(reasonKey('__proto__')).toBe('unknown');
   });
 
   it('adds codes that mean the same reason and adds the check’s missing items', () => {
