@@ -48,7 +48,7 @@ const classifyExit = (code: number | null, killedBy: NodeJS.Signals | null, diag
   if (/error while loading shared libraries/i.test(diagnostic)) {
     return new RawRenderError('dependency_missing', 'ENOENT');
   }
-  if (/no space left/i.test(diagnostic)) {
+  if (/no space left|quota exceeded/i.test(diagnostic)) {
     // a full drive is the server's trouble, named so that nobody settles for a lower rung because of it
     return new RawRenderError('resource_limit', 'ENOSPC');
   }
@@ -177,8 +177,12 @@ export async function renderRawWithLibRaw(
     if (code === 'ENOENT') {
       throw new RawRenderError('dependency_missing', 'ENOENT', error);
     }
-    if (['ENOSPC', 'ENOMEM', 'ERR_FS_FILE_TOO_LARGE'].includes(code as string)) {
-      throw new RawRenderError('resource_limit', code === 'ENOSPC' ? 'ENOSPC' : 'ERR_RAW_RESOURCE_LIMIT', error);
+    if (code === 'ENOSPC' || code === 'EDQUOT') {
+      // a full drive or quota keeps its own code, so the ladder and the job see it for what it is
+      throw new RawRenderError('resource_limit', code, error);
+    }
+    if (['ENOMEM', 'ERR_FS_FILE_TOO_LARGE'].includes(code as string)) {
+      throw new RawRenderError('resource_limit', 'ERR_RAW_RESOURCE_LIMIT', error);
     }
     if (code === 'EACCES' || code === 'EPERM') {
       throw new RawRenderError('io', code, error);

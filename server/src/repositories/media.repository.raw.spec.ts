@@ -192,8 +192,8 @@ describe('MediaRepository.renderRaw (FL-1355 ladder)', () => {
     expect(most).toBe(1);
   });
 
-  it('does not settle for a lower rung because the drive is full', async () => {
-    const failure = new RawRenderError('resource_limit', 'ENOSPC');
+  it.each(['ENOSPC', 'EDQUOT'])('does not settle for a lower rung because the drive is full: %s', async (code) => {
+    const failure = new RawRenderError('resource_limit', code);
     vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
     await expect(sut.renderRaw('a.nef')).rejects.toBe(failure);
     expect(failure.ladderExhausted).toBe(false);

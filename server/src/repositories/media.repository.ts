@@ -259,7 +259,8 @@ export class MediaRepository {
         !(error instanceof RawRenderError) ||
         error.reason === 'cancelled' ||
         error.reason === 'io' ||
-        error.code === 'ENOSPC'
+        error.code === 'ENOSPC' ||
+        error.code === 'EDQUOT'
       ) {
         throw error;
       }

@@ -21,6 +21,7 @@ case "$FAKE_RAW" in
   libs) echo "error while loading shared libraries: libraw.so" >&2; exit 127 ;;
   memory) echo "Insufficient memory" >&2; exit 1 ;;
   full) echo "No space left on device" >&2; exit 1 ;;
+  quota) echo "Disk quota exceeded" >&2; exit 1 ;;
   unsupported) echo "Unsupported file format or not RAW file" >&2; exit 1 ;;
   corrupt) echo "Corrupted data or unexpected EOF" >&2; exit 1 ;;
   io) echo "I/O error" >&2; exit 1 ;;
@@ -155,6 +156,7 @@ describe('renderRawWithLibRaw', () => {
     ['libs', 'dependency_missing', 'ENOENT'],
     ['memory', 'resource_limit', 'ERR_RAW_RESOURCE_LIMIT'],
     ['full', 'resource_limit', 'ENOSPC'],
+    ['quota', 'resource_limit', 'ENOSPC'],
     ['unsupported', 'unsupported', 'ERR_RAW_UNSUPPORTED'],
     ['corrupt', 'damaged', 'ERR_RAW_DAMAGED'],
     ['io', 'io', 'EIO'],
