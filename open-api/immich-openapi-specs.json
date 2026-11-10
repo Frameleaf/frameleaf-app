@@ -21435,6 +21435,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assistant/ask": {
+      "post": {
+        "description": "Answer a question about the library with matching items and, for each one, why it matched. Plans with a planner model when one is installed and turned on, otherwise with the search rules.",
+        "operationId": "askAssistant",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantAskDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantAskResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Ask the Library Assistant",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Beta"
+      }
+    },
     "/auth/admin-sign-up": {
       "post": {
         "description": "Create the first admin user in the system.",
@@ -69028,6 +69084,30 @@
         ],
         "type": "object"
       },
+      "AdminConfigAssistantDto": {
+        "properties": {
+          "enabled": {
+            "description": "Enable the Library Assistant in search",
+            "type": "boolean"
+          },
+          "maxResults": {
+            "description": "Maximum number of Library Assistant results",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "planner": {
+            "description": "Plan questions with an installed planner model before the rules",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "maxResults",
+          "planner"
+        ],
+        "type": "object"
+      },
       "AdminConfigBackupScheduleDto": {
         "properties": {
           "cronExpression": {
@@ -70687,6 +70767,9 @@
         "properties": {
           "askSearch": {
             "$ref": "#/components/schemas/AdminConfigAskSearchDto"
+          },
+          "assistant": {
+            "$ref": "#/components/schemas/AdminConfigAssistantDto"
           }
         },
         "required": [
@@ -82024,6 +82107,228 @@
           "durationMs",
           "hasAudio",
           "version"
+        ],
+        "type": "object"
+      },
+      "AssistantAskDto": {
+        "properties": {
+          "language": {
+            "description": "Language of the question",
+            "maxLength": 16,
+            "type": "string"
+          },
+          "query": {
+            "description": "The question, as the person typed it",
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "size": {
+            "description": "Most results to return",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "AssistantAskResponseDto": {
+        "properties": {
+          "answeredBy": {
+            "description": "What planned the search: `planner` (a planner model) or `rules`. Plain string; new values may appear",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/AssistantPlanFiltersDto",
+            "description": "The search that was run"
+          },
+          "query": {
+            "description": "The question as asked",
+            "type": "string"
+          },
+          "reasons": {
+            "description": "Why each result matched, one entry per result",
+            "items": {
+              "$ref": "#/components/schemas/AssistantReasonDto"
+            },
+            "type": "array"
+          },
+          "results": {
+            "$ref": "#/components/schemas/SearchResponseDto"
+          },
+          "summary": {
+            "description": "One line describing what was searched",
+            "type": "string"
+          },
+          "warnings": {
+            "description": "Parts of the question that could not be used",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "answeredBy",
+          "plan",
+          "query",
+          "reasons",
+          "results",
+          "summary",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "AssistantMediaType": {
+        "enum": [
+          "IMAGE",
+          "VIDEO"
+        ],
+        "type": "string"
+      },
+      "AssistantPlanFiltersDto": {
+        "additionalProperties": false,
+        "properties": {
+          "albums": {
+            "description": "Albums holding the item, by name",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          },
+          "city": {
+            "description": "City the item was taken in",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "description": {
+            "description": "A phrase in the description",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "favorite": {
+            "description": "Favorites only",
+            "type": "boolean"
+          },
+          "ocr": {
+            "description": "Text visible in the photo",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "people": {
+            "description": "People in the photo, by name",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          },
+          "pets": {
+            "description": "Pets in the photo, by name",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          },
+          "spoken": {
+            "description": "Words spoken in the video",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tags": {
+            "description": "Tags on the item, by name",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          },
+          "takenAfter": {
+            "description": "Taken at or after this time",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "takenBefore": {
+            "description": "Taken at or before this time",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssistantMediaType",
+            "description": "Photos or videos only"
+          },
+          "visual": {
+            "description": "What the photo looks like, for visual search",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AssistantReasonDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "items": {
+            "description": "Why this item matched, most specific first",
+            "items": {
+              "$ref": "#/components/schemas/AssistantReasonItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "items"
+        ],
+        "type": "object"
+      },
+      "AssistantReasonItemDto": {
+        "properties": {
+          "kind": {
+            "description": "What the reason rests on: person, pet, place, date, favorite, type, album, tag, text, speech, description or visual. Plain string; new kinds may appear",
+            "type": "string"
+          },
+          "text": {
+            "description": "The reason as a short sentence, from the stored data of this item",
+            "type": "string"
+          },
+          "value": {
+            "description": "The stored value the reason names (a name, place, date or quoted text)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "text"
         ],
         "type": "object"
       },
@@ -144514,6 +144819,10 @@
             "description": "Whether Ask Search (natural-language questions about the library) is enabled and can answer",
             "type": "boolean"
           },
+          "assistant": {
+            "description": "Whether the Library Assistant answers search questions (POST /assistant/ask)",
+            "type": "boolean"
+          },
           "cloudBackup": {
             "description": "Whether the Frameleaf Cloud plan includes cloud backup (FL-156)",
             "type": "boolean"
@@ -144623,6 +144932,7 @@
         },
         "required": [
           "askSearch",
+          "assistant",
           "cloudBackup",
           "cloudMl",
           "configFile",

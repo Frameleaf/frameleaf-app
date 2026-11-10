@@ -39,6 +39,7 @@ import {
   ChecksumAlgorithm,
   ColorMatrix,
   Colorspace,
+  DvProfile,
   FrameleafWorker,
   ImageFormat,
   JobName,
@@ -95,6 +96,7 @@ import {
   type DecodeQualification,
   DecodeSupport,
   assertDecodeQualified,
+  isUndecodableError,
   qualifySourceDecode,
   selectDecodeAcceleration,
 } from 'src/utils/media-decode.js';
@@ -621,6 +623,8 @@ export class MediaService extends BaseService {
       this.logger.verbose(`Thumbnail generation for video ${id} ${asset.originalPath}`);
       let videoStream: VideoStreamInfo | null = asset.videoStream;
       let format = fromStoredFormat(asset.format);
+      // FL-1357: cinema RAW has no open decoder. It is tried once; what fails is "can't play here yet", not an error.
+      const cinemaRaw = mimeTypes.isCinemaRaw(asset.originalPath);
       if (!videoStream || !format) {
         this.logger.warn(`Missing persisted video metadata for asset ${asset.id}; probing ${asset.originalPath}`);
         const exists = await this.storageRepository.checkFileExists(asset.originalPath);
@@ -633,15 +637,29 @@ export class MediaService extends BaseService {
         try {
           videoInfo = await this.mediaRepository.probe(asset.originalPath);
         } catch (error) {
+          executionSignal()?.throwIfAborted();
+          if (cinemaRaw && isUndecodableError(error)) {
+            this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
+            return JobStatus.Skipped;
+          }
           throw new Error(`Failed to probe video metadata for asset ${asset.id}: ${(error as Error).message}`, {
             cause: error,
           });
+        }
+        if (videoInfo.videoStreams.length === 0) {
+          // FL-1357: sound only (a voice memo saved as .mp4, say). Nothing to picture, and nothing wrong with it.
+          this.logger.log(`No thumbnail for ${asset.id}: the file has no picture track`);
+          return JobStatus.Skipped;
         }
         videoStream = videoInfo?.videoStreams[0] ?? null;
         format = videoInfo?.format ?? null;
       }
 
       if (!videoStream || !format || !videoStream.timeBase) {
+        if (cinemaRaw) {
+          this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
+          return JobStatus.Skipped;
+        }
         throw new Error(`Missing video metadata for asset ${asset.id}`);
       }
       // FL-968: a raw 360° original is thumbnailed from its stitched, equirectangular picture
@@ -651,23 +669,34 @@ export class MediaService extends BaseService {
         make: asset.exifInfo.make,
         model: asset.exifInfo.model,
       });
-      generated = await this.generateVideoThumbnails(
-        {
-          id: asset.id,
-          ownerId: asset.ownerId,
-          originalPath: asset.originalPath,
-          checksum: asset.checksum,
-          videoStream,
-          format,
-        },
-        config,
-        // FL-59: a cover the owner chose from the video's moments is where its thumbnail is cut.
-        {
-          coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined,
-          stitch,
-          sidecarOriginal: storedOriginalPath,
-        },
-      );
+      try {
+        generated = await this.generateVideoThumbnails(
+          {
+            id: asset.id,
+            ownerId: asset.ownerId,
+            originalPath: asset.originalPath,
+            checksum: asset.checksum,
+            videoStream,
+            format,
+          },
+          config,
+          // FL-59: a cover the owner chose from the video's moments is where its thumbnail is cut.
+          {
+            coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined,
+            stitch,
+            sidecarOriginal: storedOriginalPath,
+          },
+        );
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        if (!cinemaRaw || isLockedKeyUnavailable(error) || !isUndecodableError(error)) {
+          throw error;
+        }
+        // ponytail: the nightly missing-thumbnails pass tries it again (one quick ffmpeg run); record a
+        // "skipped for this checksum" marker like transcodeSkippedFor if that ever costs anything.
+        this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
+        return JobStatus.Skipped;
+      }
     } else if (asset.type === AssetType.Image) {
       this.logger.verbose(`Thumbnail generation for image ${id} ${asset.originalPath}`);
       try {
@@ -1572,6 +1601,17 @@ export class MediaService extends BaseService {
     const { videoStream } = asset;
     const format = fromStoredFormat(asset.format);
     const audioStream = asset.audioStream ?? undefined;
+    // FL-1357: cinema RAW has no open decoder, and a file with sound only has no picture to copy. Neither is
+    // an error: there is no playback copy, the original stays as it is, and nothing is retried or set aside.
+    const cinemaRaw = mimeTypes.isCinemaRaw(asset.originalPath);
+    if (cinemaRaw && (!videoStream || !format || !videoStream.height || !videoStream.width)) {
+      this.logger.log(`No playback copy for cinema RAW ${asset.id}: this server has no decoder for it`);
+      return JobStatus.Skipped;
+    }
+    if (format && !videoStream) {
+      this.logger.log(`No playback copy for asset ${asset.id}: the file has no picture track`);
+      return JobStatus.Skipped;
+    }
     if (!videoStream || !format) {
       this.logger.warn(`Skipped transcoding for asset ${asset.id}: missing metadata; re-run extraction first`);
       return JobStatus.Failed;
@@ -1586,7 +1626,12 @@ export class MediaService extends BaseService {
 
     // FL-101: classify the source before the output directory exists, so a refusal leaves any
     // existing proxy untouched and the original is never the thing that changes.
-    const qualification = qualifySourceDecode(videoStream, ffmpeg);
+    // FL-1357: a playback copy may show the HDR10 base layer of profile 7 by itself. Profile 5 is the one
+    // source that needs libplacebo, so only it asks whether that runs here.
+    const qualification = qualifySourceDecode(videoStream, ffmpeg, {
+      baseLayerOnly: true,
+      libplacebo: videoStream.dvProfile === DvProfile.Dvhe05 && (await this.mediaRepository.hasLibplacebo()),
+    });
     if (qualification.support === DecodeSupport.Refused) {
       this.logger.warn(`Skipped transcoding for asset ${asset.id}: ${qualification.reason}`);
       return JobStatus.Skipped;
@@ -1617,6 +1662,9 @@ export class MediaService extends BaseService {
     const lockedOriginal = await isLockedPath(asset.originalPath);
     let stream =
       checkLog && !lockedOriginal ? await this.attachLogConversion(asset.originalPath, videoStream) : videoStream;
+    if (qualification.reshapeDolbyVision) {
+      stream = { ...stream, dolbyVisionReshape: true };
+    }
     if (stream.logConversion) {
       ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
     }
@@ -1680,6 +1728,10 @@ export class MediaService extends BaseService {
       } catch (error: any) {
         this.logger.error(`Error occurred during transcoding: ${error.message}`);
         if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
+          if (cinemaRaw && !isUndecodableError(error)) {
+            // a full drive or a read error is not a missing decoder: fail, so the copy is tried again
+            throw error;
+          }
           return false;
         }
 
@@ -1706,8 +1758,18 @@ export class MediaService extends BaseService {
         }
       }
       return true;
+    }).catch((error) => {
+      executionSignal()?.throwIfAborted();
+      if (!cinemaRaw || isLockedKeyUnavailable(error) || !isUndecodableError(error)) {
+        throw error;
+      }
+      return false;
     });
     if (!encoded) {
+      if (cinemaRaw) {
+        this.logger.log(`No playback copy for cinema RAW ${asset.id}: this server has no decoder for it`);
+        return JobStatus.Skipped;
+      }
       return JobStatus.Failed;
     }
 
@@ -3462,7 +3524,11 @@ export class MediaService extends BaseService {
     const isTargetVideoCodec = ffmpegConfig.acceptedVideoCodecs.includes(stream.codecName as VideoCodec);
     // FL-1285: Log footage played as it is looks flat and grey, so its playback copy is always made
     // (unless playback copies are switched off altogether).
-    const isRequired = !isTargetVideoCodec || !stream.pixelFormat.endsWith('420p') || !!stream.logConversion;
+    const isRequired =
+      !isTargetVideoCodec ||
+      !stream.pixelFormat.endsWith('420p') ||
+      !!stream.logConversion ||
+      !!stream.dolbyVisionReshape;
 
     switch (ffmpegConfig.transcode) {
       case TranscodePolicy.Disabled: {

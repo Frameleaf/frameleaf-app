@@ -379,6 +379,7 @@ const testJobNames = [
   "End-to-End Tests (Web) (ubuntu-24.04-arm, icloud)",
   "End-to-End Tests Success",
   "Unit Test ML",
+  "Test Home Assistant integration",
   ".github Files Formatting",
   "ShellCheck",
   "OpenAPI Clients",
@@ -426,7 +427,7 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
   const evidence = await requireTestQualification(sha, fixture.request);
   assert.equal(evidence.runId, 42);
   assert.equal(evidence.attempt, 2);
-  assert.equal(evidence.jobs.length, 70);
+  assert.equal(evidence.jobs.length, 71);
   assert.equal(
     evidence.jobs.filter((job) =>
       job.name.startsWith("End-to-End Tests (Server & CLI)"),

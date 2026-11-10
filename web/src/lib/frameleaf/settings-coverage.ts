@@ -330,10 +330,10 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'connectedApps.allowRegistration',
-    // FL-803: the server setting; its switch on the settings page comes with FL-860
-    kind: 'api-only',
-    file: 'src/lib/frameleaf/system-config-draft.ts',
-    evidence: 'connectedApps.allowRegistration',
+    // FL-860: Sign-in › Connected apps
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
+    evidence: 'connectedApps?.allowRegistration',
   },
   {
     pattern: 'libraryCare.healthScanCronExpression',
@@ -695,6 +695,24 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
     evidence: 'askSearch.maxResults',
+  },
+  {
+    pattern: 'localFeatures.assistant.enabled',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
+    evidence: 'assistant.enabled',
+  },
+  {
+    pattern: 'localFeatures.assistant.maxResults',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
+    evidence: 'assistant.maxResults',
+  },
+  {
+    pattern: 'localFeatures.assistant.planner',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
+    evidence: 'assistant.planner',
   },
   {
     pattern: 'logging.enabled',
