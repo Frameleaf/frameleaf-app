@@ -59,7 +59,8 @@ test.describe('Passkeys', () => {
     });
     await page.goto(`${local}/auth/login`);
     await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
-    await page.waitForURL(/\/photos/);
+    // signed in: a first sign-in on the web opens the welcome steps, a later one the library
+    await page.waitForURL(/\/(auth\/onboarding|photos)/);
 
     await page.goto(`${local}/user-settings?area=privacy&section=passkeys`);
     await page.getByRole('button', { name: 'Remove Test laptop' }).click();
