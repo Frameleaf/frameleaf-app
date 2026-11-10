@@ -1040,7 +1040,7 @@ async def run_inference(
             providers = getattr(getattr(model, "session", None), "providers", [])
             provider = next((p for p in providers if p in SUPPORTED_PROVIDERS), model.model_format.value)
             prediction = inference_metrics.inference_duration.labels(
-                task=entry["task"].value, model=label, provider=provider
+                task=str(entry["task"]), model=label, provider=provider
             )
             with prediction.time():
                 output = await run(model.predict, *inputs, **entry["options"])
@@ -1051,7 +1051,7 @@ async def run_inference(
 
     async def admitted(entry: InferenceEntry) -> None:
         async with capacity:
-            with inference_metrics.request(entry["task"].value) if inference_metrics else nullcontext():
+            with inference_metrics.request(str(entry["task"])) if inference_metrics else nullcontext():
                 await _run_inference(entry)
 
     without_deps, with_deps = entries
