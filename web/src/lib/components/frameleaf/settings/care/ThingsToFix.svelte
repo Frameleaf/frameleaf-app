@@ -29,6 +29,8 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import {
+    FileProblemTab,
+    getFileProblems,
     getIntegrityOverview,
     getLivePhotoCandidates,
     getSummary,
@@ -38,6 +40,7 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
+    mdiAutoFix,
     mdiCheckCircleOutline,
     mdiChevronRight,
     mdiFileAlertOutline,
@@ -59,6 +62,8 @@
   let summary = $state<MediaHealthSummaryResponseDto>();
   let integrity = $state<IntegrityOverviewResponseDto>();
   let live = $state<LivePhotoCandidatesResponseDto>();
+  /** How many damaged or missing files Frameleaf fixed this week, and how many still need the person. */
+  let fixedFiles = $state(0);
   let loaded = $state(false);
 
   /** FL-520: the one source of findings, or nothing when it cannot be read. */
@@ -70,6 +75,15 @@
     }
   };
 
+  /** The file problems page's own totals (FL-1337), so a row and the page it opens always agree. */
+  const totalOf = async (tab: FileProblemTab) => {
+    try {
+      return (await getFileProblems({ tab, take: 1 })).total;
+    } catch {
+      return 0;
+    }
+  };
+
   $effect(() => {
     const admin = isAdmin;
     let current = true;
@@ -78,13 +92,15 @@
       getSummary(admin ? { allAccounts: true } : {}).catch(() => undefined),
       admin ? overviewOf() : Promise.resolve(undefined),
       getLivePhotoCandidates().catch(() => undefined),
-    ]).then(([health, reports, pairs]) => {
+      totalOf(FileProblemTab.Fixed),
+    ]).then(([health, reports, pairs, fixed]) => {
       if (!current) {
         return;
       }
       summary = health;
       integrity = reports;
       live = pairs;
+      fixedFiles = fixed;
       loaded = true;
     });
     return () => {
@@ -127,9 +143,13 @@
       return {
         tone: 'warn' as const,
         icon: mdiShieldAlertOutline,
-        title: $t('frameleaf_care_fix_hero_attention', { values: { count: attention } }),
+        title: $t(fixedFiles > 0 ? 'frameleaf_care_fix_fixed_hero_title' : 'frameleaf_care_fix_hero_attention', {
+          values: { count: attention },
+        }),
         body: [
-          $t('frameleaf_care_fix_hero_attention_body', { values: { missing, damaged } }),
+          fixedFiles > 0
+            ? $t('frameleaf_care_fix_fixed_hero_body', { values: { fixed: fixedFiles, missing, damaged } })
+            : $t('frameleaf_care_fix_hero_attention_body', { values: { missing, damaged } }),
           suggestions > 0 ? $t('frameleaf_care_fix_hero_also', { values: { count: suggestions } }) : '',
           $t('frameleaf_care_fix_nothing_changes'),
         ]
@@ -160,7 +180,7 @@
     detail: string;
     /** Undefined when the app keeps no count for this kind. */
     count?: number;
-    unit: 'found' | 'waiting' | 'groups';
+    unit: 'found' | 'waiting' | 'groups' | 'week';
     note: string;
     tone: KitTone;
     /** The row's switch, for an administrator. */
@@ -171,7 +191,8 @@
   };
 
   const rows = $derived.by((): Row[] => {
-    const fromChecks = isAdmin ? commandCenterUrl('care', 'integrity-checks') : undefined;
+    // Damaged and missing files open their own page, which every account has (FL-1338).
+    const needing = commandCenterUrl('care', 'files', { tab: FileProblemTab.Needs });
     const all: (Row | false)[] = [
       {
         id: 'missing',
@@ -180,9 +201,9 @@
         detail: $t('frameleaf_care_fc_missing_detail'),
         count: missing,
         unit: 'found',
-        note: isAdmin ? $t('frameleaf_care_fix_from_checks') : $t('frameleaf_care_fix_admin_fixes'),
+        note: $t('frameleaf_care_fix_from_checks'),
         tone: 'warn',
-        href: fromChecks,
+        href: needing,
       },
       {
         id: 'damaged',
@@ -191,9 +212,20 @@
         detail: $t('frameleaf_care_fc_damaged_detail'),
         count: damaged,
         unit: 'found',
-        note: isAdmin ? $t('frameleaf_care_fix_from_checks') : $t('frameleaf_care_fix_admin_fixes'),
+        note: $t('frameleaf_care_fix_from_checks'),
         tone: 'warn',
-        href: fromChecks,
+        href: needing,
+      },
+      {
+        id: 'fixed',
+        icon: mdiAutoFix,
+        name: $t('frameleaf_care_fix_fixed_name'),
+        detail: $t('frameleaf_care_fix_fixed_detail'),
+        count: fixedFiles,
+        unit: 'week',
+        note: '',
+        tone: 'good',
+        href: commandCenterUrl('care', 'files', { tab: FileProblemTab.Fixed }),
       },
       {
         id: 'live',

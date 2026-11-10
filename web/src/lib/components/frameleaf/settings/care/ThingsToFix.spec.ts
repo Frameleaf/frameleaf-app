@@ -1,4 +1,4 @@
-import { type AdminConfigDto } from '@frameleaf/sdk';
+import { FileProblemTab, type AdminConfigDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -9,7 +9,8 @@ import ThingsToFix from './ThingsToFix.svelte';
 const draft = vi.hoisted(() => ({ store: undefined as unknown }));
 const auth = vi.hoisted(() => ({ user: { id: 'u1', isAdmin: true } }));
 
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+const nav = vi.hoisted(() => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => nav);
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { configFile: false } },
@@ -77,6 +78,7 @@ describe('Things to fix (FL-366)', () => {
     sdkMock.getSummary.mockResolvedValue(summary());
     sdkMock.getIntegrityOverview.mockResolvedValue(overview());
     sdkMock.getLivePhotoCandidates.mockResolvedValue({ candidates: [], total: 0, suggestionsEnabled: true });
+    sdkMock.getFileProblems.mockResolvedValue({ items: [], total: 0 });
   });
 
   it('says "Nothing to fix" when nothing is waiting', async () => {
@@ -136,5 +138,45 @@ describe('Things to fix (FL-366)', () => {
     expect(sdkMock.getIntegrityOverview).not.toHaveBeenCalled();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(screen.queryByText('RAW files to match')).not.toBeInTheDocument();
+  });
+
+  describe('damaged and missing files (FL-1338)', () => {
+    const fixedWeek = () =>
+      sdkMock.getFileProblems.mockImplementation(({ tab }: { tab: FileProblemTab }) =>
+        Promise.resolve({ items: [], total: tab === FileProblemTab.Fixed ? 287 : 0 }),
+      );
+
+    it('says how many Frameleaf fixed this week and opens the fixed list', async () => {
+      fixedWeek();
+      newStore();
+      render(ThingsToFix);
+
+      expect(await screen.findByText('287 this week')).toBeInTheDocument();
+      expect(sdkMock.getFileProblems).toHaveBeenCalledWith({ tab: FileProblemTab.Fixed, take: 1 });
+      await fireEvent.click(screen.getByRole('button', { name: 'Review Fixed for you' }));
+      expect(nav.goto).toHaveBeenCalledWith('/user-settings?area=care&section=files&tab=fixed');
+    });
+
+    it('opens the damaged and missing files page from Missing files and Damaged files', async () => {
+      sdkMock.getIntegrityOverview.mockResolvedValue(overview({ missing: 11, damaged: 2 }));
+      fixedWeek();
+      newStore();
+      render(ThingsToFix);
+
+      expect(await hero().findByRole('heading', { name: '13 files need you' })).toBeInTheDocument();
+      expect(
+        hero().getByText(/Frameleaf fixed 287 files by itself this week\. 11 missing and 2 damaged are left/),
+      ).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'Review Missing files' }));
+      expect(nav.goto).toHaveBeenCalledWith('/user-settings?area=care&section=files&tab=needs');
+    });
+
+    it('says None when nothing was fixed', async () => {
+      newStore();
+      render(ThingsToFix);
+      expect(await hero().findByRole('heading', { name: 'Nothing to fix' })).toBeInTheDocument();
+      expect(row('Fixed for you').getByText('None')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Review Fixed for you' })).not.toBeInTheDocument();
+    });
   });
 });
