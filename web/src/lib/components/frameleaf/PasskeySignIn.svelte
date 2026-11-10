@@ -33,7 +33,7 @@
     secureUrl = null,
     onSignedIn,
     onBusy,
-    shown = $bindable(),
+    onShown,
   }: {
     rememberMe: boolean;
     disabled?: boolean;
@@ -44,7 +44,7 @@
     onSignedIn: (user: LoginResponseDto) => void | Promise<void>;
     onBusy?: (busy: boolean) => void;
     /** Whether anything is drawn: the button, its waiting card or the http note. */
-    shown?: boolean;
+    onShown?: (shown: boolean) => void;
   } = $props();
 
   type State = 'checking' | 'ready' | 'waiting' | 'http' | 'hidden';
@@ -66,7 +66,7 @@
 
   const setView = (next: State) => {
     view = next;
-    shown = next !== 'checking' && next !== 'hidden';
+    onShown?.(next !== 'checking' && next !== 'hidden');
     onBusy?.(next === 'waiting');
   };
 
@@ -128,12 +128,12 @@
     }
   };
 
-  const startAutofill = async () => {
+  /** The first challenge, which also tells whether to show the button, serves the email field. */
+  const startAutofill = async (optionsJSON: PublicKeyCredentialRequestOptionsJSON) => {
     if (!autofill || !(await browserSupportsWebAuthnAutofill())) {
       return;
     }
-    const optionsJSON = await options().catch(() => null);
-    if (optionsJSON && alive && view === 'ready') {
+    if (alive && view === 'ready') {
       // resolves when someone picks a passkey from the email field's suggestions
       void finish(startAuthentication({ optionsJSON, useBrowserAutofill: true }));
     }
@@ -150,13 +150,14 @@
         return;
       }
       setView(first ? 'ready' : 'hidden');
+      if (first) {
+        await startAutofill(first);
+      }
     } catch {
       if (alive) {
         setView('hidden');
       }
-      return;
     }
-    await startAutofill();
   });
 
   onDestroy(() => {
@@ -170,20 +171,22 @@
     }
     error = '';
     // the email field's quiet request gives way to this one
-    ceremonyId++;
+    const id = ++ceremonyId;
+    const current = () => alive && id === ceremonyId;
     WebAuthnAbortService.cancelCeremony();
     setView('waiting');
     let optionsJSON;
     try {
       optionsJSON = await options();
     } catch (error_) {
-      if (alive) {
+      if (current()) {
         setView('ready');
         error = messageFor(error_);
       }
       return;
     }
-    if (!alive) {
+    // Cancel pressed while the options were on their way: the browser's window never opens
+    if (!current()) {
       return;
     }
     if (!optionsJSON) {

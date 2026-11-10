@@ -1177,6 +1177,16 @@ describe(UserAdminService.name, () => {
       );
     });
 
+    it('keeps the old password when removing the passkeys fails, so a reset is never half done', async () => {
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      mocks.passkey.deleteAll.mockRejectedValue(new Error('database unavailable'));
+
+      await expect(sut.update(authStub.admin, userStub.user1.id, { password: 'new-password' })).rejects.toThrow(
+        'database unavailable',
+      );
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
     it('says how many passkeys an account has', async () => {
       mocks.user.hasPinCode.mockResolvedValue(false);
       mocks.passkey.countByUser.mockResolvedValue(3);

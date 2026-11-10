@@ -14462,6 +14462,8 @@
   "frameleaf_privacy_signing_in": "Signing in",
   "frameleaf_privacy_status": "Account status",
   "frameleaf_privacy_ways_frameleaf": "Frameleaf account only",
+  "frameleaf_privacy_ways_passkey": "Passkey only",
+  "frameleaf_privacy_ways_passkey_frameleaf": "Passkey and Frameleaf account",
   "frameleaf_privacy_ways_passkey_password": "Passkey and password",
   "frameleaf_privacy_ways_passkey_password_frameleaf": "Passkey, password and Frameleaf account",
   "frameleaf_privacy_ways_password": "Password only",

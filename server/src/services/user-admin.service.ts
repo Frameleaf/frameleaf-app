@@ -244,6 +244,12 @@ export class UserAdminService extends BaseService {
       dto.storageLabel = null;
     }
 
+    // FL-836 (FL-767 design): a password reset also removes their passkeys, so only the new password gets
+    // in. Removed before the password changes: if this fails the reset fails, and nothing is left half done.
+    if (dto.password) {
+      await this.removeAllPasskeys(auth, user);
+    }
+
     const updatedUser = await this.userRepository.update(id, { ...dto, updatedAt: new Date() });
 
     /*
@@ -263,10 +269,6 @@ export class UserAdminService extends BaseService {
     }
 
     await this.recordAdminEvents(this.getUpdateEvents(auth, user, updatedUser, dto));
-    // FL-836 (FL-767 design): a password reset also removes their passkeys, so only the new password gets in
-    if (dto.password) {
-      await this.removeAllPasskeys(auth, updatedUser);
-    }
 
     return this.mapAdmin(updatedUser);
   }

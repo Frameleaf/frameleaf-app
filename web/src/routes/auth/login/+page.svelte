@@ -453,7 +453,7 @@
           disabled={frameleafLoading}
           onSignedIn={finishUser}
           onBusy={(busy) => (passkeyBusy = busy)}
-          bind:shown={passkeyShown}
+          onShown={(shown) => (passkeyShown = shown)}
         />
       {/if}
       {#if frameleaf.signInAvailable}
@@ -543,7 +543,7 @@
           disabled={loading}
           onSignedIn={finishUser}
           onBusy={(busy) => (passkeyBusy = busy)}
-          bind:shown={passkeyShown}
+          onShown={(shown) => (passkeyShown = shown)}
         />
       {/if}
       {#if publicConfig.oauth.enabled || showFrameleafAtHome}
