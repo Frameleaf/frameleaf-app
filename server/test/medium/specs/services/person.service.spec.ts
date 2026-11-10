@@ -1,6 +1,8 @@
 import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { randomUUID } from 'node:crypto';
+import type { OutputInfo } from 'sharp';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto } from 'src/dtos/person.dto.js';
 import {
@@ -28,12 +30,15 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
+import { up as redetectFacesOfEditedPhotos } from 'src/schema/migrations/1794351387000-RedetectFacesOfEditedPhotos.js';
 import { BaseService } from 'src/services/base.service.js';
+import { MediaService } from 'src/services/media.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { JobOf } from 'src/types.js';
@@ -744,35 +749,187 @@ describe(PersonService.name, () => {
       },
     );
 
-    it('should prefer an edited preview file', async () => {
+    // FL-1387: a stored box is a box on the unedited picture (`mapFaces` applies the edits, the person
+    // thumbnail crops the original), so faces are found in the unedited preview.
+    it('stores the faces of an edited photo where they are in the unedited picture', async () => {
       const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
       const config = await ctx.getConfig();
       const { user } = await ctx.newUser();
-      const { asset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: asset.id, description: '' });
-      await ctx.newAssetFile({
-        assetId: asset.id,
-        type: AssetFileType.Preview,
-        isEdited: true,
-        path: 'edited_file.jpg',
-      });
-      await ctx.newAssetFile({
-        assetId: asset.id,
-        type: AssetFileType.Preview,
-        isEdited: false,
-        path: 'unedited_file.jpg',
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      // a 1000 x 500 photo, turned a quarter turn in the editor: it is shown 500 x 1000
+      const { asset } = await ctx.newAsset({ ownerId: user.id, width: 500, height: 1000 });
+      await ctx.newExif({ assetId: asset.id, description: '', exifImageWidth: 1000, exifImageHeight: 500 });
+      await ctx.newEdits(asset.id, { edits: [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }] });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, isEdited: true, path: 'edited.jpg' });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, isEdited: false, path: 'unedited.jpg' });
+      // one face, as a detector finds it in either preview
+      const found = (imageWidth: number, imageHeight: number, [x1, y1, x2, y2]: number[]) => ({
+        imageWidth,
+        imageHeight,
+        faces: [{ boundingBox: { x1, y1, x2, y2 }, embedding: newEmbedding(), score: 1 }],
       });
       ctx
         .getMock(MachineLearningRepository)
-        .detectFaces.mockResolvedValue({ imageHeight: 42, imageWidth: 69, faces: [] });
+        .detectFaces.mockImplementation((_destination, path) =>
+          Promise.resolve(
+            path === 'edited.jpg' ? found(500, 1000, [100, 100, 300, 300]) : found(1000, 500, [100, 200, 300, 400]),
+          ),
+        );
 
-      await sut.handleDetectFaces({ id: asset.id });
+      await expect(sut.handleDetectFaces({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
       expect(ctx.getMock(MachineLearningRepository).detectFaces).toHaveBeenCalledWith(
         expect.objectContaining({ workload: MlWorkload.Face }),
-        'edited_file.jpg',
+        'unedited.jpg',
         config.machineLearning.facialRecognition,
       );
+      // the viewer draws the face where it is in the turned picture
+      const shown = { boundingBoxX1: 100, boundingBoxY1: 100, boundingBoxX2: 300, boundingBoxY2: 300 };
+      const auth = factory.auth({ user });
+      await expect(sut.getFacesById(auth, { id: asset.id })).resolves.toEqual([
+        expect.objectContaining({ ...shown, imageWidth: 500, imageHeight: 1000 }),
+      ]);
+
+      // the person thumbnail is cut from the original (2000 x 1000 here) around the same face
+      const [face] = await ctx.database.selectFrom('asset_face').select('id').where('assetId', '=', asset.id).execute();
+      await ctx.get(PersonRepository).reassignFace(face.id, person.personGroupId);
+      StorageCore.reset(); // so the thumbnail folder is made through this MediaService's storage mock
+      const media = newMediumService(MediaService, {
+        database: ctx.database,
+        real: [ConfigRepository, PersonRepository, SystemMetadataRepository],
+        mock: [JobRepository, LoggingRepository, MediaRepository, StorageRepository],
+      });
+      StorageCore.setMediaLocation('/data');
+      media.ctx.getMock(JobRepository).guardAssetSource.mockResolvedValue();
+      media.ctx.getMock(StorageRepository).mkdirSync.mockReturnValue();
+      media.ctx.getMock(MediaRepository).generateThumbnail.mockResolvedValue();
+      media.ctx.getMock(MediaRepository).decodeImage.mockResolvedValue({
+        data: Buffer.from(''),
+        info: { width: 2000, height: 1000 } as OutputInfo,
+      });
+      await expect(
+        media.sut.handleGeneratePersonThumbnail({
+          ownerId: user.id,
+          personGroupId: person.personGroupId,
+          selectionFaceId: face.id,
+        }),
+      ).resolves.toBe(JobStatus.Success);
+      expect(media.ctx.getMock(MediaRepository).generateThumbnail).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          edits: [{ action: AssetEditAction.Crop, parameters: { x: 180, y: 380, width: 440, height: 440 } }],
+        }),
+        expect.any(String),
+      );
+      StorageCore.reset();
+
+      // a second detection finds the same face again, so it keeps its place and its person
+      await expect(sut.handleDetectFaces({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      await expect(sut.getFacesById(auth, { id: asset.id })).resolves.toEqual([
+        expect.objectContaining({
+          ...shown,
+          id: face.id,
+          person: expect.objectContaining({ id: person.personGroupId }),
+        }),
+      ]);
+    });
+
+    it('repairs a box stored on the edited picture when the face is found again, and hides one a crop leaves out', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      // a 1000 x 500 photo cropped to its middle 800 x 400
+      const { asset } = await ctx.newAsset({ ownerId: user.id, width: 800, height: 400 });
+      await ctx.newExif({ assetId: asset.id, description: '', exifImageWidth: 1000, exifImageHeight: 500 });
+      await ctx.newEdits(asset.id, {
+        edits: [{ action: AssetEditAction.Crop, parameters: { x: 100, y: 50, width: 800, height: 400 } }],
+      });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, isEdited: true, path: 'edited.jpg' });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, isEdited: false, path: 'unedited.jpg' });
+      await expect(ctx.get(AssetJobRepository).getForDetectFacesJob(asset.id)).resolves.toMatchObject({
+        files: [{ path: 'unedited.jpg' }],
+      });
+      // as detection used to store it: the box of the face in the cropped picture
+      const shown = { boundingBoxX1: 300, boundingBoxY1: 150, boundingBoxX2: 500, boundingBoxY2: 250 };
+      const { assetFace } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        sourceType: SourceType.MachineLearning,
+        imageWidth: 800,
+        imageHeight: 400,
+        ...shown,
+      });
+      ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
+        imageWidth: 1000,
+        imageHeight: 500,
+        faces: [
+          { boundingBox: { x1: 400, y1: 200, x2: 600, y2: 300 }, embedding: newEmbedding(), score: 1 },
+          // in the strip the crop cut off
+          { boundingBox: { x1: 10, y1: 100, x2: 60, y2: 150 }, embedding: newEmbedding(), score: 1 },
+        ],
+      });
+
+      await expect(sut.handleDetectFaces({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      await expect(sut.getFacesById(factory.auth({ user }), { id: asset.id })).resolves.toEqual([
+        expect.objectContaining({
+          ...shown,
+          id: assetFace.id,
+          imageWidth: 800,
+          imageHeight: 400,
+          person: expect.objectContaining({ id: person.personGroupId }),
+        }),
+      ]);
+      await expect(
+        ctx.database
+          .selectFrom('asset_face')
+          .select(['boundingBoxX1', 'imageWidth', 'isVisible'])
+          .where('assetId', '=', asset.id)
+          .orderBy('boundingBoxX1')
+          .execute(),
+      ).resolves.toEqual([
+        { boundingBoxX1: 10, imageWidth: 1000, isVisible: false },
+        { boundingBoxX1: 400, imageWidth: 1000, isVisible: true },
+      ]);
+    });
+
+    it('detects again, after the FL-1387 migration, only what was last detected on an edited preview', async () => {
+      const { ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const detectedAt = new Date('2026-11-01T12:00:00Z');
+      const newDetected = async (editedAt?: string) => {
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: `${asset.id}.jpg` });
+        if (editedAt) {
+          const path = `${asset.id}_edited.jpg`;
+          await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, isEdited: true, path });
+          await ctx.database
+            .updateTable('asset_file')
+            .set({ createdAt: new Date(editedAt) })
+            .where('path', '=', path)
+            .execute();
+        }
+        await ctx.get(AssetRepository).upsertJobStatus({ assetId: asset.id, facesRecognizedAt: detectedAt });
+        return asset.id;
+      };
+      const unedited = await newDetected();
+      const editedBefore = await newDetected('2026-10-31T12:00:00Z');
+      const editedAfter = await newDetected('2026-11-02T12:00:00Z');
+      // an imported face (no embedding) would be removed by an ordinary detection that does not find it
+      const imported = await newDetected('2026-10-31T12:00:00Z');
+      await ctx.newAssetFace({ assetId: imported, sourceType: SourceType.MachineLearning });
+
+      await redetectFacesOfEditedPhotos(ctx.database);
+
+      const rows = await ctx.database.selectFrom('asset_job_status').select(['assetId', 'facesRecognizedAt']).execute();
+      expect(Object.fromEntries(rows.map((row) => [row.assetId, row.facesRecognizedAt]))).toEqual({
+        [unedited]: detectedAt,
+        [editedBefore]: null,
+        [editedAfter]: detectedAt,
+        [imported]: detectedAt,
+      });
     });
   });
 

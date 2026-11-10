@@ -968,6 +968,10 @@ export class PersonRepository {
     }
     return this.db.insertInto('person_group').values(personGroups).returningAll().execute();
   }
+  /** FL-1387: a machine-learning face found again takes the new detection's box and whether a crop shows it. */
+  async moveDetectedFace(id: string, box: FaceBoxPixels & { isVisible: boolean }): Promise<void> {
+    await this.db.updateTable('asset_face').set(box).where('asset_face.id', '=', id).execute();
+  }
   @GenerateSql({ params: [[], [], [{ faceId: DummyValue.UUID, embedding: DummyValue.VECTOR }]] })
   async refreshFaces(
     facesToAdd: (Insertable<AssetFaceTable> & {

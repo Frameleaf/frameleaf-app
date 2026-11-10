@@ -363,13 +363,14 @@ export function withFaces(eb: ExpressionBuilder<DB, 'asset'>, withHidden?: boole
       .$if(!withHidden, (qb) => qb.where('asset_face.isVisible', '=', true)),
   ).as('faces');
 }
-export function withFiles(eb: ExpressionBuilder<DB, 'asset'>, type?: AssetFileType) {
+export function withFiles(eb: ExpressionBuilder<DB, 'asset'>, type?: AssetFileType, isEdited?: boolean) {
   return jsonArrayFrom(
     eb
       .selectFrom('asset_file')
       .select(columns.assetFiles)
       .whereRef('asset_file.assetId', '=', 'asset.id')
-      .$if(!!type, (qb) => qb.where('asset_file.type', '=', type!)),
+      .$if(!!type, (qb) => qb.where('asset_file.type', '=', type!))
+      .$if(isEdited !== undefined, (qb) => qb.where('asset_file.isEdited', '=', sql.lit(isEdited!))),
   ).as('files');
 }
 export function withFilePath(eb: ExpressionBuilder<DB, 'asset'>, type: AssetFileType, isEdited = false) {
