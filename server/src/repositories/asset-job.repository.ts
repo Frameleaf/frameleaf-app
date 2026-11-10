@@ -101,10 +101,12 @@ export class AssetJobRepository {
     // Earlier pages only enqueue IDs below this cursor. Keep those rows out of the live-job lookup.
     const subject = sql`lower(job.data->>'id') collate "C"`;
     const liveRange = options.after ? sql`and ${subject} > ${options.after}` : sql``;
+    // Keep this indexed lookup correlated even before PostgreSQL has analyzed a newly filled job table.
     return selection.where(sql<boolean>`asset.status = 'active' and not asset."isOffline" and not exists (
         select 1 from job
         where job.queue = ${options.queue} and job.name = ${name} and job.state in ('pending', 'waiting', 'active')
           and ${subject} = asset.id::text ${liveRange}
+        offset 0
       )`);
   }
 
