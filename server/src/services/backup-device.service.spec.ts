@@ -156,5 +156,30 @@ describe(BackupDeviceService.name, () => {
       });
       expect(repository.get).toHaveBeenCalledWith(auth.user.id, 'device');
     });
+    it.each([
+      { name: 'un-elevated', session: factory.auth() },
+      { name: 'hidden-content filtered', session: { ...auth, hideNsfwAssets: true } },
+    ])('leaves check counts out of list and register for an $name session', async ({ session }) => {
+      const device = {
+        ...dto,
+        id: 'device',
+        ownerId: session.user.id,
+        reportedAt: new Date(),
+        lastSuccessfulBackupAt: null,
+        phoneItemCount: 12,
+        pendingReasons: [],
+        deletedAt: null,
+      };
+      repository.lastChecks.mockResolvedValue([run({ deviceId: 'device' })]);
+      repository.list.mockResolvedValue([device]);
+      repository.register.mockResolvedValue(device);
+      const { devices } = await sut.list(session, page);
+      expect(devices[0]).toMatchObject({ id: 'device', phoneItemCount: 12, lastCheck: null });
+      expect(await sut.register(session, dto)).toMatchObject({ id: 'device', lastCheck: null });
+      expect(repository.lastChecks).not.toHaveBeenCalled();
+
+      expect((await sut.list(auth, page)).devices[0].lastCheck).toMatchObject({ itemsChecked: 10, itemsMissing: 2 });
+      expect(await sut.register(auth, dto)).toMatchObject({ lastCheck: { itemsChecked: 10, itemsMissing: 2 } });
+    });
   });
 });

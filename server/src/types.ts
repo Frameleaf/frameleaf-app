@@ -1752,6 +1752,8 @@ export type UserPreferences = {
     minimumFaces: number;
     /** ACCOUNT-P2: in a Space shared with me, suggest who is who from the people I have named */
     suggestInSpaces: boolean;
+    /** FL-795: archived photos appear on person pages and count in People (off: timeline photos only) */
+    includeArchived: boolean;
   };
   ratings: {
     enabled: boolean;

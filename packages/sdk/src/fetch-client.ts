@@ -1520,6 +1520,10 @@ export type AdminConfigBackupsDto = {
     database: AdminConfigDatabaseBackupDto;
     schedule: AdminConfigBackupScheduleDto;
 };
+export type AdminConfigConnectedAppsDto = {
+    /** Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything. */
+    allowRegistration: boolean;
+};
 export type AdminConfigEditingRestorationDto = {
     style: RestorationStyle;
 };
@@ -2240,6 +2244,7 @@ export type AdminConfigUserDto = {
 export type AdminConfigDto = {
     analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
+    connectedApps?: AdminConfigConnectedAppsDto;
     editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
@@ -2274,6 +2279,7 @@ export type AdminConfigDto = {
 export type AdminConfigDtoRead = {
     analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
+    connectedApps?: AdminConfigConnectedAppsDto;
     editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
@@ -3106,6 +3112,28 @@ export type TemplateResponseDto = {
 export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
+};
+export type OAuthAppClientDto = {
+    /** The app’s client id */
+    id: string;
+    /** Free text naming a verified app for its icon (claude, chatgpt, homeassistant); null otherwise */
+    knownApp: string | null;
+    /** Who made a verified app; null otherwise */
+    maker: string | null;
+    /** For a verified app the name Frameleaf knows it by; otherwise the name the app gave itself (plain text) */
+    name: string;
+    /** Where the app sends you back to, such as claude.ai or localhost:33418 */
+    returnTo: string;
+    /** Frameleaf checked who made this app (every return address is that app’s own) */
+    verified: boolean;
+};
+export type OAuthAppAdminClientDto = {
+    /** How many people currently allow it */
+    activeUsers: number;
+    client: OAuthAppClientDto;
+    createdAt: string;
+    /** The app registered itself */
+    selfRegistered: boolean;
 };
 export type OvernightResultsDto = {
     cleanup?: OvernightStepResult;
@@ -4003,6 +4031,8 @@ export type MemoriesResponse = {
 export type PeopleResponse = {
     /** Whether people are enabled */
     enabled: boolean;
+    /** Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice */
+    includeArchived: boolean;
     /** People face threshold */
     minimumFaces?: number;
     /** Whether people appear in web sidebar */
@@ -4156,6 +4186,8 @@ export type MemoriesUpdate = {
 export type PeopleUpdate = {
     /** Whether people are enabled */
     enabled?: boolean;
+    /** Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice */
+    includeArchived?: boolean;
     /** People face threshold */
     minimumFaces?: number;
     /** Whether people appear in web sidebar */
@@ -11572,6 +11604,66 @@ export type NotificationUpdateDto = {
     /** Date when notification was read */
     readAt?: string | null;
 };
+export type OAuthAppAuthorizeDto = {
+    /** true for Allow, false for Deny */
+    allow: boolean;
+    /** The app’s client id */
+    clientId: string;
+    /** The base64url SHA-256 of the app’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: string;
+    /** The return address, exactly as the app registered it */
+    redirectUri: string;
+    /** The resource (RFC 8707) the app wants access to */
+    resource?: string;
+    /** Must be `code` */
+    responseType: string;
+    /** Space-separated scopes; empty means `library:read` */
+    scope?: string;
+    /** Returned unchanged to the app */
+    state?: string;
+};
+export type OAuthAppAuthorizeResponseDto = {
+    /** Where the browser goes next: the app’s return address with the code (or access_denied), state and iss */
+    redirectUrl: string;
+};
+export type OAuthAppAuthorizeStartDto = {
+    /** The app’s client id */
+    clientId: string;
+    /** The base64url SHA-256 of the app’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: string;
+    /** The return address, exactly as the app registered it */
+    redirectUri: string;
+    /** The resource (RFC 8707) the app wants access to */
+    resource?: string;
+    /** Must be `code` */
+    responseType: string;
+    /** Space-separated scopes; empty means `library:read` */
+    scope?: string;
+    /** Returned unchanged to the app */
+    state?: string;
+};
+export type OAuthAppAuthorizeStartResponseDto = {
+    client: OAuthAppClientDto;
+    /** The scopes the app asked for, all of which this server offers */
+    scopes: string[];
+};
+export type OAuthAppGrantDto = {
+    client: OAuthAppClientDto;
+    /** When you chose Allow */
+    createdAt: string;
+    /** The grant id; Remove revokes it */
+    id: string;
+    /** When the app last used its access, to the hour; null if never */
+    lastUsedAt: string | null;
+    /** How it last connected, as free text: home, direct or relay (remote access); null if unknown */
+    lastUsedVia: string | null;
+    /** What you allowed */
+    scopes: string[];
+};
 export type OAuthConfigDto = {
     /** OAuth code challenge (PKCE) */
     codeChallenge?: string;
@@ -16564,6 +16656,8 @@ export type SharedLinkResponseDto = {
     createdAt: string;
     /** Link description */
     description: string | null;
+    /** FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root: /api/shared-links/direct/s/<slug>.jpg for a link with a slug, /api/shared-links/direct/key/<key>.jpg otherwise. */
+    directUrl: string | null;
     /** Expiration date */
     expiresAt: string | null;
     /** Shared link ID */
@@ -20684,6 +20778,9 @@ export type SearchSuggestionRequestDto = {
     state?: string;
     "type": SearchSuggestionType;
 };
+export type SharedLinkDirectImageDto = {
+    size?: SharedLinkDirectImageSize;
+};
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
     albumId?: string;
@@ -23917,6 +24014,28 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         method: "POST",
         body: adminConfigSmtpDto
     })));
+}
+/**
+ * List registered apps
+ */
+export function getOAuthAppClients(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAdminClientDto[];
+    }>("/admin/oauth/apps", {
+        ...opts
+    }));
+}
+/**
+ * Remove a registered app
+ */
+export function deleteOAuthAppClient({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/oauth/apps/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Get the overnight schedule
@@ -30820,6 +30939,58 @@ export function updateNotification({ id, notificationUpdateDto }: {
     })));
 }
 /**
+ * Allow or deny an app
+ */
+export function authorizeOAuthApp({ oAuthAppAuthorizeDto }: {
+    oAuthAppAuthorizeDto: OAuthAppAuthorizeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAuthorizeResponseDto;
+    }>("/oauth/apps/authorize", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthAppAuthorizeDto
+    })));
+}
+/**
+ * Check an app’s request before Allow
+ */
+export function startOAuthAppAuthorization({ oAuthAppAuthorizeStartDto }: {
+    oAuthAppAuthorizeStartDto: OAuthAppAuthorizeStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAuthorizeStartResponseDto;
+    }>("/oauth/apps/authorize/start", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthAppAuthorizeStartDto
+    })));
+}
+/**
+ * List your connected apps
+ */
+export function getOAuthAppGrants(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppGrantDto[];
+    }>("/oauth/apps/grants", {
+        ...opts
+    }));
+}
+/**
+ * Remove a connected app’s access
+ */
+export function revokeOAuthAppGrant({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/oauth/apps/grants/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Start OAuth
  */
 export function startOAuth({ oAuthConfigDto }: {
@@ -34229,6 +34400,38 @@ export function createSharedLink({ sharedLinkCreateDto }: {
         method: "POST",
         body: sharedLinkCreateDto
     })));
+}
+/**
+ * View the image of a single-photo shared link, by its key
+ */
+export function getSharedLinkDirectImageByKey({ key, size }: {
+    key: string;
+    size?: SharedLinkDirectImageSize;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-links/direct/key/${encodeURIComponent(key)}.jpg${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * View the image of a single-photo shared link, by its slug
+ */
+export function getSharedLinkDirectImageBySlug({ size, slug }: {
+    size?: SharedLinkDirectImageSize;
+    slug: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-links/direct/s/${encodeURIComponent(slug)}.jpg${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Shared link login
@@ -41996,6 +42199,10 @@ export enum ReleaseType {
 export enum SharedLinkType {
     Album = "ALBUM",
     Individual = "INDIVIDUAL"
+}
+export enum SharedLinkDirectImageSize {
+    Preview = "preview",
+    Fullsize = "fullsize"
 }
 export enum AssetIdErrorReason {
     Duplicate = "duplicate",

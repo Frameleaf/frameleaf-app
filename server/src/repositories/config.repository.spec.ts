@@ -183,7 +183,7 @@ describe('getEnv', () => {
         environment: 'development',
         logLevel: 'debug',
         workers: ['api', 'edge'],
-        network: { trustedProxies: ['10.0.0.0/8'], trustConfiguredProxies: true },
+        network: { trustedProxies: ['10.0.0.0/8'] },
         setup: { allow: false },
         storage: { mediaLocation: '/usr/src/app/upload', importRoots: ['/imports'] },
         telemetry: { apiPort: 9001 },
@@ -406,7 +406,6 @@ describe('getEnv', () => {
       const { network } = getEnv();
       expect(network).toEqual({
         trustedProxies: ['linklocal', 'uniquelocal'],
-        trustConfiguredProxies: false,
       });
     });
 
@@ -415,7 +414,6 @@ describe('getEnv', () => {
       const { network } = getEnv();
       expect(network).toEqual({
         trustedProxies: ['10.1.0.0', '10.2.0.0', '169.254.0.0/16'],
-        trustConfiguredProxies: true,
       });
     });
 

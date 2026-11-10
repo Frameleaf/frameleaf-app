@@ -37,6 +37,8 @@ export type AccountPreferencesDraft = {
   'people.sidebarWeb': boolean;
   /** `null` while the field is empty. */
   'people.minimumFaces': number | null;
+  /** FL-795: archived photos appear on person pages and count in People. */
+  'people.includeArchived': boolean;
   'sharedLinks.enabled': boolean;
   'sharedLinks.sidebarWeb': boolean;
   'tags.enabled': boolean;
@@ -154,6 +156,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'people.enabled': true,
   'people.sidebarWeb': true,
   'people.minimumFaces': 3,
+  'people.includeArchived': false,
   'sharedLinks.enabled': true,
   'sharedLinks.sidebarWeb': true,
   'tags.enabled': true,
@@ -189,6 +192,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'people.enabled': preferences.people.enabled,
   'people.sidebarWeb': preferences.people.sidebarWeb,
   'people.minimumFaces': preferences.people.minimumFaces ?? 3,
+  'people.includeArchived': preferences.people.includeArchived ?? false,
   'sharedLinks.enabled': preferences.sharedLinks.enabled,
   'sharedLinks.sidebarWeb': preferences.sharedLinks.sidebarWeb,
   'tags.enabled': preferences.tags.enabled,

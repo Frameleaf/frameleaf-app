@@ -17,13 +17,14 @@ export type ReconciliationProgress = {
   completed: number[];
   differing: number[];
 };
+/** An elevated owner session that sees every item: the scope for reconciliation runs and their counts. */
+export const hasReconciliationScope = (auth: AuthDto) =>
+  !auth.sharedLink &&
+  !!auth.session?.hasElevatedPermission &&
+  !auth.hideNsfwAssets &&
+  !hasHiddenContentFilter(auth.hiddenContent);
 export function requireReconciliationScope(auth: AuthDto) {
-  if (
-    auth.sharedLink ||
-    !auth.session?.hasElevatedPermission ||
-    auth.hideNsfwAssets ||
-    hasHiddenContentFilter(auth.hiddenContent)
-  ) {
+  if (!hasReconciliationScope(auth)) {
     throw new ForbiddenException('Reconciliation requires an elevated session without hidden-content filters');
   }
 }

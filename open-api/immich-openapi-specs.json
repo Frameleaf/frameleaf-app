@@ -8930,6 +8930,107 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/oauth/apps": {
+      "get": {
+        "description": "Every app registered for connecting to this server, and how many people currently allow each.",
+        "operationId": "getOAuthAppClients",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OAuthAppAdminClientDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List registered apps",
+        "tags": [
+          "Authentication (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminSession.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/oauth/apps/{id}": {
+      "delete": {
+        "description": "Removes the app and every person’s access to it; each person sees it in their account activity. The app can register again only while new apps may register themselves.",
+        "operationId": "deleteOAuthAppClient",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a registered app",
+        "tags": [
+          "Authentication (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminSession.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/overnight": {
       "get": {
         "description": "When the night’s work starts next, which steps are on, the run in progress and what the last few nights did",
@@ -37406,6 +37507,215 @@
         "x-immich-state": "Stable"
       }
     },
+    "/oauth/apps/authorize": {
+      "post": {
+        "description": "Signed in with a session (never a key or an app). Allow makes a single-use code, valid five minutes, bound to you, this session, the app, its exact return address, the code challenge, the scopes and the resource; only its SHA-256 is kept. Deny makes nothing. Both are written to your account activity. The response is where the browser goes next.",
+        "operationId": "authorizeOAuthApp",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthAppAuthorizeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthAppAuthorizeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Allow or deny an app",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/oauth/apps/authorize/start": {
+      "post": {
+        "description": "For the Allow page, signed in with a session (never a key or an app). Checks the app, its exact return address, the S256 code challenge and that every scope asked for is one this server offers, and says who the app is and what it asked for.",
+        "operationId": "startOAuthAppAuthorization",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthAppAuthorizeStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthAppAuthorizeStartResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check an app’s request before Allow",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/oauth/apps/grants": {
+      "get": {
+        "description": "The apps you allowed that can still use your library: who they are, what you allowed, when, and when and how they last connected. Connected apps are listed like signed-in devices: an API key needs session.read. Not available to the apps themselves.",
+        "operationId": "getOAuthAppGrants",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OAuthAppGrantDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your connected apps",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "session.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/oauth/apps/grants/{id}": {
+      "delete": {
+        "description": "Revokes the grant: the app’s access and refresh tokens stop working on its next request. Written to your account activity. An API key needs session.delete.",
+        "operationId": "revokeOAuthAppGrant",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a connected app’s access",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "session.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/oauth/authorize": {
       "post": {
         "description": "Initiate the OAuth authorization process.",
@@ -50926,6 +51236,134 @@
         ],
         "x-immich-permission": "sharedLink.create",
         "x-immich-state": "Stable"
+      }
+    },
+    "/shared-links/direct/key/{key}.jpg": {
+      "get": {
+        "description": "Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.",
+        "operationId": "getSharedLinkDirectImageByKey",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "View the image of a single-photo shared link, by its key",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/shared-links/direct/s/{slug}.jpg": {
+      "get": {
+        "description": "Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.",
+        "operationId": "getSharedLinkDirectImageBySlug",
+        "parameters": [
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+            }
+          },
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "View the image of a single-photo shared link, by its slug",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
       }
     },
     "/shared-links/login": {
@@ -68324,6 +68762,18 @@
         ],
         "type": "object"
       },
+      "AdminConfigConnectedAppsDto": {
+        "properties": {
+          "allowRegistration": {
+            "description": "Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "allowRegistration"
+        ],
+        "type": "object"
+      },
       "AdminConfigDatabaseBackupDto": {
         "properties": {
           "cronExpression": {
@@ -68356,6 +68806,9 @@
           },
           "backup": {
             "$ref": "#/components/schemas/AdminConfigBackupsDto"
+          },
+          "connectedApps": {
+            "$ref": "#/components/schemas/AdminConfigConnectedAppsDto"
           },
           "editing": {
             "$ref": "#/components/schemas/AdminConfigEditingDto",
@@ -114391,6 +114844,255 @@
         },
         "type": "object"
       },
+      "OAuthAppAdminClientDto": {
+        "properties": {
+          "activeUsers": {
+            "description": "How many people currently allow it",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "client": {
+            "$ref": "#/components/schemas/OAuthAppClientDto"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "selfRegistered": {
+            "description": "The app registered itself",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "activeUsers",
+          "client",
+          "createdAt",
+          "selfRegistered"
+        ],
+        "type": "object"
+      },
+      "OAuthAppAuthorizeDto": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "description": "true for Allow, false for Deny",
+            "type": "boolean"
+          },
+          "clientId": {
+            "description": "The app’s client id",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "codeChallenge": {
+            "description": "The base64url SHA-256 of the app’s code verifier",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "codeChallengeMethod": {
+            "description": "Only S256 is accepted",
+            "maxLength": 20,
+            "type": "string"
+          },
+          "redirectUri": {
+            "description": "The return address, exactly as the app registered it",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "resource": {
+            "description": "The resource (RFC 8707) the app wants access to",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "responseType": {
+            "description": "Must be `code`",
+            "maxLength": 50,
+            "type": "string"
+          },
+          "scope": {
+            "description": "Space-separated scopes; empty means `library:read`",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "state": {
+            "description": "Returned unchanged to the app",
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "required": [
+          "allow",
+          "clientId",
+          "codeChallenge",
+          "codeChallengeMethod",
+          "redirectUri",
+          "responseType"
+        ],
+        "type": "object"
+      },
+      "OAuthAppAuthorizeResponseDto": {
+        "properties": {
+          "redirectUrl": {
+            "description": "Where the browser goes next: the app’s return address with the code (or access_denied), state and iss",
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirectUrl"
+        ],
+        "type": "object"
+      },
+      "OAuthAppAuthorizeStartDto": {
+        "additionalProperties": false,
+        "properties": {
+          "clientId": {
+            "description": "The app’s client id",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "codeChallenge": {
+            "description": "The base64url SHA-256 of the app’s code verifier",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "codeChallengeMethod": {
+            "description": "Only S256 is accepted",
+            "maxLength": 20,
+            "type": "string"
+          },
+          "redirectUri": {
+            "description": "The return address, exactly as the app registered it",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "resource": {
+            "description": "The resource (RFC 8707) the app wants access to",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "responseType": {
+            "description": "Must be `code`",
+            "maxLength": 50,
+            "type": "string"
+          },
+          "scope": {
+            "description": "Space-separated scopes; empty means `library:read`",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "state": {
+            "description": "Returned unchanged to the app",
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientId",
+          "codeChallenge",
+          "codeChallengeMethod",
+          "redirectUri",
+          "responseType"
+        ],
+        "type": "object"
+      },
+      "OAuthAppAuthorizeStartResponseDto": {
+        "properties": {
+          "client": {
+            "$ref": "#/components/schemas/OAuthAppClientDto"
+          },
+          "scopes": {
+            "description": "The scopes the app asked for, all of which this server offers",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "client",
+          "scopes"
+        ],
+        "type": "object"
+      },
+      "OAuthAppClientDto": {
+        "properties": {
+          "id": {
+            "description": "The app’s client id",
+            "type": "string"
+          },
+          "knownApp": {
+            "description": "Free text naming a verified app for its icon (claude, chatgpt, homeassistant); null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "maker": {
+            "description": "Who made a verified app; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "For a verified app the name Frameleaf knows it by; otherwise the name the app gave itself (plain text)",
+            "type": "string"
+          },
+          "returnTo": {
+            "description": "Where the app sends you back to, such as claude.ai or localhost:33418",
+            "type": "string"
+          },
+          "verified": {
+            "description": "Frameleaf checked who made this app (every return address is that app’s own)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "knownApp",
+          "maker",
+          "name",
+          "returnTo",
+          "verified"
+        ],
+        "type": "object"
+      },
+      "OAuthAppGrantDto": {
+        "properties": {
+          "client": {
+            "$ref": "#/components/schemas/OAuthAppClientDto"
+          },
+          "createdAt": {
+            "description": "When you chose Allow",
+            "type": "string"
+          },
+          "id": {
+            "description": "The grant id; Remove revokes it",
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "description": "When the app last used its access, to the hour; null if never",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastUsedVia": {
+            "description": "How it last connected, as free text: home, direct or relay (remote access); null if unknown",
+            "nullable": true,
+            "type": "string"
+          },
+          "scopes": {
+            "description": "What you allowed",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "client",
+          "createdAt",
+          "id",
+          "lastUsedAt",
+          "lastUsedVia",
+          "scopes"
+        ],
+        "type": "object"
+      },
       "OAuthAuthorizeResponseDto": {
         "properties": {
           "url": {
@@ -115448,6 +116150,16 @@
             "description": "Whether people are enabled",
             "type": "boolean"
           },
+          "includeArchived": {
+            "description": "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.4.0",
+                "state": "Added"
+              }
+            ]
+          },
           "minimumFaces": {
             "description": "People face threshold",
             "maximum": 9007199254740991,
@@ -115471,6 +116183,7 @@
         },
         "required": [
           "enabled",
+          "includeArchived",
           "sidebarWeb",
           "suggestInSpaces"
         ],
@@ -115525,6 +116238,16 @@
           "enabled": {
             "description": "Whether people are enabled",
             "type": "boolean"
+          },
+          "includeArchived": {
+            "description": "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.4.0",
+                "state": "Added"
+              }
+            ]
           },
           "minimumFaces": {
             "description": "People face threshold",
@@ -144318,6 +145041,22 @@
         ],
         "type": "object"
       },
+      "SharedLinkDirectImageDto": {
+        "properties": {
+          "size": {
+            "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+          }
+        },
+        "type": "object"
+      },
+      "SharedLinkDirectImageSize": {
+        "description": "Image size: preview (default) or fullsize",
+        "enum": [
+          "preview",
+          "fullsize"
+        ],
+        "type": "string"
+      },
       "SharedLinkEditDto": {
         "properties": {
           "allowDownload": {
@@ -144431,6 +145170,17 @@
             "nullable": true,
             "type": "string"
           },
+          "directUrl": {
+            "description": "FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root: /api/shared-links/direct/s/<slug>.jpg for a link with a slug, /api/shared-links/direct/key/<key>.jpg otherwise.",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.4.0",
+                "state": "Added"
+              }
+            ]
+          },
           "expiresAt": {
             "description": "Expiration date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -144490,6 +145240,7 @@
           "coverAssetIds",
           "createdAt",
           "description",
+          "directUrl",
           "expiresAt",
           "id",
           "key",

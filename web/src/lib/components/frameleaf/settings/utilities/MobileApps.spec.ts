@@ -41,8 +41,39 @@ describe('Mobile apps, first screen (FL-539)', () => {
     expect(screen.getByRole('link', { name: 'Get it on Google Play' })).toBeInTheDocument();
     expect(screen.getByText('https://photos.example.test')).toBeInTheDocument();
     expect(screen.getByText('Taylor’s iPhone')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Taylor’s iPhone' })).toBeInTheDocument();
     // FL-1200: the apps come only from the stores
     expect(screen.queryByText(/install without a store/i)).toBeNull();
+  });
+
+  it('gives each phone its receipt line (FL-792)', async () => {
+    sdkMock.getAppReleases.mockResolvedValue({ ios: { available: false }, android: { available: false } });
+    sdkMock.getAuthStatus.mockResolvedValue({ isElevated: true } as never);
+    sdkMock.listBackupDevices.mockResolvedValue({
+      devices: [
+        {
+          id: 'p1',
+          displayName: 'Taylor’s iPhone',
+          quietForDays: 0,
+          lastSuccessfulBackupAt: new Date().toISOString(),
+          phoneItemCount: 12_348,
+          pendingReasons: [{ code: 'wifi', count: 8 }],
+          lastCheck: {
+            id: 'r1',
+            checkedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            itemsChecked: 12_340,
+            itemsMissing: 0,
+          },
+        },
+      ],
+      nextOffset: null,
+    } as never);
+    render(MobileApps);
+
+    expect(
+      await screen.findByText('12,348 on this phone · 12,340 safely on the server · 8 waiting'),
+    ).toBeInTheDocument();
   });
 
   it('says no phone is connected yet', async () => {

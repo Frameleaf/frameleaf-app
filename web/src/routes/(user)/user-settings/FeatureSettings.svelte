@@ -99,6 +99,7 @@
     'people.enabled',
     'people.sidebarWeb',
     'people.minimumFaces',
+    'people.includeArchived',
     'ratings.enabled',
     'sharedLinks.enabled',
     'sharedLinks.sidebarWeb',
@@ -175,6 +176,17 @@
             {:else if row.id === 'people' && draft['people.enabled']}
               <details class="options">
                 <summary>{$t('frameleaf_prefs_tools_people_options')}</summary>
+                <!-- FL-795: off by default, People shows only photos on the timeline -->
+                <Row
+                  label={$t('frameleaf_prefs_tools_people_archived')}
+                  help={$t('frameleaf_prefs_tools_people_archived_help')}
+                >
+                  <Switch
+                    label={$t('frameleaf_prefs_tools_people_archived')}
+                    checked={draft['people.includeArchived']}
+                    onChange={(value) => store.set('people.includeArchived', value)}
+                  />
+                </Row>
                 <Row
                   label={$t('frameleaf_prefs_tools_people_minimum')}
                   help={$t('frameleaf_prefs_tools_people_minimum_help')}

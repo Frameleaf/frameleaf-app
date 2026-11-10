@@ -291,6 +291,9 @@ export const adminConfigDefaults = {
   passwordLogin: {
     enabled: true,
   },
+  connectedApps: {
+    allowRegistration: true,
+  },
   physicalDeduplication: {
     enabled: false,
     masterUserId: null,

@@ -21,6 +21,9 @@
   "backup.schedule.cronExpression": {
     "type": "unknown"
   },
+  "connectedApps.allowRegistration": {
+    "type": "boolean"
+  },
   "editing.restoration.style": {
     "type": "string",
     "enum": [
@@ -1227,6 +1230,9 @@
     "type": "string"
   },
   "preferences.people.enabled": {
+    "type": "boolean"
+  },
+  "preferences.people.includeArchived": {
     "type": "boolean"
   },
   "preferences.people.minimumFaces": {

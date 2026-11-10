@@ -80,7 +80,6 @@ export interface EnvData {
 
   network: {
     trustedProxies: string[];
-    trustConfiguredProxies: boolean;
   };
 
   resourcePaths: {
@@ -313,7 +312,6 @@ const getEnv = (): EnvData => {
 
     network: {
       trustedProxies: dto.FRAMELEAF_TRUSTED_PROXIES ?? ['linklocal', 'uniquelocal'],
-      trustConfiguredProxies: !!dto.FRAMELEAF_TRUSTED_PROXIES?.length,
     },
 
     resourcePaths: {
