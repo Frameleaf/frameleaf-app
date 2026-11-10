@@ -687,6 +687,8 @@ export enum SystemMetadataKey {
   FrameleafSetup = 'frameleaf-setup',
   /** FL-667: when the one-off removal of filler tags left by AI descriptions before FL-659 finished. */
   DescriptionFillerTagCleanup = 'description-filler-tag-cleanup',
+  /** FL-1337: the folders an Immich import read its photos from (a list of paths), searched for lost photos while mounted. */
+  FileFixSourceRoots = 'file-fix-source-roots',
 }
 
 export enum UserMetadataKey {

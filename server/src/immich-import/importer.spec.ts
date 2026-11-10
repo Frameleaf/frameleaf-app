@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -420,5 +421,136 @@ describe('fork sensitive detections', () => {
   it('leaves detections unlocked when hiding was off or never saved', async () => {
     expect((await convert('false')).locked).toEqual([]);
     expect((await convert(null)).locked).toEqual([]);
+  });
+});
+
+describe('a lost Immich original records what Immich knew', () => {
+  let directory: string;
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'import-lost-'));
+    await mkdir(join(directory, 'source', 'library', 'admin', '2021', '07'), { recursive: true });
+    await mkdir(join(directory, 'target', 'library', 'admin', '2021', '07'), { recursive: true });
+  });
+  afterEach(async () => rm(directory, { recursive: true, force: true }));
+
+  const fixture = readFileSync(new URL('fixtures/structure/3.1.0.sql', import.meta.url), 'utf8');
+  const assetRow = (id: string, name: string, path: string) => ({
+    id,
+    ownerId: 'owner-1',
+    storageLabel: 'admin',
+    originalFileName: name,
+    originalPath: path,
+    isExternal: false,
+    libraryId: null,
+  });
+
+  const setup = (moves: Array<{ entityId: string; newPath: string }>, hasTable = true) => {
+    const roots = [{ source: join(directory, 'source'), target: join(directory, 'target') }];
+    const findings = new Set<string>();
+    const written: { finding?: unknown[]; steps: Array<Record<string, unknown>>; roots?: unknown[] }[] = [];
+    const sourceQueries: string[] = [];
+    const source: ImportDatabase = {
+      query: (statement, values = []) => {
+        sourceQueries.push(statement);
+        if (statement.includes('to_regclass')) return Promise.resolve([{ present: hasTable }]);
+        if (statement.includes('move_history')) {
+          const ids = new Set(JSON.parse(String(values[0])) as string[]);
+          return Promise.resolve(moves.filter(({ entityId }) => ids.has(entityId)));
+        }
+        return Promise.resolve([]);
+      },
+      transaction: (body) => body(source),
+    };
+    const destination: ImportDatabase = {
+      query: (statement, values = []) => {
+        if (statement.includes('FROM public.asset a')) {
+          return Promise.resolve([
+            assetRow('asset-moved', 'IMG_1.jpg', join(directory, 'target', 'library', 'admin', 'IMG_1.jpg')),
+            assetRow('asset-plain', 'IMG_2.jpg', join(directory, 'target', 'library', 'admin', 'IMG_2.jpg')),
+          ]);
+        }
+        if (statement.includes('INSERT INTO public.asset_health ')) {
+          const key = String(values[0]);
+          const fresh = !findings.has(key);
+          findings.add(key);
+          if (fresh) written.push({ finding: values, steps: JSON.parse(String(values.at(-1))) });
+          return Promise.resolve([]);
+        }
+        if (statement.includes("key='FileFixSourceRoots'") || statement.includes('file-fix-source-roots')) {
+          written.push({ steps: [], roots: JSON.parse(String(values[0])) });
+        }
+        return Promise.resolve([]);
+      },
+      transaction: (body) => body(destination),
+    };
+    const importer = new ImmichImportService(destination, source, { ...config, mediaRoots: roots });
+    const lost = (importer as unknown as { lostOriginals: Map<string, unknown> }).lostOriginals;
+    lost.set('asset-moved', { reason: 'missing', immichPath: join(directory, 'source', 'library', 'admin', 'IMG_1.jpg') });
+    lost.set('asset-plain', { reason: 'missing', immichPath: join(directory, 'source', 'library', 'admin', 'IMG_2.jpg') });
+    const record = () =>
+      (importer as unknown as { recordLostOriginalProblems(): Promise<void> }).recordLostOriginalProblems();
+    return { importer, record, written, sourceQueries };
+  };
+
+  it('uses the frozen move_history shape', () => {
+    const table = fixture.slice(fixture.indexOf('CREATE TABLE public.move_history'));
+    const columns = table.slice(0, table.indexOf(');'));
+    for (const column of ['"entityId" uuid', '"pathType"', '"oldPath"', '"newPath"']) expect(columns).toContain(column);
+  });
+
+  it('a lost Immich original records where Immich was moving it', async () => {
+    const intended = join(directory, 'source', 'library', 'admin', '2021', '07', 'IMG_1.jpg');
+    await writeFile(join(directory, 'target', 'library', 'admin', '2021', '07', 'IMG_1.jpg'), 'there');
+    const { record, written } = setup([{ entityId: 'asset-moved', newPath: intended }]);
+
+    await record();
+
+    const moved = written.find((entry) => (entry.finding as unknown[] | undefined)?.[0] === 'asset-moved')!;
+    expect(moved.finding).toEqual(
+      expect.arrayContaining(['asset-moved', 'missing', 'missing', 'critical', 'IMG_1.jpg']),
+    );
+    expect(moved.steps).toEqual([
+      {
+        step: 'imported',
+        outcome: 'failed',
+        facts: { source: 'Immich', sourcePath: 'IMG_1.jpg', intendedPath: '2021/07/IMG_1.jpg' },
+      },
+      { step: 'looked-where-moving', outcome: 'ok', facts: { folder: '2021/07', name: 'IMG_1.jpg' } },
+    ]);
+  });
+
+  it('says not-found when nothing is at the intended path', async () => {
+    const intended = join(directory, 'source', 'library', 'admin', '2021', '07', 'IMG_1.jpg');
+    const { record, written } = setup([{ entityId: 'asset-moved', newPath: intended }]);
+    await record();
+    const moved = written.find((entry) => (entry.finding as unknown[] | undefined)?.[0] === 'asset-moved')!;
+    expect(moved.steps.map(({ step, outcome }) => [step, outcome])).toEqual([
+      ['imported', 'failed'],
+      ['looked-where-moving', 'not-found'],
+    ]);
+  });
+
+  it('a lost original with no move record gets only imported/failed, and a re-run writes nothing twice', async () => {
+    const { record, written } = setup([]);
+    await record();
+    await record();
+    const findings = written.filter((entry) => entry.finding);
+    expect(findings).toHaveLength(2);
+    for (const { steps } of findings) {
+      expect(steps.map(({ step, outcome }) => [step, outcome])).toEqual([['imported', 'failed']]);
+      expect(steps[0].facts).not.toHaveProperty('intendedPath');
+    }
+  });
+
+  it('does not ask about moves when the source has no move_history', async () => {
+    const { record, sourceQueries } = setup([], false);
+    await record();
+    expect(sourceQueries.some((statement) => statement.includes('FROM public.move_history'))).toBe(false);
+  });
+
+  it('remembers the folders Immich used', async () => {
+    const { importer, written } = setup([]);
+    await (importer as unknown as { rememberSourceRoots(): Promise<void> }).rememberSourceRoots();
+    expect(written.find((entry) => entry.roots)?.roots).toEqual([join(directory, 'source')]);
   });
 });

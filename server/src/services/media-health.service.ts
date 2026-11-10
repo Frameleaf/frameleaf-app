@@ -78,6 +78,7 @@ import {
   MediaOperationStatus,
   QueueName,
   StorageFolder,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SharpOperationError } from 'src/queue/sharp-pool.js';
@@ -166,7 +167,7 @@ import { getErrorMessage } from 'src/utils/media-health.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { handlePromiseError } from 'src/utils/misc.js';
-import { isFileRootReachable } from 'src/utils/storage-reach.js';
+import { isFileRootReachable, pathState } from 'src/utils/storage-reach.js';
 
 const MEDIA_HEALTH_PAGE_SIZE = 100;
 const MANAGED_LOOKUP_MAX_ENTRIES = 10_000;
@@ -3606,7 +3607,10 @@ export class MediaHealthService {
       !!asset.libraryId && (!selected || selected.has(libraryRootId(asset.libraryId)));
 
     const managedAssets = assets.filter(({ isExternal }) => !isExternal);
-    const managedPaths = searchManaged ? (roots.find(({ id }) => id === MANAGED_ROOT_ID)?.paths ?? []) : [];
+    // FL-1337: the folders an Immich import read from are searched too, for as long as they are mounted
+    const managedPaths = searchManaged
+      ? [...(roots.find(({ id }) => id === MANAGED_ROOT_ID)?.paths ?? []), ...(await this.mountedSourceRoots())]
+      : [];
     // FL-69: recovery locations an administrator chose are walked after library storage. Read only.
     const startRoots = [...managedPaths, ...recoveryPaths];
     const { candidates: managedCandidates, continuation } =
@@ -4104,6 +4108,18 @@ export class MediaHealthService {
     return 'corrupt';
   }
 
+  /** The folders an Immich import read its photos from, while each is there to be read (an unplugged one is left out). */
+  private async mountedSourceRoots(): Promise<string[]> {
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FileFixSourceRoots);
+    const mounted: string[] = [];
+    for (const folder of Array.isArray(stored) ? stored : []) {
+      if (typeof folder === 'string' && (await pathState(this.storageRepository, folder)) === 'present') {
+        mounted.push(folder);
+      }
+    }
+    return mounted;
+  }
+
   /** Whether the drive the original lives on can be reached; on an unplugged one every file looks lost. */
   private async isDriveReachable(asset: Pick<MediaHealthAsset, 'originalPath'>): Promise<boolean> {
     const libraries = await this.libraryRepository.getAll().catch(() => []);
@@ -4128,13 +4144,17 @@ export class MediaHealthService {
     const isNew = !existing || !isOpenFinding(existing) || existing.status !== problem.status;
     const begins =
       problem.status === MediaHealthStatus.Missing || problem.status === MediaHealthStatus.CorruptConfirmed;
-    const hands = begins && isNew;
+    // An open problem nobody has handled yet (an import wrote it, or it predates the fix) is handed over once;
+    // handling gives it a fix state, or a search waiting for its next try, and it is not handed over again.
+    const evidence = (existing?.evidence ?? {}) as Record<string, unknown>;
+    const unhandled = !isNew && begins && evidence.fixState === undefined && evidence.searchPending === undefined;
+    const hands = begins && (isNew || unhandled);
     const steps: FindingStep[] = [];
     if (!existing) {
       // only what the row knows: it carries no upload device or import origin, and nothing records a move
       steps.push({ step: 'added', outcome: 'ok', at: asset.createdAt });
     }
-    if (hands) {
+    if (hands && isNew) {
       const facts = folderFacts(await this.ownerFolders(asset), asset.originalPath);
       steps.push({
         step: problem.category === MediaHealthCategory.Missing ? 'not-on-drive' : 'wont-open',

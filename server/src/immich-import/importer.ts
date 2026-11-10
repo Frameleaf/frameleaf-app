@@ -1,5 +1,7 @@
+import { stat } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { v5 } from 'uuid';
-import { AssetLockReason } from 'src/enum.js';
+import { AssetLockReason, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus, SystemMetadataKey } from 'src/enum.js';
 import {
   CONTENT_TABLES,
   DEFERRED_COLUMNS,
@@ -27,6 +29,7 @@ import { getImmichImportState } from 'src/immich-import/state.js';
 import { ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from 'src/immich-import/types.js';
 import { assertFreshImportDestination } from 'src/library-import/admission.js';
 import { LIBRARY_IMPORT_LOCK as IMPORT_LOCK } from 'src/library-import/lock.js';
+import { folderFacts } from 'src/utils/file-fix.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
 const localColumns = new Set(['updateId', 'createId']);
@@ -207,6 +210,8 @@ export class ImmichImportService {
       // Recheck after verification/dispatch: an intact ledger does not authorize schema drift.
       await assertCanonicalDestination(this.destination);
       await verifyMediaRoots(this.config.mediaRoots, this.config.media);
+      await this.rememberSourceRoots();
+      await this.recordLostOriginalProblems();
       await this.reportLostOriginals(report.fingerprint);
       await this.reportNotImported(report.fingerprint);
       await this.destination.query(
@@ -602,6 +607,101 @@ export class ImmichImportService {
           `Frameleaf doesn't have these Noodle Gallery features yet, so they stayed behind: ${names.join(', ')}. ` +
             'Your photos, albums and people came across, and your Noodle Gallery database still holds the rest.',
           JSON.stringify({ kind: 'noodle-gallery-not-imported', items: names }),
+        ],
+      );
+    }
+  }
+
+  /** Keeps the folders Immich read from, so Library care's contents search looks there while they are mounted. */
+  private async rememberSourceRoots(): Promise<void> {
+    await this.destination.query(
+      `INSERT INTO public.system_metadata(key,value) VALUES ('${SystemMetadataKey.FileFixSourceRoots}',$1::text::jsonb)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      [JSON.stringify([...new Set(this.config.mediaRoots.map(({ source }) => source))])],
+    );
+  }
+
+  /**
+   * FL-1337: each lost original gets its Missing problem with the first lines of its history: that it came
+   * from Immich and from where, and, when Immich's own move record names where it was headed, whether
+   * anything is there. Safe to repeat: a problem that exists already is left as it is, with no second copy
+   * of its history. The nightly file check hands the problem to the automatic fix.
+   */
+  private async recordLostOriginalProblems(): Promise<void> {
+    if (this.lostOriginals.size === 0) {
+      return;
+    }
+    const ids = this.lostOriginals.keys().toArray();
+    const moves = await this.source.intendedPaths(ids);
+    const assets = await this.destination.query(
+      `SELECT a.id, a."ownerId", u."storageLabel", a."originalFileName", a."originalPath", a."isExternal", a."libraryId"
+      FROM public.asset a JOIN public."user" u ON u.id = a."ownerId"
+      WHERE a.id IN (SELECT jsonb_array_elements_text($1::text::jsonb)::uuid)`,
+      [JSON.stringify(ids)],
+    );
+    for (const asset of assets) {
+      const id = String(asset.id);
+      const lost = this.lostOriginals.get(id);
+      if (!lost) continue;
+      const within = (side: 'source' | 'target') =>
+        this.config.mediaRoots.flatMap((root) =>
+          [
+            join(root[side], 'library', String(asset.storageLabel || asset.ownerId)),
+            join(root[side], 'upload', String(asset.ownerId)),
+            join(root[side], String(asset.storageLabel || asset.ownerId)),
+            join(root[side], String(asset.ownerId)),
+          ],
+        );
+      // only inside the owner's own folders, else just the file name: nothing here names another account
+      const relative = (roots: string[], path: string) => {
+        const { folder, name } = folderFacts(roots, path);
+        return name === undefined ? basename(path) : folder ? `${folder}/${name}` : name;
+      };
+      const steps: Array<Record<string, unknown>> = [
+        {
+          step: 'imported',
+          outcome: 'failed',
+          facts: { source: 'Immich', sourcePath: relative(within('source'), lost.immichPath) },
+        },
+      ];
+      const moveTo = moves.get(id);
+      let intended: string | undefined;
+      if (moveTo) {
+        try {
+          intended = mapMediaPath(moveTo, this.config.mediaRoots, this.config.media).target;
+        } catch {
+          // a path outside every imported folder says nothing we can look at
+        }
+      }
+      if (intended) {
+        const exists = await stat(intended).then(
+          () => true,
+          () => false,
+        );
+        const facts = folderFacts(within('target'), intended);
+        (steps[0].facts as Record<string, unknown>).intendedPath = relative(within('target'), intended);
+        steps.push({ step: 'looked-where-moving', outcome: exists ? 'ok' : 'not-found', facts });
+      }
+      await this.destination.query(
+        `WITH f AS (
+          INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName",
+            evidence, resolution, "checkedAt")
+          VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::text::jsonb, $8::text::jsonb, now())
+          ON CONFLICT ("assetId", category) DO NOTHING RETURNING id, "assetId")
+        INSERT INTO public.asset_health_step ("healthId", "assetId", at, step, outcome, facts)
+        SELECT f.id, f."assetId", clock_timestamp() + s.ord * interval '1 millisecond',
+          s.item->>'step', s.item->>'outcome', coalesce(s.item->'facts', '{}'::jsonb)
+        FROM f CROSS JOIN jsonb_array_elements($9::text::jsonb) WITH ORDINALITY AS s(item, ord)`,
+        [
+          id,
+          MediaHealthCategory.Missing,
+          MediaHealthStatus.Missing,
+          MediaHealthSeverity.Critical,
+          String(asset.originalPath),
+          String(asset.originalFileName),
+          JSON.stringify({ reason: 'source_file_missing_or_unreadable', source: 'import', lostReason: lost.reason }),
+          JSON.stringify({ autoRelinkable: !!asset.isExternal && !!asset.libraryId }),
+          JSON.stringify(steps),
         ],
       );
     }

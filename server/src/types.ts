@@ -1654,6 +1654,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.ApiKeyLastUsed]: Record<string, string>;
   [SystemMetadataKey.OvernightSequence]: import('src/utils/overnight.js').OvernightState;
   [SystemMetadataKey.OverviewDismissed]: { ids: string[] };
+  [SystemMetadataKey.FileFixSourceRoots]: string[];
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
   [SystemMetadataKey.FrameleafMailConnection]: FrameleafMailConnection;
   [SystemMetadataKey.FrameleafMailSignIn]: FrameleafMailSignIn;

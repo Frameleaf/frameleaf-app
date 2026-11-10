@@ -19,6 +19,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   StorageFolder,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SharpOperations } from 'src/queue/sharp-operations.js';
@@ -3341,7 +3342,7 @@ describe(MediaHealthService.name, () => {
         expect(mocks.job.queue).toHaveBeenCalledWith(queued);
       });
 
-      it('an already-open finding is not sent again', async () => {
+      it('an already-open finding that was handled is not sent again', async () => {
         vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
         vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
           {
@@ -3349,6 +3350,7 @@ describe(MediaHealthService.name, () => {
             assetId: 'asset-1',
             category: MediaHealthCategory.Missing,
             status: MediaHealthStatus.Missing,
+            evidence: { fixState: 'missing' },
             resolvedAt: null,
             dismissedAt: null,
           },
@@ -3357,6 +3359,34 @@ describe(MediaHealthService.name, () => {
         expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('missing');
 
         expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(expect.objectContaining({ steps: [] }));
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('an open finding nobody has handled yet is sent once, with no new history', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+        const open = {
+          id: 'health-1',
+          assetId: 'asset-1',
+          category: MediaHealthCategory.Missing,
+          status: MediaHealthStatus.Missing,
+          evidence: { source: 'import' },
+          resolvedAt: null,
+          dismissedAt: null,
+        };
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([open] as never);
+
+        await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(expect.objectContaining({ steps: [] }));
+        expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+        expect(mocks.job.queue).toHaveBeenCalledWith(queued);
+
+        // a search that is waiting on its next try has been handled too
+        mocks.job.queue.mockClear();
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          { ...open, evidence: { searchPending: true } },
+        ] as never);
+        await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
         expect(mocks.job.queue).not.toHaveBeenCalled();
       });
 
@@ -5753,6 +5783,40 @@ describe(MediaHealthService.name, () => {
         vi.mocked(mediaHealthRepository.replaceCandidates).mockClear();
         await sut.locateStep(snapshot, null);
         expect(vi.mocked(mediaHealthRepository.replaceCandidates).mock.calls[0][1]).toHaveLength(1);
+      });
+
+      it('also walks the folders an import read from, while they are mounted', async () => {
+        vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-id', storageLabel: null }] as never);
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
+        photo({
+          originalPath: join(StorageCore.getFolderLocation(StorageFolder.Upload, 'user-id'), 'IMG_3310.jpg'),
+          checksum: sha1('the photo'),
+        });
+        vi.mocked(mocks.systemMetadata.get).mockImplementation((async (key: SystemMetadataKey) =>
+          key === SystemMetadataKey.FileFixSourceRoots ? ['/mnt/immich/library', '/mnt/unplugged'] : undefined) as never);
+        vi.mocked(mocks.storage.stat).mockImplementation((async (path: string) => {
+          if (path === '/mnt/unplugged') throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+          return settledStat({ size: 10 });
+        }) as never);
+        const walk = vi
+          .spyOn(sut as any, 'locateManagedCandidates')
+          .mockResolvedValue({ candidates: new Map(), continuation: undefined });
+
+        await sut.locateStep(
+          {
+            mode: 'locate' as const,
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [MANAGED_ROOT_ID],
+            anyOwner: false,
+          },
+          null,
+        );
+
+        const starts = walk.mock.calls[0][2] as string[];
+        expect(starts).toContain('/mnt/immich/library');
+        expect(starts).not.toContain('/mnt/unplugged');
       });
 
       it('looks only for a photo that is still missing or changed', async () => {
