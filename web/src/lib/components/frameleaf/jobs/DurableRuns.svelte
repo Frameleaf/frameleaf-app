@@ -10,7 +10,7 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiPlay } from '@mdi/js';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import RunFailuresSheet from '$lib/components/frameleaf/jobs/RunFailuresSheet.svelte';
+  import type RunFailuresSheet from '$lib/components/frameleaf/jobs/RunFailuresSheet.svelte';
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import type { ActivityFilter } from '$lib/frameleaf/activity';
   import { isRunSettled, matchesRunFilter, runTitleKey, settledItems } from '$lib/frameleaf/durable-runs';
@@ -42,6 +42,26 @@
   let nightsOpen = $state<string | null>(null);
   /** The run whose left-over photos are being reviewed. */
   let reviewing = $state<DurableJobRun | null>(null);
+  /** The review sheet, loaded the first time it is opened so the settings page doesn't carry it up front. */
+  let Sheet = $state<typeof RunFailuresSheet | null>(null);
+  let opening = false;
+  const review = async (run: DurableJobRun) => {
+    if (opening) {
+      return;
+    }
+    opening = true;
+    try {
+      if (!Sheet) {
+        const { default: loaded } = await import('$lib/components/frameleaf/jobs/RunFailuresSheet.svelte');
+        Sheet = loaded;
+      }
+      reviewing = run;
+    } catch (error) {
+      handleError(error, $t('frameleaf_job_runs_review_unavailable'));
+    } finally {
+      opening = false;
+    }
+  };
   const visible = $derived(runs.filter((run) => matchesRunFilter(run, filter)));
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
   /** As the rest of the app says a moment: "today at 4:06 AM", "Nov 9, 4:06 AM", the year only when it isn't this one. */
@@ -234,7 +254,7 @@
               {/if}
             </p>
             {#if knowsCauses(run)}
-              <Button onclick={() => (reviewing = run)}>{$t('frameleaf_job_runs_review')}</Button>
+              <Button onclick={() => void review(run)}>{$t('frameleaf_job_runs_review')}</Button>
             {:else}
               <!-- Recorded before causes were kept: the per-photo lists are the only place to look. -->
               <a class="fl-control button" href={TASK_LIST}>{$t('frameleaf_job_runs_open_task_list')}</a>
@@ -279,14 +299,9 @@
       </li>
     {/each}
   </ol>
-  {#if reviewing}
+  {#if reviewing && Sheet}
     {#key reviewing.id}
-      <RunFailuresSheet
-        run={reviewing}
-        name={title(reviewing)}
-        onChanged={() => void load()}
-        onClose={() => (reviewing = null)}
-      />
+      <Sheet run={reviewing} name={title(reviewing)} onChanged={() => void load()} onClose={() => (reviewing = null)} />
     {/key}
   {/if}
   {#if offset > 0 || hasNext}
