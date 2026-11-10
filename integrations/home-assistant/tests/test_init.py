@@ -55,3 +55,18 @@ async def test_revoked_app_asks_to_sign_in_again(hass: HomeAssistant, aioclient_
     assert entry.state is ConfigEntryState.SETUP_ERROR
     flows = hass.config_entries.flow.async_progress()
     assert [flow["context"]["source"] for flow in flows] == ["reauth"]
+
+
+async def test_refused_refresh_asks_to_sign_in_again(hass: HomeAssistant, aioclient_mock) -> None:
+    import time
+
+    entry = oauth_entry()
+    entry.add_to_hass(hass)
+    token = {**entry.data["token"], "expires_at": time.time() - 10}
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "token": token})
+    aioclient_mock.post(f"{API}/oauth/apps/token", status=400, json={"error": "invalid_grant"})
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert [flow["context"]["source"] for flow in hass.config_entries.flow.async_progress()] == ["reauth"]

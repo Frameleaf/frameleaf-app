@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from aiohttp import ClientError, ClientResponseError
 from homeassistant.components import webhook
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, CONF_URL, Platform
@@ -12,7 +13,7 @@ from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.config_entry_oauth2_flow import LocalOAuth2ImplementationWithPkce
 
-from .api import FrameleafApi
+from .api import FrameleafApi, FrameleafAuthError, FrameleafError
 from .const import (
     AUTH_API_KEY,
     CONF_AUTH_METHOD,
@@ -82,7 +83,15 @@ def build_api(hass: HomeAssistant, entry: ConfigEntry) -> FrameleafApi:
     oauth = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
 
     async def token_headers() -> dict[str, str]:
-        await oauth.async_ensure_token_valid()
+        try:
+            await oauth.async_ensure_token_valid()
+        except ClientResponseError as error:
+            # the app was removed under Connected apps (or its refresh token expired): sign in again
+            if 400 <= error.status < 500:
+                raise FrameleafAuthError("Frameleaf refused to refresh the sign-in") from error
+            raise FrameleafError(f"Frameleaf could not refresh the sign-in: {error}") from error
+        except (ClientError, TimeoutError) as error:
+            raise FrameleafError(f"Frameleaf could not refresh the sign-in: {error}") from error
         return {"Authorization": f"Bearer {oauth.token['access_token']}"}
 
     return FrameleafApi(session, url, token_headers, is_app=True)

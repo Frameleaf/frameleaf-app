@@ -40,12 +40,14 @@ class FrameleafApi:
         self.is_app = is_app
 
     async def _request(self, method: str, path: str, *, json: Any = None, expect: str = "json") -> Any:
+        # outside the try below: a refused token refresh must reach the caller as FrameleafAuthError
+        headers = await self._headers()
         try:
             async with self._session.request(
                 method,
                 f"{self.url}/api{path}",
                 json=json,
-                headers=await self._headers(),
+                headers=headers,
                 timeout=TIMEOUT,
             ) as response:
                 if response.status == 401:
@@ -59,7 +61,7 @@ class FrameleafApi:
                 if response.status == 204:
                     return None
                 return await response.json()
-        except ClientError as error:
+        except (ClientError, TimeoutError) as error:
             raise FrameleafError(f"Frameleaf could not be reached: {error}") from error
 
     async def get_me(self) -> dict[str, Any]:
@@ -119,7 +121,7 @@ async def check_server(session: ClientSession, url: str) -> None:
         async with session.get(f"{url.rstrip('/')}/api/server/ping", timeout=TIMEOUT) as response:
             if response.status != 200 or (await response.json()).get("res") != "pong":
                 raise FrameleafError("This address is not a Frameleaf server")
-    except (ClientError, ValueError) as error:
+    except (ClientError, TimeoutError, ValueError) as error:
         raise FrameleafError(f"Frameleaf could not be reached: {error}") from error
 
 
@@ -150,6 +152,6 @@ async def register_client(session: ClientSession, url: str, redirect_uri: str, n
             if response.status >= 400:
                 raise FrameleafError(f"Frameleaf answered {response.status} to the app registration")
             client = await response.json()
-    except (ClientError, ValueError) as error:
+    except (ClientError, TimeoutError, ValueError) as error:
         raise FrameleafError(f"Frameleaf could not be reached: {error}") from error
     return client["client_id"], metadata

@@ -110,3 +110,35 @@ async def test_found_on_this_network(hass: HomeAssistant, aioclient_mock) -> Non
     schema = result["data_schema"].schema
     url = next(key for key in schema if key == CONF_URL)
     assert url.default() == "http://192.168.1.20:2283"
+
+
+async def test_discovery_of_a_server_already_added(hass: HomeAssistant) -> None:
+    from ipaddress import ip_address
+
+    from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    MockConfigEntry(domain=DOMAIN, unique_id="x", data={CONF_URL: "http://192.168.1.20:2283"}).add_to_hass(hass)
+    info = ZeroconfServiceInfo(
+        ip_address=ip_address("192.168.1.20"),
+        ip_addresses=[ip_address("192.168.1.20")],
+        hostname="frameleaf.local.",
+        name="Taylor home._frameleaf._tcp.local.",
+        port=2283,
+        type="_frameleaf._tcp.local.",
+        properties={"id": "server-1"},
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF}, data=info
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+
+
+async def test_server_that_does_not_answer(hass: HomeAssistant, aioclient_mock) -> None:
+    aioclient_mock.get(f"{API}/server/ping", exc=TimeoutError())
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_URL: URL, CONF_AUTH_METHOD: AUTH_OAUTH}
+    )
+    assert result["errors"] == {"base": "cannot_connect"}

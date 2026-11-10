@@ -48,6 +48,8 @@ class FrameleafFlowHandler(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, d
         scheme = "https" if properties.get("scheme") == "https" else "http"
         host = f"[{discovery_info.host}]" if ":" in discovery_info.host else discovery_info.host
         self._url = f"{scheme}://{host}:{discovery_info.port}"
+        # already added at this address
+        self._async_abort_entries_match({CONF_URL: self._url})
         if server_id := properties.get("id"):
             await self.async_set_unique_id(f"discovered#{server_id}")
             self._abort_if_unique_id_configured()
