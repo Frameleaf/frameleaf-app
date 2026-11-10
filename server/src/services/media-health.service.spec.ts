@@ -1398,6 +1398,168 @@ describe(MediaHealthService.name, () => {
       expect(mediaHealthRepository.getCandidatesByHealthIds).not.toHaveBeenCalled();
     });
 
+    describe('a copy in the folders an Immich import read from (Task 11b)', () => {
+      let root: string;
+      let uploads: string;
+      let immich: string;
+      let copy: string;
+      let own: string;
+      const bytes = Buffer.from('the photo, exactly');
+      const fromImport = () =>
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          {
+            id: 'candidate-1',
+            healthId: 'health-1',
+            candidatePath: copy,
+            status: MediaHealthStatus.Found,
+            // in no search location: the search reached it through the import's folders
+            evidence: { decodeValid: true },
+            resolution: { autoRelinkable: true },
+          },
+        ] as never);
+
+      beforeEach(async () => {
+        root = await mkdtemp(join(tmpdir(), 'library-care-relink-'));
+        uploads = join(root, 'upload');
+        const baseFolder = StorageCore.getBaseFolder.bind(StorageCore);
+        const base = vi
+          .spyOn(StorageCore, 'getBaseFolder')
+          .mockImplementation((folder) => (folder === StorageFolder.Upload ? uploads : baseFolder(folder)));
+        onTestFinished(() => base.mockRestore());
+        await mkdir(join(uploads, 'user-id'), { recursive: true });
+        await writeFile(join(uploads, '.frameleaf'), '');
+        immich = join(root, 'immich', 'library');
+        await mkdir(immich, { recursive: true });
+        copy = join(immich, 'IMG_3310.jpg');
+        await writeFile(copy, bytes);
+        own = join(uploads, 'user-id', 'IMG_3310.jpg');
+        const crypto = new CryptoRepository();
+        vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((file) => crypto.hashFileDigests(file));
+        // the drive is there while its mount file is
+        vi.mocked(mocks.storage.stat).mockImplementation((file) => stat(file) as never);
+        vi.mocked(mocks.systemMetadata.get).mockImplementation(((key: SystemMetadataKey) =>
+          Promise.resolve(key === SystemMetadataKey.FileFixSourceRoots ? [join(root, 'immich')] : undefined)) as never);
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([finding()] as never);
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([
+          missingAsset({
+            originalPath: own,
+            originalFileName: 'IMG_3310.jpg',
+            checksum: createHash('sha1').update(bytes).digest(),
+          }),
+        ] as never);
+        fromImport();
+      });
+
+      afterEach(async () => {
+        await rm(root, { recursive: true, force: true });
+      });
+
+      it('copies the reviewed copy into the photo’s own place, never linking to the old app’s folder', async () => {
+        await expect(sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry)).resolves.toEqual(
+          { id: 'asset-1', status: MediaOperationItemStatus.Ok },
+        );
+
+        // the library keeps a verified copy of its own; the old app's file is left exactly as it is
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+        await expect(readFile(own)).resolves.toEqual(bytes);
+        await expect(readFile(copy)).resolves.toEqual(bytes);
+        expect((await stat(own)).ino).not.toBe((await stat(copy)).ino);
+        // as the automatic put-back records it, with who did it, and Undo moves the copy aside
+        expect(mediaHealthRepository.settleFinding).toHaveBeenCalledExactlyOnceWith({
+          healthId: 'health-1',
+          evidence: { fixState: 'found-again', searchPending: false },
+          status: MediaHealthStatus.Relinked,
+          steps: [
+            {
+              step: 'put-back',
+              outcome: 'ok',
+              facts: { copied: true, by: authStub.user1.user.name },
+              undo: {
+                kind: 'restore',
+                previousPath: own,
+                originalPath: own,
+                checksum: createHash('sha1').update(bytes).digest('hex'),
+              },
+            },
+          ],
+        });
+        expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
+          ]),
+        );
+      });
+
+      it('never puts anything at the photo’s place for a copy that no longer matches, or over a file there', async () => {
+        await writeFile(copy, 'another photo');
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_media_health_unverified',
+        });
+        await expect(stat(own)).rejects.toThrow();
+
+        // a file came back at the photo's place meanwhile: it is never replaced
+        await writeFile(copy, bytes);
+        await writeFile(own, 'something else');
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({ status: MediaOperationItemStatus.Failed });
+        await expect(readFile(own, 'utf8')).resolves.toBe('something else');
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+      });
+
+      it('waits for the photo’s drive, copying nothing while it is away', async () => {
+        await rm(join(uploads, '.frameleaf'));
+
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({
+          status: MediaOperationItemStatus.Failed,
+          reasonKey: 'frameleaf_bulk_reason_failed',
+        });
+        await expect(stat(own)).rejects.toThrow();
+        expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+      });
+
+      it('copies only the copy a reviewer could relink: one verified, or the one chosen', async () => {
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          {
+            id: 'candidate-1',
+            healthId: 'health-1',
+            candidatePath: copy,
+            status: MediaHealthStatus.Found,
+            evidence: {},
+            resolution: { autoRelinkable: true },
+          },
+          {
+            id: 'candidate-2',
+            healthId: 'health-1',
+            candidatePath: join(immich, 'other.jpg'),
+            status: MediaHealthStatus.Found,
+            evidence: {},
+            resolution: { autoRelinkable: true },
+          },
+        ] as never);
+
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({ status: MediaOperationItemStatus.Skipped });
+        await expect(stat(own)).rejects.toThrow();
+
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+          finding({ resolution: { autoRelinkable: true, chosenCandidateId: 'candidate-1' } }),
+        ] as never);
+        await expect(sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry)).resolves.toEqual(
+          { id: 'asset-1', status: MediaOperationItemStatus.Ok },
+        );
+        await expect(readFile(own)).resolves.toEqual(bytes);
+      });
+    });
+
     it('refuses an entry whose finding belongs to another item', async () => {
       vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([finding({ assetId: 'asset-9' })] as never);
 

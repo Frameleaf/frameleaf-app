@@ -1908,7 +1908,8 @@ export class MediaHealthService {
       const source = await this.sourceFolderOf(candidate);
       if (source) {
         // F3: the library never comes to depend on the folders an import read from
-        return this.copyBackFromSource(current, finding, candidate, source, steps);
+        const copied = await this.copyBackFromSource(current, finding, candidate, source, steps);
+        return copied === 'wait' ? 'wait' : copied === 'copied';
       }
       const item = await this.relinkInPlace(current.ownerId, finding, current, candidate, {
         evidence,
@@ -1961,7 +1962,10 @@ export class MediaHealthService {
    * F3: a lost original found in a folder an Immich import read from is copied to the photo's own place in library
    * storage, verified and never over anything, as Cloud Backup puts one back. The file it was copied from is left
    * exactly as it is, so deleting the old app's data later never loses the photo. Its Undo moves the copy aside into
-   * Library care, as a restore's does. `wait` when the photo's drive is not there.
+   * Library care, as a restore's does. The automatic put-back and a reviewer's relink (Task 11b, with `by`) both
+   * come here. `wait` when the photo's drive is not there; `refused` for a photo whose own place is not in library
+   * storage; `unverified` when the copy is gone or no longer the photo; `failed` when it could not be written (a
+   * file at the photo's place is never replaced); `settled` when the problem was dismissed meanwhile.
    */
   private async copyBackFromSource(
     asset: MediaHealthAsset,
@@ -1969,7 +1973,8 @@ export class MediaHealthService {
     candidate: MediaHealthCandidate,
     folder: string,
     steps: FindingStep[],
-  ): Promise<boolean | 'wait'> {
+    by?: string,
+  ): Promise<'copied' | 'wait' | 'refused' | 'unverified' | 'failed' | 'settled'> {
     if (
       asset.isExternal ||
       [StorageFolder.Upload, StorageFolder.Library].every(
@@ -1977,12 +1982,12 @@ export class MediaHealthService {
       )
     ) {
       // only a photo whose own place is in library storage gets a copy there
-      return false;
+      return 'refused';
     }
     const source = await resolveInsideRoot(folder, candidate.candidatePath);
     const digests = source && (await this.validateManagedCandidate(asset, source));
     if (!source || !digests) {
-      return false;
+      return 'unverified';
     }
     if (!(await this.canReach(asset.originalPath))) {
       return 'wait';
@@ -1996,7 +2001,7 @@ export class MediaHealthService {
       });
     } catch (error) {
       this.logger.warn(`Library care could not copy ${asset.id} back from ${source}: ${getErrorMessage(error)}`);
-      return false;
+      return 'failed';
     }
     const settled = await this.mediaHealthRepository.settleFinding({
       healthId: finding.id,
@@ -2008,7 +2013,7 @@ export class MediaHealthService {
           step: 'put-back',
           outcome: 'ok',
           // copied, not linked: the library keeps a file of its own
-          facts: { copied: true },
+          facts: { copied: true, ...(by && { by }) },
           undo: {
             kind: 'restore',
             previousPath: asset.originalPath,
@@ -2020,7 +2025,7 @@ export class MediaHealthService {
     });
     // the photo's own bytes are at its own path again either way: its details and previews are read again
     await this.queueRelinkJobs(asset.id);
-    return settled;
+    return settled ? 'copied' : 'settled';
   }
 
   /**
@@ -2997,7 +3002,52 @@ export class MediaHealthService {
       }
       return this.publishAndCommit(auth.user, finding, asset, candidate, MediaHealthCategory.Missing);
     }
+    const source = await this.sourceFolderOf(candidate);
+    if (source) {
+      // F3, Task 11b: a reviewer's relink copies too; the library never comes to depend on an import's folders
+      return this.copyBackReviewed(auth, finding, asset, candidates, candidate, source);
+    }
     return this.relinkInPlace(auth.user.id, finding, asset, candidate);
+  }
+
+  /**
+   * A reviewer's relink to a copy in a folder an Immich import read from (Task 11b): the copy goes into the photo's
+   * own place in library storage, as the automatic put-back does, verified and never over anything, and the old
+   * app's file is left as it is. Only the copy a relink could use: the one verified copy, or the one chosen.
+   */
+  private async copyBackReviewed(
+    auth: AuthDto,
+    finding: MediaHealthFinding,
+    asset: MediaHealthAsset,
+    candidates: MediaHealthCandidate[],
+    candidate: MediaHealthCandidate,
+    source: string,
+  ): Promise<BulkOperationItem> {
+    const id = asset.id;
+    if (this.relinkCandidate(finding, candidates, auth)?.id !== candidate.id) {
+      return changed(id, 'The reviewed copy is no longer the one to relink');
+    }
+    const result = await this.copyBackFromSource(asset, finding, candidate, source, [], auth.user.name);
+    switch (result) {
+      case 'copied': {
+        return outcome(id, MediaOperationItemStatus.Ok);
+      }
+      case 'wait': {
+        return transient(id, "The drive this photo is kept on can't be reached right now");
+      }
+      case 'refused': {
+        return unverified(id, 'Only a photo kept in library storage can be copied back from these folders');
+      }
+      case 'unverified': {
+        return unverified(id, 'Candidate no longer matches or could not be safely linked');
+      }
+      case 'failed': {
+        return transient(id, "The copy couldn't be written to the photo's place");
+      }
+      case 'settled': {
+        return changed(id, 'The finding changed during the relink');
+      }
+    }
   }
 
   /**
