@@ -37,6 +37,8 @@ assert.ok(
   'usage: verify-formats.mjs <manifest.json> <name>=<dir>... [--dist <dir>]',
 );
 const roots = Object.fromEntries(rootArgs.map((pair) => pair.split(/=(.*)/s).slice(0, 2)));
+// `fate=` with nothing after it (an unset shell variable, say) must not read as a root left off.
+assert.ok(Object.values(roots).every(Boolean), 'every <name>=<dir> needs a directory');
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 
 const load = (file) => import(pathToFileURL(join(dist, file)).href);
