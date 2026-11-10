@@ -17,6 +17,7 @@ import { DB } from 'src/schema/index.js';
 import { asUuid } from 'src/utils/database.js';
 import { releaseDerivedResults } from 'src/utils/derivative-locks.js';
 import { encryptsFilesOf } from 'src/utils/locked-encryption-set.js';
+import { LIBRARY_CARE_FOLDER } from 'src/utils/media-health-roots.js';
 
 /** One stored file of an asset, as the seal and unseal jobs see it (spec §6). */
 export interface LockedFileRef {
@@ -60,6 +61,9 @@ const kindOfFileType = sql<LockedFileKind>`case f.type
   else 'other' end`;
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+/** A path inside a Library care folder (FL-1364): the copies Library care makes of a photo live only there. */
+const libraryCareSegment = `/${LIBRARY_CARE_FOLDER}/`;
 
 const sha256Of = async (path: string) => {
   const hash = createHash('sha256');
@@ -129,6 +133,13 @@ export class LockedFileRepository {
    * the Studio HDR intermediate; restoration outputs; video-moment frames; and the cached Studio
    * timeline media (filmstrip sprites and indexes, waveforms). A Live Photo's motion part is its own
    * asset, locked with the photo, so its files are listed under that asset.
+   *
+   * FL-1364: also the files Library care keeps of the photo (`asset_health`, optional: a kept file may be
+   * gone or on a drive that isn't there): the damaged or changed file a fix kept (`evidence.retainedPath`),
+   * the files its Undo steps would put back (`undo.previousPath`, `undo.retainedPath`), and a copy a fix
+   * made inside a Library care folder that the photo no longer uses (`undo.originalPath`, after an Undo).
+   * They are sealed and opened in place, so the paths those records hold stay right. A kept path that
+   * another asset reads as its original or a generated file is that asset's, and is left out.
    */
   @GenerateSql({ params: [DummyValue.UUID] })
   async filesOf(assetId: string): Promise<LockedFileRef[]> {
@@ -185,6 +196,22 @@ export class LockedFileRepository {
       union all
       select frame.path, 'other', 'video_moment_frame', null, false, null
       from public.video_moment_frame frame where frame."assetId" = ${id}
+      union all
+      select kept.path, 'other', 'asset_health', null, true, null
+      from public.asset_health h
+      cross join lateral (
+        select h.evidence->>'retainedPath'
+        union all
+        select p.path from public.asset_health_step s
+        cross join lateral (
+          values (s.undo->>'previousPath'), (s.undo->>'retainedPath'),
+            (case when strpos(s.undo->>'originalPath', ${libraryCareSegment}) > 0 then s.undo->>'originalPath' end)
+        ) as p(path)
+        where s."healthId" = h.id and jsonb_typeof(s.undo) = 'object'
+      ) as kept(path)
+      where h."assetId" = ${id} and kept.path like '/%'
+        and not exists (select 1 from public.asset other where other."originalPath" = kept.path and other.id <> ${id})
+        and not exists (select 1 from public.asset_file f where f.path = kept.path and f."assetId" <> ${id})
     `.execute(this.db);
     if (rows.length === 0) {
       return [];

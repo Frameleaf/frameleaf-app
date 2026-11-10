@@ -83,6 +83,69 @@ describe(LockedFileRepository.name, () => {
       expect(files.find(({ path }) => path === extra)).toMatchObject({ table: 'video_edit_version' });
     });
 
+    it('lists the files Library care kept of the photo, optional, and none another asset reads (FL-1364)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const care = `/media/${randomUUID()}/.library-care`;
+      const original = `${care}/${randomUUID()}.jpg`;
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: original });
+      const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+      const damaged = `${care}/${asset.id}-1.damaged.jpg`;
+      const changed = `${care}/${asset.id}-2.changed.jpg`;
+      const orphan = `${care}/${asset.id}-repaired.jpg`;
+      const theirs = `${care}/${asset.id}-theirs.jpg`;
+      const theirThumbnail = `${care}/${asset.id}-thumb.webp`;
+      await ctx.newAssetFile({ assetId: other.id, type: AssetFileType.Thumbnail, path: theirThumbnail });
+      await sql`UPDATE public.asset SET "originalPath" = ${theirs} WHERE id = ${other.id}::uuid`.execute(db);
+      const finding = async (
+        assetId: string,
+        category: string,
+        retainedPath: string | null,
+        undos: Record<string, unknown>[],
+      ) => {
+        const { rows } = await sql<{ id: string }>`
+          INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName",
+            evidence, resolution, "checkedAt")
+          VALUES (${assetId}::uuid, ${category}, 'resolved', 'info', ${original}, 'IMG_0001.jpg',
+            ${JSON.stringify(retainedPath ? { retainedPath } : {})}::text::jsonb, '{}'::jsonb, now())
+          RETURNING id`.execute(db);
+        for (const undo of undos) {
+          await sql`INSERT INTO public.asset_health_step ("healthId", "assetId", step, outcome, undo)
+            VALUES (${rows[0].id}::uuid, ${assetId}::uuid, 'fix', 'ok', ${JSON.stringify(undo)}::text::jsonb)`.execute(
+            db,
+          );
+        }
+      };
+      await finding(asset.id, 'corrupt', damaged, [
+        { kind: 'repair', previousPath: damaged, originalPath: orphan },
+        // a path outside Library care that the photo used right after a fix is not a kept file
+        { kind: 'relink', previousPath: theirs, originalPath: `/media/${randomUUID()}/elsewhere.jpg` },
+        { kind: 'restore', previousPath: original, originalPath: original, retainedPath: changed },
+        { kind: 'relink', previousPath: 'relative.jpg', originalPath: original, retainedPath: theirThumbnail },
+      ]);
+      // another photo's findings are its own
+      await finding(other.id, 'corrupt', `${care}/${other.id}.damaged.jpg`, []);
+
+      const files = await sut.filesOf(asset.id);
+
+      expect(
+        files
+          .filter(({ table }) => table === 'asset_health')
+          .map(({ path }) => path)
+          .toSorted(),
+      ).toEqual([damaged, changed, orphan].toSorted());
+      expect(files.find(({ path }) => path === damaged)).toEqual({
+        path: damaged,
+        kind: 'other',
+        table: 'asset_health',
+        optional: true,
+      });
+      // the photo's own file is listed once, as its original
+      expect(files.filter(({ path }) => path === original)).toEqual([
+        expect.objectContaining({ kind: 'original', table: 'asset' }),
+      ]);
+    });
+
     it('is empty for an asset that does not exist', async () => {
       const { sut } = setup();
       await expect(sut.filesOf(randomUUID())).resolves.toEqual([]);

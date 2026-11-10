@@ -407,6 +407,26 @@ describe(LockedSealService.name, () => {
       expect(await temporaries()).toEqual([]);
     });
 
+    it('seals a kept Library care file like the original, and checks its readers under the lock (FL-1364)', async () => {
+      const original = await write('original.jpg', 'original', 'asset');
+      const kept = await write('asset-health.damaged.jpg', 'other', 'asset_health');
+      files.at(-1)!.optional = true;
+
+      await expect(sut.handleSeal({ id: ASSET })).resolves.toBe(JobStatus.Success);
+      expect((await decrypted(original)).equals(plain.get(original)!)).toBe(true);
+      expect((await decrypted(kept)).equals(plain.get(kept)!)).toBe(true);
+      expect(mocks.lockedFile.plainReaders).toHaveBeenCalledWith(ASSET, kept, LOCK_TRX);
+
+      // another photo took it as its file after the registry looked: it stays as it is
+      const other = await write('asset-health-2.damaged.jpg', 'other', 'asset_health');
+      mocks.lockedFile.plainReaders.mockImplementation((_id, path) =>
+        Promise.resolve(path === other ? ['their-asset'] : []),
+      );
+      await expect(sut.handleSeal({ id: ASSET })).resolves.toBe(JobStatus.Skipped);
+      expect((await fs.readFile(other)).equals(plain.get(other)!)).toBe(true);
+      expect(await temporaries()).toEqual([]);
+    });
+
     it('read-only source assets are never sealed and are counted as notEncryptable', async () => {
       const path = await write('original.jpg', 'original', 'asset');
       state.encryptable = false;

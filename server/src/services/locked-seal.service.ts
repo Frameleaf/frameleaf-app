@@ -65,6 +65,9 @@ const HEADER_CONCURRENCY = 16;
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === 'ENOENT';
 
+/** Registry tables whose files another asset may come to read in plain form, checked again before the rename (M1). */
+const READER_CHECKED_TABLES: ReadonlySet<string> = new Set(['asset', 'asset_file', 'asset_health']);
+
 const sha256Of = async (path: string) => {
   const hash = createHash('sha256');
   await pipeline(createReadStream(path), hash);
@@ -426,10 +429,10 @@ export class LockedSealService {
     };
     // M1: an upload or dedupe may have linked another asset to this file after the un-share looked; checked
     // again on the lock's own connection right before the rename. The next sweep un-shares it first.
-    const othersRead =
-      ref.table === 'asset' || ref.table === 'asset_file'
-        ? async (trx: Kysely<DB>) => (await this.lockedFileRepository.plainReaders(state.id, path, trx)).length > 0
-        : undefined;
+    // FL-1364: a kept Library care file too, which the registry lists only while no other asset reads it
+    const othersRead = READER_CHECKED_TABLES.has(ref.table)
+      ? async (trx: Kysely<DB>) => (await this.lockedFileRepository.plainReaders(state.id, path, trx)).length > 0
+      : undefined;
     return this.replaceFile(
       state,
       ref,
