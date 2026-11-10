@@ -11,8 +11,10 @@ import type { Translations } from 'svelte-i18n';
 /** Set aside after this many failed tries at the same step (FL-845). */
 export const SET_ASIDE_AFTER = 3;
 
-/** The most files one read asks for; the server allows 200. */
+/** The most rows one read asks for; the server allows 200. */
 export const FAILURES_PAGE = 200;
+/** Pages read at most, so a huge failure (a drive gone) can't keep the page reading for ever. */
+const MAX_PAGES = 25;
 
 const VIDEO = /\.(mov|mp4|m4v|avi|mkv|webm|mts|m2ts|3gp|wmv|mpg|mpeg|insv|lrv)$/i;
 
@@ -94,12 +96,28 @@ export const actionItems = (files: ProcessingFailureFile[]) =>
   files.flatMap((file) => file.steps.map((step) => ({ assetId: file.assetId, step })));
 
 /**
+ * Every row the reader may see, page by page, so one file's rows are never split and the count
+ * matches the server's own (the Overview's).
+ */
+export const readFailures = async () => {
+  const rows: ProcessingFailureResponseDto[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const next = await getProcessingFailures({ skip: page * FAILURES_PAGE, take: FAILURES_PAGE });
+    rows.push(...next);
+    if (next.length < FAILURES_PAGE) {
+      break;
+    }
+  }
+  return rows;
+};
+
+/**
  * How many files the reader may see wait on a decision, and how many are set aside: the list's own
  * count, so a row and the page it opens agree. Nothing when the list can't be read.
  */
 export const processingFailureCounts = async () => {
   try {
-    const files = groupFailures(await getProcessingFailures({ take: FAILURES_PAGE }));
+    const files = groupFailures(await readFailures());
     return { count: files.length, setAside: files.filter((file) => file.setAside && !isRetrying(file)).length };
   } catch {
     return undefined;

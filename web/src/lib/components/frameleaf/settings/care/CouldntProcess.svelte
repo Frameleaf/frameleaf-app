@@ -23,8 +23,8 @@
   import {
     actionItems,
     causeWords,
-    FAILURES_PAGE,
     groupFailures,
+    readFailures,
     isRetrying,
     SET_ASIDE_AFTER,
     stepWords,
@@ -35,12 +35,7 @@
   import { locale } from '$lib/stores/preferences.store';
   import { downloadUrl, getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import {
-    AssetMediaSize,
-    dismissProcessingFailures,
-    getProcessingFailures,
-    retryProcessingFailures,
-  } from '@frameleaf/sdk';
+  import { AssetMediaSize, dismissProcessingFailures, retryProcessingFailures } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiCheckCircleOutline,
@@ -71,13 +66,23 @@
   let poll: ReturnType<typeof setTimeout> | undefined;
   let alive = true;
 
+  /** Each read is numbered; the answer to an older one (a poll begun before Try again) is dropped. */
+  let reads = 0;
   const load = async () => {
+    const read = ++reads;
     try {
-      files = groupFailures(await getProcessingFailures({ take: FAILURES_PAGE }));
+      const next = groupFailures(await readFailures());
+      if (read !== reads) {
+        return;
+      }
+      files = next;
       status = 'ready';
       // a file that left the list, or failed again, is no longer being tried
       trying = trying.filter((id) => files.some((file) => file.assetId === id && isRetrying(file)));
     } catch {
+      if (read !== reads) {
+        return;
+      }
       if (status !== 'ready') {
         status = 'error';
       }

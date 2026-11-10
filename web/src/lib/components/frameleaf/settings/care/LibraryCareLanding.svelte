@@ -281,6 +281,15 @@
           : $t('frameleaf_carehome_hero_attention_body_unchecked'),
       };
     }
+    // FL-862: files Frameleaf couldn't process, when the checks found nothing else.
+    if (unprocessed > 0) {
+      return {
+        tone: 'warn' as const,
+        icon: mdiFileClockOutline,
+        title: $t('frameleaf_processing_failure_hero', { values: { count: unprocessed } }),
+        body: $t('frameleaf_care_fix_hero_process_body'),
+      };
+    }
     if (!lastChecked) {
       return {
         tone: 'good' as const,
@@ -516,9 +525,10 @@
       {#if loaded && problems.length > 0}
         <Button
           variant="primary"
-          onclick={() => goto(isAdmin ? commandCenterUrl('care', 'integrity-checks') : problems[0].href)}
+          onclick={() =>
+            goto(isAdmin && attention > 0 ? commandCenterUrl('care', 'integrity-checks') : problems[0].href)}
         >
-          {isAdmin ? $t('frameleaf_carehome_see_found') : $t('frameleaf_carehome_review_it')}
+          {isAdmin && attention > 0 ? $t('frameleaf_carehome_see_found') : $t('frameleaf_carehome_review_it')}
         </Button>
       {:else if loaded && isAdmin}
         <Button variant="primary" disabled={starting} onclick={checkNow}>

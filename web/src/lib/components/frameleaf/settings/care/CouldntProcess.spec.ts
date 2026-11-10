@@ -91,7 +91,7 @@ describe("Couldn't process (FL-862)", () => {
     expect(screen.queryByText(/Taylor/)).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Whose' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: en.frameleaf_processing_failure_logs })).not.toBeInTheDocument();
-    expect(sdkMock.getProcessingFailures).toHaveBeenCalledWith({ take: 200 });
+    expect(sdkMock.getProcessingFailures).toHaveBeenCalledWith({ skip: 0, take: 200 });
   });
 
   it('shows a file once, and tries every step of it again, saying it is being tried until it works', async () => {
@@ -122,6 +122,33 @@ describe("Couldn't process (FL-862)", () => {
     expect(await fileRow(name).findByText(en.frameleaf_processing_failure_trying)).toBeInTheDocument();
     expect(fileRow(name).getByRole('button', { name: en.frameleaf_processing_failure_try_again })).toBeDisabled();
     expect(screen.getByText(`Trying ${name} again now.`)).toBeInTheDocument();
+  });
+
+  it('drops a read that answers after a newer one', async () => {
+    render(CouldntProcess);
+    await hero().findByRole('heading', { name: /couldn’t be processed/ });
+
+    let answerStale: (rows: ProcessingFailureResponseDto[]) => void = () => {};
+    sdkMock.getProcessingFailures.mockImplementationOnce(
+      () => new Promise((resolve) => (answerStale = resolve)) as never,
+    );
+    sdkMock.getProcessingFailures.mockResolvedValue([
+      failure({ attempts: 0, quarantinedAt: null }),
+      { ...panorama, attempts: 0 },
+    ]);
+    await fireEvent.click(
+      fileRow('VID_20260813_0912.MOV').getByRole('button', { name: en.frameleaf_processing_failure_try_again }),
+    );
+    await fireEvent.click(
+      fileRow('PANO_0042.JPG').getByRole('button', { name: en.frameleaf_processing_failure_try_again }),
+    );
+    expect(await fileRow('PANO_0042.JPG').findByText(en.frameleaf_processing_failure_trying)).toBeInTheDocument();
+
+    // the first read answers last, with the rows as they were before Try again
+    answerStale([failure(), panorama]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fileRow('VID_20260813_0912.MOV').getByText(en.frameleaf_processing_failure_trying)).toBeInTheDocument();
+    expect(fileRow('PANO_0042.JPG').getByText(en.frameleaf_processing_failure_trying)).toBeInTheDocument();
   });
 
   it('downloads the original of a set-aside file, and keeps a file as it is', async () => {

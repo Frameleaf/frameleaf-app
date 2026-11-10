@@ -226,7 +226,8 @@ describe('Overview (FL-363)', () => {
       sdk.getAttention.mockResolvedValue({ ...healthy, processingFailures: { count: 3, setAside: 1 } });
       render(Overview);
 
-      expect(await screen.findByText('3 files couldn’t be processed')).toBeInTheDocument();
+      // in the list, and said in the sentence under the title too
+      expect(await screen.findAllByText(/3 files couldn’t be processed/)).toHaveLength(2);
       expect(screen.getByRole('link', { name: 'See the files' })).toHaveAttribute(
         'href',
         '/user-settings?area=care&section=couldnt-process',

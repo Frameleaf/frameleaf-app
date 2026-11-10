@@ -378,6 +378,14 @@
         text: $t('frameleaf_overview_files_need_title', { values: { count: files.needsYou } }),
       });
     }
+    // FL-862: files Frameleaf couldn't process are said too.
+    const unprocessed = attention?.processingFailures?.count ?? 0;
+    if (unprocessed > 0) {
+      phrases.push({
+        wrong: true,
+        text: $t('frameleaf_processing_failure_hero', { values: { count: unprocessed } }),
+      });
+    }
     if (needs.some((need) => need.id === 'plan')) {
       phrases.push({ wrong: true, text: $t('frameleaf_overview_says_plan') });
     }

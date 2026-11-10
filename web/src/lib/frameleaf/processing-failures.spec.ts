@@ -1,5 +1,15 @@
 import { ProcessingFailureStep, type ProcessingFailureResponseDto } from '@frameleaf/sdk';
-import { actionItems, causeWords, groupFailures, isRetrying, stepWords } from '$lib/frameleaf/processing-failures';
+import { getProcessingFailures } from '@frameleaf/sdk';
+import {
+  actionItems,
+  causeWords,
+  groupFailures,
+  isRetrying,
+  processingFailureCounts,
+  stepWords,
+} from '$lib/frameleaf/processing-failures';
+
+vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<object>()), getProcessingFailures: vi.fn() }));
 
 const row = (overrides: Partial<ProcessingFailureResponseDto>): ProcessingFailureResponseDto => ({
   assetId: 'a1',
@@ -37,5 +47,14 @@ describe('processing failures (FL-862)', () => {
     expect(causeWords({ cause: 'too-large', isVideo: false })).toBe('frameleaf_processing_failure_too_large_photo');
     expect(causeWords({ cause: 'something new', isVideo: false })).toBe('frameleaf_processing_failure_other_photo');
     expect(stepWords(ProcessingFailureStep.SmartSearch)).toBe('frameleaf_processing_failure_step_search');
+  });
+
+  it('reads every page before counting, so one file is never split and nothing is left out', async () => {
+    const page = (from: number, count: number) =>
+      Array.from({ length: count }, (_, index) => row({ assetId: `a${Math.floor((from + index) / 2)}` }));
+    vi.mocked(getProcessingFailures).mockResolvedValueOnce(page(0, 200)).mockResolvedValueOnce(page(200, 3));
+    expect(await processingFailureCounts()).toEqual({ count: 102, setAside: 0 });
+    expect(getProcessingFailures).toHaveBeenNthCalledWith(1, { skip: 0, take: 200 });
+    expect(getProcessingFailures).toHaveBeenNthCalledWith(2, { skip: 200, take: 200 });
   });
 });
