@@ -9556,6 +9556,7 @@
   "frameleaf_jobs_history_empty": "No queue changes recorded yet.",
   "frameleaf_jobs_history_help": "Server-wide actions made on this device. These records describe queue commands, not completed processing.",
   "frameleaf_jobs_history_server": "Server",
+  "frameleaf_jobs_in_library_care": "In Library care",
   "frameleaf_jobs_jobs_load_failed": "Jobs could not be loaded. Try again in a moment.",
   "frameleaf_jobs_label": "Job management",
   "frameleaf_jobs_manual_analytics_collect": "Collect library analytics",

@@ -3,6 +3,7 @@ import {
   createJob,
   deferImageDescriptionRequeue,
   emptyQueue,
+  getAssetInfo,
   getImageDescriptionRequeueEstimate,
   getMachineLearningHardware,
   MachineLearningHardwareAcceleration,
@@ -51,6 +52,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   listDurableJobRuns: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
   listDurableJobRunItems: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
   getQueueJobs: vi.fn(),
+  getAssetInfo: vi.fn(),
   runQueueCommandLegacy: vi.fn(),
   updateQueue: vi.fn(),
   emptyQueue: vi.fn(),
@@ -855,6 +857,54 @@ describe('One job at a time (approved design, 2026-11-04)', () => {
       expect(retryQueueJob).toHaveBeenCalledWith({ name: QueueName.FaceDetection, id: failedJob.id }),
     );
     expect(await screen.findByText('Detect faces is back in the queue.')).toBeInTheDocument();
+  });
+
+  describe('a failed job for a photo with a file problem', () => {
+    const openDetail = async () => {
+      at('&queue=face-detection&tab=failed');
+      vi.mocked(getQueueJobs).mockResolvedValue([failedJob]);
+      render(JobsManager);
+      await fireEvent.click(await screen.findByRole('button', { name: /Machine learning is unreachable/ }));
+      return screen.findByRole('dialog');
+    };
+
+    it('a failed job for a photo with a file problem links to Library care', async () => {
+      vi.mocked(getAssetInfo).mockResolvedValue({ id: 'asset-1', fileProblem: { findingId: 'finding-1', missing: false } } as never);
+      const dialog = await openDetail();
+
+      const link = await within(dialog).findByRole('link', { name: 'In Library care' });
+      expect(getAssetInfo).toHaveBeenCalledWith({ id: 'asset-1' });
+      expect(link).toHaveAttribute('href', expect.stringContaining('area=care'));
+      expect(link).toHaveAttribute('href', expect.stringContaining('section=files'));
+      expect(link).toHaveAttribute('href', expect.stringContaining('file=finding-1'));
+    });
+
+    it('shows no link when the photo has no file problem', async () => {
+      vi.mocked(getAssetInfo).mockResolvedValue({ id: 'asset-1', fileProblem: null } as never);
+      const dialog = await openDetail();
+
+      await waitFor(() => expect(getAssetInfo).toHaveBeenCalled());
+      expect(within(dialog).queryByRole('link', { name: 'In Library care' })).not.toBeInTheDocument();
+    });
+
+    it('does not look anything up when the job has no photo id', async () => {
+      at('&queue=face-detection&tab=failed');
+      vi.mocked(getQueueJobs).mockResolvedValue([{ ...failedJob, data: { id: 42 } }]);
+      render(JobsManager);
+      await fireEvent.click(await screen.findByRole('button', { name: /Machine learning is unreachable/ }));
+      await screen.findByRole('dialog');
+
+      expect(getAssetInfo).not.toHaveBeenCalled();
+    });
+
+    it('shows nothing extra when the lookup fails', async () => {
+      vi.mocked(getAssetInfo).mockRejectedValue(new Error('403'));
+      const dialog = await openDetail();
+
+      await waitFor(() => expect(getAssetInfo).toHaveBeenCalled());
+      expect(within(dialog).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+      expect(within(dialog).queryByRole('link', { name: 'In Library care' })).not.toBeInTheDocument();
+    });
   });
 
   it('starts one waiting job now', async () => {
