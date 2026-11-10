@@ -252,6 +252,46 @@ describe('Overview (FL-363)', () => {
       expect(screen.queryByText('Frameleaf fixed 287 photos last night')).not.toBeInTheDocument();
     });
 
+    it('takes back the older Done-for-you dismissals, so they never crowd out the others', async () => {
+      const older = ['fileproblems:1760000000000', 'fileproblems:1760500000000'];
+      withFiles(lastNight, ['studio', ...older]);
+      const id = `fileproblems:${Date.parse(lastNight.latest)}`;
+      let kept = ['studio', ...older];
+      sdk.setAttentionDismissed.mockImplementation(async ({ attentionDismissDto }) => {
+        kept = attentionDismissDto.dismissed
+          ? [...kept, attentionDismissDto.id]
+          : kept.filter((other) => other !== attentionDismissDto.id);
+        return { ...healthy, fileProblems: lastNight, dismissed: kept };
+      });
+      render(Overview);
+      const row = (await screen.findByText('Frameleaf fixed 287 photos last night')).closest('li')!;
+      await fireEvent.click(within(row).getByRole('button', { name: 'Dismiss' }));
+
+      await waitFor(() => expect(sdk.setAttentionDismissed).toHaveBeenCalledTimes(3));
+      expect(sdk.setAttentionDismissed.mock.calls.map(([{ attentionDismissDto }]) => attentionDismissDto)).toEqual([
+        { id, dismissed: true },
+        { id: older[0], dismissed: false },
+        { id: older[1], dismissed: false },
+      ]);
+      expect(kept).toEqual(['studio', id]);
+      expect(screen.queryByText('Frameleaf fixed 287 photos last night')).not.toBeInTheDocument();
+    });
+
+    it('takes back nothing when another need is dismissed', async () => {
+      const older = 'fileproblems:1760000000000';
+      sdk.getAttention.mockResolvedValue({ ...healthy, dismissed: [older] });
+      sdk.getRenderWorkerCompatibility.mockResolvedValue({ unavailable: ['studio-export'] });
+      sdk.setAttentionDismissed.mockResolvedValue({ ...healthy, dismissed: [older, 'studio'] });
+      render(Overview);
+      expect(await screen.findByText('Optional')).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+      await waitFor(() => expect(sdk.setAttentionDismissed).toHaveBeenCalledTimes(1));
+      expect(sdk.setAttentionDismissed).toHaveBeenCalledWith({
+        attentionDismissDto: { id: 'studio', dismissed: true },
+      });
+    });
+
     it('says last night only when the first and the newest fix were both in it', async () => {
       // the first fix was in last night's run, the newest after it: not "last night"
       withFiles({ ...lastNight, latest: '2026-10-20T14:00:00.000Z' });

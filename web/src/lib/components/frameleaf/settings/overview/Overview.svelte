@@ -34,6 +34,7 @@
     fileProblemsDismissed,
     fixedWhen,
     growthPerDay,
+    olderFileProblemsDismissals,
     overviewLevel,
     roomLeft,
     sentence,
@@ -599,6 +600,16 @@
       said = $t('frameleaf_overview_said_dismissed');
     } catch {
       said = $t('frameleaf_overview_said_not_dismissed');
+      return;
+    }
+    // FL-1338: the Done-for-you row's older dismissals are covered by this one; taken back, they never push the
+    // other dismissals out of the server's list
+    for (const older of olderFileProblemsDismissals(attention.dismissed, id)) {
+      try {
+        attention = await setAttentionDismissed({ attentionDismissDto: { id: older, dismissed: false } });
+      } catch {
+        // harmless: the new dismissal still covers it, and the next one tries again
+      }
     }
   };
   const checkAgain = async () => {

@@ -113,6 +113,16 @@ const DISMISSED_FIXES = 'fileproblems:';
 /** What a dismissal of the Done-for-you row is kept under: the newest fix it covered (lower case, as the server requires). */
 export const fileProblemsDismissalId = (latest: string) => `${DISMISSED_FIXES}${new Date(latest).getTime()}`;
 
+/**
+ * The Done-for-you dismissals a new one makes redundant: only the newest counts, so the older ones are taken back
+ * rather than crowding the server's short list of dismissals (it keeps the last 32) and pushing out others.
+ * None when `id` is not a Done-for-you dismissal.
+ */
+export const olderFileProblemsDismissals = (dismissed: Iterable<string>, id: string) =>
+  id.startsWith(DISMISSED_FIXES)
+    ? [...dismissed].filter((other) => other.startsWith(DISMISSED_FIXES) && other !== id)
+    : [];
+
 /** Whether the row is dismissed: no fix is newer than the newest one dismissed, however the week rolls. */
 export const fileProblemsDismissed = (dismissed: Iterable<string>, latest: string) => {
   const at = new Date(latest).getTime();
