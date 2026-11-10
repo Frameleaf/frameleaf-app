@@ -132,6 +132,42 @@ describe(EmailRepository.name, () => {
       expect(unlinked.html).not.toContain('href=');
     });
 
+    it('renders the restore drill report, passed and failed (FL-900)', async () => {
+      const data = {
+        baseUrl: 'https://photos.example.com',
+        result: 'passed' as const,
+        source: 'Frameleaf Cloud',
+        ranAt: 'Sunday, November 8, 2026 at 3:40 AM',
+        backupFrom: 'Sunday, November 8, 2026 at 2:00 AM',
+        sample: 500,
+        matched: 500,
+        duration: '6 minutes 12 seconds',
+        failure: null,
+        stoppedAt: null,
+        link: '/user-settings?area=backups&section=restore&drill=abc',
+      };
+      const passed = await sut.renderEmail({ template: EmailTemplate.RESTORE_REPORT, data });
+      expect(passed.text).toContain('Your backup works');
+      expect(passed.text).toContain('500 of 500 matched');
+      expect(passed.html).toContain(
+        'https://photos.example.com/user-settings?area=backups&amp;section=restore&amp;drill=abc',
+      );
+      expect(passed.text).not.toMatch(/immich|pg_restore|job/i);
+      const failed = await sut.renderEmail({
+        template: EmailTemplate.RESTORE_REPORT,
+        data: {
+          ...data,
+          result: 'failed',
+          matched: 0,
+          failure: 'The recovery key on this server didn’t unlock the backup.',
+          stoppedAt: 'Unlock it with your recovery key',
+        },
+      });
+      expect(failed.text).toContain('The recovery key on this server didn’t unlock the backup.');
+      expect(failed.text).toContain('Stopped at “Unlock it with your recovery key”');
+      expect(failed.text).toContain('Check the recovery key');
+    });
+
     it('should render the email correctly for TEST_EMAIL template', async () => {
       const request: EmailRenderRequest = {
         template: EmailTemplate.TEST_EMAIL,

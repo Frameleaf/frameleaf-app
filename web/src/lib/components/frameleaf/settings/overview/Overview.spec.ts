@@ -19,6 +19,7 @@ const sdk = vi.hoisted(() => ({
   getMlWorkloadRoutes: vi.fn(),
   getOvernight: vi.fn(),
   listAllBackupDevices: vi.fn(),
+  getCloudBackupStatus: vi.fn(),
   createJob: vi.fn(),
 }));
 vi.mock('$lib/managers/cloud-manager.svelte', () => ({
@@ -66,6 +67,7 @@ describe('Overview (FL-363)', () => {
     sdk.getMlWorkloadRoutes.mockResolvedValue({ routes: [] });
     sdk.getOvernight.mockResolvedValue({ timezone: 'UTC', nextRunAt: null, steps: [], run: null, nights: [] });
     sdk.listAllBackupDevices.mockReset().mockResolvedValue({ devices: [], nextOffset: null });
+    sdk.getCloudBackupStatus.mockReset().mockResolvedValue({ drillNeedsAttention: false, lastDrill: null });
   });
 
   it('reads every phone and says when one stopped sending photos (FL-518)', async () => {
@@ -100,6 +102,20 @@ describe('Overview (FL-363)', () => {
     render(Overview);
     expect(await screen.findByText('No phones yet')).toBeInTheDocument();
     expect(screen.getByText('Install the app to send photos here')).toBeInTheDocument();
+  });
+
+  it('reads the restore drill first: a failed drill needs the person now (FL-900)', async () => {
+    sdk.getCloudBackupStatus.mockResolvedValue({
+      drillNeedsAttention: true,
+      lastDrill: { id: '00000000-0000-7000-8000-000000000001', result: 'failed', failedStep: 'unlock' },
+    });
+    render(Overview);
+    expect(await screen.findByText('Your backup didn’t restore')).toBeInTheDocument();
+    expect(screen.getByText(/backup didn’t restore in its last drill/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See the report' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('drill=00000000-0000-7000-8000-000000000001'),
+    );
   });
 
   it('says everything is working when nothing needs the person', async () => {
