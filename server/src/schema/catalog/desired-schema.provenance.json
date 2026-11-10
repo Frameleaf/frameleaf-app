@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "2321e55d0fa996bdc93087bc549f912bb26c257e",
+  "sourceCommit": "c87dc0b973fef562210717bb8811b402dac76e3f",
   "sourceHashes": {
     "src/enum.ts": "687791f2ee9930bbe46fcbd89dfa738db84d523a95899cb81eca32f61ef74557",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -55,7 +55,7 @@
     "src/schema/tables/asset-video-fingerprint.table.ts": "6eb73330cc4a52680d49b055a42ee7c8a9987dce91cb6b4a0310aa3040ccbec1",
     "src/schema/tables/asset-view.table.ts": "b5092f3fc59cf93d0ddc84186381f3fd50309d17434a3f32e1774b111fad2c73",
     "src/schema/tables/asset.table.ts": "af9793c65ddeadccd21c6a3600cd810e9e1c9626221a5c6517a0f0a8c75b03c4",
-    "src/schema/tables/backup-device.table.ts": "c51e7f2c189ab3484f53f85bb7210638963b8c08c16867a5a4b1481e36bc3698",
+    "src/schema/tables/backup-device.table.ts": "9daba89f4a60d835a39e787e59841ace98f2505a3261a6f5a3065e36c5a7b4d7",
     "src/schema/tables/bookmark-tag.table.ts": "8f60c34f1bca9134da0663af0dbf5ad466b5375f1922d0fa08b9eae6b49c7a5b",
     "src/schema/tables/bookmark.table.ts": "25fbd6f7e363670be7ba60396616d224637d4273df1e30c928b988df54db0f6c",
     "src/schema/tables/browser-extension-sign-in.table.ts": "534a0e7f3023ed5a04ce86fbeff914bb7d42c46b995c7c29eb4a9ca94b37bf87",
@@ -166,6 +166,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "dbe3ef1e5efb1522cd96610cf9af3ff427aa86d5b2e5d15adbf64fe01447a5d7",
-  "rawMetadataSha256": "00e2f55c45e8ea604f9412d61239b42d0218165f87d0162e333614ffa7e1b3aa"
+  "dumpSha256": "667532ac9b5f69df787b6c3d89ad9727a0fe94fbc9742ba383c3b2740a55c27d",
+  "rawMetadataSha256": "665512532dd0ede78afb1a45dafc4c56c363f51ef28a8d22bf39bb9cf89e8dce"
 }

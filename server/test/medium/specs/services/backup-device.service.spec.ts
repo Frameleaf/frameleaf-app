@@ -14,7 +14,7 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 const a = '01' + 'a'.repeat(62),
   b = '01' + 'b'.repeat(62);
-const report = (deviceKey = randomUUID()) => ({
+const report = (deviceKey: string = randomUUID()) => ({
   deviceKey,
   displayName: 'Personal phone',
   model: 'Phone',
