@@ -29,7 +29,7 @@ describe('Library care fix queue', () => {
   const start = (externalId: string, startedAt = new Date()) =>
     db
       .updateTable('job')
-      .set({ state: 'active', startedAt })
+      .set({ state: 'active', startedAt, token: randomUUID() })
       .where('queue', '=', queue)
       .where('externalId', '=', externalId)
       .execute();
