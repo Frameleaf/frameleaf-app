@@ -69,9 +69,9 @@ Frameleaf keeps redacted server logs on the library volume under `logs/`. API, j
 
 An administrator with a signed-in session can read, follow or download the logs through the server's admin logs API. Remote access requires a recent Frameleaf sign-in. The ZIP download contains JSON Lines. Keep the machine-learning port on the private container network. Logs stay on the Library server.
 
-If the server uses `FRAMELEAF_ML_AUTH_TOKEN`, configure a verified HTTPS URL in Machine learning settings to collect bundled worker logs. The accepted hostnames are `frameleaf-machine-learning`, `immich-machine-learning`, `127.0.0.1`, `[::1]` and `localhost`. For example, use `https://frameleaf-machine-learning:3443` when that service name reaches a private TLS listener with a matching certificate.
+Set `FRAMELEAF_ML_AUTH_TOKEN` on both the server and the ML worker to collect authenticated bundled worker logs. Configure a verified HTTPS URL in Machine learning settings. The accepted hostnames are `frameleaf-machine-learning`, `immich-machine-learning`, `127.0.0.1`, `[::1]` and `localhost`. For example, use `https://frameleaf-machine-learning:3444` when that service name reaches a private TLS listener with a matching certificate. The monitoring example below uses port 3443 for its metrics-only listener.
 
-The ML URL serves normal worker routes such as `/predict` as well as `/logs`. A proxy must forward both, and strip the forwarding headers listed below on requests to `/logs`. For a private CA, mount its certificate read-only into `frameleaf-server` and set `NODE_EXTRA_CA_CERTS` to the certificate's container path before startup. Prometheus has its own CA configuration.
+The ML URL serves normal worker routes such as `/predict` as well as `/logs`. A proxy must forward both, and strip the forwarding headers listed below on requests to `/logs`. Save the same bearer token on the HTTPS destination for inference and assign any workloads previously routed to the old URL. For a private CA, mount its certificate read-only into `frameleaf-server` and set `NODE_EXTRA_CA_CERTS` to the certificate's container path before startup. Prometheus has its own CA configuration.
 
 With the token configured, Frameleaf skips HTTP workers for log collection. The default bundled worker can still supply logs over the private container network without a token.
 
