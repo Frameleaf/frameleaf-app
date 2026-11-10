@@ -72,7 +72,8 @@ export class SignInSecurityService extends BaseService {
   }
 
   async signedIn(user: AlertUser, details: LoginDetails): Promise<void> {
-    if (this.configRepository.getEnv().environment === FrameleafEnvironment.Testing) return;
+    const { environment, frameleafCloud } = this.configRepository.getEnv();
+    if (environment === FrameleafEnvironment.Testing) return;
     try {
       const clientIp = details.securityClientIp ?? details.clientIp;
       const network = signInNetwork(clientIp);
@@ -88,7 +89,7 @@ export class SignInSecurityService extends BaseService {
       );
       if (!(await this.sessionRepository.observeKnownDevice(user.id, Buffer.from(fingerprint, 'base64url')))) return;
 
-      const home = !isRemoteVia(details.via) && isHomeAddress(clientIp, []);
+      const home = !isRemoteVia(details.via) && isHomeAddress(clientIp, frameleafCloud.trustedLanCidrs);
       // Browser and OS families come from the UA parser, not the arbitrary device request headers.
       const device = [details.browserFamily, details.deviceOSFamily].filter(Boolean).join(' on ') || 'Unknown device';
       await this.sendAlert(user, {
