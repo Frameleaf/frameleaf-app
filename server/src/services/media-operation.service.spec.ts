@@ -80,6 +80,7 @@ describe(MediaOperationService.name, () => {
     develop = { get: vi.fn(), update: vi.fn().mockResolvedValue(undefined) };
     preservation = {
       activeOperation: vi.fn().mockResolvedValue(undefined),
+      restrictedPackageIds: vi.fn().mockResolvedValue(new Set()),
       getPackage: vi.fn(),
       getRestore: vi.fn(),
       resetFailedItems: vi.fn().mockResolvedValue(0),
@@ -278,6 +279,131 @@ describe(MediaOperationService.name, () => {
       const cancelled = await sut.cancel(authStub.user1, operation.id);
       expect(icloud.endRun).not.toHaveBeenCalled();
       expect(JSON.stringify(cancelled)).not.toContain('PRIVATE-SENTINEL');
+    });
+  });
+
+  describe('private preservation Activity (FL-1344)', () => {
+    const packageId = newUuid();
+    const sentinel = 'PRIVATE-PRESERVATION';
+    const preservationOperation = (overrides: Partial<MediaOperation> = {}) =>
+      operationStub({
+        kind: MediaOperationKind.PreservationExport,
+        label: sentinel,
+        snapshot: { kind: 'preservation-export', packageId, itemCount: 1000, scope: sentinel },
+        settings: { selection: sentinel },
+        error: sentinel,
+        errorCode: sentinel,
+        ...overrides,
+      });
+    const withheld = {
+      withheld: true,
+      label: '',
+      progress: 0,
+      processedUnits: '0',
+      totalUnits: null,
+      settings: {},
+      estimate: null,
+      error: null,
+      errorCode: null,
+    };
+
+    it.each([
+      MediaOperationKind.PreservationExport,
+      MediaOperationKind.PreservationVerify,
+      MediaOperationKind.PreservationReview,
+      MediaOperationKind.PreservationRestore,
+    ])('withholds %s counters and details when its package becomes private', async (kind) => {
+      const operation = preservationOperation({ kind });
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.list).mockResolvedValue({ items: [operation], total: 1 });
+      vi.mocked(repository.getCheckpoints).mockResolvedValue([{ chunkKey: sentinel }] as never);
+      preservation.restrictedPackageIds.mockResolvedValue(new Set([packageId]));
+
+      const detail = await sut.get(authStub.user1, operation.id);
+      const list = await sut.search(authStub.user1, {});
+      const unfinished = await sut.listUnfinished(authStub.user1, 100);
+
+      expect(detail).toMatchObject({ ...withheld, snapshot: {}, checkpoints: [], bulkItems: [], bulkRetryPending: [] });
+      expect(list.items[0]).toMatchObject(withheld);
+      expect(unfinished[0]).toMatchObject(withheld);
+      expect(JSON.stringify([detail, list, unfinished])).not.toContain(sentinel);
+      expect(preservation.restrictedPackageIds).toHaveBeenCalledWith([packageId]);
+      expect(repository.getCheckpoints).not.toHaveBeenCalled();
+    });
+
+    it.each(['elevated', 'public package'] as const)('preserves full values for %s reads', async (access) => {
+      const operation = preservationOperation();
+      const elevated = access === 'elevated';
+      const auth = {
+        ...authStub.user1,
+        session: { ...authStub.user1.session!, hasElevatedPermission: elevated },
+      };
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.list).mockResolvedValue({ items: [operation], total: 1 });
+      vi.mocked(repository.getCheckpoints).mockResolvedValue([{ chunkKey: sentinel }] as never);
+      preservation.restrictedPackageIds.mockResolvedValue(new Set(elevated ? [packageId] : []));
+
+      const detail = await sut.get(auth, operation.id);
+      const list = await sut.search(auth, {});
+      const unfinished = await sut.listUnfinished(auth, 100);
+
+      const visible = {
+        withheld: false,
+        label: operation.label,
+        progress: 42,
+        processedUnits: '420',
+        totalUnits: '1000',
+        settings: operation.settings,
+        estimate: { seconds: 300, sizeBytes: '1024' },
+        error: sentinel,
+        errorCode: sentinel,
+      };
+      expect(detail).toMatchObject({ ...visible, snapshot: operation.snapshot });
+      expect(detail.checkpoints).toEqual([expect.objectContaining({ chunkKey: sentinel })]);
+      expect(list.items[0]).toMatchObject(visible);
+      expect(unfinished[0]).toMatchObject(visible);
+      if (elevated) {
+        expect(preservation.restrictedPackageIds).not.toHaveBeenCalled();
+      } else {
+        expect(preservation.restrictedPackageIds).toHaveBeenCalledWith([packageId]);
+      }
+    });
+
+    it('checks all preservation packages in a search batch once and leaves other jobs visible', async () => {
+      const publicPackageId = newUuid();
+      const operations = [
+        preservationOperation(),
+        preservationOperation({ id: newUuid(), kind: MediaOperationKind.PreservationVerify }),
+        preservationOperation({ id: newUuid(), snapshot: { packageId: publicPackageId } }),
+        operationStub({ id: newUuid(), snapshot: { packageId } }),
+      ];
+      vi.mocked(repository.list).mockResolvedValue({ items: operations, total: operations.length });
+      preservation.restrictedPackageIds.mockResolvedValue(new Set([packageId]));
+
+      const result = await sut.search(authStub.user1, {});
+
+      expect(preservation.restrictedPackageIds).toHaveBeenCalledTimes(1);
+      expect(new Set(preservation.restrictedPackageIds.mock.calls[0][0])).toEqual(
+        new Set([packageId, publicPackageId]),
+      );
+      expect(preservation.restrictedPackageIds.mock.calls[0][0]).toHaveLength(2);
+      expect(result.items.map((item) => item.withheld)).toEqual([true, true, false, false]);
+      expect(result.items[2]).toMatchObject({ progress: 42, totalUnits: '1000' });
+      expect(result.items[3]).toMatchObject({ label: 'Summer in the Rockies', progress: 42, totalUnits: '1000' });
+      expect(result.total).toBe(4);
+    });
+
+    it('rechecks package privacy when returning a cancelled operation', async () => {
+      const operation = preservationOperation();
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.requestCancel).mockResolvedValue({ ...operation, status: MediaOperationStatus.Cancelling });
+      preservation.restrictedPackageIds.mockResolvedValue(new Set([packageId]));
+
+      expect(await sut.cancel(authStub.user1, operation.id)).toMatchObject({
+        ...withheld,
+        status: MediaOperationStatus.Cancelling,
+      });
+      expect(preservation.restrictedPackageIds).toHaveBeenCalledWith([packageId]);
     });
   });
 

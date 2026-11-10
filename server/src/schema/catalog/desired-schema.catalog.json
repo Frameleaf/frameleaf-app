@@ -3244,15 +3244,6 @@
           "nullable": false,
           "isArray": false,
           "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "failure_times",
-          "tableName": "frameleaf_rate_limit",
-          "nullable": true,
-          "isArray": true,
-          "synchronize": true
         }
       ],
       "indexes": [
@@ -48317,66 +48308,141 @@
       "synchronize": true
     },
     {
-      "name": "user_known_device",
+      "name": "account_event",
       "columns": [
         {
           "type": "uuid",
           "primary": false,
+          "name": "id",
+          "tableName": "account_event",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
           "name": "userId",
-          "tableName": "user_known_device",
+          "tableName": "account_event",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "bytea",
+          "type": "uuid",
           "primary": false,
-          "name": "fingerprintHash",
-          "tableName": "user_known_device",
+          "name": "sessionId",
+          "tableName": "account_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "action",
+          "tableName": "account_event",
           "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "subject",
+          "tableName": "account_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "detail",
+          "tableName": "account_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "ipPrefix",
+          "tableName": "account_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "deviceType",
+          "tableName": "account_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "deviceOS",
+          "tableName": "account_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "via",
+          "tableName": "account_event",
+          "nullable": true,
           "isArray": false,
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "firstSeenAt",
-          "tableName": "user_known_device",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastSeenAt",
-          "tableName": "user_known_device",
+          "name": "createdAt",
+          "tableName": "account_event",
           "nullable": false,
           "isArray": false,
           "default": "now()",
           "synchronize": true
         }
       ],
-      "indexes": [],
+      "indexes": [
+        {
+          "name": "account_event_userId_createdAt_idx",
+          "definition": "CREATE INDEX \"account_event_userId_createdAt_idx\" ON public.account_event USING btree (\"userId\", \"createdAt\")",
+          "tableName": "account_event",
+          "columnNames": [
+            "userId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
       "triggers": [],
       "constraints": [
         {
           "type": "primary-key",
-          "name": "user_known_device_pkey",
-          "definition": "PRIMARY KEY (\"userId\", \"fingerprintHash\")",
-          "tableName": "user_known_device",
+          "name": "account_event_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "account_event",
           "columnNames": [
-            "userId",
-            "fingerprintHash"
+            "id"
           ],
           "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "user_known_device_userId_fkey",
+          "name": "account_event_userId_fkey",
           "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "user_known_device",
+          "tableName": "account_event",
           "columnNames": [
             "userId"
           ],

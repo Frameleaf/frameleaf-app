@@ -54,6 +54,40 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type AccountEventResponseDto = {
+    /** What happened, for example `signed-in`, `sign-in-failed`, `signed-out`, `session-revoked`, `password-changed`, `pin-changed`, `api-key-created`, `shared-link-created`, `partner-added` or `item-shared`; admin events use the administrator history actions. New values may appear. */
+    action: string;
+    /** For admin events, the administrator; null otherwise */
+    actorId: string | null;
+    /** For admin events, the administrator's name; null otherwise */
+    actorName: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** What the action carries, such as how someone signed in; null otherwise */
+    detail: string | null;
+    /** The client's operating system */
+    deviceOS: string | null;
+    /** The client, as the session list names it */
+    deviceType: string | null;
+    /** Event ID */
+    id: string;
+    /** The client address cut to its /24 or /48; null when unknown */
+    ipPrefix: string | null;
+    /** `account` for what the account did, `admin` for what an administrator did to it */
+    source: string;
+    /** A name: a device, an API key, a partner, an album or the account */
+    subject: string;
+    /** The account the event is about */
+    userId: string;
+    /** `home`, `direct` or `relay`; null when not known */
+    via: string | null;
+};
+export type AccountActivityResponseDto = {
+    /** Newest first */
+    events: AccountEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
+};
 export type AttentionCheckDto = {
     kind: AttentionKind;
     state: AttentionCheckState;
@@ -21373,6 +21407,31 @@ export function deleteActivity({ id }: {
     }));
 }
 /**
+ * Retrieve account activity
+ */
+export function getAccountActivityAdmin({ action, before, $from, take, to, userId }: {
+    action?: string;
+    before?: string;
+    $from?: string;
+    take?: number;
+    to?: string;
+    userId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AccountActivityResponseDto;
+    }>(`/admin/activity${QS.query(QS.explode({
+        action,
+        before,
+        "from": $from,
+        take,
+        to,
+        userId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Get what needs attention
  */
 export function getAttention(opts?: Oazapfts.RequestOpts) {
@@ -36480,6 +36539,23 @@ export function updateMyUser({ userUpdateMeDto }: {
         method: "PUT",
         body: userUpdateMeDto
     })));
+}
+/**
+ * Retrieve my account activity
+ */
+export function getMyActivity({ before, take }: {
+    before?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AccountActivityResponseDto;
+    }>(`/users/me/activity${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * List own backup devices

@@ -15,7 +15,7 @@ import {
   SharedLinkSearchDto,
   mapSharedLink,
 } from 'src/dtos/shared-link.dto.js';
-import { Permission, SharedLinkType } from 'src/enum.js';
+import { AccountEventAction, Permission, SharedLinkType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
@@ -149,7 +149,9 @@ export class SharedLinkService extends BaseService {
         slug: dto.slug || null,
       });
 
-      return mapSharedLink(await this.withAlbumListing(auth, sharedLink), {
+      const listed = await this.withAlbumListing(auth, sharedLink);
+      await this.recordSharedLink(auth, AccountEventAction.SharedLinkCreated, listed);
+      return mapSharedLink(listed, {
         stripAssetMetadata: false,
         externalDomain: await this.externalDomain(),
       });
@@ -198,6 +200,18 @@ export class SharedLinkService extends BaseService {
   async remove(auth: AuthDto, id: string): Promise<void> {
     const sharedLink = await this.findOrFail(auth.user.id, id);
     await this.sharedLinkRepository.remove(sharedLink.id);
+    await this.recordSharedLink(auth, AccountEventAction.SharedLinkRemoved, sharedLink);
+  }
+
+  /** FL-808: the album name or description and the link type; never its key, password or slug. */
+  private recordSharedLink(auth: AuthDto, action: AccountEventAction, sharedLink: SharedLink) {
+    return this.recordAccountEvent({
+      userId: auth.user.id,
+      sessionId: auth.session?.id ?? null,
+      action,
+      subject: sharedLink.album?.albumName || sharedLink.description || 'Shared link',
+      detail: sharedLink.type,
+    });
   }
 
   // TODO: replace `userId` with permissions and access control checks

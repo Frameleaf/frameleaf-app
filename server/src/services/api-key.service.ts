@@ -8,7 +8,7 @@ import {
   ApiKeyUpdateDto,
   splitApiKeyPermissions,
 } from 'src/dtos/api-key.dto.js';
-import { Permission, SystemMetadataKey } from 'src/enum.js';
+import { AccountEventAction, Permission, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { findOrFail } from 'src/utils/misc.js';
@@ -30,6 +30,13 @@ export class ApiKeyService extends BaseService {
       permissions: dto.permissions,
     });
     const apiKey = this.map(entity, {}, {});
+    // FL-808: the key's name only, never its secret
+    await this.recordAccountEvent({
+      userId: auth.user.id,
+      sessionId: auth.session?.id ?? null,
+      action: AccountEventAction.ApiKeyCreated,
+      subject: entity.name,
+    });
 
     return { ...apiKey, secret: token, apiKey };
   }
@@ -82,6 +89,12 @@ export class ApiKeyService extends BaseService {
     }
 
     await this.apiKeyRepository.delete(auth.user.id, id);
+    await this.recordAccountEvent({
+      userId: auth.user.id,
+      sessionId: auth.session?.id ?? null,
+      action: AccountEventAction.ApiKeyDeleted,
+      subject: exists.name,
+    });
   }
 
   async getMine(auth: AuthDto): Promise<ApiKeyResponseDto> {

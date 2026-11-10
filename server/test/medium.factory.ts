@@ -22,6 +22,7 @@ import {
   SyncRequestType,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
@@ -589,6 +590,7 @@ export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
 const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>): InstanceType<T> => {
   switch (key) {
     case AccessRepository:
+    case AccountEventRepository:
     case AdminAuditRepository:
     case AlbumRepository:
     case AlbumUserRepository:
@@ -695,6 +697,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
 const newMockRepository = <T>(key: ClassConstructor<T>) => {
   switch (key) {
     case ActivityRepository:
+    case AccountEventRepository:
     case AdminAuditRepository:
     case AlbumUserRepository:
     case ConfigRepository:
