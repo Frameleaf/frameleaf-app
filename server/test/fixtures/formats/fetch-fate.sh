@@ -8,7 +8,7 @@ list="$(cd "$(dirname "$0")" && pwd)/fate.sha256"
 mkdir -p "$dest"
 while read -r _ path; do
   mkdir -p "$dest/$(dirname "$path")"
-  curl -sSfL --retry 3 -o "$dest/$path" "https://fate-suite.ffmpeg.org/$path"
+  curl -sSfL --retry 3 --connect-timeout 30 --max-time 300 -o "$dest/$path" "https://fate-suite.ffmpeg.org/$path"
 done <"$list"
 cd "$dest"
 if command -v sha256sum >/dev/null; then sha256sum --strict --check "$list"; else shasum -a 256 --check "$list"; fi
