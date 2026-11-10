@@ -629,7 +629,7 @@ describe('file steps in plain words (FL-1338)', () => {
       {},
       {
         what: 'Couldn’t make a preview',
-        detail: `Frameleaf can’t show ${kind} files yet.`,
+        detail: `Frameleaf can’t show this ${kind} file yet.`,
         result: r('off', 'Not supported'),
       },
     ]),

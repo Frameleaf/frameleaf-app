@@ -103667,6 +103667,13 @@
             ],
             "type": "string"
           },
+          "pages": {
+            "description": "Pages in a PDF or Illustrator document; the first is shown",
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "reconstructionAvailable": {
             "description": "Decoder can reconstruct this source; does not imply a published HDR rendition or qualified display",
             "type": "boolean"
@@ -103696,6 +103703,11 @@
                 ]
               }
             ]
+          },
+          "variant": {
+            "description": "A named flavour of the container, such as \"fireworks-png\"; unknown values are ignored",
+            "maxLength": 40,
+            "type": "string"
           },
           "width": {
             "exclusiveMinimum": true,

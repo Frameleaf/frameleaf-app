@@ -24,7 +24,6 @@ const raw = {
   '.orf': ['image/orf', 'image/x-olympus-orf'],
   '.ori': ['image/ori', 'image/x-olympus-ori'],
   '.pef': ['image/pef', 'image/x-pentax-pef'],
-  '.psd': ['image/psd', 'image/vnd.adobe.photoshop'],
   '.raf': ['image/raf', 'image/x-fuji-raf'],
   '.raw': ['image/raw', 'image/x-panasonic-raw'],
   '.rw2': ['image/rw2', 'image/x-panasonic-rw2'],
@@ -33,6 +32,26 @@ const raw = {
   '.srf': ['image/srf', 'image/x-sony-srf'],
   '.srw': ['image/srw', 'image/x-samsung-srw'],
   '.x3f': ['image/x3f', 'image/x-sigma-x3f'],
+};
+
+/**
+ * Design files (FL-1358): kept whole, shown by a rendering or by the preview the file carries, and never
+ * decoded as sensor data. An extension is listed only with a fixture in `test/fixtures/formats/design`.
+ */
+const design: Record<string, string[]> = {
+  '.ai': ['application/illustrator', 'application/postscript', 'application/pdf'],
+  '.cdr': ['application/vnd.corel-draw', 'application/x-cdr'],
+  '.eps': ['application/postscript', 'application/eps', 'image/x-eps'],
+  '.fig': ['application/x-figma'],
+  '.kra': ['application/x-krita'],
+  '.ora': ['image/openraster'],
+  '.pdf': ['application/pdf'],
+  '.procreate': ['application/x-procreate'],
+  '.psb': ['image/vnd.adobe.photoshop', 'application/x-photoshop'],
+  '.psd': ['image/psd', 'image/vnd.adobe.photoshop'],
+  '.sketch': ['application/x-sketch', 'application/zip'],
+  '.xcf': ['image/x-xcf'],
+  '.xd': ['application/vnd.adobe.xd', 'application/zip'],
 };
 
 /**
@@ -63,6 +82,7 @@ const webSupportedImage = {
 // decodes in the built image. Add one only together with its fixture.
 const webUnsupportedImage = {
   ...raw,
+  ...design,
   '.btf': ['image/tiff'],
   // Kodak Cineon film scans. Not sensor data: FL-1356 moved it out of the RAW list.
   '.cin': ['image/cin', 'image/cineon'],
@@ -107,7 +127,6 @@ const webUnsupportedImage = {
   '.tif': ['image/tiff'],
   '.tiff': ['image/tiff'],
   '.wdp': ['image/vnd.ms-photo'],
-  '.xcf': ['image/x-xcf'],
 };
 
 const image: Record<string, string[]> = {
@@ -267,6 +286,7 @@ export const mimeTypes = {
   video,
   raw,
   font,
+  design,
   webUnsupportedImage,
 
   isAsset: (filename: string) => {
@@ -285,12 +305,14 @@ export const mimeTypes = {
   canBeTransparent: (filename: string) =>
     transparentCapableExtensions.has(getFilenameExtension(filename).toLowerCase()),
   isRaw: (filename: string) => isType(filename, raw),
+  isDesign: (filename: string) => isType(filename, design),
   isCinemaRaw: (filename: string) => cinemaRaw.has(getFilenameExtension(filename).toLowerCase()),
   isHeic: (filename: string) => heicExtensions.has(getFilenameExtension(filename).toLowerCase()),
   lookup,
   assetType: (filename: string) => {
     const contentType = lookup(filename);
-    if (contentType.startsWith('image/')) {
+    // A design file is an image whatever its own type says (a PDF is "application/pdf").
+    if (contentType.startsWith('image/') || isType(filename, design)) {
       return AssetType.Image;
     }
 
@@ -300,5 +322,10 @@ export const mimeTypes = {
 
     return AssetType.Other;
   },
-  getSupportedFileExtensions: () => [...Object.keys(image), ...Object.keys(video)],
+  // ponytail: folders Frameleaf watches or walks keep to photos and videos (and .psd, as before), so an
+  // upgrade does not pull every PDF beside the photos into the library. Design files arrive by upload or import.
+  getSupportedFileExtensions: () => [
+    ...Object.keys(image).filter((extension) => extension === '.psd' || !Object.hasOwn(design, extension)),
+    ...Object.keys(video),
+  ],
 };

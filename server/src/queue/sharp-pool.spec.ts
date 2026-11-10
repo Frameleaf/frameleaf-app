@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import sharp from 'sharp';
 import { sharpConfiguration } from 'src/queue/sharp-configuration.js';
-import { SharpProcessPool } from 'src/queue/sharp-pool.js';
+import { SharpProcessPool, imageWorkerEnvironment } from 'src/queue/sharp-pool.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
 
 vi.mock('node:worker_threads', async (original) => ({
@@ -345,5 +345,17 @@ describe('Sharp resource configuration', () => {
   });
   it.each(['NaN', '-1', 'Infinity', '1.5', '0', '99'])('rejects invalid worker limit %s', (value) => {
     expect(() => sharpConfiguration({ FRAMELEAF_SHARP_WORKERS: value })).toThrow('FRAMELEAF_SHARP_WORKERS');
+  });
+});
+
+describe(imageWorkerEnvironment.name, () => {
+  it('bounds ImageMagick in the image worker unless the environment already says otherwise (FL-1358)', () => {
+    expect(imageWorkerEnvironment({ PATH: '/bin' })).toMatchObject({
+      PATH: '/bin',
+      MAGICK_MEMORY_LIMIT: '1GiB',
+      MAGICK_MAP_LIMIT: '2GiB',
+      MAGICK_DISK_LIMIT: '4GiB',
+    });
+    expect(imageWorkerEnvironment({ MAGICK_MEMORY_LIMIT: '256MiB' }).MAGICK_MEMORY_LIMIT).toBe('256MiB');
   });
 });

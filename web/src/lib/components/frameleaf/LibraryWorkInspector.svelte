@@ -348,7 +348,15 @@
     <h3 id={`${tabId}-file`}>{$t('frameleaf_boards_file')}</h3>
     <dl class="facts">
       <dt>{$t('type')}</dt>
-      <dd>{item.originalMimeType ?? (asset?.isVideo ? $t('video') : $t('image'))}</dd>
+      <dd>
+        {item.imageEncoding?.variant === 'fireworks-png'
+          ? $t('frameleaf_info_fireworks_png')
+          : (item.originalMimeType ?? (asset?.isVideo ? $t('video') : $t('image')))}
+      </dd>
+      {#if item.imageEncoding?.pages}
+        <dt>{$t('frameleaf_info_pages')}</dt>
+        <dd>{item.imageEncoding.pages}</dd>
+      {/if}
       {#if dimensionsLabel(item)}
         <dt>{$t('resolution')}</dt>
         <dd>{dimensionsLabel(item)}</dd>
@@ -508,7 +516,17 @@
           <section class="part"><AssetSources assetId={asset.id} canRead={isOwner} /></section>
           <dl>
             <dt>{$t('type')}</dt>
-            <dd>{asset.isVideo ? $t('video') : $t('image')}</dd>
+            <dd>
+              {asset.isVideo
+                ? $t('video')
+                : detail.imageEncoding?.variant === 'fireworks-png'
+                  ? $t('frameleaf_info_fireworks_png')
+                  : $t('image')}
+            </dd>
+            {#if detail.imageEncoding?.pages}
+              <dt>{$t('frameleaf_info_pages')}</dt>
+              <dd>{detail.imageEncoding.pages}</dd>
+            {/if}
             {#if dimensionsLabel(detail)}
               <dt>{$t('resolution')}</dt>
               <dd>{dimensionsLabel(detail)}</dd>
