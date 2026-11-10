@@ -64,7 +64,14 @@ test.describe('Passkeys', () => {
     });
     await page.goto(`${local}/auth/login`);
     const button = page.getByRole('button', { name: 'Sign in with a passkey' });
-    await Promise.race([page.waitForURL(/\/photos/), button.click().catch(() => undefined)]);
+    const press = async () => {
+      try {
+        await button.click();
+      } catch {
+        // the page had already signed in and moved on
+      }
+    };
+    await Promise.race([page.waitForURL(/\/photos/), press()]);
     await page.waitForURL(/\/photos/);
 
     await page.goto(`${local}/user-settings?area=privacy&section=passkeys`);
