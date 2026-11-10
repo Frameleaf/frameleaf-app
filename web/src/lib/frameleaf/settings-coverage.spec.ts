@@ -124,8 +124,12 @@ describe('settings coverage (FL-71)', () => {
     });
   });
 
-  it('gives every settings group a page, and every page a place in an area', () => {
-    const groups = new Set([...adminLeaves.keys()].map((path) => path.split('.', 1)[0]));
+  it('gives every editable settings group a page, and every page a place in an area', () => {
+    const groups = new Set(
+      [...adminLeaves.keys()]
+        .filter((path) => !SERVER_MANAGED_CONFIG_PATHS.has(path))
+        .map((path) => path.split('.', 1)[0]),
+    );
     const sectionOf = (group: string) =>
       Object.entries(SECTION_CONFIG_KEYS).find(([, keys]) => (keys as readonly string[]).includes(group))?.[0];
     expect([...groups].filter((group) => !sectionOf(group))).toEqual([]);
@@ -143,8 +147,7 @@ describe('settings coverage (FL-71)', () => {
     );
     expect(boundCredentials).toEqual([]);
 
-    // the draft keeps server-managed values and credential flags out; the timestamps are the
-    // server-managed settings
+    // the draft keeps server-managed values and credential flags out
     const managed = SETTINGS_LEAF_COVERAGE.filter((row) => row.kind === 'server-managed').map((row) => row.pattern);
     expect(sorted(managed)).toEqual(
       sorted([...SERVER_MANAGED_CONFIG_PATHS].filter((path) => !path.endsWith('Configured'))),

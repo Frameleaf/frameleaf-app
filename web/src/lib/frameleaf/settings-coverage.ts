@@ -1056,6 +1056,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'faces.import',
   },
   {
+    pattern: 'metrics.enabled',
+    kind: 'server-managed',
+    file: 'src/lib/frameleaf/system-config-draft.ts',
+    evidence: 'metrics.enabled',
+  },
+  {
     pattern: 'newVersionCheck.channel',
     kind: 'control',
     file: 'src/routes/admin/system-settings/NewVersionCheckSettings.svelte',

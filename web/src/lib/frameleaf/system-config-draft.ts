@@ -38,13 +38,13 @@ export type ConfigConflict = {
 };
 
 /**
- * Values the server keeps on its own: the re-queue reminder bookkeeping and the "a credential is
- * stored" indicators (FL-67). A save never changes them, so they are never a change, a conflict or
- * journaled.
+ * Values the server keeps on its own. A save never changes them, so they are never a change,
+ * a conflict or journaled.
  */
 export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'machineLearning.imageDescription.pendingRequeueAt',
   'machineLearning.imageDescription.lastConfigChangeAt',
+  'metrics.enabled',
   'notifications.smtp.transport.passwordConfigured',
   'oauth.clientSecretConfigured',
 ]);
