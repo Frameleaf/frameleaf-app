@@ -1207,7 +1207,7 @@ describe(PersonService.name, () => {
         boundingBoxY2: 130,
         sourceType: SourceType.Manual,
       });
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId);
+      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
@@ -2520,7 +2520,7 @@ describe(PersonService.name, () => {
         newPersonGroupId: personGroupId,
         onlyUndecided: true,
       });
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(personGroupId);
+      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(personGroupId, asset.ownerId);
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: asset.ownerId,
         personGroupId,

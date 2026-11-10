@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetFileType, AssetVisibility, SourceType } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -368,6 +368,105 @@ describe(PersonRepository.name, () => {
       await expect(
         sut.getForFeatureFaceUpdate({ personGroupId: person.personGroupId, assetId: asset.id }),
       ).resolves.toEqual(undefined);
+    });
+  });
+
+  describe('archived photos in People (FL-795)', () => {
+    const includeArchived = async (db: Kysely<DB>, userId: string, value: boolean) => {
+      const preferences = { people: { includeArchived: value } };
+      await db
+        .insertInto('user_metadata')
+        .values({ userId, key: UserMetadataKey.Preferences, value: preferences } as never)
+        .onConflict((oc) => oc.columns(['userId', 'key']).doUpdateSet({ value: preferences } as never))
+        .execute();
+    };
+
+    /** A person in three timeline photos and two archived ones (enough to clear the default threshold either way). */
+    const personWithArchive = async (ctx: ReturnType<typeof setup>['ctx']) => {
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: '' });
+      const faces = [];
+      for (const visibility of [
+        AssetVisibility.Timeline,
+        AssetVisibility.Timeline,
+        AssetVisibility.Timeline,
+        AssetVisibility.Archive,
+        AssetVisibility.Archive,
+      ]) {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, visibility });
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+        faces.push({ asset, assetFace });
+      }
+      return { user, person, faces };
+    };
+
+    it('leaves archived photos out of counts by default, as before the option', async () => {
+      const { ctx, sut } = setup();
+      const { user, person } = await personWithArchive(ctx);
+
+      await expect(sut.getStatistics(person.personGroupId, user.id)).resolves.toEqual({
+        assets: 3,
+        photos: 3,
+        videos: 0,
+      });
+      const { items } = await sut.getAllForUser({ take: 10, skip: 0 }, user.id);
+      expect(items).toEqual([expect.objectContaining({ personGroupId: person.personGroupId, assetCount: 3 })]);
+      await expect(sut.getNumberOfPeople(user.id)).resolves.toMatchObject({ total: 1 });
+    });
+
+    it('counts archived photos once the viewer includes them, and leaves them out again when turned off', async () => {
+      const { ctx, sut } = setup();
+      const { user, person } = await personWithArchive(ctx);
+
+      await includeArchived(ctx.database, user.id, true);
+      await expect(sut.getStatistics(person.personGroupId, user.id)).resolves.toMatchObject({ assets: 5 });
+      const { items } = await sut.getAllForUser({ take: 10, skip: 0 }, user.id);
+      expect(items).toEqual([expect.objectContaining({ assetCount: 5 })]);
+
+      await includeArchived(ctx.database, user.id, false);
+      await expect(sut.getStatistics(person.personGroupId, user.id)).resolves.toMatchObject({ assets: 3 });
+    });
+
+    it('lets a person only in archived photos onto the People page only when included', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Jamie' });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+
+      await expect(sut.getAllForUser({ take: 10, skip: 0 }, user.id)).resolves.toMatchObject({ items: [] });
+      await expect(sut.getByName(user.id, 'Jamie', { withHidden: false })).resolves.toEqual([]);
+
+      await includeArchived(ctx.database, user.id, true);
+      await expect(sut.getAllForUser({ take: 10, skip: 0 }, user.id)).resolves.toMatchObject({
+        items: [expect.objectContaining({ personGroupId: person.personGroupId })],
+      });
+      await expect(sut.getByName(user.id, 'Jamie', { withHidden: false })).resolves.toEqual([
+        expect.objectContaining({ personGroupId: person.personGroupId }),
+      ]);
+    });
+
+    it("uses each viewer's own choice, not the photo owner's", async () => {
+      const { ctx, sut } = setup();
+      const { user, person } = await personWithArchive(ctx);
+      const { user: partner } = await ctx.newUser();
+
+      await includeArchived(ctx.database, partner.id, true);
+      // the owner's choice (off) decides their own counts, whatever a partner chose
+      await expect(sut.getStatistics(person.personGroupId, user.id)).resolves.toMatchObject({ assets: 3 });
+    });
+
+    it("never picks an archived photo as the featured face unless the person's owner includes archived photos", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+
+      await expect(sut.getRandomFace(person.personGroupId, user.id)).resolves.toBeUndefined();
+
+      await includeArchived(ctx.database, user.id, true);
+      await expect(sut.getRandomFace(person.personGroupId, user.id)).resolves.toMatchObject({ id: assetFace.id });
     });
   });
 

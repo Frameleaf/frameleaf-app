@@ -724,7 +724,7 @@ export class PersonService extends BaseService {
 
     const jobs: JobItem[] = [];
     for (const { ownerId, personGroupId } of changeFeaturePhoto) {
-      const assetFace = await this.personRepository.getRandomFace(personGroupId);
+      const assetFace = await this.personRepository.getRandomFace(personGroupId, ownerId);
 
       if (assetFace) {
         await this.personRepository.update({ ownerId, personGroupId, faceAssetId: assetFace.id });

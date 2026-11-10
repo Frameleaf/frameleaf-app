@@ -13984,6 +13984,8 @@
   "frameleaf_prefs_tools_memories_options": "Memories options",
   "frameleaf_prefs_tools_no_sidebar": "Not a sidebar item",
   "frameleaf_prefs_tools_people": "People",
+  "frameleaf_prefs_tools_people_archived": "Include archived photos",
+  "frameleaf_prefs_tools_people_archived_help": "Show archived photos on person pages and count them in People.",
   "frameleaf_prefs_tools_people_help": "Browse photos by who is in them.",
   "frameleaf_prefs_tools_people_minimum": "Show a person once they appear in",
   "frameleaf_prefs_tools_people_minimum_help": "People in fewer photos stay out of the People page until then. This is only for your own view.",
