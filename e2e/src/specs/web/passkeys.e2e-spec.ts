@@ -49,10 +49,13 @@ test.describe('Passkeys', () => {
     await expect(page.getByText('“Test laptop” is added.', { exact: false })).toBeVisible();
     await expect(page.getByText('Test laptop', { exact: true })).toBeVisible();
 
-    // signed out, the passkey signs in straight away (no password, no two-step code)
+    // signed out, the passkey signs in straight away (no password, no two-step code). The virtual
+    // authenticator answers the sign-in page's passkey autofill at once, so the page can sign in before
+    // the button is pressed: press it only while the page is still asking.
     await context.clearCookies();
     await page.goto(`${local}/auth/login`);
-    await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
+    const button = page.getByRole('button', { name: 'Sign in with a passkey' });
+    await Promise.race([page.waitForURL(/\/photos/), button.click().catch(() => undefined)]);
     await page.waitForURL(/\/photos/);
 
     await page.goto(`${local}/user-settings?area=privacy&section=passkeys`);
