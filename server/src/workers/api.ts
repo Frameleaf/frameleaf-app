@@ -5,6 +5,7 @@ import { ApiModule } from 'src/app.module.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ApiService } from 'src/services/api.service.js';
 import { isRetryableStartupError, isStartUpError } from 'src/utils/misc.js';
+import { stopPrivateLogs } from 'src/utils/private-log-runtime.js';
 import { API_STARTUP_RETRY_EXIT_CODE, HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 import { prepareWorkerMetrics } from 'src/utils/worker-metrics.js';
 
@@ -31,6 +32,7 @@ async function bootstrap() {
       close: async () => {
         await metrics?.close();
         await app.close();
+        await stopPrivateLogs();
       },
       graceMs,
     }),

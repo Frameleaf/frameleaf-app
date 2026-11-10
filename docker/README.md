@@ -63,6 +63,18 @@ On Linux, the Compose stack includes a small `frameleaf-lan-discovery` companion
 
 The companion is part of the regular `docker-compose.yml` only; with the rootless file, enter the server address in the app. If you change the published web port with `FRAMELEAF_HOST_PORT`, the companion's `FRAMELEAF_DISCOVERY_URL` follows it automatically. If you publish the port another way, for example in an override, set `FRAMELEAF_DISCOVERY_URL` to the full URL for that host port, such as `http://127.0.0.1:3000`, under `frameleaf-lan-discovery.environment` in the same override. Phones must be on a network that permits mDNS multicast (UDP 5353); discovery does not cross VLANs without a configured mDNS gateway. Docker Desktop needs host networking enabled to use the companion; entering the server address remains available.
 
+## Local server logs
+
+Frameleaf keeps redacted server logs on the library volume under `logs/`. API, job, maintenance and bundled machine-learning logs share a 200 MiB budget. The oldest segments are removed first within each worker's allocation. Logs are retained for seven UTC calendar days by default. Set `FRAMELEAF_LOG_RETENTION_DAYS` on the server to an integer from 1 to 30 to change retention.
+
+An administrator with a signed-in session can read, follow or download the logs through the server's admin logs API. Remote access requires a recent Frameleaf sign-in. The ZIP download contains JSON Lines. Keep the machine-learning port on the private container network. Logs stay on the Library server.
+
+Set `FRAMELEAF_ML_AUTH_TOKEN` on both the server and the ML worker to collect authenticated bundled worker logs. Configure a verified HTTPS URL in Machine learning settings. The accepted hostnames are `frameleaf-machine-learning`, `immich-machine-learning`, `127.0.0.1`, `[::1]` and `localhost`. For example, use `https://frameleaf-machine-learning:3444` when that service name reaches a private TLS listener with a matching certificate. The monitoring example below uses port 3443 for its metrics-only listener.
+
+The ML URL serves normal worker routes such as `/predict` as well as `/logs`. A proxy must forward both, and strip the forwarding headers listed below on requests to `/logs`. Save the same bearer token on the HTTPS destination for inference and assign any workloads previously routed to the old URL. For a private CA, mount its certificate read-only into `frameleaf-server` and set `NODE_EXTRA_CA_CERTS` to the certificate's container path before startup. Prometheus has its own CA configuration.
+
+With the token configured, Frameleaf skips HTTP workers for log collection. The default bundled worker can still supply logs over the private container network without a token.
+
 ## Local monitoring with Prometheus and Grafana
 
 Local metrics are off by default. They are collected only while monitoring is enabled and are available for Prometheus to pull over the private network. Frameleaf does not send them anywhere. Keep ports 8081, 8082 and 3003 off the public network and out of reverse proxy rules.

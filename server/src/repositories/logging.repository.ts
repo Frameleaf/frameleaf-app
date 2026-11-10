@@ -3,6 +3,7 @@ import { isLogLevelEnabled } from '@nestjs/common/services/utils/is-log-level-en
 import { ClsService } from 'nestjs-cls';
 import { LogFormat, LogLevel } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { currentLogContext, persistLogMessage, privateRequestId } from 'src/utils/private-log-runtime.js';
 
 type LogDetails = any;
 type LogFunction = () => string;
@@ -34,6 +35,17 @@ export class MyConsoleLogger extends ConsoleLogger {
     this.isColorEnabled = !options?.json && (options?.color || false);
   }
 
+  protected override printMessages(
+    ...[messages, context = '', level = 'log', ...rest]: Parameters<ConsoleLogger['printMessages']>
+  ) {
+    persistLogMessage(level, context, messages[0]);
+    super.printMessages(messages, context, level, ...rest);
+  }
+
+  protected override getJsonLogObject(...args: Parameters<ConsoleLogger['getJsonLogObject']>) {
+    return { ...super.getJsonLogObject(...args), ...currentLogContext() };
+  }
+
   isLevelEnabled(level: LogLevel) {
     return isLogLevelEnabled(level, logLevels);
   }
@@ -48,6 +60,9 @@ export class MyConsoleLogger extends ConsoleLogger {
     if (correlationId) {
       prefix += `~${correlationId}`;
     }
+
+    const requestId = privateRequestId();
+    if (requestId) prefix += ` [req:${requestId}]`;
 
     if (!prefix) {
       return '';
