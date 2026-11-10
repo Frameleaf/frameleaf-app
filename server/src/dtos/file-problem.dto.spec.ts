@@ -46,11 +46,26 @@ describe('lost originals response', () => {
       checksum: 'ZmFrZS1zaGEx',
       originalFileName: 'IMG_0001.jpg',
       fileCreatedAt: '2026-11-10T08:00:00.000Z',
+      fileSize: null,
     };
     expect(LostOriginalsResponseDto.schema.safeParse({ items: [item], hasNextPage: false }).success).toBe(true);
     expect(
       LostOriginalsResponseDto.schema.safeParse({ items: [{ ...item, assetId: 'asset-1' }], hasNextPage: false })
         .success,
+    ).toBe(false);
+  });
+
+  it('carries the file size in bytes when it is known (FL-1347)', () => {
+    const item = {
+      assetId: v7,
+      checksum: 'ZmFrZS1zaGEx',
+      originalFileName: 'IMG_0001.jpg',
+      fileCreatedAt: '2026-11-10T08:00:00.000Z',
+      fileSize: 3_221_225_472,
+    };
+    expect(LostOriginalsResponseDto.schema.safeParse({ items: [item], hasNextPage: false }).success).toBe(true);
+    expect(
+      LostOriginalsResponseDto.schema.safeParse({ items: [{ ...item, fileSize: -1 }], hasNextPage: false }).success,
     ).toBe(false);
   });
 });

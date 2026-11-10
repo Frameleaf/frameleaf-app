@@ -13,9 +13,20 @@ const LostOriginalSchema = z
   .object({
     // any UUID: a photo from an import keeps the id it is given (FL-845's processing failures list does the same)
     assetId: z.uuid().describe('The photo or video'),
-    checksum: z.string().describe('SHA-1 of the lost file, base64: what the phone matches its own file by'),
+    checksum: z
+      .string()
+      .describe(
+        "SHA-1 (20 bytes) or SHA-256 (32 bytes) of the lost file's contents, base64: what the phone matches its own file by",
+      ),
     originalFileName: z.string().describe('The name the file had'),
     fileCreatedAt: z.string().meta({ format: 'date-time' }).describe('When the file was created'),
+    fileSize: z
+      .int()
+      .min(0)
+      .nullable()
+      .describe(
+        'Size of the lost file in bytes, or null when unknown: a phone may look only at its files of exactly this size',
+      ),
   })
   .meta({ id: 'LostOriginalDto' });
 
@@ -32,7 +43,7 @@ const LostOriginalsCheckedSchema = z
     notHere: z
       .array(z.string().max(64))
       .max(1000)
-      .describe('Checksums (base64) of lost originals this device does not have'),
+      .describe('Checksums (base64, SHA-1 or SHA-256, as listed) of lost originals this device does not have'),
   })
   .meta({ id: 'LostOriginalsCheckedDto' });
 

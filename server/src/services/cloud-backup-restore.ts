@@ -1,6 +1,6 @@
 import { isLockedFile } from '@frameleaf/locked-crypto';
 import { randomUUID } from 'node:crypto';
-import { chmod, link, mkdir } from 'node:fs/promises';
+import { chmod, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -581,8 +581,13 @@ export class CloudBackupRestorer {
       if (present !== null) {
         await this.moveAside(file.target, options.mediaLocation, join(options.operationId, randomUUID()));
       }
-      // Staging is beside the target: link publishes atomically without replacing a new occupant.
-      await link(staged, file.target);
+      // Staging is beside the target: a link publishes it atomically without replacing a new occupant. On a drive
+      // without hard links (FL-1347) it is copied instead, never over a file, and the staged file goes only once the
+      // copy holds the same bytes, as an owner restore places its files.
+      await retainFile(staged, file.target);
+      if (lockedKey) {
+        await chmod(file.target, 0o600);
+      }
     } catch (error) {
       if (error instanceof CloudBackupStoreError && error.status === 404) {
         throw new Error(`The backup copy of ${key} is missing from the bucket. The restore stopped before it.`, {

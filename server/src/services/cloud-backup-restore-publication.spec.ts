@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { link, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -13,6 +13,7 @@ import {
 } from 'src/services/cloud-backup-restore.js';
 import * as ownerPath from 'src/utils/cloud-backup-owner-path.js';
 import { CloudBackupManifest } from 'src/utils/cloud-backup.js';
+import { LOCKED_KEY_BACKUP_ROLE } from 'src/utils/locked-backup.js';
 import { retainFile } from 'src/utils/media-health-roots.js';
 
 // Real filesystem calls by default; single cases simulate a drive without hard links through `link`.
@@ -89,7 +90,11 @@ describe('admin restore publication on a real filesystem', () => {
         if (from === target) await writeFile(target, 'new occupant');
       });
     }
-    await expect(sut.restore(options)).rejects.toMatchObject({ code: 'EEXIST' });
+    // refused as an owner restore refuses it (FL-1347): the link found the name taken by a different file
+    await expect(sut.restore(options)).rejects.toMatchObject({
+      message: expect.stringContaining('already holds a different file'),
+      cause: { code: 'EEXIST' },
+    });
     expect(await readFile(target, 'utf8')).toBe('new occupant');
     expect((await readdir(folder)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
@@ -315,5 +320,101 @@ describe('owner restore publication on a drive without hard links (FL-1333)', ()
     expect(result).toMatchObject({ files: 1, skipped: 0, restoredAssetIds: ['asset-1'] });
     expect(await readFile(files[0].target, 'utf8')).toBe('backed-up photo 1');
     expect(await readdir(join(folder, 'library'))).toEqual(['photo-1.jpg']);
+  });
+});
+
+// FL-1347: an admin restore (not the photo's owner) places its files as an owner restore does: link first, and on a
+// drive without hard links a copy, checked byte for byte before the staged file goes. It never replaces a file.
+describe('admin restore on a drive without hard links (FL-1347)', () => {
+  let folder: string;
+  beforeEach(async () => {
+    folder = await mkdtemp(join(tmpdir(), 'cloud-restore-admin-copy-'));
+    vi.mocked(link).mockImplementation(() => Promise.reject(Object.assign(new Error('EPERM'), { code: 'EPERM' })));
+  });
+  afterEach(async () => {
+    vi.mocked(link).mockReset();
+    vi.mocked(retainFile).mockReset();
+    await rm(folder, { recursive: true, force: true });
+  });
+
+  const setup = (role = 'original', target = join(folder, 'library', 'photo.jpg')) => {
+    const bytes = Buffer.from('backed-up photo');
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const logger = LoggingRepository.create();
+    const sut = new CloudBackupRestorer(null, new StorageRepository(logger), new CryptoRepository(), logger);
+    const options = {
+      manifest: { database: null } as CloudBackupManifest,
+      scope: 'asset' as const,
+      files: [{ fileKey: 'asset:000', assetId: 'asset', role, sha256, size: bytes.length, target, inPlace: true }],
+      destination: null,
+      mediaLocation: folder,
+      backupsFolder: folder,
+      operationId: 'operation',
+      start: emptyRestoreResult(),
+      checkpoint: () => Promise.resolve(true),
+      read: async (_key: string, staged: string) => {
+        await writeFile(staged, bytes);
+        return { size: bytes.length, sha256 };
+      },
+    };
+    return { sut, options, target };
+  };
+  const leftovers = async (target: string) =>
+    (await readdir(dirname(target))).filter((name) => name.endsWith('.tmp') || name.endsWith('.partial'));
+
+  it('copies a file into place where it cannot be linked', async () => {
+    const { sut, options, target } = setup();
+
+    await expect(sut.restore(options)).resolves.toMatchObject({ files: 1, skipped: 0, replaced: 0 });
+
+    expect(await readFile(target, 'utf8')).toBe('backed-up photo');
+    expect((await lstat(target)).nlink).toBe(1);
+    // the copy was forced: hard links were refused
+    expect(link).toHaveBeenCalled();
+    expect(await leftovers(target)).toEqual([]);
+  });
+
+  it('moves a different file aside by copy too, and puts the backed-up one in its place', async () => {
+    const { sut, options, target } = setup();
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, 'a different photo');
+
+    await expect(sut.restore(options)).resolves.toMatchObject({ files: 1, replaced: 1 });
+
+    expect(await readFile(target, 'utf8')).toBe('backed-up photo');
+    const aside = await readdir(join(folder, 'frameleaf/restore/replaced/operation'), {
+      recursive: true,
+      withFileTypes: true,
+    });
+    const contents = await Promise.all(
+      aside.filter((entry) => entry.isFile()).map((entry) => readFile(join(entry.parentPath, entry.name), 'utf8')),
+    );
+    expect(contents).toEqual(['a different photo']);
+    expect(await leftovers(target)).toEqual([]);
+  });
+
+  it('never replaces a file that appears while the backed-up one downloads', async () => {
+    const { sut, options, target } = setup();
+    const read = options.read;
+    options.read = async (key, staged) => {
+      const result = await read(key, staged);
+      await writeFile(target, 'new occupant');
+      return result;
+    };
+
+    await expect(sut.restore(options)).rejects.toThrow('already holds a different file');
+
+    expect(await readFile(target, 'utf8')).toBe('new occupant');
+    expect(await leftovers(target)).toEqual([]);
+  });
+
+  it('keeps a restored Locked key file for the server alone', async () => {
+    const { sut, options, target } = setup(LOCKED_KEY_BACKUP_ROLE, join(folder, 'keys', 'owner.key'));
+
+    await expect(sut.restore(options)).resolves.toMatchObject({ files: 1 });
+
+    expect(await readFile(target, 'utf8')).toBe('backed-up photo');
+    expect((await stat(target)).mode & 0o777).toBe(0o600);
+    expect(await leftovers(target)).toEqual([]);
   });
 });
