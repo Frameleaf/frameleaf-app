@@ -84,12 +84,22 @@ export class SessionService extends BaseService {
 
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AuthDeviceDelete, ids: [id] });
-    const sessions = await this.sessionRepository.getByUserId(auth.user.id);
+    const sessions = await this.revocationSnapshot(auth.user.id);
     await this.sessionRepository.delete(id);
     // FL-34: the revoked session's open tabs clear what they show and sign out
     await this.eventRepository.emit('SessionDelete', { sessionId: id });
     await this.lockedEncryption.onSessionsLocked(auth.user.id);
     await this.recordRevoked(auth, sessions, [id]);
+  }
+
+  /** FL-808: the devices before a revocation, for the activity log; never blocks the revocation. */
+  private async revocationSnapshot(userId: string) {
+    try {
+      return await this.sessionRepository.getByUserId(userId);
+    } catch (error) {
+      this.logger.warn(`Could not read devices for the activity log before signing out: ${error}`);
+      return [];
+    }
   }
 
   /** FL-808: one `session-revoked` row per signed-out device, named as the session list names it. */
@@ -114,7 +124,7 @@ export class SessionService extends BaseService {
   async deleteAll(auth: AuthDto): Promise<void> {
     const userId = auth.user.id;
     const currentSessionId = auth.session?.id;
-    const sessions = await this.sessionRepository.getByUserId(userId);
+    const sessions = await this.revocationSnapshot(userId);
     const deletedIds = await this.sessionRepository.invalidateAll({ userId, excludeId: currentSessionId });
     for (const sessionId of deletedIds) {
       await this.eventRepository.emit('SessionDelete', { sessionId });
