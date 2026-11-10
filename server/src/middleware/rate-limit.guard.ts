@@ -194,12 +194,16 @@ export const COUNTERS_UNAVAILABLE_RETRY_AFTER = 30;
 /** Expand an IPv6 address to its eight groups (`::` filled with zeros). */
 const ipv6Groups = (address: string): string[] => {
   const pad = (group: string) => group.padStart(4, '0').toLowerCase();
-  const gap = address.indexOf('::');
+  const expandedTail = address.replace(/\d+\.\d+\.\d+\.\d+$/, (tail) => {
+    const [a, b, c, d] = tail.split('.').map(Number);
+    return `${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  });
+  const gap = expandedTail.indexOf('::');
   if (gap === -1) {
-    return address.split(':').map((group) => pad(group));
+    return expandedTail.split(':').map((group) => pad(group));
   }
-  const head = address.slice(0, gap);
-  const tail = address.slice(gap + 2);
+  const head = expandedTail.slice(0, gap);
+  const tail = expandedTail.slice(gap + 2);
   const left = head ? head.split(':') : [];
   const right = tail ? tail.split(':') : [];
   const fill = Array.from({ length: Math.max(0, 8 - left.length - right.length) }, () => '0');
@@ -211,13 +215,17 @@ const ipv6Groups = (address: string): string[] => {
  * IPv4), an IPv6 address by its /64, since one household or host usually holds a whole /64.
  */
 export const rateLimitAddress = (address: string | undefined | null): string => {
-  const value = (address ?? '').trim().replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, '');
+  const value = (address ?? '').trim();
   switch (isIP(value)) {
     case 4: {
       return value;
     }
     case 6: {
       const groups = ipv6Groups(value.split('%', 1)[0]);
+      if (groups[5] === 'ffff' && groups.slice(0, 5).every((group) => group === '0000')) {
+        const [upper, lower] = groups.slice(6).map((group) => Number.parseInt(group, 16));
+        return [upper >> 8, upper & 255, lower >> 8, lower & 255].join('.');
+      }
       return `${groups.slice(0, 4).join(':')}::/64`;
     }
     default: {

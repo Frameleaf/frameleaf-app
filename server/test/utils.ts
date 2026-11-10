@@ -671,7 +671,7 @@ export const newTestService = <T extends BaseService>(
     if (type === LockedEncryptionService) {
       Object.assign(sut, { [key]: newLockedEncryptionService(mocks) });
     } else if (type === SignInSecurityService) {
-      Object.assign(sut, { [key]: mocks.signInSecurity });
+      Object.assign(sut, { [key]: overrides.signInSecurity ?? mocks.signInSecurity });
     }
   }
 
