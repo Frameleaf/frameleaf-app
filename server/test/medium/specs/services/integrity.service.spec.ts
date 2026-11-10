@@ -252,6 +252,11 @@ describe(IntegrityService.name, () => {
   });
 
   describe('photos kept as they are, everywhere else (FL-1347)', () => {
+    // the findings belong to this test alone, whether or not it passes
+    afterEach(async () => {
+      await sql`DELETE FROM public.asset_health`.execute(defaultDatabase);
+    });
+
     const health = (assetId: string, category: string, status: string, evidence: object) =>
       sql`INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName", evidence, resolution, "checkedAt")
         VALUES (${assetId}, ${category}, ${status}, 'warning', '/x', 'x', ${JSON.stringify(evidence)}::text::jsonb, '{}', now())`.execute(
@@ -333,7 +338,6 @@ describe(IntegrityService.name, () => {
         total: 2,
       });
       await expect(attention(MediaHealthCategory.Corrupt)).resolves.toEqual({ listed: [unreadableRaw.id], total: 1 });
-      await sql`DELETE FROM public.asset_health`.execute(defaultDatabase);
     });
   });
 
