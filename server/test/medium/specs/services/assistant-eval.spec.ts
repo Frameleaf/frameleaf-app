@@ -142,3 +142,36 @@ it('rejects a candidate plan that names a person outside the fixture catalogue',
     candidate.mockRestore();
   }
 });
+
+it('scores equivalent capture bounds regardless of fractional-second formatting', () => {
+  const expected = { takenAfter: asset.takenAt };
+  const actual = { takenAfter: asset.takenAt.replace('.000', '') };
+  const result = score(
+    [{ ...question, expect: { ...question.expect, filters: expected } }],
+    [asset],
+    [
+      {
+        id: question.id,
+        filters: actual,
+        hits: [
+          {
+            key: asset.key,
+            reasons: [{ field: 'takenAfter', value: actual.takenAfter }],
+          },
+        ],
+        elapsedMs: 2,
+      },
+    ],
+  );
+  assert.deepEqual(result, { filterAccuracy: 1, recallAt24: 1, faithfulness: 1, p95Ms: 2 });
+});
+
+it('counts a planner timeout as an unanswered case', async () => {
+  const candidate = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new DOMException('Timed out', 'TimeoutError'));
+  try {
+    const catalog = { people: [], pets: [], places: [], tags: [], albums: [] };
+    await expect(requestPlan(new URL('http://127.0.0.1:3003'), 'Find my photos', catalog)).resolves.toBeUndefined();
+  } finally {
+    candidate.mockRestore();
+  }
+});

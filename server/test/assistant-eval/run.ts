@@ -21,7 +21,7 @@ import cases from 'test/assistant-eval/cases.json' with { type: 'json' };
 import library from 'test/assistant-eval/library.json' with { type: 'json' };
 import { requestPlan } from 'test/assistant-eval/planner.js';
 import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
-import { EvalAnswer, EvalFilters, Reason, RESULT_LIMIT, readFixtures, score } from 'test/assistant-eval/score.js';
+import { EvalAnswer, EvalFilters, RESULT_LIMIT, Reason, readFixtures, score } from 'test/assistant-eval/score.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 

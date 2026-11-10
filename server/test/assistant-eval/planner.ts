@@ -16,8 +16,13 @@ export async function requestPlan(endpoint: URL, question: string, catalog: Cata
     redirect: 'error',
     signal: AbortSignal.timeout(8000),
     body: JSON.stringify({ question, language: 'en', today: '2026-11-09', catalog, toolSchema }),
+  }).catch((error: unknown) => {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      return null;
+    }
+    throw error;
   });
-  if (response.status === 422) {
+  if (!response || response.status === 422) {
     return;
   }
   if (!response.ok) {

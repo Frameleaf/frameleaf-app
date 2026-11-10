@@ -70,7 +70,12 @@ function supports(asset: EvalAsset | undefined, { field, value }: Reason) {
     return false;
   }
   if (field === 'takenAfter' || field === 'takenBefore') {
-    return typeof value === 'string' && (field === 'takenAfter' ? asset.takenAt >= value : asset.takenAt <= value);
+    if (typeof value !== 'string') {
+      return false;
+    }
+    const taken = Date.parse(asset.takenAt);
+    const bound = Date.parse(value);
+    return field === 'takenAfter' ? taken >= bound : taken <= bound;
   }
   const evidence = asset[field];
   if (Array.isArray(evidence)) {
@@ -86,6 +91,8 @@ function supports(asset: EvalAsset | undefined, { field, value }: Reason) {
 
 const canonical = (filters: EvalFilters) => ({
   ...filters,
+  ...(filters.takenAfter && { takenAfter: new Date(filters.takenAfter).toISOString() }),
+  ...(filters.takenBefore && { takenBefore: new Date(filters.takenBefore).toISOString() }),
   ...(filters.people && { people: [...filters.people].sort() }),
   ...(filters.pets && { pets: [...filters.pets].sort() }),
 });
