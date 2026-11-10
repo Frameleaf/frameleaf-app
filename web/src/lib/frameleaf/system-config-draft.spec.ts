@@ -209,7 +209,9 @@ describe('credentials never leave the page (FL-66)', () => {
 
     expect(diffConfig(config, changed)).toEqual([]);
     expect(importConfig(config, changed).draft.metrics.enabled).toBe(true);
-    expect(redactConfigForExport(config)).not.toHaveProperty('metrics.enabled');
+    const exported = redactConfigForExport(config);
+    expect(exported).not.toHaveProperty('metrics');
+    expect(importConfig(config, exported).unsupported).toEqual([]);
   });
 
   it('never journals secrets or URL credentials', () => {

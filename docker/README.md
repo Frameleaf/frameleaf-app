@@ -73,7 +73,7 @@ An administrator with a signed-in session can read, follow or download the logs 
 
 Local metrics are off by default. They are collected only while monitoring is enabled and are available for Prometheus to pull over the private network. Frameleaf does not send them anywhere. Keep ports 8081, 8082 and 3003 off the public network and out of reverse proxy rules.
 
-Save the following as a Compose override beside `docker-compose.yml` and `prometheus.yml`. Start the stack with both Compose files. In Grafana, add a Prometheus data source using `http://prometheus:9090`, then import `grafana/frameleaf-dashboard.json` and select that data source.
+For a release installation, copy `prometheus.yml` and `grafana/frameleaf-dashboard.json` from the `docker/` directory of the matching release tag. Put them beside `docker-compose.yml`, keeping the `grafana/` subdirectory. Save the following as a Compose override and start the stack with both Compose files. In Grafana, add a Prometheus data source using `http://prometheus:9090`, then import `grafana/frameleaf-dashboard.json` and select that data source.
 
 ```yaml
 services:
@@ -87,14 +87,31 @@ services:
     image: prom/prometheus:latest
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
   grafana:
     image: grafana/grafana:latest
     ports:
       - '127.0.0.1:3001:3000'
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  prometheus-data:
+  grafana-data:
+```
+
+If you also use `docker-compose.ml-isolated.yml`, apply the monitoring override after it and add the following networks to the Prometheus service. Prometheus needs both the default network for the Library workers and `ml-inference` to scrape the isolated ML worker.
+
+```yaml
+services:
+  prometheus:
+    networks:
+      - default
+      - ml-inference
 ```
 
 `FRAMELEAF_METRICS_PORT` changes the API metrics port from 8081. The job worker uses the next port. Update the two targets in `prometheus.yml` if you change it. Native installs bind these listeners to loopback.
 
-To protect the server scrapes with a bearer credential, set `FRAMELEAF_METRICS_TOKEN` on the server. Add `authorization.credentials_file` to the `frameleaf_api` and `frameleaf_microservices` jobs in `prometheus.yml` and mount the credential file read-only into Prometheus. If your ML worker uses `FRAMELEAF_ML_AUTH_TOKEN`, configure its credential file separately on the `frameleaf_ml` job. Use only private networks for these connections.
+To protect the server scrapes with a bearer credential, set `FRAMELEAF_METRICS_TOKEN` on the server. Add `authorization.credentials_file` to the `frameleaf_api` and `frameleaf_microservices` jobs in `prometheus.yml` and mount the credential file read-only into Prometheus. If your ML worker uses `FRAMELEAF_ML_AUTH_TOKEN`, configure its credential file separately on the `frameleaf_ml` job. Use only private networks for these connections. Without a bearer credential, other services on the same Docker network can scrape the corresponding listener.
 
-Library totals and queue counts refresh at intervals. The machine-learning panels populate after processing starts. Custom model identities are grouped together to keep private names out of labels.
+The dashboard uses the three job names in the supplied `prometheus.yml`. Update any custom queries that reference the previous example’s job names. Library totals and queue counts refresh at intervals. The machine-learning panels populate after processing starts. Custom model identities are grouped together to keep private names out of labels.
