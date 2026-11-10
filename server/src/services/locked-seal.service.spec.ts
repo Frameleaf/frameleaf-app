@@ -132,6 +132,8 @@ describe(LockedSealService.name, () => {
     mocks.lockedEncryption.get.mockImplementation(() => Promise.resolve(row as never));
     mocks.lockedEncryption.getAllUserIds.mockImplementation(() => Promise.resolve(row ? [OWNER] : []));
     mocks.lockedEncryption.getUnlockedFilePaths.mockResolvedValue([]);
+    mocks.lockedEncryption.getUnlockedCareAssetIds.mockResolvedValue([]);
+    mocks.lockedFile.keptPathsTaken.mockResolvedValue(new Set());
     mocks.lockedEncryption.getLockedAssets.mockImplementation(() =>
       Promise.resolve([
         {
@@ -404,6 +406,26 @@ describe(LockedSealService.name, () => {
       expect(mocks.lockedFile.plainReaders).toHaveBeenCalledWith(ASSET, original, LOCK_TRX);
       expect((await fs.readFile(original)).equals(plain.get(original)!)).toBe(true);
       expect((await fs.readFile(thumbnail)).equals(plain.get(thumbnail)!)).toBe(true);
+      expect(await temporaries()).toEqual([]);
+    });
+
+    it('seals a kept Library care file like the original, and checks its readers under the lock (FL-1364)', async () => {
+      const original = await write('original.jpg', 'original', 'asset');
+      const kept = await write('asset-health.damaged.jpg', 'other', 'asset_health');
+      files.at(-1)!.optional = true;
+
+      await expect(sut.handleSeal({ id: ASSET })).resolves.toBe(JobStatus.Success);
+      expect((await decrypted(original)).equals(plain.get(original)!)).toBe(true);
+      expect((await decrypted(kept)).equals(plain.get(kept)!)).toBe(true);
+      expect(mocks.lockedFile.keptPathsTaken).toHaveBeenCalledWith(ASSET, [kept], LOCK_TRX);
+
+      // something else came to name it after the registry looked: it stays as it is
+      const other = await write('asset-health-2.damaged.jpg', 'other', 'asset_health');
+      mocks.lockedFile.keptPathsTaken.mockImplementation((_id, paths) =>
+        Promise.resolve(new Set(paths.filter((path) => path === other))),
+      );
+      await expect(sut.handleSeal({ id: ASSET })).resolves.toBe(JobStatus.Skipped);
+      expect((await fs.readFile(other)).equals(plain.get(other)!)).toBe(true);
       expect(await temporaries()).toEqual([]);
     });
 
@@ -704,6 +726,34 @@ describe(LockedSealService.name, () => {
 
         expect(mocks.lockedKey.delete).toHaveBeenCalledWith(OWNER);
         expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+        expect(row).toBeUndefined();
+      });
+
+      it('waits while a kept Library care file can’t be read, Locked or not, so the key that may open it stays (FL-1364)', async () => {
+        keyFile.mode = 'advanced';
+        keyFile.wraps = keyFile.wraps.map((wrap) => (wrap.kind === 'pin' ? { ...wrap, kind: 'passphrase' } : wrap));
+        await write('original.jpg', 'original', 'asset');
+        // a path that can't be read as a file (EISDIR, unreadable even to root)
+        const kept = join(dir, 'asset-1-health-1.damaged.jpg');
+        await fs.mkdir(kept);
+        files.push({ path: kept, kind: 'other', table: 'asset_health', optional: true });
+
+        await sut.handleSweep({ userId: OWNER });
+        expect(mocks.lockedKey.delete).not.toHaveBeenCalled();
+        expect(row).toBeDefined();
+
+        // the same file of an item already out of Locked
+        mocks.lockedEncryption.getLockedAssets.mockResolvedValue([]);
+        mocks.lockedEncryption.getUnlockedCareAssetIds.mockResolvedValue([ASSET]);
+        await sut.handleSweep({ userId: OWNER });
+        expect(mocks.lockedKey.delete).not.toHaveBeenCalled();
+        expect(row).toBeDefined();
+
+        // readable (and plain) again: turning off finishes
+        await fs.rmdir(kept);
+        await fs.writeFile(kept, 'the damaged file');
+        await sut.handleSweep({ userId: OWNER });
+        expect(mocks.lockedKey.delete).toHaveBeenCalledWith(OWNER);
         expect(row).toBeUndefined();
       });
 

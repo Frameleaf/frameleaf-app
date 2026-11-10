@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { isAbsolute, normalize } from 'node:path';
 import type { Insertable, Kysely, Updateable } from 'kysely';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { StorageFolder } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import { asUuid } from 'src/utils/database.js';
 import { holdsEncryptedOriginal } from 'src/utils/locked-encryption-set.js';
+import { isPathWithin } from 'src/utils/media-health-roots.js';
 
 /** One of the person's own Locked items, as the settings API counts and queues them. */
 export interface LockedEncryptionAsset {
@@ -99,18 +103,73 @@ export class LockedEncryptionRepository {
    */
   @GenerateSql({ params: [DummyValue.UUID] })
   async getUnlockedFilePaths(ownerId: string): Promise<string[]> {
-    const { rows } = await sql<{ path: string }>`
-      select a."originalPath" as path from public.asset a
+    const { rows } = await sql<{ path: string; kept: boolean }>`
+      select a."originalPath" as path, false as kept from public.asset a
       where a."ownerId" = ${asUuid(ownerId)} and a."libraryId" is null
         and not exists (select 1 from public.asset_lock l where l."assetId" = a.id)
         and not exists (select 1 from public.asset_origin o where o."assetId" = a.id)
       union
-      select f.path from public.asset_file f join public.asset a on a.id = f."assetId"
+      select f.path, false from public.asset_file f join public.asset a on a.id = f."assetId"
       where a."ownerId" = ${asUuid(ownerId)} and a."libraryId" is null
         and not exists (select 1 from public.asset_lock l where l."assetId" = a.id)
         and not exists (select 1 from public.asset_origin o where o."assetId" = a.id)
+      union
+      select kept.path, true from public.asset_health h join public.asset a on a.id = h."assetId"
+      cross join lateral (
+        select h.evidence->>'retainedPath'
+        union all
+        select p.path from public.asset_health_step s
+        cross join lateral (values (s.undo->>'previousPath'), (s.undo->>'retainedPath'), (s.undo->>'originalPath')) as p(path)
+        where s."healthId" = h.id and jsonb_typeof(s.undo) = 'object'
+      ) as kept(path)
+      where a."ownerId" = ${asUuid(ownerId)} and a."libraryId" is null and kept.path like '/%'
+        and not exists (select 1 from public.asset_lock l where l."assetId" = a.id)
+        and not exists (select 1 from public.asset_origin o where o."assetId" = a.id)
     `.execute(this.db);
-    return rows.map(({ path }) => path);
+    if (rows.every(({ kept }) => !kept)) {
+      return rows.map(({ path }) => path);
+    }
+    // FL-1364: a path Library care's records name is only cleaned beside when it is written in normal form
+    // inside the owner's own upload or library folder (as the seal jobs confine it); a recorded former
+    // original elsewhere is never a folder Frameleaf wrote a temporary file in. Lexical, so a file that is
+    // gone is still cleaned beside.
+    const user = await this.db
+      .selectFrom('user')
+      .select('storageLabel')
+      .where('id', '=', asUuid(ownerId))
+      .executeTakeFirst();
+    const roots = [
+      StorageCore.getFolderLocation(StorageFolder.Upload, ownerId),
+      StorageCore.getLibraryFolder({ id: ownerId, storageLabel: user?.storageLabel ?? null }),
+    ];
+    return [
+      ...new Set(
+        rows
+          .filter(
+            ({ path, kept }) =>
+              !kept || (isAbsolute(path) && normalize(path) === path && roots.some((root) => isPathWithin(root, path))),
+          )
+          .map(({ path }) => path),
+      ),
+    ];
+  }
+
+  /**
+   * FL-1364: the person's own items that are no longer Locked and have Library care records, on storage
+   * Frameleaf owns. A file Library care kept of one may still be sealed (its drive was away when the item
+   * left Locked); the sweep opens it again, and start-up clears temporary files left beside it.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getUnlockedCareAssetIds(ownerId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      select a.id from public.asset a
+      where a."ownerId" = ${asUuid(ownerId)} and a."libraryId" is null
+        and exists (select 1 from public.asset_health h where h."assetId" = a.id)
+        and not exists (select 1 from public.asset_lock l where l."assetId" = a.id)
+        and not exists (select 1 from public.asset_origin o where o."assetId" = a.id)
+      order by a.id
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
   }
 
   /**
