@@ -31,8 +31,8 @@ import {
   MlUsage,
   ModelTask,
   ModelType,
-  parseMlContainerReport,
   RestorationWorkerError,
+  parseMlContainerReport,
 } from 'src/repositories/machine-learning.repository.js';
 import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
