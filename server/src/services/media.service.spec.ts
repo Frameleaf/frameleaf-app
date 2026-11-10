@@ -1944,7 +1944,8 @@ describe(MediaService.name, () => {
       const asset = AssetFactory.from().exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       const message = 'VipsJpeg: premature end of JPEG image';
-      mocks.media.generateThumbnail.mockRejectedValue(new SharpOperationError(message));
+      // the image worker could not decode the original (`decodeFailure`)
+      mocks.media.decodeImage.mockRejectedValue(new SharpOperationError(message));
 
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
 
@@ -1953,6 +1954,33 @@ describe(MediaService.name, () => {
         data: { id: asset.id, from: 'preview', message },
       });
       expect(takeHandedToCare(asset.id)).toBe(true);
+    });
+
+    it.each([
+      new SharpOperationError("VipsForeignSave: can't open /data/thumbs/x.webp: Permission denied"),
+      new SharpOperationError('vips_colourspace: no known route from P3 to sRGB'),
+    ])('a preview that could not be written fails the job and is never sent to Library care: %s', async (failure) => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      // the original decoded; making or writing a preview from it failed (`decodeFailure` is false)
+      mocks.media.generateThumbnail.mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(failure);
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+      expect(takeHandedToCare(asset.id)).toBe(false);
+    });
+
+    it('fails, instead of going back to Library care, when Library care asked for the previews of a file that opens', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const failure = new SharpOperationError('VipsJpeg: premature end of JPEG image');
+      mocks.media.decodeImage.mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id, afterCare: true })).rejects.toThrow(failure.message);
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+      expect(takeHandedToCare(asset.id)).toBe(false);
     });
 
     it('an unsupported RAW is sent too', async () => {
@@ -2168,12 +2196,10 @@ describe(MediaService.name, () => {
       const error = new SharpOperationError('output encoding failed');
       mocks.media.generateThumbnail.mockRejectedValueOnce(error);
 
-      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      // FL-1337: an output failure is the job's, not the photo's: it fails to be retried
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
 
-      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
-        name: JobName.MediaHealthFixAsset,
-        data: { id: asset.id, from: 'preview', message: error.message },
-      });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
       expect(renderRawWithLibRaw).not.toHaveBeenCalled();
       expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
     });
