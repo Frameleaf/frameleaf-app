@@ -2352,12 +2352,18 @@ describe(AlbumService.name, () => {
       expect(mocks.person.getAlbumPeople).not.toHaveBeenCalled();
     });
 
-    it('names people to a shared link that shows metadata', async () => {
+    it("names people to a shared link that shows metadata, under every owner's Locked rules", async () => {
       const auth = AuthFactory.from().sharedLink({ showExif: true }).build();
       mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
       mocks.person.getAlbumPeople.mockResolvedValue([person]);
 
       await expect(sut.getPeople(auth, albumId)).resolves.toHaveLength(1);
+      expect(mocks.person.getAlbumPeople).toHaveBeenCalledWith(
+        albumId,
+        auth.user.id,
+        expect.objectContaining({ othersRulesViewerId: null }),
+        50,
+      );
     });
 
     it('never names anyone to a shared link that hides metadata', async () => {

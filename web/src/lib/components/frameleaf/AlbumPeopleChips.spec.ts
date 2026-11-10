@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import AlbumPeopleChips from './AlbumPeopleChips.svelte';
 
 const albumId = '11111111-1111-4111-8111-111111111111';
@@ -59,6 +60,28 @@ describe('AlbumPeopleChips', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Clear people' }));
     expect(session.query.filter.personIds).toBeUndefined();
     expect(screen.queryByRole('region', { name: 'People in this album' })).not.toBeInTheDocument();
+  });
+
+  it("keeps the Filters panel's other people conditions", async () => {
+    sdkMock.getAlbumPeople.mockResolvedValue([jamie, emma]);
+    const session = new LibrarySessionStore({ storage: null });
+    session.setQuery({ ...session.query, filter: { ...session.query.filter, personIds: { none: [emma.id] } } });
+    render(AlbumPeopleChips, { albumId, session });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Jamie · 4' }));
+    expect(session.query.filter.personIds).toEqual({ none: [emma.id], all: [jamie.id] });
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear people' }));
+    expect(session.query.filter.personIds).toEqual({ none: [emma.id] });
+  });
+
+  it('reads the people again when faces change', async () => {
+    sdkMock.getAlbumPeople.mockResolvedValue([jamie]);
+    render(AlbumPeopleChips, { albumId, session: new LibrarySessionStore({ storage: null }) });
+    await screen.findByRole('button', { name: 'Jamie · 4' });
+
+    sdkMock.getAlbumPeople.mockResolvedValue([{ ...jamie, count: 5 }]);
+    eventManager.emit('PersonFacesChange', { personIds: [jamie.id] });
+    expect(await screen.findByRole('button', { name: 'Jamie · 5' })).toBeInTheDocument();
   });
 
   it('shows no row when nobody in the album is named', async () => {

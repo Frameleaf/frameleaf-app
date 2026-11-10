@@ -10,8 +10,11 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
+  import { updateSetGroup } from '$lib/frameleaf/search-filters';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { getAlbumPeople, type AlbumPersonResponseDto, type PersonResponseDto } from '@frameleaf/sdk';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -24,10 +27,19 @@
   let { albumId, refreshKey, session = librarySession }: Props = $props();
 
   let people = $state<AlbumPersonResponseDto[]>([]);
+  /** Faces moved, named or hidden somewhere: the people and their counts are read again. */
+  let facesRevision = $state(0);
+  onMount(() =>
+    eventManager.on({
+      PersonFacesChange: () => facesRevision++,
+      PersonUpdate: () => facesRevision++,
+    }),
+  );
 
   $effect(() => {
     const id = albumId;
     void refreshKey;
+    void facesRevision;
     const current = authManager.captureSession();
     const controller = new AbortController();
     people = [];
@@ -44,13 +56,15 @@
 
   const selected = $derived(session.query.filter.personIds?.all ?? []);
 
+  /** Only the "all of" group is the chips'; "any of" and "none of" from the Filters panel stay. */
   const setSelected = (ids: string[]) => {
     const query = session.query;
-    if (ids.length === 0) {
+    const condition = updateSetGroup(query.filter.personIds ?? null, 'all', ids);
+    if (!condition) {
       session.removeFilter('personIds');
       return;
     }
-    session.setQuery({ ...query, filter: { ...query.filter, personIds: { all: ids } } });
+    session.setQuery({ ...query, filter: { ...query.filter, personIds: condition } });
   };
 
   const toggle = (id: string) =>

@@ -881,10 +881,12 @@ export class AlbumService extends BaseService {
     if (auth.sharedLink && !auth.sharedLink.showExif) {
       throw new ForbiddenException('This shared link does not show people');
     }
+    // A link reads as its owner, but its visitors are not the owner: every owner's Locked rules apply,
+    // the owner's own included, so a name never points at an item the link does not show.
     const people = await this.personRepository.getAlbumPeople(
       id,
       auth.user.id,
-      this.nsfwOptions(auth),
+      { ...this.nsfwOptions(auth), ...(auth.sharedLink ? everyOwnersRules : {}) },
       ALBUM_PEOPLE_LIMIT,
     );
     return people.map(({ id, name, count, updatedAt }) => ({

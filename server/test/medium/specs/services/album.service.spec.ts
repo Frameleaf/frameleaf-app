@@ -2,7 +2,14 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AlbumKind, AlbumUserRole, AssetLockReason, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  AssetLockReason,
+  AssetMetadataKey,
+  AssetVisibility,
+  UserMetadataKey,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -445,6 +452,33 @@ describe(AlbumService.name, () => {
       await expect(sut.getPeople(factory.auth({ user: { id: stranger.id } }), album.id)).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+
+    it("leaves out people whose only items match the owner's Locked rules, when every owner's rules apply", async () => {
+      const { ctx } = setup();
+      const people = ctx.get(PersonRepository);
+      const { user } = await ctx.newUser();
+      const { person: jamie } = await ctx.newPerson({ ownerId: user.id, name: 'Jamie' });
+      const { person: secret } = await ctx.newPerson({ ownerId: user.id, name: 'Secret' });
+      const { asset: open } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: ruled } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFace({ assetId: open.id, personGroupId: jamie.personGroupId });
+      await ctx.newAssetFace({ assetId: ruled.id, personGroupId: secret.personGroupId });
+      const { album } = await ctx.newAlbum({ ownerId: user.id }, [open.id, ruled.id]);
+      // The owner marked Secret Locked (FL-446): items showing them leave every view but the owner's own.
+      const value = { privacy: { suppression: { personIds: [secret.personGroupId] } } };
+      await defaultDatabase
+        .insertInto('user_metadata')
+        .values({ userId: user.id, key: UserMetadataKey.Preferences, value } as never)
+        .onConflict((oc) => oc.columns(['userId', 'key']).doUpdateSet({ value } as never))
+        .execute();
+
+      // What a shared link reads: the link owner's id, with every owner's rules applied.
+      const viaLink = await people.getAlbumPeople(album.id, user.id, { othersRulesViewerId: null });
+      expect(viaLink.map(({ name }) => name)).toEqual(['Jamie']);
+      // The owner's own session is left to their own rules, as on their album page.
+      const asOwner = await people.getAlbumPeople(album.id, user.id, { othersRulesViewerId: user.id });
+      expect(asOwner.map(({ name }) => name).toSorted()).toEqual(['Jamie', 'Secret']);
     });
 
     it('shows no people for an album where nobody is named', async () => {
