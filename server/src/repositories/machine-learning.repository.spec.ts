@@ -153,7 +153,7 @@ describe(MachineLearningRepository.name, () => {
       await expect(sut.readBundledWorkerLogs('')).resolves.toBeUndefined();
       expect(fetch).not.toHaveBeenCalled();
 
-      const secureUrl = 'https://frameleaf-machine-learning:3443';
+      const secureUrl = 'https://frameleaf-machine-learning:3443/ml';
       sut.setup({ ...defaults.machineLearning, urls: [localUrl, 'https://other.example', secureUrl] });
       await expect(sut.readBundledWorkerLogs('2026-11-10T00:00:00.000Z')).resolves.toBe('log');
       expect(String(fetch.mock.calls[0][0])).toBe(`${secureUrl}/logs?since=2026-11-10T00%3A00%3A00.000Z`);

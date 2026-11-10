@@ -697,7 +697,8 @@ export class MachineLearningRepository implements RestorationInference {
           ),
       );
     if (!endpoint) return;
-    const url = new URL('logs', endpoint.origin);
+    const url = new URL(endpoint.origin);
+    url.pathname = `${endpoint.pathname.replace(/\/$/u, '')}/logs`;
     url.searchParams.set('since', since);
     const { response, body } = await fetchJobText(
       url,
