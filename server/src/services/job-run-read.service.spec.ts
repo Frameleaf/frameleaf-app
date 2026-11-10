@@ -1,7 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { JobRunSearchDto } from 'src/dtos/job-run.dto.js';
+import { JobRunItemSearchDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { RunItemRead, RunRead } from 'src/queue/run-query.js';
 import { JobService } from 'src/services/job.service.js';
+import { factory } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const counts = {
@@ -34,6 +35,8 @@ const run: RunRead = {
   canRelease: false,
   countsPhotos: true,
   failedQueues: ['thumbnailGeneration'],
+  nightly: false,
+  pausedQueues: [],
 };
 describe('durable run read service', () => {
   let sut: JobService;
@@ -47,7 +50,7 @@ describe('durable run read service', () => {
       run,
     ] as never);
     const page = await sut.getRuns(JobRunSearchDto.schema.parse({ take: 1, skip: 25 }));
-    expect(mocks.job.listRuns).toHaveBeenCalledWith(2, 25);
+    expect(mocks.job.listRuns).toHaveBeenCalledWith(2, 25, false);
     expect(page).toMatchObject({
       hasNextPage: true,
       items: [{ total: 1, active: 1, failed: 0, stageTotals: { failed: 1 }, state: 'running' }],
@@ -68,16 +71,16 @@ describe('durable run read service', () => {
     mocks.job.listRunItems.mockResolvedValue([
       { ...item, itemKey: 'face-id', rootItemKey: 'media-id', selection: { filename: 'private-name' } },
     ] as never);
-    const page = await sut.getRunItems(run.id, JobRunSearchDto.schema.parse({}));
+    const page = await sut.getRunItems(run.id, JobRunItemSearchDto.schema.parse({}));
     expect(mocks.job.listRunItems).toHaveBeenCalledWith(run.id, 26, 0);
     expect(page).toMatchObject({ hasNextPage: false, items: [{ id: 'opaque-operational-id', outcome: 'active' }] });
     expect(JSON.stringify(page)).not.toMatch(/face-id|media-id|private-name|itemKey|rootItemKey|selection/);
   });
   it('distinguishes a missing run from an empty item page', async () => {
     mocks.job.listRunItems.mockResolvedValue(undefined);
-    await expect(sut.getRunItems(run.id, JobRunSearchDto.schema.parse({}))).rejects.toThrow('Job run not found');
+    await expect(sut.getRunItems(run.id, JobRunItemSearchDto.schema.parse({}))).rejects.toThrow('Job run not found');
     mocks.job.listRunItems.mockResolvedValue([]);
-    await expect(sut.getRunItems(run.id, JobRunSearchDto.schema.parse({}))).resolves.toEqual({
+    await expect(sut.getRunItems(run.id, JobRunItemSearchDto.schema.parse({}))).resolves.toEqual({
       items: [],
       hasNextPage: false,
     });
@@ -92,6 +95,138 @@ describe('durable run read service', () => {
       failedQueues: ['thumbnailGeneration'],
     });
   });
+  it('getRuns passes foldNightly and maps the new fields', async () => {
+    mocks.job.listRuns.mockResolvedValue([
+      {
+        ...run,
+        nightly: true,
+        pausedQueues: ['faceDetection'],
+        unreachableLibraries: ['Holiday drive'],
+        failureCauses: [{ cause: 'unsupported', count: 863 }],
+        earlierRuns: [
+          {
+            id: '0195e2a0-0000-7000-8000-000000000002',
+            createdAt: new Date('2026-10-03T02:00:00.000Z'),
+            finishedAt: new Date('2026-10-03T04:00:00.000Z'),
+            total: 900,
+            leftOver: 863,
+          },
+        ],
+        leftOverStreak: { photos: 863, nights: 2, capped: false },
+        leftOver: 863,
+      },
+    ]);
+    const page = await sut.getRuns(JobRunSearchDto.schema.parse({ foldNightly: 'true' }));
+    expect(mocks.job.listRuns).toHaveBeenCalledWith(26, 0, true);
+    expect(page.items[0]).toMatchObject({
+      nightly: true,
+      pausedQueues: ['faceDetection'],
+      unreachableLibraries: ['Holiday drive'],
+      failureCauses: [{ cause: 'unsupported', count: 863 }],
+      earlierRuns: [
+        {
+          id: '0195e2a0-0000-7000-8000-000000000002',
+          createdAt: '2026-10-03T02:00:00.000Z',
+          finishedAt: '2026-10-03T04:00:00.000Z',
+          total: 900,
+          leftOver: 863,
+        },
+      ],
+      leftOverStreak: { photos: 863, nights: 2, capped: false },
+      leftOver: 863,
+    });
+    expect(JobRunPageDto.schema.parse(page)).toEqual(page);
+
+    mocks.job.listRuns.mockResolvedValue([run]);
+    const plain = await sut.getRuns(JobRunSearchDto.schema.parse({}));
+    expect(mocks.job.listRuns).toHaveBeenLastCalledWith(26, 0, false);
+    expect(plain.items[0]).not.toHaveProperty('earlierRuns');
+    expect(plain.items[0]).not.toHaveProperty('leftOverStreak');
+    expect(plain.items[0]).not.toHaveProperty('leftOver');
+  });
+  describe('left-over photos (FL-1349)', () => {
+    const review = {
+      photos: 2,
+      countsPhotos: true,
+      causes: [
+        {
+          cause: 'unsupported' as const,
+          count: 2,
+          stopped: 0,
+          repaired: 0,
+          libraries: [],
+          queues: ['thumbnailGeneration'],
+          message: 'unsupported image format',
+          samples: [
+            { assetId: '0195e2a0-0000-7000-8000-00000000000a', fileName: 'a.heic', ownerId: 'me', ownerName: 'Me' },
+            { assetId: '0195e2a0-0000-7000-8000-00000000000b', fileName: 'b.heic', ownerId: 'them', ownerName: 'Them' },
+          ],
+        },
+      ],
+    };
+
+    it('passes the reader’s privacy to the sample read', async () => {
+      const auth = factory.auth({ user: { id: 'me', isAdmin: true }, session: { hasElevatedPermission: true } });
+      mocks.job.reviewRunFailures.mockResolvedValue(review);
+      const page = await sut.getRunFailures(auth, run.id);
+      expect(mocks.job.reviewRunFailures).toHaveBeenCalledWith(run.id, {
+        revealLockedOwnerId: 'me',
+        lockedOwnerId: 'me',
+        othersRulesViewerId: 'me',
+      });
+      expect(page.causes[0].samples).toEqual([
+        { assetId: '0195e2a0-0000-7000-8000-00000000000a', fileName: 'a.heic', ownerName: 'Me', pictureAllowed: true },
+        {
+          assetId: '0195e2a0-0000-7000-8000-00000000000b',
+          fileName: 'b.heic',
+          ownerName: 'Them',
+          pictureAllowed: false,
+        },
+      ]);
+      expect(JSON.stringify(page)).not.toContain('ownerId');
+
+      const hiding = factory.auth({ user: { id: 'me', isAdmin: true } });
+      hiding.hideNsfwAssets = true;
+      await sut.getRunFailures(hiding, run.id);
+      expect(mocks.job.reviewRunFailures).toHaveBeenLastCalledWith(run.id, {
+        excludeNsfw: true,
+        othersRulesViewerId: 'me',
+      });
+    });
+
+    it('404 for an unknown run', async () => {
+      mocks.job.reviewRunFailures.mockResolvedValue(undefined);
+      await expect(sut.getRunFailures(factory.auth(), run.id)).rejects.toBeInstanceOf(NotFoundException);
+      mocks.job.retryRunFailures.mockResolvedValue(undefined);
+      await expect(sut.actOnRunFailures(run.id, { cause: 'drive', action: 'retry' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('refuses stop for damaged (400)', async () => {
+      for (const body of [
+        { cause: 'damaged', action: 'stop' },
+        { cause: 'missing', action: 'retry' },
+        { cause: 'unsupported', action: 'retry' },
+        { cause: 'other', action: 'stop' },
+      ] as const) {
+        await expect(sut.actOnRunFailures(run.id, body)).rejects.toBeInstanceOf(BadRequestException);
+      }
+      expect(mocks.job.stopRunFailures).not.toHaveBeenCalled();
+      expect(mocks.job.retryRunFailures).not.toHaveBeenCalled();
+    });
+
+    it('tries a drive or other cause again, and stops trying an unsupported one', async () => {
+      mocks.job.retryRunFailures.mockResolvedValue(3);
+      await expect(sut.actOnRunFailures(run.id, { cause: 'drive', action: 'retry' })).resolves.toEqual({ count: 3 });
+      expect(mocks.job.retryRunFailures).toHaveBeenCalledWith(run.id, 'drive');
+      mocks.job.stopRunFailures.mockResolvedValue(863);
+      await expect(sut.actOnRunFailures(run.id, { cause: 'unsupported', action: 'stop' })).resolves.toEqual({
+        count: 863,
+      });
+      expect(mocks.job.stopRunFailures).toHaveBeenCalledWith(run.id, 'unsupported');
+    });
+  });
   it('releases a held run and refuses an import that is not activated yet', async () => {
     mocks.job.releaseRun.mockResolvedValueOnce('released');
     await expect(sut.releaseRun(run.id)).resolves.toBeUndefined();
@@ -102,6 +237,9 @@ describe('durable run read service', () => {
     await expect(sut.releaseRun(run.id)).rejects.toBeInstanceOf(BadRequestException);
     mocks.job.releaseRun.mockResolvedValueOnce('not_found');
     await expect(sut.releaseRun(run.id)).rejects.toBeInstanceOf(NotFoundException);
+  });
+  it('keeps foldNightly to the run list', () => {
+    expect(JobRunItemSearchDto.schema.parse({ foldNightly: 'true' })).not.toHaveProperty('foldNightly');
   });
   it.each([{ take: 0 }, { take: 101 }, { skip: -1 }, { take: 'all' }])('rejects invalid pagination %j', (page) => {
     expect(() => JobRunSearchDto.schema.parse(page)).toThrow();

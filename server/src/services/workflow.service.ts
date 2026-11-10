@@ -36,6 +36,7 @@ import {
   toDefinition,
   workflowIssues,
 } from 'src/utils/workflow-definition.js';
+import { isFrameleafEventTrigger } from 'src/utils/workflow-event.js';
 import { type PreviewAsset, getPreviewFilter, isCoreAction, passesPreviewFilter } from 'src/utils/workflow-preview.js';
 import {
   type WorkflowSource,
@@ -43,7 +44,7 @@ import {
   resolveWorkflowSource,
   workflowDefinitionHash,
 } from 'src/utils/workflow-source.js';
-import { getWorkflowTriggers, isMethodCompatible } from 'src/utils/workflow.js';
+import { getFrameleafEventTriggers, getWorkflowTriggers, isMethodCompatible } from 'src/utils/workflow.js';
 
 /** FL-729: the preview checks built-in filters on at most this many matches. */
 const PREVIEW_FILTER_LIMIT = 10_000;
@@ -208,6 +209,9 @@ export class WorkflowService extends BaseService {
     const workflow = await this.findOrFail(id);
     if (!workflow.enabled) throw new BadRequestException('Enable this workflow before running it');
     const definition = this.definitionOf(workflow);
+    if (isFrameleafEventTrigger(definition.trigger)) {
+      throw new BadRequestException('This workflow runs each time its event happens in Frameleaf');
+    }
     this.assertCanEnable(true, definition, await this.pluginRepository.getForValidation());
     const snapshotAt = new Date();
     const prepared = await this.prepareSource(definition.source ?? { filter: {} }, snapshotAt, auth.user.id);
@@ -263,12 +267,21 @@ export class WorkflowService extends BaseService {
     );
   }
 
-  async discovery(): Promise<WorkflowDiscoveryResponseDto> {
+  async discovery(auth: AuthDto): Promise<WorkflowDiscoveryResponseDto> {
     const plugins = await this.pluginRepository.search({ enabled: true });
     return {
       triggers: getWorkflowTriggers(),
       templates: plugins.flatMap((plugin) => plugin.templates.map((template) => mapTemplate(plugin, template))),
+      // FL-819: administrators decide what leaves the server, so only they start workflows on events
+      eventTriggers: auth.user.isAdmin ? getFrameleafEventTriggers() : [],
     };
+  }
+
+  /** FL-819: a workflow that starts on a Frameleaf event belongs to an administrator. */
+  private assertMayUseTrigger(auth: AuthDto, definition: WorkflowDefinitionDocument) {
+    if (isFrameleafEventTrigger(definition.trigger) && !auth.user.isAdmin) {
+      throw new BadRequestException('Only an administrator can start a workflow when something happens in Frameleaf');
+    }
   }
 
   async search(auth: AuthDto, dto: WorkflowSearchDto): Promise<WorkflowResponseDto[]> {
@@ -296,6 +309,7 @@ export class WorkflowService extends BaseService {
     const definition = this.parseDefinition({ trigger, extra, source, schedule, steps: steps ?? [] });
     const methods = await this.pluginRepository.getForValidation();
     const enabled = workflowDto.enabled ?? true;
+    this.assertMayUseTrigger(auth, definition);
     this.assertCanEnable(enabled, definition, methods);
 
     const workflow = await this.workflowRepository.create(
@@ -329,6 +343,9 @@ export class WorkflowService extends BaseService {
           steps: steps ? this.withStoredCredentials(steps, stored) : stored.steps,
         })
       : stored;
+    if (changesDefinition) {
+      this.assertMayUseTrigger(auth, definition);
+    }
     this.assertCanEnable(workflowDto.enabled ?? current.enabled, definition, methods);
 
     const workflow = await this.workflowRepository.update(
@@ -386,7 +403,7 @@ export class WorkflowService extends BaseService {
       this.pluginRepository.getForValidation(),
       this.workflowRepository.getLatestRunAttempt(id, runId),
     ]);
-    if (!run?.triggerDataId) {
+    if (!run?.triggerDataId || isFrameleafEventTrigger(this.definitionOf(workflow).trigger)) {
       throw new BadRequestException('This run cannot be retried');
     }
     if (!workflow.enabled) {

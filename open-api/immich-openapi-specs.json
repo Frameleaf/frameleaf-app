@@ -31774,6 +31774,15 @@
         "operationId": "getJobRuns",
         "parameters": [
           {
+            "name": "foldNightly",
+            "required": false,
+            "in": "query",
+            "description": "Show only the newest nightly run, with its earlier nights (Recent work); a nightly run with a newer one is left out",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "skip",
             "required": false,
             "in": "query",
@@ -31835,6 +31844,139 @@
           }
         ],
         "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/jobs/runs/{id}/failures": {
+      "get": {
+        "description": "The photos a run left over (failed or needing attention), grouped by plain cause, each with up to six photos the caller may see and one raw message. The counts cover every account's photos; another account's Locked or hidden photos never appear among the samples.",
+        "operationId": "getJobRunFailures",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRunFailuresResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "description": "Job run not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Review a job run's left-over photos",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Try again now (retry) the photos left over because a drive can't be reached or for other reasons, or stop trying (stop) the ones whose format can't be read. Stopping keeps their history; nightly processing no longer picks them.",
+        "operationId": "actOnJobRunFailures",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobRunFailureActionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRunFailureActionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "description": "This action doesn't apply to photos left over for this reason"
+          },
+          "404": {
+            "description": "Job run not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Act on a job run's left-over photos",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
         "x-immich-state": "Alpha"
       }
     },
@@ -71613,6 +71755,10 @@
       },
       "AdminConfigServerDto": {
         "properties": {
+          "automationsLocalNetwork": {
+            "description": "Let automations send Frameleaf events to devices on this network, such as Home Assistant. Off: they only reach public https addresses",
+            "type": "boolean"
+          },
           "externalDomain": {
             "description": "External domain",
             "type": "string"
@@ -104674,6 +104820,174 @@
         ],
         "type": "string"
       },
+      "JobRunFailureAction": {
+        "description": "retry: try again now (drive or other); stop: stop trying (unsupported)",
+        "enum": [
+          "retry",
+          "stop"
+        ],
+        "type": "string"
+      },
+      "JobRunFailureActionDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/JobRunFailureAction"
+          },
+          "cause": {
+            "$ref": "#/components/schemas/JobRunFailureCause"
+          }
+        },
+        "required": [
+          "action",
+          "cause"
+        ],
+        "type": "object"
+      },
+      "JobRunFailureActionResponseDto": {
+        "properties": {
+          "count": {
+            "description": "Photos tried again or stopped",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "JobRunFailureCause": {
+        "description": "Why a photo was left over: drive (its external library can't be reached), missing (the file is gone), damaged, unsupported (a format that can't be read), or other",
+        "enum": [
+          "drive",
+          "missing",
+          "damaged",
+          "unsupported",
+          "other"
+        ],
+        "type": "string"
+      },
+      "JobRunFailureCauseDto": {
+        "properties": {
+          "cause": {
+            "$ref": "#/components/schemas/JobRunFailureCause"
+          },
+          "count": {
+            "description": "Photos of this cause that still need a look",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "libraries": {
+            "description": "For drive: up to three external libraries that can't be reached",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "message": {
+            "description": "One raw error message, from a photo in the samples and a job that may show it; null when none may",
+            "nullable": true,
+            "type": "string"
+          },
+          "queues": {
+            "description": "Queues whose failed jobs these photos have (the per-photo lists)",
+            "items": {
+              "$ref": "#/components/schemas/QueueName"
+            },
+            "type": "array"
+          },
+          "repaired": {
+            "description": "Of the photos needing a look, damaged files Library care already repaired",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "samples": {
+            "description": "Up to six of the photos the caller may see: never another account’s Locked or hidden media",
+            "items": {
+              "$ref": "#/components/schemas/JobRunFailureSampleDto"
+            },
+            "maxItems": 6,
+            "type": "array"
+          },
+          "stopped": {
+            "description": "Photos of this cause whose processing was stopped (Stop trying)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cause",
+          "count",
+          "libraries",
+          "message",
+          "queues",
+          "repaired",
+          "samples",
+          "stopped"
+        ],
+        "type": "object"
+      },
+      "JobRunFailureSampleDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo or video",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "The name of its file",
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "The name of the account whose library it is in",
+            "type": "string"
+          },
+          "pictureAllowed": {
+            "description": "The caller may see its picture: false on another account’s photo",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetId",
+          "fileName",
+          "ownerName",
+          "pictureAllowed"
+        ],
+        "type": "object"
+      },
+      "JobRunFailuresResponseDto": {
+        "properties": {
+          "causes": {
+            "description": "One per cause with photos, most telling first",
+            "items": {
+              "$ref": "#/components/schemas/JobRunFailureCauseDto"
+            },
+            "type": "array"
+          },
+          "countsPhotos": {
+            "description": "The counts are photos; when false they are tasks",
+            "type": "boolean"
+          },
+          "photos": {
+            "description": "Photos left over, stopped ones included",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "causes",
+          "countsPhotos",
+          "photos"
+        ],
+        "type": "object"
+      },
       "JobRunItemPageDto": {
         "properties": {
           "hasNextPage": {
@@ -104833,6 +105147,23 @@
         ],
         "type": "object"
       },
+      "JobRunItemSearchDto": {
+        "properties": {
+          "skip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take": {
+            "default": 25,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "JobRunPageDto": {
         "properties": {
           "hasNextPage": {
@@ -104891,6 +105222,50 @@
             "minimum": 0,
             "type": "integer"
           },
+          "earlierRuns": {
+            "description": "With foldNightly, on the newest nightly run: the previous nights, newest first",
+            "items": {
+              "properties": {
+                "createdAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "finishedAt": {
+                  "format": "date-time",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "leftOver": {
+                  "description": "Photos it left over",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "total": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "createdAt",
+                "finishedAt",
+                "total",
+                "leftOver"
+              ],
+              "type": "object"
+            },
+            "maxItems": 6,
+            "type": "array"
+          },
           "enumerationDone": {
             "type": "boolean"
           },
@@ -104903,6 +105278,27 @@
             "description": "Queues with failed or needs-attention jobs in this run",
             "items": {
               "$ref": "#/components/schemas/QueueName"
+            },
+            "type": "array"
+          },
+          "failureCauses": {
+            "description": "Photos left over (failed or needing attention) by cause, most telling first; stopped ones are left out. Absent when nothing failed",
+            "items": {
+              "properties": {
+                "cause": {
+                  "$ref": "#/components/schemas/JobRunFailureCause"
+                },
+                "count": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "cause",
+                "count"
+              ],
+              "type": "object"
             },
             "type": "array"
           },
@@ -104936,10 +105332,46 @@
             "nullable": true,
             "type": "string"
           },
+          "leftOver": {
+            "description": "Photos that still need a look: the sum of failureCauses, present whenever it is. Cards use it rather than failed + needsAttention, which keep counting stopped photos and a live run's photos still being worked on",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "leftOverStreak": {
+            "description": "With foldNightly, on the newest nightly run: how long the same photos have been left over",
+            "properties": {
+              "capped": {
+                "description": "Every night it could count back through left them all: it may be longer (\"N or more nights\")",
+                "type": "boolean"
+              },
+              "nights": {
+                "description": "Nights in a row, this one included, that left all of them over",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "photos": {
+                "description": "Photos this run left over (stopped ones aside)",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "photos",
+              "nights"
+            ],
+            "type": "object"
+          },
           "needsAttention": {
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "nightly": {
+            "description": "The overnight schedule's work",
+            "type": "boolean"
           },
           "noDispatchBacklog": {
             "type": "boolean"
@@ -104948,6 +105380,13 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "pausedQueues": {
+            "description": "Paused queues that unstarted work of this run waits on; resuming them lets it carry on",
+            "items": {
+              "$ref": "#/components/schemas/QueueName"
+            },
+            "type": "array"
           },
           "reasons": {
             "items": {
@@ -105075,6 +105514,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "unreachableLibraries": {
+            "description": "Names of up to three external libraries whose files work of this run waits for (can't be reached)",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
           "waiting": {
             "maximum": 9007199254740991,
             "minimum": 0,
@@ -105109,6 +105556,10 @@
       },
       "JobRunSearchDto": {
         "properties": {
+          "foldNightly": {
+            "description": "Show only the newest nightly run, with its earlier nights (Recent work); a nightly run with a newer one is left out",
+            "type": "boolean"
+          },
           "skip": {
             "default": 0,
             "maximum": 9007199254740991,
@@ -135106,6 +135557,10 @@
             "description": "Description",
             "type": "string"
           },
+          "frameleafEvents": {
+            "description": "Whether the method can run on Frameleaf events, such as a finished Studio export (FL-819)",
+            "type": "boolean"
+          },
           "hostFunctions": {
             "type": "boolean"
           },
@@ -135143,6 +135598,7 @@
         "required": [
           "allowedHosts",
           "description",
+          "frameleafEvents",
           "hostFunctions",
           "key",
           "name",
@@ -164685,6 +165141,13 @@
       },
       "WorkflowDiscoveryResponseDto": {
         "properties": {
+          "eventTriggers": {
+            "description": "Frameleaf events a workflow can start on (FL-819); they feed only the webhook step. Listed to administrators only",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowEventTriggerResponseDto"
+            },
+            "type": "array"
+          },
           "templates": {
             "items": {
               "$ref": "#/components/schemas/PluginTemplateResponseDto"
@@ -164699,8 +165162,26 @@
           }
         },
         "required": [
+          "eventTriggers",
           "templates",
           "triggers"
+        ],
+        "type": "object"
+      },
+      "WorkflowEventTriggerResponseDto": {
+        "properties": {
+          "event": {
+            "description": "Event name the webhook step sends, for example cloud.backup.failed",
+            "type": "string"
+          },
+          "trigger": {
+            "description": "Trigger to store on a workflow, for example CloudBackupFailed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "trigger"
         ],
         "type": "object"
       },

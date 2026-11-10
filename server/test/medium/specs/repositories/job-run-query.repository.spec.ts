@@ -3,6 +3,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { getRun, listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
 import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<any>;
@@ -356,4 +360,102 @@ it('reads edit deliveries through their media operation, as the queue counts do'
   const counts = await new SqlQueueStore(db).counts('editor');
   expect(counts).toMatchObject({ active: 1, paused: 1, waiting: 0 });
   expect(await observeQueueRun(db, 'editor')).toMatchObject({ active: 1, waiting: 1, paused: 1 });
+});
+
+describe('Recent work (FL-1349)', () => {
+  const night = async (daysAgo: number, failedRoots: string[], doneRoots: string[] = []) => {
+    const id = await run({ kind: 'OvernightSequence' });
+    await sql`update job_run set "createdAt" = now() - ${daysAgo} * interval '1 day' where id = ${id}::uuid`.execute(
+      db,
+    );
+    await job(id, null, 'OvernightSequence', { state: 'completed' });
+    for (const root of failedRoots) await job(id, root, 'Thumbnail', { state: 'failed' });
+    for (const root of doneRoots) await job(id, root, 'Thumbnail', { state: 'completed' });
+    return id;
+  };
+
+  it('folds three nightly runs into the newest, with two earlier nights', async () => {
+    const oldest = await night(3, ['a'], ['b', 'c']);
+    const middle = await night(2, ['a', 'b'], ['c']);
+    const newest = await night(1, ['a'], ['b']);
+    const manual = await run();
+    await job(manual, 'a', 'Thumbnail', { state: 'completed' });
+    await finishRuns(db, 10);
+
+    const folded = await listRuns(db, 25, 0, true);
+    expect(folded.map(({ id }) => id)).toEqual([manual, newest]);
+    expect(folded[0]).toMatchObject({ nightly: false });
+    expect(folded[0].earlierRuns).toBeUndefined();
+    expect(folded[1]).toMatchObject({
+      nightly: true,
+      earlierRuns: [
+        { id: middle, total: 3, leftOver: 2, finishedAt: expect.any(Date) },
+        { id: oldest, total: 3, leftOver: 1, finishedAt: expect.any(Date) },
+      ],
+    });
+  });
+
+  it('the same photos left over 2 nights in a row; a third night with fewer ends the streak', async () => {
+    await night(3, ['a'], ['b']);
+    await night(2, ['a', 'b', 'c']);
+    const newest = await night(1, ['a', 'b'], ['c']);
+    await finishRuns(db, 10);
+    const [card] = await listRuns(db, 25, 0, true);
+    expect(card).toMatchObject({ id: newest, leftOverStreak: { photos: 2, nights: 2, capped: false } });
+
+    // pruned history can only shorten it
+    await sql`delete from job where "runId" = ${newest}::uuid`.execute(db);
+    const [pruned] = await listRuns(db, 25, 0, true);
+    expect(pruned.leftOverStreak).toBeUndefined();
+  });
+
+  it('says the streak may be longer once it counts back through every night it reads', async () => {
+    for (let daysAgo = 8; daysAgo >= 1; daysAgo--) await night(daysAgo, ['a']);
+    await finishRuns(db, 20);
+    const [card] = await listRuns(db, 25, 0, true);
+    expect(card).toMatchObject({ leftOverStreak: { photos: 1, nights: 7, capped: true }, leftOver: 1 });
+  });
+
+  it('names the paused step’s queue for Resume', async () => {
+    const id = await run();
+    await job(id, 'a', 'Thumbnail', { state: 'active' });
+    await job(id, 'b', 'Faces', { queue: 'paused' });
+    await job(id, 'c', 'Smart', { queue: 'closed' });
+    expect(await read(id)).toMatchObject({ pausedQueues: ['paused'] });
+    const other = await run();
+    await job(other, 'a', 'Thumbnail');
+    expect(await read(other)).toMatchObject({ pausedQueues: [] });
+  });
+
+  it('names the external library a deferred import waits for', async () => {
+    const { ctx } = newMediumService(BaseService, {
+      database: db as unknown as Kysely<DB>,
+      real: [],
+      mock: [LoggingRepository],
+    });
+    const { user } = await ctx.newUser();
+    const libraryId = randomUUID();
+    await sql`insert into library(id, name, "ownerId", "importPaths", "exclusionPatterns")
+      values (${libraryId}::uuid, 'Holiday drive', ${user.id}::uuid, '{/mnt/a}', '{}')`.execute(db);
+    const { asset } = await ctx.newAsset({ ownerId: user.id, libraryId });
+    const { asset: upload } = await ctx.newAsset({ ownerId: user.id });
+    const id = await run({ kind: 'library-import-derived' });
+    await job(id, asset.id, 'Smart', { dependency: 'source-unavailable' });
+    await job(id, upload.id, 'Smart', { dependency: 'source-unavailable' });
+    expect(await read(id)).toMatchObject({ unreachableLibraries: ['Holiday drive'] });
+    const plain = await run();
+    await job(plain, 'a', 'Thumbnail');
+    expect((await read(plain)).unreachableLibraries).toBeUndefined();
+  });
+
+  it('without foldNightly the list is unchanged', async () => {
+    const older = await night(2, ['a']);
+    const newer = await night(1, ['a']);
+    await finishRuns(db, 10);
+    const page = await listRuns(db, 25, 0);
+    expect(page.map(({ id }) => id)).toEqual([newer, older]);
+    expect(page[0].earlierRuns).toBeUndefined();
+    expect(page[0].leftOverStreak).toBeUndefined();
+    expect(page[0]).toMatchObject({ nightly: true });
+  });
 });

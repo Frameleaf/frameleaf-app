@@ -160,6 +160,39 @@ from
 where
   frame."assetId" = $10::uuid
 
+-- LockedFileRepository.recordedKeptPaths
+select distinct
+  kept.path
+from
+  public.asset_health h
+  cross join lateral (
+    select
+      h.evidence ->> 'retainedPath'
+    union all
+    select
+      p.path
+    from
+      public.asset_health_step s
+      cross join lateral (
+        values
+          (s.undo ->> 'previousPath'),
+          (s.undo ->> 'retainedPath'),
+          (
+            case
+              when strpos(s.undo ->> 'originalPath', $1) > 0 then s.undo ->> 'originalPath'
+            end
+          )
+      ) as p (path)
+    where
+      s."healthId" = h.id
+      and jsonb_typeof(s.undo) = 'object'
+  ) as kept (path)
+where
+  h."assetId" = $2::uuid
+  and kept.path is not null
+order by
+  kept.path
+
 -- LockedFileRepository.encryptedSetOwner
 select
   "asset"."ownerId"

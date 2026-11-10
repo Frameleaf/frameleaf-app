@@ -877,6 +877,26 @@ export type JobItem =
         manual?: boolean;
       };
     }
+  /** FL-819: a Frameleaf event, handed to each of its owner's workflows that start on it */
+  | {
+      name: JobName.WorkflowEventDispatch;
+      data: { event: import('src/utils/workflow-event.js').FrameleafEventOccurrence };
+    }
+  /** FL-819: one workflow run for one Frameleaf event; the same event and workflow always share its ids */
+  | {
+      name: JobName.WorkflowEventTrigger;
+      data: {
+        workflowId: string;
+        event: import('src/utils/workflow-event.js').FrameleafEventOccurrence;
+        runId: string;
+        executionId: string;
+        attempt?: number;
+        /** The automatic retry starts at the step that failed. */
+        fromStepId?: string;
+        /** The complete definition when the run was queued; a changed workflow does not run it. */
+        definitionSha256?: string;
+      };
+    }
 
   // Integrity
   | { name: JobName.IntegrityUntrackedFilesQueueAll; data?: IIntegrityJob }

@@ -165,6 +165,20 @@
             onChange={(value) => (settingsDraft.draft.server.lanDiscovery = value)}
           />
         </Row>
+        <!-- FL-819: off by default; automations then only send Frameleaf events to public https addresses -->
+        <Row
+          label={$t('frameleaf_server_automations_local')}
+          help={server.automationsLocalNetwork
+            ? $t('frameleaf_server_automations_local_on')
+            : $t('frameleaf_server_automations_local_off')}
+        >
+          <Switch
+            label={$t('frameleaf_server_automations_local')}
+            checked={server.automationsLocalNetwork ?? false}
+            held={disabled}
+            onChange={(value) => (settingsDraft.draft.server.automationsLocalNetwork = value)}
+          />
+        </Row>
         <Row label={$t('frameleaf_sharing_find_label')} help={$t('frameleaf_server_identity_find_moved')}>
           <Button onclick={() => goto(commandCenterUrl('sharing'))}>{$t('frameleaf_server_identity_find_open')}</Button>
         </Row>

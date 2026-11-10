@@ -198,6 +198,31 @@ export async function isLockedPath(path: string): Promise<boolean> {
 /** For tests. */
 export const clearLockedPathCache = () => checks.clear();
 
+/**
+ * FL-1364: a strict answer for a file that must never be used while sealed (a file Library care kept), never
+ * cached: `unreadable` when something is at the path but it can't be read as a file, so it may be sealed.
+ * Only a path with nothing at it is `missing`.
+ */
+export async function lockedPathState(path: string): Promise<'missing' | 'plain' | 'sealed' | 'unreadable'> {
+  let stats;
+  try {
+    stats = await fs.stat(path);
+  } catch (error) {
+    return ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException)?.code ?? '') ? 'missing' : 'unreadable';
+  }
+  if (!stats.isFile()) {
+    return 'unreadable';
+  }
+  if (stats.size < 4) {
+    return 'plain';
+  }
+  try {
+    return (await isLockedFile(path)) ? 'sealed' : 'plain';
+  } catch {
+    return 'unreadable';
+  }
+}
+
 // ---- key choice ----
 
 /**

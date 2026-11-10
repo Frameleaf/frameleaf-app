@@ -7,6 +7,7 @@ import {
   WorkflowTrigger,
   type PluginMethodResponseDto,
   type PluginTemplateResponseDto,
+  type WorkflowEventTriggerResponseDto,
   type WorkflowTriggerResponseDto,
 } from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
@@ -22,6 +23,8 @@ class PluginManager {
   #methods = $state<PluginMethodResponseDto[]>([]);
   #triggers = $state<WorkflowTriggerResponseDto[]>([]);
   #templates = $state<PluginTemplateResponseDto[]>([]);
+  /** FL-819: Frameleaf events a workflow can start on; the server lists them to administrators only. */
+  #eventTriggers = $state<WorkflowEventTriggerResponseDto[]>([]);
 
   constructor() {
     eventManager.on({
@@ -46,6 +49,10 @@ class PluginManager {
 
   get templates() {
     return this.#templates;
+  }
+
+  get eventTriggers() {
+    return this.#eventTriggers;
   }
 
   ready() {
@@ -78,6 +85,7 @@ class PluginManager {
     this.#methods = [];
     this.#triggers = [];
     this.#templates = [];
+    this.#eventTriggers = [];
   }
 
   private initialize() {
@@ -106,6 +114,7 @@ class PluginManager {
         return {
           triggers: triggers.map((entry) => ({ ...entry, trigger: WorkflowTrigger[entry.trigger] })),
           templates: templates.map((entry) => ({ ...entry, trigger: WorkflowTrigger[entry.trigger] })),
+          eventTriggers: [],
         };
       }),
     ]);
@@ -120,6 +129,8 @@ class PluginManager {
 
     this.#triggers = discovery.triggers;
     this.#templates = discovery.templates;
+    // a server from before FL-819 does not list events
+    this.#eventTriggers = discovery.eventTriggers ?? [];
   }
 }
 

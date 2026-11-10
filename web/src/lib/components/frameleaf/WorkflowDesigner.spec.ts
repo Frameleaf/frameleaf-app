@@ -38,6 +38,7 @@ const webhook = (properties: Record<string, unknown>, required: string[] = []): 
   title: 'Trigger Webhook',
   description: 'Send a request',
   types: [WorkflowType.AssetV1],
+  frameleafEvents: true,
   uiHints: [],
   hostFunctions: true,
   allowedHosts: ['hooks.example.test'],
@@ -295,6 +296,48 @@ describe('WorkflowDesigner', () => {
     expect(status).toHaveTextContent(t.preview_run_needs);
     // A dry run never reaches the server.
     expect(sdkMock.updateWorkflow).not.toHaveBeenCalled();
+  });
+
+  it('groups Frameleaf events apart and shows what an event sends instead of counting photos (FL-819)', async () => {
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ timezone: 'UTC', sourceFilters: true } as never);
+    const filter: PluginMethodResponseDto = {
+      ...webhook({}),
+      key: 'immich-plugin-core#assetTypeFilter',
+      name: 'assetTypeFilter',
+      title: 'Filter by type',
+      frameleafEvents: false,
+    };
+    const stored = workflow({
+      enabled: false,
+      trigger: 'CloudBackupFailed',
+      steps: [{ ...workflow().steps[0], enabled: true }],
+    });
+    render(WorkflowDesigner, {
+      open: true,
+      workflow: stored,
+      initial: draftFromWorkflow(stored),
+      methods: [webhook({ url: { type: 'string', title: 'URL' } }), filter],
+      triggers,
+      eventTriggers: [{ trigger: 'CloudBackupFailed', event: 'cloud.backup.failed' }],
+      templates: [],
+      onSaved: vi.fn(),
+      onDeleted: vi.fn(),
+    });
+
+    const trigger = screen.getByRole('combobox', { name: t.trigger });
+    expect(trigger).toHaveValue('CloudBackupFailed');
+    const groups = [...trigger.querySelectorAll('optgroup')].map((group) => group.getAttribute('label'));
+    expect(groups).toEqual([t.trigger_group_photos, t.trigger_group_events]);
+    // only the webhook can feed an event
+    const offered = [...screen.getByRole('combobox', { name: t.available_method }).querySelectorAll('option')];
+    expect(offered.map((option) => option.textContent?.trim())).toEqual(['Trigger Webhook']);
+
+    await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
+    await fireEvent.click(screen.getByRole('button', { name: t.validate }));
+    const sample = await screen.findByLabelText(t.event_sample_label);
+    expect(sample).toHaveTextContent('"event": "cloud.backup.failed"');
+    expect(screen.getByText(t.event_privacy)).toBeInTheDocument();
+    expect(sdkMock.previewWorkflow).not.toHaveBeenCalled();
   });
 
   it('never shows a stored credential, only that one is kept', () => {

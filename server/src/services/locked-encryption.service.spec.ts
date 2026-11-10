@@ -97,6 +97,7 @@ describe(LockedEncryptionService.name, () => {
     mocks.lockedKey.userIds.mockImplementation(() => Promise.resolve(files.keys().toArray()));
     mocks.lockedKey.pepper.mockResolvedValue(PEPPER);
     mocks.lockedEncryption.getLockedAssets.mockResolvedValue([]);
+    mocks.lockedEncryption.getUnlockedCareAssetIds.mockResolvedValue([]);
     mocks.user.getForPinCode.mockImplementation(() =>
       Promise.resolve({ pinCode: `${PIN} (hashed)`, password: 'password (hashed)' }),
     );

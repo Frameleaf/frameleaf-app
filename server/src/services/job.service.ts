@@ -1,8 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { RunFailureCause } from 'src/queue/run-failure-cause.js';
 import type { JobItem } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
-import { JobRunItemPageDto, JobRunPageDto, JobRunSearchDto, mapJobRun } from 'src/dtos/job-run.dto.js';
+import {
+  JobRunFailureActionDto,
+  JobRunFailureActionResponseDto,
+  JobRunFailuresDto,
+  JobRunItemPageDto,
+  JobRunItemSearchDto,
+  JobRunPageDto,
+  JobRunSearchDto,
+  mapJobRun,
+} from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
 import {
   AssetType,
@@ -12,13 +23,16 @@ import {
   JobStatus,
   LibraryScope,
   ManualJobName,
+  QueueName,
 } from 'src/enum.js';
 import { afterJobCommit, jobHandedToCare, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { workerMetrics } from 'src/repositories/metrics.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
+import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 import { deferForLockedKey } from 'src/utils/locked-read.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { effectiveVisibilityOf, isLockedRow } from 'src/utils/locked.js';
 import {
   isFacialRecognitionEnabled,
@@ -115,17 +129,23 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
   }
 };
 
+/** FL-1349: the one action the review sheet offers per cause; missing and damaged files go to Library care. */
+const RUN_FAILURE_ACTIONS: Record<'retry' | 'stop', readonly RunFailureCause[]> = {
+  retry: ['drive', 'other'],
+  stop: ['unsupported'],
+};
+
 @Injectable()
 export class JobService extends BaseService {
-  async getRuns({ take, skip }: JobRunSearchDto): Promise<JobRunPageDto> {
-    const rows = await this.jobRepository.listRuns(take + 1, skip);
+  async getRuns({ take, skip, foldNightly }: JobRunSearchDto): Promise<JobRunPageDto> {
+    const rows = await this.jobRepository.listRuns(take + 1, skip, foldNightly ?? false);
     return {
       items: rows.slice(0, take).map((row) => mapJobRun(row)),
       hasNextPage: rows.length > take,
     };
   }
 
-  async getRunItems(id: string, { take, skip }: JobRunSearchDto): Promise<JobRunItemPageDto> {
+  async getRunItems(id: string, { take, skip }: JobRunItemSearchDto): Promise<JobRunItemPageDto> {
     const rows = await this.jobRepository.listRunItems(id, take + 1, skip);
     if (!rows) {
       throw new NotFoundException('Job run not found');
@@ -141,6 +161,58 @@ export class JobService extends BaseService {
       })),
       hasNextPage: rows.length > take,
     };
+  }
+
+  /**
+   * FL-1349: what a run left over, by cause. The counts cover every account's photos; the samples and the raw message
+   * follow Library care's privacy, and another account's photo is listed without its picture.
+   */
+  async getRunFailures(auth: AuthDto, id: string): Promise<JobRunFailuresDto> {
+    const review = await this.jobRepository.reviewRunFailures(id, {
+      ...getHiddenContentQueryOptions(auth),
+      ...getLockedVisibilityOptions(auth),
+      ...getOthersRulesQueryOptions(auth),
+    });
+    if (!review) {
+      throw new NotFoundException('Job run not found');
+    }
+    return {
+      photos: review.photos,
+      countsPhotos: review.countsPhotos,
+      causes: review.causes.map((group) => ({
+        cause: group.cause,
+        count: group.count,
+        stopped: group.stopped,
+        repaired: group.repaired,
+        libraries: group.libraries,
+        queues: group.queues as QueueName[],
+        message: group.message,
+        samples: group.samples.map((sample) => ({
+          assetId: sample.assetId,
+          fileName: sample.fileName,
+          ownerName: sample.ownerName,
+          pictureAllowed: sample.ownerId === auth.user.id,
+        })),
+      })),
+    };
+  }
+
+  /** FL-1349: Try again now (a drive that can't be reached, or other causes) or Stop trying (unsupported files). */
+  async actOnRunFailures(
+    id: string,
+    { cause, action }: JobRunFailureActionDto,
+  ): Promise<JobRunFailureActionResponseDto> {
+    if (!RUN_FAILURE_ACTIONS[action].includes(cause)) {
+      throw new BadRequestException(`Photos left over for this reason can't be handled with ${action}`);
+    }
+    const count =
+      action === 'retry'
+        ? await this.jobRepository.retryRunFailures(id, cause)
+        : await this.jobRepository.stopRunFailures(id, cause);
+    if (count === undefined) {
+      throw new NotFoundException('Job run not found');
+    }
+    return { count };
   }
 
   /** Release a run's held work (first setup or a paused setup); an import only once it is activated. */

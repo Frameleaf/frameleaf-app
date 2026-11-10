@@ -141,7 +141,7 @@ import { fileIdentity } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { JPEG_REPAIR_EXTENSIONS, type JpegRepairResult } from 'src/utils/jpeg-repair.js';
-import { isLockedPath } from 'src/utils/locked-read.js';
+import { isLockedPath, lockedPathState } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
   MediaHealthLocateSnapshot,
@@ -246,6 +246,10 @@ const UNDO_LOCKED = "This photo is locked, so this fix can't be undone.";
 /** Task 11b: the damaged file a repair kept, for its owner to download. */
 const NO_KEPT_FILE = "Frameleaf didn't keep a damaged file for this photo.";
 const KEPT_FILE_LOCKED = "This photo is locked, so the damaged file Frameleaf kept can't be downloaded.";
+/** FL-1364: the photo is out of Locked, but the file Frameleaf kept of it is still sealed (its drive was away). */
+const KEPT_FILE_SEALED = "The damaged file Frameleaf kept can't be opened yet. Frameleaf will try again; try later.";
+const UNDO_KEPT_SEALED =
+  "A file Frameleaf kept for this photo can't be opened yet, so this fix can't be undone now. Frameleaf will try again; try later.";
 const NOTHING_TO_UNDO = 'There is nothing to undo for this photo.';
 const OWNER_ONLY = "Only the photo's owner can do that.";
 /** F2: the Upload drive, which holds Library care's folder, is not there. */
@@ -2471,6 +2475,11 @@ export class MediaHealthService {
       // Task 11b: a Locked photo's file is never changed by an Undo, whoever unlocked it; nothing is moved
       throw new ConflictException(UNDO_LOCKED);
     }
+    const keptPaths = [fix.previousPath, fix.retainedPath].filter((keptPath): keptPath is string => !!keptPath);
+    if (await this.keptFileSealed(asset?.ownerId ?? auth.user.id, keptPaths)) {
+      // FL-1364: a kept file still sealed for Locked is never made the photo's file or put back as ciphertext
+      throw new ConflictException(UNDO_KEPT_SEALED);
+    }
     // a repair that stopped before it recorded what Undo needs: its repaired file says what it left, where the fix
     // left it or, once Folder layout moved it, where the photo is now
     const expectedChecksum = fix.checksum
@@ -2499,6 +2508,7 @@ export class MediaHealthService {
       stepId: fix.stepId,
       expectedOriginalPath: asset.originalPath,
       expectedChecksum,
+      keptPaths,
       status:
         record.category === MediaHealthCategory.Missing
           ? MediaHealthStatus.Missing
@@ -2515,6 +2525,11 @@ export class MediaHealthService {
     if (result === 'locked') {
       // put in Locked after the check above, before the undo held the photo: nothing was moved or relinked
       throw new ConflictException(UNDO_LOCKED);
+    }
+    if (result === 'sealed') {
+      // FL-1364: sealed after the check above, found under the kept file's own path lock
+      await this.queueKeptFileRetry(asset.ownerId);
+      throw new ConflictException(UNDO_KEPT_SEALED);
     }
     if (result === 'changed') {
       throw new ConflictException(UNDO_CHANGED);
@@ -2639,6 +2654,10 @@ export class MediaHealthService {
         : undefined;
     if (!kept) {
       throw new NotFoundException(NO_KEPT_FILE);
+    }
+    if (await this.keptFileSealed(asset.ownerId, [kept])) {
+      // FL-1364: still sealed for Locked; never handed out as ciphertext
+      throw new ConflictException(KEPT_FILE_SEALED);
     }
     // named so it is never taken for the repaired photo; the route keeps it out of every cache (private, no-store)
     const extension = path.extname(record.originalFileName);
@@ -4526,6 +4545,32 @@ export class MediaHealthService {
    */
   private isEncryptedOriginal(asset: Pick<MediaHealthAsset, 'originalPath'>): Promise<boolean> {
     return isLockedPath(asset.originalPath);
+  }
+
+  /**
+   * FL-1364: a file Library care kept of the photo is sealed with it while it is Locked and encrypted, and
+   * opened again when it leaves (the Locked file registry lists it). One that is still sealed (it was on a
+   * drive that was away while the photo left Locked) is ciphertext: never downloaded or put back by Undo.
+   * Strict (`lockedPathState`): one that is there but can't be read may be sealed, and counts as sealed.
+   */
+  private async keptFileSealed(ownerId: string, paths: string[]): Promise<boolean> {
+    for (const kept of paths) {
+      const state = await lockedPathState(kept);
+      if (state === 'sealed' || state === 'unreadable') {
+        await this.queueKeptFileRetry(ownerId);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** FL-1364: the owner's Locked sweep opens a kept file still sealed as soon as their key is loaded. */
+  private async queueKeptFileRetry(ownerId: string) {
+    try {
+      await this.jobRepository.queue({ name: JobName.LockedSweep, data: { userId: ownerId } });
+    } catch (error) {
+      this.logger.warn(`Could not queue a Locked sweep: ${getErrorMessage(error)}`);
+    }
   }
 
   /** A damage finding on an encrypted original leaves the trash queue: kept, and why. */

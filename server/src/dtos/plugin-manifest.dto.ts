@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { JsonSchemaSchema } from 'src/dtos/json-schema.dto.js';
-import { WorkflowTriggerSchema, WorkflowTypeSchema } from 'src/enum.js';
+import { PluginManifestWorkflowTypeSchema, WorkflowTriggerSchema } from 'src/enum.js';
 
 const pluginNameRegex = /^[a-z0-9-]+[a-z0-9]$/;
 const semverRegex =
@@ -14,7 +14,7 @@ const PluginManifestMethodSchema = z
     name: z.string().min(1).describe('Method name'),
     title: z.string().min(1).describe('Method title'),
     description: z.string().min(1).describe('Method description'),
-    types: z.array(WorkflowTypeSchema).min(1).describe('Workflow type'),
+    types: z.array(PluginManifestWorkflowTypeSchema).min(1).describe('Workflow type'),
     hostFunctions: z.boolean().optional().default(false).describe('Method uses host functions'),
     allowedHosts: z
       .array(z.string())

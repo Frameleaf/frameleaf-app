@@ -15,6 +15,7 @@ import {
   parseWorkflowDefinition,
   schemaDefaults,
   updateWorkflowParameter,
+  sampleEventMessage,
   workflowProblems,
   workflowStatus,
   type WorkflowDraft,
@@ -26,6 +27,7 @@ const method = (name: string, schema?: Record<string, unknown>, uiHints: string[
   title: name,
   description: '',
   types: [WorkflowType.AssetV1],
+  frameleafEvents: name === 'webhook',
   uiHints,
   hostFunctions: false,
   allowedHosts: [],
@@ -202,6 +204,39 @@ describe('workflowProblems', () => {
     enabled: true,
     extra: {},
     storedSecrets,
+  });
+
+  it('lets a Frameleaf event feed only the webhook step (FL-819)', () => {
+    const events = [{ trigger: 'CloudBackupFailed', event: 'cloud.backup.failed' }];
+    const hook = step('immich-plugin-core#webhook', { url: 'https://hooks.example.test' });
+    expect(workflowProblems(draft([hook], 'CloudBackupFailed'), methods, triggers, events)).toEqual([]);
+    expect(
+      workflowProblems(
+        draft([step('immich-plugin-core#assetTypeFilter', { allowedTypes: ['IMAGE'] }), hook], 'CloudBackupFailed'),
+        methods,
+        triggers,
+        events,
+      ),
+    ).toEqual([
+      {
+        step: 0,
+        message: 'Step 1: Frameleaf events can only send to a web address. Use “Trigger Webhook”.',
+      },
+    ]);
+    // a member is not offered events: the trigger is unavailable to them
+    expect(workflowProblems(draft([hook], 'CloudBackupFailed'), methods, triggers)).toEqual([
+      { message: 'This trigger is unavailable.' },
+    ]);
+  });
+
+  it('shows what a Frameleaf event sends, without naming a photo', () => {
+    const message = sampleEventMessage('CloudBackupFailed', 'cloud.backup.failed');
+    expect(message).toMatchObject({
+      type: 'EventV1',
+      trigger: 'CloudBackupFailed',
+      data: { event: 'cloud.backup.failed', subject: { kind: 'cloud-backup' } },
+    });
+    expect(JSON.stringify(message)).not.toMatch(/asset|path/i);
   });
 
   it('reports an unavailable trigger on an older server', () => {

@@ -547,7 +547,7 @@
       "name": "webhook",
       "title": "Trigger Webhook",
       "description": "POST/PUT event data to any URL",
-      "types": ["AssetV1"],
+      "types": ["AssetV1", "EventV1"],
       "hostFunctions": true,
       "allowedHosts": ["*"],
       "schema": {
@@ -567,6 +567,11 @@
             "type": "string",
             "title": "Header value",
             "description": "The value of the additional header"
+          },
+          "secret": {
+            "type": "string",
+            "title": "Signing secret",
+            "description": "Signs each message with this shared secret (X-Frameleaf-Signature: sha256=HMAC of \"<X-Frameleaf-Timestamp>.<X-Frameleaf-Delivery>.<body>\"), so the receiver can check it came from this server"
           },
           "method": {
             "type": "string",

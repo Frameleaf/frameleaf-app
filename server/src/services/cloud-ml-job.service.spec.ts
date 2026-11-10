@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { DummyDriver, Kysely, PostgresDialect, Transaction } from 'kysely';
 import fs from 'node:fs/promises';
@@ -13,6 +14,7 @@ import { AssetRestorationMode, AssetRestorationStatus } from 'src/dtos/asset-res
 import { CloudMlJobEstimateRequestDto } from 'src/dtos/cloud-ml-job.dto.js';
 import {
   AssetType,
+  JobName,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -1938,6 +1940,20 @@ describe(CloudMlJobService.name, () => {
         OPERATION_ID,
         expect.objectContaining({ acknowledged: true }),
       );
+      // FL-819: workflows hear what kind of job finished, never which photo (gated on it instead)
+      const [dispatch] = mocks.job.queue.mock.calls.find(([item]) => item.name === JobName.WorkflowEventDispatch)!;
+      expect(dispatch).toEqual({
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: expect.objectContaining({
+            trigger: WorkflowTrigger.CloudJobCompleted,
+            deliveryId: `cloud-job:${OPERATION_ID}`,
+            subject: { kind: 'cloud-job', id: OPERATION_ID, name: 'Restoration' },
+            detail: { job: 'restoration', stage: expect.any(String) },
+            privacyAssetIds: [expect.any(String)],
+          }),
+        },
+      });
     });
 
     it('keeps the result on Frameleaf Cloud when publishing fails for a moment, and tries again', async () => {
