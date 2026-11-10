@@ -14,7 +14,8 @@
 //   healthy | cut-short (service: corrupt) | unsupported | couldnt-check (transient, timeout)
 //
 // A fixture whose fix has not landed carries `expectedFailure: "<why, and which story fixes it>"`.
-// It must then really fail: once it passes, the run fails until the marker is removed.
+// with `failsOn`, the keys that differ today. It must fail on exactly those keys: once it passes, or
+// fails differently, the run fails until the entry is updated.
 // `--actual` prints what the image does with each fixture, as a starting point for new manifest entries.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
@@ -130,7 +131,7 @@ const assetTypes = {
 const rows = [];
 let failed = 0;
 for (const fixture of manifest.fixtures) {
-  const { file, root, kind, expectedFailure, ...expected } = fixture;
+  const { file, root, kind, expectedFailure, failsOn = [], ...expected } = fixture;
   assert.ok(roots[root], `${file}: no directory given for root "${root}"`);
   assert.ok(decoders[kind], `${file}: unknown kind "${kind}"`);
   const path = resolve(roots[root], file);
@@ -164,7 +165,12 @@ for (const fixture of manifest.fixtures) {
     .join('; ');
   let outcome = mismatches.length === 0 ? 'pass' : 'FAIL';
   if (expectedFailure) {
-    outcome = mismatches.length === 0 ? 'FAIL (passes now: remove expectedFailure)' : 'expected failure';
+    // Only the listed keys may differ, so a marker cannot hide a new regression or outlive half a fix.
+    const asListed = mismatches.length === failsOn.length && mismatches.every((key) => failsOn.includes(key));
+    outcome = asListed ? 'expected failure' : 'FAIL (fails on other keys than failsOn)';
+    if (mismatches.length === 0) {
+      outcome = 'FAIL (passes now: remove expectedFailure)';
+    }
   }
   failed += outcome.startsWith('FAIL') ? 1 : 0;
   rows.push({
