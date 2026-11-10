@@ -838,7 +838,7 @@ describe(MediaHealthRepository.name, () => {
       const { result: other } = await ctx.newAsset({ ownerId: user.id });
       const fail = async (assetId: string, name: JobName, times: number) => {
         for (let attempt = 0; attempt < times; attempt++) {
-          await recordProcessingFailure(defaultDatabase, { name, assetId }, 'unsupported format');
+          await recordProcessingFailure(defaultDatabase, { name, assetId }, 'bad data');
         }
       };
       // three failed tries set its previews aside; its details failed once

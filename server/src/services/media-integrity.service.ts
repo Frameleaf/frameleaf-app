@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { open } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
+import type { StillRung } from 'src/types.js';
 import { AssetType, Colorspace, MediaHealthStatus } from 'src/enum.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -289,7 +290,12 @@ export class MediaIntegrityService {
         if (signal.aborted) {
           return { status: 'timeout', reason: 'validation_timeout' };
         }
-        await this.mediaRepository.decodeImage(source, { colorspace: Colorspace.Srgb, processInvalidImages: false });
+        // The strict reading only: what it complains about decides between "healthy" and "cut short" below.
+        await this.mediaRepository.decodeImage(source, {
+          colorspace: Colorspace.Srgb,
+          processInvalidImages: false,
+          ladder: 'strict',
+        });
       } else {
         return { status: 'unsupported', reason: 'media_type_unsupported' };
       }
@@ -349,15 +355,20 @@ export class MediaIntegrityService {
       const said = message ? { message } : {};
       // FL-1353 (owner 2026-11-10): a picture that opens when read leniently is not damaged because a strict
       // decoder complains about it. The one exception is a JPEG cut short with rows really missing.
-      const lenient = { colorspace: Colorspace.Srgb, processInvalidImages: true };
+      // FL-1356: the rest of the still ladder counts too (another decoder reading the picture itself), but
+      // not the small preview stored inside the file, which says nothing about the picture.
+      const lenient = { colorspace: Colorspace.Srgb, processInvalidImages: true, ladder: 'pixels' as const };
+      let rung: StillRung | undefined;
       let opens = true;
       try {
-        await this.mediaRepository.decodeImage(input.path, lenient);
+        rung = (await this.mediaRepository.decodeImage(input.path, lenient)).rung;
       } catch {
         opens = false;
       }
       if (opens) {
+        // Rows can only be counted in what libvips itself read: another decoder's copy is whole or absent.
         const cutShort =
+          rung === 'lenient' &&
           isJpegFileName(input.originalFileName) &&
           /premature end|truncated|incomplete|unexpected end/i.test(message) &&
           (await this.mediaRepository.pictureSaved(input.path)) < 100;

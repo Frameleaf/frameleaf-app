@@ -139,6 +139,12 @@ FROM base-server-build AS base-server-libraw
 COPY server/base-image/sources/libraw.json server/base-image/sources/libraw.sh ./
 RUN ./libraw.sh
 
+# FL-1356: djpeg from libjpeg-turbo 3, for the JPEGs jpegli cannot read.
+FROM base-server-build AS base-server-libjpeg-turbo
+
+COPY server/base-image/sources/libjpeg-turbo.json server/base-image/sources/libjpeg-turbo.sh ./
+RUN ./libjpeg-turbo.sh
+
 FROM base-server-libraw AS base-server-imagemagick
 
 COPY --from=base-server-libheif /usr/local/lib/ /usr/local/lib/libheif/
@@ -185,6 +191,12 @@ COPY --from=base-server-image-hdr /usr/local/lib/libuhdr* /usr/local/lib/
 COPY --from=base-server-image-hdr /usr/local/lib/frameleaf/ /usr/local/lib/frameleaf/
 COPY --from=base-server-libvips /usr/local/bin/vips* /usr/local/bin/
 COPY --from=base-server-libraw /usr/local/bin/dcraw_emu /usr/local/bin/
+# FL-1356: the still ladder's other decoders. magick names a coder for files ImageMagick's content sniff
+# gets wrong; JxrDecApp (jxrlib, BSD-2-Clause) reads JPEG XR.
+COPY --from=base-server-imagemagick /usr/local/bin/magick /usr/local/bin/
+COPY --from=base-server-libjpeg-turbo /usr/local/bin/djpeg /usr/local/bin/
+COPY --from=base-server-libjpeg-turbo /usr/local/share/licenses/ /usr/local/share/licenses/
+RUN apt-update-strict && apt-get install --no-install-recommends -yqq libjxr-tools
 COPY --from=base-server-libvips /usr/local/include/vips/ /usr/local/include/vips/
 COPY --from=base-server-geodata /build/geodata /build/geodata
 COPY --from=base-server-darktable /usr/local/lib/ /usr/local/lib/
@@ -261,6 +273,7 @@ RUN . /etc/os-release && \
   liblcms2-2 \
   libpango-1.0-0 \
   libpangocairo-1.0-0 \
+  libjxr-tools \
   liblqr-1-0 \
   libltdl7 \
   libopenexr-3-1-30 \
@@ -329,7 +342,7 @@ RUN . /etc/os-release && \
   /usr/share/lintian/overrides/libjpeg62-turbo
 
 COPY --from=base-server-dev /usr/local/lib/ /usr/local/lib/
-COPY --from=base-server-dev /usr/local/bin/dcraw_emu /usr/local/bin/darktable /usr/local/bin/darktable-cli /usr/local/bin/
+COPY --from=base-server-dev /usr/local/bin/dcraw_emu /usr/local/bin/darktable /usr/local/bin/darktable-cli /usr/local/bin/djpeg /usr/local/bin/magick /usr/local/bin/
 COPY --from=base-server-dev /usr/local/share/ /usr/local/share/
 COPY --from=base-server-dev /build/ /build/
 
