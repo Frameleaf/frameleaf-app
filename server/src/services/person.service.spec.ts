@@ -1256,7 +1256,10 @@ describe(PersonService.name, () => {
       expect(mocks.person.createAssetFace).toHaveBeenCalledOnce();
       expect(mocks.person.getRandomFace).not.toHaveBeenCalled();
       expect(mocks.person.update).not.toHaveBeenCalled();
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      // FL-927: only the face sidecar refresh is queued, no feature photo job
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([
+        { name: JobName.SidecarWrite, data: { id: asset.id, facesOnly: true } },
+      ]);
     });
 
     it('should reject creating a face on an asset the user does not own', async () => {

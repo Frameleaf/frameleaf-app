@@ -886,6 +886,7 @@ export class PersonService extends BaseService {
 
     // FL-57: a new name, or hiding or showing the person, changes the names generated text may use
     if ((name !== undefined && name !== current.name) || (isHidden !== undefined && isHidden !== current.isHidden)) {
+      await this.queueFaceSidecars(await this.workflowPersonAssets(ownerId, [personGroupId]));
       await this.refreshIdentities(ownerId, { personGroupIds: [personGroupId] });
     }
 
@@ -931,6 +932,7 @@ export class PersonService extends BaseService {
     const affected = ownerId ? await this.workflowPersonAssets(ownerId, groupIds) : [];
     const people = await this.personRepository.delete(groupIds, ownerId);
     await this.emitAssetsChanged(affected);
+    await this.queueFaceSidecars(affected);
     await this.cleanupRemovedPeople(people, ownerId);
   }
 
@@ -1580,6 +1582,7 @@ export class PersonService extends BaseService {
             return this.personRepository.delete([mergeId], targetPerson.ownerId);
           }, targetPerson.ownerId);
           await this.emitAssetsChanged(affected);
+          await this.queueFaceSidecars(affected);
           await this.cleanupRemovedPeople(people, targetPerson.ownerId);
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
@@ -1888,11 +1891,30 @@ export class PersonService extends BaseService {
     }
   }
 
+  /**
+   * FL-927: refresh the people saved in each photo's XMP sidecar. The face change has already been
+   * saved, so a failure to queue only leaves the sidecar behind until the next change; it never fails
+   * or undoes the edit, and never skips the cleanup after it.
+   */
+  private async queueFaceSidecars(assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return;
+    }
+    try {
+      await this.jobRepository.queueAll(
+        [...new Set(assetIds)].map((id) => ({ name: JobName.SidecarWrite, data: { id, facesOnly: true } })),
+      );
+    } catch (error) {
+      this.logger.warn(`Unable to queue face sidecar updates for ${assetIds.length} assets: ${error}`);
+    }
+  }
+
   private async noteFaceEdit(assetIds: string[]) {
     if (assetIds.length === 0) {
       return;
     }
     await this.emitAssetsChanged(assetIds);
+    await this.queueFaceSidecars(assetIds);
     const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', [...new Set(assetIds)]);
     if (sources.length > 0) {
       await this.jobRepository.queueAll(
