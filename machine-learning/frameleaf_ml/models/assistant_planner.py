@@ -273,7 +273,7 @@ def conforms(value: Any, schema: dict[str, Any]) -> bool:
     if isinstance(value, str):
         return _conforms_string(value, schema)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return schema.get("minimum", value) <= value <= schema.get("maximum", value)
+        return bool(schema.get("minimum", value) <= value <= schema.get("maximum", value))
     if isinstance(value, list):
         if len(value) < schema.get("minItems", 0) or len(value) > schema.get("maxItems", len(value)):
             return False
