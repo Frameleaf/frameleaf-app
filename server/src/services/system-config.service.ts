@@ -537,6 +537,9 @@ export class SystemConfigService extends BaseService {
 
     resolveCredentials(dto, oldConfig);
 
+    // Older admin clients can save their settings without sending the XMP export preference.
+    dto.metadata.faces.write ??= oldConfig.metadata.faces.write;
+
     // FL-165: remote access itself (the switch, connection, port, published address and custom
     // hostname) changes only through Settings › Frameleaf Cloud › Remote access
     // (`PUT admin/cloud/remote`, which needs `adminRemoteAccess.update` and keeps the link in step)

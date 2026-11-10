@@ -2002,6 +2002,8 @@ export type AdminConfigMapDto = {
 export type AdminConfigFacesDto = {
     /** Import */
     "import": boolean;
+    /** Save people’s names in XMP sidecars */
+    write?: boolean;
 };
 export type AdminConfigMetadataDto = {
     faces: AdminConfigFacesDto;
@@ -6037,10 +6039,12 @@ export type AssetJobsDto = {
 export type LostOriginalDto = {
     /** The photo or video */
     assetId: string;
-    /** SHA-1 of the lost file, base64: what the phone matches its own file by */
+    /** SHA-1 (20 bytes) or SHA-256 (32 bytes) of the lost file's contents, base64: what the phone matches its own file by */
     checksum: string;
     /** When the file was created */
     fileCreatedAt: string;
+    /** Size of the lost file in bytes, or null when unknown: a phone may look only at its files of exactly this size */
+    fileSize: number | null;
     /** The name the file had */
     originalFileName: string;
 };
@@ -6053,7 +6057,7 @@ export type LostOriginalsResponseDto = {
 export type LostOriginalsCheckedDto = {
     /** The phone or tablet that looked */
     deviceId: string;
-    /** Checksums (base64) of lost originals this device does not have */
+    /** Checksums (base64, SHA-1 or SHA-256, as listed) of lost originals this device does not have */
     notHere: string[];
 };
 export type AssetMetadataBulkDeleteItemDto = {
@@ -16562,8 +16566,6 @@ export type SharedLinkResponseDto = {
     createdAt: string;
     /** Link description */
     description: string | null;
-    /** FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root (/api/shared-links/direct/...). */
-    directUrl: string | null;
     /** Expiration date */
     expiresAt: string | null;
     /** Shared link ID */
@@ -20683,9 +20685,6 @@ export type SearchSuggestionRequestDto = {
     /** Filter by state/province */
     state?: string;
     "type": SearchSuggestionType;
-};
-export type SharedLinkDirectImageDto = {
-    size?: SharedLinkDirectImageSize;
 };
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
@@ -34275,22 +34274,6 @@ export function createSharedLink({ sharedLinkCreateDto }: {
     })));
 }
 /**
- * View the image of a single-photo shared link
- */
-export function getSharedLinkDirectImage({ keyOrSlug, size }: {
-    keyOrSlug: string;
-    size?: SharedLinkDirectImageSize;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchBlob<{
-        status: 200;
-        data: Blob;
-    }>(`/shared-links/direct/${encodeURIComponent(keyOrSlug)}.jpg${QS.query(QS.explode({
-        size
-    }))}`, {
-        ...opts
-    }));
-}
-/**
  * Shared link login
  */
 export function sharedLinkLogin({ key, slug, sharedLinkLoginDto }: {
@@ -42052,10 +42035,6 @@ export enum ReleaseType {
 export enum SharedLinkType {
     Album = "ALBUM",
     Individual = "INDIVIDUAL"
-}
-export enum SharedLinkDirectImageSize {
-    Preview = "preview",
-    Fullsize = "fullsize"
 }
 export enum AssetIdErrorReason {
     Duplicate = "duplicate",

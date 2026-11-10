@@ -77,6 +77,7 @@ import { executionSignal, operationExecution } from 'src/utils/execution-signal.
 import { keyEscrowBlobSchema, managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
 import { FrameleafCloudError, ed25519Thumbprint, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
+import { retainFile } from 'src/utils/media-health-roots.js';
 import {
   OperationClaimLostError,
   OperationDeadlineError,
@@ -91,6 +92,10 @@ vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation:
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>();
   return { ...original, link: vi.fn(original.link) };
+});
+vi.mock('src/utils/media-health-roots.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('src/utils/media-health-roots.js')>();
+  return { ...original, retainFile: vi.fn(original.retainFile) };
 });
 vi.mock('src/utils/cloud-backup-key-channel.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/cloud-backup-key-channel.js')>()),
@@ -4632,6 +4637,8 @@ describe(CloudBackupService.name, () => {
 
     beforeEach(() => {
       vi.mocked(link).mockResolvedValue(undefined);
+      // FL-1347: a restore places each file with `retainFile`; on these mostly pretend files, its link stands for it
+      vi.mocked(retainFile).mockImplementation((from, to) => link(from, to));
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
       metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
       keys.read.mockResolvedValue(keyFileOf());
@@ -4643,7 +4650,13 @@ describe(CloudBackupService.name, () => {
       );
     });
 
-    afterEach(() => vi.mocked(link).mockReset());
+    afterEach(async () => {
+      vi.mocked(link).mockReset();
+      const { retainFile: actual } = await vi.importActual<typeof import('src/utils/media-health-roots.js')>(
+        'src/utils/media-health-roots.js',
+      );
+      vi.mocked(retainFile).mockImplementation(actual);
+    });
 
     it('queues a restore under the bucket lock, named without the item, only from a kept backup', async () => {
       await expect(

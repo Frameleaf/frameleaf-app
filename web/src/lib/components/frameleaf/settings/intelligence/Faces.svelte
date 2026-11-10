@@ -293,6 +293,14 @@
         </Notice>
       {/if}
     {/if}
+    <Row label={$t('frameleaf_intel_faces_write')} help={$t('frameleaf_intel_faces_write_help')}>
+      <Switch
+        label={$t('frameleaf_intel_faces_write')}
+        checked={settingsDraft.draft.metadata.faces.write ?? true}
+        held={disabled}
+        onChange={(value) => (settingsDraft.draft.metadata.faces.write = value)}
+      />
+    </Row>
     <Notice icon={mdiShieldCheckOutline} title={$t('frameleaf_intel_faces_pledge')}>
       {$t('frameleaf_intel_faces_pledge_body')}
     </Notice>

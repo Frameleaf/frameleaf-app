@@ -20,8 +20,7 @@
   } from '$lib/frameleaf/shared-link-badges';
   import { sharedLinkCover } from '$lib/frameleaf/shared-link-cover';
   import { Route } from '$lib/route';
-  import { asDirectImageUrl, asUrl } from '$lib/services/shared-link.service';
-  import { copyToClipboard } from '$lib/utils';
+  import { asUrl } from '$lib/services/shared-link.service';
   import { handleError } from '$lib/utils/handle-error';
   import {
     getAllAlbums,
@@ -37,7 +36,6 @@
     mdiClockOutline,
     mdiDeleteOutline,
     mdiDownloadOutline,
-    mdiImageOutline,
     mdiInformationOutline,
     mdiLinkVariant,
     mdiLockOutline,
@@ -256,13 +254,6 @@
     link.slug ? `${createdLabel(link)} · /s/${link.slug}` : createdLabel(link);
 
   /** An album link opens the album here; a selection opens the public page, as a visitor sees it. */
-  /** FL-788: copies a single-photo link's image address and says so where a screen reader hears it. */
-  const copyImageLink = async (link: SharedLinkResponseDto, title: string) => {
-    if (await copyToClipboard(asDirectImageUrl(link))) {
-      status = $t('frameleaf_sharing.image_link_copied_for', { values: { name: title } });
-    }
-  };
-
   const openPublic = (link: SharedLinkResponseDto) => window.open(asUrl(link), '_blank', 'noopener,noreferrer');
 
   /** For screen readers: which link was copied or deleted (the toast says only that it happened). */
@@ -456,12 +447,6 @@
                 label={$t('frameleaf_sharing.copy_link_for', { values: { name: title } })}
                 onCopied={() => (status = $t('frameleaf_sharing.link_copied_for', { values: { name: title } }))}
               />
-              {#if link.directUrl}
-                <Button onclick={() => void copyImageLink(link, title)}>
-                  <Icon icon={mdiImageOutline} size="18" aria-hidden={true} />
-                  {$t('frameleaf_sharing.copy_image_link')}
-                </Button>
-              {/if}
               <IconButton
                 variant="default"
                 label={$t('frameleaf_sharing.qr_code_for', { values: { name: title } })}

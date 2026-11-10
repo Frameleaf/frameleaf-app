@@ -398,7 +398,8 @@ describe(AssetService.name, () => {
           id: 'finding-1',
           category: MediaHealthCategory.Missing,
         });
-        // `BaseService.create` passes the BaseService repositories only, as a workflow's write does
+        // `BaseService.create` passes the BaseService repositories and only the dependencies named for hand-built
+        // services (FL-1347): never the flag's repository, even from a builder that holds one
         const built = BaseService.create(AssetService, sut);
 
         await expect(built.get(auth, asset.id)).resolves.toMatchObject({ fileProblem: null });
