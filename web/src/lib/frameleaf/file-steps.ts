@@ -28,6 +28,11 @@ export type StepContext = {
   waited?: boolean;
   /** The step before this one was a phone sending the photo back. */
   fromPhone?: boolean;
+  /**
+   * When the problem's history began (its first step). Cloud Backup is said to have begun "after this file was
+   * already lost" only when it began after that; without it, the sentence has no date.
+   */
+  began?: string;
   locale?: string;
   now?: Date;
 };
@@ -236,7 +241,9 @@ export const stepWords = (
         break;
       }
       const since = text(facts.since);
-      const date = since ? shortDay(since, context) : undefined;
+      // a photo that arrived after the backups began wasn't "already lost" when they did
+      const after = !!since && !!context.began && new Date(since).getTime() > new Date(context.began).getTime();
+      const date = after ? shortDay(since, context) : undefined;
       detail = date ? say('detail', { date }) : say('detail_undated');
       break;
     }
@@ -354,6 +361,14 @@ export const storyWords = (
   const source = problem.steps
     .map(({ step, facts }) => (step === 'imported' ? text(facts?.source) : undefined))
     .find(Boolean);
+  // when the history began: its earliest step
+  let began: string | undefined;
+  for (const { at } of problem.steps) {
+    const time = new Date(at).getTime();
+    if (!Number.isNaN(time) && (began === undefined || time < new Date(began).getTime())) {
+      began = at;
+    }
+  }
   let cause: string | undefined;
   let waited = false;
   let previous: FileStepDto | undefined;
@@ -367,6 +382,7 @@ export const storyWords = (
         cause,
         waited,
         fromPhone: previous?.step === 'asked-phones' && previous.outcome === 'ok',
+        began,
         locale,
         now,
       },

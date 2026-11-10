@@ -332,16 +332,32 @@ describe('file steps in plain words (FL-1338)', () => {
       },
     ],
     [
-      'not in the backups, since when',
+      'not in the backups, which began after the problem did',
       'checked-backups',
       'not-found',
       { backup: 'cloud', since: '2026-11-06T12:00:00.000Z' },
-      nov9,
+      { ...nov9, began: '2026-11-05T09:00:00.000Z' },
       {
         what: 'Checked your backups',
         detail: 'Cloud Backup began on 6 Nov, after this file was already lost.',
         result: r('off', 'Not there'),
       },
+    ],
+    [
+      'not in the backups, which began before the problem did',
+      'checked-backups',
+      'not-found',
+      { backup: 'cloud', since: '2026-11-06T12:00:00.000Z' },
+      { ...nov9, began: '2026-11-08T09:00:00.000Z' },
+      { what: 'Checked your backups', detail: 'Cloud Backup doesn’t have it.', result: r('off', 'Not there') },
+    ],
+    [
+      'not in the backups, with no history to tell when the problem began',
+      'checked-backups',
+      'not-found',
+      { backup: 'cloud', since: '2026-11-06T12:00:00.000Z' },
+      nov9,
+      { what: 'Checked your backups', detail: 'Cloud Backup doesn’t have it.', result: r('off', 'Not there') },
     ],
     [
       'not in the backups',
@@ -675,6 +691,30 @@ describe('file steps in plain words (FL-1338)', () => {
       'Asked your phones',
     ]);
     expect(story[3].words.detail).toBe('Not there. Every phone used with this library has now looked.');
+  });
+
+  it('says the backups began after the file was lost only when they began after its history did', () => {
+    const backups = (added: string) =>
+      storyWords(
+        {
+          category: MediaHealthCategory.Missing,
+          steps: [
+            { ...step('added', 'info'), at: added },
+            { ...step('not-on-drive', 'failed', { folder: '2026/11' }), at: '2026-11-09T02:00:00.000Z' },
+            {
+              ...step('checked-backups', 'not-found', { backup: 'cloud', since: '2026-10-01T03:00:00.000Z' }),
+              at: '2026-11-09T02:05:00.000Z',
+            },
+          ],
+        },
+        get(t),
+        { locale: 'en-GB', now: new Date('2026-11-09T12:00:00.000Z') },
+      ).find(({ step }) => step.step === 'checked-backups')?.words.detail;
+
+    // added in 2019, long before Cloud Backup began: it was lost before then
+    expect(backups('2019-03-12T16:31:00.000Z')).toBe('Cloud Backup began on 1 Oct, after this file was already lost.');
+    // added after Cloud Backup began, and lost before its first backup: no claim about when
+    expect(backups('2026-10-20T10:00:00.000Z')).toBe('Cloud Backup doesn’t have it.');
   });
 
   it('tells a row its story in one line', () => {
