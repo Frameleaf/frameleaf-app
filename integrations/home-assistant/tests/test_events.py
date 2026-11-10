@@ -15,6 +15,13 @@ from custom_components.frameleaf.events import signature_ok
 from .conftest import API, api_key_entry, mock_server
 
 
+DISCOVERY = {
+    "triggers": [{"trigger": "AssetCreate", "types": ["AssetV1"]}],
+    "templates": [],
+    "eventTriggers": [{"trigger": "CloudBackupFailed", "event": "cloud.backup.failed"}],
+}
+
+
 def sign(secret: str, timestamp: str, delivery: str, body: bytes) -> str:
     signed = f"{timestamp}.{delivery}.".encode() + body
     return "sha256=" + hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()

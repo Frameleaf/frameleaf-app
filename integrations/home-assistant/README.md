@@ -35,7 +35,7 @@ trigger:
       event: cloud.backup.failed
 ```
 
-Messages that are not signed (over the timestamp, delivery id and body) with the integration's secret, are more than five minutes old, or were already received are ignored. If Home Assistant is only reachable at a home address (such as `http://homeassistant.local:8123`), turn on **Allow automations to call devices on my network** in Frameleaf under **Settings › Server name & welcome**.
+Messages that are not signed (over the timestamp, delivery id and body) with the integration's secret, are more than five minutes old, or were already received are ignored. Duplicate protection remembers the last 500 delivery ids and starts empty after a restart, so write automations that are safe to run twice. If Home Assistant is only reachable at a home address (such as `http://homeassistant.local:8123`), turn on **Allow automations to call devices on my network** in Frameleaf under **Settings › Server name & welcome**.
 
 ## Development
 
