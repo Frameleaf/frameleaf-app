@@ -16,7 +16,7 @@
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { checkedWords, receiptLine } from '$lib/components/frameleaf/settings/utilities/receipt-words';
-  import { receiptScope, receiptState } from '$lib/frameleaf/backup-receipt';
+  import { allDevices, receiptScope, receiptState } from '$lib/frameleaf/backup-receipt';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { locale } from '$lib/stores/preferences.store';
   import { listAllBackupDevices, searchUsersAdmin, type BackupDeviceDto } from '@frameleaf/sdk';
@@ -34,12 +34,12 @@
     void (async () => {
       try {
         const [devices, users, scope] = await Promise.all([
-          listAllBackupDevices({ limit: 200 }),
+          allDevices((query) => listAllBackupDevices(query)),
           searchUsersAdmin({}).catch(() => []),
           receiptScope(),
         ]);
         scoped = scope;
-        phones = devices.devices;
+        phones = devices;
         owners = Object.fromEntries(users.map((user) => [user.id, user.name]));
       } catch {
         failed = true;

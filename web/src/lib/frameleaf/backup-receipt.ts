@@ -7,7 +7,7 @@
  */
 import { getAuthStatus, getBackupDeviceReceipt, isHttpError, type BackupDeviceDto } from '@frameleaf/sdk';
 
-export type ReceiptState = 'locked' | 'never' | 'missing' | 'stale' | 'safe';
+export type ReceiptState = 'locked' | 'never' | 'missing' | 'stale' | 'waiting' | 'safe';
 
 /** A last check older than this many days asks for the app to be opened. */
 export const STALE_DAYS = 7;
@@ -45,9 +45,10 @@ export type ReceiptReason = { key: ReasonKey; count: number };
 
 /**
  * The reasons as rows: one per reason (codes that spell the same reason are added together), and
- * "Not on the server" from the last check when the phone did not report it itself.
+ * "Not on the server" from the last check when the phone did not report it itself. A session that may
+ * not see the check (`scoped` false) gets nothing derived from it.
  */
-export const receiptReasons = (phone: BackupDeviceDto): ReceiptReason[] => {
+export const receiptReasons = (phone: BackupDeviceDto, scoped = true): ReceiptReason[] => {
   const rows = new Map<ReasonKey, number>();
   for (const { code, count } of phone.pendingReasons ?? []) {
     if (count > 0) {
@@ -55,15 +56,24 @@ export const receiptReasons = (phone: BackupDeviceDto): ReceiptReason[] => {
       rows.set(key, (rows.get(key) ?? 0) + count);
     }
   }
-  const missing = phone.lastCheck?.itemsMissing ?? 0;
+  const missing = scoped ? (phone.lastCheck?.itemsMissing ?? 0) : 0;
   if (missing > 0 && !rows.has('not_on_server')) {
     rows.set('not_on_server', missing);
   }
   return [...rows].map(([key, count]) => ({ key, count }));
 };
 
-export const waitingTotal = (phone: BackupDeviceDto) =>
-  receiptReasons(phone).reduce((total, reason) => total + reason.count, 0);
+export const waitingTotal = (phone: BackupDeviceDto, scoped = true) =>
+  receiptReasons(phone, scoped).reduce((total, reason) => total + reason.count, 0);
+
+/**
+ * Items still waiting to go up: every reported reason except photos deleted in Frameleaf, which the
+ * phone holds back on purpose, and "Not on the server", which is the missing state's own count.
+ */
+export const pendingUploads = (phone: BackupDeviceDto) =>
+  receiptReasons(phone, false)
+    .filter(({ key }) => key !== 'skipped_deleted' && key !== 'not_on_server')
+    .reduce((total, reason) => total + reason.count, 0);
 
 /** What the server proved is there: checked minus missing, or nothing before a check. */
 export const serverVerified = (phone: BackupDeviceDto) =>
@@ -72,18 +82,50 @@ export const serverVerified = (phone: BackupDeviceDto) =>
 export const daysSinceCheck = (phone: BackupDeviceDto, now = Date.now()) =>
   phone.lastCheck ? Math.max(0, Math.floor((now - Date.parse(phone.lastCheck.completedAt)) / 86_400_000)) : null;
 
+/**
+ * A session that may not see checks is always `locked`, whatever the device row holds. Otherwise:
+ * never checked, items missing, a check older than 7 days (compared before rounding), items still
+ * waiting on the phone, and only then safe: a receipt never says safe while something waits to go up.
+ */
 export const receiptState = (phone: BackupDeviceDto, scoped: boolean, now = Date.now()): ReceiptState => {
+  if (!scoped) {
+    return 'locked';
+  }
   if (!phone.lastCheck) {
-    return scoped ? 'never' : 'locked';
+    return 'never';
   }
   if (phone.lastCheck.itemsMissing > 0) {
     return 'missing';
   }
-  return (daysSinceCheck(phone, now) ?? 0) > STALE_DAYS ? 'stale' : 'safe';
+  if (now - Date.parse(phone.lastCheck.completedAt) > STALE_DAYS * 86_400_000) {
+    return 'stale';
+  }
+  return pendingUploads(phone) > 0 ? 'waiting' : 'safe';
+};
+
+/**
+ * Every page of a device list: the list endpoints answer at most 200 at a time with `nextOffset`, so
+ * pages are read until there is none (a bounded number of pages, in case a server never stops).
+ */
+export const allDevices = async (
+  page: (query: {
+    limit: number;
+    offset: number;
+  }) => Promise<{ devices: BackupDeviceDto[]; nextOffset?: number | null }>,
+  limit = 200,
+): Promise<BackupDeviceDto[]> => {
+  const devices: BackupDeviceDto[] = [];
+  let offset: number | null | undefined = 0;
+  for (let pages = 0; offset !== null && offset !== undefined && pages < 500; pages++) {
+    const answer: { devices: BackupDeviceDto[]; nextOffset?: number | null } = await page({ limit, offset });
+    devices.push(...answer.devices);
+    offset = answer.nextOffset;
+  }
+  return devices;
 };
 
 /** Worst first: what the page's answer is about. */
-const SEVERITY: ReceiptState[] = ['missing', 'stale', 'never', 'locked', 'safe'];
+const SEVERITY: ReceiptState[] = ['missing', 'stale', 'waiting', 'never', 'locked', 'safe'];
 export const worstFirst = <T extends { state: ReceiptState }>(rows: T[]) =>
   [...rows].sort((a, b) => SEVERITY.indexOf(a.state) - SEVERITY.indexOf(b.state));
 

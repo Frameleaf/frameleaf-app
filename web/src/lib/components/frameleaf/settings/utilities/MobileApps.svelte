@@ -18,7 +18,7 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { receiptLine } from '$lib/components/frameleaf/settings/utilities/receipt-words';
-  import { receiptScope, receiptState } from '$lib/frameleaf/backup-receipt';
+  import { allDevices, receiptScope, receiptState } from '$lib/frameleaf/backup-receipt';
   import { utilitiesUrl } from '$lib/frameleaf/utilities';
   import { goto } from '$app/navigation';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
@@ -47,7 +47,7 @@
       .catch(() => (releases = null));
     void (async () => {
       try {
-        const { devices } = await listBackupDevices({ limit: 100 });
+        const devices = await allDevices((query) => listBackupDevices(query));
         scoped = await receiptScope(devices.find((device) => !device.lastCheck)?.id);
         phones = devices;
       } catch {

@@ -29,6 +29,7 @@
     receiptTone,
   } from '$lib/components/frameleaf/settings/utilities/receipt-words';
   import {
+    allDevices,
     type ReasonKey,
     receiptReasons,
     receiptScope,
@@ -75,7 +76,7 @@
   const load = async () => {
     failed = false;
     try {
-      const { devices } = await listBackupDevices({ limit: 100 });
+      const devices = await allDevices((query) => listBackupDevices(query));
       scoped = await receiptScope(devices.find((device) => !device.lastCheck)?.id);
       phones = devices;
     } catch {
@@ -85,10 +86,10 @@
     if (authManager.user.isAdmin) {
       try {
         const [all, users] = await Promise.all([
-          listAllBackupDevices({ limit: 200 }),
+          allDevices((query) => listAllBackupDevices(query)),
           searchUsersAdmin({}).catch(() => []),
         ]);
-        everyone = all.devices;
+        everyone = all;
         owners = Object.fromEntries(users.map((user) => [user.id, user.name]));
       } catch {
         everyone = null;
@@ -118,13 +119,15 @@
     unknown: mdiClockOutline,
   };
   const iconFor = (state: string) =>
-    state === 'safe'
-      ? mdiShieldCheckOutline
-      : state === 'locked'
-        ? mdiLockOutline
-        : state === 'never'
-          ? mdiShieldOutline
-          : mdiAlertCircleOutline;
+    state === 'waiting'
+      ? mdiClockOutline
+      : state === 'safe'
+        ? mdiShieldCheckOutline
+        : state === 'locked'
+          ? mdiLockOutline
+          : state === 'never'
+            ? mdiShieldOutline
+            : mdiAlertCircleOutline;
 </script>
 
 {#snippet unlockButton()}
@@ -148,8 +151,8 @@
     {@const { phone, state } = opened}
     {@const headline = receiptHeadline($t, phone, state)}
     {@const verified = serverVerified(phone)}
-    {@const waiting = waitingTotal(phone)}
-    {@const reasons = receiptReasons(phone)}
+    {@const waiting = waitingTotal(phone, scoped)}
+    {@const reasons = receiptReasons(phone, scoped)}
     <BackLink href={phoneUrl()} label={$t('frameleaf_phones_label')} />
     <header class="phone-heading">
       <h2>{phone.displayName}</h2>
@@ -300,7 +303,7 @@
           {#each everyone as phone (phone.id)}
             {@const state = receiptState(phone, scoped)}
             {@const verified = serverVerified(phone)}
-            {@const waiting = waitingTotal(phone)}
+            {@const waiting = waitingTotal(phone, scoped)}
             <div role="row">
               <span role="cell">
                 <strong>{phone.displayName}</strong>

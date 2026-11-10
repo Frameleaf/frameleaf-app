@@ -6,6 +6,7 @@ import type { BackupDeviceDto } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import {
   daysSinceCheck,
+  pendingUploads,
   serverVerified,
   waitingTotal,
   type ReasonKey,
@@ -17,7 +18,7 @@ type T = (key: Translations, options?: { values?: Record<string, string | number
 /** "12,348 on this phone · 12,340 safely on the server · 8 waiting", without guessing. */
 export const receiptLine = (t: T, phone: BackupDeviceDto, state: ReceiptState) => {
   const verified = serverVerified(phone);
-  const waiting = waitingTotal(phone);
+  const waiting = waitingTotal(phone, state !== 'locked');
   const parts = [
     phone.phoneItemCount === null
       ? t('frameleaf_phones_receipt_phone_unknown')
@@ -50,6 +51,13 @@ export const receiptHeadline = (t: T, phone: BackupDeviceDto, state: ReceiptStat
         body: t('frameleaf_phones_receipt_missing_body', { values }),
       };
     }
+    case 'waiting': {
+      values.count = pendingUploads(phone);
+      return {
+        title: t('frameleaf_phones_receipt_waiting_title', { values }),
+        body: t('frameleaf_phones_receipt_waiting_body', { values }),
+      };
+    }
     case 'stale': {
       values.count = daysSinceCheck(phone) ?? 0;
       return {
@@ -74,6 +82,9 @@ export const receiptStatus = (t: T, phone: BackupDeviceDto, state: ReceiptState)
     }
     case 'missing': {
       return t('frameleaf_phones_status_missing', { values: { count: phone.lastCheck?.itemsMissing ?? 0 } });
+    }
+    case 'waiting': {
+      return t('frameleaf_phones_status_waiting', { values: { count: pendingUploads(phone) } });
     }
     case 'stale': {
       return t('frameleaf_phones_status_stale', { values: { count: daysSinceCheck(phone) ?? 0 } });

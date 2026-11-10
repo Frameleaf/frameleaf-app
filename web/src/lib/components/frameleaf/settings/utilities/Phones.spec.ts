@@ -64,10 +64,30 @@ describe('Tools › Phones (FL-792)', () => {
     state.user = { id: 'me', isAdmin: false };
   });
 
-  it('says every phone is safe, with the receipt line and when it was checked', async () => {
+  it('says items are waiting, never safe, while the phone still has some to send', async () => {
     show([phone()]);
+    expect(
+      await screen.findByRole('heading', { name: 'Taylor’s iPhone: 8 items are still waiting to go up' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('8 waiting')).toBeInTheDocument();
+    expect(screen.queryByText('All safe')).toBeNull();
+  });
+
+  it('follows every page of everyone’s phones', async () => {
+    state.user = { id: 'me', isAdmin: true };
+    sdkMock.listAllBackupDevices
+      .mockResolvedValueOnce({ devices: [phone()], nextOffset: 200 })
+      .mockResolvedValueOnce({ devices: [phone({ id: 'p9', displayName: 'Page two phone' })], nextOffset: null });
+    sdkMock.searchUsersAdmin.mockResolvedValue([] as never);
+    show([phone()]);
+    expect(await screen.findByText('Page two phone')).toBeInTheDocument();
+    expect(sdkMock.listAllBackupDevices).toHaveBeenLastCalledWith({ limit: 200, offset: 200 });
+  });
+
+  it('says every phone is safe, with the receipt line and when it was checked', async () => {
+    show([phone({ pendingReasons: [] })]);
     expect(await screen.findByRole('heading', { name: 'Your phones are safely backed up' })).toBeInTheDocument();
-    expect(screen.getByText('12,348 on this phone · 12,340 safely on the server · 8 waiting')).toBeInTheDocument();
+    expect(screen.getByText('12,348 on this phone · 12,340 safely on the server')).toBeInTheDocument();
     expect(screen.getByText('All safe')).toBeInTheDocument();
     expect(screen.getByText(/^Last checked/)).toBeInTheDocument();
     expect(screen.queryByText('Everyone’s phones')).toBeNull();

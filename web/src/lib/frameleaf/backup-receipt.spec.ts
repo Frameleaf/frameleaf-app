@@ -1,5 +1,13 @@
 import type { BackupDeviceDto } from '@frameleaf/sdk';
-import { reasonKey, receiptReasons, receiptState, serverVerified, waitingTotal } from '$lib/frameleaf/backup-receipt';
+import {
+  allDevices,
+  pendingUploads,
+  reasonKey,
+  receiptReasons,
+  receiptState,
+  serverVerified,
+  waitingTotal,
+} from '$lib/frameleaf/backup-receipt';
 
 const NOW = Date.parse('2026-11-10T12:00:00Z');
 const phone = (overrides: Partial<BackupDeviceDto> = {}) =>
@@ -66,5 +74,42 @@ describe('backup receipt (FL-792)', () => {
     expect(
       receiptState(phone({ lastCheck: { ...phone().lastCheck!, completedAt: '2026-11-01T03:14:00Z' } }), true, NOW),
     ).toBe('stale');
+  });
+
+  it('never says safe while items still wait to go up; photos deleted in Frameleaf do not count', () => {
+    expect(receiptState(phone({ pendingReasons: [{ code: 'wifi', count: 6 }] }), true, NOW)).toBe('waiting');
+    expect(receiptState(phone({ pendingReasons: [{ code: 'skipped_deleted', count: 4 }] }), true, NOW)).toBe('safe');
+    expect(
+      pendingUploads(
+        phone({
+          pendingReasons: [
+            { code: 'wifi', count: 6 },
+            { code: 'skipped_deleted', count: 4 },
+          ],
+        }),
+      ),
+    ).toBe(6);
+  });
+
+  it('is locked for a session that may not see checks, even when the row carries one', () => {
+    const checked = phone({ lastCheck: { ...phone().lastCheck!, itemsMissing: 3 } });
+    expect(receiptState(checked, false, NOW)).toBe('locked');
+    expect(receiptReasons(checked, false)).toEqual([]);
+    expect(waitingTotal(checked, false)).toBe(0);
+  });
+
+  it('turns stale as soon as the check is over seven days old, not a day later', () => {
+    const at = (iso: string) => phone({ lastCheck: { ...phone().lastCheck!, completedAt: iso } });
+    expect(receiptState(at('2026-11-03T11:00:00Z'), true, NOW)).toBe('stale');
+    expect(receiptState(at('2026-11-03T13:00:00Z'), true, NOW)).toBe('safe');
+  });
+
+  it('reads every page of a device list', async () => {
+    const page = vi
+      .fn()
+      .mockResolvedValueOnce({ devices: [phone({ id: 'a' })], nextOffset: 200 })
+      .mockResolvedValueOnce({ devices: [phone({ id: 'b' })], nextOffset: null });
+    expect((await allDevices(page)).map(({ id }) => id)).toEqual(['a', 'b']);
+    expect(page).toHaveBeenLastCalledWith({ limit: 200, offset: 200 });
   });
 });
