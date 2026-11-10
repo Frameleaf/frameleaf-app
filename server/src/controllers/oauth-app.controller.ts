@@ -26,7 +26,7 @@ import {
   OAuthAppAuthorizeStartResponseDto,
   OAuthAppGrantDto,
 } from 'src/dtos/oauth-app.dto.js';
-import { ApiTag } from 'src/enum.js';
+import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
@@ -158,12 +158,12 @@ export class OAuthAppController {
   }
 
   @Get('grants')
-  @Authenticated({ permission: false })
+  @Authenticated({ permission: Permission.SessionRead })
   @Endpoint({
     operationId: 'getOAuthAppGrants',
     summary: 'List your connected apps',
     description:
-      'The apps you allowed that can still use your library: who they are, what you allowed, when, and when and how they last connected. Not available to the apps themselves.',
+      'The apps you allowed that can still use your library: who they are, what you allowed, when, and when and how they last connected. Connected apps are listed like signed-in devices: an API key needs session.read. Not available to the apps themselves.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   getGrants(@Auth() auth: AuthDto): Promise<OAuthAppGrantDto[]> {
@@ -171,13 +171,13 @@ export class OAuthAppController {
   }
 
   @Delete('grants/:id')
-  @Authenticated({ permission: false })
+  @Authenticated({ permission: Permission.SessionDelete })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     operationId: 'revokeOAuthAppGrant',
     summary: 'Remove a connected app’s access',
     description:
-      'Revokes the grant: the app’s access and refresh tokens stop working on its next request. Written to your account activity.',
+      'Revokes the grant: the app’s access and refresh tokens stop working on its next request. Written to your account activity. An API key needs session.delete.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   revokeGrant(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
@@ -192,7 +192,7 @@ export class OAuthAppAdminController {
   constructor(private service: OAuthAppService) {}
 
   @Get()
-  @Authenticated({ admin: true, permission: false })
+  @Authenticated({ admin: true, permission: Permission.AdminSessionRead })
   @Endpoint({
     operationId: 'getOAuthAppClients',
     summary: 'List registered apps',
@@ -204,7 +204,7 @@ export class OAuthAppAdminController {
   }
 
   @Delete(':id')
-  @Authenticated({ admin: true, permission: false })
+  @Authenticated({ admin: true, permission: Permission.AdminSessionDelete })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     operationId: 'deleteOAuthAppClient',

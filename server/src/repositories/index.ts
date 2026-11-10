@@ -28,7 +28,6 @@ import { BackupDeviceRepository } from 'src/repositories/backup-device.repositor
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
 import { BrowserExtensionSignInRepository } from 'src/repositories/browser-extension-sign-in.repository.js';
-import { OAuthAppRepository } from 'src/repositories/oauth-app.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
@@ -97,6 +96,7 @@ import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
+import { OAuthAppRepository } from 'src/repositories/oauth-app.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';

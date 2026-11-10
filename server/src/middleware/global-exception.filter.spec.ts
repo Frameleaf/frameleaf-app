@@ -53,6 +53,15 @@ describe('FL-328 server error display contract', () => {
     );
   });
 
+  it('keeps the OAuth error code of a connected-app protocol error (FL-803)', () => {
+    const { res, body } = respond(
+      new HttpException({ error: 'invalid_grant', error_description: 'Connect the app again.', statusCode: 400 }, 400),
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(body).toMatchObject({ error: 'invalid_grant', error_description: 'Connect the app again.' });
+    expect(body).not.toHaveProperty('statusCode');
+  });
+
   it('keeps real setup refusal semantics', () => {
     const { res, body } = respond(setupRefusal(FrameleafSetupErrorCode.LanOnly));
     expect(res.status).toHaveBeenCalledWith(403);

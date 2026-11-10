@@ -1,4 +1,4 @@
-import { LoginResponseDto } from '@frameleaf/sdk';
+import { LoginResponseDto, Permission } from '@frameleaf/sdk';
 import { createHash } from 'node:crypto';
 import { createUserDto } from 'src/fixtures.js';
 import { app, asBearerAuth, baseUrl, utils } from 'src/utils.js';
@@ -137,6 +137,45 @@ describe('/oauth/apps', () => {
       .get('/timeline/buckets')
       .set({ Authorization: `Bearer ${tokens.access_token}` });
     expect(status).toBe(401);
+  });
+
+  it('an API key needs session permissions to see or remove connected apps', async () => {
+    const { tokens } = await connect();
+    const { secret } = await utils.createApiKey(user.accessToken, [Permission.AssetRead]);
+    const { body: grants } = await request(app).get('/oauth/apps/grants').set(asBearerAuth(user.accessToken));
+    const listed = await request(app).get('/oauth/apps/grants').set('x-api-key', secret);
+    expect(listed.status).toBe(403);
+    const removed = await request(app).delete(`/oauth/apps/grants/${grants[0].id}`).set('x-api-key', secret);
+    expect(removed.status).toBe(403);
+    const still = await request(app)
+      .get('/timeline/buckets')
+      .set({ Authorization: `Bearer ${tokens.access_token}` });
+    expect(still.status).toBe(200);
+  });
+
+  it('an API key with session permissions may list and remove connected apps', async () => {
+    const { tokens } = await connect();
+    const { secret } = await utils.createApiKey(user.accessToken, [Permission.SessionRead, Permission.SessionDelete]);
+    const listed = await request(app).get('/oauth/apps/grants').set('x-api-key', secret);
+    expect(listed.status).toBe(200);
+    for (const grant of listed.body) {
+      const removed = await request(app).delete(`/oauth/apps/grants/${grant.id}`).set('x-api-key', secret);
+      expect(removed.status).toBe(204);
+    }
+    const after = await request(app)
+      .get('/timeline/buckets')
+      .set({ Authorization: `Bearer ${tokens.access_token}` });
+    expect(after.status).toBe(401);
+  });
+
+  it('an administrator’s narrow API key can’t remove a registered app', async () => {
+    const clientId = await register();
+    const narrow = await utils.createApiKey(admin.accessToken, [Permission.AssetRead]);
+    const refused = await request(app).delete(`/admin/oauth/apps/${clientId}`).set('x-api-key', narrow.secret);
+    expect(refused.status).toBe(403);
+    const allowed = await utils.createApiKey(admin.accessToken, [Permission.AdminSessionDelete]);
+    const removed = await request(app).delete(`/admin/oauth/apps/${clientId}`).set('x-api-key', allowed.secret);
+    expect(removed.status).toBe(204);
   });
 
   it('refuses password and implicit grants', async () => {

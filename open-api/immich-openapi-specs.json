@@ -8976,6 +8976,7 @@
             "state": "Alpha"
           }
         ],
+        "x-immich-permission": "adminSession.read",
         "x-immich-state": "Alpha"
       }
     },
@@ -9026,6 +9027,7 @@
             "state": "Alpha"
           }
         ],
+        "x-immich-permission": "adminSession.delete",
         "x-immich-state": "Alpha"
       }
     },
@@ -37490,7 +37492,7 @@
     },
     "/oauth/apps/grants": {
       "get": {
-        "description": "The apps you allowed that can still use your library: who they are, what you allowed, when, and when and how they last connected. Not available to the apps themselves.",
+        "description": "The apps you allowed that can still use your library: who they are, what you allowed, when, and when and how they last connected. Connected apps are listed like signed-in devices: an API key needs session.read. Not available to the apps themselves.",
         "operationId": "getOAuthAppGrants",
         "parameters": [],
         "responses": {
@@ -37533,12 +37535,13 @@
             "state": "Alpha"
           }
         ],
+        "x-immich-permission": "session.read",
         "x-immich-state": "Alpha"
       }
     },
     "/oauth/apps/grants/{id}": {
       "delete": {
-        "description": "Revokes the grant: the app’s access and refresh tokens stop working on its next request. Written to your account activity.",
+        "description": "Revokes the grant: the app’s access and refresh tokens stop working on its next request. Written to your account activity. An API key needs session.delete.",
         "operationId": "revokeOAuthAppGrant",
         "parameters": [
           {
@@ -37582,6 +37585,7 @@
             "state": "Alpha"
           }
         ],
+        "x-immich-permission": "session.delete",
         "x-immich-state": "Alpha"
       }
     },
