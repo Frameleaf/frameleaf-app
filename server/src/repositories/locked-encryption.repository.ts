@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { Insertable, Kysely, Updateable } from 'kysely';
 import { isAbsolute, normalize } from 'node:path';
+import type { Insertable, Kysely, Updateable } from 'kysely';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { StorageFolder } from 'src/enum.js';
@@ -126,7 +126,7 @@ export class LockedEncryptionRepository {
         and not exists (select 1 from public.asset_lock l where l."assetId" = a.id)
         and not exists (select 1 from public.asset_origin o where o."assetId" = a.id)
     `.execute(this.db);
-    if (!rows.some(({ kept }) => kept)) {
+    if (rows.every(({ kept }) => !kept)) {
       return rows.map(({ path }) => path);
     }
     // FL-1364: a path Library care's records name is only cleaned beside when it is written in normal form
