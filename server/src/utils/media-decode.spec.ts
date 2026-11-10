@@ -19,8 +19,8 @@ import {
   assertDecodeQualified,
   classifySourceTransfer,
   describeDolbyVisionInput,
-  parseSourcePixelLayout,
   isUndecodableError,
+  parseSourcePixelLayout,
   qualifySourceDecode,
   selectDecodeAcceleration,
 } from 'src/utils/media-decode.js';
