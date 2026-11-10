@@ -2956,7 +2956,9 @@ describe(CloudBackupService.name, () => {
       ])('drops coverage when the same instance binding changes: %j', async (change) => {
         cloudBackup.metadata.mockImplementationOnce(() => {
           metadata[SystemMetadataKey.FrameleafCloudLink] = {
-            ...metadata[SystemMetadataKey.FrameleafCloudLink],
+            status: 'linked',
+            cloudUrl,
+            instanceId: INSTANCE_ID,
             ...change,
           };
           return Promise.resolve({ ...grant, coverage: { scope: 'all' as const } });
