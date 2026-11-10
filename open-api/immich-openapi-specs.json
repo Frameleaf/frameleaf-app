@@ -2265,6 +2265,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/backup/licence-coverage": {
+      "get": {
+        "description": "Reads the current licence scope from Frameleaf Cloud without provisioning storage or issuing credentials. Unknown when no grant exists, the server is unlinked or the scope cannot be checked. Names are resolved locally; no account choices or media are returned.",
+        "operationId": "getCloudBackupLicenceCoverage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupLicenceCoverageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the accounts currently covered for Cloud Backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup/manifests": {
       "get": {
         "description": "The backups retention keeps, newest first, with their size and the database dump each pairs with.",
@@ -87358,6 +87405,50 @@
         ],
         "type": "object"
       },
+      "CloudBackupLicenceCoverageResponseDto": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupLicensedAccountDto"
+            },
+            "type": "array"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CloudBackupLicenceScope"
+          }
+        },
+        "required": [
+          "accounts",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "CloudBackupLicenceScope": {
+        "enum": [
+          "unknown",
+          "none",
+          "all",
+          "users"
+        ],
+        "type": "string"
+      },
+      "CloudBackupLicensedAccountDto": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "userId"
+        ],
+        "type": "object"
+      },
       "CloudBackupLocationDto": {
         "properties": {
           "city": {
@@ -107651,13 +107742,20 @@
             "type": "string"
           },
           "checksum": {
-            "description": "SHA-1 of the lost file, base64: what the phone matches its own file by",
+            "description": "SHA-1 (20 bytes) or SHA-256 (32 bytes) of the lost file's contents, base64: what the phone matches its own file by",
             "type": "string"
           },
           "fileCreatedAt": {
             "description": "When the file was created",
             "format": "date-time",
             "type": "string"
+          },
+          "fileSize": {
+            "description": "Size of the lost file in bytes, or null when unknown: a phone may look only at its files of exactly this size",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           },
           "originalFileName": {
             "description": "The name the file had",
@@ -107668,6 +107766,7 @@
           "assetId",
           "checksum",
           "fileCreatedAt",
+          "fileSize",
           "originalFileName"
         ],
         "type": "object"
@@ -107681,7 +107780,7 @@
             "type": "string"
           },
           "notHere": {
-            "description": "Checksums (base64) of lost originals this device does not have",
+            "description": "Checksums (base64, SHA-1 or SHA-256, as listed) of lost originals this device does not have",
             "items": {
               "maxLength": 64,
               "type": "string"
