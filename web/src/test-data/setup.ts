@@ -15,6 +15,8 @@ import { init } from 'svelte-i18n';
  * A plain function, not `vi.fn()`: a spec's `vi.resetAllMocks()` would otherwise strip the
  * implementation and every later animation (toasts, transitions) would get `undefined` back.
  */
+// A finish left over from a spec file whose environment has gone would dispatch an event no document accepts.
+const setupDocument = document;
 const animateAtOnce = Object.assign(
   function animate(): Animation {
     let handler: ((event: AnimationPlaybackEvent) => void) | null = null;
@@ -34,7 +36,8 @@ const animateAtOnce = Object.assign(
         handler = next;
         if (next) {
           queueMicrotask(() => {
-            if (handler === next) {
+            // eslint-disable-next-line unicorn/no-unnecessary-global-this -- teardown deletes `document`; a bare reference would throw
+            if (handler === next && globalThis.document === setupDocument) {
               next({} as AnimationPlaybackEvent);
             }
           });

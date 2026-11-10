@@ -63,6 +63,7 @@ describe('AssetDevelopService sensor source', () => {
       expect(mocks.media.decodeImage).toHaveBeenCalledExactlyOnceWith(sensor, {
         colorspace: Colorspace.Srgb,
         processInvalidImages: false,
+        ladder: 'pixels',
         size: 1536,
       });
     },
