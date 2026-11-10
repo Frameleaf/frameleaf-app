@@ -554,6 +554,12 @@ describe(PersonRepository.name, () => {
           faceAssetId: fineFace.id,
         });
 
+        // a better face replaces an automatic main photo only while it is still the one that was read
+        await expect(sut.replaceAutomaticFeaturedFace(fine, newUuid(), featured.id)).resolves.toBe(false);
+        await expect(sut.replaceAutomaticFeaturedFace(person, featured.id, fineFace.id)).resolves.toBe(false);
+        await expect(sut.replaceAutomaticFeaturedFace(fine, fineFace.id, featured.id)).resolves.toBe(true);
+        await sut.update({ ownerId: user.id, personGroupId: fine.personGroupId, faceAssetId: fineFace.id });
+
         const poor = await sut.getPeopleWithPoorMainPhoto();
         expect(poor.filter(({ ownerId }) => ownerId === user.id)).toEqual([
           {

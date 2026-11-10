@@ -1013,16 +1013,22 @@ export class PersonService extends BaseService {
    */
   private async refreshPoorMainPhotos() {
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
-    const firstPass = !state?.uprightPassAt;
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    // the one pass is spent only once faces are on, since the thumbnail job needs the face detector
+    // ponytail: a detector that is on but away that night still spends it; record the pass per person
+    // from the thumbnail job if that leaves sideways thumbnails behind.
+    const firstPass = !state?.uprightPassAt && isFacialRecognitionEnabled(machineLearning);
     const people = await this.personRepository.getPeopleWithPoorMainPhoto();
     const jobs: JobItem[] = [];
     let replaced = 0;
     for (const { ownerId, personGroupId, faceId, manual, sideways } of people) {
       const best = manual ? undefined : await this.personRepository.getBestFace(personGroupId, ownerId);
       if (best && !best.poor && best.id !== faceId) {
-        await this.personRepository.update({ ownerId, personGroupId, faceAssetId: best.id });
-        jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
-        replaced++;
+        // only while the main photo is still the automatic one read above: the owner may pick one meanwhile
+        if (await this.personRepository.replaceAutomaticFeaturedFace({ ownerId, personGroupId }, faceId, best.id)) {
+          jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
+          replaced++;
+        }
       } else if (sideways && firstPass) {
         jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
       }

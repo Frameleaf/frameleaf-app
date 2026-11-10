@@ -19,7 +19,7 @@ import type {
   VideoInterfaces,
   VideoStreamInfo,
 } from 'src/types.js';
-import { FACE_THUMBNAIL_SIZE, FACE_UPRIGHT_PROBE_SIZE } from 'src/constants.js';
+import { FACE_THUMBNAIL_SIZE, FACE_UPRIGHT_PROBE_SIZE, FACE_UPRIGHT_PROBE_TIMEOUT_MS } from 'src/constants.js';
 import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -79,7 +79,7 @@ import { straightenScale } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
-import { executionSignal } from 'src/utils/execution-signal.js';
+import { executionSignal, executionTimeout } from 'src/utils/execution-signal.js';
 import { faceLooksSideways } from 'src/utils/face-quality.js';
 import { isBusy } from 'src/utils/file-problem.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
@@ -1046,7 +1046,12 @@ export class MediaService extends BaseService {
         }
         await tx
           .updateTable('person')
-          .set({ thumbnailPath, ...(sourceFaceId && { faceAssetId: sourceFaceId }) })
+          .set({
+            thumbnailPath,
+            ...(sourceFaceId && { faceAssetId: sourceFaceId }),
+            // FL-1383: a face this job chose for a person left without one is not the owner's pick
+            ...(sourceFaceId && !person?.faceAssetId && { isFeaturedFaceManual: false }),
+          })
           .where('ownerId', '=', ownerId)
           .where('personGroupId', '=', personGroupId)
           .execute();
@@ -1111,10 +1116,13 @@ export class MediaService extends BaseService {
           },
           probePath,
         );
-        const { faces } = await this.machineLearningRepository.detectFaces(selection, probePath, {
-          modelName,
-          minScore,
-        });
+        // a detector that does not answer must not hold the thumbnail for the job's whole deadline
+        const { faces } = await this.machineLearningRepository.detectFaces(
+          selection,
+          probePath,
+          { modelName, minScore },
+          executionTimeout(FACE_UPRIGHT_PROBE_TIMEOUT_MS),
+        );
         for (const { boundingBox, score } of faces) {
           if (!faceLooksSideways(boundingBox) && score > best.score) {
             best = { turn, score };
@@ -1123,6 +1131,8 @@ export class MediaService extends BaseService {
       }
       return best.turn;
     } catch (error) {
+      // a cancelled job stops here; a detector that failed or timed out only costs the turn
+      executionSignal()?.throwIfAborted();
       this.logger.debug(`Person thumbnail left as it is, no upright check: ${(error as Error)?.message ?? error}`);
       return 0;
     } finally {

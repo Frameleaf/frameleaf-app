@@ -1428,15 +1428,26 @@ describe(PersonService.name, () => {
         const best = { id: newUuid(), poor: false };
         mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([person]);
         mocks.person.getBestFace.mockResolvedValue(best);
+        mocks.person.replaceAutomaticFeaturedFace.mockResolvedValue(true);
 
         await sut.handlePersonCleanup();
 
-        expect(mocks.person.update).toHaveBeenCalledWith({
-          ownerId: person.ownerId,
-          personGroupId: person.personGroupId,
-          faceAssetId: best.id,
-        });
+        expect(mocks.person.replaceAutomaticFeaturedFace).toHaveBeenCalledWith(
+          { ownerId: person.ownerId, personGroupId: person.personGroupId },
+          person.faceId,
+          best.id,
+        );
         expect(mocks.job.queueAll).toHaveBeenCalledWith([thumbnailJob(person)]);
+      });
+
+      it('leaves a main photo the owner picked while the pass was running', async () => {
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([poor()]);
+        mocks.person.getBestFace.mockResolvedValue({ id: newUuid(), poor: false });
+        mocks.person.replaceAutomaticFeaturedFace.mockResolvedValue(false);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
       });
 
       it('keeps the main photo when the best face is poor too', async () => {
@@ -1445,7 +1456,7 @@ describe(PersonService.name, () => {
 
         await sut.handlePersonCleanup();
 
-        expect(mocks.person.update).not.toHaveBeenCalled();
+        expect(mocks.person.replaceAutomaticFeaturedFace).not.toHaveBeenCalled();
         expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
       });
 
@@ -1455,7 +1466,7 @@ describe(PersonService.name, () => {
         await sut.handlePersonCleanup();
 
         expect(mocks.person.getBestFace).not.toHaveBeenCalled();
-        expect(mocks.person.update).not.toHaveBeenCalled();
+        expect(mocks.person.replaceAutomaticFeaturedFace).not.toHaveBeenCalled();
       });
 
       it('makes sideways thumbnails again once, so they can be turned upright', async () => {
@@ -1468,11 +1479,25 @@ describe(PersonService.name, () => {
 
         await sut.handlePersonCleanup();
 
-        expect(mocks.person.update).not.toHaveBeenCalled();
+        expect(mocks.person.replaceAutomaticFeaturedFace).not.toHaveBeenCalled();
         expect(mocks.job.queueAll).toHaveBeenCalledWith([thumbnailJob(picked), thumbnailJob(onlySideways)]);
         expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.PeopleCareState, {
           uprightPassAt: expect.any(String),
         });
+      });
+
+      it('keeps the one pass for later while faces are turned off, since nothing could turn a thumbnail', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { enabled: false } });
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([poor({ sideways: true })]);
+        mocks.person.getBestFace.mockResolvedValue(undefined);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
+        expect(mocks.systemMetadata.set).not.toHaveBeenCalledWith(
+          SystemMetadataKey.PeopleCareState,
+          expect.objectContaining({ uprightPassAt: expect.any(String) }),
+        );
       });
     });
 

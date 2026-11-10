@@ -3290,6 +3290,13 @@ describe(MediaService.name, () => {
 
         // the detector reads the face with room around it, a quarter turn each way
         expect(mocks.machineLearning.detectFaces).toHaveBeenCalledTimes(2);
+        // each check has its own time limit, so a detector that does not answer cannot hold the job
+        expect(mocks.machineLearning.detectFaces).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.any(String),
+          expect.anything(),
+          expect.any(AbortSignal),
+        );
         expect(mocks.media.generateThumbnail.mock.calls[0][1]).toMatchObject({
           size: 500,
           edits: [

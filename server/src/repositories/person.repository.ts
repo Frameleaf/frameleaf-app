@@ -1024,6 +1024,21 @@ export class PersonRepository {
       .returningAll()
       .executeTakeFirstOrThrow();
   }
+  /**
+   * FL-1383: gives a person a better main photo, only while theirs is still the automatic one that was
+   * read (`expectedFaceId`). A photo the owner picked meanwhile stands; true when the person changed.
+   */
+  async replaceAutomaticFeaturedFace({ ownerId, personGroupId }: PersonId, expectedFaceId: string, faceId: string) {
+    const result = await this.db
+      .updateTable('person')
+      .set({ faceAssetId: faceId })
+      .where('person.ownerId', '=', ownerId)
+      .where('person.personGroupId', '=', personGroupId)
+      .where('person.faceAssetId', '=', expectedFaceId)
+      .where('person.isFeaturedFaceManual', '=', false)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
   async updateAll(people: Insertable<PersonTable>[]): Promise<void> {
     if (people.length === 0) {
       return;

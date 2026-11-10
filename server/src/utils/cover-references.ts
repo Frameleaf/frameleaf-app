@@ -195,7 +195,8 @@ export const nextPersonFace = (eb: ExpressionBuilder<DB, 'person'>, scores: Best
 const releasePersonFaces = async (db: Kysely<DB>, assetIds: string[], scores: BestPhotoScoreTable) => {
   await db
     .updateTable('person')
-    .set((eb) => ({ faceAssetId: nextPersonFace(eb, scores), thumbnailPath: '' }))
+    // FL-1383: the stand-in is chosen here, not by the owner, even when the Locked one was their pick
+    .set((eb) => ({ faceAssetId: nextPersonFace(eb, scores), thumbnailPath: '', isFeaturedFaceManual: false }))
     .where('person.faceAssetId', 'in', (eb) =>
       eb
         .selectFrom('asset_face')
