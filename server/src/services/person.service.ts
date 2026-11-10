@@ -44,8 +44,13 @@ import {
   PersonMergeVerdictResponseDto,
   PersonResponseDto,
   PersonSearchDto,
+  PersonSplitSuggestionDto,
+  PersonSplitVerdictCreateDto,
+  PersonSplitVerdictDeleteDto,
+  PersonSplitVerdictResponseDto,
   PersonStatisticsResponseDto,
   PersonUpdateDto,
+  SplitSuggestionsResponseDto,
   mapFaces,
   mapPerson,
 } from 'src/dtos/person.dto.js';
@@ -83,6 +88,7 @@ import {
 } from 'src/utils/face-anchor.js';
 import { assignFaceCandidates } from 'src/utils/face-assignment.js';
 import { type FaceSource, getFaceSourceRevision } from 'src/utils/face-source.js';
+import { FACE_SPLIT_MARGIN, FACE_SPLIT_MIN_FACES, FACE_SPLIT_SAMPLE, findFaceSplit } from 'src/utils/face-split.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import {
   getHiddenContentQueryOptions,
@@ -121,6 +127,8 @@ const isDefinedId = (id: string | null): id is string => !!id;
 
 /** FL-1384: up to this many people, merge candidates are worked out when the People page asks. */
 const MERGE_LIVE_PEOPLE = 500;
+/** FL-1385: "later" skips a split suggestion for this long, as it does a merge suggestion. */
+const SPLIT_LATER_MS = 30 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class PersonService extends BaseService {
@@ -287,6 +295,103 @@ export class PersonService extends BaseService {
     const deleted = await this.personRepository.deleteMergeVerdict(auth.user.id, personId, suggestionId);
     if (!deleted) {
       throw new NotFoundException('Merge suggestion verdict not found');
+    }
+  }
+
+  /**
+   * FL-1385: people who may hold the faces of two different people, found by the nightly check
+   * (`refreshSplitCandidates`), each with a few faces from both sides so the owner can see why. A
+   * candidate whose faces have since moved or gone is left out until the next check decides again.
+   * Evidence is only ever media the viewer may be shown, as for merge suggestions.
+   */
+  async getSplitSuggestions(auth: AuthDto): Promise<SplitSuggestionsResponseDto> {
+    const options = getHiddenContentQueryOptions(auth);
+    const suggestions: PersonSplitSuggestionDto[] = [];
+    for (const candidate of await this.personRepository.getSplitCandidates(auth.user.id)) {
+      // FL-37: a person suppressed while the session is not unlocked is not there
+      if (isSuppressedWhileLocked(auth, 'person', candidate.personId)) {
+        continue;
+      }
+      const person = await this.personRepository.getByGroupId({
+        ownerId: auth.user.id,
+        personGroupId: candidate.personId,
+      });
+      const { total, faceIds } = await this.personRepository.getSplitFaceCounts(candidate.personId, candidate.faceIds);
+      if (!person || faceIds.length < FACE_SPLIT_MIN_FACES || total - faceIds.length < FACE_SPLIT_MIN_FACES) {
+        continue;
+      }
+      const [personEvidence, otherEvidence] = await Promise.all(
+        [false, true].map(async (other) => {
+          const faces = await this.personRepository.getSplitEvidence(
+            auth.user.id,
+            candidate.personId,
+            faceIds,
+            other,
+            options,
+          );
+          return Promise.all(
+            faces.map(async (face) => ({
+              assetId: face.assetId,
+              faceId: face.faceId,
+              box: await this.displayedFaceBox(face.assetId, face),
+            })),
+          );
+        }),
+      );
+      suggestions.push({
+        person: mapPerson(person),
+        faceCount: faceIds.length,
+        totalFaceCount: total,
+        distance: candidate.distance,
+        personEvidence,
+        otherEvidence,
+      });
+    }
+    return { suggestions };
+  }
+
+  /**
+   * FL-1385: answers whether a person is all one person.
+   * - `split` moves the faces that look like someone else to a new, unnamed person now. Each move is a
+   *   face correction like any other: it is kept in the correction history, survives recognition
+   *   rebuilds, and merging the new person back undoes it;
+   * - `same` never asks about this person again, `later` not for 30 days.
+   */
+  async setSplitVerdict(auth: AuthDto, dto: PersonSplitVerdictCreateDto): Promise<PersonSplitVerdictResponseDto> {
+    await this.requirePerson(auth, Permission.PersonUpdate, dto.personId);
+    const personId = dto.personId.toLowerCase();
+    const candidate = await this.personRepository.getSplitCandidate(auth.user.id, personId);
+    if (!candidate) {
+      throw new NotFoundException('Split suggestion not found');
+    }
+    if (dto.verdict !== 'split') {
+      const until = dto.verdict === 'same' ? 'infinity' : new Date(Date.now() + SPLIT_LATER_MS);
+      await this.personRepository.setSplitDismissal(auth.user.id, personId, until);
+      return { personId, verdict: dto.verdict, newPersonId: null, movedFaceCount: 0 };
+    }
+
+    // only faces that are still this person's, and that this account may move
+    const { faceIds } = await this.personRepository.getSplitFaceCounts(personId, candidate.faceIds);
+    const allowed = await this.checkAccess({ auth, permission: Permission.PersonCreate, ids: faceIds });
+    const movable = faceIds.filter((id) => allowed.has(id));
+    if (movable.length === 0) {
+      throw new BadRequestException('None of these faces can be moved');
+    }
+    const created = await this.create(auth, {});
+    // ponytail: one face at a time, as "Fix incorrect match" moves them, so each has its history entry;
+    // batch the moves if splitting thousands of faces proves slow.
+    for (const id of movable) {
+      await this.reassignFacesById(auth, created.id, { id });
+    }
+    await this.personRepository.deleteSplitCandidate(auth.user.id, personId);
+    return { personId, verdict: 'split', newPersonId: created.id, movedFaceCount: movable.length };
+  }
+
+  /** FL-1385: undoes a "same" or "later" answer, so the person can be suggested again. */
+  async deleteSplitVerdict(auth: AuthDto, dto: PersonSplitVerdictDeleteDto): Promise<void> {
+    await this.requirePerson(auth, Permission.PersonUpdate, dto.personId);
+    if (!(await this.personRepository.setSplitDismissal(auth.user.id, dto.personId.toLowerCase(), null))) {
+      throw new NotFoundException('Split suggestion not found');
     }
   }
 
@@ -974,6 +1079,7 @@ export class PersonService extends BaseService {
 
     await this.refreshPoorMainPhotos();
     await this.refreshMergeCandidates();
+    await this.refreshSplitCandidates();
 
     return JobStatus.Success;
   }
@@ -1003,6 +1109,54 @@ export class PersonService extends BaseService {
     const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
     await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, { ...latest, mergeCandidatesAt });
     this.logger.debug(`Found ${pairs} pairs of people that may be the same person`);
+  }
+
+  /**
+   * FL-1385: looks for people who hold the faces of two different people, on nights when a face was
+   * added, moved or changed since the last time (then only among the people it happened to; the first
+   * night, everyone). A sample of each person's faces is split in two (`findFaceSplit`); when the two
+   * groups look like different people, all the person's faces nearer the smaller group are stored as the
+   * faces that may be someone else. An answer the owner gave stays with the person.
+   */
+  private async refreshSplitCandidates() {
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
+    const since = state?.splitCandidatesAt ? new Date(state.splitCandidatesAt) : undefined;
+    if (since && !(await this.personRepository.hasFaceChangesSince(since))) {
+      return;
+    }
+    const splitCandidatesAt = new Date().toISOString();
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    const minDistance = machineLearning.facialRecognition.maxDistance + FACE_SPLIT_MARGIN;
+    const people = await this.personRepository.getPeopleForSplitCheck(FACE_SPLIT_MIN_FACES * 2, since);
+    let found = 0;
+    for (const { ownerId, personGroupId } of people) {
+      const faces = await this.personRepository.getFaceEmbeddings(personGroupId, FACE_SPLIT_SAMPLE);
+      const split = findFaceSplit(
+        faces.map(({ embedding }) => JSON.parse(embedding) as number[]),
+        { minDistance },
+      );
+      const faceIds = split
+        ? await this.personRepository.getFacesNearerTo(
+            personGroupId,
+            JSON.stringify(split.centres.smaller),
+            JSON.stringify(split.centres.larger),
+          )
+        : [];
+      if (split && faceIds.length >= FACE_SPLIT_MIN_FACES) {
+        await this.personRepository.upsertSplitCandidate({
+          ownerId,
+          personId: personGroupId,
+          faceIds,
+          distance: split.distance,
+        });
+        found++;
+      } else {
+        await this.personRepository.deleteSplitCandidate(ownerId, personGroupId, { keepAnswered: true });
+      }
+    }
+    const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
+    await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, { ...latest, splitCandidatesAt });
+    this.logger.debug(`Checked ${people.length} people for two people held as one; ${found} may be`);
   }
 
   /**

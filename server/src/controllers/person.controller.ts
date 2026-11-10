@@ -33,8 +33,12 @@ import {
   PersonMergeVerdictResponseDto,
   PersonResponseDto,
   PersonSearchDto,
+  PersonSplitVerdictCreateDto,
+  PersonSplitVerdictDeleteDto,
+  PersonSplitVerdictResponseDto,
   PersonStatisticsResponseDto,
   PersonUpdateDto,
+  SplitSuggestionsResponseDto,
 } from 'src/dtos/person.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
@@ -140,6 +144,46 @@ export class PersonController {
   })
   deleteMergeVerdict(@Auth() auth: AuthDto, @Body() dto: PersonMergeVerdictDeleteDto): Promise<void> {
     return this.service.deleteMergeVerdict(auth, dto);
+  }
+
+  // Declared before `getPerson(:id)`, like the merge suggestions above.
+  @Get('split-suggestions')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Get split suggestions',
+    description:
+      'Retrieve people who may hold the faces of two different people, with a few faces from each side, for the guided review flow.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getSplitSuggestions(@Auth() auth: AuthDto): Promise<SplitSuggestionsResponseDto> {
+    return this.service.getSplitSuggestions(auth);
+  }
+
+  @Put('split-suggestions/verdicts')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @Endpoint({
+    summary: 'Record a split suggestion verdict',
+    description:
+      'Answer whether a person is all one person: "split" moves the faces that look like someone else to a new, unnamed person now, "same" never asks about this person again and "later" skips it for 30 days.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  setSplitVerdict(
+    @Auth() auth: AuthDto,
+    @Body() dto: PersonSplitVerdictCreateDto,
+  ): Promise<PersonSplitVerdictResponseDto> {
+    return this.service.setSplitVerdict(auth, dto);
+  }
+
+  @Delete('split-suggestions/verdicts')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Undo a split suggestion verdict',
+    description: 'Remove a "same" or "later" answer, so the person can be suggested again.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  deleteSplitVerdict(@Auth() auth: AuthDto, @Body() dto: PersonSplitVerdictDeleteDto): Promise<void> {
+    return this.service.deleteSplitVerdict(auth, dto);
   }
 
   @Post('corrections/:id/undo')

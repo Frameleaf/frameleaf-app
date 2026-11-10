@@ -13,12 +13,21 @@
  * ponytail: a child and the same person grown up can sit as far apart as two people; the owner answers
  * "same person" once. Reading capture dates would tell the two cases apart.
  */
+/** Each side of a split needs at least this many faces. */
+export const FACE_SPLIT_MIN_FACES = 3;
+/** The two groups' centres must be this much farther apart than the recognition distance. */
+export const FACE_SPLIT_MARGIN = 0.1;
+/** How many of a person's faces the split is looked for in; the rest are sorted by the two centres. */
+export const FACE_SPLIT_SAMPLE = 200;
+
 export interface FaceSplit {
   /** Indexes into the input of the smaller group: the faces that may be someone else. */
   smaller: number[];
   larger: number[];
   /** Cosine distance between the two groups' centres. */
   distance: number;
+  /** The two groups' centres (unit length), to sort faces that were not in the input. */
+  centres: { smaller: number[]; larger: number[] };
 }
 
 export interface FaceSplitOptions {
@@ -72,7 +81,7 @@ const farthestFrom = (faces: Float64Array[], from: Float64Array) => {
 
 export const findFaceSplit = (
   embeddings: ArrayLike<number>[],
-  { minDistance, minFaces = 3 }: FaceSplitOptions,
+  { minDistance, minFaces = FACE_SPLIT_MIN_FACES }: FaceSplitOptions,
 ): FaceSplit | null => {
   if (embeddings.length < minFaces * 2) {
     return null;
@@ -100,6 +109,8 @@ export const findFaceSplit = (
   const indexes = faces.map((_, index) => index);
   const [a, b] = [indexes.filter((index) => !sides[index]), indexes.filter((index) => sides[index])];
   const [smaller, larger] = a.length <= b.length ? [a, b] : [b, a];
+  const centres =
+    a.length <= b.length ? { smaller: [...first], larger: [...second] } : { smaller: [...second], larger: [...first] };
   if (smaller.length < minFaces) {
     return null;
   }
@@ -116,5 +127,5 @@ export const findFaceSplit = (
   if (1 - alike >= minDistance) {
     return null;
   }
-  return { smaller, larger, distance };
+  return { smaller, larger, distance, centres };
 };

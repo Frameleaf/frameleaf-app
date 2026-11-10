@@ -182,7 +182,60 @@ const PersonMergeVerdictResponseSchema = z
   })
   .meta({ id: 'PersonMergeVerdictResponseDto' });
 
+// FL-1385: one person who may hold the faces of two different people. `faceCount` of their
+// `totalFaceCount` faces look like someone else; a few faces from each side are shown as evidence.
+const PersonSplitSuggestionSchema = z
+  .object({
+    person: PersonResponseSchema.describe('The person being reviewed'),
+    faceCount: z.int().min(0).describe('How many of the faces look like someone else'),
+    totalFaceCount: z.int().min(0).describe('How many faces the person has'),
+    distance: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .describe('Face embedding distance between the two groups of faces (higher is less alike)'),
+    personEvidence: z.array(FaceEvidenceSchema).describe('A few of the faces that look like most of the person'),
+    otherEvidence: z.array(FaceEvidenceSchema).describe('A few of the faces that look like someone else'),
+  })
+  .meta({ id: 'PersonSplitSuggestionDto' });
+
+const SplitSuggestionsResponseSchema = z
+  .object({
+    suggestions: z.array(PersonSplitSuggestionSchema).describe('People who may hold two different people'),
+  })
+  .meta({ id: 'SplitSuggestionsResponseDto' });
+
+const PersonSplitVerdictSchema = z
+  .enum(['split', 'same', 'later'])
+  .describe(
+    '"split": move the faces that look like someone else to a new, unnamed person now; ' +
+      '"same": it is all one person, never ask again; "later": skip it for 30 days',
+  )
+  .meta({ id: 'PersonSplitVerdict' });
+
+const PersonSplitVerdictDeleteSchema = z
+  .object({ personId: z.uuidv4().describe('The reviewed person') })
+  .meta({ id: 'PersonSplitVerdictDeleteDto' });
+
+const PersonSplitVerdictCreateSchema = z
+  .object({ personId: z.uuidv4().describe('The reviewed person'), verdict: PersonSplitVerdictSchema })
+  .meta({ id: 'PersonSplitVerdictCreateDto' });
+
+const PersonSplitVerdictResponseSchema = z
+  .object({
+    personId: z.uuidv4().describe('The reviewed person'),
+    verdict: PersonSplitVerdictSchema,
+    newPersonId: z.uuidv4().nullable().describe('The person the faces moved to, for "split"'),
+    movedFaceCount: z.int().min(0).describe('How many faces moved, for "split"'),
+  })
+  .meta({ id: 'PersonSplitVerdictResponseDto' });
+
 export class FaceEvidenceDto extends createZodDto(FaceEvidenceSchema) {}
+export class PersonSplitSuggestionDto extends createZodDto(PersonSplitSuggestionSchema) {}
+export class SplitSuggestionsResponseDto extends createZodDto(SplitSuggestionsResponseSchema) {}
+export class PersonSplitVerdictCreateDto extends createZodDto(PersonSplitVerdictCreateSchema) {}
+export class PersonSplitVerdictDeleteDto extends createZodDto(PersonSplitVerdictDeleteSchema) {}
+export class PersonSplitVerdictResponseDto extends createZodDto(PersonSplitVerdictResponseSchema) {}
 export class PersonMergeSuggestionDto extends createZodDto(PersonMergeSuggestionSchema) {}
 export class PersonMergeVerdictCreateDto extends createZodDto(PersonMergeVerdictCreateSchema) {}
 export class PersonMergeVerdictDeleteDto extends createZodDto(PersonMergeVerdictDeleteSchema) {}

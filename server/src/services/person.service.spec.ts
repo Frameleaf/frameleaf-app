@@ -1393,6 +1393,7 @@ describe(PersonService.name, () => {
       mocks.person.delete.mockResolvedValue([person]);
       mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([]);
       mocks.person.getPersonOwnerIds.mockResolvedValue([]);
+      mocks.person.getPeopleForSplitCheck.mockResolvedValue([]);
 
       await sut.handlePersonCleanup();
 
@@ -1419,6 +1420,7 @@ describe(PersonService.name, () => {
       beforeEach(() => {
         mocks.person.getAllWithoutFaces.mockResolvedValue([]);
         mocks.person.getPersonOwnerIds.mockResolvedValue([]);
+        mocks.person.getPeopleForSplitCheck.mockResolvedValue([]);
         // the one-time upright pass has already run, unless a test says otherwise
         mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: '2026-11-10T00:00:00.000Z' });
       });
@@ -1507,6 +1509,7 @@ describe(PersonService.name, () => {
       beforeEach(() => {
         mocks.person.getAllWithoutFaces.mockResolvedValue([]);
         mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([]);
+        mocks.person.getPeopleForSplitCheck.mockResolvedValue([]);
       });
 
       it("works out every account's pairs with the recognition distance, the first night", async () => {
@@ -1544,6 +1547,75 @@ describe(PersonService.name, () => {
 
         expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledTimes(1);
       });
+    });
+  });
+
+  describe('split candidates (FL-1385)', () => {
+    const lastRun = '2026-11-10T00:00:00.000Z';
+    const unit = (index: number, mix: number) => {
+      const vector = Array.from({ length: 16 }, () => 0);
+      vector[index] = 1;
+      vector[8 + mix] = 0.3;
+      return `[${vector}]`;
+    };
+    const faces = (identities: number[]) =>
+      identities.map((identity, mix) => ({ id: `face-${mix}`, embedding: unit(identity, mix % 8) }));
+    const person = { ownerId: 'owner-1', personGroupId: 'person-1' };
+
+    beforeEach(() => {
+      mocks.person.getAllWithoutFaces.mockResolvedValue([]);
+      mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([]);
+      mocks.person.getPersonOwnerIds.mockResolvedValue([]);
+      mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: lastRun, mergeCandidatesAt: lastRun });
+      mocks.person.hasFaceChangesSince.mockResolvedValue(false);
+      mocks.person.getPeopleForSplitCheck.mockResolvedValue([person]);
+    });
+
+    it('stores every face nearer the smaller group when a person holds two different people', async () => {
+      mocks.person.getFaceEmbeddings.mockResolvedValue(faces([0, 0, 0, 0, 0, 0, 1, 1, 1]));
+      mocks.person.getFacesNearerTo.mockResolvedValue(['face-6', 'face-7', 'face-8', 'face-900']);
+
+      await sut.handlePersonCleanup();
+
+      // the first night everyone is checked: there is no earlier run to compare with
+      expect(mocks.person.getPeopleForSplitCheck).toHaveBeenCalledWith(6, undefined);
+      expect(mocks.person.getFaceEmbeddings).toHaveBeenCalledWith('person-1', 200);
+      expect(mocks.person.upsertSplitCandidate).toHaveBeenCalledWith({
+        ownerId: 'owner-1',
+        personId: 'person-1',
+        faceIds: ['face-6', 'face-7', 'face-8', 'face-900'],
+        distance: expect.any(Number),
+      });
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+        SystemMetadataKey.PeopleCareState,
+        expect.objectContaining({ splitCandidatesAt: expect.any(String) }),
+      );
+    });
+
+    it('forgets an unanswered candidate once the person is one person again', async () => {
+      mocks.person.getFaceEmbeddings.mockResolvedValue(faces([0, 0, 0, 0, 0, 0, 0, 0]));
+
+      await sut.handlePersonCleanup();
+
+      expect(mocks.person.upsertSplitCandidate).not.toHaveBeenCalled();
+      expect(mocks.person.deleteSplitCandidate).toHaveBeenCalledWith('owner-1', 'person-1', { keepAnswered: true });
+    });
+
+    it('checks only people whose faces changed, and nobody on a night nothing changed', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        uprightPassAt: lastRun,
+        mergeCandidatesAt: lastRun,
+        splitCandidatesAt: lastRun,
+      });
+
+      await sut.handlePersonCleanup();
+      expect(mocks.person.getPeopleForSplitCheck).not.toHaveBeenCalled();
+
+      mocks.person.hasFaceChangesSince.mockResolvedValue(true);
+      mocks.person.getPersonOwnerIds.mockResolvedValue([]);
+      mocks.person.getFaceEmbeddings.mockResolvedValue([]);
+      await sut.handlePersonCleanup();
+      expect(mocks.person.getPeopleForSplitCheck).toHaveBeenCalledWith(6, new Date(lastRun));
     });
   });
 
