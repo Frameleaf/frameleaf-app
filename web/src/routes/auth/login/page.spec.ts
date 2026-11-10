@@ -363,30 +363,37 @@ describe('Sign in with Frameleaf (FL-158)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('asks a newly paired owner to set the local password before entering the library', async () => {
-    localStorage.setItem(
-      'frameleaf.auth.frameleafRequest.paired',
-      JSON.stringify({ purpose: 'sign-in', expiresAt: Date.now() + 60_000 }),
-    );
-    vi.stubGlobal('location', {
-      ...location,
-      href: 'https://photos.example.test/auth/login?code=abc&state=paired',
-      search: '?code=abc&state=paired',
-    });
-    vi.mocked(oauth.isCallback).mockReturnValue(true);
-    vi.mocked(finishFrameleafSignIn).mockResolvedValue({
-      ...forced,
-      isAdmin: true,
-      shouldChangePassword: false,
-    } as LoginResponseDto);
-    vi.mocked(getAuthStatus).mockResolvedValueOnce({ localPasswordRequired: true } as Awaited<
-      ReturnType<typeof getAuthStatus>
-    >);
+  it.each([false, true])(
+    'checks the local password before entry when the initial status check fails: %s',
+    async (statusFailed) => {
+      localStorage.setItem(
+        'frameleaf.auth.frameleafRequest.paired',
+        JSON.stringify({ purpose: 'sign-in', expiresAt: Date.now() + 60_000 }),
+      );
+      vi.stubGlobal('location', {
+        ...location,
+        href: 'https://photos.example.test/auth/login?code=abc&state=paired',
+        search: '?code=abc&state=paired',
+      });
+      vi.mocked(oauth.isCallback).mockReturnValue(true);
+      vi.mocked(finishFrameleafSignIn).mockResolvedValue({
+        ...forced,
+        isAdmin: true,
+        shouldChangePassword: false,
+      } as LoginResponseDto);
+      if (statusFailed) {
+        vi.mocked(getAuthStatus).mockRejectedValueOnce(new Error('Temporarily unavailable'));
+      } else {
+        vi.mocked(getAuthStatus).mockResolvedValueOnce({ localPasswordRequired: true } as Awaited<
+          ReturnType<typeof getAuthStatus>
+        >);
+      }
 
-    render(Page, { data: relay() } as never);
-    await waitFor(() => expect(goto).toHaveBeenCalledWith('/auth/change-password?local=1', { invalidateAll: true }));
-    vi.unstubAllGlobals();
-  });
+      render(Page, { data: relay() } as never);
+      await waitFor(() => expect(goto).toHaveBeenCalledWith('/auth/change-password?local=1', { invalidateAll: true }));
+      vi.unstubAllGlobals();
+    },
+  );
 });
 
 describe('Sign in with Frameleaf from a home address (FL-167)', () => {

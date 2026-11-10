@@ -124,11 +124,12 @@
       return;
     }
     if (user.isAdmin) {
-      const status = await getAuthStatus();
+      const status = await getAuthStatus().catch(() => undefined);
       if (!alive) {
         return;
       }
-      if (status.localPasswordRequired) {
+      // The setup page can retry an unavailable status without losing the authenticated session.
+      if (!status || status.localPasswordRequired) {
         await goto(Route.changePassword({ local: '1', continue: setupContinue() }), { invalidateAll: true });
         return;
       }

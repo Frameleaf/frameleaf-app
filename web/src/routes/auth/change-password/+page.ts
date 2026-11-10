@@ -9,13 +9,12 @@ import type { PageLoad } from './$types';
 export const load = (async ({ url }) => {
   await authenticate(url);
   const local = url.searchParams.get('local') === '1';
-  if (local ? !(await getAuthStatus()).localPasswordRequired : !authManager.user.shouldChangePassword) {
-    redirect(307, Route.photos());
-  }
-
   const requested = url.searchParams.get('continue');
   const destination =
     requested && /^\/(?![/\\])/.test(requested) ? Route.setupContinue(requested, url) : Route.photos();
+  if (local ? !(await getAuthStatus()).localPasswordRequired : !authManager.user.shouldChangePassword) {
+    redirect(307, local ? destination : Route.photos());
+  }
   const $t = await getFormatter();
 
   return {
