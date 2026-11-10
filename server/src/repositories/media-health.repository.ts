@@ -195,6 +195,18 @@ const NEEDS_FIX_STATES = ['missing', 'waiting-phone', 'cant-repair', 'couldnt-ch
 const FIXED_FIX_STATES = ['repaired', 'part-saved', 'found-again', 'restored'];
 /** How long a fixed problem stays in Fixed for you. */
 const FIXED_TAB_DAYS = 30;
+/**
+ * The missing and damaged findings a person keeps with Keep (FL-1337). A RAW the decoder cannot read is not one:
+ * the fix leaves it as it is, and it still counts as an unreadable RAW.
+ */
+const KEPT_STATUSES = [
+  MediaHealthStatus.Missing,
+  MediaHealthStatus.Candidate,
+  MediaHealthStatus.Found,
+  MediaHealthStatus.CorruptSuspect,
+  MediaHealthStatus.CorruptConfirmed,
+  MediaHealthStatus.TrashQueued,
+];
 /** A search id as a claim names it: compared as a uuid, so the job's primary key is used. */
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 @Injectable()
@@ -332,7 +344,7 @@ export class MediaHealthRepository {
    * Library Care's queue sizes (FL-69): open findings by category and status, read with the same
    * owner scope and privacy as the list, so a count never reveals an item the list would hide.
    * FL-1337: a photo its owner chose to keep as it is (`fixState` `left-as-is`) waits for no one, so it is not
-   * counted.
+   * counted. An unsupported RAW the fix left as it is still counts.
    */
   async countByStatus(options: { ownerId?: string; privacy: MediaHealthPrivacy }): Promise<
     Array<{
@@ -347,7 +359,10 @@ export class MediaHealthRepository {
       .select(['asset_health.category', 'asset_health.status'])
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .where('asset.deletedAt', 'is', null)
-      .where(sql<boolean>`(asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'`)
+      .where(
+        sql<boolean>`((asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
+          OR asset_health.status NOT IN (${sql.join(KEPT_STATUSES)}))`,
+      )
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
       .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))

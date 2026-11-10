@@ -187,6 +187,8 @@ export class IntegrityRepository {
    *
    * FL-1337: a photo its owner chose to keep as it is (an open problem whose `fixState` is `left-as-is`) is no
    * longer counted as missing or damaged, by either checker: it is in Left as they are, not waiting for anyone.
+   * Only a missing or damaged finding is kept that way: an unsupported RAW the fix left as it is still counts when
+   * the file checks report it.
    */
   async getFindingsOverview(rawExtensions: readonly string[]) {
     const raw = rawExtensions.length > 0 ? rawExtensions.map((extension) => `%${extension.toLowerCase()}`) : ['%.\0'];
@@ -195,6 +197,7 @@ export class IntegrityRepository {
         SELECT h."assetId", h.category
         FROM public.asset_health h
         WHERE h.evidence->>'fixState' = 'left-as-is' AND h."resolvedAt" IS NULL AND h."dismissedAt" IS NULL
+          AND h.status IN ('missing', 'candidate', 'found', 'corrupt_suspect', 'corrupt_confirmed', 'trash_queued')
       ),
       missing AS (
         SELECT coalesce(r."assetId"::text, 'file:' || r."fileAssetId"::text, 'path:' || r.path) AS key, r."assetId"

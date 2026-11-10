@@ -1304,6 +1304,7 @@ describe(MediaHealthRepository.name, () => {
       asset: { id: string; originalPath: string },
       state: {
         category?: MediaHealthCategory;
+        status?: MediaHealthStatus;
         evidence?: Record<string, unknown>;
         resolvedAt?: Date | null;
         dismissedAt?: Date | null;
@@ -1313,6 +1314,7 @@ describe(MediaHealthRepository.name, () => {
       const finding = await sut.upsertFinding({
         ...findingDto(asset.id, asset.originalPath, null),
         ...(state.category && { category: state.category }),
+        ...(state.status && { status: state.status }),
         evidence: state.evidence ?? {},
       });
       assert.isDefined(finding);
@@ -1421,6 +1423,28 @@ describe(MediaHealthRepository.name, () => {
       expect(counts.toSorted((a, b) => a.category.localeCompare(b.category))).toEqual([
         { category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.Missing, count: 1 },
         { category: MediaHealthCategory.Missing, status: MediaHealthStatus.Missing, count: 1 },
+      ]);
+    });
+
+    it('still counts an unsupported RAW the fix left as it is in the queue counts (N1)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const photo = async () => (await ctx.newAsset({ ownerId: user.id })).result;
+      // the fix settles a RAW the decoder cannot read as left as it is: it still counts in queues.unsupportedRaw
+      await arrangeProblem(sut, await photo(), {
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.UnsupportedRaw,
+        evidence: { fixState: 'left-as-is' },
+      });
+      // a damaged photo the person kept with Keep is still left out
+      await arrangeProblem(sut, await photo(), {
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+        evidence: { fixState: 'left-as-is' },
+      });
+
+      await expect(sut.countByStatus({ ownerId: user.id, privacy: {} })).resolves.toEqual([
+        { category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.UnsupportedRaw, count: 1 },
       ]);
     });
 
