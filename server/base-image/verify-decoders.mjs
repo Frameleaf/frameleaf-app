@@ -89,7 +89,9 @@ for (const [coder, module] of Object.entries({
 }
 
 // FL-1356: the still ladder's other decoders, each run as its own program.
-check('still decoder', 'djpeg (libjpeg-turbo 3)', /version 3\./.test(output('djpeg', ['-version'])));
+// djpeg prints its version on stderr and exits 0, so both streams are read.
+const djpeg = spawnSync('djpeg', ['-version'], { encoding: 'utf8' });
+check('still decoder', 'djpeg (libjpeg-turbo 3)', /version 3\./.test(`${djpeg.stdout}${djpeg.stderr}`));
 check('still decoder', 'magick', /ImageMagick 7\./.test(output('magick', ['-version'])));
 // JxrDecApp has no version flag; run bare it prints its usage, and names itself.
 check('still decoder', 'JxrDecApp (jxrlib)', /JPEG XR Decoder Utility/i.test(output('JxrDecApp', [])));
@@ -177,7 +179,7 @@ const libraw =
   library &&
   readFileSync(join('/usr/local/lib', library))
     .toString('latin1')
-    .match(/\b0\.\d+\.\d+-(?:Release|Devel\d*|Beta\d*|Alpha\d*)/)?.[0];
+    .match(/\b0\.\d+\.\d+-(?:Release|Snapshot\d*|Devel\d*|Beta\d*|Alpha\d*)/)?.[0];
 const series = (version) => version?.match(/^\d+\.\d+/)?.[0];
 check(
   'LibRaw',

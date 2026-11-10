@@ -7,6 +7,7 @@ import {
   MediaHealthSeverity,
   MediaHealthStatus,
 } from 'src/enum.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { RawSupportRepository } from 'src/repositories/raw-support.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -108,17 +109,73 @@ describe(RawSupportRepository.name, () => {
     });
     expect(items[2].renderedAt).toBeInstanceOf(Date);
     expect(groups.toSorted((a, b) => a.extension.localeCompare(b.extension))).toEqual([
-      { extension: 'cr3', healthStatus: null, healthReason: null, hasPreview: true, hasFullsize: true, count: 1 },
-      { extension: 'nef', healthStatus: null, healthReason: null, hasPreview: false, hasFullsize: false, count: 1 },
+      {
+        extension: 'cr3',
+        healthStatus: null,
+        healthReason: null,
+        hasPreview: true,
+        hasFullsize: true,
+        rung: null,
+        count: 1,
+      },
+      {
+        extension: 'nef',
+        healthStatus: null,
+        healthReason: null,
+        hasPreview: false,
+        hasFullsize: false,
+        rung: null,
+        count: 1,
+      },
       {
         extension: 'raf',
         healthStatus: MediaHealthStatus.UnsupportedRaw,
         healthReason: 'raw_decode_unsupported',
         hasPreview: true,
         hasFullsize: false,
+        rung: null,
         count: 1,
       },
     ]);
+  });
+
+  it('reports the recorded ladder rung and lists those files ahead of the rest (FL-1355)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset: rendered } = await ctx.newAsset({
+      ownerId: user.id,
+      originalFileName: 'A.NEF',
+      fileCreatedAt: new Date('2026-06-01T00:00:00Z'),
+    });
+    const { asset: fallen } = await ctx.newAsset({
+      ownerId: user.id,
+      originalFileName: 'B.NEF',
+      fileCreatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    for (const asset of [rendered, fallen]) {
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: `/thumbs/${asset.id}.jpg` });
+    }
+    const jobs = new AssetJobRepository(db);
+    await jobs.setRawRung(fallen.id, 'embedded/timeout');
+    await jobs.setRawRung(fallen.id, 'embedded/unsupported');
+    await jobs.setRawRung(rendered.id, 'placeholder/timeout');
+    await jobs.setRawRung(rendered.id, null);
+
+    const { groups, items } = await sut.getSummary({ ownerId: user.id, limit: 10 });
+
+    // the older file comes first because its sensor did not render
+    expect(items.map(({ assetId, rung }) => ({ assetId, rung }))).toEqual([
+      { assetId: fallen.id, rung: 'embedded/unsupported' },
+      { assetId: rendered.id, rung: null },
+    ]);
+    expect(
+      groups.map(({ rung, count }) => ({ rung, count })).toSorted((a, b) => (a.rung ?? '').localeCompare(b.rung ?? '')),
+    ).toEqual([
+      { rung: null, count: 1 },
+      { rung: 'embedded/unsupported', count: 1 },
+    ]);
+    await expect(jobs.getRawRungAssetIds()).resolves.toContain(fallen.id);
+    await expect(jobs.getRawRungAssetIds()).resolves.not.toContain(rendered.id);
   });
 
   it('ignores resolved findings, names the stacked JPEG and honours the limit', async () => {

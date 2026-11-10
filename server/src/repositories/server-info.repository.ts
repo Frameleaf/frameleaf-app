@@ -237,7 +237,8 @@ export class ServerInfoRepository {
           (output) => output.replaceAll('Version: ImageMagick ', ''),
           getLockfileVersion('imagemagick', lockfile),
         ),
-        this.retrieveVersionFallback('dcraw_emu -v 2>&1'),
+        // `dcraw_emu -v` prints nothing and exits 1, so the build lock is the dependable answer (FL-1355).
+        this.retrieveVersionFallback('dcraw_emu -v 2>&1', undefined, getLockfileVersion('libraw', lockfile)),
         exiftool.version(),
       ]);
 

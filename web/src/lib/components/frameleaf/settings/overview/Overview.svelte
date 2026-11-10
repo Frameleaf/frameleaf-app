@@ -118,11 +118,28 @@
   let said = $state('');
 
   const settled = <T,>(result: PromiseSettledResult<T>) => (result.status === 'fulfilled' ? result.value : null);
+  /**
+   * The library report takes seconds on a large library, so the page never waits for it: the status and
+   * the checks draw from the quick readings, and the library's size and growth fill in when it arrives.
+   */
+  let reportLoading = $state(true);
+  let reportRead = 0;
+  const loadReport = async () => {
+    const read = ++reportRead;
+    reportLoading = true;
+    const result = await getAnalyticsReport({ scope: 'all', range: AnalyticsRange.Year }).catch(() => null);
+    // a "Check again" that started since has its own answer coming
+    if (read === reportRead) {
+      report = result;
+      reportLoading = false;
+    }
+  };
   const load = async () => {
     loading = true;
+    void loadReport();
+    const read = reportRead;
     const results = await Promise.allSettled([
       getAttention(),
-      getAnalyticsReport({ scope: 'all', range: AnalyticsRange.Year }),
       getStorage(),
       getAboutInfo(),
       getBackupRestoreVerification(),
@@ -133,18 +150,21 @@
       listAllBackupDevices({ limit: 200 }),
       getCloudBackupStatus(),
     ]);
+    // an older load that answers late never replaces a newer one's readings
+    if (read !== reportRead) {
+      return;
+    }
     attention = settled(results[0]);
-    report = settled(results[1]);
-    storage = settled(results[2]);
-    about = settled(results[3]);
-    restore = settled(results[4]);
-    compatibility = settled(results[5]);
-    const destinations = settled(results[6]);
-    const routes = settled(results[7]);
+    storage = settled(results[1]);
+    about = settled(results[2]);
+    restore = settled(results[3]);
+    compatibility = settled(results[4]);
+    const destinations = settled(results[5]);
+    const routes = settled(results[6]);
     ml = destinations && routes ? { destinations, routes: routes.routes } : null;
-    overnight = settled(results[8]);
-    phones = settled(results[9])?.devices ?? null;
-    cloudBackup = settled(results[10]);
+    overnight = settled(results[7]);
+    phones = settled(results[8])?.devices ?? null;
+    cloudBackup = settled(results[9]);
     failed = !attention && !storage;
     loading = false;
   };
@@ -434,6 +454,8 @@
     href: string;
   };
   const unread = $derived($t('frameleaf_overview_unread'));
+  /** Said for a library figure until the report arrives; `unread` only once it could not be read. */
+  const unreadReport = $derived(reportLoading ? $t('loading') : unread);
   const lastNight = $derived(overnight?.nights[0]);
   const behind = $derived(phonesBehind(phones ?? []));
   const checks = $derived.by((): Check[] => {
@@ -621,17 +643,19 @@
     const previews =
       breakdown && breakdown.previewsBytes !== null && breakdown.encodedVideoBytes !== null
         ? size(breakdown.previewsBytes + breakdown.encodedVideoBytes)
-        : $t('frameleaf_overview_measured_tonight');
+        : reportLoading
+          ? $t('loading')
+          : $t('frameleaf_overview_measured_tonight');
     return [
       {
         label: $t('frameleaf_overview_your_photos'),
-        value: report ? size(report.summary.physicalBytes) : unread,
+        value: report ? size(report.summary.physicalBytes) : unreadReport,
         detail: report ? $t('frameleaf_overview_items', { values: { count: report.summary.items } }) : undefined,
       },
       { label: $t('frameleaf_overview_previews'), value: previews, detail: $t('frameleaf_overview_previews_detail') },
       {
         label: $t('frameleaf_overview_everything_else'),
-        value: breakdown ? size(breakdown.databaseBytes + breakdown.otherBytes) : unread,
+        value: breakdown ? size(breakdown.databaseBytes + breakdown.otherBytes) : unreadReport,
         detail: $t('frameleaf_overview_everything_else_detail'),
       },
       {
@@ -785,7 +809,9 @@
         title={$t('frameleaf_overview_storage_title')}
         description={room
           ? $t(`frameleaf_overview_room_${room.unit}` as Translations, { values: { count: room.count } })
-          : $t('frameleaf_overview_room_unknown')}
+          : reportLoading
+            ? ''
+            : $t('frameleaf_overview_room_unknown')}
       >
         {#snippet action()}
           <a class="fl-control button" href={commandCenterUrl('storage')}>{$t('frameleaf_overview_manage_storage')}</a>
@@ -812,7 +838,12 @@
       {#snippet action()}
         <a class="fl-control button" href={commandCenterUrl('analytics')}>{$t('frameleaf_overview_open_analytics')}</a>
       {/snippet}
-      {#if report && hasGrowth}
+      {#if reportLoading && !report}
+        <div class="pad" role="status" aria-busy="true">
+          <span class="sr-only">{$t('loading')}</span>
+          <Skeleton variant="block" height="10rem" />
+        </div>
+      {:else if report && hasGrowth}
         <div class="chart">
           <AnalyticsChart
             compact
