@@ -1,6 +1,6 @@
 import { Column, ForeignKeyColumn, PrimaryGeneratedColumn, Table, Unique } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
-import type { ReconciliationProgress } from 'src/utils/backup-reconciliation.js';
+import type { BackupPendingReason, ReconciliationProgress } from 'src/utils/backup-reconciliation.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('backup_device')
@@ -16,6 +16,10 @@ export class BackupDeviceTable {
   @Column({ type: 'timestamp with time zone', default: () => 'clock_timestamp()' }) reportedAt!: Generated<Timestamp>;
   @Column({ type: 'timestamp with time zone', nullable: true }) lastSuccessfulBackupAt!: Timestamp | null;
   @Column({ type: 'integer' }) pendingCount!: number;
+  /** FL-771: device-reported item count on the phone; null until an app reports it. */
+  @Column({ type: 'integer', nullable: true }) phoneItemCount!: number | null;
+  /** FL-771: device-reported reasons items wait, free-form codes stored verbatim. */
+  @Column({ type: 'jsonb', default: '[]' }) pendingReasons!: Generated<BackupPendingReason[]>;
   @Column({ type: 'timestamp with time zone', nullable: true }) deletedAt!: Timestamp | null;
 }
 

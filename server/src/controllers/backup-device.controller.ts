@@ -8,6 +8,7 @@ import {
   BackupDeviceDto,
   BackupDeviceListDto,
   BackupDevicePageDto,
+  BackupDeviceReceiptDto,
   BackupDeviceWriteDto,
   ReconciliationBucketDto,
   ReconciliationHistoryDto,
@@ -43,6 +44,18 @@ export class BackupDeviceController {
   @Endpoint({ summary: 'List own backup devices', history: new HistoryBuilder().added('v3') })
   listBackupDevices(@Auth() auth: AuthDto, @Query() page: BackupDevicePageDto): Promise<BackupDeviceListDto> {
     return this.service.list(auth, page);
+  }
+
+  @Get(':id/receipt')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Get the backup receipt for an own device',
+    description:
+      'Requires elevated unfiltered session. Phone count, pending count and reasons are device-reported; serverVerifiedCount is itemsChecked minus itemsMissing of the latest completed server check, null before any. Incomplete runs are ignored. Another owner device returns 404.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getBackupDeviceReceipt(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<BackupDeviceReceiptDto> {
+    return this.service.receipt(auth, id);
   }
 
   @Delete(':id')
