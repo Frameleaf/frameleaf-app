@@ -672,9 +672,9 @@
               values: { when: when(new Date(lastCleanup.createdAt)) },
             })
           : $t('frameleaf_album_cleanup_care_detail')}
-        tone={cleanup?.ready && cleanup.suggestionCount > 0 ? 'good' : 'off'}
+        tone={cleanup?.ready && !cleanup.checking && cleanup.suggestionCount > 0 ? 'good' : 'off'}
         status={cleanup
-          ? cleanup.ready
+          ? cleanup.ready && !cleanup.checking
             ? cleanup.suggestionCount > 0
               ? $t('frameleaf_album_cleanup_care_suggestions', { values: { count: cleanup.suggestionCount } })
               : $t('frameleaf_album_cleanup_care_no_suggestions')

@@ -33,7 +33,8 @@
 
   const load = async (signal: AbortSignal) => {
     let status = await getAlbumCleanupStatus();
-    for (let poll = 0; !status.ready && poll < SCAN_POLLS && !signal.aborted; poll++) {
+    // FL-1404: a scan from before the albums changed is not the answer either; wait for the one under way.
+    for (let poll = 0; (!status.ready || status.checking) && poll < SCAN_POLLS && !signal.aborted; poll++) {
       await new Promise((resolve) => setTimeout(resolve, SCAN_POLL_MS));
       status = await getAlbumCleanupStatus();
     }

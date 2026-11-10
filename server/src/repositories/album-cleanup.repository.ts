@@ -108,6 +108,55 @@ export class AlbumCleanupRepository {
       .execute();
   }
 
+  /**
+   * FL-1404: whether anything on a person's Albums page changed after their scan began. Every write to an album
+   * moves its `updatedAt`, and an album that is deleted or left leaves an audit row behind. Compared in the
+   * database, where both sides keep their microseconds.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, AlbumCleanupVariant.Ordinary] })
+  async hasChangedSinceScan(userId: string, variant: AlbumCleanupVariant): Promise<boolean> {
+    const { changed } = await this.db
+      .selectNoFrom(
+        sql<boolean>`coalesce(
+          greatest(
+            (
+              select max(album."updatedAt")
+              from album
+              inner join album_user viewer on viewer."albumId" = album.id
+              where viewer."userId" = ${userId}
+            ),
+            (select max(album_audit."deletedAt") from album_audit where album_audit."userId" = ${userId})
+          ) > (
+            select snapshot."computedAt"
+            from album_cleanup_snapshot snapshot
+            where snapshot."userId" = ${userId} and snapshot.variant = ${variant}
+          ),
+          false
+        )`.as('changed'),
+      )
+      .executeTakeFirstOrThrow();
+    return changed;
+  }
+
+  /** Everyone with an album on their Albums page: who the overnight scan is for. */
+  @GenerateSql()
+  async getUserIdsWithAlbums(): Promise<string[]> {
+    const rows = await this.db.selectFrom('album_user').select('userId').distinct().execute();
+    return rows.map(({ userId }) => userId);
+  }
+
+  /**
+   * The database's clock, which stamps every album change. A scan is dated by it, as text so that no microseconds
+   * are lost on the way back, and the two compare exactly.
+   */
+  @GenerateSql()
+  async getTime(): Promise<string> {
+    const { now } = await this.db
+      .selectNoFrom(sql<string>`clock_timestamp()::text`.as('now'))
+      .executeTakeFirstOrThrow();
+    return now;
+  }
+
   private visible(options: AlbumReadOptions) {
     return this.db
       .selectFrom('asset')
@@ -264,7 +313,7 @@ export class AlbumCleanupRepository {
     variant: AlbumCleanupVariant,
     facts: AlbumCleanupFacts,
     suggestionCount: number,
-    computedAt: Date,
+    computedAt: Date | string,
   ): Promise<void> {
     await this.db
       .insertInto('album_cleanup_snapshot')

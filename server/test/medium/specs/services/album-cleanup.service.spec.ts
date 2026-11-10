@@ -231,11 +231,88 @@ describe(AlbumCleanupService.name, () => {
     it('asks for a new scan when none has run, without blocking the answer', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
-      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ ready: false, apply: null });
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ ready: false, checking: true, apply: null });
       expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
         name: 'AlbumCleanupScan',
         data: { userId: user.id },
       });
+    });
+
+    // FL-1404: the only scan ran before any album existed, and the page said there was nothing to tidy.
+    it('scans again after albums are created, renamed or deleted, and not otherwise', async () => {
+      const { sut, ctx } = setup();
+      const jobs = ctx.getMock(JobRepository);
+      const { user } = await ctx.newUser();
+      const scan = { name: 'AlbumCleanupScan', data: { userId: user.id } };
+
+      await sut.handleScan({ userId: user.id });
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({
+        ready: true,
+        checking: false,
+        suggestionCount: 0,
+      });
+      expect(jobs.queue).not.toHaveBeenCalled();
+
+      const { album: first } = await albumOf(ctx, user.id, 'To print', 1);
+      await albumOf(ctx, user.id, 'to print', 1);
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ checking: true, suggestionCount: 0 });
+      expect(jobs.queue).toHaveBeenCalledExactlyOnceWith(scan);
+
+      await sut.handleScan({ userId: user.id });
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ checking: false, suggestionCount: 2 });
+      const found = await sut.getSnapshot(plain(user));
+      expect(found.checking).toBe(false);
+      expect(found.facts!.sameName).toHaveLength(1);
+      expect(jobs.queue).toHaveBeenCalledOnce();
+
+      await ctx.get(AlbumRepository).update(first.id, { albumName: 'Printed' }, user.id);
+      await expect(sut.getSnapshot(plain(user))).resolves.toMatchObject({ checking: true });
+      expect(jobs.queue).toHaveBeenCalledTimes(2);
+      await sut.handleScan({ userId: user.id });
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ checking: false, suggestionCount: 0 });
+
+      await ctx.get(AlbumRepository).delete(first.id);
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ checking: true });
+      expect(jobs.queue).toHaveBeenCalledTimes(3);
+      expect(jobs.queue).toHaveBeenLastCalledWith(scan);
+    });
+
+    it('says a scan is waiting rather than asking for another', async () => {
+      const { sut, ctx } = setup();
+      const jobs = ctx.getMock(JobRepository);
+      const { user } = await ctx.newUser();
+      await sut.handleScan({ userId: user.id });
+      await albumOf(ctx, user.id, 'Trip', 1);
+      jobs.hasDedupJob.mockResolvedValue(true);
+
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ ready: true, checking: true });
+      await expect(sut.getSnapshot(plain(user))).resolves.toMatchObject({ ready: true, checking: true });
+      expect(jobs.hasDedupJob).toHaveBeenCalledWith(QueueName.BackgroundTask, `AlbumCleanupScan:${user.id}`);
+      expect(jobs.queue).not.toHaveBeenCalled();
+    });
+
+    it('scans now when asked to check again', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      await sut.handleScan({ userId: user.id });
+      await sut.check(plain(user));
+      expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledExactlyOnceWith({
+        name: 'AlbumCleanupScan',
+        data: { userId: user.id },
+      });
+    });
+
+    it('scans overnight for everyone with albums', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: albumless } = await ctx.newUser();
+      await albumOf(ctx, user.id, 'Trip', 1);
+
+      await sut.onNightlyDatabaseCleanup();
+
+      const [queued] = ctx.getMock(JobRepository).queueAll.mock.calls[0];
+      expect(queued).toContainEqual({ name: 'AlbumCleanupScan', data: { userId: user.id } });
+      expect(queued).not.toContainEqual({ name: 'AlbumCleanupScan', data: { userId: albumless.id } });
     });
   });
 

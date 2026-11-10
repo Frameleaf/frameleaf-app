@@ -4879,6 +4879,8 @@ export type AlbumCleanupFactsDto = {
     sameTrip: AlbumCleanupPairDto[];
 };
 export type AlbumCleanupSnapshotResponseDto = {
+    /** A new scan is waiting or running, so what is here may be about to change */
+    checking: boolean;
     /** When the scan ran */
     computedAt: string | null;
     /** What the scan found, for this session */
@@ -4900,6 +4902,8 @@ export type AlbumCleanupApplyProgressDto = {
 export type AlbumCleanupStatusResponseDto = {
     /** The newest cleanup you have not undone */
     apply: (AlbumCleanupApplyProgressDto) | null;
+    /** A new scan is waiting or running, so what is here may be about to change */
+    checking: boolean;
     /** When the scan ran */
     computedAt: string | null;
     /** The first scan has finished */
@@ -25160,6 +25164,15 @@ export function applyAlbumCleanup({ albumCleanupApplyDto }: {
         method: "POST",
         body: albumCleanupApplyDto
     })));
+}
+/**
+ * Scan the albums again
+ */
+export function checkAlbumCleanup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/albums/cleanup/check", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Get the album cleanup scan results

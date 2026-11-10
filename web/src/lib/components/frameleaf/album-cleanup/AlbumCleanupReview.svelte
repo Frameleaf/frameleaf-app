@@ -20,6 +20,7 @@
     type PlanPair,
   } from '$lib/frameleaf/album-cleanup';
   import '$lib/frameleaf/album-cleanup.css';
+  import { backupWhen } from '$lib/frameleaf/backup-overview';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
@@ -29,6 +30,7 @@
     AlbumChangeRunStatus,
     AssetMediaSize,
     applyAlbumCleanup,
+    checkAlbumCleanup,
     getAlbumCleanupSnapshot,
     getAlbumCleanupStatus,
     undoLatestAlbumChangeRun,
@@ -56,6 +58,7 @@
     mdiMagnify,
     mdiMapMarkerOutline,
     mdiPencilOutline,
+    mdiRefresh,
     mdiUndo,
   } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
@@ -76,6 +79,10 @@
 
   let phase = $state<Phase>('loading');
   let facts = $state<AlbumCleanupFactsDto>();
+  /** When the suggestions on screen were worked out. */
+  let computedAt = $state<string | null>(null);
+  /** FL-1404: the result a new look is replacing. `undefined` when the page isn't waiting for one. */
+  let staleAt: string | null | undefined;
 
   let delimiters = $state(DEFAULT_DELIMITERS);
   let custom = $state('');
@@ -139,12 +146,21 @@
     stop();
     try {
       const snapshot = await getAlbumCleanupSnapshot();
-      if (!snapshot.ready || !snapshot.facts) {
+      if (snapshot.checking && staleAt === undefined) {
+        staleAt = snapshot.computedAt;
+      }
+      // FL-1404: while the server looks again, what it found last time is not the answer. An empty result from
+      // before the albums existed read as "nothing to do". The first newer result is shown, even if albums are
+      // still changing and another look is already waiting.
+      const looking = snapshot.checking && snapshot.computedAt === staleAt;
+      if (!snapshot.ready || !snapshot.facts || looking) {
         phase = 'unready';
         schedule(load, SCAN_POLL_MS);
         return;
       }
+      staleAt = undefined;
       facts = snapshot.facts;
+      computedAt = snapshot.computedAt;
       phase = 'review';
       await resumeIfApplying();
     } catch (error) {
@@ -159,6 +175,29 @@
     phase = 'loading';
     void load();
   };
+
+  /** "Check again": a new look now. Choices made against the old suggestions go with them. */
+  const checkAgain = async () => {
+    stop();
+    try {
+      await checkAlbumCleanup();
+    } catch (error) {
+      handleError(error, $t('frameleaf_album_cleanup_check_failed'));
+      return;
+    }
+    staleAt = computedAt;
+    reset();
+    phase = 'unready';
+    await load();
+  };
+
+  const checkedWhen = $derived.by(() => {
+    if (!computedAt) {
+      return '';
+    }
+    const said = backupWhen(new Date(computedAt), { locale: $locale, sentence: true });
+    return $t('frameleaf_album_cleanup_checked', { values: { when: $t(said.key, { values: said.values }) } });
+  });
 
   /** Someone left the page while a cleanup was running: pick up its progress rather than offering it again. */
   const resumeIfApplying = async () => {
@@ -691,6 +730,13 @@
       <h1 id="ac-title">{$t('frameleaf_album_cleanup_title')}</h1>
       <p>{$t('frameleaf_album_cleanup_intro')}</p>
     </header>
+    <div class="ac-checked">
+      <span>{checkedWhen}</span>
+      <Button disabled={phase !== 'review'} onclick={checkAgain}>
+        <Icon icon={mdiRefresh} size="1em" aria-hidden={true} />
+        {$t('frameleaf_album_cleanup_check_again')}
+      </Button>
+    </div>
     <dl class="ac-stats">
       <div class="ac-stat lead">
         <dt>{$t('frameleaf_album_cleanup_stat_top_level')}</dt>

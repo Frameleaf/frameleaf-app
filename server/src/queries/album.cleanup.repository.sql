@@ -82,6 +82,49 @@ order by
   "album"."createdAt",
   "album"."id"
 
+-- AlbumCleanupRepository.hasChangedSinceScan
+select
+  coalesce(
+    greatest(
+      (
+        select
+          max(album."updatedAt")
+        from
+          album
+          inner join album_user viewer on viewer."albumId" = album.id
+        where
+          viewer."userId" = $1
+      ),
+      (
+        select
+          max(album_audit."deletedAt")
+        from
+          album_audit
+        where
+          album_audit."userId" = $2
+      )
+    ) > (
+      select
+        snapshot."computedAt"
+      from
+        album_cleanup_snapshot snapshot
+      where
+        snapshot."userId" = $3
+        and snapshot.variant = $4
+    ),
+    false
+  ) as "changed"
+
+-- AlbumCleanupRepository.getUserIdsWithAlbums
+select distinct
+  "userId"
+from
+  "album_user"
+
+-- AlbumCleanupRepository.getTime
+select
+  clock_timestamp()::text as "now"
+
 -- AlbumCleanupRepository.getAlbumStats
 select
   "album_asset"."albumId",

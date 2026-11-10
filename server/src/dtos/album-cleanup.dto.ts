@@ -103,6 +103,7 @@ const AlbumCleanupFactsSchema = z
 const AlbumCleanupSnapshotResponseSchema = z
   .object({
     ready: z.boolean().describe('The first scan has finished'),
+    checking: z.boolean().describe('A new scan is waiting or running, so what is here may be about to change'),
     computedAt: z.string().nullable().describe('When the scan ran'),
     suggestionCount: z.int().min(0).describe('How many albums the review has something to offer'),
     facts: AlbumCleanupFactsSchema.nullable().describe('What the scan found, for this session'),
@@ -121,6 +122,7 @@ const AlbumCleanupApplyProgressSchema = z
 const AlbumCleanupStatusResponseSchema = z
   .object({
     ready: z.boolean().describe('The first scan has finished'),
+    checking: z.boolean().describe('A new scan is waiting or running, so what is here may be about to change'),
     computedAt: z.string().nullable().describe('When the scan ran'),
     suggestionCount: z.int().min(0).describe('How many albums the review has something to offer'),
     apply: AlbumCleanupApplyProgressSchema.nullable().describe('The newest cleanup you have not undone'),
