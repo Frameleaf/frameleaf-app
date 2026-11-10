@@ -87,15 +87,15 @@ describe(MediaHealthController.name, () => {
         await rm(folder, { recursive: true, force: true });
       });
 
-      it('sends the file, named after the photo', async () => {
+      it('sends the file, named apart from the photo and kept out of every cache', async () => {
         const kept = join(folder, 'asset-1-health-1.damaged.jpg');
         await writeFile(kept, 'the damaged file');
         service.getFileProblemKeptFile.mockResolvedValue(
           new FileDownloadResponse({
             path: kept,
-            fileName: 'IMG_2041.jpg',
+            fileName: 'IMG_2041 (damaged).jpg',
             contentType: 'image/jpeg',
-            cacheControl: CacheControl.PrivateWithoutCache,
+            cacheControl: CacheControl.None,
           }),
         );
 
@@ -113,8 +113,9 @@ describe(MediaHealthController.name, () => {
         expect(status).toBe(200);
         expect(service.getFileProblemKeptFile).toHaveBeenCalledWith(undefined, id);
         expect(headers['content-type']).toMatch(/^image\/jpeg/);
-        expect(headers['content-disposition']).toBe("inline; filename*=UTF-8''IMG_2041.jpg");
-        expect(headers['cache-control']).toBe('private, no-cache, no-transform');
+        expect(headers['content-disposition']).toBe("inline; filename*=UTF-8''IMG_2041%20(damaged).jpg");
+        // like a sealed file: never written to a browser's or a proxy's cache
+        expect(headers['cache-control']).toBe('private, no-store');
         expect((body as Buffer).toString()).toBe('the damaged file');
       });
 

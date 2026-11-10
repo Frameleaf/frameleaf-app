@@ -2622,11 +2622,13 @@ export class MediaHealthService {
     if (!kept) {
       throw new NotFoundException(NO_KEPT_FILE);
     }
+    // named so it is never taken for the repaired photo; the route keeps it out of every cache (private, no-store)
+    const extension = path.extname(record.originalFileName);
     return new FileDownloadResponse({
       path: kept,
-      fileName: record.originalFileName,
+      fileName: `${path.basename(record.originalFileName, extension)} (damaged)${extension || path.extname(kept)}`,
       contentType: mimeTypes.lookup(kept),
-      cacheControl: CacheControl.PrivateWithoutCache,
+      cacheControl: CacheControl.None,
     });
   }
 

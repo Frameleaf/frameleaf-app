@@ -122,6 +122,8 @@ export class MediaHealthController {
   ): Promise<void> {
     // checked before the file is sent, so a refusal keeps its own status instead of becoming a missing file
     const file = await this.service.getFileProblemKeptFile(auth, id);
+    // a damaged original never goes into a browser's or a proxy's cache, as a sealed file does not
+    res.header('Cache-Control', 'private, no-store');
     await sendFile(res, next, () => file, this.logger);
   }
 

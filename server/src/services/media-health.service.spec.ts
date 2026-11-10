@@ -6327,13 +6327,28 @@ describe(MediaHealthService.name, () => {
         await expect(sut.getFileProblemKeptFile(owner, 'health-1')).resolves.toEqual({
           // the file itself, as the folder check resolved it
           path: await realpath(damaged),
-          fileName: 'IMG_2041.jpg',
+          // named so it is never taken for the repaired photo
+          fileName: 'IMG_2041 (damaged).jpg',
           contentType: 'image/jpeg',
-          cacheControl: CacheControl.PrivateWithoutCache,
+          // the route keeps it out of every cache (private, no-store), as a sealed file is
+          cacheControl: CacheControl.None,
         });
         // reading it changes nothing
         await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
         expect(mediaHealthRepository.getFileProblem).toHaveBeenCalledWith('health-1', owner.user.id, expect.anything());
+      });
+
+      it('names a photo without an extension after the kept file’s own', async () => {
+        shows(
+          problem({
+            originalPath: repaired,
+            originalFileName: 'Scan 12',
+            evidence: { fixState: 'part-saved', retainedPath: damaged },
+          }),
+        );
+        await expect(sut.getFileProblemKeptFile(owner, 'health-1')).resolves.toMatchObject({
+          fileName: 'Scan 12 (damaged).jpg',
+        });
       });
 
       it('also for a repair that stopped before it recorded its kept-damaged step', async () => {
