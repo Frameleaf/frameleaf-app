@@ -7,7 +7,7 @@ import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, FrameleafWorker, JobName, JobStatus, LibraryScope, ManualJobName, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobService } from 'src/services/job.service.js';
-import { noteHandedToCare } from 'src/utils/library-care-handoff.js';
+import { noteHandedToCare, takeHandedToCare } from 'src/utils/library-care-handoff.js';
 import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { getForAsset } from 'test/mappers.js';
@@ -400,6 +400,46 @@ describe(JobService.name, () => {
 
       expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([]);
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_upload_success', asset.ownerId, expect.anything());
+    });
+
+    it.each([
+      { handedToCare: true, what: 'handed to Library care queues none of its overnight processing' },
+      { handedToCare: false, what: 'not handed to Library care still queues its overnight processing' },
+    ])('from the overnight check (FL-811), one $what', async ({ handedToCare }) => {
+      const id = newUuid();
+      if (handedToCare) {
+        noteHandedToCare(id);
+      }
+      mocks.job.run.mockResolvedValue(JobStatus.Skipped);
+      mocks.job.getQueueName.mockReturnValue(QueueName.SmartSearch);
+      mocks.assetJob.selectionForUnfinished.mockImplementation(
+        (step) =>
+          ({
+            where: () => ({
+              executeTakeFirst: () => Promise.resolve(step === JobName.SmartSearch ? { id } : undefined),
+            }),
+          }) as never,
+      );
+      const execution = { signal: new AbortController().signal, adoptions: [] } as unknown as QueueExecution;
+      await queueExecution.run(execution, () =>
+        sut.onJobRun(QueueName.ThumbnailGeneration, {
+          name: JobName.AssetGenerateThumbnails,
+          data: { id, reconcileUnfinished: true },
+        }),
+      );
+      for (const adopt of execution.adoptions) {
+        await adopt({} as never);
+      }
+
+      if (handedToCare) {
+        // Library care remakes the previews after a fix, and their follow-up work runs then
+        expect(mocks.assetJob.selectionForUnfinished).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      } else {
+        expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([{ name: JobName.SmartSearch, data: { id } }]);
+      }
+      // the note is taken either way, so it never holds back a later run
+      expect(takeHandedToCare(id)).toBe(false);
     });
 
     it.each(['a hidden asset', 'a partner copy sharing its source files'])('for %s keeps its follow-ups', async () => {

@@ -8,6 +8,9 @@ import {
   AssetType,
   AssetVisibility,
   JobName,
+  MediaHealthCategory,
+  MediaHealthSeverity,
+  MediaHealthStatus,
   PhysicalFileType,
   QueueName,
 } from 'src/enum.js';
@@ -186,6 +189,82 @@ describe(AssetJobRepository.name, () => {
     // This status is independent of the legacy trash timestamp.
     expect(trashed.status).toBe(AssetStatus.Trashed);
     expect(offline.isOffline).toBe(true);
+  });
+
+  it('leaves the previews of photos Library care has in hand out of the overnight check (FL-1337)', async () => {
+    const db = await isolatedDatabase();
+    const { ctx, sut } = setup(db);
+    const { user } = await ctx.newUser();
+    const make = async () => {
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
+      return asset;
+    };
+    const problem = async (
+      asset: { id: string; originalPath: string },
+      state: { evidence?: Record<string, unknown>; resolvedAt?: Date; dismissedAt?: Date } = {},
+    ) => {
+      await db
+        .insertInto('asset_health')
+        .values({
+          assetId: asset.id,
+          category: MediaHealthCategory.Corrupt,
+          status: MediaHealthStatus.CorruptConfirmed,
+          severity: MediaHealthSeverity.Critical,
+          originalPath: asset.originalPath,
+          originalFileName: 'photo.jpg',
+          evidence: state.evidence ?? {},
+          resolution: {},
+          checkedAt: new Date(),
+          resolvedAt: state.resolvedAt ?? null,
+          dismissedAt: state.dismissedAt ?? null,
+        })
+        .execute();
+    };
+    const plain = await make();
+    const needsYou = await make();
+    const keptAsItIs = await make();
+    const fixed = await make();
+    const dismissed = await make();
+    const handedOff = await make();
+    const otherFix = await make();
+    await problem(needsYou, { evidence: { fixState: 'cant-repair' } });
+    await problem(keptAsItIs, { evidence: { fixState: 'left-as-is' } });
+    await problem(fixed, { evidence: { fixState: 'repaired' }, resolvedAt: new Date() });
+    await problem(dismissed, { dismissedAt: new Date() });
+    const store = new SqlQueueStore(db);
+    await store.enqueue([
+      {
+        // a preview that would not open was handed to Library care, and its fix has not run yet
+        queue: QueueName.MediaHealth,
+        name: JobName.MediaHealthFixAsset,
+        data: { id: handedOff.id.toUpperCase(), from: 'preview' },
+        safeToRetry: true,
+        sensitive: false,
+        deadlineMs: 30_000,
+      },
+      {
+        // another queue's job by the same name never stands for Library care's fix
+        queue: QueueName.ThumbnailGeneration,
+        name: JobName.MediaHealthFixAsset,
+        data: { id: otherFix.id },
+        safeToRetry: true,
+        sensitive: false,
+        deadlineMs: 30_000,
+      },
+    ]);
+
+    const selection = () =>
+      sut.selectionForUnfinished(JobName.AssetGenerateThumbnails, {
+        queue: QueueName.ThumbnailGeneration,
+        fullsizeEnabled: false,
+        videoPolicy: 'current-policy',
+      });
+    const rows = await selection().execute();
+    expect(rows.map(({ id }) => id).sort()).toEqual([plain.id, fixed.id, dismissed.id, otherFix.id].sort());
+    // the check after an overnight metadata read asks about one photo with the same selection
+    await expect(selection().where('asset.id', '=', needsYou.id).executeTakeFirst()).resolves.toBeUndefined();
   });
 
   it('backfills only uninspected non-RAW images through the existing metadata selection', async () => {

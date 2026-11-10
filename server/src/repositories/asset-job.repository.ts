@@ -58,6 +58,21 @@ const keepsOwnCopyThumbnails = sql<boolean>`EXISTS (
     AND copy_file.path <> source_file.path
 )`;
 
+/**
+ * FL-1337: a photo Library care has in hand, with a file problem still open or a fix still to run (the hand-off
+ * of a preview that would not open, or a fix waiting for its drive). Its previews are Library care's to remake
+ * after a fix, so the overnight check (FL-811) never queues them again.
+ */
+const notInLibraryCare = sql<boolean>`not exists (
+    select 1 from public.asset_health health
+    where health."assetId" = asset.id and health."resolvedAt" is null and health."dismissedAt" is null
+  ) and not exists (
+    select 1 from job
+    where job.queue = ${QueueName.MediaHealth} and job.name = ${JobName.MediaHealthFixAsset}
+      and job.state in ('pending', 'waiting', 'active') and lower(job.data->>'id') collate "C" = asset.id::text
+    offset 0
+  )`;
+
 type ReconciledJob =
   | JobName.AssetExtractMetadata
   | JobName.AssetGenerateThumbnails
@@ -80,7 +95,9 @@ export class AssetJobRepository {
     const selection = {
       [JobName.AssetExtractMetadata]: () => this.selectionForMetadataExtraction(false, false, true),
       [JobName.AssetGenerateThumbnails]: () =>
-        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }),
+        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }).where(
+          notInLibraryCare,
+        ),
       [JobName.AssetEncodeVideo]: () =>
         this.selectionForVideoConversion(false)
           .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
