@@ -67,6 +67,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { OAuthAppRepository } from 'src/repositories/oauth-app.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
@@ -314,6 +315,7 @@ export type ServiceOverrides = {
   lockedEncryption: LockedEncryptionRepository;
   /** FL-1337: not a BaseService dependency; `AssetService` and `AttentionService` take it explicitly. */
   mediaHealth: MediaHealthRepository;
+  oauthApp: OAuthAppRepository;
   /** FL-721: `LockedSealService` only. */
   lockedFile: LockedFileRepository;
   logger: LoggingRepository;
@@ -439,6 +441,7 @@ export const getMocks = () => {
     lockedKey: automock(LockedKeyRepository),
     lockedEncryption: automock(LockedEncryptionRepository, { args: [database], strict: false }),
     mediaHealth: automock(MediaHealthRepository, { args: [database], strict: false }),
+    oauthApp: automock(OAuthAppRepository, { args: [database], strict: false }),
     lockedFile: automock(LockedFileRepository, { args: [database], strict: false }),
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
     map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
@@ -679,6 +682,9 @@ export const newTestService = <T extends BaseService>(
     }
     if (type === MediaHealthRepository) {
       Object.assign(sut, { [key]: mocks.mediaHealth });
+    }
+    if (type === OAuthAppRepository) {
+      Object.assign(sut, { [key]: mocks.oauthApp });
     }
   }
 

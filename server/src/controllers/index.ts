@@ -26,6 +26,11 @@ import { BackupDeviceAdminController, BackupDeviceController } from 'src/control
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
 import { BookmarkController } from 'src/controllers/bookmark.controller.js';
 import { BrowserExtensionSignInController } from 'src/controllers/browser-extension-sign-in.controller.js';
+import {
+  OAuthAppAdminController,
+  OAuthAppController,
+  OAuthAppWellKnownController,
+} from 'src/controllers/oauth-app.controller.js';
 import { BuddyBackupPeerController } from 'src/controllers/buddy-backup-peer.controller.js';
 import { BuddyBackupAdminController, BuddyBackupOwnerController } from 'src/controllers/buddy-backup.controller.js';
 import { CaptureController } from 'src/controllers/capture.controller.js';
@@ -157,6 +162,9 @@ export const controllers = [
   AssetPaletteController,
   CaptureController,
   BrowserExtensionSignInController,
+  OAuthAppController,
+  OAuthAppAdminController,
+  OAuthAppWellKnownController,
   AlbumItemsController,
   AssetSourceController,
   BookmarkController,

@@ -30,6 +30,7 @@ import { BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BookmarkService } from 'src/services/bookmark.service.js';
 import { BrowserExtensionSignInService } from 'src/services/browser-extension-sign-in.service.js';
+import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
@@ -216,6 +217,7 @@ export const services = [
   AssetPaletteService,
   CaptureService,
   BrowserExtensionSignInService,
+  OAuthAppService,
   AlbumItemsService,
   AssetSourceService,
   BookmarkService,

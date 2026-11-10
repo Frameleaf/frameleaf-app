@@ -1181,6 +1181,15 @@ const AdminConfigSchemaWithVisibility = z
     passwordLogin: z
       .object({ enabled: configBool.describe('Enabled').meta({ visibility: Public }) })
       .meta({ id: 'AdminConfigPasswordLoginDto' }),
+    // FL-803: apps people connect to their library (AI assistants, Home Assistant) through OAuth.
+    connectedApps: z
+      .object({
+        allowRegistration: configBool.describe(
+          'Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything.',
+        ),
+      })
+      .meta({ id: 'AdminConfigConnectedAppsDto' })
+      .default({ allowRegistration: true }),
     // FL-71: the template's "Logs & diagnostics" local analytics rows. The nightly collector only
     // reads counts and sizes into this server's database; external telemetry stays off regardless.
     analytics: z
@@ -1845,6 +1854,9 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   passwordLogin: {
     enabled: true,
+  },
+  connectedApps: {
+    allowRegistration: true,
   },
   analytics: {
     enabled: true,

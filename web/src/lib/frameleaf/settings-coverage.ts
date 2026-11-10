@@ -329,6 +329,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'libraryCare.rawRecovery',
   },
   {
+    pattern: 'connectedApps.allowRegistration',
+    // FL-803: the server setting; its switch on the settings page comes with FL-860
+    kind: 'api-only',
+    file: 'src/lib/frameleaf/system-config-draft.ts',
+    evidence: 'connectedApps.allowRegistration',
+  },
+  {
     pattern: 'libraryCare.healthScanCronExpression',
     // FL-363: the overnight schedule starts the checks; this stored start no longer does
     kind: 'api-only',
