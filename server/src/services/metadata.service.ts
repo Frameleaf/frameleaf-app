@@ -47,11 +47,11 @@ import { resolveCameraIdentification } from 'src/utils/camera-identification.js'
 import { captureDetails } from 'src/utils/capture-details.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { DJI_SRT_READ_BYTES, getDjiSrtCandidates, parseDjiSrtLocation } from 'src/utils/dji-srt.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { boxIou, fractionBox, normalizedBox } from 'src/utils/face-anchor.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { detectMediaKinds } from 'src/utils/media-kinds.js';
-import { executionSignal } from 'src/utils/execution-signal.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
 import { photoGpsAccuracy } from 'src/utils/photo-locations.js';

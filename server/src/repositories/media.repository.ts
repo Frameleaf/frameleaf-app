@@ -132,21 +132,22 @@ export class MediaRepository {
   /**
    * FL-1357: whether this ffmpeg can really run libplacebo, found by pushing one frame through it. The filter
    * being compiled in says nothing: it needs a Vulkan device, which most containers do not have.
-   * ponytail: asked once per process; a graphics card added later is seen after a restart.
+   * ponytail: an answer is kept for the life of the process; a graphics card added later is seen after a restart.
    */
   hasLibplacebo(): Promise<boolean> {
     this.libplaceboProbe ??= new Promise((resolve) =>
       execFile(
         'ffmpeg',
-        ['-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'color=s=64x64:d=0.04', '-vf', 'libplacebo'].concat([
-          '-frames:v',
-          '1',
-          '-f',
-          'null',
-          '-',
-        ]),
+        // one 64x64 frame through the filter, thrown away
+        '-nostdin -v error -f lavfi -i color=s=64x64:d=0.04 -vf libplacebo -frames:v 1 -f null -'.split(' '),
         { timeout: 15_000 },
-        (error) => resolve(!error),
+        (error) => {
+          // Only ffmpeg's own answer is kept: a probe that timed out or could not start is asked again next time.
+          if (error && (error.killed || typeof error.code !== 'number')) {
+            this.libplaceboProbe = undefined;
+          }
+          resolve(!error);
+        },
       ),
     );
     return this.libplaceboProbe;

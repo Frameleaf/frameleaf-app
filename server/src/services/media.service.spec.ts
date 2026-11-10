@@ -5565,6 +5565,10 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+
+      // a full drive is not a missing decoder: that one fails, so it is tried again when there is room
+      mocks.media.transcode.mockRejectedValue(new Error('av_interleaved_write_frame(): No space left on device'));
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).rejects.toThrow('No space left on device');
     });
 
     it('skips a file with sound only: there is no picture to copy (FL-1357)', async () => {

@@ -648,7 +648,7 @@ export class MediaService extends BaseService {
         );
       } catch (error) {
         executionSignal()?.throwIfAborted();
-        if (!cinemaRaw || isLockedKeyUnavailable(error)) {
+        if (!cinemaRaw || isLockedKeyUnavailable(error) || isDriveFullError(error)) {
           throw error;
         }
         // ponytail: the nightly missing-thumbnails pass tries it again (one quick ffmpeg run); record a
@@ -1603,6 +1603,10 @@ export class MediaService extends BaseService {
       } catch (error: any) {
         this.logger.error(`Error occurred during transcoding: ${error.message}`);
         if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
+          if (cinemaRaw && isDriveFullError(error)) {
+            // a full drive is not a missing decoder: fail, so the copy is tried again when there is room
+            throw error;
+          }
           return false;
         }
 
@@ -1631,7 +1635,7 @@ export class MediaService extends BaseService {
       return true;
     }).catch((error) => {
       executionSignal()?.throwIfAborted();
-      if (!cinemaRaw || isLockedKeyUnavailable(error)) {
+      if (!cinemaRaw || isLockedKeyUnavailable(error) || isDriveFullError(error)) {
         throw error;
       }
       return false;
