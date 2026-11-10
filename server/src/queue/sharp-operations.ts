@@ -601,7 +601,7 @@ export class SharpOperations {
    * after a cut with flat mid-grey, so the rows above that fill are the part saved. Read small, row by
    * row in the file's own order, so a cut is always at the bottom.
    */
-  private async pictureSaved(bytes: Buffer): Promise<number> {
+  async pictureSaved(bytes: string | Buffer): Promise<number> {
     const { data, info } = await sharp(bytes, { failOn: 'none', limitInputPixels: this.maxPixels })
       .resize(64, 400, { fit: 'fill', kernel: 'nearest' })
       .removeAlpha()

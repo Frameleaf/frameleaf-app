@@ -328,6 +328,11 @@ export class MediaRepository {
     return sharpProcessPool.run('repairJpeg', [input, output, preview, metadataSource]);
   }
 
+  /** How much of a leniently decoded picture is really there, as a percentage of its rows (FL-1337). */
+  async pictureSaved(input: string) {
+    return sharpProcessPool.run('pictureSaved', [input]);
+  }
+
   async composeImageGrid(
     inputs: string[],
     options: { cols: number; rows: number; cellSize: number; output: string },
@@ -558,7 +563,7 @@ export class MediaRepository {
   probePackets(
     input: string,
     streamIndex: number,
-    options?: { maxPackets?: number; signal?: AbortSignal },
+    options?: { maxPackets?: number; signal?: AbortSignal; onProgress?: () => void },
   ): Promise<VideoPacketInfo | null> {
     if (options?.maxPackets !== undefined && (!Number.isSafeInteger(options.maxPackets) || options.maxPackets <= 0)) {
       throw new Error('Invalid media packet probe limit');
@@ -626,6 +631,7 @@ export class MediaRepository {
         return;
       }
       lifetime.progress(1);
+      options?.onProgress?.();
       if (startPts === null || pts < startPts) {
         startPts = pts;
       }
