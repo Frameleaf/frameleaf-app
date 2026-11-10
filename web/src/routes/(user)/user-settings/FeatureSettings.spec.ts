@@ -37,6 +37,7 @@ const values = (overrides: Record<string, unknown> = {}) => ({
   'people.enabled': false,
   'people.sidebarWeb': true,
   'people.minimumFaces': 3,
+  'people.includeArchived': false,
   'ratings.enabled': true,
   'sharedLinks.enabled': true,
   'sharedLinks.sidebarWeb': false,
@@ -78,5 +79,17 @@ describe('FeatureSettings: Tools & sidebar (ACCOUNT-P4)', () => {
     expect(screen.queryByText('People options')).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: '8 seconds' }));
     expect(tools.set).toHaveBeenCalledWith('memories.duration', 8);
+  });
+
+  it('offers to include archived photos in People, off unless chosen (FL-795)', async () => {
+    tools.draft = values({ 'people.enabled': true });
+    render(FeatureSettings);
+
+    await fireEvent.click(screen.getByText('People options'));
+    const archived = screen.getByRole('switch', { name: 'Include archived photos' });
+    expect(archived).not.toBeChecked();
+    expect(screen.getByText('Show archived photos on person pages and count them in People.')).toBeInTheDocument();
+    await fireEvent.click(archived);
+    expect(tools.set).toHaveBeenCalledWith('people.includeArchived', true);
   });
 });

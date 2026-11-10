@@ -190,6 +190,7 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     label: 'frameleaf_prefs_tools_people_minimum',
     values: count('frameleaf_prefs_tools_photos'),
   },
+  'people.includeArchived': { label: 'frameleaf_prefs_tools_people_archived' },
   'albums.defaultAssetOrder': {
     label: 'frameleaf_prefs_look_albums',
     values: { desc: 'newest_first', asc: 'oldest_first' },

@@ -44,12 +44,14 @@ const BODYLESS_ROUTES =
 
 /**
  * Routes that carry a bearer secret in the path itself: a cast URL's signed token, a render worker's
- * input grant and a gallery's zip ticket. The segment is masked like a query parameter would be.
+ * input grant, a gallery's zip ticket and a shared link's key or slug in its direct image address
+ * (FL-788). The segment is masked like a query parameter would be.
  */
 const PATH_SECRET_ROUTES = [
   /^(\/(?:api\/)?cast\/)[^/?#]+/i,
   /^(\/(?:api\/)?render-workers\/operations\/[^/?#]+\/inputs\/)[^/?#]+/i,
   /^(\/(?:api\/)?photography\/galleries\/[^/?#]+\/zip\/)[^/?#]+/i,
+  /^(\/(?:api\/)?shared-links\/direct\/(?:s|key)\/)[^/?#]+/i,
 ];
 
 const redactPathSecrets = (url: string) => {

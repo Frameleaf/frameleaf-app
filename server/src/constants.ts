@@ -165,7 +165,17 @@ export const FRAMELEAF_MOBILE_REDIRECT = 'frameleaf-auth:///oauth-callback';
 export const FRAMELEAF_MOBILE_REDIRECT_PATH = '/oauth/frameleaf-mobile-redirect';
 export const LOGIN_URL = '/auth/login?autoLaunch=0';
 
-export const excludePaths = ['/.well-known/frameleaf', '/.well-known/immich', '/custom.css', '/favicon.ico'];
+// FL-803: OAuth discovery for connected apps (RFC 8414, RFC 9728) is served at the root too.
+export const excludePaths = [
+  '/.well-known/frameleaf',
+  '/.well-known/immich',
+  '/.well-known/oauth-authorization-server',
+  '/.well-known/oauth-protected-resource',
+  '/custom.css',
+  '/favicon.ico',
+];
+/** Routes outside `/api` with a path under them, for Nest's prefix exclusion (`excludePaths` match by prefix elsewhere). */
+export const excludeRoutePatterns = ['/.well-known/oauth-protected-resource/*path'];
 
 export const FACE_THUMBNAIL_SIZE = 250;
 

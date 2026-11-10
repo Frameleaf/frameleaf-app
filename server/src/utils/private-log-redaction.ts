@@ -2,7 +2,7 @@ const REDACTED = '[redacted]';
 // eslint-disable-next-line no-control-regex -- keep stored messages on one safe JSONL line
 const control = /[\u{0}-\u{1F}\u{7F}]+/gu;
 const secretParts =
-  /authorization|cookies?|password|passphrase|pincode|token|secret|apikey|privatekey|sessionkey|codeverifier|licen[cs]ekey|linkcode|recovery(?:key|code|kit|phrase|seed)|keyring|(?:wrap(?:ping)?|bucket|encryption|master|root)key/;
+  /authorization|cookies?|password|passphrase|pincode|token|secret|apikey|privatekey|sessionkey|codeverifier|licen[cs]ekey|linkcode|shared?(?:link)?key|recovery(?:key|code|kit|phrase|seed)|keyring|(?:wrap(?:ping)?|bucket|encryption|master|root)key/;
 const exactNames = new Set(['key', 'keys', 'code', 'state', 'slug', 'appleid', 'pin']);
 const secretName = (name: string) => {
   const normalized = name.toLowerCase().replaceAll(/[^a-z0-9]/g, '');

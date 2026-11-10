@@ -11,13 +11,14 @@
   import Portal from '$lib/elements/Portal.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { personTimelineOptions } from '$lib/frameleaf/person-timeline';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
   import { navigate } from '$lib/utils/navigation';
-  import { AssetVisibility, type PersonResponseDto } from '@frameleaf/sdk';
+  import { type PersonResponseDto } from '@frameleaf/sdk';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -40,7 +41,10 @@
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
   let viewerInvisible = $state(false);
-  const options = $derived({ visibility: AssetVisibility.Timeline, personId: data.person.id });
+  // FL-795: archived photos too when the viewer includes them in People
+  const options = $derived(
+    personTimelineOptions(data.person.id, authManager.authenticated && authManager.preferences.people.includeArchived),
+  );
 
   // People is this page's parent: a reload, a shared address or a notification goes back there.
   let previousRoute = $state<string>(Route.people());

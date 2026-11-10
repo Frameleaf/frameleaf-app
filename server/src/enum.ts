@@ -3177,9 +3177,18 @@ export enum AccountEventAction {
   PartnerRemoved = 'partner-removed',
   /** `subject` is the recipient's name; `detail` is how many items. */
   ItemShared = 'item-shared',
-  /** Written by Frameleaf Connect (E3); `subject` is the app's name. */
+  /**
+   * Written by Frameleaf Connect (E3); `subject` is the app's name. FL-803: `detail` of a connection
+   * is the scopes allowed; of a disconnection, why: `removed` (by you), `app-signed-out` (the app
+   * revoked its own access), `token-reused` (a used refresh token came back, so a copy leaked) or
+   * `app-deleted` (an administrator removed the app).
+   */
   AppConnected = 'app-connected',
   AppDisconnected = 'app-disconnected',
+  /** FL-803: you chose Deny on the Allow page. */
+  AppDenied = 'app-denied',
+  /** FL-803: an app used its access; written at most once an hour per app. `detail` is the scopes. */
+  AppUsed = 'app-used',
 }
 
 /**

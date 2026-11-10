@@ -96,6 +96,7 @@ import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
+import { OAuthAppRepository } from 'src/repositories/oauth-app.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
@@ -159,6 +160,7 @@ export const repositories = [
   AssetPaletteRepository,
   CaptureRepository,
   BrowserExtensionSignInRepository,
+  OAuthAppRepository,
   AssetSourceRepository,
   BookmarkRepository,
   DevelopBatchRepository,

@@ -514,6 +514,26 @@ describe(StorageTemplateService.name, () => {
       });
     });
 
+    it('should file a photo with no album when album date tokens sit outside an album condition', async () => {
+      const user = UserFactory.create();
+      const asset = AssetFactory.from().owner(user).exif().build();
+      const config = structuredClone(defaults);
+      config.storageTemplate.template = '{{y}}/{{album-startDate-y}}/{{filename}}';
+
+      sut.onConfigInit({ newConfig: config });
+
+      mocks.user.get.mockResolvedValue(user);
+      mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(asset));
+
+      expect(await sut.handleMigrationSingle({ id: asset.id })).toBe(JobStatus.Success);
+      expect(mocks.move.create).toHaveBeenCalledWith({
+        entityId: asset.id,
+        newPath: `/data/library/${user.id}/${asset.fileCreatedAt.getFullYear()}/${asset.originalFileName}`,
+        oldPath: asset.originalPath,
+        pathType: AssetPathType.Original,
+      });
+    });
+
     it('should render storage datetime tokens in server timezone to preserve chronological filename ordering across time zones', async () => {
       const user = UserFactory.create();
       const assetBerlin = AssetFactory.from({

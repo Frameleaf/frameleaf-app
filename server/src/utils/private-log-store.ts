@@ -37,6 +37,9 @@ const fileNamePattern = /^(api|microservices|maintenance|machine-learning)-(\d{8
 const cursor = (entry: PrivateLog) => `${entry.at}|${entry.id}`;
 const safeId = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu;
 const safeLabel = /^[a-z0-9_.:/()-]{1,160}$/iu;
+/** What `q` matches: the part that wrote the line, its message, and the photo, request and job it names. */
+const searchable = (entry: PrivateLog) =>
+  [entry.context, entry.message, entry.assetId, entry.requestId, entry.jobId].join(' ').toLowerCase();
 const sanitize = (value: string | undefined, pattern: RegExp) => (value && pattern.test(value) ? value : undefined);
 const notFound = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 
@@ -193,7 +196,7 @@ export class PrivateLogStore {
           (query.since && entry.at < query.since) ||
           (query.level && entry.level !== query.level) ||
           (query.before && cursor(entry) >= query.before) ||
-          (search && !`${entry.context} ${entry.message}`.toLowerCase().includes(search))
+          (search && !searchable(entry).includes(search))
         )
           continue;
         entries.push(entry);
