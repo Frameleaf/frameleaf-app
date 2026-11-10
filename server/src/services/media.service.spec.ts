@@ -48,7 +48,6 @@ import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
-import { takeHandedToCare } from 'src/utils/library-care-handoff.js';
 import { LockedKeyUnavailableError, withPlainCopy } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -1945,36 +1944,68 @@ describe(MediaService.name, () => {
       });
     });
 
+    /** One queue attempt at the thumbnails, as the job system runs it: the hand-off is noted on it. */
+    const thumbnailAttempt = () =>
+      ({
+        claim: { id: newUuid(), token: newUuid(), data: {}, attempt: 1, safeToRetry: true },
+        signal: new AbortController().signal,
+        adoptions: [],
+        followups: [],
+        progress: vi.fn(),
+      }) as unknown as QueueExecution;
+
     it('a damaged image is sent to Library care, not failed', async () => {
       const asset = AssetFactory.from().exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       const message = 'VipsJpeg: premature end of JPEG image';
       // the image worker could not decode the original (`decodeFailure`)
       mocks.media.decodeImage.mockRejectedValue(new SharpOperationError(message));
+      const execution = thumbnailAttempt();
 
-      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      await expect(queueExecution.run(execution, () => sut.handleGenerateThumbnails({ id: asset.id }))).resolves.toBe(
+        JobStatus.Skipped,
+      );
 
       expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
         name: JobName.MediaHealthFixAsset,
         data: { id: asset.id, from: 'preview', message },
       });
-      expect(takeHandedToCare(asset.id)).toBe(true);
+      expect(execution.handedToCare).toBe(true);
     });
 
-    it('a failure after the hand-off, cleaning up an encrypted copy, leaves no note for a later skipped attempt', async () => {
+    it('two attempts at the same photo at once: one failing after its own hand-off leaves the other hand-off in place', async () => {
       const asset = AssetFactory.from().exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       mocks.media.decodeImage.mockRejectedValue(new SharpOperationError('VipsJpeg: premature end of JPEG image'));
+      const handingOver = thumbnailAttempt();
+      const failing = thumbnailAttempt();
       const cleanupFailure = new Error('could not delete the temporary copy');
-      // the real wrapper runs the job, then its cleanup throws
-      vi.mocked(withPlainCopy).mockImplementationOnce(async (path, run) => {
-        await run(path);
-        throw cleanupFailure;
-      });
+      const handedOver = Promise.withResolvers<void>();
+      const failed = Promise.withResolvers<void>();
+      // the real wrapper runs the job, then cleans up the encrypted temporary copy: for one attempt that throws,
+      // after the other attempt has handed the photo over and before it returns
+      const plainCopy: typeof withPlainCopy = async (path, run) => {
+        const status = await run(path);
+        if (queueExecution.getStore() === failing) {
+          await handedOver.promise;
+          failed.resolve();
+          throw cleanupFailure;
+        }
+        handedOver.resolve();
+        await failed.promise;
+        return status;
+      };
+      vi.mocked(withPlainCopy).mockImplementationOnce(plainCopy).mockImplementationOnce(plainCopy);
 
-      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(cleanupFailure);
+      const [settled, failure] = await Promise.allSettled([
+        queueExecution.run(handingOver, () => sut.handleGenerateThumbnails({ id: asset.id })),
+        queueExecution.run(failing, () => sut.handleGenerateThumbnails({ id: asset.id })),
+      ]);
 
-      expect(takeHandedToCare(asset.id)).toBe(false);
+      expect(settled).toEqual({ status: 'fulfilled', value: JobStatus.Skipped });
+      expect(failure).toEqual({ status: 'rejected', reason: cleanupFailure });
+      // the hand-off belongs to the attempt that made it, so the failing attempt could not take it away
+      expect(handingOver.handedToCare).toBe(true);
     });
 
     it.each([
@@ -1985,11 +2016,14 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       // the original decoded; making or writing a preview from it failed (`decodeFailure` is false)
       mocks.media.generateThumbnail.mockRejectedValue(failure);
+      const execution = thumbnailAttempt();
 
-      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(failure);
+      await expect(queueExecution.run(execution, () => sut.handleGenerateThumbnails({ id: asset.id }))).rejects.toBe(
+        failure,
+      );
 
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
-      expect(takeHandedToCare(asset.id)).toBe(false);
+      expect(execution.handedToCare).toBeUndefined();
     });
 
     it('fails, instead of going back to Library care, when Library care asked for the previews of a file that opens', async () => {
@@ -1997,11 +2031,14 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       const failure = new SharpOperationError('VipsJpeg: premature end of JPEG image');
       mocks.media.decodeImage.mockRejectedValue(failure);
+      const execution = thumbnailAttempt();
 
-      await expect(sut.handleGenerateThumbnails({ id: asset.id, afterCare: true })).rejects.toThrow(failure.message);
+      await expect(
+        queueExecution.run(execution, () => sut.handleGenerateThumbnails({ id: asset.id, afterCare: true })),
+      ).rejects.toThrow(failure.message);
 
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
-      expect(takeHandedToCare(asset.id)).toBe(false);
+      expect(execution.handedToCare).toBeUndefined();
     });
 
     it('an unsupported RAW is sent too', async () => {

@@ -5,9 +5,8 @@ import type { JobItem } from 'src/types.js';
 import { JOBS_NOT_RETRIED } from 'src/constants.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, FrameleafWorker, JobName, JobStatus, LibraryScope, ManualJobName, QueueName } from 'src/enum.js';
-import { queueExecution } from 'src/queue/context.js';
+import { noteJobHandedToCare, queueExecution } from 'src/queue/context.js';
 import { JobService } from 'src/services/job.service.js';
-import { noteHandedToCare, takeHandedToCare } from 'src/utils/library-care-handoff.js';
 import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { getForAsset } from 'test/mappers.js';
@@ -375,7 +374,37 @@ describe(JobService.name, () => {
   });
 
   describe('a skipped thumbnail job', () => {
-    const run = async () => {
+    const attempt = () => ({ signal: new AbortController().signal, adoptions: [] }) as unknown as QueueExecution;
+    /** Runs one attempt as the queue does, and accepts it: its adoptions, then what waits for the commit. */
+    const runAttempt = async (execution: QueueExecution, item: JobItem) => {
+      await queueExecution.run(execution, () => sut.onJobRun(QueueName.ThumbnailGeneration, item));
+      for (const adopt of execution.adoptions) {
+        await adopt({} as never);
+      }
+      for (const notify of execution.afterCommit ?? []) {
+        await notify();
+      }
+    };
+    /** The thumbnail handler, as the media service runs it: a photo that won't open is handed to Library care. */
+    const skips = (handOff: boolean) => () => {
+      if (handOff) {
+        noteJobHandedToCare();
+      }
+      return Promise.resolve(JobStatus.Skipped);
+    };
+    const overnight = (id: string) => {
+      mocks.job.getQueueName.mockReturnValue(QueueName.SmartSearch);
+      mocks.assetJob.selectionForUnfinished.mockImplementation(
+        (step) =>
+          ({
+            where: () => ({
+              executeTakeFirst: () => Promise.resolve(step === JobName.SmartSearch ? { id } : undefined),
+            }),
+          }) as never,
+      );
+      return { name: JobName.AssetGenerateThumbnails, data: { id, reconcileUnfinished: true } } as const;
+    };
+    const run = async (handOff = false) => {
       const asset = AssetFactory.create({ id: 'asset-1', type: AssetType.Image });
       const data = { id: asset.id, source: 'upload' } as const;
       mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([asset as never]);
@@ -389,14 +418,13 @@ describe(JobService.name, () => {
           nsfwDetection: { enabled: false },
         },
       });
-      mocks.job.run.mockResolvedValue(JobStatus.Skipped);
-      await sut.onJobRun(QueueName.ThumbnailGeneration, { name: JobName.AssetGenerateThumbnails, data });
+      mocks.job.run.mockImplementation(skips(handOff));
+      await runAttempt(attempt(), { name: JobName.AssetGenerateThumbnails, data });
       return { asset, data };
     };
 
     it('handed to Library care queues nothing after it, but still announces the upload', async () => {
-      noteHandedToCare('asset-1');
-      const { asset } = await run();
+      const { asset } = await run(true);
 
       expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([]);
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_upload_success', asset.ownerId, expect.anything());
@@ -407,29 +435,9 @@ describe(JobService.name, () => {
       { handedToCare: false, what: 'not handed to Library care still queues its overnight processing' },
     ])('from the overnight check (FL-811), one $what', async ({ handedToCare }) => {
       const id = newUuid();
-      if (handedToCare) {
-        noteHandedToCare(id);
-      }
-      mocks.job.run.mockResolvedValue(JobStatus.Skipped);
-      mocks.job.getQueueName.mockReturnValue(QueueName.SmartSearch);
-      mocks.assetJob.selectionForUnfinished.mockImplementation(
-        (step) =>
-          ({
-            where: () => ({
-              executeTakeFirst: () => Promise.resolve(step === JobName.SmartSearch ? { id } : undefined),
-            }),
-          }) as never,
-      );
-      const execution = { signal: new AbortController().signal, adoptions: [] } as unknown as QueueExecution;
-      await queueExecution.run(execution, () =>
-        sut.onJobRun(QueueName.ThumbnailGeneration, {
-          name: JobName.AssetGenerateThumbnails,
-          data: { id, reconcileUnfinished: true },
-        }),
-      );
-      for (const adopt of execution.adoptions) {
-        await adopt({} as never);
-      }
+      const item = overnight(id);
+      mocks.job.run.mockImplementation(skips(handedToCare));
+      await runAttempt(attempt(), item);
 
       if (handedToCare) {
         // Library care remakes the previews after a fix, and their follow-up work runs then
@@ -438,30 +446,70 @@ describe(JobService.name, () => {
       } else {
         expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([{ name: JobName.SmartSearch, data: { id } }]);
       }
-      // the note is taken either way, so it never holds back a later run
-      expect(takeHandedToCare(id)).toBe(false);
     });
 
     it('recognises a hand-off for a job queued with an upper-case id', async () => {
       const id = newUuid();
-      // the media service notes the id the database returns, in lower case
-      noteHandedToCare(id);
-      mocks.job.run.mockResolvedValue(JobStatus.Skipped);
-      const execution = { signal: new AbortController().signal, adoptions: [] } as unknown as QueueExecution;
-      await queueExecution.run(execution, () =>
-        sut.onJobRun(QueueName.ThumbnailGeneration, {
-          name: JobName.AssetGenerateThumbnails,
-          data: { id: id.toUpperCase(), reconcileUnfinished: true },
-        }),
-      );
-      for (const adopt of execution.adoptions) {
-        await adopt({} as never);
-      }
+      const item = overnight(id);
+      mocks.job.run.mockImplementation(skips(true));
+      await runAttempt(attempt(), { ...item, data: { ...item.data, id: id.toUpperCase() } });
 
       expect(mocks.assetJob.selectionForUnfinished).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
-      // taken, so it never holds back a later skipped job of this photo
-      expect(takeHandedToCare(id)).toBe(false);
+    });
+
+    it('a later attempt at the same photo starts with no hand-off', async () => {
+      const id = newUuid();
+      const item = overnight(id);
+      mocks.job.run.mockImplementationOnce(skips(true)).mockImplementationOnce(skips(false));
+      await runAttempt(attempt(), item);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+
+      await runAttempt(attempt(), item);
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([{ name: JobName.SmartSearch, data: { id } }]);
+    });
+
+    it.each([
+      { handOff: true, what: 'the one that handed it over still holds back its follow-ups' },
+      { handOff: false, what: 'a plain skipped one still queues its follow-ups' },
+    ])('two attempts at one photo at once, the other handing it over and then failing: $what', async ({ handOff }) => {
+      const id = newUuid();
+      const item = overnight(id);
+      const settling = attempt();
+      const failing = attempt();
+      const cleanupFailure = new Error('could not delete the temporary copy');
+      const noted = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      mocks.job.run.mockImplementation(async () => {
+        if (queueExecution.getStore() === settling) {
+          await skips(handOff)();
+          noted.resolve();
+          // still running while the other attempt fails
+          await release.promise;
+          return JobStatus.Skipped;
+        }
+        await noted.promise;
+        // the other attempt hands the photo over too, then cleaning up its encrypted temporary copy fails
+        noteJobHandedToCare();
+        throw cleanupFailure;
+      });
+
+      const settled = runAttempt(settling, item);
+      await expect(runAttempt(failing, item)).rejects.toBe(cleanupFailure);
+      release.resolve();
+      await settled;
+
+      if (handOff) {
+        expect(mocks.assetJob.selectionForUnfinished).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      } else {
+        expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([{ name: JobName.SmartSearch, data: { id } }]);
+      }
+      // each outcome is its own attempt's: one skipped, the other reported and failed, as before
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobSuccess', { job: item, response: JobStatus.Skipped });
+      expect(mocks.event.emit.mock.calls.filter(([name]) => name === 'JobError')).toEqual([
+        ['JobError', { job: item, error: cleanupFailure }],
+      ]);
     });
 
     it.each(['a hidden asset', 'a partner copy sharing its source files'])('for %s keeps its follow-ups', async () => {

@@ -8,6 +8,18 @@ import { publicationTransaction } from 'src/queue/transaction.js';
 export const queueExecution = new AsyncLocalStorage<QueueExecution>();
 export const jobSignal = () => queueExecution.getStore()?.signal;
 export const reportJobProgress = (completedUnits: number) => queueExecution.getStore()?.progress(completedUnits);
+/**
+ * FL-1337: a thumbnail attempt that hands its photo to Library care returns Skipped, like a hidden asset or a partner
+ * copy does. Only the hand-off holds back the follow-up work, so the attempt notes it on its own execution, where
+ * its own settling reads it. Another attempt at the same photo, running alongside, can neither see nor clear it.
+ */
+export const noteJobHandedToCare = () => {
+  const context = queueExecution.getStore();
+  if (context) {
+    context.handedToCare = true;
+  }
+};
+export const jobHandedToCare = () => queueExecution.getStore()?.handedToCare === true;
 /** Attempt-private outputs are never a canonical media path until a fenced adoption commits. */
 export const jobStagingPath = (root: string, filename: string) => {
   const context = queueExecution.getStore();
