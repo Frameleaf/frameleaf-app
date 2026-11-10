@@ -199,5 +199,7 @@ if (skipped.size > 0) {
 console.log(
   `Format matrix: ${count('pass')} passed, ${count('expected')} expected failures, ${failed} failed, of ${rows.length}`,
 );
+// A misspelt root name selects nothing: that must not pass.
+assert.ok(rows.length > 0, 'no fixture was run: check the <name>=<dir> arguments against the manifest roots');
 // Exiting also ends the image worker pool.
 process.exit(failed ? 1 : 0);
