@@ -10,14 +10,17 @@
   let {
     assetIds,
     assets,
+    onlyPreview,
     onClose,
   }: {
     assetIds: string[];
     assets?: { id: string; isVideo: boolean; originalFileName?: string; size?: number; ownerId?: string }[];
+    /** FL-1347: the viewer's "only a preview is left" check, before Download and Send a copy. */
+    onlyPreview?: () => boolean;
     onClose: () => void;
   } = $props();
 
   let open = $state(true);
 </script>
 
-<ShareSheet bind:open {assetIds} {assets} onClosed={onClose} />
+<ShareSheet bind:open {assetIds} {assets} {onlyPreview} onClosed={onClose} />

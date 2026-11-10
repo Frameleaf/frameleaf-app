@@ -171,6 +171,7 @@ let snapshots = [snapshot];
 const containerSettings = {
   'frameleaf-server': { environment: { TZ: 'America/Toronto' }, mounts: [{ source: '/fixture/archive', target: '/old-archive', readOnly: true }], memory: '4g' },
 };
+let failDashboard = false;
 await page.route('**/manager-api/**', async (route) => {
   const req = route.request(),
     path = new URL(req.url()).pathname.split('/').at(-1),
@@ -178,7 +179,13 @@ await page.route('**/manager-api/**', async (route) => {
   requests.push({ path, body, headers: req.headers() });
   let value;
   if (path === 'status') value = { claimed: true };
-  else if (path === 'dashboard') value = dashboard;
+  else if (path === 'dashboard') {
+    if (failDashboard) {
+      failDashboard = false;
+      return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ code: 'docker_unavailable' }) });
+    }
+    value = dashboard;
+  }
   else if (path === 'sources') value = { sources, refused };
   else if (path === 'photo-app-sources') value = { sources: photoAppSources };
   else if (path === 'photo-app-capture') {
@@ -978,6 +985,20 @@ try {
     await button('Local administrator menu').click();
     await page.locator('.account-menu').getByRole('button', { name: 'Sign out', exact: true }).click();
     await mainButton('Sign in').waitFor();
+  });
+  await check('signing in shows Overview, never setup, when the server state is slow to load', async () => {
+    // The dashboard answer fails once: the sign-in form stays until the installation is known.
+    failDashboard = true;
+    expectedHttpErrors++;
+    await page.getByLabel('Password').fill('correct horse battery staple');
+    await mainButton('Sign in').click();
+    await page.getByRole('alert').waitFor();
+    assert.equal(await page.getByRole('heading', { name: 'Choose how to begin' }).count(), 0);
+    await mainButton('Sign in').waitFor();
+    await page.getByLabel('Password').fill('correct horse battery staple');
+    await mainButton('Sign in').click();
+    await page.getByText('at a glance').waitFor();
+    assert.equal(await page.getByRole('heading', { name: 'Choose how to begin' }).count(), 0);
   });
   await check('a captured library can approve only its current review while awaiting approval', async () => {
     dashboard.installation = null;
