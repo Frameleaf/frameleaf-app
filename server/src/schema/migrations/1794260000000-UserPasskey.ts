@@ -45,10 +45,10 @@ export async function up(db: Kysely<any>): Promise<void> {
 
   await sql`CREATE TABLE public.session_passkey (
     "sessionId" uuid NOT NULL,
-    "passkeyId" uuid NOT NULL,
+    "passkeyId" uuid,
     CONSTRAINT session_passkey_pkey PRIMARY KEY ("sessionId"),
     CONSTRAINT "session_passkey_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES public.session(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    CONSTRAINT "session_passkey_passkeyId_fkey" FOREIGN KEY ("passkeyId") REFERENCES public.user_passkey(id) ON UPDATE CASCADE ON DELETE CASCADE
+    CONSTRAINT "session_passkey_passkeyId_fkey" FOREIGN KEY ("passkeyId") REFERENCES public.user_passkey(id) ON UPDATE CASCADE ON DELETE SET NULL
   )`.execute(db);
   await sql`CREATE INDEX "session_passkey_passkeyId_idx" ON public.session_passkey USING btree ("passkeyId")`.execute(db);
 }

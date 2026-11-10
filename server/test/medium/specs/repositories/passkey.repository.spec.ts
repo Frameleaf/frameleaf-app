@@ -83,6 +83,12 @@ it('renames and removes only the account’s own passkeys, signing out the sessi
     count: 1,
     sessionIds: [started.id],
   });
+  // the session that removed it still counts as a passkey sign-in (remote access keeps working there)
+  await expect(sut.isPasskeySession(removing.id)).resolves.toBe(true);
+  // a sign-in racing the removal gets no link, so it is signed out
+  const { session: late } = await ctx.newSession({ userId });
+  await expect(sut.linkSession(late.id, saved.id)).resolves.toBe(false);
+  await db.deleteFrom('session').where('id', '=', late.id).execute();
   const sessions = await db.selectFrom('session').select('id').where('userId', '=', userId).execute();
   expect(sessions.map(({ id }) => id).toSorted()).toEqual([sessionId, removing.id].toSorted());
   await expect(sut.getByUser(userId)).resolves.toEqual([]);
@@ -122,6 +128,24 @@ it('answers a challenge once, and never after it expired', async () => {
   });
   await expect(sut.takeChallenge('register', 'challenge-1')).resolves.toBeUndefined();
   await expect(sut.takeChallenge('login', 'challenge-2')).resolves.toBeUndefined();
+});
+
+it('forgets pending registrations and password checks, but not sign-in challenges', async () => {
+  const { sut, userId, sessionId } = await setup();
+  await sut.createChallenge({ purpose: 'register', challenge: 'reg-1', userId, sessionId, expiresAt: inMinutes(5) });
+  await sut.createChallenge({
+    purpose: 'password-proof',
+    challenge: 'proof-x',
+    userId,
+    sessionId,
+    expiresAt: inMinutes(10),
+  });
+  await sut.createChallenge({ purpose: 'login', challenge: 'login-1', expiresAt: inMinutes(5) });
+
+  await sut.deletePendingRegistrations(userId);
+  await expect(sut.takeChallenge('register', 'reg-1')).resolves.toBeUndefined();
+  await expect(sut.hasPasswordProof(sessionId)).resolves.toBe(false);
+  await expect(sut.takeChallenge('login', 'login-1')).resolves.toMatchObject({ userId: null });
 });
 
 it('keeps a password check for its session until it expires', async () => {

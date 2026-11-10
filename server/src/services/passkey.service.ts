@@ -39,6 +39,7 @@ import {
   PASSKEY_CHALLENGE_SECONDS,
   PASSKEY_PASSWORD_PROOF_SECONDS,
   type PasskeyPlace,
+  PasskeyUnavailableReason,
   answeredChallenge,
   cleanPasskeyName,
   passkeyPlace,
@@ -57,8 +58,10 @@ export const PASSKEY_PASSWORD_REQUIRED = 'passkey_password_required';
  * account's); `passkey_failed`: the signature, the person check or the count was wrong;
  * `passkey_expired`: the challenge was used or ran out.
  */
-const signInRefused = (code: 'passkey_not_recognised' | 'passkey_failed' | 'passkey_expired', message: string) =>
-  new UnauthorizedException({ message, error: 'Unauthorized', statusCode: 401, code });
+const signInRefused = (
+  code: 'passkey_not_recognised' | 'passkey_failed' | 'passkey_expired' | 'passkey_insecure',
+  message: string,
+) => new UnauthorizedException({ message, error: 'Unauthorized', statusCode: 401, code });
 const NOT_RECOGNISED = () =>
   signInRefused(
     'passkey_not_recognised',
@@ -118,16 +121,26 @@ export class PasskeyService extends BaseService {
     });
     const services: Record<string, unknown> = (linked ? link?.services : null) ?? {};
     const text = (value: unknown) => (typeof value === 'string' ? value : null);
-    return passkeyPlace(requestOrigin(headers, isSecure), [
+    const place = passkeyPlace(requestOrigin(headers, isSecure), [
       config.server.externalDomain,
       text(services.relayOrigin),
       text(services.publicUrl),
     ]);
+    // the Origin header is the page's word only: the request itself must also have come over https
+    // (or through a proxy that says so), else a session token could cross the network in clear
+    if (place.available && place.rpId !== 'localhost' && !isSecure) {
+      return { available: false, reason: PasskeyUnavailableReason.Insecure };
+    }
+    return place;
   }
 
   /** The two auth-status fields: passkeys work at this address, and the account has any. */
   async getStatus(auth: AuthDto, headers: IncomingHttpHeaders, isSecure: boolean) {
-    const place = await this.getPlace(headers, isSecure);
+    // the session's own status never fails because the server's addresses couldn't be read
+    const place = await this.getPlace(headers, isSecure).catch((error: unknown) => {
+      this.logger.warn(`Could not tell whether passkeys work at this address: ${error}`);
+      return { available: false };
+    });
     return {
       passkeysAvailable: place.available,
       hasPasskeys: (await this.passkeyRepository.countByUser(auth.user.id)) > 0,
@@ -303,6 +316,10 @@ export class PasskeyService extends BaseService {
     if (!stored?.origin || !stored.rpId) {
       throw EXPIRED();
     }
+    // the session token goes back in this answer: only over https, except on localhost
+    if (stored.rpId !== 'localhost' && !details.isSecure) {
+      throw signInRefused('passkey_insecure', 'Passkeys work only at a secure (https) address.');
+    }
 
     const credentialId = this.credentialId(dto.credential);
     const passkey = credentialId ? await this.passkeyRepository.getByCredentialId(credentialId) : undefined;
@@ -371,7 +388,11 @@ export class PasskeyService extends BaseService {
       user,
       details,
     );
-    await this.passkeyRepository.linkSession(session.id, passkey.id);
+    // removed (by its owner or an administrator) while this sign-in was checked: no session from it
+    if (!(await this.passkeyRepository.linkSession(session.id, passkey.id))) {
+      await this.sessionRepository.delete(session.id);
+      throw NOT_RECOGNISED();
+    }
     await this.recordAccountEvent({
       userId: user.id,
       sessionId: session.id,
@@ -423,7 +444,9 @@ export class PasskeyService extends BaseService {
     if (
       tag &&
       tag.userId === auth.user.id &&
-      tag.createdAt.getTime() > Date.now() - PASSKEY_PASSWORD_PROOF_SECONDS * 1000
+      // when the person signed in at Frameleaf, kept across handoffs (not when this tag was made)
+      !!tag.authTime &&
+      tag.authTime.getTime() > Date.now() - PASSKEY_PASSWORD_PROOF_SECONDS * 1000
     ) {
       return;
     }

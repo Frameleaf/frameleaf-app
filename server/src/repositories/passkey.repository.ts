@@ -140,8 +140,33 @@ export class PasskeyRepository {
     });
   }
 
-  async linkSession(sessionId: string, passkeyId: string): Promise<void> {
-    await this.db.insertInto('session_passkey').values({ sessionId, passkeyId }).execute();
+  /**
+   * Links a new session to the passkey that started it. False when the passkey was removed meanwhile
+   * (its foreign key waits for a removal in progress, then fails), so the caller signs the session out.
+   */
+  async linkSession(sessionId: string, passkeyId: string): Promise<boolean> {
+    try {
+      await this.db.insertInto('session_passkey').values({ sessionId, passkeyId }).execute();
+      return true;
+    } catch (error) {
+      if ((error as { code?: string }).code === '23503') {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Forgets the account's unanswered registration challenges and password checks, so an
+   * administrator's password reset can't be followed by a passkey added on the old password.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async deletePendingRegistrations(userId: string): Promise<void> {
+    await this.db
+      .deleteFrom('auth_challenge')
+      .where('userId', '=', userId)
+      .where('purpose', 'in', ['register', 'password-proof'])
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

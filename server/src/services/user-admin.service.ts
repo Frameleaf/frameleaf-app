@@ -448,6 +448,8 @@ export class UserAdminService extends BaseService {
   }
 
   private async removeAllPasskeys(auth: AuthDto, user: { id: string; name: string }) {
+    // nothing started on the old password (an open "Add a passkey", a recent password check) finishes after
+    await this.passkeyRepository.deletePendingRegistrations(user.id);
     const { count, sessionIds } = await this.passkeyRepository.deleteAll(user.id);
     for (const sessionId of sessionIds) {
       await this.eventRepository.emit('SessionDelete', { sessionId });

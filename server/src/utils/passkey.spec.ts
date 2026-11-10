@@ -1,5 +1,6 @@
 import {
   answeredChallenge,
+  passkeyDetails,
   passkeyPlace,
   passkeyProvider,
   passkeyUserHandle,
@@ -49,6 +50,12 @@ describe('passkey helpers (FL-836)', () => {
     expect(requestOrigin({ host: 'photos.example.com' }, true)).toBe('https://photos.example.com');
     expect(requestOrigin({ host: '192.168.1.20:2283' }, false)).toBe('http://192.168.1.20:2283');
     expect(requestOrigin({}, true)).toBeNull();
+  });
+
+  it('takes the edge worker’s word for https, never a plain request’s', () => {
+    const details = { isSecure: false, clientIp: '', deviceType: '', deviceOS: '', appVersion: null };
+    expect(passkeyDetails({ frameleafForwarded: { proto: 'https' } } as never, details).isSecure).toBe(true);
+    expect(passkeyDetails({ headers: { 'x-forwarded-proto': 'https' } } as never, details).isSecure).toBe(false);
   });
 
   it('uses the account id as the user handle, never the email', () => {

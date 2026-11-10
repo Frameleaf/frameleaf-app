@@ -41,6 +41,8 @@
   let password = $state('');
   let passwordError = $state('');
   let working = $state(false);
+  /** The server is saving the passkey the browser made: closing now would hide a passkey that exists. */
+  let saving = $state(false);
   let added = $state<PasskeyResponseDto>();
   let name = $state('');
   let alive = true;
@@ -122,6 +124,7 @@
       return;
     }
     try {
+      saving = true;
       added = await registerPasskey({ passkeyRegisterDto: { credential: credential as PasskeyCredentialDto } });
       if (alive) {
         name = added.name;
@@ -133,6 +136,7 @@
       }
     } finally {
       working = false;
+      saving = false;
     }
   };
 
@@ -165,7 +169,17 @@
   };
 </script>
 
-<Dialog {title} closeLabel={$t('close')} size="medium" bind:open>
+<Dialog
+  {title}
+  closeLabel={$t('close')}
+  size="medium"
+  bind:open
+  onRequestClose={() => {
+    if (!saving) {
+      open = false;
+    }
+  }}
+>
   <div class="pk-dialog">
     {#if step}
       <span class="pk-step">{$t('frameleaf_passkey_add_step', { values: { number } })}</span>
@@ -261,7 +275,7 @@
     {:else if step === 'name'}
       <Button variant="primary" disabled={!name.trim() || working} onclick={() => void save()}>{$t('save')}</Button>
     {:else}
-      <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
+      <Button disabled={saving} onclick={() => (open = false)}>{$t('cancel')}</Button>
     {/if}
   {/snippet}
 </Dialog>

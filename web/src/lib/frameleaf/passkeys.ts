@@ -35,7 +35,7 @@ export const passkeysInThisBrowser = (): PasskeysHere =>
   passkeysHere({
     protocol: location.protocol,
     hostname: location.hostname,
-    webAuthn: typeof globalThis.PublicKeyCredential === 'function',
+    webAuthn: typeof PublicKeyCredential === 'function',
   });
 
 /** A tidy name: spaces collapsed, no leading space, at most PASSKEY_NAME_LENGTH characters. */

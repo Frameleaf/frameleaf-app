@@ -16,6 +16,7 @@ import { ApiTag, AuthCookie, AuthType, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { PasskeyService } from 'src/services/passkey.service.js';
+import { passkeyDetails } from 'src/utils/passkey.js';
 import { respondWithCookie } from 'src/utils/response.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
@@ -52,7 +53,7 @@ export class PasskeyController {
     @Body() dto: PasskeyRegistrationOptionsDto,
     @GetLoginDetails() details: LoginDetails,
   ): Promise<PasskeyOptionsResponseDto> {
-    return this.service.getRegistrationOptions(auth, dto, req.headers, details);
+    return this.service.getRegistrationOptions(auth, dto, req.headers, passkeyDetails(req, details));
   }
 
   @Post('register')
@@ -112,7 +113,7 @@ export class PasskeyController {
     @Req() req: Request,
     @GetLoginDetails() details: LoginDetails,
   ): Promise<PasskeyOptionsResponseDto> {
-    return this.service.getLoginOptions(req.headers, details);
+    return this.service.getLoginOptions(req.headers, passkeyDetails(req, details));
   }
 
   @Post('login')
@@ -126,13 +127,15 @@ export class PasskeyController {
     history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
   })
   async loginWithPasskey(
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
     @Body() dto: PasskeyLoginDto,
     @GetLoginDetails() details: LoginDetails,
   ): Promise<LoginResponseDto> {
-    const { response, rememberMe } = await this.service.login(dto, details);
+    const secure = passkeyDetails(req, details);
+    const { response, rememberMe } = await this.service.login(dto, secure);
     return respondWithCookie(res, response, {
-      isSecure: details.isSecure,
+      isSecure: secure.isSecure,
       rememberMe,
       values: [
         { key: AuthCookie.AccessToken, value: response.accessToken },

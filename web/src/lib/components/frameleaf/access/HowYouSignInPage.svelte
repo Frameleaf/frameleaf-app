@@ -55,12 +55,15 @@
 
   /** FL-859: the Passkeys row (FL-767 prototype `passkeyRow`). */
   const passkeysHere = passkeysInThisBrowser();
-  const lastUsed = $derived(
-    (passkeys ?? [])
-      .map(({ lastUsedAt }) => lastUsedAt)
-      .filter((value): value is string => !!value)
-      .reduce<string | undefined>((latest, value) => (!latest || value > latest ? value : latest), undefined),
-  );
+  const lastUsed = $derived.by(() => {
+    let latest: string | undefined;
+    for (const { lastUsedAt } of passkeys ?? []) {
+      if (lastUsedAt && (!latest || lastUsedAt > latest)) {
+        latest = lastUsedAt;
+      }
+    }
+    return latest;
+  });
   const passkeyRow = $derived.by(() => {
     const count = passkeys?.length ?? 0;
     if (passkeys && count === 0) {

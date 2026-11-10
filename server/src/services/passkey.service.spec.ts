@@ -133,8 +133,11 @@ describe(PasskeyService.name, () => {
       return Promise.resolve({ name: row.name, count: 1, sessionIds });
     });
     repo.linkSession.mockImplementation((sessionId, passkeyId) => {
+      if (passkeys.every((passkey) => passkey.id !== passkeyId)) {
+        return Promise.resolve(false);
+      }
       sessionLinks.push({ sessionId, passkeyId });
-      return Promise.resolve();
+      return Promise.resolve(true);
     });
   };
 
@@ -207,6 +210,34 @@ describe(PasskeyService.name, () => {
     });
   });
 
+  describe('secure transport (FL-836 review)', () => {
+    it('refuses a plain http request that claims an https origin', async () => {
+      await expect(sut.getLoginOptions(headers(), { ...details, isSecure: false })).resolves.toMatchObject({
+        passkeysAvailable: false,
+        reason: 'insecure',
+      });
+      await expect(sut.getStatus(auth, headers(), false)).resolves.toMatchObject({ passkeysAvailable: false });
+    });
+
+    it('refuses to finish a sign-in over plain http', async () => {
+      const { passkey } = await addPasskey();
+      const { options } = await sut.getLoginOptions(headers(), details);
+      await expect(
+        sut.login({ credential: passkey.signIn(options!) }, { ...details, isSecure: false }),
+      ).rejects.toMatchObject({ response: { code: 'passkey_insecure' } });
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('still answers the auth status when the server’s addresses can’t be read', async () => {
+      mocks.systemMetadata.get.mockRejectedValue(new Error('database busy'));
+      clearConfigCache();
+      await expect(sut.getStatus(auth, headers(), true)).resolves.toEqual({
+        passkeysAvailable: false,
+        hasPasskeys: false,
+      });
+    });
+  });
+
   describe('adding a passkey', () => {
     it('needs a password check, then remembers it in the session for 10 minutes', async () => {
       await expect(sut.getRegistrationOptions(auth, {}, headers(), details)).rejects.toMatchObject({
@@ -226,6 +257,34 @@ describe(PasskeyService.name, () => {
       await expect(sut.getRegistrationOptions(otherSession, {}, headers(), details)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
+    });
+
+    it('counts a Frameleaf sign-in as the check only by when the person signed in, not when the session was made', async () => {
+      const old = new Date(Date.now() - 60 * 60 * 1000);
+      mocks.frameleafAccount.getSession.mockResolvedValue({
+        sessionId: auth.session!.id,
+        userId: user.id,
+        sid: null,
+        sub: 'sub',
+        authTime: old,
+        createdAt: new Date(),
+        handoffCodeHash: null,
+        handoffExpiresAt: null,
+      });
+      await expect(sut.getRegistrationOptions(auth, {}, headers(), details)).rejects.toBeInstanceOf(ForbiddenException);
+      mocks.frameleafAccount.getSession.mockResolvedValue({
+        sessionId: auth.session!.id,
+        userId: user.id,
+        sid: null,
+        sub: 'sub',
+        authTime: new Date(),
+        createdAt: new Date(),
+        handoffCodeHash: null,
+        handoffExpiresAt: null,
+      });
+      await expect(sut.getRegistrationOptions(auth, {}, headers(), details)).resolves.toMatchObject({
+        passkeysAvailable: true,
+      });
     });
 
     it('is refused with an API key', async () => {
@@ -319,6 +378,17 @@ describe(PasskeyService.name, () => {
 
       await sut.remove(auth, saved.id);
       await expect(signIn(passkey)).rejects.toThrow('isn’t set up for this server');
+    });
+
+    it('gives no session when the passkey was removed while the sign-in was checked', async () => {
+      const { passkey } = await addPasskey();
+      const { options } = await sut.getLoginOptions(headers(), details);
+      mocks.passkey.linkSession.mockResolvedValueOnce(false);
+      mocks.session.delete.mockResolvedValue();
+      await expect(sut.login({ credential: passkey.signIn(options!) }, details)).rejects.toMatchObject({
+        response: { code: 'passkey_not_recognised' },
+      });
+      expect(mocks.session.delete).toHaveBeenCalled();
     });
 
     it('refuses an answer signed at another address', async () => {

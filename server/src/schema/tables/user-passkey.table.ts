@@ -90,13 +90,14 @@ export class AuthChallengeTable {
 
 /**
  * FL-836: the sessions a passkey started. Remote access accepts them like a Frameleaf sign-in, and
- * removing the passkey signs them out.
+ * removing the passkey signs them out, except the session removing it: that one keeps its row (with
+ * `passkeyId` cleared), so it still counts as a passkey sign-in.
  */
 @Table({ name: 'session_passkey' })
 export class SessionPasskeyTable {
   @ForeignKeyColumn(() => SessionTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', primary: true })
   sessionId!: string;
 
-  @ForeignKeyColumn(() => UserPasskeyTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', index: true })
-  passkeyId!: string;
+  @ForeignKeyColumn(() => UserPasskeyTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true, index: true })
+  passkeyId!: string | null;
 }

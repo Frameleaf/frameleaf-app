@@ -32,6 +32,7 @@ import { Auth, Authenticated, GetLoginDetails, RemoteSignInExempt } from 'src/mi
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
 import { PasskeyService } from 'src/services/passkey.service.js';
+import { passkeyDetails } from 'src/utils/passkey.js';
 import { respondWithCookie, respondWithoutCookie } from 'src/utils/response.js';
 
 @ApiTags(ApiTag.Authentication)
@@ -280,7 +281,7 @@ export class AuthController {
     // FL-836: whether passkeys work at this address, and whether the account has any
     const [status, passkeys] = await Promise.all([
       this.service.getAuthStatus(auth),
-      this.passkeyService.getStatus(auth, req.headers, details.isSecure),
+      this.passkeyService.getStatus(auth, req.headers, passkeyDetails(req, details).isSecure),
     ]);
     return { ...status, ...passkeys };
   }

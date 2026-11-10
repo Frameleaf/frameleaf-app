@@ -1,5 +1,8 @@
 import { isIP } from 'node:net';
+import type { Request } from 'express';
 import type { IncomingHttpHeaders } from 'node:http';
+import type { FrameleafRequest } from 'src/middleware/frameleaf-via.middleware.js';
+import type { LoginDetails } from 'src/services/auth.service.js';
 import { requestHosts } from 'src/utils/websocket-origin.js';
 
 /**
@@ -130,3 +133,12 @@ const PROVIDERS: Record<string, string> = {
 /** The password manager or kind of device a passkey is saved in, when the server knows it. */
 export const passkeyProvider = (aaguid: string | null | undefined): string | null =>
   (aaguid && PROVIDERS[aaguid.toLowerCase()]) || null;
+
+/**
+ * FL-836: whether the request itself arrived over https: directly, through a trusted proxy (Express
+ * `trust proxy`), or through the Frameleaf edge worker, which vouches for its `X-Forwarded-Proto`.
+ */
+export const passkeyDetails = (req: Request, details: LoginDetails): LoginDetails => ({
+  ...details,
+  isSecure: details.isSecure || (req as FrameleafRequest).frameleafForwarded?.proto === 'https',
+});
