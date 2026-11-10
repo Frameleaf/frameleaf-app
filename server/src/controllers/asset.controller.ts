@@ -32,6 +32,11 @@ import {
   VideoEditVersionResponseDto,
 } from 'src/dtos/editing.dto.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
+import {
+  ProcessingFailureActionDto,
+  ProcessingFailureQueryDto,
+  ProcessingFailureResponseDto,
+} from 'src/dtos/processing-failure.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -142,6 +147,32 @@ export class AssetController {
   })
   getAssetsInfo(@Auth() auth: AuthDto, @Body() dto: AssetInfoBatchDto): Promise<AssetInfoBatchResponseDto> {
     return this.service.getMany(auth, dto);
+  }
+
+  @Get('processing-failures')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({ summary: 'List asset processing failures', history: new HistoryBuilder().added('v3').alpha('v3') })
+  getProcessingFailures(
+    @Auth() auth: AuthDto,
+    @Query() query: ProcessingFailureQueryDto,
+  ): Promise<ProcessingFailureResponseDto[]> {
+    return this.service.getProcessingFailures(auth, query);
+  }
+
+  @Post('processing-failures/retry')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({ summary: 'Retry asset processing failures', history: new HistoryBuilder().added('v3').alpha('v3') })
+  retryProcessingFailures(@Auth() auth: AuthDto, @Body() dto: ProcessingFailureActionDto): Promise<void> {
+    return this.service.retryProcessingFailures(auth, dto);
+  }
+
+  @Post('processing-failures/dismiss')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({ summary: 'Dismiss asset processing failures', history: new HistoryBuilder().added('v3').alpha('v3') })
+  dismissProcessingFailures(@Auth() auth: AuthDto, @Body() dto: ProcessingFailureActionDto): Promise<void> {
+    return this.service.dismissProcessingFailures(auth, dto);
   }
 
   @Get(':id')

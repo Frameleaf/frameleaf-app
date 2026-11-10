@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Kysely, type Transaction, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ProcessingFailureActionDto, ProcessingFailureQueryDto } from 'src/dtos/processing-failure.dto.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import {
@@ -27,11 +29,13 @@ import {
   withFaces,
   withFilePath,
   withFiles,
+  withHiddenContentFilter,
   withVideoFormat,
   withVideoStream,
 } from 'src/utils/database.js';
+import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
-import { effectiveVisibility, isLocked, isNotLocked } from 'src/utils/locked.js';
+import { effectiveVisibility, getLockedOwnerId, isLocked, isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /**
@@ -100,6 +104,88 @@ export class AssetJobRepository {
         where job.queue = ${options.queue} and job.name = ${name} and job.state in ('pending', 'waiting', 'active')
           and ${subject} = asset.id::text ${liveRange}
       )`);
+  }
+
+  private visibleProcessingFailures(auth: AuthDto, db: Kysely<DB>, userId?: string) {
+    const ownerId = auth.user.isAdmin ? userId : auth.user.id;
+    return db
+      .selectFrom('asset_processing_failure as failure')
+      .innerJoin('asset', 'asset.id', 'failure.assetId')
+      .where('asset.deletedAt', 'is', null)
+      .where(notLockedOrOwnedBy(getLockedOwnerId(auth)))
+      .$call((qb) =>
+        withHiddenContentFilter(qb, {
+          ...getHiddenContentQueryOptions(auth),
+          ...getOthersRulesQueryOptions(auth),
+        }),
+      )
+      .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!));
+  }
+
+  getProcessingFailures(auth: AuthDto, { userId, take, skip }: ProcessingFailureQueryDto) {
+    return this.visibleProcessingFailures(auth, this.db, userId)
+      .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
+      .where('failure.dismissedAt', 'is', null)
+      .select([
+        'failure.assetId',
+        'failure.step',
+        'failure.attempts',
+        'failure.lastError as cause',
+        'failure.lastFailedAt',
+        'failure.quarantinedAt',
+        'asset.ownerId',
+        'owner.name as ownerName',
+        'asset.originalFileName as fileName',
+      ])
+      .orderBy('failure.lastFailedAt', 'desc')
+      .orderBy('failure.assetId')
+      .orderBy('failure.step')
+      .limit(take)
+      .offset(skip)
+      .execute();
+  }
+
+  async updateProcessingFailures(
+    auth: AuthDto,
+    { items }: ProcessingFailureActionDto,
+    enqueue?: (
+      tx: Transaction<DB>,
+      step: ProcessingFailureActionDto['items'][number]['step'],
+      id: string,
+    ) => Promise<void>,
+  ) {
+    await this.db.transaction().execute(async (tx) => {
+      // Stable locking order makes two overlapping bulk actions safe.
+      const ordered = items.toSorted((a, b) => a.assetId.localeCompare(b.assetId) || a.step.localeCompare(b.step));
+      for (const { assetId, step } of ordered) {
+        const row = await this.visibleProcessingFailures(auth, tx)
+          .where('failure.assetId', '=', assetId)
+          .where('failure.step', '=', step)
+          .select(['failure.attempts', 'failure.dismissedAt', 'failure.quarantinedAt'])
+          .forUpdate('failure')
+          .executeTakeFirst();
+        if (!row) throw new NotFoundException('Processing failure not found');
+        const update = tx
+          .updateTable('asset_processing_failure')
+          .where('assetId', '=', assetId)
+          .where('step', '=', step);
+        if (!enqueue) {
+          await update.set({ dismissedAt: new Date() }).execute();
+          continue;
+        }
+        if (row.attempts === 0 && !row.dismissedAt && !row.quarantinedAt) continue;
+        await update.set({ attempts: 0, dismissedAt: null, quarantinedAt: null }).execute();
+        const live = await tx
+          .selectFrom('job')
+          .select('id')
+          .where('name', '=', step)
+          .where('state', 'in', ['pending', 'waiting', 'active'])
+          .where(sql<boolean>`lower(data->>'id') = ${assetId.toLowerCase()}`)
+          .limit(1)
+          .executeTakeFirst();
+        if (!live) await enqueue(tx, step, assetId.toLowerCase());
+      }
+    });
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

@@ -5,6 +5,7 @@ import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetVisibility, DatabaseLock, FrameleafWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { deferJobAdoption } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { CustomClipModelRefusedError } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
@@ -159,7 +160,7 @@ export class SmartInfoService extends BaseService {
   }
 
   @OnJob({ name: JobName.SmartSearchQueueAll, queue: QueueName.SmartSearch })
-  async handleQueueEncodeClip({ force }: JobOf<JobName.SmartSearchQueueAll>): Promise<JobStatus> {
+  async handleQueueEncodeClip({ force, includeSetAside }: JobOf<JobName.SmartSearchQueueAll>): Promise<JobStatus> {
     const config = await this.getConfig({ withCache: false });
     const { machineLearning } = config;
     if (!isSmartSearchEnabled(machineLearning)) {
@@ -187,7 +188,11 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Failed;
     }
 
-    await this.jobRepository.queueSelection(JobName.SmartSearch, this.assetJobRepository.selectionForEncodeClip(force));
+    await this.jobRepository.queueSelection(
+      JobName.SmartSearch,
+      this.assetJobRepository.selectionForEncodeClip(force),
+      ...processingSetAsideOverride(force, includeSetAside),
+    );
 
     return JobStatus.Success;
   }

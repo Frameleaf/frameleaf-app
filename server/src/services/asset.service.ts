@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ProcessingFailureActionDto, ProcessingFailureQueryDto } from 'src/dtos/processing-failure.dto.js';
 import type { HealedDateAfter, HealedDateBefore } from 'src/repositories/album-suggestion.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
@@ -1294,6 +1295,25 @@ export class AssetService extends BaseService {
     const ordinary = (changed ?? []).filter((id) => !sequencedIds.has(id));
     if (ordinary.length > 0)
       await this.eventRepository.emit('AssetTrashAll', { assetIds: ordinary, userId: auth.user.id });
+  }
+
+  async getProcessingFailures(auth: AuthDto, query: ProcessingFailureQueryDto) {
+    const failures = await this.assetJobRepository.getProcessingFailures(auth, query);
+    return failures.map(({ lastFailedAt, quarantinedAt, ...failure }) => ({
+      ...failure,
+      lastFailedAt: new Date(lastFailedAt).toISOString(),
+      quarantinedAt: quarantinedAt ? new Date(quarantinedAt).toISOString() : null,
+    }));
+  }
+
+  retryProcessingFailures(auth: AuthDto, dto: ProcessingFailureActionDto) {
+    return this.assetJobRepository.updateProcessingFailures(auth, dto, (tx, name, id) =>
+      this.jobRepository.queueInTransaction(tx, { name, data: { id } }),
+    );
+  }
+
+  dismissProcessingFailures(auth: AuthDto, dto: ProcessingFailureActionDto) {
+    return this.assetJobRepository.updateProcessingFailures(auth, dto);
   }
 
   async getMetadata(auth: AuthDto, id: string): Promise<AssetMetadataResponseDto[]> {

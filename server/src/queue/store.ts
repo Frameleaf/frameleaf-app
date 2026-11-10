@@ -5,6 +5,13 @@ import type { DB } from 'src/schema/index.js';
 import { JobName, MediaOperationKind, QueueName } from 'src/enum.js';
 import { costReusedRead } from 'src/queue/coalesced-task.js';
 import { QUEUE_CHANNEL } from 'src/queue/notifications.js';
+import {
+  clearProcessingFailure,
+  isProcessingFailureStep,
+  processingIsSetAside,
+  queuedProcessingIsSetAside,
+  recordProcessingFailure,
+} from 'src/queue/processing-failure.js';
 import { getRun, listRunItems, listRuns, observeQueueRun, reportedQueueJobs } from 'src/queue/run-query.js';
 import {
   JobDependencyReason,
@@ -171,6 +178,17 @@ export class SqlQueueStore {
     }
     let inserted = 0;
     for (const intent of intents) {
+      if (isProcessingFailureStep(intent.name)) {
+        const id = typeof intent.data.id === 'string' ? intent.data.id : null;
+        const {
+          rows: [check],
+        } = await sql<{ setAside: boolean }>`select ${processingIsSetAside(
+          sql`case when pg_input_is_valid(${id}, 'uuid') then ${id}::uuid end`,
+          sql`${intent.name}`,
+          sql`${intent.data.includeSetAside === true}::boolean`,
+        )} as "setAside"`.execute(db);
+        if (check.setAside) continue;
+      }
       const key = intent.options?.deduplication?.id ?? intent.options?.jobId ?? null;
       if (key) {
         const {
@@ -328,7 +346,17 @@ export class SqlQueueStore {
           ${dedupKey}, ${intent.safeToRetry}, ${intent.sensitive}, ${intent.deadlineMs},
           ${availability(sql`${intent.runId}::uuid`, sql`${intent.name}::text`)}, ${intent.runId}::uuid, ${itemKey},
           coalesce(s."row"->>'rootItemKey', s.id::text)
-        from page s order by s.id
+        from page s
+        ${
+          isProcessingFailureStep(intent.name)
+            ? sql`where not ${processingIsSetAside(
+                sql`s.id`,
+                sql`${intent.name}`,
+                sql`${intent.data.includeSetAside === true}::boolean`,
+              )}`
+            : sql``
+        }
+        order by s.id
         on conflict do nothing returning 1
       ) select (select count(*) from page)::int selected, (select count(*) from inserted)::int inserted,
         (select id::text from page order by id desc limit 1) last`.execute(tx);
@@ -400,18 +428,34 @@ export class SqlQueueStore {
     if (limit <= 0) {
       return [];
     }
-    const { rows } = await sql<QueueClaim>`
-        update job set state = 'active', token = gen_random_uuid(), "workerId" = ${workerId}::uuid,
-          attempt = attempt + 1, "startedAt" = now(), "progressAt" = now(), "progressUnits" = 0,
-          "leaseExpiresAt" = now() + interval '60 seconds', "cancelRequestedAt" = null, "cancelReason" = null, "dependencyReason" = null
-        where id in (
-          select id from job j where queue = ${queue} and state in ('pending','waiting')
-            and ${byHand ? sql`"availableAt" = ${STARTED_BY_HAND}` : sql`"availableAt" <= now()`}
-            and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
-            and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
-          order by "availableAt", "createdAt", id limit ${limit} for update skip locked
-        ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt", "safeToRetry"
-      `.execute(tx);
+    const { rows: picked } = await sql<QueueClaim & { state: string }>`
+      with candidates as materialized (
+        select j.id, (${queuedProcessingIsSetAside}) as "setAside" from job j
+        where queue = ${queue} and state in ('pending','waiting')
+          and ${byHand ? sql`"availableAt" = ${STARTED_BY_HAND}` : sql`"availableAt" <= now()`}
+          and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
+          and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
+        order by "availableAt", "createdAt", id limit ${limit} for update skip locked
+      )
+      update job j set state = case when c."setAside" then 'blocked' else 'active' end,
+        token = case when not c."setAside" then gen_random_uuid() end,
+        "workerId" = case when not c."setAside" then ${workerId}::uuid end,
+        attempt = case when c."setAside" then attempt else attempt + 1 end,
+        "startedAt" = case when c."setAside" then j."startedAt" else now() end,
+        "progressAt" = now(), "progressUnits" = 0,
+        "finishedAt" = case when c."setAside" then now() end,
+        error = case when c."setAside" then 'Processing set aside' end,
+        "leaseExpiresAt" = case when not c."setAside" then now() + interval '60 seconds' end,
+        "cancelRequestedAt" = null, "cancelReason" = null, "dependencyReason" = null
+      from candidates c where j.id = c.id
+      returning j.id, queue, name, data, token, "workerId", attempt, "runId", "itemKey",
+        "rootItemKey", "deadlineMs", "startedAt", "safeToRetry", state
+    `.execute(tx);
+    await this.settleDependencies(
+      tx,
+      picked.filter(({ state }) => state === 'blocked').map(({ id }) => id),
+    );
+    const rows = picked.filter(({ state }) => state === 'active').map(({ state: _, ...claim }) => claim);
     if (rows.length > 0) {
       await sql`insert into job_attempt("jobId", attempt, token, "workerId")
           select id, attempt, token, "workerId" from job where id = any(${rows.map((claim) => claim.id)}::uuid[])`.execute(
@@ -493,6 +537,7 @@ export class SqlQueueStore {
       await sql`update job_attempt set outcome = 'completed', "finishedAt" = now() where token = ${claim.token}::uuid`.execute(
         tx,
       );
+      await clearProcessingFailure(tx, claim.name, claim.data.id);
       await this.enqueueFollowups(claim, followups, tx);
       await this.scheduleLatest(claim.id, job.latestPending, tx);
       return true;
@@ -582,7 +627,9 @@ export class SqlQueueStore {
         safeToRetry: boolean;
         retryAvailable: boolean;
         operationId: string | null;
-      }>`select data->>'operationId' "operationId", "safeToRetry", attempt < "retryBaseAttempt" + 2 "retryAvailable",
+        name: string;
+        assetId: string | null;
+      }>`select j.name, j.data->>'id' as "assetId", data->>'operationId' "operationId", "safeToRetry", attempt < "retryBaseAttempt" + 2 "retryAvailable",
           "leaseExpiresAt" <= clock_timestamp() - interval '30 seconds' "graceElapsed",
           "cancelRequestedAt" is not null "stopRequested",
           ("cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline') cancelled,
@@ -642,11 +689,19 @@ export class SqlQueueStore {
           and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null`.execute(tx);
         if (valid.length === 0) throw new Error('Diagnostic publication lost its claim');
       }
+      const setAside =
+        !job.cancelled &&
+        (await recordProcessingFailure(
+          tx,
+          job,
+          reason,
+          options.expiredRecovery ? 'crashed' : job.stopRequested ? 'timed-out' : undefined,
+        ));
       const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
         state = case when ${unconfirmedAttention} then 'needs_attention' when ${job.cancelled} then 'cancelled'
-          when not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
+          when not "safeToRetry" then 'needs_attention' when ${setAside} then 'failed' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
         "availableAt" = now() + interval '30 seconds', "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
-        "finishedAt" = case when ${unconfirmedAttention} or ${job.cancelled} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
+        "finishedAt" = case when ${unconfirmedAttention} or ${job.cancelled} or ${setAside} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
         error = case when sensitive then 'Job failed; sensitive details omitted' else ${reason.slice(0, 500)} end,
         data = case when sensitive then '{}'::jsonb else data end
         where id = ${claim.id}::uuid and ${owned}
@@ -680,7 +735,7 @@ export class SqlQueueStore {
         // Work held for attention never replays its deferred request. Repeatable work that ran out of retries
         // on an unconfirmed stop schedules it like any other failure: publication is fenced by the revoked
         // claim token, and scheduleLatest still holds an unsafe request for attention.
-        if (!unconfirmedAttention) {
+        if (!unconfirmedAttention && !setAside) {
           terminalParents.push(...(await this.scheduleLatest(claim.id, rows[0].latestPending, tx, false)));
         }
         await this.settleDependencies(tx, terminalParents);
@@ -1106,7 +1161,7 @@ export class SqlQueueStore {
       const { rows } = await sql<{ id: string }>`WITH RECURSIVE eligible AS (
         SELECT j.id,j."parentId",j.state FROM job j
         WHERE j."runId"=${runId}::uuid AND j."safeToRetry" AND j.data->>'operationId' IS NULL
-          AND j.state IN ('failed','blocked')
+          AND j.state IN ('failed','blocked') AND NOT (${queuedProcessingIsSetAside})
           AND (j."dedupKey" IS NULL OR NOT EXISTS (
             SELECT 1 FROM job d WHERE d.queue=j.queue AND d."dedupKey"=j."dedupKey" AND d.id<>j.id
               AND (d.state IN ('pending','waiting','active') OR (d.state IN ('failed','blocked')
@@ -1149,7 +1204,8 @@ export class SqlQueueStore {
           "retryBaseAttempt" = attempt
           where id in (
             select id from (select id, "dedupKey", row_number() over (partition by coalesce("dedupKey", id::text) order by "createdAt", id) ordinal
-              from job where queue = ${queue} and state = 'failed' and "safeToRetry"
+              from job j where queue = ${queue} and state = 'failed' and "safeToRetry"
+                and not (${queuedProcessingIsSetAside})
                 ${jobId ? sql`and id = ${jobId}::uuid` : sql``}) candidates
             where ordinal = 1 and (candidates."dedupKey" is null or not exists (
               select 1 from job d where d.queue = ${queue} and d."dedupKey" = candidates."dedupKey"
