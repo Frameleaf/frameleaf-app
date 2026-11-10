@@ -43,6 +43,7 @@ describe('classifyFileProblem', () => {
     ['app segment', 'Corrupt JPEG data: bad APP segment', {}, null, 'broken-details'],
     ['psd unsupported', 'unsupported image format', { extension: '.psd' }, null, 'not-supported'],
     ['indd unsupported', 'Unsupported', { extension: '.indd' }, null, 'not-supported'],
+    ['design file no renderer opens', 'unsupported image format', { extension: '.sketch' }, null, 'not-supported'],
     ['raw unsupported', 'unsupported', { extension: '.nef' }, null, 'not-supported'],
     ['unsupported jpg without marker', 'unsupported image format', { extension: '.jpg' }, null, 'unreadable'],
     ['psd with an embedded thumbnail', 'unsupported', { extension: '.psd', jpegMarkerAt: 128 }, null, 'not-supported'],

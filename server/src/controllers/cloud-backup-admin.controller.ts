@@ -11,6 +11,8 @@ import {
 import {
   CloudBackupCheckDto,
   CloudBackupCheckResponseDto,
+  CloudBackupDrillDto,
+  CloudBackupDrillReportDto,
   CloudBackupEscrowDto,
   CloudBackupGeneratedKeyDto,
   CloudBackupManifestAlbumsDto,
@@ -188,6 +190,57 @@ export class CloudBackupAdminController {
   })
   verify(@Auth() auth: AuthDto, @Body() dto: CloudBackupVerifyDto): Promise<CloudBackupStatusResponseDto> {
     return this.service.startVerify(auth, dto);
+  }
+
+  @Post('drills')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudBackupRun, admin: true })
+  @Endpoint({
+    operationId: 'startCloudBackupDrill',
+    summary: 'Run a restore drill',
+    description:
+      'FL-879: queues a restore drill. It fetches the newest backup named by the signed snapshot history, unlocks it, rebuilds its library data in a scratch database and compares a random sample of originals, then signs a report. Nothing in the library changes; the scratch copy is removed afterwards.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  startDrill(@Auth() auth: AuthDto): Promise<CloudBackupStatusResponseDto> {
+    return this.service.startDrill(auth);
+  }
+
+  @Get('drills')
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'listCloudBackupDrills',
+    summary: 'List restore drills',
+    description: 'FL-879: the restore drills, newest first (at most 50).',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  listDrills(): Promise<CloudBackupDrillDto[]> {
+    return this.service.listDrills();
+  }
+
+  @Get('drills/:id')
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudBackupDrill',
+    summary: 'Get a restore drill',
+    description: 'FL-879: one restore drill: what was checked, what matched, and which step failed.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getDrill(@Param() { id }: UUIDv7ParamDto): Promise<CloudBackupDrillDto> {
+    return this.service.getDrill(id);
+  }
+
+  @Get('drills/:id/report.json')
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudBackupDrillReport',
+    summary: 'Download a restore drill report',
+    description:
+      'FL-879: the signed report. `signature.value` is the Ed25519 signature (base64url) of `signature.prefix` followed by the canonical JSON of `report` (keys sorted, no spaces), by the key in `signature.publicKey`, whose RFC 7638 thumbprint is `signature.keyFingerprint`.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getDrillReport(@Param() { id }: UUIDv7ParamDto): Promise<CloudBackupDrillReportDto> {
+    return this.service.getDrillReport(id) as Promise<CloudBackupDrillReportDto>;
   }
 
   @Post('prune')

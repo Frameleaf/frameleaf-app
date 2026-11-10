@@ -1236,6 +1236,8 @@ export type FrameleafCloudBackup = {
   lastRestore?: FrameleafCloudBackupRestore;
   /** FL-164: a scheduled run found the bucket busy; it starts when the operation holding it ends. */
   scheduledRunDueAt?: string;
+  /** FL-879: a scheduled restore drill found the bucket busy; it starts once the operation holding it ends. */
+  drillDueAt?: string;
 };
 
 /** FL-164: one restore from a manifest. Counts are files; `databaseFile` is the dump's name in `<media>/backups`. */
@@ -1718,6 +1720,8 @@ export type BackupRestoreVerification = {
   metadataVerifiedAt?: string | null;
   originalsVerifiedAt?: string | null;
   verifiedBy?: string | null;
+  /** FL-879: the passing restore drill that recorded this, rather than an administrator by hand. */
+  drillReportId?: string | null;
 };
 
 /**

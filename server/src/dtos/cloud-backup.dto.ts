@@ -400,8 +400,63 @@ const CloudBackupActiveRunSchema = z
     skipped: z.int(),
     bytesUploaded: z.int(),
     checked: z.int().describe('verify: files checked so far'),
+    drill: z.boolean().describe('FL-879: this is a restore drill (its task reads as verify, which it is a kind of)'),
   })
   .meta({ id: 'CloudBackupActiveRunDto' });
+
+/** FL-879: one restore drill. */
+const CloudBackupDrillSchema = z
+  .object({
+    id: z.uuid(),
+    target: z.string().describe('managed or byo-s3'),
+    trigger: z.enum(['scheduled', 'manual']).meta({ id: 'CloudBackupDrillTrigger' }),
+    startedAt: z.string().meta({ format: 'date-time' }),
+    finishedAt: z.string().meta({ format: 'date-time' }).nullable(),
+    result: z.enum(['running', 'passed', 'failed']).meta({ id: 'CloudBackupDrillResult' }),
+    failedStep: z
+      .enum(['fetch', 'unlock', 'rebuild', 'compare'])
+      .nullable()
+      .describe(
+        'fetch: the backup could not be fetched intact; unlock: the recovery key did not unlock it; rebuild: its library data did not rebuild; compare: sampled originals did not match',
+      )
+      .meta({ id: 'CloudBackupDrillStep' }),
+    backupFrom: z.string().meta({ format: 'date-time' }).nullable().describe('When the backup that was used was made'),
+    library: z
+      .object({ items: z.int(), photos: z.int(), videos: z.int(), albums: z.int() })
+      .nullable()
+      .describe('What the backup holds'),
+    restored: z
+      .object({ asset: z.int(), user: z.int(), album: z.int() })
+      .nullable()
+      .describe('Rows the rebuilt library data holds'),
+    sampleSize: z.int(),
+    checked: z.int(),
+    matched: z.int(),
+    mismatches: z.array(
+      z.object({
+        assetId: z.string(),
+        problem: z.enum(['different', 'missing', 'not-in-library-data']).meta({ id: 'CloudBackupDrillProblem' }),
+      }),
+    ),
+    durationSeconds: z.int().nullable(),
+    keyFingerprint: z.string().nullable().describe('The signing key (RFC 7638 thumbprint of the Ed25519 key)'),
+    signed: z.boolean(),
+  })
+  .meta({ id: 'CloudBackupDrillDto' });
+
+/** FL-879: the signed report file. `signature.value` signs `prefix` + the canonical JSON of `report`. */
+const CloudBackupDrillReportSchema = z
+  .object({
+    report: z.record(z.string(), z.unknown()),
+    signature: z.object({
+      algorithm: z.literal('Ed25519'),
+      prefix: z.string(),
+      keyFingerprint: z.string(),
+      publicKey: z.record(z.string(), z.unknown()),
+      value: z.string(),
+    }),
+  })
+  .meta({ id: 'CloudBackupDrillReportDto' });
 
 /** FL-362: whether the newest run's numeric coverage reached Frameleaf Cloud. Numbers only, never choices. */
 const CloudBackupCoverageStatusSchema = z
@@ -444,6 +499,14 @@ const CloudBackupStatusSchema = z
     lastRestore: CloudBackupLastRestoreSchema.nullable(),
     lastVerify: CloudBackupLastVerifySchema.nullable(),
     lastPrune: CloudBackupLastPruneSchema.nullable(),
+    lastDrill: CloudBackupDrillSchema.nullable().describe('FL-879: the newest finished restore drill'),
+    drillDue: z.boolean().describe('FL-879: a restore drill runs after the next scheduled backup'),
+    nextDrillAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('FL-879: when the next restore drill is due; null when it is due now or backup is off'),
+    drillNeedsAttention: z.boolean().describe('FL-879: the newest restore drill failed'),
     managed: CloudBackupManagedSchema.nullable().describe('Frameleaf-managed storage only'),
     escrow: CloudBackupEscrowStatusSchema,
   })
@@ -476,6 +539,8 @@ export class CloudBackupGeneratedKeyDto extends createZodDto(CloudBackupGenerate
 export class CloudBackupSetupDto extends createZodDto(CloudBackupSetupSchema) {}
 export class CloudBackupUnlockDto extends createZodDto(CloudBackupUnlockSchema) {}
 export class CloudBackupStatusResponseDto extends createZodDto(CloudBackupStatusSchema) {}
+export class CloudBackupDrillDto extends createZodDto(CloudBackupDrillSchema) {}
+export class CloudBackupDrillReportDto extends createZodDto(CloudBackupDrillReportSchema) {}
 export class CloudBackupVerifyDto extends createZodDto(CloudBackupVerifySchema) {}
 export class CloudBackupPruneDto extends createZodDto(CloudBackupPruneSchema) {}
 export class CloudBackupEscrowDto extends createZodDto(CloudBackupEscrowSchema) {}

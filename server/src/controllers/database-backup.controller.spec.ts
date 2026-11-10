@@ -80,6 +80,7 @@ describe(DatabaseBackupController.name, () => {
         verifiedBy: null,
         overdue: true,
         dueAt: null,
+        drillReportId: null,
         intervalDays: 90,
       });
 

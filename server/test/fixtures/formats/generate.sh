@@ -48,7 +48,9 @@ magick "$tmp/small.ppm" BMP3:still/bmp-24.bmp
 magick "$tmp/small.ppm" -alpha set -channel A -evaluate set 50% +channel BMP:still/bmp-32-alpha.bmp
 magick "$tmp/small.ppm" -colors 256 -compress RLE BMP3:still/bmp-rle8.bmp
 magick "$tmp/small.ppm" BMP2:still/bmp-os2.bmp
-magick "$tmp/small.ppm" -define bmp:subtype=RGB565 BMP3:still/bmp-565.bmp
+# ffmpeg, not ImageMagick: its RGB565 BMP names the bitfields format and leaves the three colour masks out.
+magick "$tmp/small.ppm" "$tmp/small.bmp"
+ffmpeg -nostdin -v error -y -i "$tmp/small.bmp" -pix_fmt rgb565le -fflags +bitexact still/bmp-565.bmp
 magick "$tmp/small.ppm" -compress None still/tga-24.tga
 magick "$tmp/small.ppm" -compress RLE still/tga-rle.tga
 magick "$tmp/small.ppm" -resize 64x64! -define icon:auto-resize=64,32,16 still/icon.ico
@@ -67,8 +69,11 @@ magick "$tmp/small.ppm" still/sgi.sgi
 magick "$tmp/small.ppm" still/pict.pict
 magick "$tmp/small.ppm" -compress Zip still/exr.exr
 
-# --- Design: a flat PSD is all ImageMagick can write; layered and PSB samples are in SOURCES.md ---
+# --- Design: a flat PSD is all ImageMagick can write; generate-design.py writes the rest byte by byte
+# (layered PSD with and without its flat picture, PSB, PDF, Illustrator, EPS, XCF, Fireworks PNG and the
+# ZIP-based documents). It reads jpeg/baseline.jpg, so it runs after the JPEGs.
 magick "$tmp/small.ppm" design/flat.psd
+python3 generate-design.py >/dev/null
 
 # --- Video: five frames of a test pattern per codec and container ---------------------------------
 clip() { # clip <output> <ffmpeg output options...>

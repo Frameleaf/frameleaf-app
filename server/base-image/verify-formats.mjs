@@ -7,10 +7,14 @@
 //   kind     decode entry point                                             rungs
 //   still    MediaRepository.decodeImage: the still ladder (FL-1356)        strict | lenient | djpeg | jxrlib |
 //                                                                           magick | ffmpeg | embedded
-//   design   the same as still (ImageMagick behind libvips today)           as still
+//   design   MediaRepository.decodeImage, which runs the design ladder      rendered | container | embedded | placeholder
+//            (FL-1358); a rendering that comes out one flat colour is a failure
 //   raw      renderRawWithLibRaw, then a full 16-bit decode of its TIFF     libraw
 //   video    MediaRepository.probe, then ffmpeg decodes the first frame     ffmpeg
 //   font     libvips text with the font file (no server entry point yet)    specimen
+//
+// Two optional facts: `pages` (what libvips counts in a PDF or Illustrator file) and `fireworks` (whether a
+// PNG carries Fireworks' editable data).
 //
 // `integrity` is MediaIntegrityService.validate({ deep: true }) said in the product's words:
 //   healthy | cut-short (service: corrupt) | unsupported | couldnt-check (transient, timeout)
@@ -54,6 +58,7 @@ const { StorageRepository } = await load('repositories/storage.repository.js');
 const { CryptoRepository } = await load('repositories/crypto.repository.js');
 const { MediaIntegrityService } = await load('services/media-integrity.service.js');
 const { renderRawWithLibRaw } = await load('utils/raw-renderer.js');
+const { DesignPreviewUnavailableError, isFireworksPng } = await load('utils/design-preview.js');
 
 const logger = LoggingRepository.create();
 const media = new MediaRepository(logger);
@@ -64,8 +69,15 @@ const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest(
 const decoders = {
   async still(file, { matches } = {}) {
     const decode = (path) => media.decodeImage(path, { colorspace: 'srgb', processInvalidImages: false });
-    const { data, info, rung } = await decode(file);
-    const decoded = { rung, width: info.width, height: info.height };
+    const { data, info, rung, designRung } = await decode(file);
+    if (designRung) {
+      // A document saved without its flat picture must still show its layers, not the white stand-in.
+      assert.ok(
+        data.some((value) => value !== data[0]),
+        'rendered as one flat colour',
+      );
+    }
+    const decoded = { rung: designRung ?? rung, width: info.width, height: info.height };
     if (matches) {
       const small = (pixels) =>
         sharp(pixels.data, {
@@ -129,7 +141,15 @@ const decoders = {
     return { rung: 'specimen' };
   },
 };
-decoders.design = decoders.still;
+// FL-1358: a design file goes down its own ladder inside decodeImage; one with no picture inside is kept
+// and shown by the plain tile, which is a result, not a failure.
+decoders.design = (file, options) =>
+  decoders.still(file, options).catch((error) => {
+    if (error instanceof DesignPreviewUnavailableError) {
+      return { rung: 'placeholder' };
+    }
+    throw error;
+  });
 
 const verdicts = {
   healthy: 'healthy',
@@ -172,6 +192,17 @@ for (const fixture of manifest.fixtures) {
     deep: true,
   });
   const actual = { decodes: !!decoded, ...decoded, integrity: verdicts[result.status] ?? result.status };
+  if ('pages' in expected) {
+    actual.pages =
+      (
+        await sharp(path)
+          .metadata()
+          .catch(() => ({}))
+      ).pages ?? 1;
+  }
+  if ('fireworks' in expected) {
+    actual.fireworks = await isFireworksPng(path);
+  }
 
   if (printActual) {
     console.log(

@@ -7,6 +7,7 @@ import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { designFileHasSignature } from 'src/utils/design-preview.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
@@ -309,7 +310,14 @@ export class MediaIntegrityService {
     if (input.type === AssetType.Video) {
       return this.checkVideo(input, signal, touch);
     }
-    const isRaw = mimeTypes.isRaw(input.originalFileName) && !input.originalFileName.toLowerCase().endsWith('.psd');
+    if (input.type === AssetType.Image && mimeTypes.isDesign(input.originalFileName)) {
+      // FL-1358: a design file is proved by its checksum and by starting the way its format does. Whether a
+      // renderer can draw it says nothing about the file, so it is never decoded here and never called damaged.
+      return (await designFileHasSignature(input.path, input.originalFileName))
+        ? undefined
+        : { status: 'unsupported', reason: 'media_type_unsupported' };
+    }
+    const isRaw = mimeTypes.isRaw(input.originalFileName);
     try {
       if (input.type === AssetType.Image) {
         // RAW previews do not prove the original sensor data can be decoded.
