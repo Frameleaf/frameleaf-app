@@ -1891,11 +1891,21 @@ export class PersonService extends BaseService {
     }
   }
 
+  /**
+   * FL-927: refresh the people saved in each photo's XMP sidecar. The face change has already been
+   * saved, so a failure to queue only leaves the sidecar behind until the next change; it never fails
+   * or undoes the edit, and never skips the cleanup after it.
+   */
   private async queueFaceSidecars(assetIds: string[]) {
-    if (assetIds.length > 0) {
+    if (assetIds.length === 0) {
+      return;
+    }
+    try {
       await this.jobRepository.queueAll(
         [...new Set(assetIds)].map((id) => ({ name: JobName.SidecarWrite, data: { id, facesOnly: true } })),
       );
+    } catch (error) {
+      this.logger.warn(`Unable to queue face sidecar updates for ${assetIds.length} assets: ${error}`);
     }
   }
 

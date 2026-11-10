@@ -104,6 +104,14 @@ export function firstDateTime(tags: ImmichTags) {
   }
 }
 
+type SidecarFace = NonNullable<Awaited<ReturnType<AssetJobRepository['getForSidecarFaces']>>>['faces'][number];
+
+/** A face the sidecar names: placed, and on a named person who is not hidden. */
+const isNamedFace = (face: SidecarFace) => !!fractionBox(face) && !!face.person?.name.trim() && !face.person.isHidden;
+
+/** MWG region types are case-insensitive in practice: some tools write `face`. A region without a type counts as a face. */
+const isFaceRegion = (type?: string) => !type || type.toLowerCase() === 'face';
+
 const validate = <T>(value: T): NonNullable<T> | null => {
   // handle lists of numbers
   if (Array.isArray(value)) {
@@ -880,10 +888,7 @@ export class MetadataService extends BaseService {
         ? sidecarFile.path
         : undefined;
     const tagsToWrite = faceData
-      ? await this.getSidecarFaceTags(
-          this.sidecarFaceRegions(faceData.faces, asset.exifInfo),
-          copySource ?? sidecarPath,
-        )
+      ? await this.getSidecarFaceTags(faceData.faces, asset, copySource ?? sidecarPath)
       : exif;
     if (!tagsToWrite || Object.keys(tagsToWrite).length === 0) {
       return JobStatus.Skipped;
@@ -934,49 +939,76 @@ export class MetadataService extends BaseService {
   }
 
   private async getSidecarFaceTags(
-    faceRegions: ImmichTags['RegionInfo'],
+    faces: SidecarFace[],
+    asset: { originalPath: string; exifInfo: Pick<AssetExifTable, 'exifImageWidth' | 'exifImageHeight'> },
     path: string,
   ): Promise<SidecarTags | undefined> {
     const previous = (await this.storageRepository.checkFileExists(path))
       ? await withPlainCopy(path, (plain) => this.metadataRepository.readTags(plain))
       : undefined;
-    if (!faceRegions && !previous?.RegionInfo && !previous?.PersonInImage) {
+    const named = faces.filter((face) => isNamedFace(face));
+    if (named.length === 0 && !previous?.RegionInfo && !previous?.PersonInImage) {
       return;
     }
 
+    const faceRegions =
+      named.length > 0
+        ? this.sidecarFaceRegions(
+            named,
+            asset.exifInfo,
+            await this.getFaceImportOrientation(asset.originalPath, previous),
+          )
+        : undefined;
+
     // Other tools also use MWG regions for things besides faces.
-    const otherRegions = (previous?.RegionInfo?.RegionList ?? []).filter(
-      (region) => region.Type && region.Type !== 'Face',
-    );
-    const dimensions = otherRegions.length
-      ? previous?.RegionInfo?.AppliedToDimensions
-      : (faceRegions ?? previous?.RegionInfo)?.AppliedToDimensions;
+    const otherRegions = (previous?.RegionInfo?.RegionList ?? []).filter((region) => !isFaceRegion(region.Type));
+    const dimensions =
+      otherRegions.length > 0
+        ? previous?.RegionInfo?.AppliedToDimensions
+        : (faceRegions ?? previous?.RegionInfo)?.AppliedToDimensions;
     const regions = [...otherRegions, ...(faceRegions?.RegionList ?? [])];
     const names = [...new Set(faceRegions?.RegionList.flatMap(({ Name }) => (Name ? [Name] : [])))];
     return {
       // Keep dimensions after the last face is removed so the sidecar overrides any embedded regions.
       'XMP-mwg-rs:RegionInfo': dimensions ? { AppliedToDimensions: dimensions, RegionList: regions } : null,
-      'XMP-iptcExt:PersonInImage': names.length ? names : null,
+      'XMP-iptcExt:PersonInImage': names.length > 0 ? names : null,
     };
   }
 
-  private sidecarFaceRegions(
-    faces: NonNullable<Awaited<ReturnType<AssetJobRepository['getForSidecarFaces']>>>['faces'],
-    exif: Pick<AssetExifTable, 'exifImageWidth' | 'exifImageHeight' | 'orientation'>,
-  ): ImmichTags['RegionInfo'] {
-    const first = faces.find((face) => !!fractionBox(face) && face.person?.name.trim() && !face.person.isHidden);
-    if (!first) {
-      return;
+  /**
+   * The orientation the next metadata read applies to the sidecar's face regions (`getExifTags`, then
+   * `applyTaggedFaces`): the sidecar's own, else the original's, from `irot` for HEIF. The stored
+   * orientation can differ, as on a copy that kept its source sidecar's orientation but not the sidecar,
+   * and regions written with it would come back at the wrong place.
+   */
+  private async getFaceImportOrientation(
+    originalPath: string,
+    sidecarTags: ImmichTags | undefined,
+  ): Promise<ExifOrientation | undefined> {
+    if (sidecarTags?.Orientation !== undefined) {
+      return Number(sidecarTags.Orientation) as ExifOrientation;
     }
-    const orientation = Number(exif.orientation) as ExifOrientation;
-    const sidewards = this.isOrientationSidewards(orientation);
+    const mediaTags = await withPlainCopy(originalPath, (path) => this.metadataRepository.readTags(path));
+    if (mimeTypes.isHeifImage(originalPath)) {
+      return this.getHeifOrientation(mediaTags) ?? undefined;
+    }
+    return mediaTags.Orientation === undefined ? undefined : (Number(mediaTags.Orientation) as ExifOrientation);
+  }
+
+  private sidecarFaceRegions(
+    faces: SidecarFace[],
+    exif: Pick<AssetExifTable, 'exifImageWidth' | 'exifImageHeight'>,
+    orientation: ExifOrientation | undefined,
+  ): ImmichTags['RegionInfo'] {
+    const [first] = faces;
+    const sidewards = orientation !== undefined && this.isOrientationSidewards(orientation);
     const rawWidth = exif.exifImageWidth || (sidewards ? first.imageHeight : first.imageWidth);
     const rawHeight = exif.exifImageHeight || (sidewards ? first.imageWidth : first.imageHeight);
     const regions: ImmichTagsWithFaces['RegionInfo'] = {
       AppliedToDimensions: { W: sidewards ? rawHeight : rawWidth, H: sidewards ? rawWidth : rawHeight, Unit: 'pixel' },
       RegionList: faces.flatMap((face) => {
         const box = fractionBox(face);
-        if (!box || !face.person?.name.trim() || face.person.isHidden) {
+        if (!box || !face.person) {
           return [];
         }
         return [
@@ -1001,7 +1033,22 @@ export class MetadataService extends BaseService {
         : orientation === ExifOrientation.Rotate270CW
           ? ExifOrientation.Rotate90CW
           : orientation;
-    return this.orientRegionInfo(regions, inverse);
+    const oriented = this.orientRegionInfo(regions, inverse);
+    // Round away floating-point noise (0.30000000000000004) so other apps read clean values.
+    const round = (value: string | number) => Math.round(Number(value) * 1e6) / 1e6;
+    return {
+      ...oriented,
+      RegionList: oriented.RegionList.map((region) => ({
+        ...region,
+        Area: {
+          ...region.Area,
+          X: round(region.Area.X),
+          Y: round(region.Area.Y),
+          W: round(region.Area.W),
+          H: round(region.Area.H),
+        },
+      })),
+    };
   }
 
   private async getSidecarWritePath(
@@ -1498,7 +1545,7 @@ export class MetadataService extends BaseService {
     const imageHeight = adjustedRegionInfo.AppliedToDimensions.H;
 
     for (const region of adjustedRegionInfo.RegionList) {
-      if (!region.Name || (region.Type && region.Type !== 'Face')) {
+      if (!region.Name || !isFaceRegion(region.Type)) {
         continue;
       }
 
@@ -1508,7 +1555,7 @@ export class MetadataService extends BaseService {
       const W = Number(region.Area.W);
       const H = Number(region.Area.H);
 
-      if (![X, Y, W, H].every(Number.isFinite) || W <= 0 || H <= 0) {
+      if ([X, Y, W, H].some((value) => !Number.isFinite(value)) || W <= 0 || H <= 0) {
         continue;
       }
 
