@@ -128,6 +128,7 @@ const SHARED_LINK_ROUTES = new Set([
   // Boards: a shared collection lists its files and saved links together
   'GET albums/:id/items',
   'GET albums/:id/map-markers',
+  'GET albums/:id/people',
   'GET assets/:id',
   // Studio timeline filmstrips and waveforms follow the thumbnail's access
   'GET assets/:id/filmstrip',
