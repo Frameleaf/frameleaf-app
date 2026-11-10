@@ -19,6 +19,7 @@ import {
   mdiCogOutline,
   mdiContentDuplicate,
   mdiDevices,
+  mdiPuzzleOutline,
   mdiDownload,
   mdiFeatureSearchOutline,
   mdiFileAlertOutline,
@@ -240,6 +241,13 @@ export const USER_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_access_devices_title',
     descriptionKey: 'frameleaf_access_devices_description',
     icon: mdiDevices,
+  },
+  // FL-860: AI assistants, Home Assistant and other apps you allowed (OAuth, FL-803).
+  {
+    key: 'connected-apps',
+    titleKey: 'frameleaf_apps_title',
+    descriptionKey: 'frameleaf_apps_row_description',
+    icon: mdiPuzzleOutline,
   },
   {
     key: 'download-settings',
