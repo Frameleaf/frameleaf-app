@@ -61,6 +61,8 @@ export type AttentionCheckDto = {
 export type AttentionFileProblemsDto = {
     /** Damaged or missing files Frameleaf fixed in the last 7 days */
     fixed: number;
+    /** When the newest of those fixes was made, or null when there are none */
+    latest: string | null;
     /** Damaged or missing files that need the reader */
     needsYou: number;
     /** When the earliest of those fixes was made, or null when there are none */
@@ -29439,6 +29441,19 @@ export function keepFileProblem({ id }: {
     }>(`/media-health/files/${encodeURIComponent(id)}/keep`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Download the damaged file a repair kept
+ */
+export function downloadFileProblemKeptFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-health/files/${encodeURIComponent(id)}/kept-file`, {
+        ...opts
     }));
 }
 /**

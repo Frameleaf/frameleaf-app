@@ -32872,6 +32872,69 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/media-health/files/{id}/kept-file": {
+      "get": {
+        "description": "The damaged file Frameleaf kept when it repaired the photo, as it was. Only the owner can download it, only while the latest fix is a repair whose kept file is still there, and not while the photo is Locked.",
+        "operationId": "downloadFileProblemKeptFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download the damaged file a repair kept",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/media-health/files/{id}/look-in": {
       "post": {
         "description": "Search one folder the owner may search for an exact copy, and put it back when there is exactly one. Answers at once; what was found is added to the history when the search is done.",
@@ -32996,7 +33059,7 @@
     },
     "/media-health/files/{id}/undo": {
       "post": {
-        "description": "Put back the file the photo used before Frameleaf repaired, relinked or restored it, keeping every file. Only the owner can undo, and not once the photo changed since the fix.",
+        "description": "Put back the file the photo used before Frameleaf repaired, relinked or restored it, keeping every file. Only the owner can undo, not once the photo changed since the fix, and not while it is Locked.",
         "operationId": "undoFileProblemFix",
         "parameters": [
           {
@@ -80267,6 +80330,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "latest": {
+            "description": "When the newest of those fixes was made, or null when there are none",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "needsYou": {
             "description": "Damaged or missing files that need the reader",
             "maximum": 9007199254740991,
@@ -80282,6 +80351,7 @@
         },
         "required": [
           "fixed",
+          "latest",
           "needsYou",
           "since"
         ],
