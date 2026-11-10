@@ -21,6 +21,9 @@
   "backup.schedule.cronExpression": {
     "type": "unknown"
   },
+  "connectedApps.allowRegistration": {
+    "type": "boolean"
+  },
   "editing.restoration.style": {
     "type": "string",
     "enum": [
@@ -910,6 +913,9 @@
   "metadata.faces.import": {
     "type": "boolean"
   },
+  "metadata.faces.write": {
+    "type": "boolean"
+  },
   "metrics.enabled": {
     "type": "boolean"
   },
@@ -1213,6 +1219,9 @@
     "type": "string"
   },
   "preferences.people.enabled": {
+    "type": "boolean"
+  },
+  "preferences.people.includeArchived": {
     "type": "boolean"
   },
   "preferences.people.minimumFaces": {

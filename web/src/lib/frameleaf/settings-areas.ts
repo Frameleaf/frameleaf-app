@@ -166,7 +166,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'server',
     group: 'server',
-    sections: ['version-check', 'server', 'location', 'logging', 'theme', 'configuration'],
+    sections: ['version-check', 'server', 'location', 'logging', 'logs', 'theme', 'configuration'],
   },
   // FL-71: the old /admin/maintenance page (Maintenance.jsx): mode, database backups, integrity.
   { id: 'maintenance', group: 'server', sections: ['mode', 'backups', 'integrity'] },
@@ -324,6 +324,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   'version-check': 'frameleaf_page_versions_description',
   server: 'frameleaf_page_identity_description',
   logging: 'frameleaf_page_diagnostics_description',
+  logs: 'frameleaf_page_logs_description',
   theme: 'frameleaf_page_branding_description',
   'locked-encryption': 'frameleaf_le_page_description',
   // "How you sign in" (Personal.jsx MySignIn): the password, Frameleaf account and provider on one page.
@@ -336,7 +337,8 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
 
 /** Pages a landing page keeps behind "Advanced": kept, and closed until asked for. */
 export const ADVANCED_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
-  server: ['logging', 'theme', 'configuration'],
+  // FL-893: Server logs sits under Advanced beside Troubleshooting, as in the prototype (FL-798).
+  server: ['logging', 'logs', 'theme', 'configuration'],
 });
 
 /**
@@ -772,6 +774,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     theme: 'this_server',
     'version-check': 'updates',
     logging: 'updates',
+    logs: 'updates',
     configuration: 'updates',
     location: 'maps',
   },

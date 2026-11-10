@@ -12,6 +12,7 @@
    * Left for later (server work): what the server recorded lately inside the report, and how long
    * Detailed has been on.
    */
+  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
@@ -24,6 +25,7 @@
   import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { buildDiagnostics, diagnosticsFileName } from '$lib/frameleaf/diagnostics';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -39,7 +41,7 @@
     LogLevel,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiDownload, mdiLifebuoy } from '@mdi/js';
+  import { mdiChevronRight, mdiDownload, mdiLifebuoy } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
@@ -191,6 +193,16 @@
         </Row>
       </Advanced>
     {/if}
+  </Section>
+
+  <!-- FL-893 (prototype FL-798): the log viewer, for reading what the server recorded. -->
+  <Section title={$t('frameleaf_logs_read_yourself')} description={$t('frameleaf_logs_read_yourself_description')}>
+    {#snippet action()}
+      <Button onclick={() => goto(commandCenterUrl('server', 'logs'))}>
+        {$t('frameleaf_cc_section_logs')}
+        <Icon icon={mdiChevronRight} size="18" aria-hidden />
+      </Button>
+    {/snippet}
   </Section>
 
   <Section

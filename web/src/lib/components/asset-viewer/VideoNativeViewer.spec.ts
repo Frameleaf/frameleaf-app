@@ -707,6 +707,105 @@ describe('VideoNativeViewer component', () => {
       play.mockRestore();
     });
   });
+
+  // FL-801: zoom and pan inside a video, with the playback controls staying in place.
+  describe('video zoom', () => {
+    const zoomProps = () => ({ ...videoProps(), zoomable: true });
+    const frame = () => document.querySelector('media-controller') as HTMLElement;
+
+    afterEach(() => assetViewerManager.resetZoomState());
+
+    it('scales only the video when the footer zooms in, and returns it to fit', async () => {
+      const props = zoomProps();
+      renderViewer(props);
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+      const footer = renderWithTooltips(ViewerFooter, {
+        asset: props.asset,
+        canNavigateCollection: false,
+        canShowFilmstrip: false,
+        hasStack: false,
+        zoomable: true,
+        isPlayingOriginalVideo: false,
+        setPlayOriginalVideo: () => {},
+        fullscreen: false,
+        onToggleFullscreen: () => {},
+      });
+      expect(footer.getByRole('button', { name: 'frameleaf_viewer_fit' })).toHaveAttribute(
+        'title',
+        'frameleaf_viewer_fit_video_title',
+      );
+
+      assetViewerManager.zoom = 2;
+      await waitFor(() => expect(viewerVideo()!.style.transform).toBe('translate(0px, 0px) scale(2)'));
+      expect(frame()).toHaveAttribute('data-zoomed');
+      expect(document.querySelector('media-control-bar')!.getAttribute('style') ?? '').not.toContain('transform');
+      expect(document.querySelector('frameleaf-time-range')!.getAttribute('style') ?? '').not.toContain('transform');
+      await waitFor(() => expect(footer.getByRole('button', { name: 'frameleaf_viewer_percent' })).toBeTruthy());
+
+      assetViewerManager.zoom = 1;
+      await waitFor(() => expect(viewerVideo()!.style.transform).toBe(''));
+      expect(frame()).not.toHaveAttribute('data-zoomed');
+    });
+
+    it('zooms with the wheel over the picture but not over the controls', async () => {
+      renderViewer(zoomProps());
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+
+      await fireEvent.wheel(document.querySelector('media-control-bar')!, { deltaY: -100 });
+      expect(assetViewerManager.zoom).toBe(1);
+
+      await fireEvent.wheel(frame(), { deltaY: -100 });
+      expect(assetViewerManager.zoom).toBeCloseTo(1.05);
+      expect(viewerVideo()!.style.transform).toContain('scale(1.05');
+    });
+
+    it('steps the zoom with the + and - keys', async () => {
+      renderViewer(zoomProps());
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+      const animatedZoom = vi.spyOn(assetViewerManager, 'animatedZoom');
+
+      await fireEvent.keyDown(document.body, { key: '+' });
+      expect(animatedZoom).toHaveBeenLastCalledWith(1.25);
+      await fireEvent.keyDown(document.body, { key: 'z' });
+      expect(animatedZoom).toHaveBeenLastCalledWith(2);
+      animatedZoom.mockRestore();
+    });
+
+    it('opens the next video at fit', async () => {
+      const props = zoomProps();
+      const viewer = renderViewer(props);
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+      assetViewerManager.zoom = 3;
+      await waitFor(() => expect(viewerVideo()!.style.transform).toContain('scale(3)'));
+
+      const next = assetFactory.build({ ownerId: props.asset.ownerId, type: AssetTypeEnum.Video, duration: 5000 });
+      await viewer.rerender({ componentProps: { ...props, asset: next, assetId: next.id } });
+      await waitFor(() => expect(assetViewerManager.zoom).toBe(1));
+      expect(viewerVideo()!.style.transform).toBe('');
+    });
+
+    it('returns to fit when zoom ends while zoomed, as when casting starts', async () => {
+      const props = zoomProps();
+      const viewer = renderViewer(props);
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+      assetViewerManager.zoom = 3;
+      const reset = vi.spyOn(assetViewerManager, 'resetZoomState');
+
+      await viewer.rerender({ componentProps: { ...props, zoomable: false } });
+      await waitFor(() => expect(reset).toHaveBeenCalled());
+      expect(assetViewerManager.zoom).toBe(1);
+      reset.mockRestore();
+    });
+
+    it('leaves the picture alone when the video cannot zoom', async () => {
+      renderViewer(videoProps());
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+
+      await fireEvent.wheel(frame(), { deltaY: -100 });
+      expect(assetViewerManager.zoom).toBe(1);
+      expect(viewerVideo()!.style.transform).toBe('');
+    });
+  });
 });
 
 const viewerVideo = () => document.querySelector('video');

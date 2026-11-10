@@ -34,6 +34,7 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
     enabled: false,
     sidebarWeb: false,
     suggestInSpaces: false,
+    includeArchived: false,
   },
   search: {
     includeArchived: false,

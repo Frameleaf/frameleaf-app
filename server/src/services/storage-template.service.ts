@@ -604,11 +604,10 @@ export class StorageTemplateService extends BaseService {
 
     for (const token of Object.values(storageTokens).flat()) {
       substitutions[token] = dt.toFormat(token);
-      if (albumName) {
-        // Album date tokens are rendered in the server time zone to match storage template datetime behavior.
-        substitutions['album-startDate-' + token] = albumStartTime?.toFormat(token) ?? '';
-        substitutions['album-endDate-' + token] = albumEndTime?.toFormat(token) ?? '';
-      }
+      // Album date tokens are rendered in the server time zone to match storage template datetime behavior.
+      // Always defined (empty without an album): strict mode would otherwise throw and leave the photo unfiled.
+      substitutions['album-startDate-' + token] = albumStartTime?.toFormat(token) ?? '';
+      substitutions['album-endDate-' + token] = albumEndTime?.toFormat(token) ?? '';
     }
 
     return template(substitutions).replaceAll(/\/{2,}/gm, '/');

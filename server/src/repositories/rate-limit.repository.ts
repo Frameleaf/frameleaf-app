@@ -90,34 +90,68 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
     return rows[0];
   }
 
-  /** Keep one credential check per key in flight across API processes without queuing on a held lock. */
-  async acquireSignInAttempt(key: string): Promise<SignInAttempt | undefined> {
+  /**
+   * Keep one credential check per key in flight across API processes without queuing on a held lock. Several keys
+   * (an address and an account, FL-850) are held together on one connection: all of them, or none.
+   */
+  async acquireSignInAttempt(key: string | string[]): Promise<SignInAttempt | undefined> {
+    const keys = typeof key === 'string' ? [key] : key;
     const client = await this.getSignInClient().connect();
     const lockKey = 'hashtextextended($1, 850)';
+    const held: string[] = [];
+    const unlockAll = async () => {
+      let unlocked = true;
+      for (const name of held) {
+        unlocked =
+          (await client
+            .query<{ unlocked: boolean }>(`SELECT pg_advisory_unlock(${lockKey}) AS unlocked`, [name])
+            .then(({ rows }) => rows[0].unlocked)
+            .catch(() => false)) && unlocked;
+      }
+      return unlocked;
+    };
     try {
-      const { rows } = await client.query<{ acquired: boolean }>(
-        `SELECT pg_try_advisory_lock(${lockKey}) AS acquired`,
-        [key],
-      );
-      if (!rows[0].acquired) {
-        client.release();
-        return;
+      for (const name of keys) {
+        const { rows } = await client.query<{ acquired: boolean }>(
+          `SELECT pg_try_advisory_lock(${lockKey}) AS acquired`,
+          [name],
+        );
+        if (!rows[0].acquired) {
+          client.release(!(await unlockAll()));
+          return;
+        }
+        held.push(name);
       }
     } catch (error) {
       // A timed-out acquisition may still have acquired the lock.
       client.release(true);
       throw error;
     }
+    let released = false;
     return {
-      getWait: () => this.getSignInWait(key, client),
-      recordFailure: () => this.recordSignInFailure(key, client),
-      clearFailures: () => this.clearSignInFailures(key, client),
+      getWait: async () => {
+        let wait = 0;
+        for (const name of keys) {
+          wait = Math.max(wait, await this.getSignInWait(name, client));
+        }
+        return wait;
+      },
+      recordFailure: async () => {
+        for (const name of keys) {
+          await this.recordSignInFailure(name, client);
+        }
+      },
+      clearFailures: async () => {
+        for (const name of keys) {
+          await this.clearSignInFailures(name, client);
+        }
+      },
       release: async () => {
-        const unlocked = await client
-          .query<{ unlocked: boolean }>(`SELECT pg_advisory_unlock(${lockKey}) AS unlocked`, [key])
-          .then(({ rows }) => rows[0].unlocked)
-          .catch(() => false);
-        client.release(!unlocked);
+        if (released) {
+          return;
+        }
+        released = true;
+        client.release(!(await unlockAll()));
       },
     };
   }

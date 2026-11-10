@@ -4,7 +4,12 @@
   import Toggle from './Toggle.svelte';
   import { sharedLinkBadges, relativeTime, type SharedLinkBadgeId } from '$lib/frameleaf/shared-link-badges';
   import { loadAlbumLinkCoverIds, sharedLinkCover, type SharedLinkCover } from '$lib/frameleaf/shared-link-cover';
-  import { asUrl, handleCreateSharedLink, handleUpdateSharedLink } from '$lib/services/shared-link.service';
+  import {
+    asDirectImageUrl,
+    asUrl,
+    handleCreateSharedLink,
+    handleUpdateSharedLink,
+  } from '$lib/services/shared-link.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getAllSharedLinks, SharedLinkType, type SharedLinkResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -17,6 +22,7 @@
     mdiDownloadOutline,
     mdiEyeOffOutline,
     mdiEyeOutline,
+    mdiImageOutline,
     mdiInformationOutline,
     mdiLinkVariant,
     mdiLockOutline,
@@ -306,6 +312,8 @@
   );
 
   const createdUrl = $derived(created ? asUrl(created) : '');
+  /** FL-788: a link to one photo also offers its image file's address, for embedding elsewhere. */
+  const createdImageUrl = $derived(created ? asDirectImageUrl(created) : '');
 
   /* ---- AL-25: the preview aside (SharedLinkForm.jsx:137-171, 486-505) ---- */
   const hasPassword = $derived(editing ? (removePassword ? false : password ? true : !!link?.password) : !!password);
@@ -396,6 +404,15 @@
       copied = true;
       clearTimeout(copiedTimer);
       copiedTimer = setTimeout(() => (copied = false), COPIED_MS);
+    } catch {
+      copyStatus = $t('frameleaf_sharing.copy_unavailable');
+    }
+  }
+
+  async function copyCreatedImage() {
+    try {
+      await navigator.clipboard.writeText(createdImageUrl);
+      copyStatus = $t('frameleaf_sharing.image_link_copied');
     } catch {
       copyStatus = $t('frameleaf_sharing.copy_unavailable');
     }
@@ -493,6 +510,12 @@
         {/if}
         {$t('frameleaf_sharing.copy')}
       </button>
+      {#if createdImageUrl}
+        <button type="button" onclick={() => void copyCreatedImage()}>
+          <Icon icon={mdiImageOutline} size="18" />
+          {$t('frameleaf_sharing.copy_image_link')}
+        </button>
+      {/if}
       <button type="button" aria-pressed={showQr} onclick={() => (showQr = !showQr)}>
         <Icon icon={mdiQrcode} size="18" />
         {$t('frameleaf_sharing.qr_code')}

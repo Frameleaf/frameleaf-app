@@ -48819,90 +48819,41 @@
       "synchronize": true
     },
     {
-      "name": "user_passkey",
+      "name": "oauth_client",
       "columns": [
         {
           "type": "uuid",
           "primary": false,
           "name": "id",
-          "tableName": "user_passkey",
+          "tableName": "oauth_client",
           "nullable": false,
           "isArray": false,
-          "default": "immich_uuid_v7()",
+          "default": "uuid_generate_v4()",
           "synchronize": true
         },
         {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "user_passkey",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "credentialId",
-          "tableName": "user_passkey",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "publicKey",
-          "tableName": "user_passkey",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "counter",
-          "tableName": "user_passkey",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "transports",
-          "tableName": "user_passkey",
-          "nullable": false,
-          "isArray": true,
-          "default": "'{}'::text[]",
-          "synchronize": true
-        },
-        {
-          "type": "text",
+          "type": "character varying",
           "primary": false,
           "name": "name",
-          "tableName": "user_passkey",
+          "tableName": "oauth_client",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "text",
+          "type": "character varying",
           "primary": false,
-          "name": "rpId",
-          "tableName": "user_passkey",
+          "name": "redirectUris",
+          "tableName": "oauth_client",
           "nullable": false,
-          "isArray": false,
+          "isArray": true,
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "character varying",
           "primary": false,
-          "name": "aaguid",
-          "tableName": "user_passkey",
+          "name": "logoUri",
+          "tableName": "oauth_client",
           "nullable": true,
           "isArray": false,
           "synchronize": true
@@ -48910,18 +48861,158 @@
         {
           "type": "boolean",
           "primary": false,
-          "name": "backedUp",
-          "tableName": "user_passkey",
+          "name": "dynamic",
+          "tableName": "oauth_client",
           "nullable": false,
           "isArray": false,
-          "default": "false",
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "createdById",
+          "tableName": "oauth_client",
+          "nullable": true,
+          "isArray": false,
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
           "name": "createdAt",
-          "tableName": "user_passkey",
+          "tableName": "oauth_client",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "oauth_client_createdById_idx",
+          "definition": "CREATE INDEX \"oauth_client_createdById_idx\" ON public.oauth_client USING btree (\"createdById\")",
+          "tableName": "oauth_client",
+          "columnNames": [
+            "createdById"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "oauth_client_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "oauth_client",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_client_createdById_fkey",
+          "definition": "FOREIGN KEY (\"createdById\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "oauth_client",
+          "columnNames": [
+            "createdById"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "oauth_grant",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "clientId",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopes",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "resource",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "refreshTokenHash",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "accessTokenHash",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "accessExpiresAt",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "oauth_grant",
           "nullable": false,
           "isArray": false,
           "default": "now()",
@@ -48931,7 +49022,25 @@
           "type": "timestamp with time zone",
           "primary": false,
           "name": "lastUsedAt",
-          "tableName": "user_passkey",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lastUsedVia",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "revokedAt",
+          "tableName": "oauth_grant",
           "nullable": true,
           "isArray": false,
           "synchronize": true
@@ -48939,11 +49048,23 @@
       ],
       "indexes": [
         {
-          "name": "user_passkey_userId_idx",
-          "definition": "CREATE INDEX \"user_passkey_userId_idx\" ON public.user_passkey USING btree (\"userId\")",
-          "tableName": "user_passkey",
+          "name": "oauth_grant_userId_revokedAt_idx",
+          "definition": "CREATE INDEX \"oauth_grant_userId_revokedAt_idx\" ON public.oauth_grant USING btree (\"userId\", \"revokedAt\")",
+          "tableName": "oauth_grant",
           "columnNames": [
-            "userId"
+            "userId",
+            "revokedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_grant_clientId_idx",
+          "definition": "CREATE INDEX \"oauth_grant_clientId_idx\" ON public.oauth_grant USING btree (\"clientId\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "clientId"
           ],
           "using": "btree",
           "unique": false,
@@ -48954,9 +49075,9 @@
       "constraints": [
         {
           "type": "primary-key",
-          "name": "user_passkey_pkey",
+          "name": "oauth_grant_pkey",
           "definition": "PRIMARY KEY (id)",
-          "tableName": "user_passkey",
+          "tableName": "oauth_grant",
           "columnNames": [
             "id"
           ],
@@ -48964,23 +49085,49 @@
         },
         {
           "type": "unique",
-          "name": "user_passkey_credentialId_uq",
-          "definition": "UNIQUE (\"credentialId\")",
-          "tableName": "user_passkey",
+          "name": "oauth_grant_refreshTokenHash_uq",
+          "definition": "UNIQUE (\"refreshTokenHash\")",
+          "tableName": "oauth_grant",
           "columnNames": [
-            "credentialId"
+            "refreshTokenHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "oauth_grant_accessTokenHash_uq",
+          "definition": "UNIQUE (\"accessTokenHash\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "accessTokenHash"
           ],
           "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "user_passkey_userId_fkey",
+          "name": "oauth_grant_userId_fkey",
           "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "user_passkey",
+          "tableName": "oauth_grant",
           "columnNames": [
             "userId"
           ],
           "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_grant_clientId_fkey",
+          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "clientId"
+          ],
+          "referenceTableName": "oauth_client",
           "referenceColumnNames": [
             "id"
           ],
@@ -48992,32 +49139,22 @@
       "synchronize": true
     },
     {
-      "name": "auth_challenge",
+      "name": "oauth_authorization_code",
       "columns": [
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "codeHash",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
         {
           "type": "uuid",
           "primary": false,
-          "name": "id",
-          "tableName": "auth_challenge",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "purpose",
-          "tableName": "auth_challenge",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "challenge",
-          "tableName": "auth_challenge",
+          "name": "clientId",
+          "tableName": "oauth_authorization_code",
           "nullable": false,
           "isArray": false,
           "synchronize": true
@@ -49026,8 +49163,8 @@
           "type": "uuid",
           "primary": false,
           "name": "userId",
-          "tableName": "auth_challenge",
-          "nullable": true,
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
           "isArray": false,
           "synchronize": true
         },
@@ -49035,35 +49172,44 @@
           "type": "uuid",
           "primary": false,
           "name": "sessionId",
-          "tableName": "auth_challenge",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "origin",
-          "tableName": "auth_challenge",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "rpId",
-          "tableName": "auth_challenge",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "expiresAt",
-          "tableName": "auth_challenge",
+          "tableName": "oauth_authorization_code",
           "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "redirectUri",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "codeChallenge",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopes",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "resource",
+          "tableName": "oauth_authorization_code",
+          "nullable": true,
           "isArray": false,
           "synchronize": true
         },
@@ -49071,31 +49217,62 @@
           "type": "timestamp with time zone",
           "primary": false,
           "name": "createdAt",
-          "tableName": "auth_challenge",
+          "tableName": "oauth_authorization_code",
           "nullable": false,
           "isArray": false,
           "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
           "synchronize": true
         }
       ],
       "indexes": [
         {
-          "name": "auth_challenge_sessionId_idx",
-          "definition": "CREATE INDEX \"auth_challenge_sessionId_idx\" ON public.auth_challenge USING btree (\"sessionId\")",
-          "tableName": "auth_challenge",
+          "name": "oauth_authorization_code_expiresAt_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_expiresAt_idx\" ON public.oauth_authorization_code USING btree (\"expiresAt\")",
+          "tableName": "oauth_authorization_code",
           "columnNames": [
-            "sessionId"
+            "expiresAt"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "auth_challenge_expiresAt_idx",
-          "definition": "CREATE INDEX \"auth_challenge_expiresAt_idx\" ON public.auth_challenge USING btree (\"expiresAt\")",
-          "tableName": "auth_challenge",
+          "name": "oauth_authorization_code_clientId_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_clientId_idx\" ON public.oauth_authorization_code USING btree (\"clientId\")",
+          "tableName": "oauth_authorization_code",
           "columnNames": [
-            "expiresAt"
+            "clientId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_authorization_code_userId_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_userId_idx\" ON public.oauth_authorization_code USING btree (\"userId\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "userId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_authorization_code_sessionId_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_sessionId_idx\" ON public.oauth_authorization_code USING btree (\"sessionId\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "sessionId"
           ],
           "using": "btree",
           "unique": false,
@@ -49105,30 +49282,44 @@
       "triggers": [],
       "constraints": [
         {
-          "type": "primary-key",
-          "name": "auth_challenge_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "auth_challenge",
-          "columnNames": [
-            "id"
-          ],
+          "type": "check",
+          "name": "oauth_authorization_code_hash_check",
+          "definition": "CHECK ((octet_length(\"codeHash\") = 32))",
+          "tableName": "oauth_authorization_code",
+          "expression": "((octet_length(\"codeHash\") = 32))",
           "synchronize": true
         },
         {
-          "type": "unique",
-          "name": "auth_challenge_challenge_uq",
-          "definition": "UNIQUE (challenge)",
-          "tableName": "auth_challenge",
+          "type": "primary-key",
+          "name": "oauth_authorization_code_pkey",
+          "definition": "PRIMARY KEY (\"codeHash\")",
+          "tableName": "oauth_authorization_code",
           "columnNames": [
-            "challenge"
+            "codeHash"
           ],
           "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "auth_challenge_userId_fkey",
+          "name": "oauth_authorization_code_clientId_fkey",
+          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "clientId"
+          ],
+          "referenceTableName": "oauth_client",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_authorization_code_userId_fkey",
           "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "auth_challenge",
+          "tableName": "oauth_authorization_code",
           "columnNames": [
             "userId"
           ],
@@ -49142,9 +49333,9 @@
         },
         {
           "type": "foreign-key",
-          "name": "auth_challenge_sessionId_fkey",
+          "name": "oauth_authorization_code_sessionId_fkey",
           "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "auth_challenge",
+          "tableName": "oauth_authorization_code",
           "columnNames": [
             "sessionId"
           ],
@@ -49160,13 +49351,13 @@
       "synchronize": true
     },
     {
-      "name": "session_passkey",
+      "name": "oauth_spent_refresh_token",
       "columns": [
         {
-          "type": "uuid",
+          "type": "bytea",
           "primary": false,
-          "name": "sessionId",
-          "tableName": "session_passkey",
+          "name": "tokenHash",
+          "tableName": "oauth_spent_refresh_token",
           "nullable": false,
           "isArray": false,
           "synchronize": true
@@ -49174,20 +49365,30 @@
         {
           "type": "uuid",
           "primary": false,
-          "name": "passkeyId",
-          "tableName": "session_passkey",
-          "nullable": true,
+          "name": "grantId",
+          "tableName": "oauth_spent_refresh_token",
+          "nullable": false,
           "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "spentAt",
+          "tableName": "oauth_spent_refresh_token",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
           "synchronize": true
         }
       ],
       "indexes": [
         {
-          "name": "session_passkey_passkeyId_idx",
-          "definition": "CREATE INDEX \"session_passkey_passkeyId_idx\" ON public.session_passkey USING btree (\"passkeyId\")",
-          "tableName": "session_passkey",
+          "name": "oauth_spent_refresh_token_grantId_idx",
+          "definition": "CREATE INDEX \"oauth_spent_refresh_token_grantId_idx\" ON public.oauth_spent_refresh_token USING btree (\"grantId\")",
+          "tableName": "oauth_spent_refresh_token",
           "columnNames": [
-            "passkeyId"
+            "grantId"
           ],
           "using": "btree",
           "unique": false,
@@ -49198,44 +49399,28 @@
       "constraints": [
         {
           "type": "primary-key",
-          "name": "session_passkey_pkey",
-          "definition": "PRIMARY KEY (\"sessionId\")",
-          "tableName": "session_passkey",
+          "name": "oauth_spent_refresh_token_pkey",
+          "definition": "PRIMARY KEY (\"tokenHash\")",
+          "tableName": "oauth_spent_refresh_token",
           "columnNames": [
-            "sessionId"
+            "tokenHash"
           ],
           "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "session_passkey_sessionId_fkey",
-          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "session_passkey",
+          "name": "oauth_spent_refresh_token_grantId_fkey",
+          "definition": "FOREIGN KEY (\"grantId\") REFERENCES oauth_grant(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_spent_refresh_token",
           "columnNames": [
-            "sessionId"
+            "grantId"
           ],
-          "referenceTableName": "session",
+          "referenceTableName": "oauth_grant",
           "referenceColumnNames": [
             "id"
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "session_passkey_passkeyId_fkey",
-          "definition": "FOREIGN KEY (\"passkeyId\") REFERENCES user_passkey(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "session_passkey",
-          "columnNames": [
-            "passkeyId"
-          ],
-          "referenceTableName": "user_passkey",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
           "synchronize": true
         }
       ],

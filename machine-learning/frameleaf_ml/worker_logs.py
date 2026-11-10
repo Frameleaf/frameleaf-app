@@ -14,7 +14,9 @@ _MASK = "[redacted]"
 _KEY = re.compile(
     r"""(?<![\w.-])(?P<key>["']?[\w.-]{1,128}["']?)(?P<separator>\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?|[^\s&,;]+)"""
 )
-_SECRET = re.compile(r"authorization|cookie|password|passphrase|pin(code)?|token|secret|apikey|privatekey|sessionkey")
+_SECRET = re.compile(
+    r"authorization|cookie|password|passphrase|pin(code)?|token|secret|apikey|privatekey|sessionkey|shared?(link)?key"
+)
 
 
 def _assignment(match: re.Match[str]) -> str:

@@ -62,6 +62,7 @@ import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
+import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { DecimalSize } from 'src/utils/bytes.js';
@@ -81,6 +82,7 @@ import {
 } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { isOAuthAccessToken } from 'src/utils/oauth-apps.js';
 import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
@@ -264,6 +266,10 @@ export class AuthService extends BaseService {
   /** FL-721: the Locked encryption PIN hooks (spec §4.1, §4.3, §7.5). */
   @Inject(LockedEncryptionService)
   private lockedEncryption!: LockedEncryptionService;
+
+  /** FL-803: connected apps' access tokens (`Authorization: Bearer fla_…`). */
+  @Inject(OAuthAppService)
+  private oauthApps!: OAuthAppService;
 
   /**
    * `trustToken` is the browser's "Trust this browser" cookie (FL-793). For an account with two-step
@@ -952,9 +958,19 @@ export class AuthService extends BaseService {
   }
 
   async authenticate({ headers, queryParams, metadata }: ValidateRequest): Promise<AuthDto> {
-    const authDto = await this.validate({ headers, queryParams }, metadata.refreshElevation !== false);
+    const appToken = this.getBearerToken(headers);
+    const authDto = isOAuthAccessToken(appToken)
+      ? await this.oauthApps.validateAccessToken(appToken, metadata.via)
+      : await this.validate({ headers, queryParams }, metadata.refreshElevation !== false);
     const { adminRoute, sharedLinkRoute, uri } = metadata;
     const requestedPermission = metadata.permission ?? Permission.All;
+
+    // FL-803: a connected app reaches only routes its scopes' permissions name: never an admin
+    // route, and never one that takes any signed-in caller (`permission: false`), whoever owns it.
+    if (authDto.oauthApp && (adminRoute || requestedPermission === false)) {
+      this.logger.warn(`Denied a connected app access to ${uri}`);
+      throw new ForbiddenException('Connected apps can’t use this');
+    }
 
     if (isRemoteVia(metadata.via) && !metadata.remoteSignInExempt) {
       await this.requireRemoteSignIn(authDto, metadata.via, uri);

@@ -44,9 +44,11 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  *   which a timeline requests by the hundred, count toward the higher `REMOTE_MEDIA_CEILING`
  *   instead. The edge worker must send `X-Forwarded-For`, or every remote visitor shares the loopback
  *   address's counter.
- * - Counters use the socket address unless the authenticated edge forwards the client address or
- *   an administrator configures a reverse proxy with `FRAMELEAF_TRUSTED_PROXIES`. Behind another
- *   reverse proxy, configure its exact addresses so clients get separate counters.
+ * - Counters use `requestSecurityAddress`: the authenticated edge's forwarded address, else Express's
+ *   `request.ip`. That follows `X-Forwarded-For` only from loopback and the private and link-local
+ *   ranges by default, or from the exact `FRAMELEAF_TRUSTED_PROXIES` when set, so a reverse proxy on
+ *   the home network gives each visitor their own counter. Behind a proxy on another address (for
+ *   example a Tailscale `100.64.0.0/10` address), set `FRAMELEAF_TRUSTED_PROXIES`.
  *
  * Going over answers 429 with `Retry-After` (seconds until the window ends) and the error code
  * `rate_limited`. If the counters cannot be reached, remote-access requests are refused (503) and
@@ -161,6 +163,24 @@ export const RATE_LIMITS = Object.freeze({
   extensionSignIn: {
     bucket: 'extension-sign-in',
     limit: 30,
+    windowSeconds: 10 * MINUTE,
+  },
+  /** FL-803: connected apps' authorization (the redirect, the Allow page's check and Allow/Deny). */
+  oauthAppAuthorize: {
+    bucket: 'oauth-app-authorize',
+    limit: 60,
+    windowSeconds: 10 * MINUTE,
+  },
+  /** FL-803: connected apps' token and revocation endpoints; apps refresh about once an hour. */
+  oauthAppToken: {
+    bucket: 'oauth-app-token',
+    limit: 120,
+    windowSeconds: 10 * MINUTE,
+  },
+  /** FL-803: apps registering themselves (RFC 7591), which also caps how many can pile up. */
+  oauthAppRegister: {
+    bucket: 'oauth-app-register',
+    limit: 10,
     windowSeconds: 10 * MINUTE,
   },
   /** `POST shared-links/login`. */
