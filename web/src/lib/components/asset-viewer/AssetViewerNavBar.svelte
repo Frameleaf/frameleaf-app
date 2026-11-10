@@ -4,6 +4,7 @@
   import RatingAction from '$lib/components/asset-viewer/actions/RatingAction.svelte';
   import ViewerMoreMenu from '$lib/components/frameleaf/ViewerMoreMenu.svelte';
   import ViewerTitle from '$lib/components/frameleaf/ViewerTitle.svelte';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
   import LoadingDots from '$lib/components/LoadingDots.svelte';
@@ -15,11 +16,21 @@
   import { getSharedLink, isEnabled, withoutIcons } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
   import { AssetTypeEnum, type AlbumResponseDto, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, IconButton, Tooltip, type ActionItem } from '@frameleaf/ui';
+  import {
+    ActionButton,
+    CommandPaletteDefaultProvider,
+    Icon,
+    IconButton,
+    Tooltip,
+    type ActionItem,
+  } from '@frameleaf/ui';
   import {
     mdiArrowLeft,
+    mdiChevronRight,
     mdiDotsHorizontal,
+    mdiFileAlertOutline,
     mdiHeart,
+    mdiImageOffOutline,
     mdiInformationOutline,
     mdiPencilOutline,
     mdiVideoOutline,
@@ -160,6 +171,23 @@
     <!-- FL-35: file name with the short EXIF line underneath; VIEWER-P8: "n of N" beside the name. -->
     <ViewerTitle {asset} {position} />
   </div>
+
+  <!-- FL-1338: an open problem with the photo's file (MediaViewer.jsx FILE_PROBLEM); opens its history in Library care. -->
+  {#if asset.fileProblem}
+    {@const missing = asset.fileProblem.missing}
+    <a
+      class="fl-file-problem"
+      class:is-missing={missing}
+      class:is-damaged={!missing}
+      data-testid="viewer-file-problem"
+      href={commandCenterUrl('care', 'files', { file: asset.fileProblem.findingId })}
+      title={$t(missing ? 'frameleaf_viewer_file_missing_title' : 'frameleaf_viewer_file_damaged_title')}
+    >
+      <Icon icon={missing ? mdiImageOffOutline : mdiFileAlertOutline} size="16" aria-hidden />
+      {$t(missing ? 'frameleaf_viewer_file_missing' : 'frameleaf_viewer_file_damaged')}
+      <Icon icon={mdiChevronRight} size="16" aria-hidden />
+    </a>
+  {/if}
 
   <div class="fl-viewer-toolbar">
     <div
@@ -338,6 +366,39 @@
 
   .fl-viewer-header :global(button[aria-pressed='true']:not(:where(.fl-rating-popover *))) {
     color: var(--fl-accent);
+  }
+
+  /* FL-1338, MediaViewer.jsx FILE_PROBLEM / media-viewer.css .mv-problem: a pill, amber when the original is gone, red when damaged. */
+  .fl-file-problem {
+    /* The viewer's chrome is dark in every theme, so these are the dark theme's warning and danger colours (tokens.css). */
+    --fl-problem: #e4bd69;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    min-height: 36px;
+    padding: 0 10px 0 12px;
+    border-radius: var(--fl-radius-pill);
+    color: var(--fl-problem);
+    background: color-mix(in srgb, var(--fl-problem) 16%, transparent);
+    font-size: var(--fl-font-sm);
+    font-weight: var(--fl-weight-semibold);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .fl-file-problem.is-damaged {
+    --fl-problem: #f0625d;
+  }
+
+  .fl-file-problem:hover,
+  .fl-file-problem:focus-visible {
+    background: color-mix(in srgb, var(--fl-problem) 26%, transparent);
+  }
+
+  .fl-file-problem:focus-visible {
+    outline: 2px solid var(--fl-problem);
+    outline-offset: 2px;
   }
 
   .fl-wide-only {

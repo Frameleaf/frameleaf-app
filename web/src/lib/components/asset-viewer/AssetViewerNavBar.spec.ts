@@ -1,20 +1,27 @@
 import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
-import { commandPaletteManager } from '@frameleaf/ui';
+import { commandPaletteManager, toastManager } from '@frameleaf/ui';
 import '@testing-library/jest-dom';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
+import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { setSharedLink } from '$lib/utils';
+import { downloadAssetFile } from '$lib/utils/asset-utils';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AssetViewerNavBar from './AssetViewerNavBar.svelte';
+
+vi.mock(import('$lib/utils/asset-utils'), async (original) => ({
+  ...(await original()),
+  downloadAssetFile: vi.fn(),
+}));
 
 vi.mock(import('$lib/managers/feature-flags-manager.svelte'), function () {
   return {
@@ -150,6 +157,99 @@ describe('AssetViewerNavBar component', () => {
       await fireEvent.click(getByLabelText('frameleaf_viewer_edit'));
 
       expect(assetViewerManager.isShowEditor).toBe(true);
+    });
+  });
+
+  describe('FL-1338 a photo whose file has a problem', () => {
+    const ownerId = 'id-of-the-user';
+    const signIn = () => {
+      authManager.setUser(userAdminFactory.build({ id: ownerId }));
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    };
+    const build = (fileProblem?: { findingId: string; missing: boolean }) =>
+      assetFactory.build({
+        ownerId,
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        originalFileName: 'IMG_0877.jpg',
+        fileProblem,
+      });
+
+    it('shows "Original missing" and links to its history', () => {
+      signIn();
+      const asset = build({ findingId: 'finding-1', missing: true });
+      const { getByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      const flag = getByTestId('viewer-file-problem');
+      expect(flag).toHaveTextContent('frameleaf_viewer_file_missing');
+      expect(flag).toHaveAttribute('href', commandCenterUrl('care', 'files', { file: 'finding-1' }));
+      expect(flag).toHaveAttribute('title', 'frameleaf_viewer_file_missing_title');
+      expect(flag).toHaveClass('is-missing');
+    });
+
+    it('shows "Damaged file" when the original is there but unreadable', () => {
+      signIn();
+      const asset = build({ findingId: 'finding-2', missing: false });
+      const { getByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      const flag = getByTestId('viewer-file-problem');
+      expect(flag).toHaveTextContent('frameleaf_viewer_file_damaged');
+      expect(flag).toHaveAttribute('title', 'frameleaf_viewer_file_damaged_title');
+      expect(flag).toHaveClass('is-damaged');
+    });
+
+    it('shows nothing for a photo without a problem', () => {
+      signIn();
+      const { queryByTestId } = renderWithTooltips(AssetViewerNavBar, { asset: build(), ...additionalProps });
+      expect(queryByTestId('viewer-file-problem')).not.toBeInTheDocument();
+    });
+
+    it('download explains that only a preview is left', async () => {
+      signIn();
+      const asset = build({ findingId: 'finding-1', missing: true });
+      const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({ id: 't', close: () => {} }) as never);
+      const { getByText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      await fireEvent.click(getByText('download'));
+      expect(show).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'frameleaf_viewer_file_only_preview',
+          button: expect.objectContaining({ label: 'frameleaf_viewer_file_see_what_happened' }),
+        }),
+        expect.anything(),
+      );
+      expect(downloadAssetFile).not.toHaveBeenCalled();
+      show.mockRestore();
+    });
+
+    it('download original explains it too, when it is offered', async () => {
+      signIn();
+      const asset = { ...build({ findingId: 'finding-1', missing: true }), isEdited: true };
+      const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({ id: 't', close: () => {} }) as never);
+      const { getByText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      await fireEvent.click(getByText('download_original'));
+      expect(show).toHaveBeenCalledTimes(1);
+      expect(downloadAssetFile).not.toHaveBeenCalled();
+      show.mockRestore();
+    });
+
+    it('edit explains that only a preview is left instead of opening the editor', async () => {
+      signIn();
+      const asset = build({ findingId: 'finding-1', missing: true });
+      const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({ id: 't', close: () => {} }) as never);
+      const { getByLabelText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      await fireEvent.click(getByLabelText('frameleaf_viewer_edit'));
+      expect(show).toHaveBeenCalledTimes(1);
+      expect(assetViewerManager.isShowEditor).toBe(false);
+      show.mockRestore();
+    });
+
+    it('a damaged photo still downloads and edits', async () => {
+      signIn();
+      const asset = build({ findingId: 'finding-2', missing: false });
+      const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({ id: 't', close: () => {} }) as never);
+      const { getByLabelText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      await fireEvent.click(getByLabelText('frameleaf_viewer_edit'));
+      expect(show).not.toHaveBeenCalled();
+      expect(assetViewerManager.isShowEditor).toBe(true);
+      show.mockRestore();
     });
   });
 
