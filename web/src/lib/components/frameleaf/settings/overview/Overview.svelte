@@ -106,7 +106,7 @@
   let about = $state<ServerAboutResponseDto | null>(null);
   let restore = $state<BackupRestoreVerificationResponseDto | null>(null);
   // FL-900: the restore drill (FL-879) is read first; the manual record (FL-71) stays the fallback
-  let cloud = $state<CloudBackupStatusResponseDto | null>(null);
+  let cloudBackup = $state<CloudBackupStatusResponseDto | null>(null);
   let compatibility = $state<RenderWorkerCompatibilityResponseDto | null>(null);
   let ml = $state<{ destinations: MlDestinationResponseDto[]; routes: MlWorkloadRouteDto[] } | null>(null);
   let overnight = $state<OvernightResponseDto | null>(null);
@@ -143,7 +143,7 @@
     ml = destinations && routes ? { destinations, routes: routes.routes } : null;
     overnight = settled(results[8]);
     phones = settled(results[9])?.devices ?? null;
-    cloud = settled(results[10]);
+    cloudBackup = settled(results[10]);
     failed = !attention && !storage;
     loading = false;
   };
@@ -219,7 +219,7 @@
       });
     }
     // FL-900: the last restore drill failed: the backup could not be proven to restore.
-    const drill = cloud?.drillNeedsAttention ? cloud.lastDrill : null;
+    const drill = cloudBackup?.drillNeedsAttention ? cloudBackup.lastDrill : null;
     if (drill) {
       found.push({
         id: 'restore-drill',

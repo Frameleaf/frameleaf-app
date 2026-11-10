@@ -167,6 +167,7 @@ describe('cloud backup schedule, retention, escrow and activity (FL-164)', () =>
     skipped: 300,
     bytesUploaded: 4_000_000,
     checked: 0,
+    drill: false,
     ...overrides,
   });
   const status = (overrides: Partial<CloudBackupStatusResponseDto>) =>

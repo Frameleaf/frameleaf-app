@@ -46,21 +46,26 @@
 
   // While a drill runs the card follows it, so its steps tick over and its result appears.
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const look = async () => {
+    let next = status;
+    try {
+      next = await getCloudBackupStatus();
+      onStatus(next);
+    } catch {
+      // the next look tries again
+    }
+    if (drillCardState(next) === 'running') {
+      follow();
+    }
+  };
   const follow = () => {
     clearTimeout(timer);
-    timer = setTimeout(async () => {
-      let next = status;
-      try {
-        next = await getCloudBackupStatus();
-        onStatus(next);
-      } catch {
-        // the next look tries again
-      }
-      if (drillCardState(next) === 'running') follow();
-    }, 3000);
+    timer = setTimeout(() => void look(), 3000);
   };
   $effect(() => {
-    if (cardState === 'running') follow();
+    if (cardState === 'running') {
+      follow();
+    }
   });
   onDestroy(() => clearTimeout(timer));
 
@@ -79,9 +84,15 @@
     }[cardState],
   );
   const body = $derived.by(() => {
-    if (cardState === 'never') return $t('frameleaf_restore_drill_never_body');
-    if (cardState === 'running') return $t('frameleaf_restore_drill_running_body');
-    if (!last) return '';
+    if (cardState === 'never') {
+      return $t('frameleaf_restore_drill_never_body');
+    }
+    if (cardState === 'running') {
+      return $t('frameleaf_restore_drill_running_body');
+    }
+    if (!last) {
+      return '';
+    }
     const when = moment(last.startedAt);
     return cardState === 'passed'
       ? $t('frameleaf_restore_drill_passed_body', {

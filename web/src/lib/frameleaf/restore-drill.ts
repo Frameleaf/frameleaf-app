@@ -10,9 +10,13 @@ export const DRILL_STEPS = ['fetch', 'unlock', 'rebuild', 'compare'] as const;
 export type DrillStepId = (typeof DRILL_STEPS)[number];
 
 export const drillCardState = (status: CloudBackupStatusResponseDto | null): DrillCardState => {
-  if (status?.activeRun?.drill) return 'running';
+  if (status?.activeRun?.drill) {
+    return 'running';
+  }
   const last = status?.lastDrill;
-  if (!last) return 'never';
+  if (!last) {
+    return 'never';
+  }
   return last.result === 'failed' ? 'failed' : 'passed';
 };
 

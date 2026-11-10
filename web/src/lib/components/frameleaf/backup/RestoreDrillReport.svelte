@@ -51,7 +51,9 @@
   };
 
   const rows = $derived.by(() => {
-    if (!drill) return [];
+    if (!drill) {
+      return [];
+    }
     const duration = drill.durationSeconds === null ? null : durationParts(drill.durationSeconds);
     return [
       [
@@ -104,7 +106,9 @@
   });
 
   const download = async () => {
-    if (!drill) return;
+    if (!drill) {
+      return;
+    }
     saving = true;
     try {
       const signed = await getCloudBackupDrillReport({ id });
@@ -151,7 +155,7 @@
           <Icon icon={mdiDownloadOutline} size="18" aria-hidden />
           {$t('frameleaf_restore_drill_report_download')}
         </Button>
-        <Button onclick={() => window.print()}>
+        <Button onclick={() => print()}>
           <Icon icon={mdiPrinterOutline} size="18" aria-hidden />
           {$t('frameleaf_restore_drill_report_print')}
         </Button>
