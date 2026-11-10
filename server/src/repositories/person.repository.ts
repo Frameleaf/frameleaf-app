@@ -974,10 +974,17 @@ export class PersonRepository {
    */
   async moveDetectedFace(id: string, box: FaceBoxPixels & { isVisible: boolean }): Promise<PersonId[]> {
     await this.db.updateTable('asset_face').set(box).where('asset_face.id', '=', id).execute();
+    return this.getPeopleFeaturing([id]);
+  }
+  /** FL-1387: the people whose main photo is cut from one of these faces. */
+  async getPeopleFeaturing(faceIds: string[]): Promise<PersonId[]> {
+    if (faceIds.length === 0) {
+      return [];
+    }
     return this.db
       .selectFrom('person')
       .select(['person.ownerId', 'person.personGroupId'])
-      .where('person.faceAssetId', '=', id)
+      .where('person.faceAssetId', '=', anyUuid(faceIds))
       .execute();
   }
   @GenerateSql({ params: [[], [], [{ faceId: DummyValue.UUID, embedding: DummyValue.VECTOR }]] })

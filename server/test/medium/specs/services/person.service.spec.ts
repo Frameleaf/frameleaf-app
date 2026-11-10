@@ -42,6 +42,7 @@ import { MediaService } from 'src/services/media.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { JobOf } from 'src/types.js';
+import { replaceHiddenFeatureFaces } from 'src/utils/cover-references.js';
 import { useRealJobPublication } from 'test/fixtures/job-publication.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory, newEmbedding } from 'test/small.factory.js';
@@ -938,6 +939,38 @@ describe(PersonService.name, () => {
         [editedAfter]: detectedAt,
         [imported]: detectedAt,
       });
+    });
+  });
+
+  describe('replaceHiddenFeatureFaces (FL-1387)', () => {
+    it('gives a person whose main face a crop hides another of their faces, and leaves one who has no other', async () => {
+      const { ctx } = setup();
+      const jobs = ctx.getMock(JobRepository);
+      jobs.queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const people = ctx.get(PersonRepository);
+      const newFeatured = async (withAnother: boolean) => {
+        const { person } = await ctx.newPerson({ ownerId: user.id });
+        const newFace = async (isVisible: boolean) => {
+          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const face = { assetId: asset.id, personGroupId: person.personGroupId, isVisible };
+          return (await ctx.newAssetFace(face)).assetFace.id;
+        };
+        const hidden = await newFace(false);
+        const other = withAnother ? await newFace(true) : undefined;
+        await people.update({ ...person, faceAssetId: hidden });
+        return { id: { ownerId: user.id, personGroupId: person.personGroupId }, hidden, other };
+      };
+      const replaced = await newFeatured(true);
+      const kept = await newFeatured(false);
+
+      await replaceHiddenFeatureFaces({ person: people, job: jobs }, [replaced.hidden, kept.hidden]);
+
+      await expect(people.getByGroupId(replaced.id)).resolves.toMatchObject({ faceAssetId: replaced.other });
+      await expect(people.getByGroupId(kept.id)).resolves.toMatchObject({ faceAssetId: kept.hidden });
+      expect(jobs.queueAll).toHaveBeenCalledExactlyOnceWith([
+        { name: JobName.PersonGenerateThumbnail, data: replaced.id },
+      ]);
     });
   });
 

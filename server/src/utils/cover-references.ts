@@ -1,6 +1,7 @@
 import { Expression, ExpressionBuilder, Kysely, sql } from 'kysely';
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { PersonRepository } from 'src/repositories/person.repository.js';
+import type { JobItem } from 'src/types.js';
 import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
 import { AlbumKind, AlbumUserRole, AssetVisibility, JobName, PetObservationState } from 'src/enum.js';
 
@@ -261,4 +262,32 @@ export const queueReleasedPersonThumbnails = async (
       )
       .toArray(),
   );
+};
+
+/**
+ * FL-1387: a person whose main face a crop now hides shows no photo (the thumbnail is refused while its
+ * face is hidden), so they take another of their faces and their thumbnail is made from it. A person
+ * with no other face keeps the hidden one: undoing the crop brings their photo back.
+ */
+export const replaceHiddenFeatureFaces = async (
+  repositories: {
+    person: Pick<PersonRepository, 'getPeopleFeaturing' | 'getRandomFace' | 'update'>;
+    job: Pick<JobRepository, 'queueAll'>;
+  },
+  hiddenFaceIds: string[],
+): Promise<void> => {
+  if (hiddenFaceIds.length === 0) {
+    return;
+  }
+  const jobs: JobItem[] = [];
+  for (const { ownerId, personGroupId } of await repositories.person.getPeopleFeaturing(hiddenFaceIds)) {
+    const face = await repositories.person.getRandomFace(personGroupId, ownerId);
+    if (face) {
+      await repositories.person.update({ ownerId, personGroupId, faceAssetId: face.id });
+      jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
+    }
+  }
+  if (jobs.length > 0) {
+    await repositories.job.queueAll(jobs);
+  }
 };

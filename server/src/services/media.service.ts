@@ -73,6 +73,7 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
+import { replaceHiddenFeatureFaces } from 'src/utils/cover-references.js';
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { straightenScale } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
@@ -3872,6 +3873,10 @@ export class MediaService extends BaseService {
 
       const faceStatuses = checkFaceVisibility(assetFaces, originalDimensions, cropBox);
       await this.personRepository.updateVisibility(faceStatuses.visible, faceStatuses.hidden);
+      await replaceHiddenFeatureFaces(
+        { person: this.personRepository, job: this.jobRepository },
+        faceStatuses.hidden.map(({ id }) => id),
+      );
 
       const ocrStatuses = checkOcrVisibility(ocrData, originalDimensions, cropBox);
       await this.ocrRepository.updateOcrVisibilities(asset.id, ocrStatuses.visible, ocrStatuses.hidden);

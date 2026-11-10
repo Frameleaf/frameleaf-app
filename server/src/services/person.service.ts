@@ -73,6 +73,7 @@ import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { CloudLibraryQueueWriter, cloudLibraryDestination } from 'src/utils/cloud-library-batch.js';
+import { replaceHiddenFeatureFaces } from 'src/utils/cover-references.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import { checkFaceVisibility } from 'src/utils/editor.js';
 import {
@@ -1195,15 +1196,19 @@ export class PersonService extends BaseService {
       if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
       }
+      const hiddenFaceIds: string[] = [];
       for (const { id: faceId, ...box } of facesToMove) {
         // a person's main photo is cut from this box, so it is made again from the new one
         const featured = await this.personRepository.moveDetectedFace(faceId, box);
-        if (featured.length > 0) {
+        if (!box.isVisible) {
+          hiddenFaceIds.push(faceId);
+        } else if (featured.length > 0) {
           await this.jobRepository.queueAll(
             featured.map((data) => ({ name: JobName.PersonGenerateThumbnail, data }) as const),
           );
         }
       }
+      await replaceHiddenFeatureFaces({ person: this.personRepository, job: this.jobRepository }, hiddenFaceIds);
 
       const reapplied =
         facesToAdd.length > 0 ? await this.reapplyFaceDecisions(currentAsset, facesToAdd) : new Set<string>();

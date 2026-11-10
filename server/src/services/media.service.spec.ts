@@ -3030,9 +3030,21 @@ describe(MediaService.name, () => {
       mocks.person.getFaces.mockResolvedValue(faces);
       mocks.ocr.getByAssetId.mockResolvedValue(ocrs);
       mocks.media.generateThumbhash.mockResolvedValue(factory.buffer());
+      // FL-1387: a person whose main photo is cut from the face the crop hides
+      const featured = { ownerId: asset.ownerId, personGroupId: newUuid() };
+      mocks.person.getPeopleFeaturing.mockResolvedValue([featured]);
+      mocks.person.getRandomFace.mockResolvedValue(faces[1]);
 
       await expect(sut.handleAssetEditThumbnailGeneration({ id: asset.id })).resolves.toBe(JobStatus.Success);
       expect(mocks.job.collectFollowups).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
+      if (cropped) {
+        expect(mocks.person.getPeopleFeaturing).toHaveBeenCalledExactlyOnceWith([faces[0].id]);
+        expect(mocks.person.update).toHaveBeenCalledExactlyOnceWith({ ...featured, faceAssetId: faces[1].id });
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.PersonGenerateThumbnail, data: featured }]);
+      } else {
+        expect(mocks.person.getPeopleFeaturing).not.toHaveBeenCalled();
+        expect(mocks.person.update).not.toHaveBeenCalled();
+      }
 
       const visibleFaces = cropped ? [faces[1], faces[2]] : [faces[1]];
       const hiddenFaces = cropped ? [faces[0]] : [];

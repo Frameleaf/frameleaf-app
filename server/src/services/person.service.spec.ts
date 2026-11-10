@@ -2292,6 +2292,43 @@ describe(PersonService.name, () => {
       });
 
       it.each([
+        ['takes another of their faces', true],
+        ['keeps the face when they have no other', false],
+      ])("when a crop hides a person's main face found again, the person %s", async (_name, hasAnother) => {
+        // an 800 x 1000 photo whose crop keeps the right half; the face is in the left half
+        const featured = { ownerId: newUuid(), personGroupId: newUuid() };
+        const face = AssetFaceFactory.create({ personGroupId: featured.personGroupId });
+        const other = AssetFaceFactory.create({ personGroupId: featured.personGroupId });
+        const asset = AssetFactory.from()
+          .face(face)
+          .file({ type: AssetFileType.Preview })
+          .exif({ exifImageWidth: 800, exifImageHeight: 1000 })
+          .edit({ action: AssetEditAction.Crop, parameters: { x: 400, y: 0, width: 400, height: 1000 } })
+          .build();
+        mocks.machineLearning.detectFaces.mockResolvedValue(
+          getAsDetectedFace({ ...face, boundingBoxX1: 110, boundingBoxX2: 210 }),
+        );
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+        mocks.person.moveDetectedFace.mockResolvedValue([featured]);
+        mocks.person.getPeopleFeaturing.mockResolvedValue([featured]);
+        mocks.person.getRandomFace.mockResolvedValue(hasAnother ? other : undefined);
+
+        await sut.handleDetectFaces({ id: asset.id });
+
+        expect(mocks.person.moveDetectedFace).toHaveBeenCalledExactlyOnceWith(face.id, { ...moved, isVisible: false });
+        expect(mocks.person.getPeopleFeaturing).toHaveBeenCalledExactlyOnceWith([face.id]);
+        if (hasAnother) {
+          expect(mocks.person.update).toHaveBeenCalledExactlyOnceWith({ ...featured, faceAssetId: other.id });
+          expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([
+            { name: JobName.PersonGenerateThumbnail, data: featured },
+          ]);
+        } else {
+          expect(mocks.person.update).not.toHaveBeenCalled();
+          expect(mocks.job.queueAll).not.toHaveBeenCalled();
+        }
+      });
+
+      it.each([
         ['shows a new face inside the crop', { x: 100, y: 100, width: 400, height: 400 }, true],
         ['hides a new face the crop leaves out', { x: 400, y: 0, width: 400, height: 1000 }, false],
       ])('%s', async (_name, parameters, isVisible) => {
