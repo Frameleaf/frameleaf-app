@@ -72,7 +72,17 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
   const auth = factory.auth({ user: { id: user.id, isAdmin: false } });
   const other = factory.auth({ user: { isAdmin: false } });
   const admin = factory.auth({ user: { isAdmin: true } });
-  const query = { skip: 0, take: 20 };
+  await db
+    .insertInto('asset_processing_failure')
+    .values({
+      assetId: corrupt.id,
+      step: 'UnknownLaterStep',
+      attempts: 1,
+      lastError: 'unreadable',
+      lastFailedAt: new Date(Date.now() + 1_000),
+    })
+    .execute();
+  const query = { skip: 0, take: 1 };
   expect(await repository.getProcessingFailures(auth, query)).toMatchObject([
     { assetId: corrupt.id, cause: 'unsupported' },
   ]);

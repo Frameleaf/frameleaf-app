@@ -16,6 +16,7 @@ import {
   LibraryScope,
   QueueName,
 } from 'src/enum.js';
+import { processingFailureSteps } from 'src/queue/processing-failure.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -126,6 +127,7 @@ export class AssetJobRepository {
     return this.visibleProcessingFailures(auth, this.db, userId)
       .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
       .where('failure.dismissedAt', 'is', null)
+      .where('failure.step', 'in', processingFailureSteps)
       .select([
         'failure.assetId',
         'failure.step',
