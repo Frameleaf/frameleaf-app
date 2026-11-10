@@ -29,13 +29,18 @@ describe('Cloud Backup account cover', () => {
       { scope: CloudBackupLicenceScope.Unknown, accounts: [] },
       { scope: CloudBackupLicenceScope.Users, accounts: [] },
     ]) {
-      expect(backupLicenceCoverage(coverage, 'en')).toMatchObject({ known: false, key: 'frameleaf_lic_cover_unknown' });
+      expect(backupLicenceCoverage(coverage, 'en')).toMatchObject({
+        known: false,
+        key: 'frameleaf_lic_cover_unknown',
+        tone: 'off',
+      });
     }
   });
   it('distinguishes confirmed none from all', () => {
     expect(backupLicenceCoverage({ scope: CloudBackupLicenceScope.None, accounts: [] }, 'en')).toMatchObject({
       known: true,
       key: 'frameleaf_lic_no_accounts',
+      tone: 'off',
     });
     expect(backupLicenceCoverage({ scope: CloudBackupLicenceScope.All, accounts: [] }, 'en')).toMatchObject({
       known: true,

@@ -153,7 +153,7 @@
             : $t('frameleaf_license_state_none');
 
   const hero = $derived({
-    tone: backupCover.tone,
+    tone: backupCover.tone === 'off' ? ('quiet' as const) : backupCover.tone,
     title: $t('frameleaf_lic_hero_accounts', { values: { accounts: backupCoverLabel } }),
     body: $t(backupCover.known ? 'frameleaf_lic_cover_confirmed_body' : 'frameleaf_lic_cover_unknown_body'),
   });

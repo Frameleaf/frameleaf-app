@@ -119,7 +119,7 @@ export class CloudManager {
     this.#loading = true;
     const generation = ++this.#generation;
     const coverageGeneration = ++this.#coverageGeneration;
-    const isCurrent = authManager.captureSession();
+    const isCurrent = authManager.captureSession({ reactive: true });
     // each loads on its own, so a licence or price failure never hides a status that loaded
     this.#backupCoverage = null;
     const [status, license, products, backupCoverage] = await Promise.allSettled([
@@ -195,7 +195,7 @@ export class CloudManager {
   }
 
   async #refreshBackupCoverage(generation: number) {
-    const isCurrent = authManager.captureSession();
+    const isCurrent = authManager.captureSession({ reactive: true });
     try {
       const coverage = await getCloudBackupLicenceCoverage();
       if (generation === this.#coverageGeneration && isCurrent()) {

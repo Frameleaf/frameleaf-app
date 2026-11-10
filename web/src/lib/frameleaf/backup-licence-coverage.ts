@@ -24,5 +24,5 @@ export const backupLicenceCoverage = (
     };
   }
   // No local account matches an opaque Cloud fingerprint: never substitute the administrator.
-  return { key: 'frameleaf_lic_cover_unknown' as const, tone: 'quiet' as const, known: false, values: undefined };
+  return { key: 'frameleaf_lic_cover_unknown' as const, tone: 'off' as const, known: false, values: undefined };
 };

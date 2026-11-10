@@ -175,6 +175,8 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(
         await screen.findByRole('heading', { name: 'Cloud Backup licence cover: Not checked' }),
       ).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Licence status' })).toHaveAttribute('data-tone', 'quiet');
+      expect(screen.getAllByText('Not checked').every((status) => status.dataset.tone === 'off')).toBe(true);
       expect(screen.getAllByText('Not included').length).toBeGreaterThan(1);
       unmount();
 

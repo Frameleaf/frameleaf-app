@@ -6,6 +6,7 @@ import {
   type UserAdminResponseDto,
   type UserPreferencesResponseDto,
 } from '@frameleaf/sdk';
+import { untrack } from 'svelte';
 import { browser } from '$app/env';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
@@ -27,10 +28,14 @@ class AuthManager {
   #preferences = $state<UserPreferencesResponseDto>();
   #sessionGeneration = $state(0);
 
-  captureSession() {
-    const generation = this.#sessionGeneration;
+  captureSession({ reactive = false }: { reactive?: boolean } = {}) {
+    // Capturing an async guard must not subscribe its caller's effect and restart work at sign-out.
+    const generation = untrack(() => this.#sessionGeneration);
     const privateGeneration = getPrivateBrowserStateGeneration();
-    return () => generation === this.#sessionGeneration && privateGeneration === getPrivateBrowserStateGeneration();
+    const current = () =>
+      generation === this.#sessionGeneration && privateGeneration === getPrivateBrowserStateGeneration();
+    // Only session-bound display state opts in; existing async guards remain nonreactive.
+    return reactive ? current : () => untrack(current);
   }
 
   get authenticated() {

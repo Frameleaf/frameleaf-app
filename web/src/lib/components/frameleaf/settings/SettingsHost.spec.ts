@@ -24,6 +24,7 @@ vi.mock('$app/state', () => ({
 vi.mock('$app/navigation', () => ({ goto: state.goto, beforeNavigate: vi.fn() }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: {
+    captureSession: () => () => true,
     get user() {
       return state.user;
     },

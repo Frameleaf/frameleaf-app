@@ -223,7 +223,7 @@
     not: 'off',
     always: 'good',
     partly: 'warn',
-    unknown: 'quiet',
+    unknown: 'off',
   };
 </script>
 
