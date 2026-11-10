@@ -95,6 +95,40 @@ describe('Server logs (FL-893)', () => {
     expect(lines().getAllByRole('button')).toHaveLength(3);
   });
 
+  it('reads older pages to fill the screen and keeps every line in time order', async () => {
+    vi.mocked(listServerLogs)
+      .mockResolvedValueOnce({ entries: PAGE, nextCursor: 'cursor-1' })
+      .mockResolvedValueOnce({
+        entries: [
+          line(0, { message: 'Older line 0', at: '2026-11-10T09:40:59.000Z' }),
+          line(9, { message: 'Oldest line', at: '2026-11-10T09:40:58.000Z' }),
+        ],
+        nextCursor: null,
+      });
+    render(LogViewer);
+
+    // fewer than a screenful shows, so the next page is read straight away
+    expect(await screen.findByText('Oldest line')).toBeInTheDocument();
+    expect(listServerLogs).toHaveBeenLastCalledWith({
+      worker: undefined,
+      q: undefined,
+      before: 'cursor-1',
+      limit: 200,
+    });
+    expect(
+      lines()
+        .getAllByRole('button')
+        .map((row) => row.querySelector('.message')?.textContent),
+    ).toEqual([
+      'Oldest line',
+      'Older line 0',
+      'Taylor signed in',
+      'IMG_2041.HEIC has no date',
+      'Couldn’t convert VID_0001.MOV',
+    ]);
+    expect(screen.queryByRole('button', { name: en.frameleaf_logs_older })).not.toBeInTheDocument();
+  });
+
   it('sends the search and the source to the server, and says when nothing matches', async () => {
     render(LogViewer);
     await screen.findByText('Taylor signed in');

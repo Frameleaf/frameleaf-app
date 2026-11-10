@@ -201,7 +201,7 @@
     if (gen !== generation) {
       return false;
     }
-    lines = mergeLines(older.entries, lines, Math.max(MAX_LINES, lines.length + older.entries.length));
+    lines = mergeLines(lines, older.entries, Math.max(MAX_LINES, lines.length + older.entries.length));
     cursor = older.nextCursor;
     return true;
   };
