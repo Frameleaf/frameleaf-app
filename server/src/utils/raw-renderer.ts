@@ -99,9 +99,10 @@ export async function renderRawWithLibRaw(
         .catch(() => 0);
   // ponytail: a scaled deadline, not stall detection. dcraw_emu reports stages only to a block-buffered stdout,
   // so there is no progress to watch; add an idle window if LibRaw is ever called in-process.
-  const deadlineMs =
-    Number(process.env.FRAMELEAF_RAW_RENDER_TIMEOUT_MS ?? RAW_RENDER_TIMEOUT_MS) +
-    megapixels * RAW_RENDER_MS_PER_MEGAPIXEL;
+  const configured = Number(process.env.FRAMELEAF_RAW_RENDER_TIMEOUT_MS ?? RAW_RENDER_TIMEOUT_MS);
+  const base = Number.isFinite(configured) && configured >= 1 ? configured : RAW_RENDER_TIMEOUT_MS;
+  // capped at the longest delay a Node timer takes
+  const deadlineMs = Math.min(base + megapixels * RAW_RENDER_MS_PER_MEGAPIXEL, 2_147_483_647);
   // Never beside the immutable original; a plain copy of a sealed Locked file renders inside the RAM folder.
   // Its own errors (a Locked key that is not loaded yet) are the caller's to see, unclassified.
   const directory = await makeWorkDirFor(source, 'raw');

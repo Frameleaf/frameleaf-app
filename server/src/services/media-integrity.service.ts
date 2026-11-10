@@ -3,6 +3,7 @@ import { open } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import type { StillRung } from 'src/types.js';
 import { AssetType, Colorspace, MediaHealthStatus } from 'src/enum.js';
+import { sharpConfiguration } from 'src/queue/sharp-configuration.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -305,8 +306,12 @@ export class MediaIntegrityService {
     try {
       return await renderRawWithLibRaw(path, signal, { halfSize: true });
     } catch (error) {
+      // The camera's picture is read into memory and cannot be larger than the file that holds it, so a
+      // file over the image worker's byte limit is not asked for one.
       const preview =
-        error instanceof RawRenderError && error.reason === 'unsupported'
+        error instanceof RawRenderError &&
+        error.reason === 'unsupported' &&
+        (await this.storageRepository.stat(path)).size <= sharpConfiguration().maxBytes
           ? await this.mediaRepository.extract(path)
           : null;
       if (!preview) {

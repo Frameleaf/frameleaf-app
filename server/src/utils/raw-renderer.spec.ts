@@ -144,6 +144,11 @@ describe('renderRawWithLibRaw', () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(390);
   });
 
+  it('ignores a timeout setting that is not a number', async () => {
+    vi.stubEnv('FRAMELEAF_RAW_RENDER_TIMEOUT_MS', 'soon');
+    expect(await renderRawWithLibRaw('photo.CR3')).toEqual(tiff);
+  });
+
   it.each([
     ['killed', 'resource_limit', 'ERR_RAW_RESOURCE_LIMIT'],
     ['libs', 'dependency_missing', 'ENOENT'],

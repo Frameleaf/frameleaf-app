@@ -2129,7 +2129,14 @@ describe(MediaService.name, () => {
         await start(raw(), { fullsize: { enabled: true } });
         await start(raw({ exifImageWidth: 2000, exifImageHeight: 1500 }));
         await start(raw({ exifImageWidth: null, exifImageHeight: null }));
-        expect(mocks.media.renderRaw.mock.calls.map(([, options]) => options?.halfSize)).toEqual([false, false, false]);
+        // half of the short edge (1296) would be under the 1440 preview
+        await start(raw({ exifImageWidth: 3872, exifImageHeight: 2592 }));
+        expect(mocks.media.renderRaw.mock.calls.map(([, options]) => options?.halfSize)).toEqual([
+          false,
+          false,
+          false,
+          false,
+        ]);
       });
 
       it('shares the processors between concurrent thumbnail jobs', async () => {

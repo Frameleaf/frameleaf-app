@@ -400,6 +400,26 @@ describe(MediaIntegrityService.name, () => {
     });
     expect(mocks.media.decodeImage).toHaveBeenCalledWith(preview, expect.objectContaining({ ladder: 'strict' }));
   });
+  it("does not read the camera's picture out of a file over the image worker's byte limit (FL-1355)", async () => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED'));
+    mocks.media.extract.mockClear();
+    const storage = new StorageRepository(mocks.logger as never);
+    const stat = storage.stat.bind(storage);
+    let calls = 0;
+    // the check's own two looks at the file see it as it is; the look before extraction sees 2 GiB
+    vi.spyOn(storage, 'stat').mockImplementation(async (path) => {
+      const real = await stat(path);
+      return ++calls === 2
+        ? Object.assign(Object.create(Object.getPrototypeOf(real)), real, { size: 2 * 1024 ** 3 })
+        : real;
+    });
+    sut = new MediaIntegrityService(storage, new CryptoRepository(), mocks.media as never);
+    expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toEqual({
+      status: 'unsupported',
+      reason: 'raw_decode_unsupported',
+    });
+    expect(mocks.media.extract).not.toHaveBeenCalled();
+  });
   it('decodes a half-size sensor render of a RAW (FL-1355)', async () => {
     vi.mocked(renderRawWithLibRaw).mockResolvedValue(bytes);
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toMatchObject({

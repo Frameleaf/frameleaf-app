@@ -741,7 +741,8 @@ export class MediaService extends BaseService {
     const rendered = await this.mediaRepository.renderRaw(asset.originalPath, {
       signal,
       pixels: width && height ? width * height : undefined,
-      halfSize: !fullsize && !!width && !!height && Math.max(width, height) / 2 >= image.preview.size,
+      // the preview size is measured on the short edge (`shouldUseExtractedImage`)
+      halfSize: !fullsize && !!width && !!height && Math.min(width, height) / 2 >= image.preview.size,
       // The processors are shared between the thumbnail jobs running at once.
       threads: Math.max(1, Math.floor(availableParallelism() / Math.max(1, concurrency))),
     });
