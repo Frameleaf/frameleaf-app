@@ -210,6 +210,12 @@ export const KEPT_STATUSES = [
 /** A finding that is not one a person kept as it is with Keep (FL-1337 W3, with the N1/N2 status guard). */
 const notKept = sql<boolean>`((asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
   OR asset_health.status NOT IN (${sql.join(KEPT_STATUSES)}))`;
+/**
+ * FL-1353: a file that could not be checked is not damage. Proven damage whose repair could not run
+ * (the drive was away, the worker busy) carries the same state and still counts.
+ */
+const notUnchecked = sql<boolean>`(asset_health.category <> 'corrupt' OR asset_health.status = 'corrupt_confirmed'
+  OR (asset_health.evidence->>'fixState') IS DISTINCT FROM 'couldnt-check')`;
 /** A search id as a claim names it: compared as a uuid, so the job's primary key is used. */
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 @Injectable()
@@ -366,6 +372,7 @@ export class MediaHealthRepository {
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .where('asset.deletedAt', 'is', null)
       .where(notKept)
+      .where(notUnchecked)
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
       .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
@@ -1837,7 +1844,7 @@ export class MediaHealthRepository {
     return this.fileProblems({})
       .where('asset_health.assetId', '=', asUuid(assetId))
       .where(this.inFileProblemTab('needs'))
-      .where(sql<boolean>`(asset_health.evidence->>'fixState') IS DISTINCT FROM 'couldnt-check'`)
+      .where(notUnchecked)
       .select(['asset_health.id', 'asset_health.category'])
       .orderBy(sql`asset_health.category = 'missing'`, 'desc')
       .orderBy('asset_health.updatedAt', 'desc')

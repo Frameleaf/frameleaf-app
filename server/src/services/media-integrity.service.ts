@@ -227,22 +227,38 @@ export class MediaIntegrityService {
       if (!stream) {
         return { status: 'unsupported', reason: 'decode_unsupported' };
       }
-      const packets = await this.mediaRepository.probePackets(input.path, stream.index, { signal, onProgress: touch });
       const tick = stream.timeBaseRational
         ? stream.timeBaseRational.num / stream.timeBaseRational.den
         : stream.timeBase
           ? 1 / stream.timeBase
           : undefined;
-      const seconds =
-        packets?.presentation && tick
+      const readable = async () => {
+        const packets = await this.mediaRepository.probePackets(input.path, stream.index, {
+          signal,
+          onProgress: touch,
+        });
+        return packets?.presentation && tick
           ? (packets.presentation.endPts - packets.presentation.startPts) * tick
           : undefined;
+      };
       // Only what could be measured counts: packets without timing say nothing about the length.
-      if (seconds !== undefined && stream.duration && seconds < stream.duration * 0.9 - 2) {
+      const short = (seconds?: number) =>
+        seconds !== undefined && !!stream.duration && seconds < stream.duration * 0.9 - 2;
+      const seconds = await readable();
+      if (short(seconds)) {
+        // A read that failed partway also ends early. The file is only cut short when a second read stops
+        // at the same place; anything else is a drive that could not be read, which is no verdict.
+        const again = await readable();
+        if (!short(again)) {
+          return undefined;
+        }
+        if (again !== seconds) {
+          return { status: 'transient', reason: 'decode_unverified' };
+        }
         return {
           status: 'corrupt',
           reason: 'decode_failed',
-          message: `truncated: ${Math.floor(seconds)} of ${Math.floor(stream.duration)} seconds can be read`,
+          message: `truncated: ${Math.floor(seconds!)} of ${Math.floor(stream.duration!)} seconds can be read`,
         };
       }
       return undefined;
@@ -271,7 +287,8 @@ export class MediaIntegrityService {
         .replace(/^[\s:]+/, '')
         .trim();
       const said = message ? { message } : {};
-      if (/moov atom not found|invalid data found when processing input|end of file|partial file/i.test(message)) {
+      // "End of file" and "partial file" are also what a failed read looks like, so they stay unverified.
+      if (/moov atom not found|invalid data found when processing input/i.test(message)) {
         return { status: 'corrupt', reason: 'decode_failed', ...said };
       }
       return { status: 'transient', reason: 'decode_unverified', ...said };

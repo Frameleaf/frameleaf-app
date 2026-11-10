@@ -198,6 +198,22 @@ describe(MediaIntegrityService.name, () => {
         message: expect.stringContaining('truncated'),
       });
     });
+    it('a read that stops early once and not again is a drive that could not be read, not damage', async () => {
+      mocks.media.probePackets.mockResolvedValueOnce(walked(4) as never);
+      expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
+    });
+    it('two short reads that stop in different places are no verdict', async () => {
+      mocks.media.probePackets.mockResolvedValueOnce(walked(4) as never).mockResolvedValueOnce(walked(5) as never);
+      expect(await sut.validate(video())).toEqual({ status: 'transient', reason: 'decode_unverified' });
+    });
+    it('"End of file" is also what a failed read says, so it is not damage', async () => {
+      mocks.media.probe.mockRejectedValue(new Error(`ffprobe exited with code 1: ${input.path}: End of file\n`));
+      expect(await sut.validate(video())).toEqual({
+        status: 'transient',
+        reason: 'decode_unverified',
+        message: 'End of file',
+      });
+    });
     it('packets that cannot be timed say nothing about the length', async () => {
       mocks.media.probePackets.mockResolvedValue(null);
       expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });

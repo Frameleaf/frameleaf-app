@@ -1435,6 +1435,19 @@ describe(MediaHealthRepository.name, () => {
       await expect(listed(sut, 'needs', user.id)).resolves.toContain(unchecked.id);
     });
 
+    it('still flags proven damage whose repair could not run (FL-1353)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      // the file changed on the drive, and the repair found the Upload drive away
+      await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+        evidence: { fixState: 'couldnt-check' },
+      });
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeDefined();
+    });
+
     it('flags it once a later check proves the damage (FL-1353)', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
