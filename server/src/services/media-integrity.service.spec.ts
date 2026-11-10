@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetType } from 'src/enum.js';
@@ -198,6 +198,22 @@ describe(MediaIntegrityService.name, () => {
         message: expect.stringContaining('truncated'),
       });
     });
+    it('a read that stops early once and not again is a drive that could not be read, not damage', async () => {
+      mocks.media.probePackets.mockResolvedValueOnce(walked(4) as never);
+      expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
+    });
+    it('two short reads that stop in different places are no verdict', async () => {
+      mocks.media.probePackets.mockResolvedValueOnce(walked(4) as never).mockResolvedValueOnce(walked(5) as never);
+      expect(await sut.validate(video())).toEqual({ status: 'transient', reason: 'decode_unverified' });
+    });
+    it('"End of file" is also what a failed read says, so it is not damage', async () => {
+      mocks.media.probe.mockRejectedValue(new Error(`ffprobe exited with code 1: ${input.path}: End of file\n`));
+      expect(await sut.validate(video())).toEqual({
+        status: 'transient',
+        reason: 'decode_unverified',
+        message: 'End of file',
+      });
+    });
     it('packets that cannot be timed say nothing about the length', async () => {
       mocks.media.probePackets.mockResolvedValue(null);
       expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
@@ -292,6 +308,30 @@ describe(MediaIntegrityService.name, () => {
       strictOnly('VipsJpeg: Invalid SOS parameters for sequential JPEG');
       expect(await sut.validate({ ...input, deep: true })).toMatchObject({ status: 'healthy' });
       expect(mocks.media.pictureSaved).not.toHaveBeenCalled();
+    });
+    it('a second read that was killed is no verdict, whatever the strict reader said', async () => {
+      mocks.media.decodeImage.mockImplementation((_input, options) =>
+        Promise.reject(
+          options.processInvalidImages
+            ? new SharpOperationError('Sharp child closed (SIGKILL)')
+            : new SharpOperationError('VipsJpeg: Premature end of JPEG file', true),
+        ),
+      );
+      expect(await sut.validate({ ...input, deep: true })).toEqual({
+        status: 'transient',
+        reason: 'decoder_resource_limit',
+      });
+    });
+    it('a damage word in the folder name is not read as damage', async () => {
+      const folder = join(directory, 'corrupt');
+      await mkdir(folder);
+      const path = join(folder, 'original.jpg');
+      await writeFile(path, bytes);
+      mocks.media.decodeImage.mockRejectedValue(new SharpOperationError(`Input file ${path} could not be read`, true));
+      expect(await sut.validate({ ...input, path, deep: true })).toMatchObject({
+        status: 'transient',
+        reason: 'decode_unverified',
+      });
     });
     it('"invalid" alone, on a picture that will not open, is a suspicion and not confirmed damage', async () => {
       mocks.media.decodeImage.mockRejectedValue(new SharpOperationError('VipsJpeg: Invalid component ID', true));
