@@ -25,7 +25,12 @@ export type AssistantProblem = 'disabled' | 'failed';
  */
 const REASON_ORDER = ['person', 'pet', 'place', 'date', 'text', 'speech', 'description'] as const;
 type ShownKind = (typeof REASON_ORDER)[number];
-const REASON_SHAPE: Record<ShownKind, { icon: string; key: string }> = {
+type ReasonKey =
+  | 'frameleaf_assistant_reason_value'
+  | 'frameleaf_assistant_reason_text'
+  | 'frameleaf_assistant_reason_speech'
+  | 'frameleaf_assistant_reason_description';
+const REASON_SHAPE: Record<ShownKind, { icon: string; key: ReasonKey }> = {
   person: { icon: mdiAccountOutline, key: 'frameleaf_assistant_reason_value' },
   pet: { icon: mdiPaw, key: 'frameleaf_assistant_reason_value' },
   place: { icon: mdiMapMarkerOutline, key: 'frameleaf_assistant_reason_value' },
@@ -38,7 +43,7 @@ const REASON_SHAPE: Record<ShownKind, { icon: string; key: string }> = {
 /** At most this many reasons under a tile, so the line stays one line; the tooltip has them all. */
 export const WHY_LINE_MAX = 3;
 
-export type WhyReason = { kind: ShownKind; icon: string; key: string; value: string };
+export type WhyReason = { kind: ShownKind; icon: string; key: ReasonKey; value: string };
 
 const isShown = (kind: string): kind is ShownKind => (REASON_ORDER as readonly string[]).includes(kind);
 
