@@ -1559,7 +1559,7 @@ export class MediaHealthService {
     const evidence = (finding?.evidence ?? {}) as Record<string, unknown>;
     if (job.startedAt || job.stage || (job.attempt ?? 0) > 0) {
       // a fix from before these times were kept began before every choice it can see
-      const began = job.startedAt ? Date.parse(job.startedAt) : Number.NEGATIVE_INFINITY;
+      const began = job.startedAt ? Date.parse(job.startedAt) : -Infinity;
       return [evidence.keptAt, evidence.retriedAt].some((at) => typeof at === 'string' && Date.parse(at) > began);
     }
     if (job.searched) {
