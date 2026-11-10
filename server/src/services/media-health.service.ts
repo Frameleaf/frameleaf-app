@@ -5124,13 +5124,16 @@ export class MediaHealthService {
 
   /**
    * The photo's file changed (a repair, a put-back, a restore, a relink or an Undo): its details and previews are
-   * read again from the file it uses now. Outside any run (Task 11b): a run the fix is a job of (an import, an
-   * administrator's Generate thumbnails) already holds this photo's finished thumbnail job, made from the old file,
-   * and would drop the request as done.
+   * read again from the file it uses now.
+   * - Its details as work of the asking job's run, as before: the metadata read that follows keeps an import's rules
+   *   for its own photos (no motion photos, no bursts, the imported capture time).
+   * - Its previews outside any run (Task 11b): a run the fix is a job of (an import, an administrator's Generate
+   *   thumbnails) already holds this photo's finished thumbnail job, made from the old file, and would drop the
+   *   request as done.
    */
   private async queueRelinkJobs(assetId: string): Promise<void> {
+    await this.jobRepository.queueAll([{ name: JobName.SidecarCheck, data: { id: assetId, source: 'upload' } }]);
     await this.jobRepository.queueOutsideRun([
-      { name: JobName.SidecarCheck, data: { id: assetId, source: 'upload' } },
       { name: JobName.AssetGenerateThumbnails, data: { id: assetId, source: 'upload' } },
     ]);
   }

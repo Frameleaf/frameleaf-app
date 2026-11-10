@@ -1304,12 +1304,14 @@ describe(MediaHealthService.name, () => {
           originalFileName: 'missing.jpg',
         }),
       );
-      // its details and previews are read again outside any run, which may already hold this photo's (11b)
-      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+      // its details are read again as work of the asking job's run, which keeps an import's metadata rules; its
+      // previews outside it, as the run may already hold this photo's finished thumbnails (11b)
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } },
+      ]);
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
         { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
       ]);
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
     });
 
@@ -5822,9 +5824,12 @@ describe(MediaHealthService.name, () => {
         await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
         expect(result).toMatchObject({ fixState: 'cant-repair', canAct: true });
         expect(mocks.job.queue).not.toHaveBeenCalled();
-        // its details and previews are read again from the file it uses now, as after a relink, outside any run
-        expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        // its details and previews are read again from the file it uses now, as after a relink; the previews
+        // outside any run
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([
           { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } },
+        ]);
+        expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
           { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
         ]);
       });

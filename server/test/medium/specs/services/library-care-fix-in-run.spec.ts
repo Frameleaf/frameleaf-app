@@ -226,12 +226,13 @@ describe('Library care inside a run', () => {
     expect(repository.replaceRepairedOriginal).toHaveBeenCalledWith(
       expect.objectContaining({ assetId, expectedOriginalPath: asset.originalPath }),
     );
-    // so its previews and its details are read again from the repaired file, as work of their own
+    // so its previews are made again from the repaired file, as work of their own outside the run
     await expect(live(JobName.AssetGenerateThumbnails)).resolves.toEqual([
       { runId: null, data: { id: assetId, source: 'upload' } },
     ]);
+    // while its details are read again as work of the run, so an import's metadata rules still apply to it
     await expect(live(JobName.SidecarCheck)).resolves.toEqual([
-      { runId: null, data: { id: assetId, source: 'upload' } },
+      { runId: claim.runId, data: { id: assetId, source: 'upload' } },
     ]);
   });
 
