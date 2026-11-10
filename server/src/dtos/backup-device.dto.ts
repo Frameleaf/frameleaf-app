@@ -6,6 +6,16 @@ export const Sha256Schema = z
   .string()
   .regex(/^[a-f\d]{64}$/i)
   .toLowerCase();
+const BackupPendingReasonSchema = z
+  .object({
+    code: z
+      .string()
+      .min(1)
+      .max(64)
+      .describe('Free-form reason code, e.g. wifi, charging, low-power, too-large; stored verbatim'),
+    count: z.int().min(0).max(2_147_483_647),
+  })
+  .meta({ id: 'BackupPendingReasonDto' });
 export const BackupDeviceWriteSchema = z
   .object({
     deviceKey: z.uuid().describe('Stable random client device identity, scoped to this owner'),
@@ -15,6 +25,17 @@ export const BackupDeviceWriteSchema = z
     appVersion: z.string().trim().min(1).max(100),
     lastSuccessfulBackupAt: z.iso.datetime().nullable().describe('Device-reported success; not server verification'),
     pendingCount: z.int().min(0).max(2_147_483_647),
+    phoneItemCount: z
+      .int()
+      .min(0)
+      .max(2_147_483_647)
+      .optional()
+      .describe('Items the device holds for backup; omitted keeps the stored value'),
+    pendingReasons: z
+      .array(BackupPendingReasonSchema)
+      .max(20)
+      .optional()
+      .describe('Why items wait, by reason code; omitted keeps the stored value'),
   })
   .meta({ id: 'BackupDeviceWriteDto' });
 export class BackupDeviceWriteDto extends createZodDto(BackupDeviceWriteSchema) {}
@@ -39,9 +60,30 @@ const BackupDeviceSchema = z
     lastSuccessfulBackupAt: DateTime.nullable(),
     pendingCount: z.int(),
     quietForDays: z.int().nullable().describe('Elapsed whole days since reported success; null if never reported'),
+    phoneItemCount: z.int().nullable().describe('Device-reported item count; null until reported'),
+    pendingReasons: z.array(BackupPendingReasonSchema),
+    lastCheck: z
+      .object({
+        id: z.uuid(),
+        checkedAt: DateTime,
+        completedAt: DateTime,
+        itemsChecked: z.int(),
+        itemsMissing: z.int(),
+      })
+      .meta({ id: 'BackupDeviceLastCheckDto' })
+      .nullable()
+      .describe('Latest completed server check; incomplete runs are ignored, null before any completes'),
   })
   .meta({ id: 'BackupDeviceDto' });
 export class BackupDeviceDto extends createZodDto(BackupDeviceSchema) {}
+export class BackupDeviceReceiptDto extends createZodDto(
+  BackupDeviceSchema.extend({
+    serverVerifiedCount: z
+      .int()
+      .nullable()
+      .describe('Items the latest completed check found on the server (checked minus missing); null before any'),
+  }).meta({ id: 'BackupDeviceReceiptDto' }),
+) {}
 export class BackupDeviceListDto extends createZodDto(
   z
     .object({ devices: z.array(BackupDeviceSchema), nextOffset: z.int().nullable() })

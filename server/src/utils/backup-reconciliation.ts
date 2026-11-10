@@ -9,6 +9,7 @@ import {
 } from 'src/dtos/backup-device.dto.js';
 import { hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 
+export type BackupPendingReason = { code: string; count: number };
 export type BucketDigest = { count: number; digest: string };
 export type ReconciliationProgress = {
   client: BucketDigest[];
