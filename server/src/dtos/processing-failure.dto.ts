@@ -2,7 +2,8 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { processingFailureSteps } from 'src/queue/processing-failure.js';
 
-const item = z.object({ assetId: z.uuid(), step: z.enum(processingFailureSteps) });
+const step = z.enum(processingFailureSteps).meta({ id: 'ProcessingFailureStep' });
+const item = z.object({ assetId: z.uuid(), step });
 
 const query = z
   .object({
@@ -17,7 +18,7 @@ const action = z.object({ items: z.array(item).min(1).max(100) }).meta({ id: 'Pr
 const response = z
   .object({
     assetId: z.uuid(),
-    step: z.string(),
+    step,
     cause: z.string(),
     attempts: z.int().nonnegative(),
     lastFailedAt: z.iso.datetime(),

@@ -5912,12 +5912,12 @@ export type ProcessingFailureResponseDto = {
     ownerId: string;
     ownerName: string;
     quarantinedAt: string | null;
-    step: string;
+    step: ProcessingFailureStep;
 };
 export type ProcessingFailureActionDto = {
     items: {
         assetId: string;
-        step: Step;
+        step: ProcessingFailureStep;
     }[];
 };
 export type SafetyLookupDto = {
@@ -39307,7 +39307,7 @@ export enum AssetJobName {
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
 }
-export enum Step {
+export enum ProcessingFailureStep {
     AssetExtractMetadata = "AssetExtractMetadata",
     AssetGenerateThumbnails = "AssetGenerateThumbnails",
     AssetEncodeVideo = "AssetEncodeVideo",

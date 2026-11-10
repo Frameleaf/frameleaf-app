@@ -132535,15 +132535,7 @@
                   "type": "string"
                 },
                 "step": {
-                  "enum": [
-                    "AssetExtractMetadata",
-                    "AssetGenerateThumbnails",
-                    "AssetEncodeVideo",
-                    "SmartSearch",
-                    "AssetDetectFaces",
-                    "Ocr"
-                  ],
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProcessingFailureStep"
                 }
               },
               "required": [
@@ -132622,7 +132614,7 @@
             "type": "string"
           },
           "step": {
-            "type": "string"
+            "$ref": "#/components/schemas/ProcessingFailureStep"
           }
         },
         "required": [
@@ -132637,6 +132629,17 @@
           "step"
         ],
         "type": "object"
+      },
+      "ProcessingFailureStep": {
+        "enum": [
+          "AssetExtractMetadata",
+          "AssetGenerateThumbnails",
+          "AssetEncodeVideo",
+          "SmartSearch",
+          "AssetDetectFaces",
+          "Ocr"
+        ],
+        "type": "string"
       },
       "ProcessingProvenanceEvidence": {
         "enum": [

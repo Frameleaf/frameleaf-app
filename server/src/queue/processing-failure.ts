@@ -33,7 +33,7 @@ export const processingIsSetAside = (
   includeSetAside: RawBuilder<unknown>,
 ) => sql<boolean>`exists (
   select 1 from asset_processing_failure f where f."assetId" = ${id} and f.step = ${name}
-  and (f."dismissedAt" is not null or (not ${includeSetAside} and f."quarantinedAt" is not null))
+  and not ${includeSetAside} and (f."dismissedAt" is not null or f."quarantinedAt" is not null)
 )`;
 
 export const queuedProcessingIsSetAside = sql<boolean>`j.name = any(${[...processingFailureSteps]}::text[])
@@ -45,7 +45,7 @@ export const queuedProcessingIsSetAside = sql<boolean>`j.name = any(${[...proces
 
 export async function recordProcessingFailure(
   db: Kysely<DB>,
-  { name, assetId }: { name: string; assetId: string | null },
+  { name, assetId, includeSetAside = false }: { name: string; assetId: string | null; includeSetAside?: boolean },
   reason: string,
   lifecycle?: 'crashed' | 'timed-out',
 ): Promise<boolean> {
@@ -65,6 +65,7 @@ export async function recordProcessingFailure(
     from asset where id = ${assetId}::uuid and status = 'active' and not "isOffline"
     on conflict ("assetId", step) do update set attempts = f.attempts + 1,
       "lastError" = excluded."lastError", "lastFailedAt" = excluded."lastFailedAt",
+      "dismissedAt" = case when ${includeSetAside} then null else f."dismissedAt" end,
       "quarantinedAt" = coalesce(f."quarantinedAt", case when f.attempts >= 2 then excluded."lastFailedAt" end)
     returning ("quarantinedAt" is not null or "dismissedAt" is not null) as "setAside"`.execute(db);
   return rows[0]?.setAside ?? false;

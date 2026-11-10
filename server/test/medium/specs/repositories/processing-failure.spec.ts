@@ -86,6 +86,16 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
 
   const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
   jobs['handlers'][JobName.AssetGenerateThumbnails] = { queueName: queue } as never;
+  const selected = db.selectFrom('asset').select('id').where('id', '=', corrupt.id);
+  expect((await jobs.queueSelection(JobName.AssetGenerateThumbnails, selected)).inserted).toBe(0);
+  expect(
+    (await jobs.queueSelection(JobName.AssetGenerateThumbnails, selected, { includeSetAside: true })).inserted,
+  ).toBe(1);
+  const [forced] = await store.claim(queue, worker, 1);
+  expect(forced.data.id).toBe(corrupt.id);
+  expect(await store.fail(forced, 'unsupported format')).toBe(true);
+  expect(await repository.getProcessingFailures(auth, query)).toMatchObject([{ assetId: corrupt.id, attempts: 4 }]);
+
   const retry = () =>
     repository.updateProcessingFailures(auth, action, (tx, name, id) =>
       jobs.queueInTransaction(tx, { name, data: { id } }),
@@ -95,6 +105,10 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
   expect(claim.data.id).toBe(corrupt.id);
   expect(await store.complete(claim, [])).toBe(true);
   expect(await store.claim(queue, worker, 1)).toEqual([]);
+  expect(await repository.getProcessingFailures(auth, query)).toEqual([]);
+  await enqueue(healthy.id);
+  const [stopping] = await store.claim(queue, worker, 1);
+  expect(await store.fail(stopping, 'Worker stopped', undefined, { interrupted: true })).toBe(true);
   expect(await repository.getProcessingFailures(auth, query)).toEqual([]);
   expect(await db.selectFrom('asset').select('originalPath').where('id', '=', corrupt.id).executeTakeFirst()).toEqual({
     originalPath: corrupt.originalPath,

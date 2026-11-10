@@ -54,6 +54,7 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
+import { isProcessingFailureStep } from 'src/queue/processing-failure.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
@@ -1299,11 +1300,18 @@ export class AssetService extends BaseService {
 
   async getProcessingFailures(auth: AuthDto, query: ProcessingFailureQueryDto) {
     const failures = await this.assetJobRepository.getProcessingFailures(auth, query);
-    return failures.map(({ lastFailedAt, quarantinedAt, ...failure }) => ({
-      ...failure,
-      lastFailedAt: new Date(lastFailedAt).toISOString(),
-      quarantinedAt: quarantinedAt ? new Date(quarantinedAt).toISOString() : null,
-    }));
+    return failures.flatMap(({ lastFailedAt, quarantinedAt, step, ...failure }) =>
+      isProcessingFailureStep(step)
+        ? [
+            {
+              ...failure,
+              step,
+              lastFailedAt: new Date(lastFailedAt).toISOString(),
+              quarantinedAt: quarantinedAt ? new Date(quarantinedAt).toISOString() : null,
+            },
+          ]
+        : [],
+    );
   }
 
   retryProcessingFailures(auth: AuthDto, dto: ProcessingFailureActionDto) {

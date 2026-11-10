@@ -607,6 +607,7 @@ export class SqlQueueStore {
       expiredRecovery?: boolean;
       stopRequestedOnly?: boolean;
       queuedCancellation?: boolean;
+      interrupted?: boolean;
       settlements?: QueueExecution['failureSettlements'];
     } = {},
   ) {
@@ -629,7 +630,9 @@ export class SqlQueueStore {
         operationId: string | null;
         name: string;
         assetId: string | null;
-      }>`select j.name, j.data->>'id' as "assetId", data->>'operationId' "operationId", "safeToRetry", attempt < "retryBaseAttempt" + 2 "retryAvailable",
+        includeSetAside: boolean;
+      }>`select j.name, j.data->>'id' as "assetId",
+          coalesce(j.data->'includeSetAside' = 'true'::jsonb, false) as "includeSetAside", data->>'operationId' "operationId", "safeToRetry", attempt < "retryBaseAttempt" + 2 "retryAvailable",
           "leaseExpiresAt" <= clock_timestamp() - interval '30 seconds' "graceElapsed",
           "cancelRequestedAt" is not null "stopRequested",
           ("cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline') cancelled,
@@ -691,6 +694,7 @@ export class SqlQueueStore {
       }
       const setAside =
         !job.cancelled &&
+        !options.interrupted &&
         (await recordProcessingFailure(
           tx,
           job,
