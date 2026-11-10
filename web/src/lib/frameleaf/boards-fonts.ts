@@ -12,6 +12,7 @@ import {
   searchLibraryItems,
   type AssetAnnotationStyle,
   type AssetFontResponseDto,
+  type LibraryItemDto,
 } from '@frameleaf/sdk';
 import { getAssetMediaUrl } from '$lib/utils';
 
@@ -124,15 +125,25 @@ export function loadBoardsFont(id: string): Promise<string> {
 export type BoardsFontChoice = { id: string; name: string; format: string; usable: boolean };
 /** The fonts in Boards, for the font list of a text annotation. */
 export async function listBoardsFonts(): Promise<BoardsFontChoice[]> {
-  // ponytail: the first 200 font items (the most one search returns); page through the search if someone keeps more fonts than that.
-  const response = await searchLibraryItems({
-    libraryItemSearchDto: {
-      filter: { libraryScope: LibraryViewScope.Design, type: { eq: AssetTypeEnum.Other } },
-      kinds: [LibraryItemSearchKind.Asset],
-      limit: 200,
-    },
-  });
-  return response.items.flatMap((item) => {
+  // ponytail: up to 25 pages of 200 items; a server-side "fonts only" list if anyone keeps more than that
+  const items: LibraryItemDto[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 25; page++) {
+    const response = await searchLibraryItems({
+      libraryItemSearchDto: {
+        filter: { libraryScope: LibraryViewScope.Design, type: { eq: AssetTypeEnum.Other } },
+        kinds: [LibraryItemSearchKind.Asset],
+        limit: 200,
+        cursor,
+      },
+    });
+    items.push(...response.items);
+    cursor = response.nextCursor ?? undefined;
+    if (!cursor) {
+      break;
+    }
+  }
+  return items.flatMap((item) => {
     const name =
       item.kind === LibraryAssetItemKind.Asset && 'originalFileName' in item.asset ? item.asset.originalFileName : null;
     return item.kind === LibraryAssetItemKind.Asset && isFontName(name)
