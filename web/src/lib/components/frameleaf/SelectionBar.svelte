@@ -123,10 +123,16 @@
    * background with progress and cancellation.
    *
    * September 24 "one toolbar": while items are selected this bar takes the library bar's place
-   * and carries the page's own actions (`leading`: Compare, Quick edit, Open in Studio) as labelled
-   * buttons ahead of the bulk actions, which are icon-only and named in tooltips. It is a frosted
-   * capsule over the photos (apple-style.css "#1 one toolbar"), and sits above the phone tab bar.
+   * and carries the page's own actions (`leading`: Compare, Quick edit, Open in Studio) beside the
+   * bulk actions. It is a frosted capsule over the photos (apple-style.css "#1 one toolbar"), and
+   * sits above the phone tab bar.
+   *
+   * FL-1391 B2 (UI review 2026-11-10): the everyday bulk actions come first, with Add to album and
+   * Share link named and the rest icons with tooltips; the page's tools follow a divider, all at
+   * the same weight.
    */
+  /** SelectionBar.jsx `LABELLED`: the everyday actions that keep their name beside the icon. */
+  const LABELLED = new Set<BulkActionId>(['add-to-album', 'create-shared-link', 'restore']);
   let {
     count = 0,
     /** Total matching the current scope, for the "Select all n" offer. Null while unknown. */
@@ -227,6 +233,43 @@
     }
     menuLeaving = true;
     cancelMenuLeave = leave(node, 'pop', () => (menuLeaving = false));
+  });
+  /**
+   * FL-1391 B2: the actions carry their names only while the capsule fits on one line. The room is
+   * the bar's own (the photo area, less the rail and any side panel) and the names are translated,
+   * so it is measured: when the action row drops under the count the names go, and they come back
+   * once the bar is wider than it was then, or what it shows changes.
+   */
+  let bar = $state<HTMLElement>();
+  let pill = $state<HTMLElement>();
+  let countRow = $state<HTMLElement>();
+  let actionRow = $state<HTMLElement>();
+  let named = $state(true);
+  let tooNarrowAt = 0;
+  $effect(() => {
+    // A different count, total or undo offer changes what has to fit.
+    void [count, total, undoLabel, leading.length];
+    tooNarrowAt = 0;
+    named = true;
+  });
+  $effect(() => {
+    if (!bar || !pill || !countRow || !actionRow || typeof ResizeObserver !== 'function') {
+      return;
+    }
+    const [host, counted, row] = [bar, countRow, actionRow];
+    const check = () => {
+      const width = host.clientWidth;
+      if (!named) {
+        named = width > tooNarrowAt;
+      } else if (row.offsetTop >= counted.offsetTop + counted.offsetHeight) {
+        tooNarrowAt = width;
+        named = false;
+      }
+    };
+    const observer = new ResizeObserver(check);
+    observer.observe(host);
+    observer.observe(pill);
+    return () => observer.disconnect();
   });
   /** The server's trash flag; unknown (flags not loaded) counts as on, the server default. */
   const trashEnabled = () => {
@@ -457,6 +500,7 @@
   role="region"
   aria-label={$t('frameleaf_selection_region')}
   inert={!open}
+  bind:this={bar}
 >
   <BulkOperationStatus
     {operations}
@@ -465,8 +509,8 @@
     onDismiss={onDismissOperation}
   />
 
-  <div class="pill">
-    <div class="count">
+  <div class="pill" class:is-compact={!named} bind:this={pill}>
+    <div class="count" bind:this={countRow}>
       <span aria-live="polite">{$t('selected_count', { values: { count: shownCount } })}</span>
       {#if onSelectAllMatching && total !== null && total > count}
         <button type="button" class="text" onclick={onSelectAllMatching}>
@@ -492,13 +536,31 @@
       </button>
     </div>
 
-    <div class="actions" role="group" aria-label={$t('frameleaf_selection_actions')}>
+    <div class="actions" role="group" aria-label={$t('frameleaf_selection_actions')} bind:this={actionRow}>
+      {#each primary as action (action.id)}
+        <button
+          type="button"
+          class="action"
+          class:is-danger={action.danger}
+          class:icon-only={leading.length > 0}
+          class:is-labelled={LABELLED.has(action.id)}
+          title={$t(action.labelKey)}
+          aria-label={$t(action.labelKey)}
+          onclick={() => perform(action.id)}
+        >
+          <Icon icon={icon(action.icon)} size="1.125rem" />
+          <span>{$t(action.labelKey)}</span>
+        </button>
+      {/each}
+      {#if leading.length > 0 && primary.length > 0}
+        <span class="divider" aria-hidden="true"></span>
+      {/if}
       {#each leading as action (action.id)}
         <button
           type="button"
           class="action is-leading"
-          class:is-primary={action.primary}
           title={action.disabled && action.disabledReason ? action.disabledReason : action.label}
+          aria-label={action.label}
           aria-disabled={action.disabled && action.disabledReason ? 'true' : undefined}
           disabled={action.disabled && !action.disabledReason}
           data-testid="selection-leading-{action.id}"
@@ -510,24 +572,6 @@
         >
           <Icon icon={action.icon} size="1.125rem" />
           <span>{action.label}</span>
-        </button>
-      {/each}
-      {#if leading.length > 0}
-        <span class="divider" aria-hidden="true"></span>
-      {/if}
-      {#each primary as action, index (action.id)}
-        <button
-          type="button"
-          class="action"
-          class:is-danger={action.danger}
-          class:icon-only={leading.length > 0}
-          class:is-everyday={index < 3}
-          title={$t(action.labelKey)}
-          aria-label={$t(action.labelKey)}
-          onclick={() => perform(action.id)}
-        >
-          <Icon icon={icon(action.icon)} size="1.125rem" />
-          <span>{$t(action.labelKey)}</span>
         </button>
       {/each}
 
@@ -810,22 +854,28 @@
   .action[aria-disabled='true']:hover {
     background: transparent;
   }
-  /* With room to spare the three everyday actions carry their names, even beside a page's own. */
-  @media (min-width: 1600px) {
-    .action.icon-only.is-everyday {
-      padding-inline: 0.6rem;
-    }
-    .action.icon-only.is-everyday span {
-      display: inline;
-    }
+  /*
+   * FL-1391 B2 (review-1110.css): Add to album and Share link carry their names beside a page's
+   * own tools, which are named too. Where that does not fit on one line (`named`), the tools and
+   * those two are icons, named in their tooltips. Phones keep their own layout below.
+   */
+  .action.icon-only.is-labelled {
+    padding-inline: 0.6rem;
   }
-  .action.is-primary {
-    background: var(--fl-accent);
-    color: var(--fl-accent-text);
-    font-weight: 500;
+  .action.icon-only.is-labelled span {
+    display: inline;
   }
-  .action.is-primary:hover:not(:disabled) {
-    background: var(--fl-accent-hover, var(--fl-accent));
+  @media (min-width: 701px) {
+    .pill.is-compact .action.is-leading {
+      padding-inline: 10px;
+    }
+    .pill.is-compact .action.icon-only.is-labelled {
+      padding-inline: 8px;
+    }
+    .pill.is-compact .action.is-leading span,
+    .pill.is-compact .action.icon-only.is-labelled span {
+      display: none;
+    }
   }
   .action:disabled {
     opacity: 0.4;
@@ -855,6 +905,25 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.25rem;
+  }
+  /* Prototype `.sb-pill`, `.sb-count` and `.sb-actions` (selection-bar.css): 13px type and its
+     tighter gaps, so the named actions fit the photo area of a 1440px window. Phones keep their own
+     sizes below. */
+  @media (min-width: 701px) {
+    .pill {
+      gap: 6px;
+      padding: 6px 8px 6px 16px;
+      font-size: 13px;
+    }
+    .count {
+      gap: 4px;
+    }
+    .actions {
+      gap: 2px;
+    }
+    .menu {
+      font-size: 0.875rem;
+    }
   }
   button {
     display: inline-flex;
