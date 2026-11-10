@@ -240,6 +240,8 @@ const NEEDS_FILE_STATES: ReadonlySet<string> = new Set<FixState>([
 const UNDO_CHANGED = "This photo changed since Frameleaf fixed it, so it can't be undone.";
 const NOTHING_TO_UNDO = 'There is nothing to undo for this photo.';
 const OWNER_ONLY = "Only the photo's owner can do that.";
+/** F2: the Upload drive, which holds Library care's folder, is not there. */
+const COPIES_DRIVE_AWAY = "Frameleaf can't reach the drive that keeps its copies right now. Try again later.";
 /** Review Focus 5: a photo's open problem is the one the list and Undo go by. */
 const OTHER_PROBLEM_OPEN = "This photo has another problem open, so this fix can't be undone yet.";
 /** Facts kept for the server's own bookkeeping, never sent: which session reported, and the app's device id. */
@@ -1299,11 +1301,14 @@ export class MediaHealthService {
     { output, digests }: { output: string; digests: FileDigests },
     record: Pick<ReplaceRepairedOriginal, 'provenance' | 'evidence' | 'steps'>,
   ): Promise<{ committed: boolean; destination: string }> {
-    const destination = path.join(
-      path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
-      RECOVERY_FOLDER,
+    const destination = this.libraryCarePath(
+      asset,
       `${asset.id}-${finding.id}-${digests.sha1.toString('hex').slice(0, 8)}.jpg`,
     );
+    if (!(await this.canReach(destination))) {
+      // F2: never into the empty mount point of the Upload drive, which would hide the repair once it is back
+      throw new ServiceUnavailableException(COPIES_DRIVE_AWAY);
+    }
     await publishVerifiedCopy({
       source: output,
       destination,
@@ -1506,15 +1511,9 @@ export class MediaHealthService {
     if (!asset || asset.deletedAt) {
       return JobStatus.Skipped;
     }
-    const libraries = await this.libraryRepository.getAll().catch(() => []);
-    if (!(await isFileRootReachable(this.storageRepository, asset.originalPath, libraries))) {
+    if (!(await this.canReach(asset.originalPath))) {
       // Review Focus 1: on an unplugged drive every file looks lost. Wait for it, recording nothing.
-      const waits = job.waits ?? 0;
-      if (waits >= MAX_DRIVE_WAITS) {
-        this.logger.log(`Library care stopped waiting for the drive that holds ${asset.id}`);
-        return JobStatus.Skipped;
-      }
-      return this.putFixBack(job, { waits: waits + 1, delay: FIX_WAIT_MS });
+      return this.waitForDrive(job, asset);
     }
     const open = (await this.mediaHealthRepository.getFindingsForAsset(asset.id)).filter((finding) =>
       isOpenFinding(finding),
@@ -1536,10 +1535,12 @@ export class MediaHealthService {
   /**
    * A feed the fix leaves alone (FL-1337): a check, preview or import asking about a problem a fix already
    * settled (apart from "couldn't check", which may be tried again), or the shared search's feed for a
-   * finding already decided. A person's Try again, and a fix carrying on, always run.
+   * finding already decided. A person's Try again, and a fix carrying on, always run. A fix that only waited
+   * for a drive has done nothing yet, so it is still the feed that asked (F1): a problem settled meanwhile,
+   * or a person's Keep, is left as it is.
    */
   private isSettledFeed(job: FixJob, finding?: MediaHealthFinding): boolean {
-    if (job.requeue || job.stage) {
+    if (job.stage || (job.attempt ?? 0) > 0) {
       return false;
     }
     const evidence = (finding?.evidence ?? {}) as Record<string, unknown>;
@@ -1560,20 +1561,20 @@ export class MediaHealthService {
       // FL-721: a sealed original is ciphertext; nothing here can call it damaged or repair it
       return JobStatus.Skipped;
     }
-    let message = job.message;
-    let verdict: CandidateValidation | undefined;
-    let busy = false;
-    if (message === undefined) {
-      // a check, an import, a person or a retry asked: what does the decoder say now?
-      const result = await this.validateReadableAssetIntegrity(asset, { verifyChecksum: false });
-      verdict = result ? ('busy' in result ? result.candidate : result) : undefined;
-      // gone between the two looks: as busy, the next try sees it missing
-      busy = !!result && ('busy' in result || result.status === MediaHealthStatus.Missing);
-      message = verdict ? this.decoderMessage(verdict) : '';
-    }
+    // Whoever asked, the file itself is looked at now (F1): a preview's or a check's words are no verdict. A
+    // preview can fail for reasons that are not the photo's, and a drive that was away is back.
+    const result = await this.validateReadableAssetIntegrity(asset, { verifyChecksum: false });
+    const verdict = result ? ('busy' in result ? result.candidate : result) : undefined;
+    // gone between the two looks: as busy, the next try sees it missing
+    const busy = !!result && ('busy' in result || result.status === MediaHealthStatus.Missing);
     // the decoder opened it: whatever is wrong is not in the picture
-    const decoded = !busy && !verdict && job.message === undefined;
+    const decoded = !busy && !verdict;
+    // the words of whatever asked only say more about a file that will not open now
+    const message = verdict ? (job.message ?? this.decoderMessage(verdict)) : '';
     const matches = busy ? null : await this.matchesStoredChecksum(asset);
+    if (decoded) {
+      await this.remakeLostPreviews(job, asset);
+    }
     if (decoded && matches !== false) {
       // it opens, and it is the file Frameleaf stored: nothing is wrong with it now
       return this.settleHealthy(open);
@@ -1591,7 +1592,7 @@ export class MediaHealthService {
         repairableType: isJpegFileName(asset.originalFileName),
         writable: !asset.isExternal,
       });
-    let cause: FileCause = busy ? 'busy' : decoded ? 'changed' : await this.causeOf(asset, message, matches);
+    let cause: FileCause = busy ? 'busy' : decoded ? 'changed' : await this.causeOf(asset, message, matches, verdict);
     let action = next(cause);
     if (action === 'retry-later') {
       // busy is never a verdict: no finding and no step until it has had its three tries
@@ -1654,7 +1655,7 @@ export class MediaHealthService {
         return JobStatus.Success;
       }
       // no stored original anywhere: the file is all there is, so treat it for what is wrong with it
-      cause = await this.causeOf(asset, message, null);
+      cause = await this.causeOf(asset, message, null, verdict);
       action = next(cause);
     }
 
@@ -1673,6 +1674,16 @@ export class MediaHealthService {
       }
       case 'repair': {
         const repaired = await this.repairAutomatically(finding, asset, lead);
+        if (repaired === 'drive-away' && (job.waits ?? 0) < MAX_DRIVE_WAITS) {
+          // F2: wait for the Upload drive like an unplugged one; what came before is recorded once
+          await this.mediaHealthRepository.appendSteps(this.stepsOf(finding, lead));
+          return this.waitForDrive(job, asset, { stage: 'treat' });
+        }
+        if (repaired === 'drive-away') {
+          // a day without the drive: the person can try again once it is back
+          await this.settle(finding, 'couldnt-check', [...lead, checkedStep('busy')]);
+          return JobStatus.Success;
+        }
         if (repaired === 'busy' && attempt < BUSY_RETRY_DELAYS_MS.length) {
           // the image worker crashed or the photo changed under the repair (Review Focus 2): try again
           return tryAgain();
@@ -1719,7 +1730,8 @@ export class MediaHealthService {
     if ((await this.findOriginal(job, asset, finding, [])) === 'done') {
       return JobStatus.Success;
     }
-    if (!settings.askPhones) {
+    // F4: phones are asked only for a photo they are shown (a SHA-1 of its contents, not external, not Locked)
+    if (!settings.askPhones || !(await this.mediaHealthRepository.isShownToPhones(asset.ownerId, asset.id))) {
       await this.settle(finding, 'missing', []);
       return JobStatus.Success;
     }
@@ -1766,8 +1778,14 @@ export class MediaHealthService {
               folderFacts(await this.ownerFolders(asset), search.verified[0].candidatePath)),
           },
         };
-        if (!(await this.putBackCopy(asset, finding, search.verified, [...lead, found]))) {
-          // copies, but not one Frameleaf may pick by itself: the person chooses
+        const put = await this.putBackCopy(asset, finding, search.verified, [...lead, found]);
+        if (put === 'wait' && (job.waits ?? 0) < MAX_DRIVE_WAITS) {
+          // F2: the drive it goes to is not there; the search is done, so the next try only puts it back
+          await this.waitForDrive(job, asset);
+          return 'done';
+        }
+        if (put !== true) {
+          // copies, but not one Frameleaf may pick by itself (or a day without the drive): the person chooses
           await this.settle(finding, finding.category === MediaHealthCategory.Missing ? 'missing' : 'cant-repair', [
             ...lead,
             found,
@@ -1829,10 +1847,10 @@ export class MediaHealthService {
         steps: lead,
       });
     }
-    await this.jobRepository.queue({
-      name: JobName.MediaHealthLocateMissing,
-      data: { userId: asset.ownerId, pending: true },
-    });
+    // F8: never as a job of the run this fix is in, which keeps one search per owner and drops the next
+    await this.jobRepository.queueOutsideRun([
+      { name: JobName.MediaHealthLocateMissing, data: { userId: asset.ownerId, pending: true } },
+    ]);
   }
 
   /**
@@ -1858,13 +1876,16 @@ export class MediaHealthService {
     return { copies: copies.length, usable: copies, verified };
   }
 
-  /** Put the one verified copy back as the asset's original, with the steps that say so. */
+  /**
+   * Put the one verified copy back as the asset's original, with the steps that say so. `wait` when the drive it
+   * would be written to is not there (F2): nothing was written, and the fix waits for it.
+   */
   private async putBackCopy(
     asset: MediaHealthAsset,
     finding: MediaHealthFinding,
     verified: MediaHealthCandidate[],
     steps: FindingStep[],
-  ): Promise<boolean> {
+  ): Promise<boolean | 'wait'> {
     if (verified.length !== 1) {
       return false;
     }
@@ -1884,6 +1905,11 @@ export class MediaHealthService {
       if (current.isExternal && !current.libraryId) {
         return false;
       }
+      const source = await this.sourceFolderOf(candidate);
+      if (source) {
+        // F3: the library never comes to depend on the folders an import read from
+        return this.copyBackFromSource(current, finding, candidate, source, steps);
+      }
       const item = await this.relinkInPlace(current.ownerId, finding, current, candidate, {
         evidence,
         steps: [
@@ -1895,6 +1921,10 @@ export class MediaHealthService {
     }
     if (current.isExternal) {
       return false;
+    }
+    if (!(await this.canReach(this.libraryCarePath(current, '')))) {
+      // F2: the copy and the changed file it replaces go into Library care's folder on the Upload drive
+      return 'wait';
     }
     // a changed file is replaced by a published copy of its original and kept beside it, like a repair
     const item = await this.publishAndCommit(
@@ -1917,20 +1947,101 @@ export class MediaHealthService {
   }
 
   /**
+   * F3: the folder an Immich import read its photos from that holds this copy, when the copy is there and not in
+   * library storage (an import in place reads from inside library storage, and its copies are relinked as any).
+   */
+  private async sourceFolderOf(candidate: MediaHealthCandidate): Promise<string | undefined> {
+    if (this.candidateRootKind(candidate)) {
+      return;
+    }
+    return (await this.sourceRoots()).find((folder) => isPathWithin(folder, candidate.candidatePath));
+  }
+
+  /**
+   * F3: a lost original found in a folder an Immich import read from is copied to the photo's own place in library
+   * storage, verified and never over anything, as Cloud Backup puts one back. The file it was copied from is left
+   * exactly as it is, so deleting the old app's data later never loses the photo. Its Undo moves the copy aside into
+   * Library care, as a restore's does. `wait` when the photo's drive is not there.
+   */
+  private async copyBackFromSource(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    candidate: MediaHealthCandidate,
+    folder: string,
+    steps: FindingStep[],
+  ): Promise<boolean | 'wait'> {
+    if (
+      asset.isExternal ||
+      [StorageFolder.Upload, StorageFolder.Library].every(
+        (base) => !isPathWithin(StorageCore.getBaseFolder(base), asset.originalPath),
+      )
+    ) {
+      // only a photo whose own place is in library storage gets a copy there
+      return false;
+    }
+    const source = await resolveInsideRoot(folder, candidate.candidatePath);
+    const digests = source && (await this.validateManagedCandidate(asset, source));
+    if (!source || !digests) {
+      return false;
+    }
+    if (!(await this.canReach(asset.originalPath))) {
+      return 'wait';
+    }
+    try {
+      await publishVerifiedCopy({
+        source,
+        destination: asset.originalPath,
+        expected: digests,
+        hash: (filePath) => this.cryptoRepository.hashFileDigests(filePath),
+      });
+    } catch (error) {
+      this.logger.warn(`Library care could not copy ${asset.id} back from ${source}: ${getErrorMessage(error)}`);
+      return false;
+    }
+    const settled = await this.mediaHealthRepository.settleFinding({
+      healthId: finding.id,
+      evidence: { fixState: 'found-again' satisfies FixState, searchPending: false },
+      status: MediaHealthStatus.Relinked,
+      steps: [
+        ...steps,
+        {
+          step: 'put-back',
+          outcome: 'ok',
+          // copied, not linked: the library keeps a file of its own
+          facts: { copied: true },
+          undo: {
+            kind: 'restore',
+            previousPath: asset.originalPath,
+            originalPath: asset.originalPath,
+            checksum: asset.checksum.toString('hex'),
+          },
+        },
+      ],
+    });
+    // the photo's own bytes are at its own path again either way: its details and previews are read again
+    await this.queueRelinkJobs(asset.id);
+    return settled;
+  }
+
+  /**
    * Repair a damaged JPEG without a person (design §3 step 3): FL-1273's repair, published into the
    * hidden Library Care folder, the asset relinked to it and the damaged file kept beside it. Its
    * refusals are FL-1273's (external libraries, encrypted Locked originals, anything but a JPEG) without
    * the owner check or the reviewed checksum: the repair is deterministic, it runs on the owner's
    * behalf, and Undo puts the damaged file back. `busy` when the image worker gave up or the photo
-   * changed while it was repaired.
+   * changed while it was repaired; `drive-away` when the Upload drive it is published to is not there.
    */
   private async repairAutomatically(
     finding: MediaHealthFinding,
     asset: MediaHealthAsset,
     steps: FindingStep[] = [],
-  ): Promise<'repaired' | 'part-saved' | 'not-repaired' | 'busy'> {
+  ): Promise<'repaired' | 'part-saved' | 'not-repaired' | 'busy' | 'drive-away'> {
     if (asset.isExternal || !isJpegFileName(asset.originalFileName) || (await this.isEncryptedOriginal(asset))) {
       return 'not-repaired';
+    }
+    if (!(await this.canReach(this.libraryCarePath(asset, '')))) {
+      // F2: the repair goes into Library care's folder on the Upload drive, which is not there
+      return 'drive-away';
     }
     let repaired: { destination: string; checksum: string; fixState: 'repaired' | 'part-saved' } | undefined;
     try {
@@ -2012,12 +2123,26 @@ export class MediaHealthService {
     await this.queueRelinkJobs(asset.id);
   }
 
-  /** It opens and is the stored file: each open finding is settled, saying so. */
+  /**
+   * The file opens (F1): a photo whose preview failed, or that has none, gets its previews made again, since its
+   * thumbnail job ended when it was handed over. They fail as a job of their own if they still can't be made, and
+   * never come back here.
+   */
+  private async remakeLostPreviews(job: FixJob, asset: MediaHealthAsset): Promise<void> {
+    if (job.from === 'preview' || !asset.previewPath || !asset.thumbnailPath) {
+      await this.jobRepository.queue({
+        name: JobName.AssetGenerateThumbnails,
+        data: { id: asset.id, source: 'upload', afterCare: true },
+      });
+    }
+  }
+
+  /** It opens and is the stored file: each open finding is settled, saying so, with no fix state left on it. */
   private async settleHealthy(open: MediaHealthFinding[]): Promise<JobStatus> {
     for (const finding of open) {
       await this.mediaHealthRepository.settleFinding({
         healthId: finding.id,
-        evidence: {},
+        evidence: { fixState: null },
         status: MediaHealthStatus.Resolved,
         steps: [{ step: 'checked', outcome: 'ok' }],
       });
@@ -2048,6 +2173,38 @@ export class MediaHealthService {
     });
   }
 
+  /**
+   * A drive the fix needs is not there (Review Focus 1, F2): put the fix back for half an hour, recording nothing,
+   * for at most a day of waits. Then it stops until the next file check or a person's Try again. The words that
+   * asked are dropped: when the drive is back, the fix looks at the file itself.
+   */
+  private async waitForDrive(job: FixJob, asset: MediaHealthAsset, changes: Partial<FixJob> = {}) {
+    const waits = job.waits ?? 0;
+    if (waits >= MAX_DRIVE_WAITS) {
+      this.logger.log(`Library care stopped waiting for a drive that ${asset.id} needs`);
+      return JobStatus.Skipped;
+    }
+    return this.putFixBack(job, { waits: waits + 1, delay: FIX_WAIT_MS, message: undefined, ...changes });
+  }
+
+  /**
+   * A file in the owner's Library care folder, the hidden folder on the Upload drive where repairs, put-back
+   * copies and the files they replace are kept.
+   */
+  private libraryCarePath(asset: Pick<MediaHealthAsset, 'id' | 'ownerId'>, name: string): string {
+    return path.join(
+      path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
+      RECOVERY_FOLDER,
+      name,
+    );
+  }
+
+  /** Whether the drive a path is on can be reached: Frameleaf's own folders, or an external library's. */
+  private async canReach(filePath: string): Promise<boolean> {
+    const libraries = await this.libraryRepository.getAll().catch(() => []);
+    return isFileRootReachable(this.storageRepository, filePath, libraries);
+  }
+
   /** Put this fix back on its queue under its next key, after `delay` when given (FL-1337 ruling R1). */
   private async putFixBack(job: FixJob, changes: Partial<FixJob>): Promise<JobStatus> {
     await this.jobRepository.queue({
@@ -2057,14 +2214,29 @@ export class MediaHealthService {
     return JobStatus.Success;
   }
 
-  /** What is wrong with the file, in plain words (design §2a): from the decoder's words and the bytes. */
+  /**
+   * What is wrong with the file, in plain words (design §2a): from the decoder's words and the bytes. A file the
+   * check calls unsupported (a format it does not decode, such as a PSD, some RAWs or an audio file) is not
+   * supported rather than unreadable when nothing else is wrong with it (F5). Never a JPEG: one without a start
+   * marker that won't decode is damaged.
+   */
   private async causeOf(
     asset: MediaHealthAsset,
     message: string,
     matchesStoredChecksum: boolean | null,
+    verdict?: Pick<CandidateValidation, 'status'>,
   ): Promise<FileCause> {
     try {
-      return classifyFileProblem({ message, shape: await readFileShape(asset.originalPath), matchesStoredChecksum });
+      const cause = classifyFileProblem({
+        message,
+        shape: await readFileShape(asset.originalPath),
+        matchesStoredChecksum,
+      });
+      return cause === 'unreadable' &&
+        verdict?.status === MediaHealthStatus.UnsupportedRaw &&
+        !isJpegFileName(asset.originalFileName)
+        ? 'not-supported'
+        : cause;
     } catch (error) {
       // an I/O error is busy: never a verdict on the file
       this.logger.debug(`Could not read ${asset.id} to tell what is wrong with it: ${getErrorMessage(error)}`);
@@ -2265,16 +2437,22 @@ export class MediaHealthService {
       throw new ConflictException(OTHER_PROBLEM_OPEN);
     }
     const [asset] = await this.mediaHealthRepository.getAssets([record.assetId]);
-    // a repair that stopped before it recorded what Undo needs: its repaired file says what it left
+    // a repair that stopped before it recorded what Undo needs: its repaired file says what it left, where the fix
+    // left it or, once Folder layout moved it, where the photo is now
     const expectedChecksum = fix.checksum
       ? Buffer.from(fix.checksum, 'hex')
       : asset &&
-        (await this.cryptoRepository.hashFileMatching(fix.originalPath, asset.checksum).catch((): undefined => {}));
+        ((await this.cryptoRepository.hashFileMatching(fix.originalPath, asset.checksum).catch((): undefined => {})) ??
+          (await this.cryptoRepository
+            .hashFileMatching(asset.originalPath, asset.checksum)
+            .catch((): undefined => {})));
+    // F9: the photo's checksum, the Trash and its edits say whether it changed since the fix, not its path. The only
+    // thing that moves a stored original is Frameleaf's own Folder layout, which runs right after every fix and
+    // never changes the file; the repository holds the photo to the path read here.
     if (
       !asset ||
       asset.deletedAt ||
       asset.ownerId !== auth.user.id ||
-      asset.originalPath !== fix.originalPath ||
       !expectedChecksum ||
       !asset.checksum.equals(expectedChecksum)
     ) {
@@ -2357,14 +2535,12 @@ export class MediaHealthService {
     base: Omit<UndoFileFix, 'evidence'>,
   ): Promise<UndoFileFixResult> {
     const extension = path.extname(asset.originalPath).toLowerCase();
-    const aside = path.join(
-      path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
-      RECOVERY_FOLDER,
+    const aside = this.libraryCarePath(
+      asset,
       `${asset.id}-${record.id}.restored${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`,
     );
-    const libraries = await this.libraryRepository.getAll().catch(() => []);
-    if (!(await isFileRootReachable(this.storageRepository, aside, libraries))) {
-      throw new ConflictException("Frameleaf can't reach the drive that keeps its copies right now. Try again later.");
+    if (!(await this.canReach(aside))) {
+      throw new ConflictException(COPIES_DRIVE_AWAY);
     }
     // the file at its path must still be the one the restore put there
     const present = await this.cryptoRepository
@@ -2465,6 +2641,10 @@ export class MediaHealthService {
     // only a folder the search walks for this photo: library storage and recovery folders for a stored
     // photo, its own library for an external one; any other would say it looked where it did not
     const [asset] = await this.mediaHealthRepository.getAssets([record.assetId]);
+    if (asset?.isExternal && record.category !== MediaHealthCategory.Missing) {
+      // an external library's photo is looked for only when it is missing: a changed one is its library's to fix
+      throw new BadRequestException("Frameleaf can only look for an external library's photo when it is missing.");
+    }
     const searchable = asset?.isExternal
       ? !!asset.libraryId && folder.id === libraryRootId(asset.libraryId)
       : folder.id === MANAGED_ROOT_ID || rootKindOf(folder.id) === 'recovery';
@@ -2507,14 +2687,14 @@ export class MediaHealthService {
         continue;
       }
       const found: FindingStep = { step: 'searched-copy', outcome: 'ok', facts: { ...facts, copies: copies.length } };
-      if (
-        !(await this.putBackCopy(
-          asset,
-          finding,
-          search.verified.filter((candidate) => inFolder(candidate)),
-          [found],
-        ))
-      ) {
+      const put = await this.putBackCopy(
+        asset,
+        finding,
+        search.verified.filter((candidate) => inFolder(candidate)),
+        [found],
+      );
+      if (put !== true) {
+        // not put back (or its drive is not there now): the copies are recorded, and the person chooses
         await this.mediaHealthRepository.appendSteps(this.stepsOf(finding, [found]));
       }
     }
@@ -2545,7 +2725,7 @@ export class MediaHealthService {
       this.privacyFor(auth),
     );
     if (!record) {
-      throw new NotFoundException('Frameleaf has no record of this problem');
+      throw new NotFoundException('Frameleaf has no record of this problem.');
     }
     return record;
   }
@@ -3026,11 +3206,11 @@ export class MediaHealthService {
 
     const extension = path.extname(asset.originalFileName).toLowerCase();
     const name = `${asset.id}-${finding.id}${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`;
-    const destination = path.join(
-      path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
-      RECOVERY_FOLDER,
-      name,
-    );
+    const destination = this.libraryCarePath(asset, name);
+    if (!(await this.canReach(destination))) {
+      // F2: never into the empty mount point of the Upload drive, which would hide the copy once it is back
+      return transient(id, COPIES_DRIVE_AWAY);
+    }
     await publishVerifiedCopy({
       source,
       destination,
@@ -3556,7 +3736,8 @@ export class MediaHealthService {
       (finding) => isOpenFinding(finding) && !!(finding.evidence as Record<string, unknown> | null)?.searchPending,
     );
     if (waiting.length > 0) {
-      await this.jobRepository.queueAll(
+      // F8: outside any run, so a later search's feed for the same photo is never dropped as already done
+      await this.jobRepository.queueOutsideRun(
         waiting.map(({ assetId }) => ({
           name: JobName.MediaHealthFixAsset as const,
           data: { id: assetId, from: 'check' as const, searched: true },
@@ -3688,25 +3869,26 @@ export class MediaHealthService {
       await this.mediaHealthRepository.replaceCandidates(finding.id, [...kept, ...fresh]);
 
       const validCandidates = [...kept, ...fresh].filter(({ status }) => status === MediaHealthStatus.Found);
-      // A new candidate list has new ids: a choice made from the old list no longer applies.
-      const { chosenCandidateId: _stale, ...resolution } = (finding.resolution ?? {}) as Record<string, unknown>;
-      const evidence = {
-        ...(finding.evidence as Record<string, unknown>),
-        candidateCount: kept.length + fresh.length,
-        validatedCandidateCount: validCandidates.length,
-        searchTruncated: !asset.isExternal && truncated,
-        ...(input.rootIds && { searchedRootIds: input.rootIds }),
+      // F7: only what this search found is written, onto the finding as it is now (the walk took a while): a
+      // Keep, a dismissal, a put-back or a fix's state written meanwhile stays, and a closed finding is left as
+      // it is. A new candidate list has new ids, so a choice made from the old list no longer applies.
+      const result = {
+        healthId: finding.id,
+        assetId: asset.id,
+        expectedUpdateId: asset.updateId,
+        originalPath: asset.originalPath,
+        evidence: {
+          candidateCount: kept.length + fresh.length,
+          validatedCandidateCount: validCandidates.length,
+          searchTruncated: !asset.isExternal && truncated,
+          ...(input.rootIds && { searchedRootIds: input.rootIds }),
+        },
       };
 
       if (isDamaged) {
         // The damage itself is unchanged: keep its status and the time it was confirmed, which is
         // what the trash gate measures recency by.
-        await this.mediaHealthRepository.upsertFinding({
-          ...finding,
-          expectedUpdateId: asset.updateId,
-          evidence,
-          resolution,
-        });
+        await this.mediaHealthRepository.recordSearchResult({ ...result, resolution: {} });
         continue;
       }
 
@@ -3717,22 +3899,15 @@ export class MediaHealthService {
             ? MediaHealthStatus.Candidate
             : MediaHealthStatus.Missing;
 
-      await this.mediaHealthRepository.upsertFinding({
-        runId: input.runId,
-        assetId: asset.id,
-        expectedUpdateId: asset.updateId,
-        category: MediaHealthCategory.Missing,
-        status: findingStatus,
-        severity:
-          findingStatus === MediaHealthStatus.Missing ? MediaHealthSeverity.Critical : MediaHealthSeverity.Warning,
-        originalPath: asset.originalPath,
-        originalFileName: asset.originalFileName,
-        evidence,
-        resolution: {
-          ...resolution,
-          autoRelinkable: validCandidates.length === 1,
+      await this.mediaHealthRepository.recordSearchResult({
+        ...result,
+        resolution: { autoRelinkable: validCandidates.length === 1 },
+        found: {
+          status: findingStatus,
+          severity:
+            findingStatus === MediaHealthStatus.Missing ? MediaHealthSeverity.Critical : MediaHealthSeverity.Warning,
+          runId: input.runId,
         },
-        checkedAt: new Date(),
       });
     }
 
@@ -4103,17 +4278,23 @@ export class MediaHealthService {
         evidence: result.evidence,
         resolution: result.resolution,
       },
-      this.decoderMessage(result),
+      // the decoder's own words only (F1): a reason such as a checksum mismatch is not something it said
+      result.message,
     );
     return 'corrupt';
   }
 
+  /** The folders an Immich import read its photos from. */
+  private async sourceRoots(): Promise<string[]> {
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FileFixSourceRoots);
+    return (Array.isArray(stored) ? stored : []).filter((folder): folder is string => typeof folder === 'string');
+  }
+
   /** The folders an Immich import read its photos from, while each is there to be read (an unplugged one is left out). */
   private async mountedSourceRoots(): Promise<string[]> {
-    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FileFixSourceRoots);
     const mounted: string[] = [];
-    for (const folder of Array.isArray(stored) ? stored : []) {
-      if (typeof folder === 'string' && (await pathState(this.storageRepository, folder)) === 'present') {
+    for (const folder of await this.sourceRoots()) {
+      if ((await pathState(this.storageRepository, folder)) === 'present') {
         mounted.push(folder);
       }
     }
@@ -4121,17 +4302,18 @@ export class MediaHealthService {
   }
 
   /** Whether the drive the original lives on can be reached; on an unplugged one every file looks lost. */
-  private async isDriveReachable(asset: Pick<MediaHealthAsset, 'originalPath'>): Promise<boolean> {
-    const libraries = await this.libraryRepository.getAll().catch(() => []);
-    return isFileRootReachable(this.storageRepository, asset.originalPath, libraries);
+  private isDriveReachable(asset: Pick<MediaHealthAsset, 'originalPath'>): Promise<boolean> {
+    return this.canReach(asset.originalPath);
   }
 
   /**
-   * Record what a file check found and, when it is a new problem, hand it to the fix (FL-1337): a
-   * finding that is new, or that changes into Missing or CorruptConfirmed (or comes back after it was
-   * resolved or dismissed), gets the step that found it, written with the finding. A new finding also
-   * gets the first lines of its history from what the photo row knows. A problem already open with
-   * the same status is only refreshed: no step, nothing queued.
+   * Record what a file check found and, when it is a new problem, hand it to the fix (FL-1337). A new problem
+   * is one of a category that was not open (F6): none yet, or one that comes back after it was resolved or
+   * dismissed. It gets the step that found it, written with the finding, and a first finding also the first
+   * line of its history from what the photo row knows. A change of status within an open problem (missing to
+   * found, suspected to confirmed damage) is the same problem: refreshed, with no step, nothing queued and
+   * how the fix left it kept. Every problem a check records is handed over, including a file it can't decode
+   * (F5), which the fix leaves as it is, and a suspected one, which the fix looks at again.
    */
   private async recordFileProblem(
     asset: MediaHealthAsset,
@@ -4141,25 +4323,30 @@ export class MediaHealthService {
     const existing = ((await this.mediaHealthRepository.getFindingsForAsset(asset.id)) ?? []).find(
       ({ category }) => category === problem.category,
     );
-    const isNew = !existing || !isOpenFinding(existing) || existing.status !== problem.status;
-    const begins =
-      problem.status === MediaHealthStatus.Missing || problem.status === MediaHealthStatus.CorruptConfirmed;
+    const isNew = !existing || !isOpenFinding(existing);
     // An open problem nobody has handled yet (an import wrote it, or it predates the fix) is handed over once;
     // handling gives it a fix state, or a search waiting for its next try, and it is not handed over again.
     const evidence = (existing?.evidence ?? {}) as Record<string, unknown>;
-    const unhandled = !isNew && begins && evidence.fixState === undefined && evidence.searchPending === undefined;
-    const hands = begins && (isNew || unhandled);
+    const unhandled = !isNew && evidence.fixState === undefined && evidence.searchPending === undefined;
+    const hands = isNew || unhandled;
     const steps: FindingStep[] = [];
     if (!existing) {
       // only what the row knows: it carries no upload device or import origin, and nothing records a move
-      steps.push({ step: 'added', outcome: 'ok', at: asset.createdAt });
+      steps.push({ step: 'added', outcome: 'info', at: asset.createdAt });
     }
-    if (hands && isNew) {
-      const facts = folderFacts(await this.ownerFolders(asset), asset.originalPath);
+    // What the check found starts the story, but not "won't open" for a file that is only not the one
+    // Frameleaf stored (it may open), nor for one it can't decode: the fix says what it found about those.
+    const says =
+      problem.category === MediaHealthCategory.Missing
+        ? 'not-on-drive'
+        : problem.status !== MediaHealthStatus.UnsupportedRaw && problem.evidence?.reason !== 'expected_mismatch'
+          ? 'wont-open'
+          : undefined;
+    if (isNew && says) {
       steps.push({
-        step: problem.category === MediaHealthCategory.Missing ? 'not-on-drive' : 'wont-open',
+        step: says,
         outcome: 'failed',
-        facts,
+        facts: folderFacts(await this.ownerFolders(asset), asset.originalPath),
       });
     }
     const finding = await this.mediaHealthRepository.upsertFinding({
