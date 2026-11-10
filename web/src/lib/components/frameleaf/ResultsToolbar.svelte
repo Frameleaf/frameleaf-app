@@ -104,11 +104,10 @@
      * (the Locked view's reasons, LIB-P2).
      */
     leading?: import('svelte').Snippet;
-    /**
-     * The layout tabs and the timeline grouping, at the start of the row (FL-1391 B1, App.jsx
-     * `has-layout-tabs`). The count is then for screen readers only: the floating bar shows it.
-     */
+    /** The layout tabs and the timeline grouping, at the start of the row (FL-1391 B1, App.jsx `has-layout-tabs`). */
     start?: import('svelte').Snippet;
+    /** The host shows the count elsewhere (the floating bar), so here it is for screen readers only. */
+    countElsewhere?: boolean;
   };
 
   let {
@@ -133,6 +132,7 @@
     children,
     leading,
     start,
+    countElsewhere = false,
   }: Props = $props();
 
   /** The prototype's "Choose a filter" menu, in its order (`App.jsx`); Pets live under All filters. */
@@ -436,7 +436,12 @@
       <div class="fl-toolbar-start">{@render start()}</div>
     {/if}
     {#if count !== null}
-      <span class="fl-result-count" class:fl-sr={!!start} aria-live="polite" data-testid="frameleaf-result-count">
+      <span
+        class="fl-result-count"
+        class:fl-sr={countElsewhere}
+        aria-live="polite"
+        data-testid="frameleaf-result-count"
+      >
         {$t('items_count', { values: { count } })}
       </span>
     {/if}

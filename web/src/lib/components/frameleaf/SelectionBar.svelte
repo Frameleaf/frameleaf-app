@@ -252,24 +252,33 @@
     tooNarrowAt = 0;
     named = true;
   });
-  $effect(() => {
-    if (!bar || !pill || !countRow || !actionRow || typeof ResizeObserver !== 'function') {
+  const fit = () => {
+    // Not laid out (hidden under the viewer): nothing to measure.
+    if (!bar || !countRow?.offsetHeight || !actionRow) {
       return;
     }
-    const [host, counted, row] = [bar, countRow, actionRow];
-    const check = () => {
-      const width = host.clientWidth;
-      if (!named) {
-        named = width > tooNarrowAt;
-      } else if (row.offsetTop >= counted.offsetTop + counted.offsetHeight) {
-        tooNarrowAt = width;
-        named = false;
-      }
-    };
-    const observer = new ResizeObserver(check);
-    observer.observe(host);
+    const width = bar.clientWidth;
+    if (!named) {
+      named = width > tooNarrowAt;
+    } else if (actionRow.offsetTop >= countRow.offsetTop + countRow.offsetHeight) {
+      tooNarrowAt = width;
+      named = false;
+    }
+  };
+  $effect(() => {
+    if (!bar || !pill || typeof ResizeObserver !== 'function') {
+      return;
+    }
+    const observer = new ResizeObserver(fit);
+    observer.observe(bar);
     observer.observe(pill);
     return () => observer.disconnect();
+  });
+  // The names are back and drawn: see that they fit, since nothing may resize to say they do not.
+  $effect(() => {
+    if (named) {
+      untrack(fit);
+    }
   });
   /** The server's trash flag; unknown (flags not loaded) counts as on, the server default. */
   const trashEnabled = () => {
@@ -856,8 +865,8 @@
   }
   /*
    * FL-1391 B2 (review-1110.css): Add to album and Share link carry their names beside a page's
-   * own tools, which are named too. Where that does not fit on one line (`named`), the tools and
-   * those two are icons, named in their tooltips. Phones keep their own layout below.
+   * own tools, which are named too. Where the capsule does not fit on one line (`named`), every
+   * action is an icon, named in its tooltip. Phones keep their own layout below.
    */
   .action.icon-only.is-labelled {
     padding-inline: 0.6rem;
@@ -866,14 +875,13 @@
     display: inline;
   }
   @media (min-width: 701px) {
+    .pill.is-compact .action {
+      padding-inline: 8px;
+    }
     .pill.is-compact .action.is-leading {
       padding-inline: 10px;
     }
-    .pill.is-compact .action.icon-only.is-labelled {
-      padding-inline: 8px;
-    }
-    .pill.is-compact .action.is-leading span,
-    .pill.is-compact .action.icon-only.is-labelled span {
+    .pill.is-compact .action span {
       display: none;
     }
   }

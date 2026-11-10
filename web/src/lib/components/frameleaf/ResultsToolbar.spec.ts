@@ -157,7 +157,7 @@ describe('ResultsToolbar start', () => {
   const session = () => new LibrarySessionStore({ storage: null });
 
   it("draws the host's tabs first and keeps the count for screen readers only", () => {
-    render(ResultsToolbar, { session: session(), count: 86, start: tabs });
+    render(ResultsToolbar, { session: session(), count: 86, start: tabs, countElsewhere: true });
     const row = screen.getByTestId('frameleaf-results-toolbar').querySelector('.fl-toolbar-row')!;
     expect(row.firstElementChild).toContainElement(screen.getByTestId('tabs'));
     const count = screen.getByTestId('frameleaf-result-count');
@@ -166,8 +166,11 @@ describe('ResultsToolbar start', () => {
     expect(count).toHaveClass('fl-sr');
   });
 
-  it('shows the count where the tabs have a row of their own', () => {
-    render(ResultsToolbar, { session: session(), count: 86 });
+  it('shows the count where the tabs have a row of their own, or no floating bar shows it', () => {
+    const narrow = render(ResultsToolbar, { session: session(), count: 86 });
+    expect(screen.getByTestId('frameleaf-result-count')).not.toHaveClass('fl-sr');
+    narrow.unmount();
+    render(ResultsToolbar, { session: session(), count: 86, start: tabs });
     expect(screen.getByTestId('frameleaf-result-count')).not.toHaveClass('fl-sr');
   });
 });
