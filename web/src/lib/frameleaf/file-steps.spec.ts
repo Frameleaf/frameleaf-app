@@ -572,6 +572,32 @@ describe('file steps in plain words (FL-1338)', () => {
         result: r('good', 'Found again'),
       },
     ],
+    [
+      'copied a lost original back from the old folders',
+      'put-back',
+      'ok',
+      { copied: true },
+      missingCategory,
+      {
+        what: 'Copied it back',
+        detail:
+          'A copy in the folders your old photo app used matched exactly. Frameleaf copied it into your library and left the old one where it was.',
+        result: r('good', 'Found again'),
+      },
+    ],
+    [
+      'copied back by a person’s own choice',
+      'put-back',
+      'ok',
+      { copied: true, by: 'Taylor' },
+      missingCategory,
+      {
+        what: 'Copied it back',
+        detail:
+          'A copy in the folders your old photo app used matched exactly. Frameleaf copied it into your library and left the old one where it was. Taylor chose it.',
+        result: r('good', 'Found again'),
+      },
+    ],
     ...(
       [
         ['.psd', 'Photoshop'],

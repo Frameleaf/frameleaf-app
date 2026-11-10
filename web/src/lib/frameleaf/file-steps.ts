@@ -274,6 +274,13 @@ export const stepWords = (
       break;
     }
     case 'put-back': {
+      if (facts.copied === true) {
+        // a lost original found in the folders an import used was copied in; the old file stays where it was
+        const by = text(facts.by);
+        what = say('what_copied');
+        detail = by ? say('detail_copied_by', { person: by }) : say('detail_copied');
+        break;
+      }
       detail =
         context.category === MediaHealthCategory.Corrupt
           ? say('detail_changed')

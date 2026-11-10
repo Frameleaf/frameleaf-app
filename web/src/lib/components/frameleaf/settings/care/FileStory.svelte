@@ -24,11 +24,13 @@
   import { offersLookIn, offersRepair, problemKind, storyWords } from '$lib/frameleaf/file-steps';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { getAssetMediaUrl } from '$lib/utils';
+  import { downloadBlob, getAssetMediaUrl } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
     AssetMediaSize,
+    AssetVisibility,
     deleteAssets,
+    downloadFileProblemKeptFile,
     getAssetInfo,
     getFileProblem,
     getFileProblemFolders,
@@ -72,6 +74,8 @@
   let failure = $state<string>();
   let working = $state(false);
   let taken = $state<string>();
+  /** The photo is Locked now: the server won't hand over the kept file, so the button isn't offered. */
+  let locked = $state(false);
   let repairing = $state(false);
 
   let looking = $state(false);
@@ -83,8 +87,8 @@
   let managerUrl = $state<string | null>(null);
 
   /** The server's own words for a refusal it wrote for people; anything else is said plainly. */
-  const failureOf = (error: unknown) =>
-    (isHttpError(error) && [400, 403, 409].includes(error.status) ? getServerErrorMessage(error) : undefined) ??
+  const failureOf = (error: unknown, statuses = [400, 403, 409]) =>
+    (isHttpError(error) && statuses.includes(error.status) ? getServerErrorMessage(error) : undefined) ??
     $t('frameleaf_files_action_failed');
 
   onMount(() => {
@@ -99,6 +103,9 @@
         // when it was taken is the photo's own detail: only for the account that may see it
         if (loaded.pictureAllowed) {
           const info = await getAssetInfo({ id: loaded.assetId }).catch(() => undefined);
+          if (active && info?.visibility === AssetVisibility.Locked) {
+            locked = true;
+          }
           if (active && info?.localDateTime) {
             taken = new Intl.DateTimeFormat($locale, {
               day: 'numeric',
@@ -226,6 +233,20 @@
       () => tryFileProblemAgain({ id }),
       () => $t('frameleaf_files_trying', { values: { name } }),
     );
+  /** The damaged file a repair kept, saved as the server names it: "<name> (damaged).<extension>". */
+  const downloadDamaged = async () => {
+    working = true;
+    failure = undefined;
+    try {
+      const blob = await downloadFileProblemKeptFile({ id });
+      const extension = /\.[^./\\]*$/.exec(name)?.[0] ?? '';
+      downloadBlob(blob, `${name.slice(0, name.length - extension.length)} (damaged)${extension}`);
+    } catch (error) {
+      failure = failureOf(error, [400, 403, 404, 409]);
+    } finally {
+      working = false;
+    }
+  };
   /** Remove goes through the Trash as usual (design §7), after asking. */
   const remove = async () => {
     const assetId = shown?.assetId;
@@ -300,6 +321,9 @@
       case 'repaired': {
         return [
           { id: 'undo', label: $t('frameleaf_files_undo_repair'), run: undo },
+          ...(locked
+            ? []
+            : [{ id: 'download-damaged', label: $t('frameleaf_files_download_damaged'), run: downloadDamaged }]),
           { id: 'keep-repaired', label: $t('frameleaf_files_keep_repaired'), primary: true, run: closeSheet },
         ];
       }

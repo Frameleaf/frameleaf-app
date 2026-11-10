@@ -2,6 +2,7 @@ import { MediaHealthCategory, type FileProblemDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import * as utils from '$lib/utils';
 import en from '../../../../../../../i18n/en.json';
 import FileStory from './FileStory.svelte';
 
@@ -251,5 +252,74 @@ describe('What happened (FL-1338)', () => {
     expect(await look.findByRole('radio', { name: 'USB drive' })).toBeInTheDocument();
     expect(look.queryByText('Couldn’t read the folders just now. Try again in a moment.')).not.toBeInTheDocument();
     expect(sdkMock.getFileProblemFolders).toHaveBeenCalledTimes(2);
+  });
+
+  describe('the damaged file a repair kept', () => {
+    it('downloads it between Undo repair and Keep repaired photo, named as the server names it', async () => {
+      const blob = new Blob(['damaged']);
+      const download = vi.spyOn(utils, 'downloadBlob').mockImplementation(() => {});
+      sdkMock.downloadFileProblemKeptFile.mockResolvedValue(blob as never);
+      const { sheet, onDone } = show(repaired);
+
+      await sheet().findByText('Repaired it');
+      expect(buttons(screen.getByRole('dialog'))).toEqual(['Undo repair', 'Download damaged file', 'Keep repaired photo']);
+      await fireEvent.click(sheet().getByRole('button', { name: 'Download damaged file' }));
+
+      expect(sdkMock.downloadFileProblemKeptFile).toHaveBeenCalledWith({ id: 'img-2041' });
+      await vi.waitFor(() => expect(download).toHaveBeenCalledWith(blob, 'IMG_2041 (damaged).jpg'));
+      // the sheet stays open: the person is still looking at the repair
+      expect(onDone).not.toHaveBeenCalled();
+      download.mockRestore();
+    });
+
+    it('is not offered for another account’s photo', async () => {
+      const { sheet } = show({ ...repaired, canAct: false, pictureAllowed: false });
+      await sheet().findByText('In Taylor’s library');
+      expect(sheet().queryByRole('button', { name: 'Download damaged file' })).not.toBeInTheDocument();
+    });
+
+    it('is not offered for a file that was never repaired', async () => {
+      const { sheet } = show(missing);
+      await sheet().findByRole('button', { name: 'Look in a folder…' });
+      expect(sheet().queryByRole('button', { name: 'Download damaged file' })).not.toBeInTheDocument();
+    });
+
+    it('is not offered once the photo is Locked', async () => {
+      sdkMock.getAssetInfo.mockResolvedValue({ localDateTime: '2019-03-12T16:31:00.000Z', visibility: 'locked' } as never);
+      const { sheet } = show(repaired);
+
+      await sheet().findByText('Repaired it');
+      // the button goes once the photo's details say it is Locked
+      await vi.waitFor(() =>
+        expect(sheet().queryByRole('button', { name: 'Download damaged file' })).not.toBeInTheDocument(),
+      );
+      expect(sheet().getByRole('button', { name: 'Undo repair' })).toBeInTheDocument();
+    });
+
+    it('shows the server’s words when there is no kept file, and saves nothing', async () => {
+      const download = vi.spyOn(utils, 'downloadBlob').mockImplementation(() => {});
+      sdkMock.downloadFileProblemKeptFile.mockRejectedValue(
+        Object.assign(new Error('Not Found'), {
+          status: 404,
+          data: { message: 'There is no damaged file kept for this photo.' },
+        }),
+      );
+      const { sheet } = show(repaired);
+
+      await fireEvent.click(await sheet().findByRole('button', { name: 'Download damaged file' }));
+
+      expect(await sheet().findByText('There is no damaged file kept for this photo.')).toBeInTheDocument();
+      expect(download).not.toHaveBeenCalled();
+      download.mockRestore();
+    });
+
+    it('says plainly that it failed when the server gives no reason', async () => {
+      sdkMock.downloadFileProblemKeptFile.mockRejectedValue(new Error('offline'));
+      const { sheet } = show(repaired);
+
+      await fireEvent.click(await sheet().findByRole('button', { name: 'Download damaged file' }));
+
+      expect(await sheet().findByText(en.frameleaf_files_action_failed)).toBeInTheDocument();
+    });
   });
 });
