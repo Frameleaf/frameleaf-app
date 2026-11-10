@@ -6115,6 +6115,69 @@ describe(MediaHealthService.name, () => {
         await expect(readFile(changed, 'utf8')).resolves.toBe('the changed file');
       });
 
+      it('refuses to undo a fix of a photo that is Locked now, before any file moves (Task 11b)', async () => {
+        const LOCKED = "This photo is locked, so this fix can't be undone.";
+        // a restore, whose Undo would move the restored file aside and put the changed one back
+        const original = join(root, 'library', 'IMG_5520.jpg');
+        const changed = join(care, 'asset-1-0badc0de.damaged.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(original, 'the original, from Cloud Backup');
+        await writeFile(changed, 'the changed file');
+        photo({
+          originalPath: original,
+          checksum: sha1('the original, from Cloud Backup'),
+          checksumAlgorithm: ChecksumAlgorithm.sha1File,
+          isLocked: true,
+        });
+        shows(problem({ originalPath: original, evidence: { fixState: 'restored' } }));
+        history(
+          step('step-1', 'restored', 'ok', {
+            undo: {
+              kind: 'restore',
+              previousPath: original,
+              originalPath: original,
+              checksum: sha1('the original, from Cloud Backup').toString('hex'),
+              retainedPath: changed,
+            },
+          }),
+        );
+        vi.mocked(mediaHealthRepository.undoFix).mockImplementation(async (input) => {
+          await input.moveFiles?.();
+          return 'undone';
+        });
+
+        // the owner sees it in an unlocked session, and still can't undo it
+        await refused(sut.undoFileProblemFix(elevatedOwner, 'health-1'), LOCKED);
+
+        await expect(readFile(original, 'utf8')).resolves.toBe('the original, from Cloud Backup');
+        await expect(readFile(changed, 'utf8')).resolves.toBe('the changed file');
+        await expect(stat(join(care, 'asset-1-health-1.restored.jpg'))).rejects.toThrow();
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+        expect(mocks.crypto.hashFileMatching).not.toHaveBeenCalled();
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+
+        // a repair is refused the same way: the photo stays the repaired file
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        await writeFile(damaged, 'the damaged file');
+        await writeFile(repaired, 'the repaired file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file'), isLocked: true });
+        shows(problem({ originalPath: repaired, evidence: { fixState: 'repaired', retainedPath: damaged } }));
+        history(
+          step('step-1', 'repaired', 'ok'),
+          step('step-2', 'kept-damaged', 'info', {
+            undo: {
+              kind: 'repair',
+              previousPath: damaged,
+              originalPath: repaired,
+              checksum: sha256('the repaired file').toString('hex'),
+            },
+          }),
+        );
+        await refused(sut.undoFileProblemFix(elevatedOwner, 'health-1'), LOCKED);
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
       it('refuses to undo a restore while the drive that keeps the copies is not there', async () => {
         const original = join(root, 'library', 'IMG_5520.jpg');
         await mkdir(join(root, 'library'), { recursive: true });

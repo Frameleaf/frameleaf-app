@@ -112,7 +112,7 @@ export class MediaHealthController {
   @Endpoint({
     summary: 'Undo what Frameleaf fixed',
     description:
-      'Put back the file the photo used before Frameleaf repaired, relinked or restored it, keeping every file. Only the owner can undo, and not once the photo changed since the fix.',
+      'Put back the file the photo used before Frameleaf repaired, relinked or restored it, keeping every file. Only the owner can undo, not once the photo changed since the fix, and not while it is Locked.',
     history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
   })
   undoFileProblemFix(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<FileProblemDto> {

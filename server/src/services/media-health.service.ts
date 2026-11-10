@@ -238,6 +238,8 @@ const NEEDS_FILE_STATES: ReadonlySet<string> = new Set<FixState>([
 ]);
 /** Review Focus 3: the photo is not as the fix left it, so Undo changes nothing. */
 const UNDO_CHANGED = "This photo changed since Frameleaf fixed it, so it can't be undone.";
+/** Task 11b: a photo that is Locked now keeps the file it has; Undo moves nothing. */
+const UNDO_LOCKED = "This photo is locked, so this fix can't be undone.";
 const NOTHING_TO_UNDO = 'There is nothing to undo for this photo.';
 const OWNER_ONLY = "Only the photo's owner can do that.";
 /** F2: the Upload drive, which holds Library care's folder, is not there. */
@@ -2442,6 +2444,10 @@ export class MediaHealthService {
       throw new ConflictException(OTHER_PROBLEM_OPEN);
     }
     const [asset] = await this.mediaHealthRepository.getAssets([record.assetId]);
+    if (asset?.isLocked) {
+      // Task 11b: a Locked photo's file is never changed by an Undo, whoever unlocked it; nothing is moved
+      throw new ConflictException(UNDO_LOCKED);
+    }
     // a repair that stopped before it recorded what Undo needs: its repaired file says what it left, where the fix
     // left it or, once Folder layout moved it, where the photo is now
     const expectedChecksum = fix.checksum
