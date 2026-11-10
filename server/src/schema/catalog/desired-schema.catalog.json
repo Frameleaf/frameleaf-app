@@ -46,22 +46,22 @@
       ],
       "indexes": [
         {
-          "name": "album_audit_deletedAt_idx",
-          "definition": "CREATE INDEX \"album_audit_deletedAt_idx\" ON public.album_audit USING btree (\"deletedAt\")",
+          "name": "album_audit_albumId_idx",
+          "definition": "CREATE INDEX \"album_audit_albumId_idx\" ON public.album_audit USING btree (\"albumId\")",
           "tableName": "album_audit",
           "columnNames": [
-            "deletedAt"
+            "albumId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "album_audit_albumId_idx",
-          "definition": "CREATE INDEX \"album_audit_albumId_idx\" ON public.album_audit USING btree (\"albumId\")",
+          "name": "album_audit_deletedAt_idx",
+          "definition": "CREATE INDEX \"album_audit_deletedAt_idx\" ON public.album_audit USING btree (\"deletedAt\")",
           "tableName": "album_audit",
           "columnNames": [
-            "albumId"
+            "deletedAt"
           ],
           "using": "btree",
           "unique": false,
@@ -365,22 +365,22 @@
       ],
       "indexes": [
         {
-          "name": "album_user_audit_albumId_idx",
-          "definition": "CREATE INDEX \"album_user_audit_albumId_idx\" ON public.album_user_audit USING btree (\"albumId\")",
+          "name": "album_user_audit_deletedAt_idx",
+          "definition": "CREATE INDEX \"album_user_audit_deletedAt_idx\" ON public.album_user_audit USING btree (\"deletedAt\")",
           "tableName": "album_user_audit",
           "columnNames": [
-            "albumId"
+            "deletedAt"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "album_user_audit_deletedAt_idx",
-          "definition": "CREATE INDEX \"album_user_audit_deletedAt_idx\" ON public.album_user_audit USING btree (\"deletedAt\")",
+          "name": "album_user_audit_albumId_idx",
+          "definition": "CREATE INDEX \"album_user_audit_albumId_idx\" ON public.album_user_audit USING btree (\"albumId\")",
           "tableName": "album_user_audit",
           "columnNames": [
-            "deletedAt"
+            "albumId"
           ],
           "using": "btree",
           "unique": false,
@@ -457,17 +457,6 @@
       ],
       "indexes": [
         {
-          "name": "asset_audit_deletedAt_idx",
-          "definition": "CREATE INDEX \"asset_audit_deletedAt_idx\" ON public.asset_audit USING btree (\"deletedAt\")",
-          "tableName": "asset_audit",
-          "columnNames": [
-            "deletedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "asset_audit_assetId_idx",
           "definition": "CREATE INDEX \"asset_audit_assetId_idx\" ON public.asset_audit USING btree (\"assetId\")",
           "tableName": "asset_audit",
@@ -484,6 +473,17 @@
           "tableName": "asset_audit",
           "columnNames": [
             "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_audit_deletedAt_idx",
+          "definition": "CREATE INDEX \"asset_audit_deletedAt_idx\" ON public.asset_audit USING btree (\"deletedAt\")",
+          "tableName": "asset_audit",
+          "columnNames": [
+            "deletedAt"
           ],
           "using": "btree",
           "unique": false,
@@ -862,22 +862,22 @@
       ],
       "indexes": [
         {
-          "name": "asset_develop_artifact_path_idx",
-          "definition": "CREATE INDEX asset_develop_artifact_path_idx ON public.asset_develop_artifact USING btree (path)",
+          "name": "asset_develop_artifact_owner_idx",
+          "definition": "CREATE INDEX asset_develop_artifact_owner_idx ON public.asset_develop_artifact USING btree (\"ownerId\")",
           "tableName": "asset_develop_artifact",
           "columnNames": [
-            "path"
+            "ownerId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "asset_develop_artifact_owner_idx",
-          "definition": "CREATE INDEX asset_develop_artifact_owner_idx ON public.asset_develop_artifact USING btree (\"ownerId\")",
+          "name": "asset_develop_artifact_path_idx",
+          "definition": "CREATE INDEX asset_develop_artifact_path_idx ON public.asset_develop_artifact USING btree (path)",
           "tableName": "asset_develop_artifact",
           "columnNames": [
-            "ownerId"
+            "path"
           ],
           "using": "btree",
           "unique": false,
@@ -1235,6 +1235,18 @@
       ],
       "indexes": [
         {
+          "name": "asset_develop_revision_current_idx",
+          "definition": "CREATE UNIQUE INDEX asset_develop_revision_current_idx ON public.asset_develop_revision USING btree (\"assetId\") WHERE \"isCurrent\"",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "where": "\"isCurrent\"",
+          "unique": true,
+          "synchronize": true
+        },
+        {
           "name": "asset_develop_revision_asset_idx",
           "definition": "CREATE INDEX asset_develop_revision_asset_idx ON public.asset_develop_revision USING btree (\"assetId\", revision DESC)",
           "tableName": "asset_develop_revision",
@@ -1255,18 +1267,6 @@
           ],
           "using": "btree",
           "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_develop_revision_current_idx",
-          "definition": "CREATE UNIQUE INDEX asset_develop_revision_current_idx ON public.asset_develop_revision USING btree (\"assetId\") WHERE \"isCurrent\"",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "where": "\"isCurrent\"",
-          "unique": true,
           "synchronize": true
         }
       ],
@@ -1501,6 +1501,17 @@
       ],
       "indexes": [
         {
+          "name": "asset_face_audit_assetId_idx",
+          "definition": "CREATE INDEX \"asset_face_audit_assetId_idx\" ON public.asset_face_audit USING btree (\"assetId\")",
+          "tableName": "asset_face_audit",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_face_audit_assetFaceId_idx",
           "definition": "CREATE INDEX \"asset_face_audit_assetFaceId_idx\" ON public.asset_face_audit USING btree (\"assetFaceId\")",
           "tableName": "asset_face_audit",
@@ -1517,17 +1528,6 @@
           "tableName": "asset_face_audit",
           "columnNames": [
             "deletedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_face_audit_assetId_idx",
-          "definition": "CREATE INDEX \"asset_face_audit_assetId_idx\" ON public.asset_face_audit USING btree (\"assetId\")",
-          "tableName": "asset_face_audit",
-          "columnNames": [
-            "assetId"
           ],
           "using": "btree",
           "unique": false,
@@ -1593,6 +1593,17 @@
       ],
       "indexes": [
         {
+          "name": "asset_metadata_audit_deletedAt_idx",
+          "definition": "CREATE INDEX \"asset_metadata_audit_deletedAt_idx\" ON public.asset_metadata_audit USING btree (\"deletedAt\")",
+          "tableName": "asset_metadata_audit",
+          "columnNames": [
+            "deletedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_metadata_audit_key_idx",
           "definition": "CREATE INDEX asset_metadata_audit_key_idx ON public.asset_metadata_audit USING btree (key)",
           "tableName": "asset_metadata_audit",
@@ -1609,17 +1620,6 @@
           "tableName": "asset_metadata_audit",
           "columnNames": [
             "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_metadata_audit_deletedAt_idx",
-          "definition": "CREATE INDEX \"asset_metadata_audit_deletedAt_idx\" ON public.asset_metadata_audit USING btree (\"deletedAt\")",
-          "tableName": "asset_metadata_audit",
-          "columnNames": [
-            "deletedAt"
           ],
           "using": "btree",
           "unique": false,
@@ -1676,22 +1676,22 @@
       ],
       "indexes": [
         {
-          "name": "asset_ocr_audit_assetId_idx",
-          "definition": "CREATE INDEX \"asset_ocr_audit_assetId_idx\" ON public.asset_ocr_audit USING btree (\"assetId\")",
+          "name": "asset_ocr_audit_deletedAt_idx",
+          "definition": "CREATE INDEX \"asset_ocr_audit_deletedAt_idx\" ON public.asset_ocr_audit USING btree (\"deletedAt\")",
           "tableName": "asset_ocr_audit",
           "columnNames": [
-            "assetId"
+            "deletedAt"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "asset_ocr_audit_deletedAt_idx",
-          "definition": "CREATE INDEX \"asset_ocr_audit_deletedAt_idx\" ON public.asset_ocr_audit USING btree (\"deletedAt\")",
+          "name": "asset_ocr_audit_assetId_idx",
+          "definition": "CREATE INDEX \"asset_ocr_audit_assetId_idx\" ON public.asset_ocr_audit USING btree (\"assetId\")",
           "tableName": "asset_ocr_audit",
           "columnNames": [
-            "deletedAt"
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
@@ -1794,18 +1794,6 @@
       ],
       "indexes": [
         {
-          "name": "asset_origin_source_idx",
-          "definition": "CREATE INDEX asset_origin_source_idx ON public.asset_origin USING btree (\"sourceAssetId\") WHERE following",
-          "tableName": "asset_origin",
-          "columnNames": [
-            "sourceAssetId"
-          ],
-          "using": "btree",
-          "where": "following",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "asset_origin_partner_idx",
           "definition": "CREATE INDEX asset_origin_partner_idx ON public.asset_origin USING btree (\"partnerSharedById\", \"ownerId\")",
           "tableName": "asset_origin",
@@ -1814,6 +1802,18 @@
             "ownerId"
           ],
           "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_origin_source_idx",
+          "definition": "CREATE INDEX asset_origin_source_idx ON public.asset_origin USING btree (\"sourceAssetId\") WHERE following",
+          "tableName": "asset_origin",
+          "columnNames": [
+            "sourceAssetId"
+          ],
+          "using": "btree",
+          "where": "following",
           "unique": false,
           "synchronize": true
         }
@@ -2586,28 +2586,6 @@
       ],
       "indexes": [
         {
-          "name": "face_correction_face_idx",
-          "definition": "CREATE INDEX face_correction_face_idx ON public.face_correction USING btree (\"faceId\")",
-          "tableName": "face_correction",
-          "columnNames": [
-            "faceId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "face_correction_asset_idx",
-          "definition": "CREATE INDEX face_correction_asset_idx ON public.face_correction USING btree (\"assetId\")",
-          "tableName": "face_correction",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "face_correction_owner_to_idx",
           "definition": "CREATE INDEX face_correction_owner_to_idx ON public.face_correction USING btree (\"ownerId\", \"toPersonId\", \"createdAt\" DESC)",
           "tableName": "face_correction",
@@ -2621,6 +2599,17 @@
           "synchronize": true
         },
         {
+          "name": "face_correction_face_idx",
+          "definition": "CREATE INDEX face_correction_face_idx ON public.face_correction USING btree (\"faceId\")",
+          "tableName": "face_correction",
+          "columnNames": [
+            "faceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "face_correction_owner_from_idx",
           "definition": "CREATE INDEX face_correction_owner_from_idx ON public.face_correction USING btree (\"ownerId\", \"fromPersonId\", \"createdAt\" DESC)",
           "tableName": "face_correction",
@@ -2628,6 +2617,17 @@
             "ownerId",
             "fromPersonId",
             "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "face_correction_asset_idx",
+          "definition": "CREATE INDEX face_correction_asset_idx ON public.face_correction USING btree (\"assetId\")",
+          "tableName": "face_correction",
+          "columnNames": [
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
@@ -3828,6 +3828,15 @@
       ],
       "indexes": [
         {
+          "name": "idx_geodata_places_admin2_name",
+          "definition": "CREATE INDEX idx_geodata_places_admin2_name ON public.geodata_places USING gin (f_unaccent((\"admin2Name\")::text) gin_trgm_ops)",
+          "tableName": "geodata_places",
+          "expression": "f_unaccent((\"admin2Name\")::text)",
+          "using": "gin",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "IDX_geodata_gist_earthcoord",
           "definition": "CREATE INDEX \"IDX_geodata_gist_earthcoord\" ON public.geodata_places USING gist (ll_to_earth_public(latitude, longitude))",
           "tableName": "geodata_places",
@@ -3859,15 +3868,6 @@
           "definition": "CREATE INDEX idx_geodata_places_name ON public.geodata_places USING gin (f_unaccent((name)::text) gin_trgm_ops)",
           "tableName": "geodata_places",
           "expression": "f_unaccent((name)::text)",
-          "using": "gin",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "idx_geodata_places_admin2_name",
-          "definition": "CREATE INDEX idx_geodata_places_admin2_name ON public.geodata_places USING gin (f_unaccent((\"admin2Name\")::text) gin_trgm_ops)",
-          "tableName": "geodata_places",
-          "expression": "f_unaccent((\"admin2Name\")::text)",
           "using": "gin",
           "unique": false,
           "synchronize": true
@@ -5380,6 +5380,17 @@
       ],
       "indexes": [
         {
+          "name": "person_group_audit_personGroupId_idx",
+          "definition": "CREATE INDEX \"person_group_audit_personGroupId_idx\" ON public.person_group_audit USING btree (\"personGroupId\")",
+          "tableName": "person_group_audit",
+          "columnNames": [
+            "personGroupId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "person_group_audit_deletedAt_idx",
           "definition": "CREATE INDEX \"person_group_audit_deletedAt_idx\" ON public.person_group_audit USING btree (\"deletedAt\")",
           "tableName": "person_group_audit",
@@ -5396,17 +5407,6 @@
           "tableName": "person_group_audit",
           "columnNames": [
             "clusterGroupId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "person_group_audit_personGroupId_idx",
-          "definition": "CREATE INDEX \"person_group_audit_personGroupId_idx\" ON public.person_group_audit USING btree (\"personGroupId\")",
-          "tableName": "person_group_audit",
-          "columnNames": [
-            "personGroupId"
           ],
           "using": "btree",
           "unique": false,
@@ -5620,6 +5620,18 @@
       ],
       "indexes": [
         {
+          "name": "person_origin_partner_idx",
+          "definition": "CREATE INDEX person_origin_partner_idx ON public.person_origin USING btree (\"partnerSharedById\", \"ownerId\")",
+          "tableName": "person_origin",
+          "columnNames": [
+            "partnerSharedById",
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "person_origin_source_idx",
           "definition": "CREATE INDEX person_origin_source_idx ON public.person_origin USING btree (\"sourceOwnerId\", \"sourcePersonGroupId\") WHERE following",
           "tableName": "person_origin",
@@ -5629,18 +5641,6 @@
           ],
           "using": "btree",
           "where": "following",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "person_origin_partner_idx",
-          "definition": "CREATE INDEX person_origin_partner_idx ON public.person_origin USING btree (\"partnerSharedById\", \"ownerId\")",
-          "tableName": "person_origin",
-          "columnNames": [
-            "partnerSharedById",
-            "ownerId"
-          ],
-          "using": "btree",
           "unique": false,
           "synchronize": true
         }
@@ -5826,6 +5826,28 @@
       ],
       "indexes": [
         {
+          "name": "pet_observation_audit_ownerId_idx",
+          "definition": "CREATE INDEX \"pet_observation_audit_ownerId_idx\" ON public.pet_observation_audit USING btree (\"ownerId\")",
+          "tableName": "pet_observation_audit",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "pet_observation_audit_observationId_idx",
+          "definition": "CREATE INDEX \"pet_observation_audit_observationId_idx\" ON public.pet_observation_audit USING btree (\"observationId\")",
+          "tableName": "pet_observation_audit",
+          "columnNames": [
+            "observationId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "pet_observation_audit_petId_idx",
           "definition": "CREATE INDEX \"pet_observation_audit_petId_idx\" ON public.pet_observation_audit USING btree (\"petId\")",
           "tableName": "pet_observation_audit",
@@ -5853,28 +5875,6 @@
           "tableName": "pet_observation_audit",
           "columnNames": [
             "deletedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "pet_observation_audit_ownerId_idx",
-          "definition": "CREATE INDEX \"pet_observation_audit_ownerId_idx\" ON public.pet_observation_audit USING btree (\"ownerId\")",
-          "tableName": "pet_observation_audit",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "pet_observation_audit_observationId_idx",
-          "definition": "CREATE INDEX \"pet_observation_audit_observationId_idx\" ON public.pet_observation_audit USING btree (\"observationId\")",
-          "tableName": "pet_observation_audit",
-          "columnNames": [
-            "observationId"
           ],
           "using": "btree",
           "unique": false,
@@ -6287,23 +6287,23 @@
       ],
       "indexes": [
         {
-          "name": "physical_file_trash_checksum_idx",
-          "definition": "CREATE INDEX physical_file_trash_checksum_idx ON public.physical_file_trash USING btree (checksum, \"sizeInBytes\")",
+          "name": "physical_file_trash_trashed_at_idx",
+          "definition": "CREATE INDEX physical_file_trash_trashed_at_idx ON public.physical_file_trash USING btree (\"trashedAt\")",
           "tableName": "physical_file_trash",
           "columnNames": [
-            "checksum",
-            "sizeInBytes"
+            "trashedAt"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "physical_file_trash_trashed_at_idx",
-          "definition": "CREATE INDEX physical_file_trash_trashed_at_idx ON public.physical_file_trash USING btree (\"trashedAt\")",
+          "name": "physical_file_trash_checksum_idx",
+          "definition": "CREATE INDEX physical_file_trash_checksum_idx ON public.physical_file_trash USING btree (checksum, \"sizeInBytes\")",
           "tableName": "physical_file_trash",
           "columnNames": [
-            "trashedAt"
+            "checksum",
+            "sizeInBytes"
           ],
           "using": "btree",
           "unique": false,
@@ -7089,6 +7089,19 @@
       ],
       "indexes": [
         {
+          "name": "studio_import_publication_active_import",
+          "definition": "CREATE UNIQUE INDEX studio_import_publication_active_import ON public.studio_import_publication USING btree (\"projectId\", \"importId\") WHERE ((\"stagedPath\" IS NOT NULL) OR (\"targetPath\" IS NOT NULL))",
+          "tableName": "studio_import_publication",
+          "columnNames": [
+            "projectId",
+            "importId"
+          ],
+          "using": "btree",
+          "where": "((\"stagedPath\" IS NOT NULL) OR (\"targetPath\" IS NOT NULL))",
+          "unique": true,
+          "synchronize": true
+        },
+        {
           "name": "studio_import_publication_discovery",
           "definition": "CREATE INDEX studio_import_publication_discovery ON public.studio_import_publication USING btree (\"ownerId\", \"projectId\", \"createdAt\", id)",
           "tableName": "studio_import_publication",
@@ -7100,19 +7113,6 @@
           ],
           "using": "btree",
           "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_import_publication_active_import",
-          "definition": "CREATE UNIQUE INDEX studio_import_publication_active_import ON public.studio_import_publication USING btree (\"projectId\", \"importId\") WHERE ((\"stagedPath\" IS NOT NULL) OR (\"targetPath\" IS NOT NULL))",
-          "tableName": "studio_import_publication",
-          "columnNames": [
-            "projectId",
-            "importId"
-          ],
-          "using": "btree",
-          "where": "((\"stagedPath\" IS NOT NULL) OR (\"targetPath\" IS NOT NULL))",
-          "unique": true,
           "synchronize": true
         }
       ],
@@ -7607,17 +7607,6 @@
       ],
       "indexes": [
         {
-          "name": "tag_audit_tagId_idx",
-          "definition": "CREATE INDEX \"tag_audit_tagId_idx\" ON public.tag_audit USING btree (\"tagId\")",
-          "tableName": "tag_audit",
-          "columnNames": [
-            "tagId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "tag_audit_userId_idx",
           "definition": "CREATE INDEX \"tag_audit_userId_idx\" ON public.tag_audit USING btree (\"userId\")",
           "tableName": "tag_audit",
@@ -7634,6 +7623,17 @@
           "tableName": "tag_audit",
           "columnNames": [
             "deletedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "tag_audit_tagId_idx",
+          "definition": "CREATE INDEX \"tag_audit_tagId_idx\" ON public.tag_audit USING btree (\"tagId\")",
+          "tableName": "tag_audit",
+          "columnNames": [
+            "tagId"
           ],
           "using": "btree",
           "unique": false,
@@ -8210,29 +8210,6 @@
       ],
       "indexes": [
         {
-          "name": "activity_albumId_assetId_idx",
-          "definition": "CREATE INDEX \"activity_albumId_assetId_idx\" ON public.activity USING btree (\"albumId\", \"assetId\")",
-          "tableName": "activity",
-          "columnNames": [
-            "albumId",
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "activity_assetId_idx",
-          "definition": "CREATE INDEX \"activity_assetId_idx\" ON public.activity USING btree (\"assetId\")",
-          "tableName": "activity",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "activity_like_idx",
           "definition": "CREATE UNIQUE INDEX activity_like_idx ON public.activity USING btree (\"assetId\", \"userId\", \"albumId\") WHERE (\"isLiked\" = true)",
           "tableName": "activity",
@@ -8269,11 +8246,34 @@
           "synchronize": true
         },
         {
+          "name": "activity_albumId_assetId_idx",
+          "definition": "CREATE INDEX \"activity_albumId_assetId_idx\" ON public.activity USING btree (\"albumId\", \"assetId\")",
+          "tableName": "activity",
+          "columnNames": [
+            "albumId",
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "activity_updateId_idx",
           "definition": "CREATE INDEX \"activity_updateId_idx\" ON public.activity USING btree (\"updateId\")",
           "tableName": "activity",
           "columnNames": [
             "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "activity_assetId_idx",
+          "definition": "CREATE INDEX \"activity_assetId_idx\" ON public.activity USING btree (\"assetId\")",
+          "tableName": "activity",
+          "columnNames": [
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
@@ -8437,22 +8437,22 @@
       ],
       "indexes": [
         {
-          "name": "album_asset_updateId_idx",
-          "definition": "CREATE INDEX \"album_asset_updateId_idx\" ON public.album_asset USING btree (\"updateId\")",
+          "name": "album_asset_assetId_idx",
+          "definition": "CREATE INDEX \"album_asset_assetId_idx\" ON public.album_asset USING btree (\"assetId\")",
           "tableName": "album_asset",
           "columnNames": [
-            "updateId"
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "album_asset_assetId_idx",
-          "definition": "CREATE INDEX \"album_asset_assetId_idx\" ON public.album_asset USING btree (\"assetId\")",
+          "name": "album_asset_updateId_idx",
+          "definition": "CREATE INDEX \"album_asset_updateId_idx\" ON public.album_asset USING btree (\"updateId\")",
           "tableName": "album_asset",
           "columnNames": [
-            "assetId"
+            "updateId"
           ],
           "using": "btree",
           "unique": false,
@@ -8621,6 +8621,28 @@
       ],
       "indexes": [
         {
+          "name": "album_user_userId_idx",
+          "definition": "CREATE INDEX \"album_user_userId_idx\" ON public.album_user USING btree (\"userId\")",
+          "tableName": "album_user",
+          "columnNames": [
+            "userId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_user_createId_idx",
+          "definition": "CREATE INDEX \"album_user_createId_idx\" ON public.album_user USING btree (\"createId\")",
+          "tableName": "album_user",
+          "columnNames": [
+            "createId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "album_user_albumId_idx",
           "definition": "CREATE INDEX \"album_user_albumId_idx\" ON public.album_user USING btree (\"albumId\")",
           "tableName": "album_user",
@@ -8652,28 +8674,6 @@
           "using": "btree",
           "where": "(role = 'owner'::album_user_role_enum)",
           "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "album_user_userId_idx",
-          "definition": "CREATE INDEX \"album_user_userId_idx\" ON public.album_user USING btree (\"userId\")",
-          "tableName": "album_user",
-          "columnNames": [
-            "userId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "album_user_createId_idx",
-          "definition": "CREATE INDEX \"album_user_createId_idx\" ON public.album_user USING btree (\"createId\")",
-          "tableName": "album_user",
-          "columnNames": [
-            "createId"
-          ],
-          "using": "btree",
-          "unique": false,
           "synchronize": true
         }
       ],
@@ -9293,6 +9293,17 @@
           "synchronize": true
         },
         {
+          "name": "asset_updateId_idx",
+          "definition": "CREATE INDEX \"asset_updateId_idx\" ON public.asset USING btree (\"updateId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_owner_taken_page_idx",
           "definition": "CREATE INDEX asset_owner_taken_page_idx ON public.asset USING btree (\"ownerId\", (date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), (((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date), \"fileCreatedAt\", \"originalFileName\", id)",
           "tableName": "asset",
@@ -9304,6 +9315,18 @@
           ],
           "expression": "(date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date",
           "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_id_timeline_notDeleted_idx",
+          "definition": "CREATE INDEX \"asset_id_timeline_notDeleted_idx\" ON public.asset USING btree (id) WHERE ((visibility = 'timeline'::asset_visibility_enum) AND (\"deletedAt\" IS NULL))",
+          "tableName": "asset",
+          "columnNames": [
+            "id"
+          ],
+          "using": "btree",
+          "where": "((visibility = 'timeline'::asset_visibility_enum) AND (\"deletedAt\" IS NULL))",
           "unique": false,
           "synchronize": true
         },
@@ -9338,6 +9361,18 @@
           "synchronize": true
         },
         {
+          "name": "asset_id_stackId_idx",
+          "definition": "CREATE INDEX \"asset_id_stackId_idx\" ON public.asset USING btree (id, \"stackId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "id",
+            "stackId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_livePhotoVideoId_idx",
           "definition": "CREATE INDEX \"asset_livePhotoVideoId_idx\" ON public.asset USING btree (\"livePhotoVideoId\")",
           "tableName": "asset",
@@ -9366,63 +9401,6 @@
           "columnNames": [
             "ownerId",
             "libraryScope"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_libraryId_idx",
-          "definition": "CREATE INDEX \"asset_libraryId_idx\" ON public.asset USING btree (\"libraryId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "libraryId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_physicalOriginalFileId_idx",
-          "definition": "CREATE INDEX \"asset_physicalOriginalFileId_idx\" ON public.asset USING btree (\"physicalOriginalFileId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "physicalOriginalFileId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_updateId_idx",
-          "definition": "CREATE INDEX \"asset_updateId_idx\" ON public.asset USING btree (\"updateId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_id_timeline_notDeleted_idx",
-          "definition": "CREATE INDEX \"asset_id_timeline_notDeleted_idx\" ON public.asset USING btree (id) WHERE ((visibility = 'timeline'::asset_visibility_enum) AND (\"deletedAt\" IS NULL))",
-          "tableName": "asset",
-          "columnNames": [
-            "id"
-          ],
-          "using": "btree",
-          "where": "((visibility = 'timeline'::asset_visibility_enum) AND (\"deletedAt\" IS NULL))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_id_stackId_idx",
-          "definition": "CREATE INDEX \"asset_id_stackId_idx\" ON public.asset USING btree (id, \"stackId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "id",
-            "stackId"
           ],
           "using": "btree",
           "unique": false,
@@ -9499,6 +9477,17 @@
           "synchronize": true
         },
         {
+          "name": "asset_libraryId_idx",
+          "definition": "CREATE INDEX \"asset_libraryId_idx\" ON public.asset USING btree (\"libraryId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "libraryId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_ownerId_idx",
           "definition": "CREATE INDEX \"asset_ownerId_idx\" ON public.asset USING btree (\"ownerId\")",
           "tableName": "asset",
@@ -9520,6 +9509,17 @@
             "id"
           ],
           "expression": "(date_trunc('MONTH'::text, (\"createdAt\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"createdAt\" AT TIME ZONE 'UTC'::text))::date",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_physicalOriginalFileId_idx",
+          "definition": "CREATE INDEX \"asset_physicalOriginalFileId_idx\" ON public.asset USING btree (\"physicalOriginalFileId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "physicalOriginalFileId"
+          ],
           "using": "btree",
           "unique": false,
           "synchronize": true
@@ -10044,30 +10044,6 @@
       ],
       "indexes": [
         {
-          "name": "asset_face_personGroupId_assetId_notDeleted_isVisible_idx",
-          "definition": "CREATE INDEX \"asset_face_personGroupId_assetId_notDeleted_isVisible_idx\" ON public.asset_face USING btree (\"personGroupId\", \"assetId\") WHERE ((\"deletedAt\" IS NULL) AND (\"isVisible\" IS TRUE))",
-          "tableName": "asset_face",
-          "columnNames": [
-            "personGroupId",
-            "assetId"
-          ],
-          "using": "btree",
-          "where": "((\"deletedAt\" IS NULL) AND (\"isVisible\" IS TRUE))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_face_correctedAt_idx",
-          "definition": "CREATE INDEX \"asset_face_correctedAt_idx\" ON public.asset_face USING btree (\"correctedAt\")",
-          "tableName": "asset_face",
-          "columnNames": [
-            "correctedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "asset_face_assetId_personGroupId_idx",
           "definition": "CREATE INDEX \"asset_face_assetId_personGroupId_idx\" ON public.asset_face USING btree (\"assetId\", \"personGroupId\")",
           "tableName": "asset_face",
@@ -10086,6 +10062,30 @@
           "columnNames": [
             "personGroupId",
             "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_face_personGroupId_assetId_notDeleted_isVisible_idx",
+          "definition": "CREATE INDEX \"asset_face_personGroupId_assetId_notDeleted_isVisible_idx\" ON public.asset_face USING btree (\"personGroupId\", \"assetId\") WHERE ((\"deletedAt\" IS NULL) AND (\"isVisible\" IS TRUE))",
+          "tableName": "asset_face",
+          "columnNames": [
+            "personGroupId",
+            "assetId"
+          ],
+          "using": "btree",
+          "where": "((\"deletedAt\" IS NULL) AND (\"isVisible\" IS TRUE))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_face_correctedAt_idx",
+          "definition": "CREATE INDEX \"asset_face_correctedAt_idx\" ON public.asset_face USING btree (\"correctedAt\")",
+          "tableName": "asset_face",
+          "columnNames": [
+            "correctedAt"
           ],
           "using": "btree",
           "unique": false,
@@ -10310,22 +10310,22 @@
           "synchronize": true
         },
         {
-          "name": "asset_file_physicalFileId_idx",
-          "definition": "CREATE INDEX \"asset_file_physicalFileId_idx\" ON public.asset_file USING btree (\"physicalFileId\")",
+          "name": "asset_file_path_frameleaf_idx",
+          "definition": "CREATE INDEX asset_file_path_frameleaf_idx ON public.asset_file USING btree (path)",
           "tableName": "asset_file",
           "columnNames": [
-            "physicalFileId"
+            "path"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "asset_file_path_frameleaf_idx",
-          "definition": "CREATE INDEX asset_file_path_frameleaf_idx ON public.asset_file USING btree (path)",
+          "name": "asset_file_physicalFileId_idx",
+          "definition": "CREATE INDEX \"asset_file_physicalFileId_idx\" ON public.asset_file USING btree (\"physicalFileId\")",
           "tableName": "asset_file",
           "columnNames": [
-            "path"
+            "physicalFileId"
           ],
           "using": "btree",
           "unique": false,
@@ -10716,6 +10716,18 @@
       ],
       "indexes": [
         {
+          "name": "asset_health_category_status_idx",
+          "definition": "CREATE INDEX asset_health_category_status_idx ON public.asset_health USING btree (category, status)",
+          "tableName": "asset_health",
+          "columnNames": [
+            "category",
+            "status"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_health_checkedAt_idx",
           "definition": "CREATE INDEX \"asset_health_checkedAt_idx\" ON public.asset_health USING btree (\"checkedAt\")",
           "tableName": "asset_health",
@@ -10732,18 +10744,6 @@
           "tableName": "asset_health",
           "columnNames": [
             "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_health_category_status_idx",
-          "definition": "CREATE INDEX asset_health_category_status_idx ON public.asset_health USING btree (category, status)",
-          "tableName": "asset_health",
-          "columnNames": [
-            "category",
-            "status"
           ],
           "using": "btree",
           "unique": false,
@@ -11612,6 +11612,17 @@
           "synchronize": true
         },
         {
+          "name": "asset_restoration_resultExpiresAt_idx",
+          "definition": "CREATE INDEX \"asset_restoration_resultExpiresAt_idx\" ON public.asset_restoration USING btree (\"resultExpiresAt\")",
+          "tableName": "asset_restoration",
+          "columnNames": [
+            "resultExpiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_restoration_fullOperationId_idx",
           "definition": "CREATE INDEX \"asset_restoration_fullOperationId_idx\" ON public.asset_restoration USING btree (\"fullOperationId\")",
           "tableName": "asset_restoration",
@@ -11643,17 +11654,6 @@
           "using": "btree",
           "where": "\"isCurrent\"",
           "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "asset_restoration_resultExpiresAt_idx",
-          "definition": "CREATE INDEX \"asset_restoration_resultExpiresAt_idx\" ON public.asset_restoration USING btree (\"resultExpiresAt\")",
-          "tableName": "asset_restoration",
-          "columnNames": [
-            "resultExpiresAt"
-          ],
-          "using": "btree",
-          "unique": false,
           "synchronize": true
         },
         {
@@ -11985,23 +11985,23 @@
           "synchronize": true
         },
         {
-          "name": "bookmark_previewAssetId_idx",
-          "definition": "CREATE INDEX \"bookmark_previewAssetId_idx\" ON public.bookmark USING btree (\"previewAssetId\")",
-          "tableName": "bookmark",
-          "columnNames": [
-            "previewAssetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "bookmark_ownerId_libraryScope_idx",
           "definition": "CREATE INDEX \"bookmark_ownerId_libraryScope_idx\" ON public.bookmark USING btree (\"ownerId\", \"libraryScope\")",
           "tableName": "bookmark",
           "columnNames": [
             "ownerId",
             "libraryScope"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "bookmark_previewAssetId_idx",
+          "definition": "CREATE INDEX \"bookmark_previewAssetId_idx\" ON public.bookmark USING btree (\"previewAssetId\")",
+          "tableName": "bookmark",
+          "columnNames": [
+            "previewAssetId"
           ],
           "using": "btree",
           "unique": false,
@@ -13494,17 +13494,6 @@
           "synchronize": true
         },
         {
-          "name": "user_updateId_idx",
-          "definition": "CREATE INDEX \"user_updateId_idx\" ON public.\"user\" USING btree (\"updateId\")",
-          "tableName": "user",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "user_profileImageAssetId_idx",
           "definition": "CREATE INDEX \"user_profileImageAssetId_idx\" ON public.\"user\" USING btree (\"profileImageAssetId\")",
           "tableName": "user",
@@ -13521,6 +13510,17 @@
           "tableName": "user",
           "columnNames": [
             "clusterGroupId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "user_updateId_idx",
+          "definition": "CREATE INDEX \"user_updateId_idx\" ON public.\"user\" USING btree (\"updateId\")",
+          "tableName": "user",
+          "columnNames": [
+            "updateId"
           ],
           "using": "btree",
           "unique": false,
@@ -13689,22 +13689,22 @@
       ],
       "indexes": [
         {
-          "name": "IDX_user_metadata_updated_at",
-          "definition": "CREATE INDEX \"IDX_user_metadata_updated_at\" ON public.user_metadata USING btree (\"updatedAt\")",
+          "name": "IDX_user_metadata_update_id",
+          "definition": "CREATE INDEX \"IDX_user_metadata_update_id\" ON public.user_metadata USING btree (\"updateId\")",
           "tableName": "user_metadata",
           "columnNames": [
-            "updatedAt"
+            "updateId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "IDX_user_metadata_update_id",
-          "definition": "CREATE INDEX \"IDX_user_metadata_update_id\" ON public.user_metadata USING btree (\"updateId\")",
+          "name": "IDX_user_metadata_updated_at",
+          "definition": "CREATE INDEX \"IDX_user_metadata_updated_at\" ON public.user_metadata USING btree (\"updatedAt\")",
           "tableName": "user_metadata",
           "columnNames": [
-            "updateId"
+            "updatedAt"
           ],
           "using": "btree",
           "unique": false,
@@ -14786,17 +14786,6 @@
           "synchronize": true
         },
         {
-          "name": "media_operation_ownerId_idx",
-          "definition": "CREATE INDEX \"media_operation_ownerId_idx\" ON public.media_operation USING btree (\"ownerId\")",
-          "tableName": "media_operation",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "media_operation_enrichment_plan_requestKey_uq",
           "definition": "CREATE UNIQUE INDEX \"media_operation_enrichment_plan_requestKey_uq\" ON public.media_operation USING btree (\"ownerId\", ((snapshot ->> 'requestKey'::text))) WHERE (((kind)::text = 'enrichment_plan'::text) AND ((snapshot ->> 'requestKey'::text) IS NOT NULL))",
           "tableName": "media_operation",
@@ -14838,6 +14827,17 @@
           "tableName": "media_operation",
           "columnNames": [
             "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "media_operation_ownerId_idx",
+          "definition": "CREATE INDEX \"media_operation_ownerId_idx\" ON public.media_operation USING btree (\"ownerId\")",
+          "tableName": "media_operation",
+          "columnNames": [
+            "ownerId"
           ],
           "using": "btree",
           "unique": false,
@@ -15002,17 +15002,6 @@
       ],
       "indexes": [
         {
-          "name": "memory_asset_updateId_idx",
-          "definition": "CREATE INDEX \"memory_asset_updateId_idx\" ON public.memory_asset USING btree (\"updateId\")",
-          "tableName": "memory_asset",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "memory_asset_assetId_idx",
           "definition": "CREATE INDEX \"memory_asset_assetId_idx\" ON public.memory_asset USING btree (\"assetId\")",
           "tableName": "memory_asset",
@@ -15029,6 +15018,17 @@
           "tableName": "memory_asset",
           "columnNames": [
             "memoriesId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "memory_asset_updateId_idx",
+          "definition": "CREATE INDEX \"memory_asset_updateId_idx\" ON public.memory_asset USING btree (\"updateId\")",
+          "tableName": "memory_asset",
+          "columnNames": [
+            "updateId"
           ],
           "using": "btree",
           "unique": false,
@@ -15250,6 +15250,17 @@
           "synchronize": true
         },
         {
+          "name": "memory_updateId_idx",
+          "definition": "CREATE INDEX \"memory_updateId_idx\" ON public.memory USING btree (\"updateId\")",
+          "tableName": "memory",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "memory_owner_show_order_idx",
           "definition": "CREATE INDEX memory_owner_show_order_idx ON public.memory USING btree (\"ownerId\", \"showAt\" DESC NULLS LAST, \"memoryAt\" DESC) WHERE (\"deletedAt\" IS NULL)",
           "tableName": "memory",
@@ -15260,17 +15271,6 @@
           ],
           "using": "btree",
           "where": "(\"deletedAt\" IS NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "memory_updateId_idx",
-          "definition": "CREATE INDEX \"memory_updateId_idx\" ON public.memory USING btree (\"updateId\")",
-          "tableName": "memory",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
           "unique": false,
           "synchronize": true
         }
@@ -15454,22 +15454,22 @@
       ],
       "indexes": [
         {
-          "name": "notification_userId_idx",
-          "definition": "CREATE INDEX \"notification_userId_idx\" ON public.notification USING btree (\"userId\")",
+          "name": "notification_updateId_idx",
+          "definition": "CREATE INDEX \"notification_updateId_idx\" ON public.notification USING btree (\"updateId\")",
           "tableName": "notification",
           "columnNames": [
-            "userId"
+            "updateId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "notification_updateId_idx",
-          "definition": "CREATE INDEX \"notification_updateId_idx\" ON public.notification USING btree (\"updateId\")",
+          "name": "notification_userId_idx",
+          "definition": "CREATE INDEX \"notification_userId_idx\" ON public.notification USING btree (\"userId\")",
           "tableName": "notification",
           "columnNames": [
-            "updateId"
+            "userId"
           ],
           "using": "btree",
           "unique": false,
@@ -16042,6 +16042,17 @@
       ],
       "indexes": [
         {
+          "name": "person_group_updateId_idx",
+          "definition": "CREATE INDEX \"person_group_updateId_idx\" ON public.person_group USING btree (\"updateId\")",
+          "tableName": "person_group",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "person_group_clusterGroupId_idx",
           "definition": "CREATE INDEX \"person_group_clusterGroupId_idx\" ON public.person_group USING btree (\"clusterGroupId\")",
           "tableName": "person_group",
@@ -16058,17 +16069,6 @@
           "tableName": "person_group",
           "columnNames": [
             "createId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "person_group_updateId_idx",
-          "definition": "CREATE INDEX \"person_group_updateId_idx\" ON public.person_group USING btree (\"updateId\")",
-          "tableName": "person_group",
-          "columnNames": [
-            "updateId"
           ],
           "using": "btree",
           "unique": false,
@@ -16258,17 +16258,6 @@
           "synchronize": true
         },
         {
-          "name": "pet_updateId_idx",
-          "definition": "CREATE INDEX \"pet_updateId_idx\" ON public.pet USING btree (\"updateId\")",
-          "tableName": "pet",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "pet_featuredAssetId_idx",
           "definition": "CREATE INDEX \"pet_featuredAssetId_idx\" ON public.pet USING btree (\"featuredAssetId\")",
           "tableName": "pet",
@@ -16286,6 +16275,17 @@
           "columnNames": [
             "ownerId",
             "isHidden"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "pet_updateId_idx",
+          "definition": "CREATE INDEX \"pet_updateId_idx\" ON public.pet USING btree (\"updateId\")",
+          "tableName": "pet",
+          "columnNames": [
+            "updateId"
           ],
           "using": "btree",
           "unique": false,
@@ -16736,17 +16736,6 @@
       ],
       "indexes": [
         {
-          "name": "physical_file_canonicalAssetId_idx",
-          "definition": "CREATE INDEX \"physical_file_canonicalAssetId_idx\" ON public.physical_file USING btree (\"canonicalAssetId\")",
-          "tableName": "physical_file",
-          "columnNames": [
-            "canonicalAssetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "physical_file_checksum_sizeInBytes_type_idx",
           "definition": "CREATE INDEX \"physical_file_checksum_sizeInBytes_type_idx\" ON public.physical_file USING btree (checksum, \"sizeInBytes\", type)",
           "tableName": "physical_file",
@@ -16777,6 +16766,17 @@
           "tableName": "physical_file",
           "columnNames": [
             "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "physical_file_canonicalAssetId_idx",
+          "definition": "CREATE INDEX \"physical_file_canonicalAssetId_idx\" ON public.physical_file USING btree (\"canonicalAssetId\")",
+          "tableName": "physical_file",
+          "columnNames": [
+            "canonicalAssetId"
           ],
           "using": "btree",
           "unique": false,
@@ -17746,6 +17746,17 @@
       ],
       "indexes": [
         {
+          "name": "preservation_restore_packageId_idx",
+          "definition": "CREATE INDEX \"preservation_restore_packageId_idx\" ON public.preservation_restore USING btree (\"packageId\")",
+          "tableName": "preservation_restore",
+          "columnNames": [
+            "packageId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "preservation_restore_ownerId_idx",
           "definition": "CREATE INDEX \"preservation_restore_ownerId_idx\" ON public.preservation_restore USING btree (\"ownerId\")",
           "tableName": "preservation_restore",
@@ -17763,17 +17774,6 @@
           "columnNames": [
             "ownerId",
             "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "preservation_restore_packageId_idx",
-          "definition": "CREATE INDEX \"preservation_restore_packageId_idx\" ON public.preservation_restore USING btree (\"packageId\")",
-          "tableName": "preservation_restore",
-          "columnNames": [
-            "packageId"
           ],
           "using": "btree",
           "unique": false,
@@ -19422,17 +19422,6 @@
       ],
       "indexes": [
         {
-          "name": "studio_preview_frame_operationId_idx",
-          "definition": "CREATE INDEX \"studio_preview_frame_operationId_idx\" ON public.studio_preview_frame USING btree (\"operationId\")",
-          "tableName": "studio_preview_frame",
-          "columnNames": [
-            "operationId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "studio_preview_frame_ownerId_projectId_revisionDigest_idx",
           "definition": "CREATE INDEX \"studio_preview_frame_ownerId_projectId_revisionDigest_idx\" ON public.studio_preview_frame USING btree (\"ownerId\", \"projectId\", \"revisionDigest\")",
           "tableName": "studio_preview_frame",
@@ -19464,6 +19453,17 @@
           "columnNames": [
             "status",
             "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_preview_frame_operationId_idx",
+          "definition": "CREATE INDEX \"studio_preview_frame_operationId_idx\" ON public.studio_preview_frame USING btree (\"operationId\")",
+          "tableName": "studio_preview_frame",
+          "columnNames": [
+            "operationId"
           ],
           "using": "btree",
           "unique": false,
@@ -19685,28 +19685,6 @@
       ],
       "indexes": [
         {
-          "name": "studio_project_comment_projectId_idx",
-          "definition": "CREATE INDEX \"studio_project_comment_projectId_idx\" ON public.studio_project_comment USING btree (\"projectId\")",
-          "tableName": "studio_project_comment",
-          "columnNames": [
-            "projectId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_project_comment_authorId_idx",
-          "definition": "CREATE INDEX \"studio_project_comment_authorId_idx\" ON public.studio_project_comment USING btree (\"authorId\")",
-          "tableName": "studio_project_comment",
-          "columnNames": [
-            "authorId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "studio_project_comment_projectId_createdAt_idx",
           "definition": "CREATE INDEX \"studio_project_comment_projectId_createdAt_idx\" ON public.studio_project_comment USING btree (\"projectId\", \"createdAt\")",
           "tableName": "studio_project_comment",
@@ -19724,6 +19702,28 @@
           "tableName": "studio_project_comment",
           "columnNames": [
             "resolvedById"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_comment_projectId_idx",
+          "definition": "CREATE INDEX \"studio_project_comment_projectId_idx\" ON public.studio_project_comment USING btree (\"projectId\")",
+          "tableName": "studio_project_comment",
+          "columnNames": [
+            "projectId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_comment_authorId_idx",
+          "definition": "CREATE INDEX \"studio_project_comment_authorId_idx\" ON public.studio_project_comment USING btree (\"authorId\")",
+          "tableName": "studio_project_comment",
+          "columnNames": [
+            "authorId"
           ],
           "using": "btree",
           "unique": false,
@@ -20020,6 +20020,17 @@
       ],
       "indexes": [
         {
+          "name": "studio_project_duplicatedFromId_idx",
+          "definition": "CREATE INDEX \"studio_project_duplicatedFromId_idx\" ON public.studio_project USING btree (\"duplicatedFromId\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "duplicatedFromId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "studio_project_ownerId_updatedAt_idx",
           "definition": "CREATE INDEX \"studio_project_ownerId_updatedAt_idx\" ON public.studio_project USING btree (\"ownerId\", \"updatedAt\")",
           "tableName": "studio_project",
@@ -20043,39 +20054,6 @@
           "synchronize": true
         },
         {
-          "name": "studio_project_purgeAfter_idx",
-          "definition": "CREATE INDEX \"studio_project_purgeAfter_idx\" ON public.studio_project USING btree (\"purgeAfter\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "purgeAfter"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_project_thumbnailAssetId_idx",
-          "definition": "CREATE INDEX \"studio_project_thumbnailAssetId_idx\" ON public.studio_project USING btree (\"thumbnailAssetId\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "thumbnailAssetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "studio_project_duplicatedFromId_idx",
-          "definition": "CREATE INDEX \"studio_project_duplicatedFromId_idx\" ON public.studio_project USING btree (\"duplicatedFromId\")",
-          "tableName": "studio_project",
-          "columnNames": [
-            "duplicatedFromId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "studio_project_spaceId_idx",
           "definition": "CREATE INDEX \"studio_project_spaceId_idx\" ON public.studio_project USING btree (\"spaceId\")",
           "tableName": "studio_project",
@@ -20092,6 +20070,28 @@
           "tableName": "studio_project",
           "columnNames": [
             "leaseHolderId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_purgeAfter_idx",
+          "definition": "CREATE INDEX \"studio_project_purgeAfter_idx\" ON public.studio_project USING btree (\"purgeAfter\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "purgeAfter"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_project_thumbnailAssetId_idx",
+          "definition": "CREATE INDEX \"studio_project_thumbnailAssetId_idx\" ON public.studio_project USING btree (\"thumbnailAssetId\")",
+          "tableName": "studio_project",
+          "columnNames": [
+            "thumbnailAssetId"
           ],
           "using": "btree",
           "unique": false,
@@ -20262,6 +20262,28 @@
       ],
       "indexes": [
         {
+          "name": "tag_asset_tagId_idx",
+          "definition": "CREATE INDEX \"tag_asset_tagId_idx\" ON public.tag_asset USING btree (\"tagId\")",
+          "tableName": "tag_asset",
+          "columnNames": [
+            "tagId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "tag_asset_updateId_idx",
+          "definition": "CREATE INDEX \"tag_asset_updateId_idx\" ON public.tag_asset USING btree (\"updateId\")",
+          "tableName": "tag_asset",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "tag_asset_assetId_tagId_idx",
           "definition": "CREATE INDEX \"tag_asset_assetId_tagId_idx\" ON public.tag_asset USING btree (\"assetId\", \"tagId\")",
           "tableName": "tag_asset",
@@ -20279,28 +20301,6 @@
           "tableName": "tag_asset",
           "columnNames": [
             "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "tag_asset_tagId_idx",
-          "definition": "CREATE INDEX \"tag_asset_tagId_idx\" ON public.tag_asset USING btree (\"tagId\")",
-          "tableName": "tag_asset",
-          "columnNames": [
-            "tagId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "tag_asset_updateId_idx",
-          "definition": "CREATE INDEX \"tag_asset_updateId_idx\" ON public.tag_asset USING btree (\"updateId\")",
-          "tableName": "tag_asset",
-          "columnNames": [
-            "updateId"
           ],
           "using": "btree",
           "unique": false,
@@ -21901,22 +21901,22 @@
       ],
       "indexes": [
         {
-          "name": "album_bookmark_bookmarkId_idx",
-          "definition": "CREATE INDEX \"album_bookmark_bookmarkId_idx\" ON public.album_bookmark USING btree (\"bookmarkId\")",
+          "name": "album_bookmark_albumId_idx",
+          "definition": "CREATE INDEX \"album_bookmark_albumId_idx\" ON public.album_bookmark USING btree (\"albumId\")",
           "tableName": "album_bookmark",
           "columnNames": [
-            "bookmarkId"
+            "albumId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "album_bookmark_albumId_idx",
-          "definition": "CREATE INDEX \"album_bookmark_albumId_idx\" ON public.album_bookmark USING btree (\"albumId\")",
+          "name": "album_bookmark_bookmarkId_idx",
+          "definition": "CREATE INDEX \"album_bookmark_bookmarkId_idx\" ON public.album_bookmark USING btree (\"bookmarkId\")",
           "tableName": "album_bookmark",
           "columnNames": [
-            "albumId"
+            "bookmarkId"
           ],
           "using": "btree",
           "unique": false,
@@ -22996,28 +22996,6 @@
       ],
       "indexes": [
         {
-          "name": "asset_best_photo_score_ownerId_idx",
-          "definition": "CREATE INDEX \"asset_best_photo_score_ownerId_idx\" ON public.asset_best_photo_score USING btree (\"ownerId\")",
-          "tableName": "asset_best_photo_score",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_best_photo_score_computedAt_idx",
-          "definition": "CREATE INDEX \"asset_best_photo_score_computedAt_idx\" ON public.asset_best_photo_score USING btree (\"computedAt\")",
-          "tableName": "asset_best_photo_score",
-          "columnNames": [
-            "computedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "asset_best_photo_score_ownerId_score_idx",
           "definition": "CREATE INDEX \"asset_best_photo_score_ownerId_score_idx\" ON public.asset_best_photo_score USING btree (\"ownerId\", score)",
           "tableName": "asset_best_photo_score",
@@ -23035,6 +23013,28 @@
           "tableName": "asset_best_photo_score",
           "columnNames": [
             "scoreVersion",
+            "computedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_best_photo_score_ownerId_idx",
+          "definition": "CREATE INDEX \"asset_best_photo_score_ownerId_idx\" ON public.asset_best_photo_score USING btree (\"ownerId\")",
+          "tableName": "asset_best_photo_score",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_best_photo_score_computedAt_idx",
+          "definition": "CREATE INDEX \"asset_best_photo_score_computedAt_idx\" ON public.asset_best_photo_score USING btree (\"computedAt\")",
+          "tableName": "asset_best_photo_score",
+          "columnNames": [
             "computedAt"
           ],
           "using": "btree",
@@ -26328,22 +26328,22 @@
       ],
       "indexes": [
         {
-          "name": "browser_extension_sign_in_code_sessionId_idx",
-          "definition": "CREATE INDEX \"browser_extension_sign_in_code_sessionId_idx\" ON public.browser_extension_sign_in_code USING btree (\"sessionId\")",
+          "name": "browser_extension_sign_in_code_userId_idx",
+          "definition": "CREATE INDEX \"browser_extension_sign_in_code_userId_idx\" ON public.browser_extension_sign_in_code USING btree (\"userId\")",
           "tableName": "browser_extension_sign_in_code",
           "columnNames": [
-            "sessionId"
+            "userId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "browser_extension_sign_in_code_userId_idx",
-          "definition": "CREATE INDEX \"browser_extension_sign_in_code_userId_idx\" ON public.browser_extension_sign_in_code USING btree (\"userId\")",
+          "name": "browser_extension_sign_in_code_sessionId_idx",
+          "definition": "CREATE INDEX \"browser_extension_sign_in_code_sessionId_idx\" ON public.browser_extension_sign_in_code USING btree (\"sessionId\")",
           "tableName": "browser_extension_sign_in_code",
           "columnNames": [
-            "userId"
+            "sessionId"
           ],
           "using": "btree",
           "unique": false,
@@ -26617,18 +26617,6 @@
       ],
       "indexes": [
         {
-          "name": "classification_match_ruleId_decision_idx",
-          "definition": "CREATE INDEX \"classification_match_ruleId_decision_idx\" ON public.classification_match USING btree (\"ruleId\", decision)",
-          "tableName": "classification_match",
-          "columnNames": [
-            "ruleId",
-            "decision"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "classification_match_assetId_idx",
           "definition": "CREATE INDEX \"classification_match_assetId_idx\" ON public.classification_match USING btree (\"assetId\")",
           "tableName": "classification_match",
@@ -26645,6 +26633,18 @@
           "tableName": "classification_match",
           "columnNames": [
             "ruleId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "classification_match_ruleId_decision_idx",
+          "definition": "CREATE INDEX \"classification_match_ruleId_decision_idx\" ON public.classification_match USING btree (\"ruleId\", decision)",
+          "tableName": "classification_match",
+          "columnNames": [
+            "ruleId",
+            "decision"
           ],
           "using": "btree",
           "unique": false,
@@ -28736,23 +28736,23 @@
       ],
       "indexes": [
         {
-          "name": "desktop_worker_challenge_deviceId_expiresAt_idx",
-          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_expiresAt_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\", \"expiresAt\")",
+          "name": "desktop_worker_challenge_deviceId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\")",
           "tableName": "desktop_worker_challenge",
           "columnNames": [
-            "deviceId",
-            "expiresAt"
+            "deviceId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "desktop_worker_challenge_deviceId_idx",
-          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\")",
+          "name": "desktop_worker_challenge_deviceId_expiresAt_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_expiresAt_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\", \"expiresAt\")",
           "tableName": "desktop_worker_challenge",
           "columnNames": [
-            "deviceId"
+            "deviceId",
+            "expiresAt"
           ],
           "using": "btree",
           "unique": false,
@@ -29634,22 +29634,22 @@
       ],
       "indexes": [
         {
-          "name": "develop_export_assetId_idx",
-          "definition": "CREATE INDEX \"develop_export_assetId_idx\" ON public.develop_export USING btree (\"assetId\")",
+          "name": "develop_export_ownerId_idx",
+          "definition": "CREATE INDEX \"develop_export_ownerId_idx\" ON public.develop_export USING btree (\"ownerId\")",
           "tableName": "develop_export",
           "columnNames": [
-            "assetId"
+            "ownerId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "develop_export_ownerId_idx",
-          "definition": "CREATE INDEX \"develop_export_ownerId_idx\" ON public.develop_export USING btree (\"ownerId\")",
+          "name": "develop_export_assetId_idx",
+          "definition": "CREATE INDEX \"develop_export_assetId_idx\" ON public.develop_export USING btree (\"assetId\")",
           "tableName": "develop_export",
           "columnNames": [
-            "ownerId"
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
@@ -30191,6 +30191,17 @@
       ],
       "indexes": [
         {
+          "name": "duplicate_decision_ownerId_idx",
+          "definition": "CREATE INDEX \"duplicate_decision_ownerId_idx\" ON public.duplicate_decision USING btree (\"ownerId\")",
+          "tableName": "duplicate_decision",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "duplicate_decision_ownerId_createdAt_idx",
           "definition": "CREATE INDEX \"duplicate_decision_ownerId_createdAt_idx\" ON public.duplicate_decision USING btree (\"ownerId\", \"createdAt\")",
           "tableName": "duplicate_decision",
@@ -30203,34 +30214,23 @@
           "synchronize": true
         },
         {
+          "name": "duplicate_decision_undoOperationId_idx",
+          "definition": "CREATE INDEX \"duplicate_decision_undoOperationId_idx\" ON public.duplicate_decision USING btree (\"undoOperationId\")",
+          "tableName": "duplicate_decision",
+          "columnNames": [
+            "undoOperationId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "duplicate_decision_ownerId_duplicateId_idx",
           "definition": "CREATE INDEX \"duplicate_decision_ownerId_duplicateId_idx\" ON public.duplicate_decision USING btree (\"ownerId\", \"duplicateId\")",
           "tableName": "duplicate_decision",
           "columnNames": [
             "ownerId",
             "duplicateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "duplicate_decision_ownerId_idx",
-          "definition": "CREATE INDEX \"duplicate_decision_ownerId_idx\" ON public.duplicate_decision USING btree (\"ownerId\")",
-          "tableName": "duplicate_decision",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "duplicate_decision_undoOperationId_idx",
-          "definition": "CREATE INDEX \"duplicate_decision_undoOperationId_idx\" ON public.duplicate_decision USING btree (\"undoOperationId\")",
-          "tableName": "duplicate_decision",
-          "columnNames": [
-            "undoOperationId"
           ],
           "using": "btree",
           "unique": false,
@@ -30552,6 +30552,17 @@
           "synchronize": true
         },
         {
+          "name": "eagle_import_ownerId_idx",
+          "definition": "CREATE INDEX \"eagle_import_ownerId_idx\" ON public.eagle_import USING btree (\"ownerId\")",
+          "tableName": "eagle_import",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "eagle_import_active_library_uq",
           "definition": "CREATE UNIQUE INDEX eagle_import_active_library_uq ON public.eagle_import USING btree (\"ownerId\", \"libraryPath\") WHERE ((status)::text = ANY (ARRAY[('running'::character varying)::text, ('stopping'::character varying)::text]))",
           "tableName": "eagle_import",
@@ -30562,17 +30573,6 @@
           "using": "btree",
           "where": "((status)::text = ANY (ARRAY[('running'::character varying)::text, ('stopping'::character varying)::text]))",
           "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "eagle_import_ownerId_idx",
-          "definition": "CREATE INDEX \"eagle_import_ownerId_idx\" ON public.eagle_import USING btree (\"ownerId\")",
-          "tableName": "eagle_import",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
           "synchronize": true
         }
       ],
@@ -31509,18 +31509,6 @@
       ],
       "indexes": [
         {
-          "name": "icloud_album_mapping_idx",
-          "definition": "CREATE INDEX icloud_album_mapping_idx ON public.icloud_album USING btree (\"albumId\") WHERE (\"albumId\" IS NOT NULL)",
-          "tableName": "icloud_album",
-          "columnNames": [
-            "albumId"
-          ],
-          "using": "btree",
-          "where": "(\"albumId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "icloud_album_parent_idx",
           "definition": "CREATE INDEX icloud_album_parent_idx ON public.icloud_album USING btree (\"connectionId\", \"libraryKey\", \"parentSourceId\")",
           "tableName": "icloud_album",
@@ -31530,6 +31518,18 @@
             "parentSourceId"
           ],
           "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "icloud_album_mapping_idx",
+          "definition": "CREATE INDEX icloud_album_mapping_idx ON public.icloud_album USING btree (\"albumId\") WHERE (\"albumId\" IS NOT NULL)",
+          "tableName": "icloud_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "where": "(\"albumId\" IS NOT NULL)",
           "unique": false,
           "synchronize": true
         }
@@ -33004,6 +33004,19 @@
       ],
       "indexes": [
         {
+          "name": "icloud_record_asset_name_idx",
+          "definition": "CREATE INDEX icloud_record_asset_name_idx ON public.icloud_record USING btree (\"connectionId\", upper(\"recordId\")) WHERE ((\"recordType\" = 'CPLAsset'::text) AND (NOT deleted))",
+          "tableName": "icloud_record",
+          "columnNames": [
+            "connectionId"
+          ],
+          "expression": "upper(\"recordId\")",
+          "using": "btree",
+          "where": "((\"recordType\" = 'CPLAsset'::text) AND (NOT deleted))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "icloud_record_type_idx",
           "definition": "CREATE INDEX icloud_record_type_idx ON public.icloud_record USING btree (\"connectionId\", \"libraryKey\", \"recordType\", \"recordId\") WHERE (NOT deleted)",
           "tableName": "icloud_record",
@@ -33029,19 +33042,6 @@
           ],
           "using": "btree",
           "where": "(\"masterId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "icloud_record_asset_name_idx",
-          "definition": "CREATE INDEX icloud_record_asset_name_idx ON public.icloud_record USING btree (\"connectionId\", upper(\"recordId\")) WHERE ((\"recordType\" = 'CPLAsset'::text) AND (NOT deleted))",
-          "tableName": "icloud_record",
-          "columnNames": [
-            "connectionId"
-          ],
-          "expression": "upper(\"recordId\")",
-          "using": "btree",
-          "where": "((\"recordType\" = 'CPLAsset'::text) AND (NOT deleted))",
           "unique": false,
           "synchronize": true
         }
@@ -33397,33 +33397,6 @@
           "synchronize": true
         },
         {
-          "name": "icloud_resource_pending_idx",
-          "definition": "CREATE INDEX icloud_resource_pending_idx ON public.icloud_resource USING btree (\"connectionId\", status, \"nextAttemptAt\", id) WHERE (status = ANY (ARRAY['pending'::text, 'retry'::text]))",
-          "tableName": "icloud_resource",
-          "columnNames": [
-            "connectionId",
-            "status",
-            "nextAttemptAt",
-            "id"
-          ],
-          "using": "btree",
-          "where": "(status = ANY (ARRAY['pending'::text, 'retry'::text]))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "icloud_resource_asset_idx",
-          "definition": "CREATE INDEX icloud_resource_asset_idx ON public.icloud_resource USING btree (\"assetId\") WHERE (\"assetId\" IS NOT NULL)",
-          "tableName": "icloud_resource",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "where": "(\"assetId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "icloud_resource_claim_order_idx",
           "definition": "CREATE INDEX icloud_resource_claim_order_idx ON public.icloud_resource USING btree (\"connectionId\", (\nCASE\n    WHEN (status = 'committed'::text) THEN 0\n    ELSE 1\nEND), \"createdAt\", id) WHERE ((\"auditRequestId\" IS NULL) AND (status = ANY (ARRAY['pending'::text, 'retry'::text, 'staging'::text, 'validated'::text, 'promoted'::text, 'committed'::text])))",
           "tableName": "icloud_resource",
@@ -33435,6 +33408,21 @@
           "expression": "\nCASE\n    WHEN (status = 'committed'::text) THEN 0\n    ELSE 1\nEND",
           "using": "btree",
           "where": "((\"auditRequestId\" IS NULL) AND (status = ANY (ARRAY['pending'::text, 'retry'::text, 'staging'::text, 'validated'::text, 'promoted'::text, 'committed'::text])))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "icloud_resource_pending_idx",
+          "definition": "CREATE INDEX icloud_resource_pending_idx ON public.icloud_resource USING btree (\"connectionId\", status, \"nextAttemptAt\", id) WHERE (status = ANY (ARRAY['pending'::text, 'retry'::text]))",
+          "tableName": "icloud_resource",
+          "columnNames": [
+            "connectionId",
+            "status",
+            "nextAttemptAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(status = ANY (ARRAY['pending'::text, 'retry'::text]))",
           "unique": false,
           "synchronize": true
         },
@@ -33463,6 +33451,18 @@
             "status"
           ],
           "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "icloud_resource_asset_idx",
+          "definition": "CREATE INDEX icloud_resource_asset_idx ON public.icloud_resource USING btree (\"assetId\") WHERE (\"assetId\" IS NOT NULL)",
+          "tableName": "icloud_resource",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "where": "(\"assetId\" IS NOT NULL)",
           "unique": false,
           "synchronize": true
         },
@@ -34085,22 +34085,22 @@
       ],
       "indexes": [
         {
-          "name": "identical_file_change_runId_idx",
-          "definition": "CREATE INDEX \"identical_file_change_runId_idx\" ON public.identical_file_change USING btree (\"runId\")",
+          "name": "identical_file_change_assetId_idx",
+          "definition": "CREATE INDEX \"identical_file_change_assetId_idx\" ON public.identical_file_change USING btree (\"assetId\")",
           "tableName": "identical_file_change",
           "columnNames": [
-            "runId"
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "identical_file_change_assetId_idx",
-          "definition": "CREATE INDEX \"identical_file_change_assetId_idx\" ON public.identical_file_change USING btree (\"assetId\")",
+          "name": "identical_file_change_runId_idx",
+          "definition": "CREATE INDEX \"identical_file_change_runId_idx\" ON public.identical_file_change USING btree (\"runId\")",
           "tableName": "identical_file_change",
           "columnNames": [
-            "assetId"
+            "runId"
           ],
           "using": "btree",
           "unique": false,
@@ -34227,22 +34227,22 @@
       ],
       "indexes": [
         {
-          "name": "integrity_report_assetId_idx",
-          "definition": "CREATE INDEX \"integrity_report_assetId_idx\" ON public.integrity_report USING btree (\"assetId\")",
+          "name": "integrity_report_fileAssetId_idx",
+          "definition": "CREATE INDEX \"integrity_report_fileAssetId_idx\" ON public.integrity_report USING btree (\"fileAssetId\")",
           "tableName": "integrity_report",
           "columnNames": [
-            "assetId"
+            "fileAssetId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "integrity_report_fileAssetId_idx",
-          "definition": "CREATE INDEX \"integrity_report_fileAssetId_idx\" ON public.integrity_report USING btree (\"fileAssetId\")",
+          "name": "integrity_report_assetId_idx",
+          "definition": "CREATE INDEX \"integrity_report_assetId_idx\" ON public.integrity_report USING btree (\"assetId\")",
           "tableName": "integrity_report",
           "columnNames": [
-            "fileAssetId"
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
@@ -34469,22 +34469,22 @@
       ],
       "indexes": [
         {
-          "name": "memory_asset_audit_assetId_idx",
-          "definition": "CREATE INDEX \"memory_asset_audit_assetId_idx\" ON public.memory_asset_audit USING btree (\"assetId\")",
+          "name": "memory_asset_audit_deletedAt_idx",
+          "definition": "CREATE INDEX \"memory_asset_audit_deletedAt_idx\" ON public.memory_asset_audit USING btree (\"deletedAt\")",
           "tableName": "memory_asset_audit",
           "columnNames": [
-            "assetId"
+            "deletedAt"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "memory_asset_audit_deletedAt_idx",
-          "definition": "CREATE INDEX \"memory_asset_audit_deletedAt_idx\" ON public.memory_asset_audit USING btree (\"deletedAt\")",
+          "name": "memory_asset_audit_assetId_idx",
+          "definition": "CREATE INDEX \"memory_asset_audit_assetId_idx\" ON public.memory_asset_audit USING btree (\"assetId\")",
           "tableName": "memory_asset_audit",
           "columnNames": [
-            "deletedAt"
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
@@ -34753,28 +34753,6 @@
           "synchronize": true
         },
         {
-          "name": "memory_export_ownerId_idx",
-          "definition": "CREATE INDEX \"memory_export_ownerId_idx\" ON public.memory_export USING btree (\"ownerId\")",
-          "tableName": "memory_export",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "memory_export_studioProjectId_idx",
-          "definition": "CREATE INDEX \"memory_export_studioProjectId_idx\" ON public.memory_export USING btree (\"studioProjectId\")",
-          "tableName": "memory_export",
-          "columnNames": [
-            "studioProjectId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "memory_export_status_idx",
           "definition": "CREATE INDEX memory_export_status_idx ON public.memory_export USING btree (status)",
           "tableName": "memory_export",
@@ -34791,6 +34769,28 @@
           "tableName": "memory_export",
           "columnNames": [
             "memoryId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "memory_export_ownerId_idx",
+          "definition": "CREATE INDEX \"memory_export_ownerId_idx\" ON public.memory_export USING btree (\"ownerId\")",
+          "tableName": "memory_export",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "memory_export_studioProjectId_idx",
+          "definition": "CREATE INDEX \"memory_export_studioProjectId_idx\" ON public.memory_export USING btree (\"studioProjectId\")",
+          "tableName": "memory_export",
+          "columnNames": [
+            "studioProjectId"
           ],
           "using": "btree",
           "unique": false,
@@ -35193,17 +35193,6 @@
       ],
       "indexes": [
         {
-          "name": "studio_export_version_publishOperationId_idx",
-          "definition": "CREATE INDEX \"studio_export_version_publishOperationId_idx\" ON public.studio_export_version USING btree (\"publishOperationId\")",
-          "tableName": "studio_export_version",
-          "columnNames": [
-            "publishOperationId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "studio_export_version_projectId_createdAt_idx",
           "definition": "CREATE INDEX \"studio_export_version_projectId_createdAt_idx\" ON public.studio_export_version USING btree (\"projectId\", \"createdAt\")",
           "tableName": "studio_export_version",
@@ -35221,6 +35210,17 @@
           "tableName": "studio_export_version",
           "columnNames": [
             "resultAssetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_export_version_publishOperationId_idx",
+          "definition": "CREATE INDEX \"studio_export_version_publishOperationId_idx\" ON public.studio_export_version USING btree (\"publishOperationId\")",
+          "tableName": "studio_export_version",
+          "columnNames": [
+            "publishOperationId"
           ],
           "using": "btree",
           "unique": false,
@@ -36565,22 +36565,22 @@
           "synchronize": true
         },
         {
-          "name": "photo_location_scan_item_scanid_idx",
-          "definition": "CREATE INDEX photo_location_scan_item_scanid_idx ON public.photo_location_scan_item USING btree (\"scanId\")",
+          "name": "photo_location_scan_item_assetid_idx",
+          "definition": "CREATE INDEX photo_location_scan_item_assetid_idx ON public.photo_location_scan_item USING btree (\"assetId\")",
           "tableName": "photo_location_scan_item",
           "columnNames": [
-            "scanId"
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "photo_location_scan_item_assetid_idx",
-          "definition": "CREATE INDEX photo_location_scan_item_assetid_idx ON public.photo_location_scan_item USING btree (\"assetId\")",
+          "name": "photo_location_scan_item_scanid_idx",
+          "definition": "CREATE INDEX photo_location_scan_item_scanid_idx ON public.photo_location_scan_item USING btree (\"scanId\")",
           "tableName": "photo_location_scan_item",
           "columnNames": [
-            "assetId"
+            "scanId"
           ],
           "using": "btree",
           "unique": false,
@@ -36896,29 +36896,6 @@
       ],
       "indexes": [
         {
-          "name": "photo_location_scan_one_active_idx",
-          "definition": "CREATE UNIQUE INDEX photo_location_scan_one_active_idx ON public.photo_location_scan USING btree (\"ownerId\") WHERE (status = ANY (ARRAY['queued'::text, 'preparing'::text, 'uploading'::text, 'running'::text, 'paused'::text]))",
-          "tableName": "photo_location_scan",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "where": "(status = ANY (ARRAY['queued'::text, 'preparing'::text, 'uploading'::text, 'running'::text, 'paused'::text]))",
-          "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "photo_location_scan_estimate_idx",
-          "definition": "CREATE UNIQUE INDEX photo_location_scan_estimate_idx ON public.photo_location_scan USING btree (\"estimateId\")",
-          "tableName": "photo_location_scan",
-          "columnNames": [
-            "estimateId"
-          ],
-          "using": "btree",
-          "unique": true,
-          "synchronize": true
-        },
-        {
           "name": "photo_location_scan_owner_created_idx",
           "definition": "CREATE INDEX photo_location_scan_owner_created_idx ON public.photo_location_scan USING btree (\"ownerId\", \"createdAt\")",
           "tableName": "photo_location_scan",
@@ -36931,6 +36908,18 @@
           "synchronize": true
         },
         {
+          "name": "photo_location_scan_one_active_idx",
+          "definition": "CREATE UNIQUE INDEX photo_location_scan_one_active_idx ON public.photo_location_scan USING btree (\"ownerId\") WHERE (status = ANY (ARRAY['queued'::text, 'preparing'::text, 'uploading'::text, 'running'::text, 'paused'::text]))",
+          "tableName": "photo_location_scan",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "where": "(status = ANY (ARRAY['queued'::text, 'preparing'::text, 'uploading'::text, 'running'::text, 'paused'::text]))",
+          "unique": true,
+          "synchronize": true
+        },
+        {
           "name": "photo_location_scan_ownerid_idx",
           "definition": "CREATE INDEX photo_location_scan_ownerid_idx ON public.photo_location_scan USING btree (\"ownerId\")",
           "tableName": "photo_location_scan",
@@ -36939,6 +36928,17 @@
           ],
           "using": "btree",
           "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "photo_location_scan_estimate_idx",
+          "definition": "CREATE UNIQUE INDEX photo_location_scan_estimate_idx ON public.photo_location_scan USING btree (\"estimateId\")",
+          "tableName": "photo_location_scan",
+          "columnNames": [
+            "estimateId"
+          ],
+          "using": "btree",
+          "unique": true,
           "synchronize": true
         }
       ],
@@ -38215,6 +38215,15 @@
           "synchronize": true
         },
         {
+          "name": "render_worker_session_budget_measurement_key",
+          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_measurement_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)))",
+          "tableName": "render_worker_session",
+          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)",
+          "using": "btree",
+          "unique": true,
+          "synchronize": true
+        },
+        {
           "name": "render_worker_session_workerId_expiresAt_idx",
           "definition": "CREATE INDEX \"render_worker_session_workerId_expiresAt_idx\" ON public.render_worker_session USING btree (\"workerId\", \"expiresAt\")",
           "tableName": "render_worker_session",
@@ -38224,15 +38233,6 @@
           ],
           "using": "btree",
           "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "render_worker_session_budget_measurement_key",
-          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_measurement_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)))",
-          "tableName": "render_worker_session",
-          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)",
-          "using": "btree",
-          "unique": true,
           "synchronize": true
         },
         {
@@ -39141,17 +39141,6 @@
       ],
       "indexes": [
         {
-          "name": "shared_space_event_targetUserId_idx",
-          "definition": "CREATE INDEX \"shared_space_event_targetUserId_idx\" ON public.shared_space_event USING btree (\"targetUserId\")",
-          "tableName": "shared_space_event",
-          "columnNames": [
-            "targetUserId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "shared_space_event_albumId_createdAt_idx",
           "definition": "CREATE INDEX \"shared_space_event_albumId_createdAt_idx\" ON public.shared_space_event USING btree (\"albumId\", \"createdAt\")",
           "tableName": "shared_space_event",
@@ -39180,6 +39169,17 @@
           "tableName": "shared_space_event",
           "columnNames": [
             "activityId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "shared_space_event_targetUserId_idx",
+          "definition": "CREATE INDEX \"shared_space_event_targetUserId_idx\" ON public.shared_space_event USING btree (\"targetUserId\")",
+          "tableName": "shared_space_event",
+          "columnNames": [
+            "targetUserId"
           ],
           "using": "btree",
           "unique": false,
@@ -39330,6 +39330,17 @@
       ],
       "indexes": [
         {
+          "name": "shared_space_invite_invitedById_idx",
+          "definition": "CREATE INDEX \"shared_space_invite_invitedById_idx\" ON public.shared_space_invite USING btree (\"invitedById\")",
+          "tableName": "shared_space_invite",
+          "columnNames": [
+            "invitedById"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "shared_space_invite_albumId_idx",
           "definition": "CREATE INDEX \"shared_space_invite_albumId_idx\" ON public.shared_space_invite USING btree (\"albumId\")",
           "tableName": "shared_space_invite",
@@ -39346,17 +39357,6 @@
           "tableName": "shared_space_invite",
           "columnNames": [
             "userId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "shared_space_invite_invitedById_idx",
-          "definition": "CREATE INDEX \"shared_space_invite_invitedById_idx\" ON public.shared_space_invite USING btree (\"invitedById\")",
-          "tableName": "shared_space_invite",
-          "columnNames": [
-            "invitedById"
           ],
           "using": "btree",
           "unique": false,
@@ -39451,22 +39451,22 @@
       ],
       "indexes": [
         {
-          "name": "shared_space_mention_userId_idx",
-          "definition": "CREATE INDEX \"shared_space_mention_userId_idx\" ON public.shared_space_mention USING btree (\"userId\")",
+          "name": "shared_space_mention_activityId_idx",
+          "definition": "CREATE INDEX \"shared_space_mention_activityId_idx\" ON public.shared_space_mention USING btree (\"activityId\")",
           "tableName": "shared_space_mention",
           "columnNames": [
-            "userId"
+            "activityId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "shared_space_mention_activityId_idx",
-          "definition": "CREATE INDEX \"shared_space_mention_activityId_idx\" ON public.shared_space_mention USING btree (\"activityId\")",
+          "name": "shared_space_mention_userId_idx",
+          "definition": "CREATE INDEX \"shared_space_mention_userId_idx\" ON public.shared_space_mention USING btree (\"userId\")",
           "tableName": "shared_space_mention",
           "columnNames": [
-            "activityId"
+            "userId"
           ],
           "using": "btree",
           "unique": false,
@@ -39593,17 +39593,6 @@
       ],
       "indexes": [
         {
-          "name": "shared_space_person_personOwnerId_idx",
-          "definition": "CREATE INDEX \"shared_space_person_personOwnerId_idx\" ON public.shared_space_person USING btree (\"personOwnerId\")",
-          "tableName": "shared_space_person",
-          "columnNames": [
-            "personOwnerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "shared_space_person_albumId_idx",
           "definition": "CREATE INDEX \"shared_space_person_albumId_idx\" ON public.shared_space_person USING btree (\"albumId\")",
           "tableName": "shared_space_person",
@@ -39631,6 +39620,17 @@
           "tableName": "shared_space_person",
           "columnNames": [
             "coverAssetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "shared_space_person_personOwnerId_idx",
+          "definition": "CREATE INDEX \"shared_space_person_personOwnerId_idx\" ON public.shared_space_person USING btree (\"personOwnerId\")",
+          "tableName": "shared_space_person",
+          "columnNames": [
+            "personOwnerId"
           ],
           "using": "btree",
           "unique": false,
@@ -41479,23 +41479,23 @@
       ],
       "indexes": [
         {
-          "name": "studio_bundle_upload_ownerId_idx",
-          "definition": "CREATE INDEX \"studio_bundle_upload_ownerId_idx\" ON public.studio_bundle_upload USING btree (\"ownerId\")",
-          "tableName": "studio_bundle_upload",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "studio_bundle_upload_ownerId_expiresAt_idx",
           "definition": "CREATE INDEX \"studio_bundle_upload_ownerId_expiresAt_idx\" ON public.studio_bundle_upload USING btree (\"ownerId\", \"expiresAt\")",
           "tableName": "studio_bundle_upload",
           "columnNames": [
             "ownerId",
             "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "studio_bundle_upload_ownerId_idx",
+          "definition": "CREATE INDEX \"studio_bundle_upload_ownerId_idx\" ON public.studio_bundle_upload USING btree (\"ownerId\")",
+          "tableName": "studio_bundle_upload",
+          "columnNames": [
+            "ownerId"
           ],
           "using": "btree",
           "unique": false,
@@ -42593,22 +42593,22 @@
       ],
       "indexes": [
         {
-          "name": "takeout_file_sourceId_idx",
-          "definition": "CREATE INDEX \"takeout_file_sourceId_idx\" ON public.takeout_file USING btree (\"sourceId\")",
+          "name": "takeout_file_importId_idx",
+          "definition": "CREATE INDEX \"takeout_file_importId_idx\" ON public.takeout_file USING btree (\"importId\")",
           "tableName": "takeout_file",
           "columnNames": [
-            "sourceId"
+            "importId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "takeout_file_importId_idx",
-          "definition": "CREATE INDEX \"takeout_file_importId_idx\" ON public.takeout_file USING btree (\"importId\")",
+          "name": "takeout_file_sourceId_idx",
+          "definition": "CREATE INDEX \"takeout_file_sourceId_idx\" ON public.takeout_file USING btree (\"sourceId\")",
           "tableName": "takeout_file",
           "columnNames": [
-            "importId"
+            "sourceId"
           ],
           "using": "btree",
           "unique": false,
@@ -43111,18 +43111,6 @@
       ],
       "indexes": [
         {
-          "name": "takeout_pair_importId_state_idx",
-          "definition": "CREATE INDEX \"takeout_pair_importId_state_idx\" ON public.takeout_pair USING btree (\"importId\", state)",
-          "tableName": "takeout_pair",
-          "columnNames": [
-            "importId",
-            "state"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "takeout_pair_photoItemId_idx",
           "definition": "CREATE INDEX \"takeout_pair_photoItemId_idx\" ON public.takeout_pair USING btree (\"photoItemId\")",
           "tableName": "takeout_pair",
@@ -43139,6 +43127,18 @@
           "tableName": "takeout_pair",
           "columnNames": [
             "videoItemId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "takeout_pair_importId_state_idx",
+          "definition": "CREATE INDEX \"takeout_pair_importId_state_idx\" ON public.takeout_pair USING btree (\"importId\", state)",
+          "tableName": "takeout_pair",
+          "columnNames": [
+            "importId",
+            "state"
           ],
           "using": "btree",
           "unique": false,
@@ -44626,22 +44626,22 @@
       ],
       "indexes": [
         {
-          "name": "workflow_step_workflowId_idx",
-          "definition": "CREATE INDEX \"workflow_step_workflowId_idx\" ON public.workflow_step USING btree (\"workflowId\")",
+          "name": "workflow_step_pluginMethodId_idx",
+          "definition": "CREATE INDEX \"workflow_step_pluginMethodId_idx\" ON public.workflow_step USING btree (\"pluginMethodId\")",
           "tableName": "workflow_step",
           "columnNames": [
-            "workflowId"
+            "pluginMethodId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "workflow_step_pluginMethodId_idx",
-          "definition": "CREATE INDEX \"workflow_step_pluginMethodId_idx\" ON public.workflow_step USING btree (\"pluginMethodId\")",
+          "name": "workflow_step_workflowId_idx",
+          "definition": "CREATE INDEX \"workflow_step_workflowId_idx\" ON public.workflow_step USING btree (\"workflowId\")",
           "tableName": "workflow_step",
           "columnNames": [
-            "pluginMethodId"
+            "workflowId"
           ],
           "using": "btree",
           "unique": false,
@@ -44748,22 +44748,22 @@
       ],
       "indexes": [
         {
-          "name": "workflow_run_step_workflowId_idx",
-          "definition": "CREATE INDEX \"workflow_run_step_workflowId_idx\" ON public.workflow_run_step USING btree (\"workflowId\")",
+          "name": "workflow_run_step_createdAt_idx",
+          "definition": "CREATE INDEX \"workflow_run_step_createdAt_idx\" ON public.workflow_run_step USING btree (\"createdAt\")",
           "tableName": "workflow_run_step",
           "columnNames": [
-            "workflowId"
+            "createdAt"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "workflow_run_step_createdAt_idx",
-          "definition": "CREATE INDEX \"workflow_run_step_createdAt_idx\" ON public.workflow_run_step USING btree (\"createdAt\")",
+          "name": "workflow_run_step_workflowId_idx",
+          "definition": "CREATE INDEX \"workflow_run_step_workflowId_idx\" ON public.workflow_run_step USING btree (\"workflowId\")",
           "tableName": "workflow_run_step",
           "columnNames": [
-            "createdAt"
+            "workflowId"
           ],
           "using": "btree",
           "unique": false,
@@ -45233,6 +45233,32 @@
       ],
       "indexes": [
         {
+          "name": "job_run_deferred",
+          "definition": "CREATE INDEX job_run_deferred ON public.job USING btree (\"runId\", \"dependencyReason\") WHERE ((state = 'pending'::text) AND (\"dependencyReason\" IS NOT NULL))",
+          "tableName": "job",
+          "columnNames": [
+            "runId",
+            "dependencyReason"
+          ],
+          "using": "btree",
+          "where": "((state = 'pending'::text) AND (\"dependencyReason\" IS NOT NULL))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_queue_state_idx",
+          "definition": "CREATE INDEX job_queue_state_idx ON public.job USING btree (queue, state, \"availableAt\")",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "state",
+            "availableAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "job_parent",
           "definition": "CREATE INDEX job_parent ON public.job USING btree (\"parentId\") WHERE (\"parentId\" IS NOT NULL)",
           "tableName": "job",
@@ -45256,100 +45282,6 @@
           ],
           "using": "btree",
           "where": "(\"runId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_dedup_live",
-          "definition": "CREATE UNIQUE INDEX job_dedup_live ON public.job USING btree (queue, \"dedupKey\") WHERE ((\"dedupKey\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "dedupKey"
-          ],
-          "using": "btree",
-          "where": "((\"dedupKey\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
-          "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "job_retention",
-          "definition": "CREATE INDEX job_retention ON public.job USING btree (\"finishedAt\", id) WHERE ((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
-          "tableName": "job",
-          "columnNames": [
-            "finishedAt",
-            "id"
-          ],
-          "using": "btree",
-          "where": "((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_claim",
-          "definition": "CREATE INDEX job_claim ON public.job USING btree (queue, \"availableAt\", \"createdAt\", id) WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text]))",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "availableAt",
-            "createdAt",
-            "id"
-          ],
-          "using": "btree",
-          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text]))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_live_queue",
-          "definition": "CREATE INDEX job_live_queue ON public.job USING btree (queue, state, \"createdAt\", id) WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "state",
-            "createdAt",
-            "id"
-          ],
-          "using": "btree",
-          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_worker_reference",
-          "definition": "CREATE INDEX job_worker_reference ON public.job USING btree (\"workerId\") WHERE (\"workerId\" IS NOT NULL)",
-          "tableName": "job",
-          "columnNames": [
-            "workerId"
-          ],
-          "using": "btree",
-          "where": "(\"workerId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_run_deferred",
-          "definition": "CREATE INDEX job_run_deferred ON public.job USING btree (\"runId\", \"dependencyReason\") WHERE ((state = 'pending'::text) AND (\"dependencyReason\" IS NOT NULL))",
-          "tableName": "job",
-          "columnNames": [
-            "runId",
-            "dependencyReason"
-          ],
-          "using": "btree",
-          "where": "((state = 'pending'::text) AND (\"dependencyReason\" IS NOT NULL))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_queue_state_idx",
-          "definition": "CREATE INDEX job_queue_state_idx ON public.job USING btree (queue, state, \"availableAt\")",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "state",
-            "availableAt"
-          ],
-          "using": "btree",
           "unique": false,
           "synchronize": true
         },
@@ -45420,6 +45352,62 @@
           "synchronize": true
         },
         {
+          "name": "job_dedup_live",
+          "definition": "CREATE UNIQUE INDEX job_dedup_live ON public.job USING btree (queue, \"dedupKey\") WHERE ((\"dedupKey\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "dedupKey"
+          ],
+          "using": "btree",
+          "where": "((\"dedupKey\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "job_retention",
+          "definition": "CREATE INDEX job_retention ON public.job USING btree (\"finishedAt\", id) WHERE ((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
+          "tableName": "job",
+          "columnNames": [
+            "finishedAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_claim",
+          "definition": "CREATE INDEX job_claim ON public.job USING btree (queue, \"availableAt\", \"createdAt\", id) WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text]))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "availableAt",
+            "createdAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text]))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_live_queue",
+          "definition": "CREATE INDEX job_live_queue ON public.job USING btree (queue, state, \"createdAt\", id) WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "state",
+            "createdAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "job_run_live",
           "definition": "CREATE INDEX job_run_live ON public.job USING btree (\"runId\") WHERE ((\"runId\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
           "tableName": "job",
@@ -45428,6 +45416,18 @@
           ],
           "using": "btree",
           "where": "((\"runId\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_worker_reference",
+          "definition": "CREATE INDEX job_worker_reference ON public.job USING btree (\"workerId\") WHERE (\"workerId\" IS NOT NULL)",
+          "tableName": "job",
+          "columnNames": [
+            "workerId"
+          ],
+          "using": "btree",
+          "where": "(\"workerId\" IS NOT NULL)",
           "unique": false,
           "synchronize": true
         }
@@ -46771,22 +46771,22 @@
       ],
       "indexes": [
         {
-          "name": "album_change_albumId_idx",
-          "definition": "CREATE INDEX \"album_change_albumId_idx\" ON public.album_change USING btree (\"albumId\")",
+          "name": "album_change_assetId_idx",
+          "definition": "CREATE INDEX \"album_change_assetId_idx\" ON public.album_change USING btree (\"assetId\")",
           "tableName": "album_change",
           "columnNames": [
-            "albumId"
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "album_change_assetId_idx",
-          "definition": "CREATE INDEX \"album_change_assetId_idx\" ON public.album_change USING btree (\"assetId\")",
+          "name": "album_change_albumId_idx",
+          "definition": "CREATE INDEX \"album_change_albumId_idx\" ON public.album_change USING btree (\"albumId\")",
           "tableName": "album_change",
           "columnNames": [
-            "assetId"
+            "albumId"
           ],
           "using": "btree",
           "unique": false,
@@ -47387,6 +47387,28 @@
       ],
       "indexes": [
         {
+          "name": "asset_exif_updateId_idx",
+          "definition": "CREATE INDEX \"asset_exif_updateId_idx\" ON public.asset_exif USING btree (\"updateId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_city_idx",
+          "definition": "CREATE INDEX asset_exif_city_idx ON public.asset_exif USING btree (city)",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "city"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_exif_rating_order_idx",
           "definition": "CREATE INDEX asset_exif_rating_order_idx ON public.asset_exif USING btree (COALESCE(rating, 0) DESC, \"assetId\")",
           "tableName": "asset_exif",
@@ -47444,28 +47466,6 @@
           "tableName": "asset_exif",
           "columnNames": [
             "livePhotoCID"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_updateId_idx",
-          "definition": "CREATE INDEX \"asset_exif_updateId_idx\" ON public.asset_exif USING btree (\"updateId\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_city_idx",
-          "definition": "CREATE INDEX asset_exif_city_idx ON public.asset_exif USING btree (city)",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "city"
           ],
           "using": "btree",
           "unique": false,
@@ -47846,17 +47846,6 @@
       ],
       "indexes": [
         {
-          "name": "album_source_link_album_idx",
-          "definition": "CREATE INDEX album_source_link_album_idx ON public.album_source_link USING btree (\"albumId\")",
-          "tableName": "album_source_link",
-          "columnNames": [
-            "albumId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "album_source_link_source_idx",
           "definition": "CREATE UNIQUE INDEX album_source_link_source_idx ON public.album_source_link USING btree (\"userId\", \"sourceKind\", \"sourceId\", COALESCE(\"deviceKey\", ''::text))",
           "tableName": "album_source_link",
@@ -47868,6 +47857,17 @@
           "expression": "COALESCE(\"deviceKey\", ''::text)",
           "using": "btree",
           "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "album_source_link_album_idx",
+          "definition": "CREATE INDEX album_source_link_album_idx ON public.album_source_link USING btree (\"albumId\")",
+          "tableName": "album_source_link",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
           "synchronize": true
         }
       ],
