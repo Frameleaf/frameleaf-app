@@ -27,7 +27,8 @@ const ITEMS: FixtureItem[] = [
   { id: 'I2', name: 'logo', ext: 'png', folders: ['F2'], tags: ['logo'] },
   { id: 'I3', name: 'loose', ext: 'webp', tags: ['warm'] },
   { id: 'I4', name: 'already', ext: 'png', folders: ['F2'] },
-  { id: 'I5', name: 'Lodge Serif', ext: 'otf', folders: ['F2'] },
+  // a kind of file Boards does not keep (fonts come over since FL-1359)
+  { id: 'I5', name: 'Lodge Mark', ext: 'blend', folders: ['F2'] },
   { id: 'I6', name: 'old-draft', ext: 'png', isDeleted: true },
   { id: 'I7', name: 'missing', ext: 'jpg', noFile: true },
 ];
@@ -194,7 +195,7 @@ test.describe('Import from Eagle', () => {
     const check = page.getByRole('dialog', { name: 'Check before importing' });
     await expect(check.getByText('4 items', { exact: true })).toBeVisible();
     await expect(check.getByText(/3 new · 1 already in your library/)).toBeVisible();
-    await expect(check.getByText('Lodge Serif.otf')).toBeVisible();
+    await expect(check.getByText('Lodge Mark.blend')).toBeVisible();
     await expect(check.getByText('old-draft.png')).toBeVisible();
     await expect(check.getByText('missing.jpg')).toBeVisible();
     await expect(check.getByText('7 items found in Eagle = 4 that come over + 3 that can’t.')).toBeVisible();
