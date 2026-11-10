@@ -17,7 +17,7 @@ describe('AssistantModeSwitch', () => {
   it('moves the choice with the arrow keys', async () => {
     const onChange = vi.fn();
     render(AssistantModeSwitch, { classic: false, onChange });
-    await fireEvent.keyDown(screen.getByRole('radiogroup'), { key: 'ArrowRight' });
+    await fireEvent.keyDown(screen.getByRole('radio', { name: ASSISTANT_NAME }), { key: 'ArrowRight' });
     expect(onChange).toHaveBeenCalledWith(true);
   });
 

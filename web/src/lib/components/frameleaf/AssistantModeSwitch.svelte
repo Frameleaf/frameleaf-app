@@ -39,13 +39,7 @@
   });
 </script>
 
-<div
-  class="frameleaf la-mode"
-  role="radiogroup"
-  aria-label={$t('frameleaf_assistant_mode')}
-  bind:this={group}
-  {onkeydown}
->
+<div class="frameleaf la-mode" role="radiogroup" aria-label={$t('frameleaf_assistant_mode')} bind:this={group}>
   <button
     type="button"
     role="radio"
@@ -53,6 +47,7 @@
     tabindex={classic ? -1 : 0}
     class:is-on={!classic}
     onclick={() => choose(false)}
+    {onkeydown}
   >
     {ASSISTANT_NAME}
   </button>
@@ -63,6 +58,7 @@
     tabindex={classic ? 0 : -1}
     class:is-on={classic}
     onclick={() => choose(true)}
+    {onkeydown}
   >
     {$t('frameleaf_assistant_classic')}
   </button>
