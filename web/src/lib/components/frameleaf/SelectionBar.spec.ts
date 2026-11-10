@@ -1,5 +1,6 @@
 import { SharedLinkType } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { dockLift } from '$lib/frameleaf/panel-dock.svelte';
@@ -100,7 +101,7 @@ describe('one toolbar while selecting (September 24)', () => {
     onClear: vi.fn(),
   });
 
-  it('puts the labelled page actions ahead of icon-only bulk actions named in tooltips', () => {
+  it('puts the everyday bulk actions ahead of the page actions, none of them filled', () => {
     addMessages('dev', en);
     const compare = vi.fn();
     const { container } = render(SelectionBar, {
@@ -108,7 +109,7 @@ describe('one toolbar while selecting (September 24)', () => {
         ...baseProps(),
         leading: [
           { id: 'compare', label: 'Compare', icon: 'M0 0', onClick: compare },
-          { id: 'studio', label: 'Open in Studio', icon: 'M0 0', onClick: vi.fn(), primary: true },
+          { id: 'studio', label: 'Open in Studio', icon: 'M0 0', onClick: vi.fn() },
         ],
       },
     });
@@ -116,12 +117,82 @@ describe('one toolbar while selecting (September 24)', () => {
     const actions = [
       ...container.querySelectorAll<HTMLButtonElement>(':scope .actions > button, :scope .actions .more > button'),
     ];
-    expect(actions.slice(0, 2).map((button) => button.textContent?.trim())).toEqual(['Compare', 'Open in Studio']);
-    expect(container.querySelector(':scope .actions > .divider')).not.toBeNull();
+    // FL-1391 B2: Favorite, Add to album, Share link, Download, Delete, then the page's tools, then More.
+    expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual([
+      en.frameleaf_bulk_favorite,
+      en.frameleaf_bulk_add_to_album,
+      en.frameleaf_bulk_create_shared_link,
+      en.frameleaf_bulk_download,
+      en.frameleaf_bulk_delete,
+      'Compare',
+      'Open in Studio',
+      en.frameleaf_selection_more_actions,
+    ]);
+    expect(
+      container.querySelector(':scope .actions > .divider + [data-testid="selection-leading-compare"]'),
+    ).not.toBeNull();
     const favorite = screen.getByRole('button', { name: en.frameleaf_bulk_favorite });
     expect(favorite).toHaveClass('icon-only');
+    expect(favorite).not.toHaveClass('is-labelled');
     expect(favorite).toHaveAttribute('title', en.frameleaf_bulk_favorite);
-    expect(screen.getByRole('button', { name: 'Open in Studio' })).toHaveClass('is-primary');
+    expect(screen.getByRole('button', { name: en.frameleaf_bulk_add_to_album })).toHaveClass('is-labelled');
+    expect(screen.getByRole('button', { name: en.frameleaf_bulk_create_shared_link })).toHaveClass('is-labelled');
+  });
+
+  it('names the actions only while the capsule fits on one line (FL-1391 B2)', async () => {
+    addMessages('dev', en);
+    let observed = () => {};
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          observed = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    try {
+      const { container, rerender } = render(SelectionBar, {
+        props: { ...baseProps(), leading: [{ id: 'compare', label: 'Compare', icon: 'M0 0', onClick: vi.fn() }] },
+      });
+      const pill = container.querySelector('.pill')!;
+      const layout = { barWidth: 1000, actionsTop: 0 };
+      const measure = (selector: string, property: string, get: () => number) =>
+        Object.defineProperty(container.querySelector(selector)!, property, { configurable: true, get });
+      measure('.selection-bar', 'clientWidth', () => layout.barWidth);
+      measure('.count', 'offsetHeight', () => 44);
+      measure('.actions', 'offsetTop', () => layout.actionsTop);
+      const resize = async () => {
+        observed();
+        await tick();
+      };
+
+      await resize();
+      expect(pill).not.toHaveClass('is-compact');
+
+      // The action row dropped under the count: the names go.
+      layout.actionsTop = 50;
+      await resize();
+      expect(pill).toHaveClass('is-compact');
+
+      // As icons it fits again, but the names stay away until the bar is wider than it was.
+      layout.actionsTop = 0;
+      await resize();
+      expect(pill).toHaveClass('is-compact');
+      layout.barWidth = 1200;
+      await resize();
+      expect(pill).not.toHaveClass('is-compact');
+
+      // A different count changes what has to fit, so the names are tried again.
+      layout.actionsTop = 50;
+      await resize();
+      expect(pill).toHaveClass('is-compact');
+      await rerender({ count: 3 });
+      expect(pill).not.toHaveClass('is-compact');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('runs a page action and keeps a disabled one inert', async () => {

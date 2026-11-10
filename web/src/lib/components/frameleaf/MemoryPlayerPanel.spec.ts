@@ -102,7 +102,7 @@ describe('MemoryPlayerPanel (FL-62)', () => {
     render(MemoryPlayerPanel);
 
     const header = screen.getByRole('banner');
-    expect(within(header).getByText('On this day')).toBeInTheDocument();
+    expect(within(header).getByText('One year ago')).toBeInTheDocument();
     expect(within(header).getByText(/September 25, 2025/)).toBeInTheDocument();
     expect(within(header).getByText(/3 items/)).toBeInTheDocument();
     const progress = screen.getByRole('group', { name: 'Memory progress' });

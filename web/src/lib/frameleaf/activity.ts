@@ -615,6 +615,8 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
       renderStartedAt: operation.startedAt ? Date.parse(operation.startedAt) : undefined,
     }),
     ...((operation.encryptedWithOlderKey ?? 0) > 0 && { encryptedWithOlderKey: operation.encryptedWithOlderKey! }),
+    // When it ended, for the Finished list; the export above keeps its own, which times the render.
+    ...(finished && operation.finishedAt && { finishedAt: Date.parse(operation.finishedAt) }),
     ...(CLOUD_WORK_KINDS.has(operation.kind) && { cloudWork: true }),
     stage: mediaOperationStage(operation),
     // FL-162: a Frameleaf Cloud job reads its stage, progress and money from the cloud job itself
@@ -754,6 +756,7 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
       (failed || unfinished || status === MediaOperationStatus.Cancelled),
     canDismiss: !running && !pause.paused,
     browserLocal: false,
+    ...(!running && !pause.paused && operation.finishedAt && { finishedAt: Date.parse(operation.finishedAt) }),
     stage: failed && !running ? 'failed' : mediaOperationStage(operation),
     ...(bulk && {
       bulk: {
@@ -960,6 +963,75 @@ export const matchesActivityFilter = (item: ActivityItem, filter: ActivityFilter
       return item.failed;
     }
   }
+};
+
+/**
+ * Activity's Finished list (UI review 2026-11-10, A1; prototype `ActivityWorkV3.jsx` Finished): one line per
+ * thing that finished, newest first. Runs of the same job are one line that says how many times it ran (a
+ * library checked every night is one line, not a card a night). A job with something of its own to show
+ * keeps its own line: a result to open, a bundle, a bulk job's counts, a Frameleaf Cloud cost, a warning.
+ * Failures are not here; they stay cards, with their reason and Retry.
+ */
+export type ActivityFinishedRow = {
+  /** The newest run's id. */
+  id: string;
+  /**
+   * The newest run: the line's name, result and actions are its own. Runs that ended at the same moment, or
+   * whose times are not known, are told apart by nothing, so the first one listed stands for them.
+   */
+  item: ActivityItem;
+  /** How many runs the line stands for. */
+  count: number;
+  /** When the newest run ended (or started, where the end was not recorded); null when neither is known. */
+  at: number | null;
+};
+
+const finishedKey = (item: ActivityItem) =>
+  item.bulk || item.cloud || item.assetId || item.studioBundle || item.encryptedWithOlderKey
+    ? item.id
+    : [item.source, item.kindKey, item.titleKey ?? item.title, item.stage, item.projectId ?? ''].join('\0');
+
+export const buildFinishedRows = (items: readonly ActivityItem[]): ActivityFinishedRow[] => {
+  const rows = new Map<string, ActivityFinishedRow>();
+  for (const item of items) {
+    if (!matchesActivityFilter(item, 'done')) {
+      continue;
+    }
+    const at = (item.finishedAt ?? item.startedAt) || null;
+    const key = finishedKey(item);
+    const row = rows.get(key);
+    if (!row) {
+      rows.set(key, { id: item.id, item, count: 1, at });
+    } else if ((at ?? 0) > (row.at ?? 0)) {
+      rows.set(key, { id: item.id, item, count: row.count + 1, at });
+    } else {
+      rows.set(key, { ...row, count: row.count + 1 });
+    }
+  }
+  return [...rows.values()].sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+};
+
+/** "Today, 3:12 AM", "Yesterday, 8:46 PM", then "Nov 3, 2:02 AM": when a Finished line ended, in the reader's words. */
+export const formatFinishedTime = (at: number, locale?: string, now: number = Date.now()): string => {
+  const date = new Date(at);
+  const today = new Date(now);
+  // Calendar days apart, by local midnights (rounded, so a daylight-saving day still counts as one).
+  const days = Math.round(
+    (new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() -
+      new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()) /
+      86_400_000,
+  );
+  if (days !== 0 && days !== 1) {
+    return new Intl.DateTimeFormat(locale, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(date);
+  }
+  const day = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-days, 'day');
+  const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(date);
+  return `${day.charAt(0).toLocaleUpperCase(locale)}${day.slice(1)}, ${time}`;
 };
 
 export type ActivityCounts = Record<ActivityFilter, number>;

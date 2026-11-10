@@ -174,6 +174,10 @@
   .upload-menu :global(.menu-root > button:hover)::before {
     background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }
+  /* FL-1391 S2: on the light theme the grey fill read as pressed beside the outlined buttons. */
+  :global(:root:not(.dark)) .upload-menu :global(.menu-root > button:not(:hover))::before {
+    background: transparent;
+  }
   .upload-menu :global(.menu-root > button) {
     gap: 0.375rem;
   }

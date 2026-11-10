@@ -836,6 +836,10 @@
   .fl-topbar-button:hover::before {
     background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }
+  /* FL-1391 S2: on the light theme the grey fill read as pressed beside the outlined Locked control. */
+  .fl-topbar[data-theme='light'] .fl-help-button:not(:hover, [aria-expanded='true'])::before {
+    background: transparent;
+  }
   @media (max-width: 47.99rem) {
     .fl-topbar-button {
       min-width: 44px;

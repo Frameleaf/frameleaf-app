@@ -218,9 +218,9 @@ const monthLabel = (month: string, locale?: string) =>
   });
 
 /**
- * A memory's title and the line under it (Memories.jsx:170-200, discovery-data.mjs:990-1150): "On this
- * day" over "One year ago · September 25, 2025", a trip's place over its days, a birthday, a recap. The
- * owner's own title always wins over the generated one.
+ * A memory's title and the line under it (Memories.jsx:170-200, discovery-data.mjs:990-1200): "One year
+ * ago in Jasper" over "September 25, 2025 · Jasper", a trip's place over its days, a birthday, a recap.
+ * The owner's own title always wins over the generated one.
  */
 export const memoryHeadline = (
   memory: MemoryResponseDto,
@@ -280,14 +280,22 @@ const generatedHeadline = (
     };
   }
   const day = memoryLocalDay(memory) ?? DateTime.fromISO(memory.memoryAt, { zone: 'utc' }).toISODate() ?? today;
-  const year = (memory.data as Partial<OnThisDayDto>).year;
+  const { year, places: [place, ...otherPlaces] = [] } = memory.data as Partial<OnThisDayDto>;
   const sourceDay = year ? `${String(year).padStart(4, '0')}${day.slice(4)}` : day;
   const years = year ? Number(day.slice(0, 4)) - year : 0;
   return {
-    title: t('frameleaf_memories_on_this_day'),
+    // FL-1394: how long ago and where; "On this day" was the same on every card.
+    title:
+      years > 0
+        ? t(place ? 'frameleaf_memories_years_ago_in' : 'frameleaf_memories_years_ago', {
+            values: { count: years, place },
+          })
+        : t('frameleaf_memories_on_this_day'),
     subtitle: [
-      years > 0 ? t('frameleaf_memories_years_ago', { values: { count: years } }) : undefined,
       longDate(sourceDay, locale),
+      otherPlaces.length > 0
+        ? t('frameleaf_memories_places_more', { values: { place, count: otherPlaces.length } })
+        : place,
     ]
       .filter(Boolean)
       .join(' · '),

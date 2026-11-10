@@ -1124,6 +1124,16 @@
    * scrubber keep 24px (8px on phones) from them.
    */
   const pageLevel = $derived(!!root?.parentElement?.classList.contains('fl-scope'));
+
+  /**
+   * FL-1391 B1 (App.jsx `useHeaderRoom`): how much the toolbar can hold, from the width of the photo
+   * area itself, so the rail and the Work panel count. A narrow one keeps the tabs on their own row;
+   * the timeline grouping joins the toolbar only when it fits too.
+   */
+  const TABS_IN_TOOLBAR = 960;
+  const GROUPING_IN_TOOLBAR = 1180;
+  let mainWidth = $state(0);
+  const tabsInToolbar = $derived(mainWidth >= TABS_IN_TOOLBAR);
   const gutter = $derived(pageLevel ? (mediaQueryManager.maxMd ? 8 : 24) : 0);
 
   /**
@@ -1332,8 +1342,6 @@
       id: 'studio',
       label: $t('frameleaf_selection_open_in_studio'),
       icon: mdiOpenInNew,
-      // The capsule's one accent button, as in the prototype (App.jsx `primary: true`).
-      primary: true,
       disabled: studioIds.length === 0,
       onClick: openInStudio,
     },
@@ -1864,7 +1872,8 @@
   {@render shell?.()}
 
   <div class="fl-library-body" class:has-panel={showInfoPanel}>
-    <div class="fl-library-main" bind:this={main}>
+    <!-- Hidden under the viewer the area measures 0: the header keeps the shape it had. -->
+    <div class="fl-library-main" bind:this={main} bind:clientWidth={null, (width) => (mainWidth = width || mainWidth)}>
       <!-- LIB-09: the year scrubber and the stuck toolbar stack above Compare's overlay, so the
            timeline is hidden (and out of the tab order) while Compare is open. It stays mounted,
            so the scroll position survives Done. -->
@@ -1895,8 +1904,9 @@
           timelineCaptions={gridLayout === 'timeline'}
           empty={emptyState}
           {gutter}
+          groupingInHeader={!publicView && !firstRun && mainWidth >= GROUPING_IN_TOOLBAR}
         >
-          {#snippet header()}
+          {#snippet header(groupingControl: Snippet | undefined)}
             <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
             <div class="fl-library-header" class:has-title={!!title} class:has-toolbar={!publicView && !firstRun}>
               <div class="fl-library-header-content">
@@ -1909,9 +1919,16 @@
             {#if subheader}
               <div class="fl-library-subheader">{@render subheader()}</div>
             {/if}
-            {#if !publicView && !firstRun}
-              <!-- FL-707 P2/12: the layout tabs get their own row under the header and any notice,
-                   directly above the toolbar, with a line saying what the current one is for. -->
+            <!-- FL-1391 B1: a photo area with room has the tabs, and the timeline grouping, in the
+                 toolbar, where each tab's tooltip says what it is for. -->
+            {#snippet toolbarTabs()}
+              <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
+              {@render groupingControl?.()}
+            {/snippet}
+            {#if !publicView && !firstRun && !tabsInToolbar}
+              <!-- FL-707 P2/12, kept where the photo area is narrow (phones, the Work panel open): the
+                   layout tabs get their own row under the header and any notice, directly above the
+                   toolbar, with a line saying what the current one is for. -->
               <div class="fl-library-layouts">
                 <p class="fl-layout-hint">{$t(LAYOUT_HINTS[lockedView ? 'timeline' : session.layout])}</p>
                 <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
@@ -1939,6 +1956,7 @@
                   onViewChange={changeView}
                   onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
                   leading={toolbarStart}
+                  start={tabsInToolbar ? toolbarTabs : undefined}
                 >
                   {@render toolbar?.()}
                   <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->

@@ -35,6 +35,9 @@
       .catch(() => (fonts = []));
   });
 
+  /** True while one drag of the weight slider is under way. */
+  let adjusting = false;
+
   const fontId = $derived(style?.fontAssetId ?? '');
   const missing = $derived(!!fontId && fonts !== null && fonts.every((font) => font.id !== fontId));
 
@@ -132,8 +135,12 @@
         max={weightAxis.max}
         step="10"
         value={weight}
-        oninput={(event) =>
-          change({ variation: { ...style?.variation, wght: Number(event.currentTarget.value) } }, true)}
+        oninput={(event) => {
+          // one undo step for each drag or key press: its first change starts the step, the rest join it
+          change({ variation: { ...style?.variation, wght: Number(event.currentTarget.value) } }, adjusting);
+          adjusting = true;
+        }}
+        onchange={() => (adjusting = false)}
       />
     </label>
   {/if}

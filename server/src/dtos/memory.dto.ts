@@ -42,6 +42,10 @@ const MemorySearchSchema = z
 const OnThisDaySchema = z
   .object({
     year: z.int().min(1000).max(9999).describe('Year for on this day memory'),
+    places: z
+      .array(z.string())
+      .optional()
+      .describe('Cities the items the viewer can see were taken in, the one with the most items first'),
   })
   .meta({ id: 'OnThisDayDto' });
 
@@ -397,6 +401,24 @@ export class MemoryCreateDto extends createZodDto(MemoryCreateSchema) {}
 export class MemoryStatisticsResponseDto extends createZodDto(MemoryStatisticsResponseSchema) {}
 export class MemoryResponseDto extends createZodDto(MemoryResponseSchema) {}
 
+/**
+ * FL-1394: where an "on this day" memory was taken, so a client can title it "One year ago in Jasper".
+ * Read from the items this session is given, never stored, so a place only shows while a photo taken
+ * there does. That is also the whole Locked rule: a locked session is given no Locked item, so none
+ * names a place; unlocked, the owner's Locked items count like any other (FL-195, `REVEALED_LOCK_REASONS`).
+ */
+export const memoryPlaces = (assets: { city?: string | null }[]): string[] => {
+  const counts = new Map<string, number>();
+  for (const { city } of assets) {
+    const place = city?.trim();
+    if (place) {
+      counts.set(place, (counts.get(place) ?? 0) + 1);
+    }
+  }
+  // Map keeps first-seen order and the sort is stable, so equal counts stay in the memory's own order.
+  return [...counts].toSorted((a, b) => b[1] - a[1]).map(([place]) => place);
+};
+
 export const mapMemory = (entity: Memory, auth: AuthDto, curation?: MemoryCuration | null): MemoryResponseDto => {
   const assets = applyMemoryAssetOrder('assets' in entity ? entity.assets : [], curation?.assetOrder);
   return {
@@ -410,7 +432,9 @@ export const mapMemory = (entity: Memory, auth: AuthDto, curation?: MemoryCurati
     hideAt: entity.hideAt ?? undefined,
     ownerId: entity.ownerId,
     type: entity.type as MemoryType,
-    data: entity.data as unknown as MemoryData,
+    data: (entity.type === MemoryType.OnThisDay
+      ? { ...entity.data, places: memoryPlaces(assets) }
+      : entity.data) as unknown as MemoryData,
     isSaved: entity.isSaved,
     isHidden: !!curation?.hiddenAt,
     title: curation?.title ?? null,

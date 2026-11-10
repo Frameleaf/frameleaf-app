@@ -111,7 +111,8 @@ export type Memory = {
   data: Record<string, unknown>;
   ownerId: string;
   isSaved: boolean;
-  assets: ShallowDehydrateObject<MapAsset>[];
+  /** each item with the city it was taken in, which names an "on this day" memory (FL-1394) */
+  assets: (ShallowDehydrateObject<MapAsset> & { city?: string | null })[];
 };
 
 /** a private highlight export run (FL-62) */

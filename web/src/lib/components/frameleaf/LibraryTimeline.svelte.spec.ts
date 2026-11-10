@@ -439,6 +439,17 @@ describe('LibraryTimeline curated Years and Months', () => {
     return { ...view, onGroupingChange };
   };
 
+  it('leaves the grouping control to a header with room for it (FL-1391 B1)', async () => {
+    const { container, rerender } = renderGrouping('days');
+    await tick();
+    const row = () => container.querySelector('.fl-grouping')!;
+    expect(row().querySelectorAll('button')).toHaveLength(4);
+
+    // The row stays as an empty marker of where the header block ends.
+    await rerender({ groupingInHeader: true });
+    expect(row()).toBeEmptyDOMElement();
+  });
+
   it('forgets a header menu left open in the rows when the view turns to cards', async () => {
     const { container, rerender } = renderGrouping('days');
     await tick();
