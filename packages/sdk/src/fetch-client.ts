@@ -6844,7 +6844,7 @@ export type ChangePasswordDto = {
     invalidateSessions?: boolean;
     /** New password (min 8 characters) */
     newPassword: string;
-    /** Current password */
+    /** Current password, or empty when setting the linked owner’s first local password */
     password: string;
 };
 export type LoginCredentialDto = {
@@ -6940,6 +6940,8 @@ export type AuthStatusResponseDto = {
     expiresAt?: string;
     /** Is elevated session */
     isElevated: boolean;
+    /** This freshly signed-in owner needs to set their first local password */
+    localPasswordRequired?: boolean;
     /** Has password set */
     password: boolean;
     /** Has PIN code set */

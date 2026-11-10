@@ -37,7 +37,13 @@
   import { Route } from '$lib/route';
   import { oauth } from '$lib/utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
-  import { finishFrameleafSignIn, login, redeemFrameleafHandoff, type LoginResponseDto } from '@frameleaf/sdk';
+  import {
+    finishFrameleafSignIn,
+    getAuthStatus,
+    login,
+    redeemFrameleafHandoff,
+    type LoginResponseDto,
+  } from '@frameleaf/sdk';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { takeAuthNotice } from '../auth-notice';
@@ -116,6 +122,17 @@
   const finishUser = async (user: LoginResponseDto) => {
     if (!alive) {
       return;
+    }
+    if (user.isAdmin) {
+      const status = await getAuthStatus().catch(() => undefined);
+      if (!alive) {
+        return;
+      }
+      // The setup page can retry an unavailable status without losing the authenticated session.
+      if (!status || status.localPasswordRequired) {
+        await goto(Route.changePassword({ local: '1', continue: setupContinue() }), { invalidateAll: true });
+        return;
+      }
     }
     if (!user.isOnboarded) {
       await onOnboarding();
