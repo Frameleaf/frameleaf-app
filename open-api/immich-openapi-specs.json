@@ -2265,6 +2265,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/backup/licence-coverage": {
+      "get": {
+        "description": "Reads the current licence scope from Frameleaf Cloud without provisioning storage or issuing credentials. Unknown when no grant exists, the server is unlinked or the scope cannot be checked. Names are resolved locally; no account choices or media are returned.",
+        "operationId": "getCloudBackupLicenceCoverage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupLicenceCoverageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the accounts currently covered for Cloud Backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup/manifests": {
       "get": {
         "description": "The backups retention keeps, newest first, with their size and the database dump each pairs with.",
@@ -13577,6 +13624,77 @@
         ],
         "x-immich-permission": "album.delete",
         "x-immich-state": "Alpha"
+      }
+    },
+    "/albums/{id}/people": {
+      "get": {
+        "description": "The named people who appear in an album, most often first, with how many of its items show each (at most 50). Hidden people, unnamed faces, and items that are Locked or in the trash are left out. A shared link gets them only when it shows metadata.",
+        "operationId": "getAlbumPeople",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlbumPersonResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the people in an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
       }
     },
     "/albums/{id}/suggestions": {
@@ -50754,6 +50872,134 @@
         "x-immich-state": "Stable"
       }
     },
+    "/shared-links/direct/key/{key}.jpg": {
+      "get": {
+        "description": "Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.",
+        "operationId": "getSharedLinkDirectImageByKey",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "View the image of a single-photo shared link, by its key",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/shared-links/direct/s/{slug}.jpg": {
+      "get": {
+        "description": "Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.",
+        "operationId": "getSharedLinkDirectImageBySlug",
+        "parameters": [
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+            }
+          },
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "View the image of a single-photo shared link, by its slug",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
     "/shared-links/login": {
       "post": {
         "description": "Login to a password protected shared link",
@@ -68570,6 +68816,10 @@
           "import": {
             "description": "Import",
             "type": "boolean"
+          },
+          "write": {
+            "description": "Save people’s names in XMP sidecars",
+            "type": "boolean"
           }
         },
         "required": [
@@ -71959,6 +72209,39 @@
         "required": [
           "albumIds",
           "parentId"
+        ],
+        "type": "object"
+      },
+      "AlbumPersonResponseDto": {
+        "description": "A named person who appears in an album, with how many of its items show them",
+        "properties": {
+          "count": {
+            "description": "Number of album items showing this person",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Person ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Person name",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update date, for the thumbnail cache",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "id",
+          "name",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -86940,6 +87223,50 @@
           "missing",
           "operationId",
           "status"
+        ],
+        "type": "object"
+      },
+      "CloudBackupLicenceCoverageResponseDto": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupLicensedAccountDto"
+            },
+            "type": "array"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CloudBackupLicenceScope"
+          }
+        },
+        "required": [
+          "accounts",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "CloudBackupLicenceScope": {
+        "enum": [
+          "unknown",
+          "none",
+          "all",
+          "users"
+        ],
+        "type": "string"
+      },
+      "CloudBackupLicensedAccountDto": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "userId"
         ],
         "type": "object"
       },
@@ -107236,13 +107563,20 @@
             "type": "string"
           },
           "checksum": {
-            "description": "SHA-1 of the lost file, base64: what the phone matches its own file by",
+            "description": "SHA-1 (20 bytes) or SHA-256 (32 bytes) of the lost file's contents, base64: what the phone matches its own file by",
             "type": "string"
           },
           "fileCreatedAt": {
             "description": "When the file was created",
             "format": "date-time",
             "type": "string"
+          },
+          "fileSize": {
+            "description": "Size of the lost file in bytes, or null when unknown: a phone may look only at its files of exactly this size",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           },
           "originalFileName": {
             "description": "The name the file had",
@@ -107253,6 +107587,7 @@
           "assetId",
           "checksum",
           "fileCreatedAt",
+          "fileSize",
           "originalFileName"
         ],
         "type": "object"
@@ -107266,7 +107601,7 @@
             "type": "string"
           },
           "notHere": {
-            "description": "Checksums (base64) of lost originals this device does not have",
+            "description": "Checksums (base64, SHA-1 or SHA-256, as listed) of lost originals this device does not have",
             "items": {
               "maxLength": 64,
               "type": "string"
@@ -143801,6 +144136,22 @@
         ],
         "type": "object"
       },
+      "SharedLinkDirectImageDto": {
+        "properties": {
+          "size": {
+            "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+          }
+        },
+        "type": "object"
+      },
+      "SharedLinkDirectImageSize": {
+        "description": "Image size: preview (default) or fullsize",
+        "enum": [
+          "preview",
+          "fullsize"
+        ],
+        "type": "string"
+      },
       "SharedLinkEditDto": {
         "properties": {
           "allowDownload": {
@@ -143914,6 +144265,17 @@
             "nullable": true,
             "type": "string"
           },
+          "directUrl": {
+            "description": "FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root: /api/shared-links/direct/s/<slug>.jpg for a link with a slug, /api/shared-links/direct/key/<key>.jpg otherwise.",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.4.0",
+                "state": "Added"
+              }
+            ]
+          },
           "expiresAt": {
             "description": "Expiration date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -143973,6 +144335,7 @@
           "coverAssetIds",
           "createdAt",
           "description",
+          "directUrl",
           "expiresAt",
           "id",
           "key",

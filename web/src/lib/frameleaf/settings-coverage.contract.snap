@@ -910,6 +910,9 @@
   "metadata.faces.import": {
     "type": "boolean"
   },
+  "metadata.faces.write": {
+    "type": "boolean"
+  },
   "metrics.enabled": {
     "type": "boolean"
   },

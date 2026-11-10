@@ -5,13 +5,20 @@ import en from '../../../../../../../i18n/en.json';
 import CloudLanding from './CloudLanding.svelte';
 import { cloudNeeds } from './cloud-landing';
 
-const cloud = vi.hoisted(() => ({ status: null as unknown, license: null as unknown }));
+const cloud = vi.hoisted(() => ({
+  status: null as unknown,
+  license: null as unknown,
+  backupCoverage: null as unknown,
+}));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/managers/cloud-manager.svelte', () => ({
   cloudManager: {
     listen: () => () => {},
     get status() {
       return cloud.status;
+    },
+    get backupCoverage() {
+      return cloud.backupCoverage;
     },
     get license() {
       return cloud.license;
@@ -44,7 +51,17 @@ describe('Frameleaf Cloud landing (FL-367)', () => {
       key: { kind: LicenseKind.Server, state: LicenseState.Active },
       entitlements: {},
     };
+    cloud.backupCoverage = {
+      scope: 'users',
+      accounts: [
+        { userId: 'one', name: 'Morgan' },
+        { userId: 'two', name: 'Robin' },
+      ],
+    };
     render(CloudLanding);
+    expect(screen.getByText('Selected accounts')).toBeInTheDocument();
+    expect(screen.queryByText('One person only')).not.toBeInTheDocument();
+    expect(screen.getByText(/Morgan.*Robin/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Linked to Frameleaf, and everything is working' })).toBeInTheDocument();
     expect(screen.getByText('Server licence')).toBeInTheDocument();
     expect(screen.getByText('Plan active')).toBeInTheDocument();
@@ -57,6 +74,15 @@ describe('Frameleaf Cloud landing (FL-367)', () => {
 });
 
 describe('what each feature needs', () => {
+  it('uses account cover from Cloud and leaves an unchecked Server licence unknown', () => {
+    const base = { off: false, linked: true, hasPlan: true, licence: LicenseKind.Server };
+    const row = (backupScope?: 'all' | 'users' | 'none') =>
+      cloudNeeds({ ...base, backupScope }).find((need) => need.id === 'cloud_backup')?.state;
+    expect(row()).toBe('unknown');
+    expect(row('none')).toBe('not');
+    expect(row('users')).toBe('partly');
+    expect(row('all')).toBe('have');
+  });
   it('works out each row from what the server has', () => {
     const needs = cloudNeeds({ off: false, linked: true, hasPlan: false, licence: LicenseKind.Server });
     expect(Object.fromEntries(needs.map((need) => [need.id, need.state]))).toEqual({

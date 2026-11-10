@@ -25,9 +25,9 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { cloudPlanPrice, discountPercent, formatUsd } from '$lib/frameleaf/cloud';
+  import { backupLicenceCoverage } from '$lib/frameleaf/backup-licence-coverage';
   import { haveFrom, type CloudFeature } from '$lib/frameleaf/cloud-rules';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -60,6 +60,7 @@
   const plan = $derived(license?.plan ?? null);
   const overdue = $derived(have.plan && plan?.state === 'grace');
   const lapsed = $derived(!!plan && (plan.state === 'expired' || plan.state === 'invalid'));
+  const backupCover = $derived(backupLicenceCoverage(cloudManager.backupCoverage, $locale));
 
   const price = (id: string) => products?.products.find((product) => product.id === id)?.priceUsd ?? 0;
   /** What the licence on this server takes off a plan; a server with none gets the Server licence's, as it buys one. */
@@ -152,29 +153,13 @@
         ? $t('frameleaf_plan_cover_until', { values: { date: formatDate(plan?.graceUntil) } })
         : $t('frameleaf_plan_cover_remote_everyone'),
     },
-    have.licence === 'server'
-      ? {
-          icon: mdiCloudOutline,
-          name: $t('frameleaf_plan_cover_backup'),
-          detail: $t('frameleaf_plan_cover_backup_everyone_detail'),
-          tone: 'good',
-          value: $t('frameleaf_plan_cover_backup_everyone'),
-        }
-      : have.licence === 'individual'
-        ? {
-            icon: mdiCloudOutline,
-            name: $t('frameleaf_plan_cover_backup'),
-            detail: $t('frameleaf_plan_cover_backup_one_detail'),
-            tone: 'warn',
-            value: $t('frameleaf_plan_cover_backup_one', { values: { name: authManager.user.name } }),
-          }
-        : {
-            icon: mdiCloudOutline,
-            name: $t('frameleaf_plan_cover_backup'),
-            detail: $t('frameleaf_plan_cover_backup_waiting_detail'),
-            tone: 'off',
-            value: $t('frameleaf_plan_cover_backup_waiting'),
-          },
+    {
+      icon: mdiCloudOutline,
+      name: $t('frameleaf_plan_cover_backup'),
+      detail: $t(backupCover.known ? 'frameleaf_lic_cover_confirmed_body' : 'frameleaf_lic_cover_unknown_body'),
+      tone: backupCover.tone,
+      value: $t(backupCover.key, { values: backupCover.values }),
+    },
   ]);
 
   /** What either way of paying gives (the prototype's GIVES). */

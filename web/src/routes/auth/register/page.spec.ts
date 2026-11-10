@@ -12,7 +12,7 @@ vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   serverConfigManager: { loadServerConfig: vi.fn().mockResolvedValue(undefined) },
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
-  authManager: { authenticated: false, load: vi.fn().mockResolvedValue(undefined) },
+  authManager: { authenticated: false, load: vi.fn().mockResolvedValue(undefined), captureSession: () => () => true },
 }));
 
 beforeEach(() => {

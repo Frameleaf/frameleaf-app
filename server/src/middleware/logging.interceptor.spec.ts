@@ -331,6 +331,12 @@ describe('request log line', () => {
     expect(requestLogPath('/api/shared-links/me?slug=holiday-2026&key=Zk3jR8b2Lq9xV7c1Np4tW6')).toBe(
       '/api/shared-links/me?slug=********&key=********',
     );
+    expect(requestLogPath('/api/shared-links/direct/s/holiday-2026.jpg?size=fullsize')).toBe(
+      '/api/shared-links/direct/s/********?size=********',
+    );
+    expect(requestLogPath('/api/shared-links/direct/key/Zk3jR8b2Lq9xV7c1Np4tW6.jpg')).toBe(
+      '/api/shared-links/direct/key/********',
+    );
     expect(requestLogPath('/api/server/about')).toBe('/api/server/about');
     expect(requestLogPath('/api/%63ast/eyJhbGciOi.mac')).toBe('/api/cast/********');
     expect(requestLogPath('/API/%43AST/x.y?size=preview')).toBe('/API/CAST/********?size=********');

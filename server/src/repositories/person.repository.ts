@@ -21,6 +21,7 @@ import {
   isNotLockedAsset,
   nsfwAssetIdExists,
   removeUndefinedKeys,
+  withDefaultVisibility,
   withFilePath,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
@@ -704,6 +705,38 @@ export class PersonRepository {
       .executeTakeFirst();
     return Number(result.numUpdatedRows);
   }
+  /**
+   * FL-809: the named people `viewerId` sees in an album, most often first. A person is the viewer's own
+   * name for a face group, so a member sees the names they gave. Only Timeline and Archive items count:
+   * never Locked (anyone's, whatever the session), trashed, or hidden by the viewer's privacy options.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, {}, 50] })
+  getAlbumPeople(albumId: string, viewerId: string, options: HiddenContentQueryOptions = {}, limit = 50) {
+    return this.db
+      .selectFrom('asset')
+      .$call((qb) => withDefaultVisibility(qb))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .innerJoin('asset_face', 'asset_face.assetId', 'asset.id')
+      .innerJoin('person', (join) =>
+        join.onRef('person.personGroupId', '=', 'asset_face.personGroupId').on('person.ownerId', '=', viewerId),
+      )
+      .where('album_asset.albumId', '=', albumId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .where('person.isHidden', 'is', false)
+      .where('person.name', '!=', '')
+      .select(['person.personGroupId as id', 'person.name', 'person.updatedAt'])
+      .select(sql<number>`count(distinct "asset"."id")::int`.as('count'))
+      .groupBy(['person.personGroupId', 'person.name', 'person.updatedAt'])
+      .orderBy('count', 'desc')
+      .orderBy('person.name', 'asc')
+      .orderBy('person.personGroupId', 'asc')
+      .limit(limit)
+      .execute();
+  }
+
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, personGroupId: DummyValue.UUID }] })
   getByGroupId({ ownerId, personGroupId }: PersonId) {
     return this.db //
