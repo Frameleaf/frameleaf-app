@@ -207,6 +207,11 @@ describe(AuthService.name, () => {
 
       expect(mocks.user.redeemPasswordLink).toHaveBeenCalledWith(Buffer.from('digest'), 'hashed');
       expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', { userId: 'u1', invalidateSessions: true });
+      // FL-808: the account's own log shows it, never the token or password
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'u1', action: 'password-changed', subject: 'Alex', detail: 'link' }),
+      );
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, ['token', 'a-long-password', 'hashed']);
 
       // a link used in between (a race) is refused
       mocks.user.redeemPasswordLink.mockResolvedValueOnce(void 0);

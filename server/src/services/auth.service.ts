@@ -749,6 +749,12 @@ export class AuthService extends BaseService {
       throw new BadRequestException('This link has expired or was already used');
     }
     await this.eventRepository.emit('AuthChangePassword', { userId: user.id, invalidateSessions: true });
+    await this.recordAccountEvent({
+      userId: user.id,
+      action: AccountEventAction.PasswordChanged,
+      subject: account.name,
+      detail: 'link',
+    });
   }
 
   async setupPinCode(auth: AuthDto, { pinCode }: PinCodeSetupDto) {
