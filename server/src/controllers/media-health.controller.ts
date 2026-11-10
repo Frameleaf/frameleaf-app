@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
@@ -29,14 +30,19 @@ import {
   MediaHealthSummaryResponseDto,
 } from 'src/dtos/media-health.dto.js';
 import { ApiTag } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
+import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.MediaHealth)
 @Controller('media-health')
 export class MediaHealthController {
-  constructor(private service: MediaHealthService) {}
+  constructor(
+    private service: MediaHealthService,
+    private logger: LoggingRepository,
+  ) {}
 
   @Get()
   @Authenticated()
@@ -94,6 +100,29 @@ export class MediaHealthController {
   })
   getFileProblemFolders(@Auth() auth: AuthDto): Promise<FileProblemFolderDto[]> {
     return this.service.getFileProblemFolders(auth);
+  }
+
+  // Task 11b: declared before every other route under files/:id
+  @Get('files/:id/kept-file')
+  @FileResponse('image/jpeg')
+  @Authenticated()
+  // the damaged file is as large as an original
+  @OriginalTransfer()
+  @Endpoint({
+    summary: 'Download the damaged file a repair kept',
+    description:
+      'The damaged file Frameleaf kept when it repaired the photo, as it was. Only the owner can download it, only while the latest fix is a repair whose kept file is still there, and not while the photo is Locked.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  async downloadFileProblemKeptFile(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ): Promise<void> {
+    // checked before the file is sent, so a refusal keeps its own status instead of becoming a missing file
+    const file = await this.service.getFileProblemKeptFile(auth, id);
+    await sendFile(res, next, () => file, this.logger);
   }
 
   @Get('files/:id')

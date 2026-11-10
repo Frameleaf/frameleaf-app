@@ -63,6 +63,7 @@ import {
 } from 'src/dtos/media-health.dto.js';
 import {
   AssetVisibility,
+  CacheControl,
   ChecksumAlgorithm,
   DatabaseLock,
   FrameleafWorker,
@@ -136,6 +137,7 @@ import {
 } from 'src/utils/file-problem.js';
 import { isActivePhone, phoneName } from 'src/utils/file-steps.js';
 import { fileIdentity } from 'src/utils/file-trash.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { JPEG_REPAIR_EXTENSIONS, type JpegRepairResult } from 'src/utils/jpeg-repair.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
@@ -240,6 +242,9 @@ const NEEDS_FILE_STATES: ReadonlySet<string> = new Set<FixState>([
 const UNDO_CHANGED = "This photo changed since Frameleaf fixed it, so it can't be undone.";
 /** Task 11b: a photo that is Locked now keeps the file it has; Undo moves nothing. */
 const UNDO_LOCKED = "This photo is locked, so this fix can't be undone.";
+/** Task 11b: the damaged file a repair kept, for its owner to download. */
+const NO_KEPT_FILE = "Frameleaf didn't keep a damaged file for this photo.";
+const KEPT_FILE_LOCKED = "This photo is locked, so the damaged file Frameleaf kept can't be downloaded.";
 const NOTHING_TO_UNDO = 'There is nothing to undo for this photo.';
 const OWNER_ONLY = "Only the photo's owner can do that.";
 /** F2: the Upload drive, which holds Library care's folder, is not there. */
@@ -2588,6 +2593,37 @@ export class MediaHealthService {
         "Frameleaf couldn't undo this just now, so nothing was changed. Try again later.",
       );
     }
+  }
+
+  /**
+   * The damaged file a repair kept, for its owner to download (Task 11b): only while the newest fix Undo would undo
+   * is a repair, and its kept file is there in the photo's own Library care folder, not a link out of it. Never for
+   * a photo that is Locked now, even in its owner's unlocked session. The file is only read.
+   */
+  async getFileProblemKeptFile(auth: AuthDto, id: string): Promise<FileDownloadResponse> {
+    const record = await this.ownFileProblem(auth, id);
+    const [asset] = await this.mediaHealthRepository.getAssets([record.assetId]);
+    if (!asset) {
+      throw new NotFoundException(NO_KEPT_FILE);
+    }
+    if (asset.isLocked) {
+      throw new ConflictException(KEPT_FILE_LOCKED);
+    }
+    const fix = this.fixToUndo(record, await this.mediaHealthRepository.listSteps(record.id));
+    const folder = path.dirname(this.libraryCarePath(asset, 'kept'));
+    const kept =
+      fix?.kind === 'repair' && path.dirname(path.normalize(fix.previousPath)) === folder
+        ? await resolveInsideRoot(folder, fix.previousPath)
+        : undefined;
+    if (!kept) {
+      throw new NotFoundException(NO_KEPT_FILE);
+    }
+    return new FileDownloadResponse({
+      path: kept,
+      fileName: record.originalFileName,
+      contentType: mimeTypes.lookup(kept),
+      cacheControl: CacheControl.PrivateWithoutCache,
+    });
   }
 
   /** Keep a problem as it is (the owner only, from Needs you): it moves to Left as they are, and stays there. */

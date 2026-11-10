@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -8,6 +8,7 @@ import { CORRUPT_MEDIA_DELETE_CONFIRM_TEXT } from 'src/dtos/media-health.dto.js'
 import {
   AssetType,
   AssetVisibility,
+  CacheControl,
   ChecksumAlgorithm,
   JobName,
   JobStatus,
@@ -6264,6 +6265,115 @@ describe(MediaHealthService.name, () => {
 
         await expect(sut.undoFileProblemFix(admin, 'health-1')).rejects.toThrow("Only the photo's owner can do that");
         expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('the damaged file a repair kept (Task 11b)', () => {
+      const NO_FILE = "Frameleaf didn't keep a damaged file for this photo.";
+      let damaged: string;
+      let repaired: string;
+      const keptDamaged = (previousPath: string) =>
+        step('step-3', 'kept-damaged', 'info', {
+          undo: {
+            kind: 'repair',
+            previousPath,
+            originalPath: repaired,
+            checksum: sha256('the repaired file').toString('hex'),
+          },
+        });
+
+      beforeEach(async () => {
+        damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        await writeFile(damaged, 'the damaged file');
+        await writeFile(repaired, 'the repaired file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+        shows(problem({ originalPath: repaired, evidence: { fixState: 'part-saved', retainedPath: damaged } }));
+        history(step('step-1', 'wont-open', 'failed'), step('step-2', 'repaired', 'ok'), keptDamaged(damaged));
+      });
+
+      it('gives the owner the damaged file their repair kept in Library care', async () => {
+        await expect(sut.getFileProblemKeptFile(owner, 'health-1')).resolves.toEqual({
+          // the file itself, as the folder check resolved it
+          path: await realpath(damaged),
+          fileName: 'IMG_2041.jpg',
+          contentType: 'image/jpeg',
+          cacheControl: CacheControl.PrivateWithoutCache,
+        });
+        // reading it changes nothing
+        await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
+        expect(mediaHealthRepository.getFileProblem).toHaveBeenCalledWith('health-1', owner.user.id, expect.anything());
+      });
+
+      it('also for a repair that stopped before it recorded its kept-damaged step', async () => {
+        history(step('step-1', 'wont-open', 'failed'), step('step-2', 'repaired', 'ok'));
+        await expect(sut.getFileProblemKeptFile(owner, 'health-1')).resolves.toMatchObject({
+          path: await realpath(damaged),
+        });
+      });
+
+      it('is only for the owner', async () => {
+        // an administrator sees the problem, but the file is the owner's
+        shows(problem({ ownerId: 'someone-else', ownerName: 'Emma' }));
+        await expect(sut.getFileProblemKeptFile(admin, 'health-1')).rejects.toMatchObject({
+          status: 403,
+          message: "Only the photo's owner can do that.",
+        });
+        // another member never sees the problem at all
+        shows(undefined as never);
+        const member = { user: { ...owner.user, id: 'user-2', name: 'Emma' } } as never;
+        await expect(sut.getFileProblemKeptFile(member, 'health-1')).rejects.toMatchObject({ status: 404 });
+      });
+
+      it('is refused for a photo that is Locked now, even in its owner’s unlocked session', async () => {
+        photo({ originalPath: repaired, checksum: sha256('the repaired file'), isLocked: true });
+        await expect(sut.getFileProblemKeptFile(elevatedOwner, 'health-1')).rejects.toMatchObject({
+          status: 409,
+          message: "This photo is locked, so the damaged file Frameleaf kept can't be downloaded.",
+        });
+      });
+
+      it.each([
+        [
+          'the latest fix is not a repair',
+          () =>
+            history(
+              step('step-1', 'not-on-drive', 'failed'),
+              step('step-2', 'put-back', 'ok', {
+                undo: { kind: 'relink', previousPath: damaged, originalPath: repaired },
+              }),
+            ),
+        ],
+        [
+          'the repair was undone',
+          () => history(step('step-2', 'repaired', 'ok'), keptDamaged(damaged), step('step-4', 'undone', 'info')),
+        ],
+        ['no fix was made', () => history(step('step-1', 'wont-open', 'failed'))],
+        ['the kept file is gone', async () => rm(damaged)],
+        [
+          'the kept file is not in the photo’s Library care folder',
+          async () => {
+            const elsewhere = join(root, 'library', 'IMG_2041.jpg');
+            await mkdir(join(root, 'library'), { recursive: true });
+            await writeFile(elsewhere, 'some other file');
+            history(step('step-2', 'repaired', 'ok'), keptDamaged(elsewhere));
+          },
+        ],
+        [
+          'the kept file is a link out of Library care',
+          async () => {
+            const outside = join(root, 'outside.jpg');
+            await writeFile(outside, 'not the damaged file');
+            await rm(damaged);
+            await symlink(outside, damaged);
+          },
+        ],
+      ])('has nothing to give when %s', async (_, arrange) => {
+        await arrange();
+        await expect(sut.getFileProblemKeptFile(owner, 'health-1')).rejects.toMatchObject({
+          status: 404,
+          message: NO_FILE,
+        });
       });
     });
 
