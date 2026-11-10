@@ -13,6 +13,7 @@
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
   import Logo from '$lib/components/frameleaf/Logo.svelte';
+  import PasskeySignIn from '$lib/components/frameleaf/PasskeySignIn.svelte';
   import WelcomeMessage from '$lib/components/frameleaf/WelcomeMessage.svelte';
   import {
     clearRememberMePreference,
@@ -32,6 +33,7 @@
     takeFrameleafCallbackRequest,
     takeHandoffCode,
   } from '$lib/frameleaf/frameleaf-sign-in';
+  import { passkeysInThisBrowser } from '$lib/frameleaf/passkeys';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
@@ -84,6 +86,12 @@
   let frameleafLoading = $state(false);
   let frameleafError = $state('');
   let stayRemote = $state(false);
+  // FL-859: Sign in with a passkey, at home and through remote access (owner, 2026-11-07)
+  let passkeyShown = $state(false);
+  let passkeyBusy = $state(false);
+  const passkeysHere = passkeysInThisBrowser().ok;
+  /** The secure address the http note links to: the external domain, else the Frameleaf address. */
+  const secureUrl = $derived(serverConfigManager.value.externalDomain || frameleaf.signInOrigin);
   const localHost = $derived.by(() => {
     try {
       return frameleaf.localUrl ? new URL(frameleaf.localUrl).host : '';
@@ -435,8 +443,19 @@
     {/if}
     <div class="auth-card auth-form">
       <p class="auth-info">
-        <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_relay_note')}</span>
+        <Icon icon={mdiInformationOutline} size="16" /><span
+          >{passkeyShown ? $t('frameleaf_passkey_relay_note') : $t('frameleaf_auth_relay_note')}</span
+        >
       </p>
+      {#if publicConfig.passwordLogin.enabled}
+        <PasskeySignIn
+          {rememberMe}
+          disabled={frameleafLoading}
+          onSignedIn={finishUser}
+          onBusy={(busy) => (passkeyBusy = busy)}
+          onShown={(shown) => (passkeyShown = shown)}
+        />
+      {/if}
       {#if frameleaf.signInAvailable}
         {@render frameleafButton(true)}
         <label class="auth-check"
@@ -478,7 +497,7 @@
             name="email"
             type="email"
             inputmode="email"
-            autocomplete="username"
+            autocomplete={passkeysHere ? 'username webauthn' : 'username'}
             autofocus
             bind:value={email}
             aria-invalid={!!errorMessage || undefined}
@@ -505,18 +524,33 @@
             <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_forgot_password_help')}</span>
           </p>
         {/if}
-        <button type="submit" class="button primary auth-submit" disabled={loading}
+        <button type="submit" class="button primary auth-submit" disabled={loading || passkeyBusy}
           >{loading ? $t('frameleaf_auth_signing_in') : $t('frameleaf_auth_sign_in')}</button
         >
+        {#if passkeyShown && !publicConfig.oauth.enabled && !showFrameleafAtHome}
+          <div class="auth-divider" aria-hidden="true">{$t('frameleaf_auth_or')}</div>
+        {/if}
       {/if}
 
+      {#if publicConfig.passwordLogin.enabled && (publicConfig.oauth.enabled || showFrameleafAtHome)}
+        <div class="auth-divider" aria-hidden="true">{$t('frameleaf_auth_or')}</div>
+      {/if}
+      {#if publicConfig.passwordLogin.enabled}
+        <PasskeySignIn
+          {rememberMe}
+          autofill
+          {secureUrl}
+          disabled={loading}
+          onSignedIn={finishUser}
+          onBusy={(busy) => (passkeyBusy = busy)}
+          onShown={(shown) => (passkeyShown = shown)}
+        />
+      {/if}
       {#if publicConfig.oauth.enabled || showFrameleafAtHome}
         {#if !publicConfig.passwordLogin.enabled}
           <label class="auth-check"
             ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
           >
-        {:else}
-          <div class="auth-divider" aria-hidden="true">{$t('frameleaf_auth_or')}</div>
         {/if}
         {#if showFrameleafAtHome}
           {@render frameleafButton(false)}

@@ -10858,6 +10858,57 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/users/{id}/passkeys": {
+      "delete": {
+        "description": "Remove every passkey of someone who lost a device and can’t sign in to remove it. Sessions they started are signed out. Recorded in the account history.",
+        "operationId": "removeUserPasskeysAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove all passkeys of a user",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminUser.update",
+        "x-immich-state": "Beta"
+      }
+    },
     "/admin/users/{id}/password-link": {
       "post": {
         "description": "Email the person a single-use link (valid 7 days) to choose their own password. The administrator never sees it. Needs email to be set up and a public address.",
@@ -21687,6 +21738,360 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/auth/passkeys": {
+      "get": {
+        "description": "The passkeys of the current user, oldest first.",
+        "operationId": "getPasskeys",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PasskeyResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List passkeys",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/passkeys/login": {
+      "post": {
+        "description": "Send the browser’s answer to login/options and receive a session token. A passkey sign-in skips two-step sign-in.",
+        "operationId": "loginWithPasskey",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyLoginDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Sign in with a passkey",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/passkeys/login/options": {
+      "post": {
+        "description": "Get the options for the browser to sign in with a passkey. Answers passkeysAvailable false with a reason at an address where passkeys cannot work, such as plain http.",
+        "operationId": "getPasskeyLoginOptions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyOptionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Start a passkey sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/passkeys/register": {
+      "post": {
+        "description": "Save the passkey the browser made for the options from register/options.",
+        "operationId": "registerPasskey",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegisterDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add a passkey",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/passkeys/register/options": {
+      "post": {
+        "description": "Check the password (or a check from this session in the last 10 minutes) and get the options for the browser. Answers passkeysAvailable false with a reason at an address where passkeys cannot work, such as plain http.",
+        "operationId": "getPasskeyRegistrationOptions",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegistrationOptionsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyOptionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start adding a passkey",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/passkeys/{id}": {
+      "delete": {
+        "description": "Remove one of the current user’s passkeys. Sessions it signed in are signed out.",
+        "operationId": "removePasskey",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a passkey",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      },
+      "patch": {
+        "description": "Change the name of one of the current user’s passkeys.",
+        "operationId": "updatePasskey",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Rename a passkey",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
       }
     },
     "/auth/password-link": {
@@ -82137,6 +82542,27 @@
         ],
         "type": "string"
       },
+      "AttentionProcessingFailuresDto": {
+        "properties": {
+          "count": {
+            "description": "Files with a step Frameleaf could not finish, not kept as they are",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "setAside": {
+            "description": "Of those, files set aside after repeated tries; they are not tried again by themselves",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "setAside"
+        ],
+        "type": "object"
+      },
       "AttentionReason": {
         "description": "What was found, one value per kind of finding",
         "enum": [
@@ -82182,6 +82608,10 @@
               "$ref": "#/components/schemas/AttentionItemDto"
             },
             "type": "array"
+          },
+          "processingFailures": {
+            "$ref": "#/components/schemas/AttentionProcessingFailuresDto",
+            "description": "FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check."
           }
         },
         "required": [
@@ -82189,7 +82619,8 @@
           "checks",
           "dismissed",
           "fileProblems",
-          "items"
+          "items",
+          "processingFailures"
         ],
         "type": "object"
       },
@@ -82326,12 +82757,20 @@
             "description": "Session expiration date",
             "type": "string"
           },
+          "hasPasskeys": {
+            "description": "FL-836: the account has at least one passkey",
+            "type": "boolean"
+          },
           "isElevated": {
             "description": "Is elevated session",
             "type": "boolean"
           },
           "localPasswordRequired": {
             "description": "This freshly signed-in owner needs to set their first local password",
+            "type": "boolean"
+          },
+          "passkeysAvailable": {
+            "description": "FL-836: passkeys can be added and used at the address this request was sent to",
             "type": "boolean"
           },
           "password": {
@@ -82358,7 +82797,9 @@
           }
         },
         "required": [
+          "hasPasskeys",
           "isElevated",
+          "passkeysAvailable",
           "password",
           "pinCode",
           "recoveryCodesRemaining",
@@ -115976,6 +116417,178 @@
       },
       "PartnerUpdateDto": {
         "properties": {},
+        "type": "object"
+      },
+      "PasskeyCredentialDto": {
+        "properties": {
+          "authenticatorAttachment": {
+            "description": "`platform` or `cross-platform`",
+            "maxLength": 32,
+            "type": "string"
+          },
+          "clientExtensionResults": {
+            "additionalProperties": {},
+            "description": "Extension results",
+            "type": "object"
+          },
+          "id": {
+            "description": "The credential id (base64url)",
+            "maxLength": 1400,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rawId": {
+            "description": "The credential id (base64url)",
+            "maxLength": 1400,
+            "minLength": 1,
+            "type": "string"
+          },
+          "response": {
+            "additionalProperties": {},
+            "description": "The authenticator response, as the browser encodes it in JSON",
+            "type": "object"
+          },
+          "type": {
+            "description": "`public-key`",
+            "maxLength": 32,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "rawId",
+          "response",
+          "type"
+        ],
+        "type": "object"
+      },
+      "PasskeyLoginDto": {
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/PasskeyCredentialDto"
+          },
+          "rememberMe": {
+            "description": "Keep the session after the browser closes",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "credential"
+        ],
+        "type": "object"
+      },
+      "PasskeyOptionsResponseDto": {
+        "properties": {
+          "options": {
+            "additionalProperties": {},
+            "description": "The options to pass to the browser (WebAuthn JSON); null when unavailable",
+            "nullable": true,
+            "type": "object"
+          },
+          "passkeysAvailable": {
+            "description": "Whether passkeys work at the address the request was sent to",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Why not, when unavailable: `insecure` (a plain http address) or `address` (not the server’s external domain or Frameleaf address). New values may appear.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "options",
+          "passkeysAvailable",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "PasskeyRegisterDto": {
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/PasskeyCredentialDto"
+          },
+          "name": {
+            "description": "A name to tell passkeys apart",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential"
+        ],
+        "type": "object"
+      },
+      "PasskeyRegistrationOptionsDto": {
+        "properties": {
+          "password": {
+            "description": "The account password, unless it was checked in this session in the last 10 minutes",
+            "maxLength": 1000,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PasskeyResponseDto": {
+        "properties": {
+          "backedUp": {
+            "description": "It syncs to the owner’s other devices",
+            "type": "boolean"
+          },
+          "createdAt": {
+            "description": "When it was added",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Passkey ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "description": "When it last signed in",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The name its owner gave it",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Where it is saved, such as `iCloud Keychain` or `1Password`, when the server knows it",
+            "nullable": true,
+            "type": "string"
+          },
+          "rpId": {
+            "description": "The address it was made on, and works at",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backedUp",
+          "createdAt",
+          "id",
+          "lastUsedAt",
+          "name",
+          "provider",
+          "rpId"
+        ],
+        "type": "object"
+      },
+      "PasskeyUpdateDto": {
+        "properties": {
+          "name": {
+            "description": "A name to tell passkeys apart",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
         "type": "object"
       },
       "PasswordLinkCheckDto": {
@@ -160723,6 +161336,12 @@
       },
       "UserAdminPinCodeStateResponseDto": {
         "properties": {
+          "passkeys": {
+            "description": "FL-836: how many passkeys the account has",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "pinCode": {
             "description": "Whether the account has a PIN set",
             "type": "boolean"
@@ -160733,6 +161352,7 @@
           }
         },
         "required": [
+          "passkeys",
           "pinCode",
           "twoFactorEnabled"
         ],

@@ -91,6 +91,7 @@ import {
 import { OAuthController } from 'src/controllers/oauth.controller.js';
 import { OvernightController } from 'src/controllers/overnight.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
+import { PasskeyController } from 'src/controllers/passkey.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
 import {
@@ -256,6 +257,7 @@ export const controllers = [
   NotificationAdminController,
   MailConnectionController,
   OAuthController,
+  PasskeyController,
   PartnerController,
   PersonController,
   PetController,
