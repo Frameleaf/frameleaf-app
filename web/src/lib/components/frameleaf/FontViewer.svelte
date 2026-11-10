@@ -50,6 +50,7 @@
   let axes = $state<Record<string, number>>({});
   let features = $state<Record<string, boolean>>({});
   let closeButton = $state<HTMLButtonElement>();
+  let root = $state<HTMLElement>();
 
   const name = $derived(font?.family || fontFileTitle(asset.originalFileName));
   const reset = () => {
@@ -111,6 +112,10 @@
 
   const onKey = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement | null;
+    // Something opened on top of the viewer (the "Add to…" picker) owns its keys.
+    if (target && target !== document.body && !root?.contains(target)) {
+      return;
+    }
     // A field in Details (tags, note) handles its own keys: Enter picks a tag, Escape closes its
     // suggestions. Workspace shortcuts already ignore keys typed in a field.
     if (target?.matches?.('input, textarea, select') && target.closest('[data-font-details]')) {
@@ -161,6 +166,7 @@
 {/snippet}
 
 <div
+  bind:this={root}
   class="viewer"
   role="dialog"
   aria-modal="true"

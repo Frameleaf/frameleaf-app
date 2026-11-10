@@ -90,6 +90,15 @@ const SCRIPTS: { name: string; from: number; to: number; needs: number; sample: 
   { name: 'emoji', from: 0x1_f6_00, to: 0x1_f6_4f, needs: 20, sample: '😀🌿📷🎨' },
 ];
 
+const OWN_MAX = 12;
+const OWN_RANGES: [number, number][] = [
+  [0x21, 0x7e],
+  [0xa1, 0x2_ff],
+  [0x20_00, 0x2b_ff],
+  [0xe0_00, 0xf8_ff],
+  [0x1_f3_00, 0x1_fa_ff],
+];
+
 export function fontScripts(codePoints: Iterable<number>): string[] {
   const counts = SCRIPTS.map(() => 0);
   for (const point of codePoints) {
@@ -140,8 +149,21 @@ export function readFontFacts(data: Buffer, filename: string): { facts: FontFact
   const first = fonts[0];
   if (!first) throw new Error('The font file holds no font');
   const fallback = fontFactsFromName(filename).family;
-  const codePoints = attempt(() => first.characterSet, []);
-  const scripts = fontScripts(codePoints);
+  // Each code point of the ranges that matter is asked for on its own. The font's whole character list is
+  // never built: a few bytes of a hostile file can declare billions of characters.
+  const covered = (from: number, to: number, limit = Infinity) => {
+    const found: number[] = [];
+    for (let point = from; point <= to && found.length < limit; point++) {
+      if (attempt(() => first.hasGlyphForCodePoint(point), false)) {
+        found.push(point);
+      }
+    }
+    return found;
+  };
+  const scripts = fontScripts(SCRIPTS.flatMap(({ from, to }) => covered(from, to)));
+  // a symbol font shows its own first characters: basic and extended Latin, symbols, private use, pictographs
+  const own =
+    scripts.length > 0 ? [] : OWN_RANGES.flatMap(([from, to]) => covered(from, to, OWN_MAX)).slice(0, OWN_MAX);
   const axes = attempt(
     () =>
       Object.entries(first.variationAxes ?? {})
@@ -169,7 +191,7 @@ export function readFontFacts(data: Buffer, filename: string): { facts: FontFact
   );
   const name = (key: string) => attempt(() => clean(first.getName?.(key), LICENCE_MAX) || null, null);
   return {
-    sample: fontSpecimenText(scripts, codePoints),
+    sample: fontSpecimenText(scripts, own),
     facts: {
       ...face(first, fallback),
       axes,

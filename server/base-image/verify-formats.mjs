@@ -59,7 +59,6 @@ const { StorageRepository } = await load('repositories/storage.repository.js');
 const { CryptoRepository } = await load('repositories/crypto.repository.js');
 const { MediaIntegrityService } = await load('services/media-integrity.service.js');
 const { renderRawWithLibRaw } = await load('utils/raw-renderer.js');
-const { readFontFacts } = await load('utils/font-file.js');
 const { SharpOperations } = await load('queue/sharp-operations.js');
 const { DesignPreviewUnavailableError, isFireworksPng } = await load('utils/design-preview.js');
 
@@ -137,7 +136,8 @@ const decoders = {
   },
   async font(file) {
     // FL-1359: the product's own path. The facts are read, then the specimen is set in the font file.
-    const { facts, sample } = readFontFacts(readFileSync(file), basename(file));
+    // through the server's own entry point: the facts are read in a process of their own
+    const { facts, sample } = await media.readFontFacts(file, basename(file));
     const folder = mkdtempSync(join(tmpdir(), 'font-specimen-'));
     try {
       const output = join(folder, 'preview.jpeg');

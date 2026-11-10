@@ -50,6 +50,7 @@ import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo 
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
+import { readFontFacts } from 'src/utils/font-file.js';
 import { LockedKeyUnavailableError, withPlainCopy } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -539,7 +540,9 @@ describe(MediaService.name, () => {
 
       it('keeps the font’s facts and makes its thumbnail and preview a specimen set in the font', async () => {
         const asset = font();
-        mocks.storage.readFile.mockResolvedValue(readFileSync('resources/studio-fonts/anton-latin-400-normal.ttf'));
+        mocks.media.readFontFacts.mockResolvedValue(
+          readFontFacts(readFileSync('resources/studio-fonts/anton-latin-400-normal.ttf'), 'Anton.ttf'),
+        );
 
         await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
@@ -565,7 +568,7 @@ describe(MediaService.name, () => {
 
       it('gives a font that cannot be read or drawn a plain tile with its name, and never fails', async () => {
         const asset = font('Lodge Serif.otf');
-        mocks.storage.readFile.mockResolvedValue(Buffer.from('OTTO but nothing else'));
+        mocks.media.readFontFacts.mockRejectedValue(new Error('Command failed: the font reader ran out of time'));
         mocks.media.renderFontSpecimen.mockRejectedValueOnce(new Error('Sharp child closed (SIGSEGV)'));
 
         await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
@@ -590,7 +593,7 @@ describe(MediaService.name, () => {
 
         await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-        expect(mocks.storage.readFile).not.toHaveBeenCalled();
+        expect(mocks.media.readFontFacts).not.toHaveBeenCalled();
         expect(mocks.media.renderFontSpecimen).toHaveBeenCalledExactlyOnceWith(
           null,
           expect.anything(),

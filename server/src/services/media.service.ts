@@ -79,7 +79,7 @@ import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { isBusy } from 'src/utils/file-problem.js';
-import { FONT_PARSE_LIMIT, fontFactsFromName, readFontFacts } from 'src/utils/font-file.js';
+import { FONT_PARSE_LIMIT, fontFactsFromName } from 'src/utils/font-file.js';
 import { FONT_SPECIMEN } from 'src/utils/font-specimen.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
 import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
@@ -3794,14 +3794,15 @@ export class MediaService extends BaseService {
           facts.license = text('Notice') || text('Copyright') || null;
           sample = 'Aa Bb Cc\nHandgloves 0123';
         } else {
-          ({ facts, sample } = readFontFacts(await this.storageRepository.readFile(asset.originalPath), name));
+          ({ facts, sample } = await this.mediaRepository.readFontFacts(asset.originalPath, name));
         }
       }
     } catch (error) {
       executionSignal()?.throwIfAborted();
       this.logger.warn(`Font ${asset.id} could not be read, keeping its name only: ${error}`);
     }
-    await this.assetRepository.upsertFont(asset.id, facts);
+    // kept only if the job's result is: a file that changed underneath it leaves no facts behind
+    await publishJobResult(() => this.assetRepository.upsertFont(asset.id, facts));
 
     const files = ([AssetFileType.Preview, AssetFileType.Thumbnail] as const).map((fileType) => {
       const { format, quality, size } = fileType === AssetFileType.Preview ? image.preview : image.thumbnail;

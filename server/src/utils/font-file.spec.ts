@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   fontFactsFromName,
   fontScripts,
@@ -11,6 +11,12 @@ import {
 
 const anton = () => readFileSync('resources/studio-fonts/anton-latin-400-normal.ttf');
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => from + index);
+
+// the real parser, with `create` replaceable for one test
+vi.mock('fontkit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fontkit')>();
+  return { ...actual, create: vi.fn(actual.create) };
+});
 
 describe('font files (FL-1359)', () => {
   it.each([
@@ -65,5 +71,26 @@ describe('font files (FL-1359)', () => {
     expect(fontSpecimenText(['latin', 'cyrillic'])).toContain('Aa');
     expect(fontSpecimenText([], [0x20, 0xe0_01, 0xe0_02])).toBe('');
     expect(fontSpecimenText([])).toBe('Aa');
+  });
+
+  it('never builds the font’s whole character list, which a hostile file can make billions long', async () => {
+    const fontkit = await import('fontkit');
+    const asked: number[] = [];
+    const hostile = {
+      familyName: 'Trap',
+      get characterSet(): number[] {
+        throw new Error('the whole character list was asked for');
+      },
+      hasGlyphForCodePoint: (point: number) => {
+        asked.push(point);
+        return point >= 0x61 && point <= 0x7a;
+      },
+    };
+    vi.mocked(fontkit.create).mockReturnValueOnce(hostile as never);
+    const { facts, sample } = readFontFacts(Buffer.alloc(8), 'trap.ttf');
+    expect(facts).toMatchObject({ family: 'Trap', scripts: ['latin'] });
+    expect(sample).toContain('Aa');
+    // only the ranges that name a script are asked about: tens of thousands of lookups, not billions
+    expect(asked.length).toBeLessThan(40_000);
   });
 });

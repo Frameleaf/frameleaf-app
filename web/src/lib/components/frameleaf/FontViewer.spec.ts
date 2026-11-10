@@ -122,6 +122,17 @@ describe('FontViewer (FL-1359)', () => {
     expect(escape.defaultPrevented).toBe(false);
     expect(onClose).not.toHaveBeenCalled();
 
+    // a picker opened on top of the viewer keeps its keys too, Escape included
+    const picker = document.createElement('input');
+    const onPickerKey = vi.fn();
+    picker.addEventListener('keydown', onPickerKey);
+    document.body.append(picker);
+    picker.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    picker.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onPickerKey).toHaveBeenCalledTimes(2);
+    expect(onClose).not.toHaveBeenCalled();
+    picker.remove();
+
     await fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
   });
