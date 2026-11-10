@@ -695,6 +695,16 @@
     }
   });
   const canZoom = $derived(zoomable && !castManager.isCasting);
+  // Casting (or anything else that ends zoom) takes the local player away before its frame can return to
+  // fit, so the shared zoom is reset here: a zoom left above 1 would block swipes and drag-to-close.
+  let couldZoom = false;
+  $effect(() => {
+    const now = canZoom;
+    if (couldZoom && !now) {
+      untrack(() => assetViewerManager.resetZoomState());
+    }
+    couldZoom = now;
+  });
   // The keyboard steps of the photo viewer (PhotoViewer.svelte); 0 returns to fit (RatingAction).
   const zoomBy = (factor: number) =>
     assetViewerManager.animatedZoom(Math.min(VIDEO_MAX_ZOOM, Math.max(1, assetViewerManager.zoom * factor)));

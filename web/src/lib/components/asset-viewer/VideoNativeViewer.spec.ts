@@ -784,6 +784,19 @@ describe('VideoNativeViewer component', () => {
       expect(viewerVideo()!.style.transform).toBe('');
     });
 
+    it('returns to fit when zoom ends while zoomed, as when casting starts', async () => {
+      const props = zoomProps();
+      const viewer = renderViewer(props);
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+      assetViewerManager.zoom = 3;
+      const reset = vi.spyOn(assetViewerManager, 'resetZoomState');
+
+      await viewer.rerender({ componentProps: { ...props, zoomable: false } });
+      await waitFor(() => expect(reset).toHaveBeenCalled());
+      expect(assetViewerManager.zoom).toBe(1);
+      reset.mockRestore();
+    });
+
     it('leaves the picture alone when the video cannot zoom', async () => {
       renderViewer(videoProps());
       await waitFor(() => expect(viewerVideo()).toBeTruthy());
