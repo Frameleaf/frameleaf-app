@@ -14,7 +14,6 @@ import logging
 import secrets
 import time
 from collections import OrderedDict
-from typing import Any
 
 from aiohttp import web
 from homeassistant.components import webhook
@@ -36,13 +35,16 @@ _LOGGER = logging.getLogger(__name__)
 _SEEN_LIMIT = 500
 
 
-def signature_ok(secret: str, timestamp: str | None, body: bytes, signature: str | None, now: float) -> bool:
-    """Frameleaf signs `<X-Frameleaf-Timestamp>.<body>` with HMAC-SHA256 (`sha256=<hex>`)."""
-    if not timestamp or not signature or not timestamp.isdigit():
+def signature_ok(
+    secret: str, timestamp: str | None, delivery: str | None, body: bytes, signature: str | None, now: float
+) -> bool:
+    """Frameleaf signs `<X-Frameleaf-Timestamp>.<X-Frameleaf-Delivery>.<body>` with HMAC-SHA256 (`sha256=<hex>`)."""
+    if not timestamp or not delivery or not signature or not timestamp.isdigit():
         return False
     if abs(now - int(timestamp)) > SIGNATURE_TOLERANCE_SECONDS:
         return False
-    expected = hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+    signed = f"{timestamp}.{delivery}.".encode() + body
+    expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
@@ -51,29 +53,27 @@ def make_handler(secret: str):
 
     async def handle(hass: HomeAssistant, webhook_id: str, request: web.Request) -> web.Response | None:
         body = await request.read()
+        # the delivery id is part of what is signed, so a replay cannot change it
+        delivery = request.headers.get("X-Frameleaf-Delivery")
         if not signature_ok(
             secret,
             request.headers.get("X-Frameleaf-Timestamp"),
+            delivery,
             body,
             request.headers.get("X-Frameleaf-Signature"),
             time.time(),
         ):
             _LOGGER.warning("Ignored a Frameleaf event that was not signed by this server")
             return web.Response(status=401)
+        if delivery in seen:
+            return web.Response(status=200)
         try:
             message = json.loads(body)
-            data: dict[str, Any] = message["data"]
+            data = message["data"]
         except (ValueError, KeyError, TypeError):
             return web.Response(status=400)
-        # dedupe on what the signature covers: the delivery id in the signed body (the header is not
-        # signed), else the signature itself, so a replay with a changed header is still a replay
-        delivery = data.get("deliveryId")
-        key = delivery or request.headers.get("X-Frameleaf-Signature")
-        if key in seen:
-            return web.Response(status=200)
-        seen[key] = None
-        while len(seen) > _SEEN_LIMIT:
-            seen.popitem(last=False)
+        if not isinstance(message, dict) or not isinstance(data, dict):
+            return web.Response(status=400)
         hass.bus.async_fire(
             EVENT_FRAMELEAF,
             {
@@ -85,6 +85,10 @@ def make_handler(secret: str):
                 "detail": data.get("detail"),
             },
         )
+        # remembered only once it was fired, so a failed fire can be delivered again
+        seen[delivery] = None
+        while len(seen) > _SEEN_LIMIT:
+            seen.popitem(last=False)
         return web.Response(status=200)
 
     return handle

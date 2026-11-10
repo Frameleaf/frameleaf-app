@@ -70,3 +70,19 @@ async def test_refused_refresh_asks_to_sign_in_again(hass: HomeAssistant, aiocli
 
     assert entry.state is ConfigEntryState.SETUP_ERROR
     assert [flow["context"]["source"] for flow in hass.config_entries.flow.async_progress()] == ["reauth"]
+
+
+async def test_busy_token_endpoint_keeps_the_sign_in(hass: HomeAssistant, aioclient_mock) -> None:
+    import time
+
+    entry = oauth_entry()
+    entry.add_to_hass(hass)
+    token = {**entry.data["token"], "expires_at": time.time() - 10}
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "token": token})
+    aioclient_mock.post(f"{API}/oauth/apps/token", status=429, json={"error": "slow_down"})
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # tried again later, never a new sign-in
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert hass.config_entries.flow.async_progress() == []

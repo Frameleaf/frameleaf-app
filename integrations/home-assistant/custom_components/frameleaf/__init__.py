@@ -87,7 +87,8 @@ def build_api(hass: HomeAssistant, entry: ConfigEntry) -> FrameleafApi:
             await oauth.async_ensure_token_valid()
         except ClientResponseError as error:
             # the app was removed under Connected apps (or its refresh token expired): sign in again
-            if 400 <= error.status < 500:
+            # 429 is "too many requests": try again later with the same credentials
+            if 400 <= error.status < 500 and error.status != 429:
                 raise FrameleafAuthError("Frameleaf refused to refresh the sign-in") from error
             raise FrameleafError(f"Frameleaf could not refresh the sign-in: {error}") from error
         except (ClientError, TimeoutError) as error:

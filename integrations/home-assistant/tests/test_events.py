@@ -15,21 +15,24 @@ from custom_components.frameleaf.events import signature_ok
 from .conftest import API, api_key_entry, mock_server
 
 
-def sign(secret: str, timestamp: str, body: bytes) -> str:
-    return "sha256=" + hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+def sign(secret: str, timestamp: str, delivery: str, body: bytes) -> str:
+    signed = f"{timestamp}.{delivery}.".encode() + body
+    return "sha256=" + hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
 
 
 def test_signature() -> None:
     body = b'{"event":"cloud.backup.failed"}'
     now = 1_700_000_000
-    good = sign("my-secret", str(now), body)
+    delivery = "cloud-backup:run-1:failed"
+    good = sign("my-secret", str(now), delivery, body)
     # the same vector the server's own test uses
-    assert good == "sha256=a7c8f58a2ed23ca10051f5c824003a8445bce7114f4ccb22b65e69ab010a00ba"
-    assert signature_ok("my-secret", str(now), body, good, now)
-    assert not signature_ok("my-secret", str(now), body + b" ", good, now)
-    assert not signature_ok("other", str(now), body, good, now)
-    assert not signature_ok("my-secret", str(now), body, good, now + 301)
-    assert not signature_ok("my-secret", None, body, good, now)
+    assert good == "sha256=9cd2af4efc0ad7feb339dc6ab001fc96bc4253d5ebd2dd7a9206a5b31a99b4c6"
+    assert signature_ok("my-secret", str(now), delivery, body, good, now)
+    assert not signature_ok("my-secret", str(now), "another", body, good, now)
+    assert not signature_ok("my-secret", str(now), delivery, body + b" ", good, now)
+    assert not signature_ok("other", str(now), delivery, body, good, now)
+    assert not signature_ok("my-secret", str(now), delivery, body, good, now + 301)
+    assert not signature_ok("my-secret", None, delivery, body, good, now)
 
 
 async def setup_with_events(hass: HomeAssistant, aioclient_mock):
@@ -88,15 +91,15 @@ async def test_signed_event_reaches_the_bus_once(hass: HomeAssistant, aioclient_
     path = f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}"
     headers = {
         "X-Frameleaf-Timestamp": timestamp,
-        "X-Frameleaf-Signature": sign(entry.data[CONF_WEBHOOK_SECRET], timestamp, body),
+        "X-Frameleaf-Signature": sign(entry.data[CONF_WEBHOOK_SECRET], timestamp, "cloud-backup:run-1:failed", body),
         "X-Frameleaf-Delivery": "cloud-backup:run-1:failed",
         "Content-Type": "application/json",
     }
     assert (await client.post(path, data=body, headers=headers)).status == 200
     assert (await client.post(path, data=body, headers=headers)).status == 200
-    # a replay with another delivery header is still the same signed delivery
-    assert (await client.post(path, data=body, headers={**headers, "X-Frameleaf-Delivery": "other"})).status == 200
-    forged = {**headers, "X-Frameleaf-Signature": sign("guess", timestamp, body), "X-Frameleaf-Delivery": "x"}
+    # a replay with another delivery header no longer matches its signature
+    assert (await client.post(path, data=body, headers={**headers, "X-Frameleaf-Delivery": "other"})).status == 401
+    forged = {**headers, "X-Frameleaf-Signature": sign("guess", timestamp, "x", body), "X-Frameleaf-Delivery": "x"}
     assert (await client.post(path, data=body, headers=forged)).status == 401
     await hass.async_block_till_done()
 
@@ -109,3 +112,24 @@ async def test_signed_event_reaches_the_bus_once(hass: HomeAssistant, aioclient_
         "subject": {"kind": "cloud-backup", "id": "run-1", "name": "Cloud Backup"},
         "detail": {"uploaded": 3},
     }
+
+
+async def test_message_without_an_object_is_refused(hass: HomeAssistant, aioclient_mock, hass_client_no_auth) -> None:
+    hass.config.external_url = "https://home.example.com"
+    entry = await setup_with_events(hass, aioclient_mock)
+    events = []
+    hass.bus.async_listen(EVENT_FRAMELEAF, events.append)
+    client = await hass_client_no_auth()
+    path = f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}"
+    for n, payload in enumerate(([], {"data": ["a"]}, {"data": {"deliveryId": {"b": 1}, "event": "e"}})):
+        body = json.dumps(payload).encode()
+        timestamp = str(int(time.time()))
+        headers = {
+            "X-Frameleaf-Timestamp": timestamp,
+            "X-Frameleaf-Delivery": f"d-{n}",
+            "X-Frameleaf-Signature": sign(entry.data[CONF_WEBHOOK_SECRET], timestamp, f"d-{n}", body),
+        }
+        assert (await client.post(path, data=body, headers=headers)).status in (200, 400)
+    await hass.async_block_till_done()
+    # only the well-formed message fires, keyed on the signed delivery header
+    assert [event.data["delivery_id"] for event in events] == ["d-2"]
