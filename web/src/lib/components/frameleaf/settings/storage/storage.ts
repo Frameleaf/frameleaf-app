@@ -2,7 +2,6 @@
  * Storage & originals (FL-365) in plain words: the rules of the pages, kept apart from the drawing so
  * they can be tested on their own.
  */
-import handlebars from 'handlebars';
 import { DateTime } from 'luxon';
 
 const DAY_MS = 86_400_000;
@@ -93,9 +92,33 @@ const SAMPLE: ReadonlyMap<string, string> = new Map([
 /** Names used in `{{name}}`, `{{#if name}}` and `{{#unless name}}` (also with `~` trim marks); `else` is not a name. */
 const NAMES = /\{\{~?\s*(#(?:if|unless)\s+)?([\w-]+)\s*~?\}\}/g;
 
+/** An innermost `{{#if name}}…{{else}}…{{/if}}` or `#unless` block: its body holds no other block. */
+const BLOCK = /\{\{#(if|unless)\s+([\w-]+)\s*\}\}((?:(?!\{\{[#/])[\s\S])*?)\{\{\/\1\s*\}\}/;
+
+/**
+ * Fills a template the way the server's Handlebars does for the parts storage templates use:
+ * `{{name}}`, `#if`/`#unless`/`else` (nested too) and `~` trim marks. `undefined` when a block is
+ * left open or a closing tag has no opening one.
+ * ponytail: a small renderer instead of the Handlebars compiler, which put the settings pages over
+ * their bundle budget; add a helper here if the server ever accepts one.
+ */
+const fill = (template: string, values: Record<string, string>): string | undefined => {
+  let text = template.replaceAll(/\s*\{\{~/g, '{{').replaceAll(/~\}\}\s*/g, '}}');
+  for (let match = BLOCK.exec(text); match; match = BLOCK.exec(text)) {
+    const [whole, kind, name, body] = match;
+    const [yes, no = ''] = body.split(/\{\{\s*else\s*\}\}/, 2);
+    const truthy = (values[name] ?? '') !== '';
+    text = text.replace(whole, () => ((kind === 'if') === truthy ? yes : no));
+  }
+  if (/\{\{\s*(?:[#/]|else\b)/.test(text)) {
+    return undefined;
+  }
+  return text.replaceAll(/\{\{\s*([\w-]+)\s*\}\}/g, (_, name: string) => values[name] ?? '');
+};
+
 /**
  * Where the sample photo would go under a template, as folder names and a file name, and the
- * placeholders Frameleaf does not know. Rendered with Handlebars like the server, so every
+ * placeholders Frameleaf does not know. Filled the way the server's Handlebars fills it, so every
  * Immich-era template (album dates, `#if`/`#unless`/`else`) previews the way it will be filed.
  */
 export const placeSample = (
@@ -119,10 +142,8 @@ export const placeSample = (
       values[name] = condition ? '' : whole;
     }
   }
-  let filled: string;
-  try {
-    filled = handlebars.compile(template, { noEscape: true })(values);
-  } catch {
+  const filled = fill(template, values);
+  if (filled === undefined) {
     return { parts: [template], unknown: unknown.length > 0 ? unknown : [template] };
   }
   const parts = filled

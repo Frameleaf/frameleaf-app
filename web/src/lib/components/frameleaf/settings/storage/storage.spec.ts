@@ -193,6 +193,13 @@ describe('storage rules', () => {
     });
     expect(placeSample('{{#unless album}}Loose{{/unless}}{{y}}/{{filename}}').parts).toEqual(['2024', 'IMG_1234.jpg']);
     expect(placeSample('{{#if nope}}x{{/if}}{{y}}/{{filename}}').unknown).toEqual(['{{nope}}']);
+    // nested blocks, and a block left open
+    expect(placeSample('{{#if album}}{{#if make}}{{make}}/{{/if}}{{album}}{{/if}}/{{filename}}').parts).toEqual([
+      'FUJIFILM',
+      'Summer in Banff',
+      'IMG_1234.jpg',
+    ]);
+    expect(placeSample('{{#if album}}{{album}}/{{filename}}').unknown).toEqual(['{{#if album}}{{album}}/{{filename}}']);
     // whitespace-trim marks
     expect(placeSample('{{~y~}}/{{filename}}')).toEqual({ parts: ['2024', 'IMG_1234.jpg'], unknown: [] });
     expect(placeSample('{{~#if nope}}x{{/if}}{{y}}/{{filename}}')).toEqual({
