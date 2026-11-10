@@ -773,8 +773,8 @@ export class JobRepository {
     });
   }
 
-  listRuns(take: number, skip: number) {
-    return this.store.listRuns(take, skip);
+  listRuns(take: number, skip: number, foldNightly = false) {
+    return this.store.listRuns(take, skip, foldNightly);
   }
 
   getRun(runId: string) {

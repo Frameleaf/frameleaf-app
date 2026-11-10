@@ -954,12 +954,13 @@ export class SqlQueueStore {
   }
 
   /** Activity and the running-jobs summary poll this; a costly recount is shared and not repeated at once. */
-  private readonly runReads = costReusedRead(({ take, skip }: { take: number; skip: number }) =>
-    listRuns(this.db, take, skip),
+  private readonly runReads = costReusedRead(
+    ({ take, skip, foldNightly }: { take: number; skip: number; foldNightly: boolean }) =>
+      listRuns(this.db, take, skip, foldNightly),
   );
 
-  listRuns(take: number, skip: number) {
-    return this.runReads({ take, skip });
+  listRuns(take: number, skip: number, foldNightly = false) {
+    return this.runReads({ take, skip, foldNightly });
   }
 
   /** A run's page polls this; an unfinished run is recounted from its jobs, so it is shared like `listRuns`. */

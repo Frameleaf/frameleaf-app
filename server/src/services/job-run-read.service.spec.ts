@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { JobRunSearchDto } from 'src/dtos/job-run.dto.js';
+import { JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { RunItemRead, RunRead } from 'src/queue/run-query.js';
 import { JobService } from 'src/services/job.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -34,6 +34,8 @@ const run: RunRead = {
   canRelease: false,
   countsPhotos: true,
   failedQueues: ['thumbnailGeneration'],
+  nightly: false,
+  pausedQueues: [],
 };
 describe('durable run read service', () => {
   let sut: JobService;
@@ -47,7 +49,7 @@ describe('durable run read service', () => {
       run,
     ] as never);
     const page = await sut.getRuns(JobRunSearchDto.schema.parse({ take: 1, skip: 25 }));
-    expect(mocks.job.listRuns).toHaveBeenCalledWith(2, 25);
+    expect(mocks.job.listRuns).toHaveBeenCalledWith(2, 25, false);
     expect(page).toMatchObject({
       hasNextPage: true,
       items: [{ total: 1, active: 1, failed: 0, stageTotals: { failed: 1 }, state: 'running' }],
@@ -91,6 +93,52 @@ describe('durable run read service', () => {
       countsPhotos: false,
       failedQueues: ['thumbnailGeneration'],
     });
+  });
+  it('getRuns passes foldNightly and maps the new fields', async () => {
+    mocks.job.listRuns.mockResolvedValue([
+      {
+        ...run,
+        nightly: true,
+        pausedQueues: ['faceDetection'],
+        unreachableLibraries: ['Holiday drive'],
+        failureCauses: [{ cause: 'unsupported', count: 863 }],
+        earlierRuns: [
+          {
+            id: '0195e2a0-0000-7000-8000-000000000002',
+            createdAt: new Date('2026-10-03T02:00:00.000Z'),
+            finishedAt: new Date('2026-10-03T04:00:00.000Z'),
+            total: 900,
+            leftOver: 863,
+          },
+        ],
+        leftOverStreak: { photos: 863, nights: 2 },
+      },
+    ]);
+    const page = await sut.getRuns(JobRunSearchDto.schema.parse({ foldNightly: 'true' }));
+    expect(mocks.job.listRuns).toHaveBeenCalledWith(26, 0, true);
+    expect(page.items[0]).toMatchObject({
+      nightly: true,
+      pausedQueues: ['faceDetection'],
+      unreachableLibraries: ['Holiday drive'],
+      failureCauses: [{ cause: 'unsupported', count: 863 }],
+      earlierRuns: [
+        {
+          id: '0195e2a0-0000-7000-8000-000000000002',
+          createdAt: '2026-10-03T02:00:00.000Z',
+          finishedAt: '2026-10-03T04:00:00.000Z',
+          total: 900,
+          leftOver: 863,
+        },
+      ],
+      leftOverStreak: { photos: 863, nights: 2 },
+    });
+    expect(JobRunPageDto.schema.parse(page)).toEqual(page);
+
+    mocks.job.listRuns.mockResolvedValue([run]);
+    const plain = await sut.getRuns(JobRunSearchDto.schema.parse({}));
+    expect(mocks.job.listRuns).toHaveBeenLastCalledWith(26, 0, false);
+    expect(plain.items[0]).not.toHaveProperty('earlierRuns');
+    expect(plain.items[0]).not.toHaveProperty('leftOverStreak');
   });
   it('releases a held run and refuses an import that is not activated yet', async () => {
     mocks.job.releaseRun.mockResolvedValueOnce('released');

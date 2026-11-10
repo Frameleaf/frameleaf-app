@@ -117,8 +117,8 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
 
 @Injectable()
 export class JobService extends BaseService {
-  async getRuns({ take, skip }: JobRunSearchDto): Promise<JobRunPageDto> {
-    const rows = await this.jobRepository.listRuns(take + 1, skip);
+  async getRuns({ take, skip, foldNightly }: JobRunSearchDto): Promise<JobRunPageDto> {
+    const rows = await this.jobRepository.listRuns(take + 1, skip, foldNightly ?? false);
     return {
       items: rows.slice(0, take).map((row) => mapJobRun(row)),
       hasNextPage: rows.length > take,

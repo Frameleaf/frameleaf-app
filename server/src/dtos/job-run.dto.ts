@@ -2,6 +2,8 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { RunRead } from 'src/queue/run-query.js';
 import { QueueName, QueueNameSchema } from 'src/enum.js';
+import { RUN_FAILURE_CAUSES } from 'src/queue/run-failure-cause.js';
+import { stringToBool } from 'src/validation.js';
 
 export const JobRunOutcomeSchema = z.enum([
   'completed',
@@ -49,6 +51,12 @@ export const JobRunReasonSchema = z.enum([
   'source-unavailable',
   'local-capacity',
 ]);
+export const JobRunFailureCauseSchema = z
+  .enum(RUN_FAILURE_CAUSES)
+  .describe(
+    "Why a photo was left over: drive (its external library can't be reached), missing (the file is gone), damaged, unsupported (a format that can't be read), or other",
+  )
+  .meta({ id: 'JobRunFailureCause' });
 const counts = z.object({
   total: z.int().min(0),
   completed: z.int().min(0),
@@ -73,6 +81,11 @@ export class JobRunSearchDto extends createZodDto(
     .object({
       take: z.coerce.number().int().min(1).max(100).default(25),
       skip: z.coerce.number().int().min(0).default(0),
+      foldNightly: stringToBool
+        .optional()
+        .describe(
+          'Show only the newest nightly run, with its earlier nights (Recent work); a nightly run with a newer one is left out',
+        ),
     })
     .meta({ id: 'JobRunSearchDto' }),
 ) {}
@@ -105,6 +118,42 @@ export const JobRunResponseSchema = counts
       .array(QueueNameSchema)
       .optional()
       .describe('Queues with failed or needs-attention jobs in this run'),
+    nightly: z.boolean().optional().describe("The overnight schedule's work"),
+    pausedQueues: z
+      .array(QueueNameSchema)
+      .optional()
+      .describe('Paused queues that unstarted work of this run waits on; resuming them lets it carry on'),
+    unreachableLibraries: z
+      .array(z.string())
+      .max(3)
+      .optional()
+      .describe("Names of up to three external libraries whose files work of this run waits for (can't be reached)"),
+    failureCauses: z
+      .array(z.object({ cause: JobRunFailureCauseSchema, count: z.int().min(1) }))
+      .optional()
+      .describe(
+        'Photos left over (failed or needing attention) by cause, most telling first; stopped ones are left out. Absent when nothing failed',
+      ),
+    earlierRuns: z
+      .array(
+        z.object({
+          id: z.uuid(),
+          createdAt: z.iso.datetime(),
+          finishedAt: z.iso.datetime().nullable(),
+          total: z.int().min(0),
+          leftOver: z.int().min(0).describe('Photos it left over'),
+        }),
+      )
+      .max(6)
+      .optional()
+      .describe('With foldNightly, on the newest nightly run: the previous nights, newest first'),
+    leftOverStreak: z
+      .object({
+        photos: z.int().min(1).describe('Photos this run left over (stopped ones aside)'),
+        nights: z.int().min(1).describe('Nights in a row, this one included, that left all of them over'),
+      })
+      .optional()
+      .describe('With foldNightly, on the newest nightly run: how long the same photos have been left over'),
   })
   .extend(progress.shape)
   .meta({ id: 'JobRunResponseDto' });
@@ -156,4 +205,18 @@ export const mapJobRun = (row: RunRead): JobRunResponseDto => ({
   canRelease: row.canRelease,
   countsPhotos: row.countsPhotos,
   failedQueues: row.failedQueues as QueueName[],
+  nightly: row.nightly,
+  pausedQueues: row.pausedQueues as QueueName[],
+  ...(row.unreachableLibraries && { unreachableLibraries: row.unreachableLibraries }),
+  ...(row.failureCauses && { failureCauses: row.failureCauses }),
+  ...(row.earlierRuns && {
+    earlierRuns: row.earlierRuns.map((earlier) => ({
+      id: earlier.id,
+      createdAt: earlier.createdAt.toISOString(),
+      finishedAt: earlier.finishedAt?.toISOString() ?? null,
+      total: earlier.total,
+      leftOver: earlier.leftOver,
+    })),
+  }),
+  ...(row.leftOverStreak && { leftOverStreak: row.leftOverStreak }),
 });
