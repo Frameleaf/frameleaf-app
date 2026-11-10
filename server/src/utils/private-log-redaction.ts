@@ -18,22 +18,18 @@ export const redactPrivateLog = (message: string): string => {
       /-----BEGIN [^\r\n-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^\r\n-]*PRIVATE KEY-----|$)/giu,
       () => REDACTED,
     )
-    .replaceAll(/\b(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\r\n]*/giu, () => REDACTED)
+    .replaceAll(/\b(?:authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*[^\r\n]*/giu, () => REDACTED)
     .replaceAll(/\bBearer[ \t]+[A-Za-z0-9._~+/=-]+/giu, () => `Bearer ${REDACTED}`)
     .replaceAll(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu, () => REDACTED)
-    .replaceAll(/\b(?:https?|postgres(?:ql)?|s3):\/\/[^\s"'<>]+/giu, (value) => {
-      try {
-        const url = new URL(value);
-        return `${url.protocol}//${url.host}/${REDACTED}`;
-      } catch {
-        return REDACTED;
-      }
-    })
+    .replaceAll(/\b(?:https?|postgres(?:ql)?|s3):\/\/[^\s"'<>]+/giu, () => REDACTED)
     .replaceAll(
-      /(["']?[\w.-]+["']?)(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?|[^\s&,;]+)/gu,
+      /(?<![\w.-])(["']?[\w.-]{1,128}["']?)(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?|[^\s&,;]+)/gu,
       (match, key: string, delimiter: string) => (secretName(key) ? `${key}${delimiter}${REDACTED}` : match),
     )
-    .replaceAll(/[\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\p{L}\p{N}.-]+\.[\p{L}\p{N}-]+/gu, () => REDACTED)
+    .replaceAll(
+      /(?<![\p{L}\p{N}.!#$%&\u{27}*+/=?^_`{|}~-])[\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-]{1,128}@[\p{L}\p{N}.-]+\.[\p{L}\p{N}-]+/gu,
+      () => REDACTED,
+    )
     .replaceAll(control, ' ')
     .slice(0, 4096);
 };

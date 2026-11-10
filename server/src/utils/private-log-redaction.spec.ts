@@ -5,6 +5,7 @@ describe(redactPrivateLog.name, () => {
   it.each([
     ['Authorization: Bearer a-private-bearer', 'a-private-bearer'],
     ['Cookie: session=private-cookie; other=another-private-cookie', 'another-private-cookie'],
+    ['Cookie=session=private-cookie; other=another-private-cookie', 'another-private-cookie'],
     ['"refresh_token": "private-refresh-value"', 'private-refresh-value'],
     ['password="password with spaces"', 'password with spaces'],
     ['s3SecretAccessKey=secret-credential', 'secret-credential'],

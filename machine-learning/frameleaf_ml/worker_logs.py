@@ -9,7 +9,7 @@ from uuid import uuid4
 
 _MASK = "[redacted]"
 _KEY = re.compile(
-    r"""(?P<key>["']?[\w.-]+["']?)(?P<separator>\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?|[^\s&,;]+)"""
+    r"""(?<![\w.-])(?P<key>["']?[\w.-]{1,128}["']?)(?P<separator>\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?|[^\s&,;]+)"""
 )
 _SECRET = re.compile(r"authorization|cookie|password|passphrase|pin(code)?|token|secret|apikey|privatekey|sessionkey")
 
@@ -25,11 +25,13 @@ def redact_worker_message(message: str) -> str:
     if len(message) > 16_384:
         return "[oversized log message omitted]"
     text = re.sub(r"-----BEGIN [^\r\n-]*PRIVATE KEY-----[\s\S]*", _MASK, message, flags=re.I)
-    text = re.sub(r"\b(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\r\n]*", _MASK, text, flags=re.I)
+    text = re.sub(
+        r"\b(?:authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*[^\r\n]*", _MASK, text, flags=re.I
+    )
     text = re.sub(r"\bBearer\s+\S+|\beyJ[\w-]+\.[\w-]+\.[\w-]+", _MASK, text, flags=re.I)
     text = re.sub(r"""\b(?:https?|s3)://[^\s"'<>]+""", _MASK, text, flags=re.I)
     text = _KEY.sub(_assignment, text)
-    text = re.sub(r"[\w.!#$%&'*+/=?^\x60{|}~-]+@[\w.-]+\.[\w-]+", _MASK, text)
+    text = re.sub(r"(?<![\w.!#$%&'*+/=?^\x60{|}~-])[\w.!#$%&'*+/=?^\x60{|}~-]{1,128}@[\w.-]+\.[\w-]+", _MASK, text)
     return re.sub(r"[\x00-\x1f\x7f]+", " ", text)[:2048]
 
 
