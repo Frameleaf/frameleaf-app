@@ -27,14 +27,15 @@ import {
   OAuthAppGrantDto,
 } from 'src/dtos/oauth-app.dto.js';
 import { ApiTag } from 'src/enum.js';
-import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
 import { UUIDParamDto } from 'src/validation.js';
 
-const HOST = /^(?:[a-z\d](?:[a-z\d-]{0,62}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,62}[a-z\d])?)*|\[[\da-f:.]+\])(?::\d{1,5})?$/i;
+const HOST =
+  /^(?:[a-z\d](?:[a-z\d-]{0,62}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,62}[a-z\d])?)*|\[[\da-f:.]+\])(?::\d{1,5})?$/i;
 
 /**
  * FL-803: the issuer, built from the address the request used, because an app checks that the
@@ -49,7 +50,7 @@ export const oauthIssuer = (request: Request) => {
   const https =
     request.secure ||
     isRemoteVia(requestVia(request)) ||
-    (typeof forwardedProto === 'string' && forwardedProto.split(',')[0].trim() === 'https');
+    (typeof forwardedProto === 'string' && forwardedProto.split(',', 1)[0].trim() === 'https');
   return `${https ? 'https' : 'http'}://${safeHost}`;
 };
 

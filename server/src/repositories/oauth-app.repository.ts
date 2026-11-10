@@ -2,14 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable, Kysely, Selectable } from 'kysely';
-import { columns } from 'src/database.js';
-import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { DB } from 'src/schema/index.js';
 import type {
   OAuthAuthorizationCodeTable,
   OAuthClientTable,
   OAuthGrantTable,
 } from 'src/schema/tables/oauth-app.table.js';
+import { columns } from 'src/database.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { DB } from 'src/schema/index.js';
 import { asUuid } from 'src/utils/database.js';
 
 export type OAuthClient = Selectable<OAuthClientTable>;
@@ -62,14 +62,19 @@ export class OAuthAppRepository {
             .where('createdAt', '<', new Date(Date.now() - 24 * 60 * 60 * 1000))
             .where((eb) =>
               eb.not(
-                eb.exists(eb.selectFrom('oauth_grant').select('oauth_grant.id').whereRef('oauth_grant.clientId', '=', 'oauth_client.id')),
+                eb.exists(
+                  eb
+                    .selectFrom('oauth_grant')
+                    .select('oauth_grant.id')
+                    .whereRef('oauth_grant.clientId', '=', 'oauth_client.id'),
+                ),
               ),
             )
             .orderBy('createdAt', 'asc')
             .limit(excess)
             .execute();
           if (unused.length < excess) {
-            return undefined;
+            return;
           }
           await trx
             .deleteFrom('oauth_client')

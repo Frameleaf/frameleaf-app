@@ -1409,6 +1409,79 @@ describe(AuthService.name, () => {
     });
   });
 
+  describe('validate - connected app token (FL-803)', () => {
+    const appAuth = (permissions: Permission[], isAdmin = false): AuthDto => ({
+      user: { ...UserFactory.create(), isAdmin } as AuthDto['user'],
+      apiKey: { id: newUuid(), permissions },
+      oauthApp: {
+        grantId: newUuid(),
+        clientId: newUuid(),
+        clientName: 'Claude',
+        scopes: ['library:read'],
+        resource: null,
+      },
+    });
+    const useApp = (auth: AuthDto) => {
+      const validateAccessToken = vi.fn().mockResolvedValue(auth);
+      Object.assign(sut, { oauthApps: { validateAccessToken } });
+      return validateAccessToken;
+    };
+    const request = (metadata: Record<string, unknown>) =>
+      sut.authenticate({
+        headers: { authorization: 'Bearer fla_token' },
+        queryParams: {},
+        metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test', ...metadata },
+      });
+
+    it('checks a Bearer fla_ token as an app, never as a session', async () => {
+      const validate = useApp(appAuth([Permission.AssetRead]));
+      await expect(request({ permission: Permission.AssetRead, via: 'lan' })).resolves.toMatchObject({
+        oauthApp: { clientName: 'Claude' },
+      });
+      expect(validate).toHaveBeenCalledWith('fla_token', 'lan');
+      expect(mocks.session.getByToken).not.toHaveBeenCalled();
+    });
+
+    it('never reaches an admin route, even for an administrator’s app', async () => {
+      useApp(appAuth([Permission.AssetRead], true));
+      await expect(request({ adminRoute: true, permission: Permission.AssetRead })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
+    it('never reaches a route open to any signed-in caller', async () => {
+      useApp(appAuth([Permission.AssetRead]));
+      await expect(request({ permission: false })).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('needs the permission its scopes carry', async () => {
+      useApp(appAuth([Permission.AssetRead]));
+      await expect(request({ permission: Permission.AssetDownload })).rejects.toThrow(
+        'Missing required permission: asset.download',
+      );
+      await expect(request({})).rejects.toThrow('Missing required permission: all');
+    });
+
+    it('is never elevated, so Locked and hidden items stay out', async () => {
+      useApp(appAuth([Permission.AssetRead]));
+      const auth = await request({ permission: Permission.AssetRead });
+      expect(auth.session).toBeUndefined();
+    });
+
+    it('leaves other Bearer tokens to the session check', async () => {
+      const validate = useApp(appAuth([Permission.AssetRead]));
+      mocks.session.getByToken.mockResolvedValue(undefined as never);
+      await expect(
+        sut.authenticate({
+          headers: { authorization: 'Bearer session_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(validate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('validate - api key', () => {
     it('should throw an error if no api key is found', async () => {
       mocks.apiKey.getKey.mockResolvedValue(void 0);

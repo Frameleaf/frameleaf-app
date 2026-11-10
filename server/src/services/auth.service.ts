@@ -81,6 +81,7 @@ import {
 } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { isOAuthAccessToken } from 'src/utils/oauth-apps.js';
 import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
@@ -101,7 +102,6 @@ import {
   verifyToken,
 } from 'src/utils/two-factor.js';
 import { allowedOrigins, requestHosts, websocketOriginAllowed } from 'src/utils/websocket-origin.js';
-import { isOAuthAccessToken } from 'src/utils/oauth-apps.js';
 
 const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 const TWO_FACTOR_WRONG_CODE = 'That code didn’t work. Check your authenticator app and try again.';

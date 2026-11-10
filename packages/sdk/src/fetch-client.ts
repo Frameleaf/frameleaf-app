@@ -1520,6 +1520,10 @@ export type AdminConfigBackupsDto = {
     database: AdminConfigDatabaseBackupDto;
     schedule: AdminConfigBackupScheduleDto;
 };
+export type AdminConfigConnectedAppsDto = {
+    /** Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything. */
+    allowRegistration: boolean;
+};
 export type AdminConfigEditingRestorationDto = {
     style: RestorationStyle;
 };
@@ -2229,6 +2233,7 @@ export type AdminConfigUserDto = {
 export type AdminConfigDto = {
     analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
+    connectedApps?: AdminConfigConnectedAppsDto;
     editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
@@ -2263,6 +2268,7 @@ export type AdminConfigDto = {
 export type AdminConfigDtoRead = {
     analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
+    connectedApps?: AdminConfigConnectedAppsDto;
     editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
@@ -3095,6 +3101,28 @@ export type TemplateResponseDto = {
 export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
+};
+export type OAuthAppClientDto = {
+    /** The app’s client id */
+    id: string;
+    /** Free text naming a verified app for its icon (claude, chatgpt, homeassistant); null otherwise */
+    knownApp: string | null;
+    /** Who made a verified app; null otherwise */
+    maker: string | null;
+    /** For a verified app the name Frameleaf knows it by; otherwise the name the app gave itself (plain text) */
+    name: string;
+    /** Where the app sends you back to, such as claude.ai or localhost:33418 */
+    returnTo: string;
+    /** Frameleaf checked who made this app (every return address is that app’s own) */
+    verified: boolean;
+};
+export type OAuthAppAdminClientDto = {
+    /** How many people currently allow it */
+    activeUsers: number;
+    client: OAuthAppClientDto;
+    createdAt: string;
+    /** The app registered itself */
+    selfRegistered: boolean;
 };
 export type OvernightResultsDto = {
     cleanup?: OvernightStepResult;
@@ -11444,6 +11472,66 @@ export type NotificationUpdateAllDto = {
 export type NotificationUpdateDto = {
     /** Date when notification was read */
     readAt?: string | null;
+};
+export type OAuthAppAuthorizeDto = {
+    /** true for Allow, false for Deny */
+    allow: boolean;
+    /** The app’s client id */
+    clientId: string;
+    /** The base64url SHA-256 of the app’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: string;
+    /** The return address, exactly as the app registered it */
+    redirectUri: string;
+    /** The resource (RFC 8707) the app wants access to */
+    resource?: string;
+    /** Must be `code` */
+    responseType: string;
+    /** Space-separated scopes; empty means `library:read` */
+    scope?: string;
+    /** Returned unchanged to the app */
+    state?: string;
+};
+export type OAuthAppAuthorizeResponseDto = {
+    /** Where the browser goes next: the app’s return address with the code (or access_denied), state and iss */
+    redirectUrl: string;
+};
+export type OAuthAppAuthorizeStartDto = {
+    /** The app’s client id */
+    clientId: string;
+    /** The base64url SHA-256 of the app’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: string;
+    /** The return address, exactly as the app registered it */
+    redirectUri: string;
+    /** The resource (RFC 8707) the app wants access to */
+    resource?: string;
+    /** Must be `code` */
+    responseType: string;
+    /** Space-separated scopes; empty means `library:read` */
+    scope?: string;
+    /** Returned unchanged to the app */
+    state?: string;
+};
+export type OAuthAppAuthorizeStartResponseDto = {
+    client: OAuthAppClientDto;
+    /** The scopes the app asked for, all of which this server offers */
+    scopes: string[];
+};
+export type OAuthAppGrantDto = {
+    client: OAuthAppClientDto;
+    /** When you chose Allow */
+    createdAt: string;
+    /** The grant id; Remove revokes it */
+    id: string;
+    /** When the app last used its access, to the hour; null if never */
+    lastUsedAt: string | null;
+    /** How it last connected, as free text: home, direct or relay (remote access); null if unknown */
+    lastUsedVia: string | null;
+    /** What you allowed */
+    scopes: string[];
 };
 export type OAuthConfigDto = {
     /** OAuth code challenge (PKCE) */
@@ -23834,6 +23922,28 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
     })));
 }
 /**
+ * List registered apps
+ */
+export function getOAuthAppClients(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAdminClientDto[];
+    }>("/admin/oauth/apps", {
+        ...opts
+    }));
+}
+/**
+ * Remove a registered app
+ */
+export function deleteOAuthAppClient({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/oauth/apps/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Get the overnight schedule
  */
 export function getOvernight(opts?: Oazapfts.RequestOpts) {
@@ -30700,6 +30810,58 @@ export function updateNotification({ id, notificationUpdateDto }: {
         method: "PUT",
         body: notificationUpdateDto
     })));
+}
+/**
+ * Allow or deny an app
+ */
+export function authorizeOAuthApp({ oAuthAppAuthorizeDto }: {
+    oAuthAppAuthorizeDto: OAuthAppAuthorizeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAuthorizeResponseDto;
+    }>("/oauth/apps/authorize", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthAppAuthorizeDto
+    })));
+}
+/**
+ * Check an app’s request before Allow
+ */
+export function startOAuthAppAuthorization({ oAuthAppAuthorizeStartDto }: {
+    oAuthAppAuthorizeStartDto: OAuthAppAuthorizeStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAuthorizeStartResponseDto;
+    }>("/oauth/apps/authorize/start", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthAppAuthorizeStartDto
+    })));
+}
+/**
+ * List your connected apps
+ */
+export function getOAuthAppGrants(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppGrantDto[];
+    }>("/oauth/apps/grants", {
+        ...opts
+    }));
+}
+/**
+ * Remove a connected app’s access
+ */
+export function revokeOAuthAppGrant({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/oauth/apps/grants/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Start OAuth

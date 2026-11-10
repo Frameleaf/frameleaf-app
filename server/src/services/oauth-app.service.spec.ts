@@ -1,13 +1,13 @@
 import { ForbiddenException, HttpException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { AccountEventAction, Permission } from 'src/enum.js';
 import type { OAuthAuthorizationCode, OAuthClient, OAuthGrant } from 'src/repositories/oauth-app.repository.js';
+import { AccountEventAction, Permission } from 'src/enum.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { OAUTH_ACCESS_TTL_SECONDS, OAUTH_CODE_TTL_SECONDS } from 'src/utils/oauth-apps.js';
 import { ServiceMocks, expectNoSecretsInAccountEvents, newTestService } from 'test/utils.js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ISSUER = 'https://photos.example.test';
 const CLAUDE_REDIRECT = 'https://claude.ai/api/mcp/auth_callback';
@@ -49,10 +49,13 @@ class FakeOAuthAppRepository {
   });
   getClients = vi.fn(() =>
     Promise.resolve(
-      [...this.clients.values()].map((client) => ({
-        ...client,
-        activeUsers: this.grants.filter((grant) => grant.clientId === client.id && !grant.revokedAt).length,
-      })),
+      this.clients
+        .values()
+        .map((client) => ({
+          ...client,
+          activeUsers: this.grants.filter((grant) => grant.clientId === client.id && !grant.revokedAt).length,
+        }))
+        .toArray(),
     ),
   );
   deleteClient = vi.fn((id: string) => {
@@ -89,7 +92,12 @@ class FakeOAuthAppRepository {
   private withClient(grant: Grant | undefined) {
     const client = grant && this.clients.get(grant.clientId);
     return grant && client
-      ? { ...grant, clientName: client.name, clientRedirectUris: client.redirectUris, user: this.users.get(grant.userId) }
+      ? {
+          ...grant,
+          clientName: client.name,
+          clientRedirectUris: client.redirectUris,
+          user: this.users.get(grant.userId),
+        }
       : undefined;
   }
   getByAccessToken = vi.fn((hash: Buffer) =>
@@ -103,8 +111,14 @@ class FakeOAuthAppRepository {
     return Promise.resolve(this.withClient(this.grants.find((grant) => grant.id === grantId)));
   });
   rotate = vi.fn(
-    (id: string, previous: Buffer, next: { refreshTokenHash: Buffer; accessTokenHash: Buffer; accessExpiresAt: Date }) => {
-      const grant = this.grants.find((item) => item.id === id && item.refreshTokenHash.equals(previous) && !item.revokedAt);
+    (
+      id: string,
+      previous: Buffer,
+      next: { refreshTokenHash: Buffer; accessTokenHash: Buffer; accessExpiresAt: Date },
+    ) => {
+      const grant = this.grants.find(
+        (item) => item.id === id && item.refreshTokenHash.equals(previous) && !item.revokedAt,
+      );
       if (!grant) {
         return Promise.resolve(false);
       }
@@ -122,14 +136,23 @@ class FakeOAuthAppRepository {
   });
   getActiveGrants = vi.fn((userId: string) =>
     Promise.resolve(
-      this.grants.filter((grant) => grant.userId === userId && !grant.revokedAt).map((grant) => this.withClient(grant)!),
+      this.grants
+        .filter((grant) => grant.userId === userId && !grant.revokedAt)
+        .map((grant) => this.withClient(grant)!),
     ),
   );
   recordUse = vi.fn(() => Promise.resolve());
 }
 
 const person = (name: string, isAdmin = false): AuthDto => ({
-  user: { id: randomUUID(), name, email: `${name}@example.test`, isAdmin, quotaSizeInBytes: null, quotaUsageInBytes: 0 },
+  user: {
+    id: randomUUID(),
+    name,
+    email: `${name}@example.test`,
+    isAdmin,
+    quotaSizeInBytes: null,
+    quotaUsageInBytes: 0,
+  },
   session: { id: randomUUID(), hasElevatedPermission: true } as AuthDto['session'],
 });
 
@@ -159,7 +182,7 @@ describe(OAuthAppService.name, () => {
   /** Allow, then exchange the code: the tokens an app gets. */
   const connect = async (client: OAuthClient, overrides: Record<string, unknown> = {}) => {
     const { dto, verifier } = request(client, overrides);
-    const { redirectUrl } = await sut.authorize(me, { ...(dto as never), allow: true }, ISSUER);
+    const { redirectUrl } = await sut.authorize(me, { ...dto, allow: true } as never, ISSUER);
     const code = new URL(redirectUrl).searchParams.get('code')!;
     const tokens = await sut.token({
       grant_type: 'authorization_code',
@@ -172,10 +195,7 @@ describe(OAuthAppService.name, () => {
   };
 
   const oauthErrorOf = async (promise: Promise<unknown>) => {
-    const error = await promise.then(
-      () => null,
-      (error_: unknown) => error_,
-    );
+    const error = await promise.then(() => null).catch((error_: unknown) => error_);
     expect(error).toBeInstanceOf(HttpException);
     return (error as HttpException).getResponse() as { error: string };
   };
@@ -188,7 +208,7 @@ describe(OAuthAppService.name, () => {
     mocks.crypto.randomBytesAsText.mockImplementation((bytes: number) =>
       randomBytes(bytes).toString('base64').replaceAll(/\W/g, ''),
     );
-    mocks.crypto.hashSha256.mockImplementation((value: string) => createHash('sha256').update(value).digest());
+    mocks.crypto.hashSha256.mockImplementation((value: string | Buffer) => createHash('sha256').update(value).digest());
     me = person('taylor');
     repo.users.set(me.user.id, me.user);
     mocks.user.get.mockImplementation((id: string) => Promise.resolve(repo.users.get(id) as never));
@@ -257,7 +277,12 @@ describe(OAuthAppService.name, () => {
     it('shows a verified app by the name Frameleaf knows', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT], 'Totally Claude');
       const result = await sut.start(me, request(client).dto as never);
-      expect(result.client).toMatchObject({ name: 'Claude', verified: true, maker: 'Anthropic', returnTo: 'claude.ai' });
+      expect(result.client).toMatchObject({
+        name: 'Claude',
+        verified: true,
+        maker: 'Anthropic',
+        returnTo: 'claude.ai',
+      });
       expect(result.scopes).toEqual(['library:read', 'people:read']);
     });
 
@@ -287,7 +312,7 @@ describe(OAuthAppService.name, () => {
 
     it('records Deny and makes no code', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
-      const { redirectUrl } = await sut.authorize(me, { ...(request(client).dto as never), allow: false }, ISSUER);
+      const { redirectUrl } = await sut.authorize(me, { ...request(client).dto, allow: false } as never, ISSUER);
       const params = new URL(redirectUrl).searchParams;
       expect(params.get('error')).toBe('access_denied');
       expect(params.get('code')).toBeNull();
@@ -299,7 +324,7 @@ describe(OAuthAppService.name, () => {
 
     it('records Allow and makes a five-minute code bound to this session', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
-      const { redirectUrl } = await sut.authorize(me, { ...(request(client).dto as never), allow: true }, ISSUER);
+      const { redirectUrl } = await sut.authorize(me, { ...request(client).dto, allow: true } as never, ISSUER);
       const params = new URL(redirectUrl).searchParams;
       expect(params.get('state')).toBe('state-123');
       expect(params.get('iss')).toBe(ISSUER);
@@ -316,7 +341,11 @@ describe(OAuthAppService.name, () => {
     it('issues an hour-long access token and a refresh token, keeping only their hashes', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
       const { tokens } = await connect(client);
-      expect(tokens).toMatchObject({ token_type: 'Bearer', expires_in: OAUTH_ACCESS_TTL_SECONDS, scope: 'library:read people:read' });
+      expect(tokens).toMatchObject({
+        token_type: 'Bearer',
+        expires_in: OAUTH_ACCESS_TTL_SECONDS,
+        scope: 'library:read people:read',
+      });
       expect(tokens.access_token.startsWith('fla_')).toBe(true);
       expect(tokens.refresh_token.startsWith('flr_')).toBe(true);
       const [grant] = repo.grants;
@@ -327,11 +356,13 @@ describe(OAuthAppService.name, () => {
     it('uses a code once, even when the first try is wrong', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
       const { dto, verifier } = request(client);
-      const { redirectUrl } = await sut.authorize(me, { ...(dto as never), allow: true }, ISSUER);
+      const { redirectUrl } = await sut.authorize(me, { ...dto, allow: true } as never, ISSUER);
       const code = new URL(redirectUrl).searchParams.get('code')!;
       const body = { grant_type: 'authorization_code', code, client_id: client.id, redirect_uri: CLAUDE_REDIRECT };
 
-      expect((await oauthErrorOf(sut.token({ ...body, code_verifier: verifierFor('wrong') }))).error).toBe('invalid_grant');
+      expect((await oauthErrorOf(sut.token({ ...body, code_verifier: verifierFor('wrong') }))).error).toBe(
+        'invalid_grant',
+      );
       expect((await oauthErrorOf(sut.token({ ...body, code_verifier: verifier }))).error).toBe('invalid_grant');
       expect(repo.grants).toHaveLength(0);
     });
@@ -344,7 +375,7 @@ describe(OAuthAppService.name, () => {
     ])('refuses %s', async (_, change) => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
       const { dto, verifier } = request(client);
-      const { redirectUrl } = await sut.authorize(me, { ...(dto as never), allow: true }, ISSUER);
+      const { redirectUrl } = await sut.authorize(me, { ...dto, allow: true } as never, ISSUER);
       const code = new URL(redirectUrl).searchParams.get('code')!;
       const error = await oauthErrorOf(
         sut.token({
@@ -362,13 +393,19 @@ describe(OAuthAppService.name, () => {
     it('refuses an expired code', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
       const { dto, verifier } = request(client);
-      const { redirectUrl } = await sut.authorize(me, { ...(dto as never), allow: true }, ISSUER);
+      const { redirectUrl } = await sut.authorize(me, { ...dto, allow: true } as never, ISSUER);
       const code = new URL(redirectUrl).searchParams.get('code')!;
       for (const stored of repo.codes.values()) {
         stored.expiresAt = new Date(Date.now() - 1000) as never;
       }
       const error = await oauthErrorOf(
-        sut.token({ grant_type: 'authorization_code', code, client_id: client.id, redirect_uri: CLAUDE_REDIRECT, code_verifier: verifier }),
+        sut.token({
+          grant_type: 'authorization_code',
+          code,
+          client_id: client.id,
+          redirect_uri: CLAUDE_REDIRECT,
+          code_verifier: verifier,
+        }),
       );
       expect(error.error).toBe('invalid_grant');
     });
@@ -376,7 +413,7 @@ describe(OAuthAppService.name, () => {
     it('binds the code to the loopback port the app actually used', async () => {
       const client = repo.addClient([LOCAL_REDIRECT]);
       const { dto, verifier } = request(client, { redirectUri: 'http://127.0.0.1:5123/callback' });
-      const { redirectUrl } = await sut.authorize(me, { ...(dto as never), allow: true }, ISSUER);
+      const { redirectUrl } = await sut.authorize(me, { ...dto, allow: true } as never, ISSUER);
       expect(redirectUrl.startsWith('http://127.0.0.1:5123/callback?')).toBe(true);
       const code = new URL(redirectUrl).searchParams.get('code')!;
       const body = { grant_type: 'authorization_code', code, client_id: client.id, code_verifier: verifier };
@@ -394,7 +431,11 @@ describe(OAuthAppService.name, () => {
     it('rotates both tokens', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
       const { tokens } = await connect(client);
-      const next = await sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id });
+      const next = await sut.token({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+        client_id: client.id,
+      });
       expect(next.refresh_token).not.toBe(tokens.refresh_token);
       expect(next.access_token).not.toBe(tokens.access_token);
       await expect(sut.validateAccessToken(tokens.access_token, null)).rejects.toBeInstanceOf(UnauthorizedException);
@@ -404,7 +445,11 @@ describe(OAuthAppService.name, () => {
     it('revokes the grant when a used refresh token comes back', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
       const { tokens } = await connect(client);
-      const next = await sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id });
+      const next = await sut.token({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+        client_id: client.id,
+      });
 
       const error = await oauthErrorOf(
         sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id }),
@@ -413,8 +458,11 @@ describe(OAuthAppService.name, () => {
       expect(repo.grants[0].revokedAt).not.toBeNull();
       await expect(sut.validateAccessToken(next.access_token, null)).rejects.toBeInstanceOf(UnauthorizedException);
       expect(
-        (await oauthErrorOf(sut.token({ grant_type: 'refresh_token', refresh_token: next.refresh_token, client_id: client.id })))
-          .error,
+        (
+          await oauthErrorOf(
+            sut.token({ grant_type: 'refresh_token', refresh_token: next.refresh_token, client_id: client.id }),
+          )
+        ).error,
       ).toBe('invalid_grant');
       expect(mocks.accountEvent.create).toHaveBeenCalledWith(
         expect.objectContaining({ action: AccountEventAction.AppDisconnected, detail: 'token-reused' }),
@@ -426,8 +474,11 @@ describe(OAuthAppService.name, () => {
       const { tokens } = await connect(client, { scope: 'library:read' });
       const other = repo.addClient(['https://other.example/cb']);
       expect(
-        (await oauthErrorOf(sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: other.id })))
-          .error,
+        (
+          await oauthErrorOf(
+            sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: other.id }),
+          )
+        ).error,
       ).toBe('invalid_grant');
       expect(
         (
@@ -513,7 +564,10 @@ describe(OAuthAppService.name, () => {
     it.each([
       [{ redirect_uris: [] }, 'invalid_redirect_uri'],
       [{ redirect_uris: ['http://evil.example/cb'] }, 'invalid_redirect_uri'],
-      [{ redirect_uris: [CLAUDE_REDIRECT], token_endpoint_auth_method: 'client_secret_basic' }, 'invalid_client_metadata'],
+      [
+        { redirect_uris: [CLAUDE_REDIRECT], token_endpoint_auth_method: 'client_secret_basic' },
+        'invalid_client_metadata',
+      ],
       [{ redirect_uris: [CLAUDE_REDIRECT], grant_types: ['implicit'] }, 'invalid_client_metadata'],
       [{ redirect_uris: [CLAUDE_REDIRECT], grant_types: ['password'] }, 'invalid_client_metadata'],
       [{ redirect_uris: [CLAUDE_REDIRECT], response_types: ['token'] }, 'invalid_client_metadata'],
@@ -571,8 +625,14 @@ describe(OAuthAppService.name, () => {
   it('never writes a token, code or verifier to the account activity', async () => {
     const client = repo.addClient([CLAUDE_REDIRECT]);
     const { tokens, code, verifier } = await connect(client);
-    const next = await sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id });
-    await sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id }).catch(() => {});
+    const next = await sut.token({
+      grant_type: 'refresh_token',
+      refresh_token: tokens.refresh_token,
+      client_id: client.id,
+    });
+    await sut
+      .token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id })
+      .catch(() => {});
     expectNoSecretsInAccountEvents(mocks.accountEvent.create, [
       tokens.access_token,
       tokens.refresh_token,

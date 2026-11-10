@@ -63,24 +63,22 @@ export const OAUTH_DEFAULT_SCOPES: OAuthAppScope[] = ['library:read'];
  * does not offer; a request with any unknown scope is refused as a whole.
  */
 export const parseScopes = (value: unknown): { scopes: OAuthAppScope[]; unknown: string[] } => {
-  if (value === undefined || value === null || value === '') {
+  if ([undefined, null, ''].includes(value as string)) {
     return { scopes: [...OAUTH_DEFAULT_SCOPES], unknown: [] };
   }
   if (typeof value !== 'string' || value.length > 1000) {
     return { scopes: [], unknown: [String(value).slice(0, 100)] };
   }
   const names = [...new Set(value.split(' ').filter(Boolean))];
-  const scopes = names.filter((name): name is OAuthAppScope => Object.hasOwn(OAUTH_APP_SCOPES, name));
+  const scopes = new Set(names.filter((name): name is OAuthAppScope => Object.hasOwn(OAUTH_APP_SCOPES, name)));
   const unknown = names.filter((name) => !Object.hasOwn(OAUTH_APP_SCOPES, name));
-  return { scopes: OAUTH_SCOPES_SUPPORTED.filter((scope) => scopes.includes(scope)), unknown };
+  return { scopes: OAUTH_SCOPES_SUPPORTED.filter((scope) => scopes.has(scope)), unknown };
 };
 
 /** The permissions a set of granted scopes carries; unknown scope names carry nothing. */
 export const scopePermissions = (scopes: readonly string[]): Permission[] => [
   ...new Set(
-    scopes.flatMap((scope) =>
-      Object.hasOwn(OAUTH_APP_SCOPES, scope) ? OAUTH_APP_SCOPES[scope as OAuthAppScope] : [],
-    ),
+    scopes.flatMap((scope) => (Object.hasOwn(OAUTH_APP_SCOPES, scope) ? OAUTH_APP_SCOPES[scope as OAuthAppScope] : [])),
   ),
 ];
 
@@ -197,14 +195,16 @@ export const cleanClientName = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
   }
-  // eslint-disable-next-line no-control-regex
-  const name = value.replaceAll(/[\u0000-\u001F\u007F-\u009F​-‏‪-‮⁦-⁩]/g, '').trim();
+  const name = value
+    // eslint-disable-next-line no-control-regex -- control and direction characters are removed on purpose
+    .replaceAll(/[\u{0}-\u{1F}\u{7F}-\u{9F}\u{200B}-\u{200F}\u{202A}-\u{202E}\u{2066}-\u{2069}]/gu, '')
+    .trim();
   return name.length > 0 ? name.slice(0, 80) : null;
 };
 
 /** A resource indicator (RFC 8707): an absolute http(s) address without a fragment, or null. */
 export const checkResource = (value: unknown): string | null | false => {
-  if (value === undefined || value === null || value === '') {
+  if ([undefined, null, ''].includes(value as string)) {
     return null;
   }
   const url = parseUrl(value);

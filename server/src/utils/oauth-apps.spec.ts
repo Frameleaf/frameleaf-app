@@ -1,16 +1,16 @@
+import { describe, expect, it } from 'vitest';
 import { Permission } from 'src/enum.js';
 import {
+  OAUTH_APP_SCOPES,
   checkRegisteredRedirectUri,
   checkResource,
   cleanClientName,
   isOAuthAccessToken,
   matchRedirectUri,
-  OAUTH_APP_SCOPES,
   parseScopes,
   scopePermissions,
   verifiedApp,
 } from 'src/utils/oauth-apps.js';
-import { describe, expect, it } from 'vitest';
 
 const ADMIN_OR_DANGEROUS = [
   Permission.All,
@@ -82,6 +82,7 @@ describe('oauth-apps', () => {
     });
 
     it.each([
+      // eslint-disable-next-line unicorn/prefer-https -- plain http to a non-loopback host must be refused
       'http://example.com/cb',
       'http://192.168.1.2/cb',
       'https://user:pass@example.com/cb',
@@ -115,6 +116,7 @@ describe('oauth-apps', () => {
         'https://claude.ai/api/mcp/auth_callback?x=1',
         'https://claude.ai.evil.example/api/mcp/auth_callback',
         'https://claude.ai:444/api/mcp/auth_callback',
+        // eslint-disable-next-line unicorn/prefer-https -- the http form of an https address must not match
         'http://claude.ai/api/mcp/auth_callback',
         'HTTPS://claude.ai/api/mcp/auth_callback',
       ]) {
@@ -141,7 +143,7 @@ describe('oauth-apps', () => {
 
   it('cleans an app’s own name', () => {
     expect(cleanClientName('  Claude‮ ')).toBe('Claude');
-    expect(cleanClientName('\u0000')).toBeNull();
+    expect(cleanClientName('\0')).toBeNull();
     expect(cleanClientName('x'.repeat(200))).toHaveLength(80);
     expect(cleanClientName(5)).toBeNull();
   });

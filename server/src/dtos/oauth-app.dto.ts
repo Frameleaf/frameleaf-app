@@ -25,7 +25,9 @@ const OAuthAppClientSchema = z
     id: z.string().describe('The app’s client id'),
     name: z
       .string()
-      .describe('For a verified app the name Frameleaf knows it by; otherwise the name the app gave itself (plain text)'),
+      .describe(
+        'For a verified app the name Frameleaf knows it by; otherwise the name the app gave itself (plain text)',
+      ),
     verified: z.boolean().describe('Frameleaf checked who made this app (every return address is that app’s own)'),
     maker: z.string().nullable().describe('Who made a verified app; null otherwise'),
     knownApp: z
@@ -52,7 +54,9 @@ const OAuthAppAuthorizeResponseSchema = z
   .object({
     redirectUrl: z
       .string()
-      .describe('Where the browser goes next: the app’s return address with the code (or access_denied), state and iss'),
+      .describe(
+        'Where the browser goes next: the app’s return address with the code (or access_denied), state and iss',
+      ),
   })
   .meta({ id: 'OAuthAppAuthorizeResponseDto' });
 

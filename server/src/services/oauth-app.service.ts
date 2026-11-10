@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import type { AuthUser } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import {
   OAuthAppAdminClientDto,
   OAuthAppAuthorizeDto,
@@ -24,7 +25,6 @@ import { toAccountEventVia } from 'src/repositories/account-event.repository.js'
 import { OAuthAppRepository, OAuthClient } from 'src/repositories/oauth-app.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isCodeChallenge, verifierMatches } from 'src/utils/browser-extension-sign-in.js';
-import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import {
   OAUTH_ACCESS_TOKEN_PREFIX,
   OAUTH_ACCESS_TTL_SECONDS,
@@ -78,7 +78,8 @@ type CheckedRequest = {
 };
 
 /** The parts of an authorization request that must be right before anything is sent back to the app. */
-type RequestFault = { target: false } | { target: true; redirectUri: string; state?: string; error: string; description: string };
+type RequestFault =
+  { target: false } | { target: true; redirectUri: string; state?: string; error: string; description: string };
 
 export type OAuthTokenResponse = {
   access_token: string;
@@ -273,7 +274,7 @@ export class OAuthAppService extends BaseService {
       throw oauthError('invalid_redirect_uri', 'Give one to ten return addresses');
     }
     const redirectUris = uris.map((uri) => checkRegisteredRedirectUri(uri));
-    if (redirectUris.some((uri) => uri === null)) {
+    if (redirectUris.includes(null)) {
       throw oauthError(
         'invalid_redirect_uri',
         'Return addresses must be https, or http on 127.0.0.1, [::1] or localhost, with no fragment',
@@ -281,15 +282,18 @@ export class OAuthAppService extends BaseService {
     }
     const method = body.token_endpoint_auth_method;
     if (method !== undefined && method !== 'none') {
-      throw oauthError('invalid_client_metadata', 'Only public clients (token_endpoint_auth_method none) are supported');
+      throw oauthError(
+        'invalid_client_metadata',
+        'Only public clients (token_endpoint_auth_method none) are supported',
+      );
     }
     const grantTypes = body.grant_types ?? ['authorization_code', 'refresh_token'];
     const responseTypes = body.response_types ?? ['code'];
     if (
       !Array.isArray(grantTypes) ||
-      !grantTypes.every((type) => type === 'authorization_code' || type === 'refresh_token') ||
+      grantTypes.some((type) => !(type === 'authorization_code' || type === 'refresh_token')) ||
       !Array.isArray(responseTypes) ||
-      !responseTypes.every((type) => type === 'code')
+      responseTypes.some((type) => type !== 'code')
     ) {
       throw oauthError('invalid_client_metadata', 'Only the authorization_code and refresh_token grants are supported');
     }
@@ -364,7 +368,7 @@ export class OAuthAppService extends BaseService {
       !grant?.user ||
       grant.revokedAt ||
       new Date(grant.accessExpiresAt).getTime() <= Date.now() ||
-      !OAUTH_SCOPES_SUPPORTED.some((scope) => grant.scopes.includes(scope))
+      OAUTH_SCOPES_SUPPORTED.every((scope) => !grant.scopes.includes(scope))
     ) {
       throw new UnauthorizedException({
         message: 'This app’s access has ended. Connect the app again.',
@@ -372,7 +376,15 @@ export class OAuthAppService extends BaseService {
         statusCode: 401,
       });
     }
-    void this.recordUse(grant.id, grant.userId, grant.lastUsedAt, via, grant.clientName, grant.clientRedirectUris, grant.scopes);
+    void this.recordUse(
+      grant.id,
+      grant.userId,
+      grant.lastUsedAt,
+      via,
+      grant.clientName,
+      grant.clientRedirectUris,
+      grant.scopes,
+    );
     return {
       user: grant.user as AuthUser,
       apiKey: { id: grant.id, permissions: scopePermissions(grant.scopes) },
@@ -518,7 +530,7 @@ export class OAuthAppService extends BaseService {
     }
     if (body.scope !== undefined) {
       const { scopes, unknown } = parseScopes(body.scope);
-      if (unknown.length > 0 || !scopes.every((scope) => grant.scopes.includes(scope))) {
+      if (unknown.length > 0 || scopes.some((scope) => !grant.scopes.includes(scope))) {
         throw oauthError('invalid_scope', 'An app can’t widen its access when it refreshes');
       }
     }
@@ -571,7 +583,10 @@ export class OAuthAppService extends BaseService {
     scopes: string[],
   ) {
     const now = Date.now();
-    const last = Math.max(lastUsedAt ? new Date(lastUsedAt as string).getTime() : 0, this.usesRecorded.get(grantId) ?? 0);
+    const last = Math.max(
+      lastUsedAt ? new Date(lastUsedAt as string).getTime() : 0,
+      this.usesRecorded.get(grantId) ?? 0,
+    );
     if (now - last < OAUTH_USE_RECORD_INTERVAL_MS) {
       return;
     }
@@ -652,7 +667,10 @@ export class OAuthAppService extends BaseService {
     return verifiedApp(redirectUris)?.name ?? name;
   }
 
-  private mapClient(client: Pick<OAuthClient, 'id' | 'name' | 'redirectUris'>, redirectUri: string | undefined): OAuthAppClientDto {
+  private mapClient(
+    client: Pick<OAuthClient, 'id' | 'name' | 'redirectUris'>,
+    redirectUri: string | undefined,
+  ): OAuthAppClientDto {
     const known = verifiedApp(client.redirectUris);
     return {
       id: client.id,
