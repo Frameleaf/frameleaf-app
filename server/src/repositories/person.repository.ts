@@ -1527,10 +1527,12 @@ export class PersonRepository {
       .$if(keepAnswered, (qb) => qb.where(splitCandidateIsOpen))
       .execute();
   }
+  /** FL-1385: a person's candidate; `open` is false once the owner answered "same person", or "later" not long ago. */
   getSplitCandidate(ownerId: string, personId: string) {
     return this.db
       .selectFrom('person_split_candidate')
       .selectAll()
+      .select(splitCandidateIsOpen.as('open'))
       .where('ownerId', '=', ownerId)
       .where('personId', '=', personId)
       .executeTakeFirst();

@@ -1663,6 +1663,7 @@ describe(PersonService.name, () => {
         faceIds,
         distance: 0.9,
         dismissedUntil: null,
+        open: true,
       });
       mocks.person.getSplitFaceCounts.mockResolvedValue({ total: 9, faceIds });
       vi.spyOn(sut, 'create').mockResolvedValue({ id: 'new-person' } as never);

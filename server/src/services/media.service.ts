@@ -1271,7 +1271,10 @@ export class MediaService extends BaseService {
       return 0;
     } finally {
       if (folder) {
-        await fs.rm(folder, { recursive: true, force: true });
+        // a scratch folder that will not go must not cost the thumbnail its turn
+        await fs
+          .rm(folder, { recursive: true, force: true })
+          .catch((error) => this.logger.warn(`Could not remove ${folder}: ${error}`));
       }
     }
   }

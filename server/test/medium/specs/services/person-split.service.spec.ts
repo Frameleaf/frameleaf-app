@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
@@ -158,6 +158,9 @@ describe('PersonService split suggestions (FL-1385)', () => {
 
     await sut.setSplitVerdict(auth, { personId, verdict: 'same' });
     await expect(sut.getSplitSuggestions(auth)).resolves.toEqual({ suggestions: [] });
+    // a banner in another tab that has not caught up cannot replace the answer, or split after all
+    await expect(sut.setSplitVerdict(auth, { personId, verdict: 'later' })).rejects.toBeInstanceOf(ConflictException);
+    await expect(sut.setSplitVerdict(auth, { personId, verdict: 'split' })).rejects.toBeInstanceOf(ConflictException);
     // the next nightly check finds the same faces and keeps the answer
     await people.upsertSplitCandidate({
       ownerId: auth.user.id,

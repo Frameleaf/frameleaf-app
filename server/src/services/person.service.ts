@@ -383,6 +383,11 @@ export class PersonService extends BaseService {
     if (!candidate) {
       throw new NotFoundException('Split suggestion not found');
     }
+    // an answer already given (in another tab, say) is not replaced by a banner that has not caught up:
+    // "same person" stays "same person" until it is undone
+    if (!candidate.open && dto.verdict !== 'same') {
+      throw new ConflictException('This suggestion was already answered');
+    }
     if (dto.verdict !== 'split') {
       const until = dto.verdict === 'same' ? 'infinity' : new Date(Date.now() + SPLIT_LATER_MS);
       await this.personRepository.setSplitDismissal(auth.user.id, personId, until);

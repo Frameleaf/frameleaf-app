@@ -439,8 +439,12 @@
         return;
       }
       try {
-        // merging the new person back is the undo: the faces return and the new person goes
-        await mergePeople({ mergePersonDto: { ids: [personId, createdId] } });
+        // merging the new person back is the undo: the faces return and the new person goes. A merge
+        // that could not be done comes back as a result, not an error
+        const results = await mergePeople({ mergePersonDto: { ids: [personId, createdId] } });
+        if (!results.find(({ id }) => id === createdId)?.success) {
+          throw new Error('The new person could not be merged back');
+        }
         if (!isCurrentSession()) {
           return;
         }
