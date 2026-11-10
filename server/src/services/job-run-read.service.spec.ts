@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { RunItemRead, RunRead } from 'src/queue/run-query.js';
 import { JobService } from 'src/services/job.service.js';
+import { factory } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const counts = {
@@ -139,6 +140,89 @@ describe('durable run read service', () => {
     expect(mocks.job.listRuns).toHaveBeenLastCalledWith(26, 0, false);
     expect(plain.items[0]).not.toHaveProperty('earlierRuns');
     expect(plain.items[0]).not.toHaveProperty('leftOverStreak');
+  });
+  describe('left-over photos (FL-1349)', () => {
+    const review = {
+      photos: 2,
+      countsPhotos: true,
+      causes: [
+        {
+          cause: 'unsupported' as const,
+          count: 2,
+          stopped: 0,
+          repaired: 0,
+          libraries: [],
+          queues: ['thumbnailGeneration'],
+          message: 'unsupported image format',
+          samples: [
+            { assetId: '0195e2a0-0000-7000-8000-00000000000a', fileName: 'a.heic', ownerId: 'me', ownerName: 'Me' },
+            { assetId: '0195e2a0-0000-7000-8000-00000000000b', fileName: 'b.heic', ownerId: 'them', ownerName: 'Them' },
+          ],
+        },
+      ],
+    };
+
+    it('passes the reader’s privacy to the sample read', async () => {
+      const auth = factory.auth({ user: { id: 'me', isAdmin: true }, session: { hasElevatedPermission: true } });
+      mocks.job.reviewRunFailures.mockResolvedValue(review);
+      const page = await sut.getRunFailures(auth, run.id);
+      expect(mocks.job.reviewRunFailures).toHaveBeenCalledWith(run.id, {
+        revealLockedOwnerId: 'me',
+        lockedOwnerId: 'me',
+        othersRulesViewerId: 'me',
+      });
+      expect(page.causes[0].samples).toEqual([
+        { assetId: '0195e2a0-0000-7000-8000-00000000000a', fileName: 'a.heic', ownerName: 'Me', pictureAllowed: true },
+        {
+          assetId: '0195e2a0-0000-7000-8000-00000000000b',
+          fileName: 'b.heic',
+          ownerName: 'Them',
+          pictureAllowed: false,
+        },
+      ]);
+      expect(JSON.stringify(page)).not.toContain('ownerId');
+
+      const hiding = factory.auth({ user: { id: 'me', isAdmin: true } });
+      hiding.hideNsfwAssets = true;
+      await sut.getRunFailures(hiding, run.id);
+      expect(mocks.job.reviewRunFailures).toHaveBeenLastCalledWith(run.id, {
+        excludeNsfw: true,
+        othersRulesViewerId: 'me',
+      });
+    });
+
+    it('404 for an unknown run', async () => {
+      mocks.job.reviewRunFailures.mockResolvedValue(undefined);
+      await expect(sut.getRunFailures(factory.auth(), run.id)).rejects.toBeInstanceOf(NotFoundException);
+      mocks.job.retryRunFailures.mockResolvedValue(undefined);
+      await expect(sut.actOnRunFailures(run.id, { cause: 'drive', action: 'retry' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('refuses stop for damaged (400)', async () => {
+      for (const body of [
+        { cause: 'damaged', action: 'stop' },
+        { cause: 'missing', action: 'retry' },
+        { cause: 'unsupported', action: 'retry' },
+        { cause: 'other', action: 'stop' },
+      ] as const) {
+        await expect(sut.actOnRunFailures(run.id, body)).rejects.toBeInstanceOf(BadRequestException);
+      }
+      expect(mocks.job.stopRunFailures).not.toHaveBeenCalled();
+      expect(mocks.job.retryRunFailures).not.toHaveBeenCalled();
+    });
+
+    it('tries a drive or other cause again, and stops trying an unsupported one', async () => {
+      mocks.job.retryRunFailures.mockResolvedValue(3);
+      await expect(sut.actOnRunFailures(run.id, { cause: 'drive', action: 'retry' })).resolves.toEqual({ count: 3 });
+      expect(mocks.job.retryRunFailures).toHaveBeenCalledWith(run.id, 'drive');
+      mocks.job.stopRunFailures.mockResolvedValue(863);
+      await expect(sut.actOnRunFailures(run.id, { cause: 'unsupported', action: 'stop' })).resolves.toEqual({
+        count: 863,
+      });
+      expect(mocks.job.stopRunFailures).toHaveBeenCalledWith(run.id, 'unsupported');
+    });
   });
   it('releases a held run and refuses an import that is not activated yet', async () => {
     mocks.job.releaseRun.mockResolvedValueOnce('released');

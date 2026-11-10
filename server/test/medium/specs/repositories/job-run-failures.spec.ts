@@ -1,9 +1,19 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { JobName, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
+import {
+  AssetVisibility,
+  JobName,
+  MediaHealthCategory,
+  MediaHealthSeverity,
+  MediaHealthStatus,
+  QueueName,
+} from 'src/enum.js';
 import { type RunFailureInput, failureCauseSql, runFailureCause } from 'src/queue/run-failure-cause.js';
+import { reviewRunFailures } from 'src/queue/run-failures.js';
 import { getRun, runFailureGroupsQuery, summarizeRunFailures } from 'src/queue/run-query.js';
 import { finishRuns } from 'src/queue/run-summary.js';
+import { SqlQueueStore } from 'src/queue/store.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -254,5 +264,167 @@ describe('summarizeRunFailures', () => {
       })} cause`.execute(db);
       expect({ ...input, cause: row.cause }).toEqual({ ...input, cause: runFailureCause(input) });
     }
+  });
+});
+
+describe('reviewing and acting on a run’s left-over photos', () => {
+  const arrange = async () => {
+    const ctx = setup();
+    const { user: admin } = await ctx.newUser({ isAdmin: true });
+    const { user: other } = await ctx.newUser({ name: 'Other person' });
+    const { asset: mine } = await ctx.newAsset({ ownerId: admin.id, originalFileName: 'mine.heic' });
+    const { asset: theirs } = await ctx.newAsset({ ownerId: other.id, originalFileName: 'theirs.heic' });
+    const { asset: locked } = await ctx.newAsset({
+      ownerId: other.id,
+      originalFileName: 'locked.heic',
+      visibility: AssetVisibility.Locked,
+    });
+    const { asset: nsfw } = await ctx.newAsset({ ownerId: other.id, originalFileName: 'nsfw.heic', is_nsfw: true });
+    const id = await run();
+    for (const asset of [mine, theirs, locked, nsfw]) {
+      await failedJob(
+        id,
+        asset.id,
+        JobName.AssetGenerateThumbnails,
+        `unsupported image format in ${asset.originalFileName}`,
+        {
+          sensitive: asset.id !== locked.id && asset.id !== mine.id ? false : true,
+        },
+      );
+    }
+    return { ctx, admin, other, mine, theirs, locked, nsfw, id };
+  };
+
+  it("an admin never sees another account's Locked photo among the samples", async () => {
+    const { admin, other, locked, mine, theirs, nsfw, id } = await arrange();
+    const review = (await reviewRunFailures(database, id, { othersRulesViewerId: admin.id }))!;
+    expect(review).toMatchObject({ photos: 4, countsPhotos: true });
+    const [unsupported] = review.causes;
+    // counts are the run's work and include every account's photos
+    expect(unsupported).toMatchObject({ cause: 'unsupported', count: 4, stopped: 0 });
+    const ids = unsupported.samples.map(({ assetId }) => assetId);
+    expect(ids).not.toContain(locked.id);
+    expect(ids.toSorted()).toEqual([mine.id, theirs.id, nsfw.id].toSorted());
+
+    // hidden content of the reader's settings stays out too
+    const hiding = (await reviewRunFailures(database, id, { excludeNsfw: true, othersRulesViewerId: admin.id }))!;
+    expect(hiding.causes[0].samples.map(({ assetId }) => assetId)).not.toContain(nsfw.id);
+
+    // the owner's own elevated session sees their Locked photo
+    const owner = (await reviewRunFailures(database, id, { lockedOwnerId: other.id }))!;
+    expect(owner.causes[0].samples.map(({ assetId }) => assetId)).toContain(locked.id);
+  });
+
+  it("another account's photo is listed without its picture", async () => {
+    const { admin, other, theirs, id } = await arrange();
+    const review = (await reviewRunFailures(database, id, { othersRulesViewerId: admin.id }))!;
+    expect(review.causes[0].samples).toContainEqual({
+      assetId: theirs.id,
+      fileName: 'theirs.heic',
+      ownerId: other.id,
+      ownerName: 'Other person',
+    });
+  });
+
+  it('no raw message from a sensitive job', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const id = await run();
+    await failedJob(id, asset.id, JobName.AssetGenerateThumbnails, 'unsupported format of /private/path.heic', {
+      sensitive: true,
+    });
+    const hidden = (await reviewRunFailures(database, id, { othersRulesViewerId: user.id }))!;
+    expect(hidden.causes[0]).toMatchObject({ cause: 'unsupported', message: null });
+
+    const shown = await arrange();
+    const review = (await reviewRunFailures(database, shown.id, { othersRulesViewerId: shown.admin.id }))!;
+    // only the visible photos' non-sensitive jobs can give the message: theirs or nsfw, never mine or locked
+    expect(review.causes[0].message).toMatch(/unsupported image format in (theirs|nsfw)\.heic/);
+    expect(await reviewRunFailures(database, randomUUID(), {})).toBeUndefined();
+  });
+
+  it('stop keeps the photo out of the next nightly selection', async () => {
+    const { ctx, admin, theirs, mine, id } = await arrange();
+    const { asset: fresh } = await ctx.newAsset({ ownerId: admin.id });
+    // read and without previews: what the overnight thumbnail step picks
+    for (const asset of [theirs, mine, fresh]) {
+      await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
+    }
+    const store = new SqlQueueStore(database);
+    expect(await store.stopRunFailures(id, 'unsupported')).toBe(4);
+    expect(await store.stopRunFailures(randomUUID(), 'unsupported')).toBeUndefined();
+    expect(await summarizeRunFailures(db, id)).toEqual([
+      expect.objectContaining({ cause: 'unsupported', count: 0, stopped: 4 }),
+    ]);
+    // the job rows stay as they were: history and the per-photo list are intact
+    const { rows: states } = await sql<{
+      state: string;
+    }>`select distinct state from job where "runId" = ${id}::uuid`.execute(db);
+    expect(states).toEqual([{ state: 'failed' }]);
+
+    const nightly = await run();
+    const selection = new AssetJobRepository(database)
+      .selectionForUnfinished(JobName.AssetGenerateThumbnails, {
+        queue: QueueName.ThumbnailGeneration,
+        fullsizeEnabled: false,
+        videoPolicy: 'current-policy',
+      })
+      .where('asset.id', 'in', [theirs.id, mine.id, fresh.id]);
+    const { inserted } = await database.transaction().execute((tx) =>
+      store.insertSelectionPage(
+        {
+          queue: QueueName.ThumbnailGeneration,
+          name: JobName.AssetGenerateThumbnails,
+          data: {},
+          runId: nightly,
+          safeToRetry: true,
+          sensitive: false,
+          deadlineMs: 1000,
+        },
+        selection,
+        null,
+        100,
+        tx,
+      ),
+    );
+    // only the photo nobody stopped is picked
+    expect(inserted).toBe(1);
+    const { rows: picked } = await sql<{ root: string }>`select "rootItemKey" root from job
+      where "runId" = ${nightly}::uuid`.execute(db);
+    expect(picked).toEqual([{ root: fresh.id }]);
+  });
+
+  it('retry re-arms quarantined photos and reopens the run', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: unsupported } = await ctx.newAsset({ ownerId: user.id });
+    const id = await run();
+    await failedJob(id, asset.id, JobName.AssetGenerateThumbnails, 'Timed out');
+    await failedJob(id, unsupported.id, JobName.AssetGenerateThumbnails, 'unsupported image format');
+    await sql`insert into asset_processing_failure("assetId", step, attempts, "lastError", "lastFailedAt", "quarantinedAt")
+      values (${asset.id}::uuid, ${JobName.AssetGenerateThumbnails}, 3, 'timed-out', now(), now())`.execute(db);
+    expect(await finishRuns(db, 10)).toBe(1);
+
+    const store = new SqlQueueStore(database);
+    expect(await store.retryRunFailures(id, 'other')).toBe(1);
+    const { rows: jobs } = await sql<{ root: string; state: string }>`select "rootItemKey" root, state from job
+      where "runId" = ${id}::uuid order by state`.execute(db);
+    expect(jobs).toEqual([
+      { root: unsupported.id, state: 'failed' },
+      { root: asset.id, state: 'pending' },
+    ]);
+    const { rows: failures } = await sql<{ quarantinedAt: Date | null; attempts: number }>`select "quarantinedAt",
+      attempts from asset_processing_failure where "assetId" = ${asset.id}::uuid`.execute(db);
+    expect(failures).toEqual([{ quarantinedAt: null, attempts: 0 }]);
+    const { rows: runs } = await sql<{ finishedAt: Date | null; causes: unknown }>`select "finishedAt",
+      summary->'failureCauses' causes from job_run where id = ${id}::uuid`.execute(db);
+    expect(runs).toEqual([{ finishedAt: null, causes: [{ cause: 'unsupported', count: 1 }] }]);
+    expect(await getRun(db, id)).toMatchObject({
+      finishedAt: null,
+      failureCauses: [{ cause: 'unsupported', count: 1 }],
+    });
   });
 });

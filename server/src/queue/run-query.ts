@@ -4,6 +4,7 @@ import { JobName, QueueName } from 'src/enum.js';
 import {
   NIGHTLY_RUN_KINDS,
   type RunFailureCause,
+  causeRank,
   failureCauseName,
   failureCauseRank,
 } from 'src/queue/run-failure-cause.js';
@@ -611,6 +612,31 @@ export async function summarizeRunFailures(
 ): Promise<RunFailureGroup[]> {
   const { rows } = await runFailureGroupsQuery(runId, countsPhotos).execute(db);
   return rows;
+}
+
+/** Whether a run works on photos (`RunRead.countsPhotos`): any of its jobs has a root, from the progress index. */
+export async function runCountsPhotos(db: Kysely<any>, runId: string): Promise<boolean | undefined> {
+  const {
+    rows: [run],
+  } = await sql<{ countsPhotos: boolean }>`select exists (select 1 from job j where j."runId" = r.id
+      and j."rootItemKey" is not null) "countsPhotos" from job_run r where r.id = ${runId}::uuid`.execute(db);
+  return run?.countsPhotos;
+}
+
+/** The photos (roots) of one cause that still need a look; with `stopped`, the stopped ones. */
+export async function runFailureRoots(db: Kysely<any>, runId: string, cause: RunFailureCause, stopped = false) {
+  const { rows } = await sql<{ root: string }>`select t.root from (${runFailureTasks(runId, true)}) t
+    where t."photoRank" = ${causeRank(cause)}::int and t."photoStopped" = ${stopped}::boolean
+    group by t.root`.execute(db);
+  return rows.map(({ root }) => root);
+}
+
+/** A run's stored cause counts, written again after Try again or Stop trying (a reopened run's summary is stale). */
+export async function rewriteFailureCauses(db: Kysely<any>, runId: string) {
+  const causes = causeCounts(await summarizeRunFailures(db, runId, (await runCountsPhotos(db, runId)) ?? true));
+  await sql`update job_run set summary = case when ${causes.length === 0}::boolean then summary - 'failureCauses'
+      else jsonb_set(summary, '{failureCauses}', ${JSON.stringify(causes)}::text::jsonb) end
+    where id = ${runId}::uuid and jsonb_typeof(summary) = 'object'`.execute(db);
 }
 
 /** What a run's card and summary keep: the causes with photos still needing a look. */

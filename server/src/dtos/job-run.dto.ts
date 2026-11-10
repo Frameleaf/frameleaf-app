@@ -177,6 +177,56 @@ export class JobRunItemPageDto extends createZodDto(
     .meta({ id: 'JobRunItemPageDto' }),
 ) {}
 
+const JobRunFailureSampleSchema = z
+  .object({
+    assetId: z.uuid().describe('The photo or video'),
+    fileName: z.string().describe('The name of its file'),
+    ownerName: z.string().describe('The name of the account whose library it is in'),
+    pictureAllowed: z.boolean().describe('The caller may see its picture: false on another account’s photo'),
+  })
+  .meta({ id: 'JobRunFailureSampleDto' });
+const JobRunFailureCauseGroupSchema = z
+  .object({
+    cause: JobRunFailureCauseSchema,
+    count: z.int().min(0).describe('Photos of this cause that still need a look'),
+    stopped: z.int().min(0).describe('Photos of this cause whose processing was stopped (Stop trying)'),
+    repaired: z.int().min(0).describe('Of the photos needing a look, damaged files Library care already repaired'),
+    libraries: z.array(z.string()).max(3).describe("For drive: up to three external libraries that can't be reached"),
+    queues: z.array(QueueNameSchema).describe('Queues whose failed jobs these photos have (the per-photo lists)'),
+    message: z
+      .string()
+      .nullable()
+      .describe('One raw error message, from a photo in the samples and a job that may show it; null when none may'),
+    samples: z
+      .array(JobRunFailureSampleSchema)
+      .max(6)
+      .describe('Up to six of the photos the caller may see: never another account’s Locked or hidden media'),
+  })
+  .meta({ id: 'JobRunFailureCauseDto' });
+export class JobRunFailuresDto extends createZodDto(
+  z
+    .object({
+      photos: z.int().min(0).describe('Photos left over, stopped ones included'),
+      countsPhotos: z.boolean().describe('The counts are photos; when false they are tasks'),
+      causes: z.array(JobRunFailureCauseGroupSchema).describe('One per cause with photos, most telling first'),
+    })
+    .meta({ id: 'JobRunFailuresResponseDto' }),
+) {}
+export const JobRunFailureActionSchema = z
+  .enum(['retry', 'stop'])
+  .describe('retry: try again now (drive or other); stop: stop trying (unsupported)')
+  .meta({ id: 'JobRunFailureAction' });
+export class JobRunFailureActionDto extends createZodDto(
+  z
+    .object({ cause: JobRunFailureCauseSchema, action: JobRunFailureActionSchema })
+    .meta({ id: 'JobRunFailureActionDto' }),
+) {}
+export class JobRunFailureActionResponseDto extends createZodDto(
+  z
+    .object({ count: z.int().min(0).describe('Photos tried again or stopped') })
+    .meta({ id: 'JobRunFailureActionResponseDto' }),
+) {}
+
 /** The public summary of a run: counts and progress only, never a selection, payload or error text. */
 export const mapJobRun = (row: RunRead): JobRunResponseDto => ({
   id: row.id,

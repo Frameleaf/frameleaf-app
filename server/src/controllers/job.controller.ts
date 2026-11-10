@@ -2,7 +2,15 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query } 
 import { ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { JobRunIdParamDto, JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
+import {
+  JobRunFailureActionDto,
+  JobRunFailureActionResponseDto,
+  JobRunFailuresDto,
+  JobRunIdParamDto,
+  JobRunItemPageDto,
+  JobRunPageDto,
+  JobRunSearchDto,
+} from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
 import { QueueResponseLegacyDto, QueuesResponseLegacyDto } from 'src/dtos/queue-legacy.dto.js';
 import { QueueCommandDto, QueueNameParamDto } from 'src/dtos/queue.dto.js';
@@ -34,6 +42,37 @@ export class JobController {
   @Endpoint({ summary: 'Inspect selected job run items', history: new HistoryBuilder().added('v3').alpha('v3') })
   getJobRunItems(@Param() { id }: JobRunIdParamDto, @Query() dto: JobRunSearchDto): Promise<JobRunItemPageDto> {
     return this.service.getRunItems(id, dto);
+  }
+
+  @Get('runs/:id/failures')
+  @Authenticated({ permission: Permission.JobRead, admin: true })
+  @ApiResponse({ status: 404, description: 'Job run not found' })
+  @Endpoint({
+    summary: "Review a job run's left-over photos",
+    description:
+      "The photos a run left over (failed or needing attention), grouped by plain cause, each with up to six photos the caller may see and one raw message. The counts cover every account's photos; another account's Locked or hidden photos never appear among the samples.",
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getJobRunFailures(@Auth() auth: AuthDto, @Param() { id }: JobRunIdParamDto): Promise<JobRunFailuresDto> {
+    return this.service.getRunFailures(auth, id);
+  }
+
+  @Post('runs/:id/failures')
+  @Authenticated({ permission: Permission.JobCreate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({ status: 400, description: "This action doesn't apply to photos left over for this reason" })
+  @ApiResponse({ status: 404, description: 'Job run not found' })
+  @Endpoint({
+    summary: "Act on a job run's left-over photos",
+    description:
+      "Try again now (retry) the photos left over because a drive can't be reached or for other reasons, or stop trying (stop) the ones whose format can't be read. Stopping keeps their history; nightly processing no longer picks them.",
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  actOnJobRunFailures(
+    @Param() { id }: JobRunIdParamDto,
+    @Body() dto: JobRunFailureActionDto,
+  ): Promise<JobRunFailureActionResponseDto> {
+    return this.service.actOnRunFailures(id, dto);
   }
 
   @Post('runs/:id/release')
