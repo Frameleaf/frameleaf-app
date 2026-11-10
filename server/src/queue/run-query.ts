@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
+import { type RunFailureCause, failureCauseName, failureCauseRank } from 'src/queue/run-failure-cause.js';
 
 export const RUN_OUTCOMES = [
   'completed',
@@ -83,7 +84,10 @@ export type RunRead = RunCounts & {
   countsPhotos: boolean;
   /** Queues with failed or needs-attention jobs in this run. */
   failedQueues: string[];
+  /** FL-1349: the photos left over, by plain cause (stopped ones left out); absent when nothing failed. */
+  failureCauses?: RunFailureCauseCount[];
 };
+export type RunFailureCauseCount = { cause: RunFailureCause; count: number };
 export type RunItemRead = {
   id: string;
   outcome: RunOutcome;
@@ -106,6 +110,8 @@ export type RunSummary = {
   lastStage?: string | null;
   countsPhotos?: boolean;
   failedQueues?: string[];
+  /** FL-1349 summaries */
+  failureCauses?: RunFailureCauseCount[];
 };
 
 type HoldReason = 'setup' | 'paused' | 'parked';
@@ -137,6 +143,8 @@ export type RunAggregate = {
   heldReasons: Set<'setup' | 'paused'>;
   dependencyReasons: RunReason[];
   deferred: number;
+  /** stored with a finished run's summary */
+  failureCauses?: RunFailureCauseCount[];
 };
 
 const LIVE = new Set(['pending', 'waiting', 'active']);
@@ -370,6 +378,7 @@ const fromSummary = (summary: RunSummary): RunAggregate => ({
   heldReasons: new Set(),
   dependencyReasons: [],
   deferred: 0,
+  failureCauses: summary.failureCauses,
 });
 
 export const runState = (
@@ -436,6 +445,13 @@ async function toRead(db: Kysely<any>, run: Header, around: Surroundings): Promi
     aggregate.stageTotals.active === 0 &&
     (aggregate.lastProgressAt ?? run.createdAt).getTime() < Date.now() - 2 * 60_000;
   const canRelease = aggregate.heldReasons.size > 0 && (await importActivated(db, run.kind));
+  const failures = aggregate.stageTotals.failed + aggregate.stageTotals.needsAttention;
+  const failureCauses =
+    run.summarized && run.summary
+      ? aggregate.failureCauses
+      : failures > 0
+        ? causeCounts(await summarizeRunFailures(db, run.id, aggregate.countsPhotos))
+        : undefined;
   return {
     id: run.id,
     kind: run.kind,
@@ -453,8 +469,110 @@ async function toRead(db: Kysely<any>, run: Header, around: Surroundings): Promi
     canRelease,
     countsPhotos: aggregate.countsPhotos,
     failedQueues: aggregate.failedQueues,
+    ...(failureCauses && { failureCauses }),
   };
 }
+
+export type RunFailureGroup = {
+  cause: RunFailureCause;
+  /** photos that still need a look */
+  count: number;
+  /** photos whose every failed task was stopped ("Stop trying") */
+  stopped: number;
+  /** photos needing a look whose damaged file a Library care fix already repaired or found again */
+  repaired: number;
+  queues: string[];
+  /** up to three external libraries, for the drive cause */
+  libraries: string[];
+};
+
+/** Library care's fixed-for-you states (`FileProblemRowSchema.fixState`). */
+const FIXED_STATES = ['repaired', 'part-saved', 'found-again', 'restored'];
+
+const failedColumns = sql`coalesce(j."rootItemKey", j.id::text) root, j.id "jobId", j.name, j.queue, j.error,
+  j.sensitive, case when pg_input_is_valid(j."rootItemKey", 'uuid') then j."rootItemKey"::uuid end "assetId"`;
+/**
+ * A run's failed tasks of photos: their keys from the progress index alone ("runId","rootItemKey",name,state), then
+ * the tasks by those keys. The state test is written so no index can answer it (`is true`): on a server with few
+ * failures the planner would otherwise find the run by reading every failed job of every run through the queue-state
+ * index; this way the run's own index entries are read and the state is checked in them, without the heap.
+ */
+const failedPhotoTasks = (runId: string) => sql`with keys as materialized (
+    select distinct k."rootItemKey", k.name, k.state from job k
+    where k."runId" = ${runId}::uuid and k."rootItemKey" is not null
+      and (k.state in ('failed','needs_attention')) is true
+  ) select ${failedColumns} from keys k cross join lateral (select * from job j where j."runId" = ${runId}::uuid
+    and j."rootItemKey" = k."rootItemKey" and j.name = k.name and j.state = k.state) j`;
+/** A run that works on something other than photos: each failed task is its own item. */
+const failedTasks = (runId: string) => sql`select ${failedColumns} from job j
+  where j."runId" = ${runId}::uuid and j.state in ('failed','needs_attention')`;
+
+/**
+ * FL-1349: each failed or needs-attention task of a run with its photo's cause. Read from the run's progress index
+ * (`"runId"` and the two states), then one indexed lookup each into asset, asset_health (unique per asset and
+ * category) and asset_processing_failure (its primary key). A photo's cause is its most telling task's
+ * (`run-failure-cause.ts`), from the tasks not stopped; a photo whose every failed task was stopped is `stopped`.
+ * Without photos (`countsPhotos` false) each task is its own item.
+ */
+export const runFailureTasks = (runId: string, countsPhotos: boolean) => sql<{
+  root: string;
+  jobId: string;
+  name: string;
+  queue: string;
+  error: string | null;
+  sensitive: boolean;
+  assetId: string | null;
+  libraryId: string | null;
+  rank: number;
+  stopped: boolean;
+  fixed: boolean;
+  photoRank: number;
+  photoStopped: boolean;
+}>`with failed as (${countsPhotos ? failedPhotoTasks(runId) : failedTasks(runId)}), tasks as (
+    select f.*, a."libraryId", ${failureCauseRank({
+      error: sql`f.error`,
+      external: sql`a."libraryId" is not null`,
+      offline: sql`a."isOffline"`,
+      finding: sql`h.finding`,
+    })} rank,
+      coalesce(p."dismissedAt" is not null, false) stopped, coalesce(c.fixed, false) fixed
+    from failed f
+    left join asset a on a.id = f."assetId"
+    left join lateral (select h.category::text finding from asset_health h where h."assetId" = a.id
+      and h.category in ('missing','corrupt') and h."resolvedAt" is null and h."dismissedAt" is null
+      order by h.category = 'missing' desc limit 1) h on true
+    left join lateral (select c.evidence->>'fixState' = any(${FIXED_STATES}::text[]) fixed from asset_health c
+      where c."assetId" = a.id and c.category = 'corrupt') c on true
+    left join asset_processing_failure p on p."assetId" = a.id and p.step = f.name
+  )
+  select t.*, coalesce(min(rank) filter (where not stopped) over photo, min(rank) over photo) "photoRank",
+    bool_and(stopped) over photo "photoStopped"
+  from tasks t window photo as (partition by root)`;
+
+/** A run's left-over photos grouped by cause, causes in order; the counts with the stopped ones add up to its failed photos. */
+export const runFailureGroupsQuery = (runId: string, countsPhotos: boolean) => sql<RunFailureGroup>`
+  select ${failureCauseName(sql`t."photoRank"`)} cause,
+    count(distinct t.root) filter (where not t."photoStopped")::int count,
+    count(distinct t.root) filter (where t."photoStopped")::int stopped,
+    count(distinct t.root) filter (where t.fixed and not t."photoStopped")::int repaired,
+    array_agg(distinct t.queue order by t.queue) queues,
+    case when t."photoRank" = 1 then coalesce((array_agg(distinct l.name order by l.name)
+      filter (where l.name is not null))[1:3], '{}') else '{}' end libraries
+  from (${runFailureTasks(runId, countsPhotos)}) t left join library l on l.id = t."libraryId"
+  group by t."photoRank" order by t."photoRank"`;
+
+export async function summarizeRunFailures(
+  db: Kysely<any>,
+  runId: string,
+  countsPhotos = true,
+): Promise<RunFailureGroup[]> {
+  const { rows } = await runFailureGroupsQuery(runId, countsPhotos).execute(db);
+  return rows;
+}
+
+/** What a run's card and summary keep: the causes with photos still needing a look. */
+export const causeCounts = (groups: RunFailureGroup[]): RunFailureCauseCount[] =>
+  groups.filter((group) => group.count > 0).map(({ cause, count }) => ({ cause, count }));
 
 /** A stored summary is the run's counts while it was taken at the run's current `finishedAt`. */
 const SUMMARIZED = sql<boolean>`coalesce(r."finishedAt" is not null and r.summary->>'complete' = 'true'
