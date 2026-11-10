@@ -5,12 +5,21 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type {
+  FileProblemDto,
+  FileProblemFolderDto,
+  FileProblemListQueryDto,
+  FileProblemLookInDto,
+  FileProblemPageDto,
+  FileProblemRowDto,
+} from 'src/dtos/file-problem.dto.js';
 import type {
   LostOriginalsCheckedDto,
   LostOriginalsQueryDto,
@@ -19,7 +28,7 @@ import type {
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { LostOriginalRestore } from 'src/services/cloud-backup-lost-original.js';
 import type { JobOf } from 'src/types.js';
-import type { FindingStep, FixState, NewFileStep } from 'src/utils/file-steps.js';
+import type { FileStep, FindingStep, FixState, NewFileStep } from 'src/utils/file-steps.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -83,12 +92,14 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
+  FileProblemRecord,
   MediaHealthAsset,
   MediaHealthCandidate,
   MediaHealthFinding,
   MediaHealthRepository,
   MediaHealthRun,
   ReplaceRepairedOriginal,
+  UndoFileFix,
   UpsertMediaHealthFinding,
 } from 'src/repositories/media-health.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -128,6 +139,7 @@ import { JPEG_REPAIR_EXTENSIONS, type JpegRepairResult } from 'src/utils/jpeg-re
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
+  MediaHealthLocateSnapshot,
   MediaHealthOperationSnapshot,
   MediaHealthRunState,
   MediaHealthScanResult,
@@ -213,6 +225,36 @@ const backupFacts = ({ since }: LostOriginalRestore) => ({ backup: 'cloud', ...(
 
 const isOpenFinding = (finding: Pick<MediaHealthFinding, 'resolvedAt' | 'dismissedAt'>) =>
   !finding.resolvedAt && !finding.dismissedAt;
+
+/** Damaged and missing files (FL-1337 ruling 1): the fix states of Fixed for you, and of Needs you. */
+const FIXED_FILE_STATES: ReadonlySet<string> = new Set<FixState>(['repaired', 'part-saved', 'found-again', 'restored']);
+const NEEDS_FILE_STATES: ReadonlySet<string> = new Set<FixState>([
+  'missing',
+  'waiting-phone',
+  'cant-repair',
+  'couldnt-check',
+]);
+/** Review Focus 3: the photo is not as the fix left it, so Undo changes nothing. */
+const UNDO_CHANGED = "This photo changed since Frameleaf fixed it, so it can't be undone.";
+const NOTHING_TO_UNDO = 'There is nothing to undo for this photo.';
+const OWNER_ONLY = "Only the photo's owner can do that.";
+/** Facts kept for the server's own bookkeeping, never sent: which session reported, and the app's device id. */
+const UNSHOWN_FACTS: ReadonlySet<string> = new Set(['session', 'deviceId']);
+const shownFacts = (facts: Record<string, unknown> | null | undefined) =>
+  Object.fromEntries(Object.entries(facts ?? {}).filter(([key]) => !UNSHOWN_FACTS.has(key)));
+/** One fix as Undo reads it from the step that recorded it (FL-1337, design §5). */
+type FixToUndo = {
+  kind: 'repair' | 'relink' | 'restore';
+  stepId: string;
+  /** The file the photo used before the fix. */
+  previousPath: string;
+  /** The photo's file right after the fix, and its checksum (hex) when recorded. */
+  originalPath: string;
+  checksum?: string;
+  /** A restore: where the changed file that was at the photo's path was moved aside. */
+  retainedPath?: string;
+};
+const UNDO_KINDS: ReadonlySet<string> = new Set(['repair', 'relink', 'restore']);
 
 /** A validation that could not reach a verdict (busy, timed out, out of resources): no change this time. */
 type BusyValidation = { busy: true; candidate: CandidateValidation };
@@ -891,7 +933,11 @@ export class MediaHealthService {
    * are an administrator's; so are other accounts' findings. Nothing is changed but the candidate
    * list: relinking or recovering is a separate, reviewed step.
    */
-  async locateMissing(auth: AuthDto, dto: MediaHealthLocateDto): Promise<MediaHealthScanResponseDto> {
+  async locateMissing(
+    auth: AuthDto,
+    dto: MediaHealthLocateDto,
+    lookIn?: MediaHealthLocateSnapshot['lookIn'],
+  ): Promise<MediaHealthScanResponseDto> {
     const findings = await this.findingsFor(auth, dto.ids);
     const eligible = findings.filter(
       (finding) =>
@@ -939,6 +985,7 @@ export class MediaHealthService {
         findingIds: searchable.map(({ id }) => id),
         rootIds,
         anyOwner,
+        ...(lookIn && { lookIn }),
       };
       try {
         const operation = await this.createHealthOperation(auth.user.id, snapshot, searchable.length);
@@ -2113,6 +2160,407 @@ export class MediaHealthService {
       deviceId,
       phones: phones.map((phone) => phone.deviceId),
     });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Damaged and missing files (FL-1337, design §5 and §7)               */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * One page of a tab of Damaged and missing files. A member sees their own problems; an administrator
+   * every account's, another account's without its picture and with only Try again to press. Hidden content
+   * and Locked photos follow the reader's privacy, so another account's Locked photo is never listed, and
+   * the reader's own only in their unlocked session. Partners and shared links see none.
+   */
+  async listFileProblems(auth: AuthDto, { tab, take, skip }: FileProblemListQueryDto): Promise<FileProblemPageDto> {
+    const scope = { tab, ownerId: this.fileProblemOwner(auth), privacy: this.privacyFor(auth) };
+    const [rows, total] = await Promise.all([
+      this.mediaHealthRepository.listFileProblems({ ...scope, take, skip }),
+      this.mediaHealthRepository.countFileProblems(scope),
+    ]);
+    return { items: rows.map((row) => this.fileProblemRow(auth, row)), total };
+  }
+
+  /** One problem and its history, oldest first, open or closed (Review Focus 5), as the list shows it. */
+  async getFileProblem(auth: AuthDto, id: string): Promise<FileProblemDto> {
+    const record = await this.fileProblemFor(auth, id);
+    const steps = await this.mediaHealthRepository.listSteps(record.id);
+    return {
+      ...this.fileProblemRow(auth, record),
+      steps: steps.map(({ at, step, outcome, facts }) => ({
+        at: asDateTimeString(at),
+        step,
+        outcome,
+        facts: shownFacts(facts),
+      })),
+    };
+  }
+
+  /**
+   * The folders Look in a folder may search, by name: library storage and the caller's own external
+   * libraries; for an administrator also every external library and the recovery folders and drives added
+   * in Frameleaf Manager. Only folders the server can already see.
+   */
+  async getFileProblemFolders(auth: AuthDto): Promise<FileProblemFolderDto[]> {
+    const { roots } = await this.getRoots(auth);
+    return roots.map(({ id, label }) => ({ id, name: label }));
+  }
+
+  /**
+   * Undo a fix, one photo at a time, the owner only (design §5). The fix is the newest step carrying what
+   * Undo needs; nothing is undone when the photo changed since (Review Focus 3), and nothing is deleted:
+   * - a repair: the photo is the kept damaged file again, and automatic repair never redoes it;
+   * - a relink: the photo goes back to the file it used, missing there or the changed file kept aside;
+   * - a restore: the restored file moves aside into Library care, and a changed file it replaced comes back.
+   * The problem goes back to Needs you, with who undid it.
+   */
+  async undoFileProblemFix(auth: AuthDto, id: string): Promise<FileProblemDto> {
+    const record = await this.ownFileProblem(auth, id);
+    const fixState = this.fixStateOf(record);
+    if (record.dismissedAt || !record.resolvedAt || !fixState || !FIXED_FILE_STATES.has(fixState)) {
+      throw new BadRequestException(NOTHING_TO_UNDO);
+    }
+    const fix = this.fixToUndo(record, await this.mediaHealthRepository.listSteps(record.id));
+    if (!fix) {
+      throw new BadRequestException(NOTHING_TO_UNDO);
+    }
+    const [asset] = await this.mediaHealthRepository.getAssets([record.assetId]);
+    // a repair that stopped before it recorded what Undo needs: its repaired file says what it left
+    const expectedChecksum = fix.checksum
+      ? Buffer.from(fix.checksum, 'hex')
+      : asset &&
+        (await this.cryptoRepository.hashFileMatching(fix.originalPath, asset.checksum).catch((): undefined => {}));
+    if (
+      !asset ||
+      asset.deletedAt ||
+      asset.ownerId !== auth.user.id ||
+      asset.originalPath !== fix.originalPath ||
+      !expectedChecksum ||
+      !asset.checksum.equals(expectedChecksum)
+    ) {
+      throw new ConflictException(UNDO_CHANGED);
+    }
+    const base = {
+      healthId: record.id,
+      assetId: asset.id,
+      ownerId: asset.ownerId,
+      stepId: fix.stepId,
+      expectedOriginalPath: asset.originalPath,
+      expectedChecksum,
+      status:
+        record.category === MediaHealthCategory.Missing
+          ? MediaHealthStatus.Missing
+          : MediaHealthStatus.CorruptConfirmed,
+      steps: [{ step: 'undone', outcome: 'info', facts: { by: auth.user.name } }] satisfies FindingStep[],
+    };
+    const result =
+      fix.kind === 'restore'
+        ? await this.undoRestore(record, asset, fix, base)
+        : await this.undoRelink(record, fix, base);
+    if (result === 'changed') {
+      throw new ConflictException(UNDO_CHANGED);
+    }
+    return this.getFileProblem(auth, id);
+  }
+
+  /** A repair or a relink is undone by pointing the photo back at the file it used; no file moves. */
+  private async undoRelink(
+    record: FileProblemRecord,
+    fix: FixToUndo,
+    base: Omit<UndoFileFix, 'evidence'>,
+  ): Promise<'undone' | 'changed'> {
+    let relinkTo: NonNullable<UndoFileFix['relinkTo']> = { path: fix.previousPath, takeChecksum: false };
+    let evidence: Record<string, unknown>;
+    if (fix.kind === 'repair') {
+      // the photo is the damaged file again: its checksum is that file's own, as when it was stored
+      const digests = await this.cryptoRepository.hashFileDigests(fix.previousPath).catch((): undefined => {});
+      if (!digests) {
+        throw new ConflictException("The damaged file Frameleaf kept isn't there any more, so this can't be undone.");
+      }
+      relinkTo = { path: fix.previousPath, digests, takeChecksum: true };
+      evidence = { fixState: 'cant-repair' satisfies FixState, partSaved: false, autoRepairDeclined: true };
+    } else if (record.category === MediaHealthCategory.Missing) {
+      // missing again where it was; the photo keeps its own checksum, which its copy matched
+      evidence = { fixState: 'missing' satisfies FixState, partSaved: false };
+    } else {
+      // the changed file kept aside is the photo's file again, and still not the one Frameleaf stored
+      if (!(await this.storageRepository.checkFileExists(fix.previousPath))) {
+        throw new ConflictException("The changed file Frameleaf kept isn't there any more, so this can't be undone.");
+      }
+      evidence = { fixState: 'cant-repair' satisfies FixState, partSaved: false };
+    }
+    try {
+      return await this.mediaHealthRepository.undoFix({ ...base, relinkTo, evidence });
+    } catch (error) {
+      if (isAssetChecksumConstraint(error)) {
+        throw new ConflictException("Another photo in this library is the same file, so this can't be undone.");
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * A restore put the original back at its own path: Undo moves it aside into the owner's Library care
+   * folder and puts back the changed file it replaced, if there was one. The files move only once the
+   * photo is proven unchanged, under the repository's lock, and go back where they were if the undo is not
+   * recorded. Never while the drive that keeps the copies is not there.
+   */
+  private async undoRestore(
+    record: FileProblemRecord,
+    asset: MediaHealthAsset,
+    fix: FixToUndo,
+    base: Omit<UndoFileFix, 'evidence'>,
+  ): Promise<'undone' | 'changed'> {
+    const extension = path.extname(asset.originalPath).toLowerCase();
+    const aside = path.join(
+      path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
+      RECOVERY_FOLDER,
+      `${asset.id}-${record.id}.restored${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`,
+    );
+    const libraries = await this.libraryRepository.getAll().catch(() => []);
+    if (!(await isFileRootReachable(this.storageRepository, aside, libraries))) {
+      throw new ConflictException("Frameleaf can't reach the drive that keeps its copies right now. Try again later.");
+    }
+    // the file at its path must still be the one the restore put there
+    const present = await this.cryptoRepository
+      .hashFileMatching(asset.originalPath, asset.checksum)
+      .catch((): undefined => {});
+    if (!present?.equals(asset.checksum)) {
+      throw new ConflictException(UNDO_CHANGED);
+    }
+    const { retainedPath } = fix;
+    const moved: Array<[string, string]> = [];
+    const move = async (from: string, to: string) => {
+      await retainFile(from, to);
+      moved.push([from, to]);
+    };
+    try {
+      return await this.mediaHealthRepository.undoFix({
+        ...base,
+        moveFiles: async () => {
+          await move(asset.originalPath, aside);
+          if (retainedPath) {
+            await move(retainedPath, asset.originalPath);
+          }
+        },
+        evidence: { fixState: (retainedPath ? 'cant-repair' : 'missing') satisfies FixState, partSaved: false },
+      });
+    } catch (error) {
+      for (const [from, to] of moved.toReversed()) {
+        await retainFile(to, from).catch((error_: unknown) =>
+          this.logger.warn(`Library care kept ${to} after an Undo that was not recorded: ${getErrorMessage(error_)}`),
+        );
+      }
+      this.logger.warn(`Library care could not undo the restore of ${asset.id}: ${getErrorMessage(error)}`);
+      throw new ServiceUnavailableException(
+        "Frameleaf couldn't undo this just now, so nothing was changed. Try again later.",
+      );
+    }
+  }
+
+  /** Keep a problem as it is (the owner only, from Needs you): it moves to Left as they are, and stays there. */
+  async keepFileProblem(auth: AuthDto, id: string): Promise<FileProblemDto> {
+    const record = await this.ownFileProblem(auth, id);
+    if (!this.needsYou(record)) {
+      throw new BadRequestException('Only a photo that still needs you can be kept as it is.');
+    }
+    // open, so a later check keeps the person's choice; it no longer waits for the shared search
+    const waiting = !!(record.evidence as Record<string, unknown> | null)?.searchPending;
+    const kept = await this.mediaHealthRepository.settleFinding({
+      healthId: record.id,
+      evidence: { fixState: 'left-as-is' satisfies FixState, ...(waiting && { searchPending: false }) },
+      steps: [{ step: 'kept-as-is', outcome: 'info' }],
+    });
+    if (!kept) {
+      throw new ConflictException('This photo changed meanwhile. Look at it again.');
+    }
+    return this.getFileProblem(auth, id);
+  }
+
+  /**
+   * Try again: the fix starts from the beginning, for the owner or an administrator. A repair someone undid
+   * stays declined, so it is never redone by itself; its owner repairs it with Repair….
+   */
+  async tryFileProblemAgain(auth: AuthDto, id: string): Promise<FileProblemDto> {
+    const record = await this.fileProblemFor(auth, id);
+    if (record.dismissedAt || record.assetDeletedAt) {
+      throw new BadRequestException('This photo was dismissed or is in the Trash, so there is nothing to try again.');
+    }
+    await this.jobRepository.queue({
+      name: JobName.MediaHealthFixAsset,
+      data: { id: record.assetId, from: 'person', attempt: 0 },
+    });
+    return this.getFileProblem(auth, id);
+  }
+
+  /**
+   * Look in a folder (the owner only): a one-off search by contents of one folder the owner may search, as a
+   * search Activity shows. It answers at once; when the search is done, `finishLookIn` records what it found
+   * and puts back the one exact copy, as a fix does.
+   */
+  async lookInFolderForFileProblem(
+    auth: AuthDto,
+    id: string,
+    { folderId }: FileProblemLookInDto,
+  ): Promise<FileProblemDto> {
+    const record = await this.ownFileProblem(auth, id);
+    if (!this.needsYou(record)) {
+      throw new BadRequestException('Frameleaf only looks for a photo that still needs you.');
+    }
+    if (record.category !== MediaHealthCategory.Missing && record.status !== MediaHealthStatus.CorruptConfirmed) {
+      // a file that arrived damaged: every exact copy has the same damage
+      throw new BadRequestException(
+        'Frameleaf can only look for an exact copy of a missing photo, or of one that changed.',
+      );
+    }
+    const folder = (await this.getFileProblemFolders(auth)).find((candidate) => candidate.id === folderId);
+    if (!folder) {
+      throw new ForbiddenException("That folder isn't one you can search.");
+    }
+    await this.locateMissing(auth, { ids: [record.id], rootIds: [folder.id] }, { folder: folder.name });
+    return this.getFileProblem(auth, id);
+  }
+
+  /**
+   * A Look in a folder search is complete: each problem still open gets `searched-copy` with the folder's
+   * name, and the one exact copy Frameleaf may use by itself is put back (`put-back`, with its Undo), never
+   * for a Locked photo or from a recovery folder.
+   */
+  async finishLookIn(snapshot: MediaHealthLocateSnapshot): Promise<void> {
+    if (!snapshot.lookIn) {
+      return;
+    }
+    const facts = { folder: snapshot.lookIn.folder };
+    for (const finding of await this.mediaHealthRepository.getByIds(snapshot.findingIds, snapshot.userId)) {
+      if (!isOpenFinding(finding)) {
+        continue;
+      }
+      const [asset] = await this.mediaHealthRepository.getAssets([finding.assetId]);
+      if (!asset || asset.deletedAt) {
+        continue;
+      }
+      const search = await this.copiesFound(finding);
+      if (search.copies === 0) {
+        await this.mediaHealthRepository.appendSteps(
+          this.stepsOf(finding, [{ step: 'searched-copy', outcome: 'not-found', facts }]),
+        );
+        continue;
+      }
+      const found: FindingStep = { step: 'searched-copy', outcome: 'ok', facts: { ...facts, copies: search.copies } };
+      if (!(await this.putBackCopy(asset, finding, search.verified, [found]))) {
+        await this.mediaHealthRepository.appendSteps(this.stepsOf(finding, [found]));
+      }
+    }
+  }
+
+  /** Remove goes through the Trash as usual (design §7): each open problem of a trashed photo says so. */
+  @OnEvent({ name: 'AssetTrashAll' })
+  async onAssetTrashAll({ assetIds, userId }: ArgOf<'AssetTrashAll'>): Promise<void> {
+    try {
+      const user = await this.userRepository.get(userId, {});
+      await this.mediaHealthRepository.recordRemoved(assetIds, user?.name ? { by: user.name } : {});
+    } catch (error) {
+      this.logger.warn(
+        `Library care could not record that ${assetIds.length} photos were removed: ${getErrorMessage(error)}`,
+      );
+    }
+  }
+
+  /** Whose problems a reader sees: their own, or every account's for an administrator. */
+  private fileProblemOwner(auth: AuthDto): string | undefined {
+    return auth.user.isAdmin ? undefined : auth.user.id;
+  }
+
+  private async fileProblemFor(auth: AuthDto, id: string): Promise<FileProblemRecord> {
+    const record = await this.mediaHealthRepository.getFileProblem(
+      id,
+      this.fileProblemOwner(auth),
+      this.privacyFor(auth),
+    );
+    if (!record) {
+      throw new NotFoundException('Frameleaf has no record of this problem');
+    }
+    return record;
+  }
+
+  /** A problem only its owner may act on: Undo, Keep as it is and Look in a folder. */
+  private async ownFileProblem(auth: AuthDto, id: string): Promise<FileProblemRecord> {
+    const record = await this.fileProblemFor(auth, id);
+    if (record.ownerId !== auth.user.id) {
+      throw new ForbiddenException(OWNER_ONLY);
+    }
+    return record;
+  }
+
+  private fixStateOf(record: Pick<MediaHealthFinding, 'evidence'>): string | null {
+    const fixState = (record.evidence as Record<string, unknown> | null)?.fixState;
+    return typeof fixState === 'string' ? fixState : null;
+  }
+
+  /** In Needs you: open, its photo in the library, and no fix settled it another way. */
+  private needsYou(record: FileProblemRecord): boolean {
+    const fixState = this.fixStateOf(record);
+    return (
+      !record.resolvedAt &&
+      !record.dismissedAt &&
+      !record.assetDeletedAt &&
+      (fixState === null || NEEDS_FILE_STATES.has(fixState))
+    );
+  }
+
+  /** A row as the reader may see it: another account's carries no picture and nothing to do but Try again. */
+  private fileProblemRow(auth: AuthDto, record: FileProblemRecord): FileProblemRowDto {
+    const own = record.ownerId === auth.user.id;
+    return {
+      id: record.id,
+      assetId: record.assetId,
+      ownerId: record.ownerId,
+      ownerName: record.ownerName,
+      originalFileName: record.originalFileName,
+      category: record.category,
+      fixState: this.fixStateOf(record),
+      partSaved: (record.evidence as Record<string, unknown> | null)?.partSaved === true,
+      line: record.line && {
+        step: record.line.step,
+        outcome: record.line.outcome,
+        facts: shownFacts(record.line.facts),
+      },
+      updatedAt: asDateTimeString(record.updatedAt),
+      pictureAllowed: own,
+      canAct: own,
+    };
+  }
+
+  /**
+   * The fix Undo would undo: the newest step carrying what Undo needs, unless an Undo came after it. A repair
+   * that stopped before it recorded its kept damaged file falls back on the file the problem still names.
+   */
+  private fixToUndo(record: FileProblemRecord, steps: FileStep[]): FixToUndo | undefined {
+    const last = steps.findLast(({ step, undo }) => !!undo || step === 'undone' || step === 'repaired');
+    if (!last || last.step === 'undone') {
+      return;
+    }
+    const text = (value: unknown) => (typeof value === 'string' && value !== '' ? value : undefined);
+    if (!last.undo) {
+      const retainedPath = text((record.evidence as Record<string, unknown> | null)?.retainedPath);
+      return retainedPath
+        ? { kind: 'repair', stepId: last.id, previousPath: retainedPath, originalPath: record.originalPath }
+        : undefined;
+    }
+    const kind = text(last.undo.kind);
+    const previousPath = text(last.undo.previousPath);
+    const originalPath = text(last.undo.originalPath);
+    if (!kind || !UNDO_KINDS.has(kind) || !previousPath || !originalPath) {
+      return;
+    }
+    return {
+      kind: kind as FixToUndo['kind'],
+      stepId: last.id,
+      previousPath,
+      originalPath,
+      checksum: text(last.undo.checksum),
+      retainedPath: text(last.undo.retainedPath),
+    };
   }
 
   /**

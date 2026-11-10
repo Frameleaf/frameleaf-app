@@ -1,6 +1,13 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { AssetStatus, AssetVisibility, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
+import {
+  AssetStatus,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  MediaHealthCategory,
+  MediaHealthSeverity,
+  MediaHealthStatus,
+} from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -1129,6 +1136,428 @@ describe(MediaHealthRepository.name, () => {
           },
         },
       ]);
+    });
+  });
+
+  describe('file problems (FL-1337)', () => {
+    const days = (count: number) => new Date(Date.now() - count * 24 * 60 * 60 * 1000);
+    /** One finding as a fix left it: its fix state, and when it was resolved or dismissed. */
+    const arrangeProblem = async (
+      sut: MediaHealthRepository,
+      asset: { id: string; originalPath: string },
+      state: {
+        category?: MediaHealthCategory;
+        evidence?: Record<string, unknown>;
+        resolvedAt?: Date | null;
+        dismissedAt?: Date | null;
+        updatedAt?: Date;
+      } = {},
+    ) => {
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        ...(state.category && { category: state.category }),
+        evidence: state.evidence ?? {},
+      });
+      assert.isDefined(finding);
+      await defaultDatabase
+        .updateTable('asset_health')
+        .set({ resolvedAt: state.resolvedAt ?? null, dismissedAt: state.dismissedAt ?? null })
+        .where('id', '=', finding.id)
+        .execute();
+      if (state.updatedAt) {
+        // the update trigger stamps updatedAt; a test sets the order it wants afterwards
+        await sql`ALTER TABLE asset_health DISABLE TRIGGER "asset_health_updatedAt"`.execute(defaultDatabase);
+        await defaultDatabase
+          .updateTable('asset_health')
+          .set({ updatedAt: state.updatedAt })
+          .where('id', '=', finding.id)
+          .execute();
+        await sql`ALTER TABLE asset_health ENABLE TRIGGER "asset_health_updatedAt"`.execute(defaultDatabase);
+      }
+      return finding;
+    };
+    const listed = async (
+      sut: MediaHealthRepository,
+      tab: 'needs' | 'fixed' | 'kept',
+      ownerId?: string,
+      privacy: { lockedOwnerId?: string } = {},
+    ) => (await sut.listFileProblems({ tab, ownerId, privacy, take: 50, skip: 0 })).map(({ id }) => id);
+
+    it('puts each problem in its tab, newest first, part-saved first among the fixed', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const photo = async () => (await ctx.newAsset({ ownerId: user.id })).result;
+      const fresh = await arrangeProblem(sut, await photo(), { updatedAt: days(3) });
+      const waiting = await arrangeProblem(sut, await photo(), {
+        evidence: { fixState: 'waiting-phone' },
+        updatedAt: days(1),
+      });
+      const cantRepair = await arrangeProblem(sut, await photo(), {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'cant-repair' },
+        updatedAt: days(2),
+      });
+      const repaired = await arrangeProblem(sut, await photo(), {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'repaired' },
+        resolvedAt: days(1),
+      });
+      const partSaved = await arrangeProblem(sut, await photo(), {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'part-saved', partSaved: true },
+        resolvedAt: days(5),
+      });
+      const restored = await arrangeProblem(sut, await photo(), {
+        evidence: { fixState: 'restored' },
+        resolvedAt: days(3),
+      });
+      // fixed too long ago, dismissed, or in the trash: in no tab
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'found-again' }, resolvedAt: days(31) });
+      await arrangeProblem(sut, await photo(), { dismissedAt: days(1) });
+      await arrangeProblem(sut, await photo(), {
+        evidence: { fixState: 'repaired' },
+        resolvedAt: days(1),
+        dismissedAt: days(1),
+      });
+      const { result: trashed } = await ctx.newAsset({
+        ownerId: user.id,
+        deletedAt: new Date(),
+        status: AssetStatus.Trashed,
+      });
+      await arrangeProblem(sut, trashed);
+      const kept = await arrangeProblem(sut, await photo(), {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'left-as-is' },
+      });
+      const keptSettled = await arrangeProblem(sut, await photo(), {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'left-as-is' },
+        resolvedAt: days(40),
+        updatedAt: days(40),
+      });
+
+      await expect(listed(sut, 'needs', user.id)).resolves.toEqual([waiting.id, cantRepair.id, fresh.id]);
+      await expect(listed(sut, 'fixed', user.id)).resolves.toEqual([partSaved.id, repaired.id, restored.id]);
+      await expect(listed(sut, 'kept', user.id)).resolves.toEqual([kept.id, keptSettled.id]);
+      await expect(sut.countFileProblems({ tab: 'needs', ownerId: user.id, privacy: {} })).resolves.toBe(3);
+      await expect(sut.countFileProblems({ tab: 'fixed', ownerId: user.id, privacy: {} })).resolves.toBe(3);
+      await expect(sut.countFileProblems({ tab: 'kept', ownerId: user.id, privacy: {} })).resolves.toBe(2);
+      // a page at a time
+      await expect(
+        sut.listFileProblems({ tab: 'needs', ownerId: user.id, privacy: {}, take: 1, skip: 1 }),
+      ).resolves.toEqual([expect.objectContaining({ id: cantRepair.id })]);
+    });
+
+    it('tells each row’s story from its newest step, apart from the damaged file kept beside a repair', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser({ name: 'Taylor' });
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const finding = await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'part-saved', partSaved: true },
+        resolvedAt: days(1),
+      });
+      const { result: quiet } = await ctx.newAsset({ ownerId: user.id });
+      const untold = await arrangeProblem(sut, quiet);
+      await sut.appendSteps([
+        {
+          healthId: finding.id,
+          assetId: asset.id,
+          step: 'wont-open',
+          outcome: 'failed',
+          facts: { cause: 'cut-short' },
+        },
+        {
+          healthId: finding.id,
+          assetId: asset.id,
+          step: 'repaired',
+          outcome: 'ok',
+          facts: { method: 'rebuilt', percentSaved: 92 },
+        },
+        {
+          healthId: finding.id,
+          assetId: asset.id,
+          step: 'kept-damaged',
+          outcome: 'info',
+          undo: { kind: 'repair', previousPath: '/x' },
+        },
+      ]);
+
+      const [row] = await sut.listFileProblems({ tab: 'fixed', ownerId: user.id, privacy: {}, take: 50, skip: 0 });
+      expect(row).toMatchObject({
+        id: finding.id,
+        assetId: asset.id,
+        ownerId: user.id,
+        ownerName: 'Taylor',
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'part-saved', partSaved: true },
+        line: { step: 'repaired', outcome: 'ok', facts: { method: 'rebuilt', percentSaved: 92 } },
+      });
+      await expect(sut.getFileProblem(untold.id, user.id, {})).resolves.toMatchObject({ id: untold.id, line: null });
+    });
+
+    it('lists a member’s own problems only, and never another account’s Locked photo to anyone', async () => {
+      const { ctx, sut } = setup();
+      const [{ user: member }, { user: other }, { user: admin }] = await Promise.all([
+        ctx.newUser(),
+        ctx.newUser(),
+        ctx.newUser({ isAdmin: true }),
+      ]);
+      const { result: own } = await ctx.newAsset({ ownerId: member.id });
+      const { result: theirs } = await ctx.newAsset({ ownerId: other.id });
+      const { result: theirsLocked } = await ctx.newAsset({ ownerId: other.id, visibility: AssetVisibility.Locked });
+      const { result: adminLocked } = await ctx.newAsset({ ownerId: admin.id, visibility: AssetVisibility.Locked });
+      const ownProblem = await arrangeProblem(sut, own);
+      const theirProblem = await arrangeProblem(sut, theirs);
+      const theirLockedProblem = await arrangeProblem(sut, theirsLocked);
+      const adminLockedProblem = await arrangeProblem(sut, adminLocked);
+
+      await expect(listed(sut, 'needs', member.id)).resolves.toEqual([ownProblem.id]);
+      await expect(sut.getFileProblem(theirProblem.id, member.id, {})).resolves.toBeUndefined();
+
+      // an administrator reads every account, but Locked photos only their own, in their unlocked session
+      const everyone = await listed(sut, 'needs', undefined, {});
+      expect(everyone).toEqual(expect.arrayContaining([ownProblem.id, theirProblem.id]));
+      expect(everyone).not.toContain(theirLockedProblem.id);
+      expect(everyone).not.toContain(adminLockedProblem.id);
+      const unlocked = await listed(sut, 'needs', undefined, { lockedOwnerId: admin.id });
+      expect(unlocked).toContain(adminLockedProblem.id);
+      expect(unlocked).not.toContain(theirLockedProblem.id);
+      await expect(sut.getFileProblem(theirLockedProblem.id, undefined, { lockedOwnerId: admin.id })).resolves.toBe(
+        undefined,
+      );
+      await expect(sut.countFileProblems({ tab: 'needs', ownerId: other.id, privacy: {} })).resolves.toBe(1);
+    });
+
+    /** A repaired photo, as a fix leaves it: the repaired file in use, the damaged one kept, and the step Undo reads. */
+    const arrangeRepaired = async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const damagedSha1 = Buffer.alloc(20, 7);
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id, checksum: damagedSha1 });
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+      });
+      assert.isDefined(finding);
+      const repairedPath = `/data/upload/${user.id}/.library-care/${asset.id}-${finding.id}-01234567.jpg`;
+      const keptPath = `/data/upload/${user.id}/.library-care/${asset.id}-${finding.id}.damaged.jpg`;
+      const repaired = { sha1: Buffer.alloc(20, 8), sha256: Buffer.alloc(32, 9), sizeInBytes: 50 };
+      await expect(
+        sut.replaceRepairedOriginal({
+          expectedUpdateId: asset.updateId,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve(repaired),
+          assetId: asset.id,
+          ownerId: user.id,
+          healthId: finding.id,
+          expectedOriginalPath: asset.originalPath,
+          expectedChecksum: damagedSha1,
+          originalPath: repairedPath,
+          originalFileName: asset.originalFileName,
+          ...repaired,
+          fileModifiedAt: new Date(),
+          evidence: { fixState: 'part-saved', partSaved: true },
+          steps: [{ step: 'repaired', outcome: 'ok', facts: { method: 'rebuilt', percentSaved: 92 } }],
+        }),
+      ).resolves.toBe(true);
+      await sut.setRetainedPath(finding.id, keptPath, [
+        {
+          step: 'kept-damaged',
+          outcome: 'info',
+          undo: {
+            kind: 'repair',
+            previousPath: keptPath,
+            originalPath: repairedPath,
+            checksum: repaired.sha256.toString('hex'),
+          },
+        },
+      ]);
+      const fixStep = (await sut.listSteps(finding.id)).find(({ step }) => step === 'kept-damaged')!;
+      const damaged = { sha1: damagedSha1, sha256: Buffer.alloc(32, 7), sizeInBytes: 40 };
+      const undo = {
+        healthId: finding.id,
+        assetId: asset.id,
+        ownerId: user.id,
+        stepId: fixStep.id,
+        expectedOriginalPath: repairedPath,
+        expectedChecksum: repaired.sha256,
+        relinkTo: { path: keptPath, digests: damaged, takeChecksum: true },
+        status: MediaHealthStatus.CorruptConfirmed,
+        evidence: { fixState: 'cant-repair', partSaved: false, autoRepairDeclined: true },
+        steps: [{ step: 'undone' as const, outcome: 'info' as const, facts: { by: user.name } }],
+      };
+      const assetRow = async () =>
+        defaultDatabase
+          .selectFrom('asset')
+          .select(['originalPath', 'checksum', 'checksumAlgorithm', 'physicalOriginalFileId'])
+          .where('id', '=', asset.id)
+          .executeTakeFirstOrThrow();
+      return { ctx, sut, user, asset, finding, repairedPath, keptPath, damaged, undo, assetRow };
+    };
+
+    it('undoFix relinks and records the step in one transaction', async () => {
+      const { ctx, sut, user, asset, finding, repairedPath, keptPath, damaged, undo, assetRow } =
+        await arrangeRepaired();
+
+      // another photo of the same account already has the damaged file's checksum: the relink fails, and
+      // with it every other write of the undo
+      const { result: twin } = await ctx.newAsset({ ownerId: user.id, checksum: damaged.sha256 });
+      await expect(sut.undoFix(undo)).rejects.toThrow();
+      await expect(assetRow()).resolves.toMatchObject({ originalPath: repairedPath });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({ status: MediaHealthStatus.Resolved, resolvedAt: expect.any(Date) }),
+      ]);
+      expect((await sut.listSteps(finding.id)).map(({ step }) => step)).toEqual(['repaired', 'kept-damaged']);
+
+      await defaultDatabase.deleteFrom('asset').where('id', '=', twin.id).execute();
+      await expect(sut.undoFix(undo)).resolves.toBe('undone');
+
+      const relinked = await assetRow();
+      expect(relinked).toMatchObject({
+        originalPath: keptPath,
+        checksum: damaged.sha256,
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+      });
+      const physical = await defaultDatabase
+        .selectFrom('physical_file')
+        .selectAll()
+        .where('id', '=', relinked.physicalOriginalFileId!)
+        .executeTakeFirstOrThrow();
+      expect(physical).toMatchObject({ path: keptPath, checksum: damaged.sha256, canonicalAssetId: asset.id });
+      await expect(sut.getAssetChecksums([asset.id])).resolves.toEqual([
+        expect.objectContaining({ sha1: damaged.sha1, sha256: damaged.sha256, sizeInBytes: 40 }),
+      ]);
+      // reopened in Needs you, never repaired again by itself
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          status: MediaHealthStatus.CorruptConfirmed,
+          originalPath: keptPath,
+          resolvedAt: null,
+          evidence: expect.objectContaining({ fixState: 'cant-repair', partSaved: false, autoRepairDeclined: true }),
+        }),
+      ]);
+      await expect(listed(sut, 'needs', user.id)).resolves.toEqual([finding.id]);
+      await expect(sut.listSteps(finding.id)).resolves.toMatchObject([
+        { step: 'repaired' },
+        { step: 'kept-damaged' },
+        { step: 'undone', outcome: 'info', facts: { by: user.name }, undo: null },
+      ]);
+      // the repaired file keeps its record: it is still there, and nothing deleted it
+      await expect(
+        defaultDatabase.selectFrom('physical_file').select('path').where('path', '=', repairedPath).execute(),
+      ).resolves.toHaveLength(1);
+
+      // undone once: a second undo finds the photo changed
+      await expect(sut.undoFix(undo)).resolves.toBe('changed');
+    });
+
+    it('undoFix changes nothing once the photo changed since the fix', async () => {
+      const { sut, asset, finding, repairedPath, undo, assetRow } = await arrangeRepaired();
+      const unchanged = async () => {
+        await expect(assetRow()).resolves.toMatchObject({ originalPath: repairedPath });
+        await expect(sut.getByIds([finding.id])).resolves.toEqual([
+          expect.objectContaining({ status: MediaHealthStatus.Resolved }),
+        ]);
+        expect((await sut.listSteps(finding.id)).map(({ step }) => step)).not.toContain('undone');
+      };
+
+      // re-uploaded or replaced: not the file or the checksum the repair left
+      await expect(sut.undoFix({ ...undo, expectedOriginalPath: '/data/upload/elsewhere.jpg' })).resolves.toBe(
+        'changed',
+      );
+      await expect(sut.undoFix({ ...undo, expectedChecksum: Buffer.alloc(32, 1) })).resolves.toBe('changed');
+      await unchanged();
+
+      // an edit saved after the repair
+      await sql`INSERT INTO asset_edit ("assetId", action, parameters, sequence)
+        VALUES (${asset.id}::uuid, 'rotate', '{"angle":90}'::jsonb, 0)`.execute(defaultDatabase);
+      await expect(sut.undoFix(undo)).resolves.toBe('changed');
+      await unchanged();
+
+      // an edit removed after it counts too
+      await defaultDatabase.deleteFrom('asset_edit').where('assetId', '=', asset.id).execute();
+      await expect(sut.undoFix(undo)).resolves.toBe('changed');
+      await unchanged();
+    });
+
+    it('undoFix leaves a fix that a later fix or an undo replaced', async () => {
+      const { sut, asset, finding, undo } = await arrangeRepaired();
+      await sut.appendSteps([
+        { healthId: finding.id, assetId: asset.id, step: 'undone', outcome: 'info', facts: { by: 'someone' } },
+      ]);
+
+      await expect(sut.undoFix(undo)).resolves.toBe('changed');
+    });
+
+    it('undoFix of a restore moves its files under the lock, and reopens the problem', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id, checksum: Buffer.alloc(20, 3) });
+      const finding = await arrangeProblem(sut, asset, { evidence: { fixState: 'restored' }, resolvedAt: days(1) });
+      await sut.appendSteps([
+        {
+          healthId: finding.id,
+          assetId: asset.id,
+          step: 'restored',
+          outcome: 'ok',
+          undo: { kind: 'restore', previousPath: asset.originalPath },
+        },
+      ]);
+      const [fixStep] = await sut.listSteps(finding.id);
+      const restore = {
+        healthId: finding.id,
+        assetId: asset.id,
+        ownerId: user.id,
+        stepId: fixStep.id,
+        expectedOriginalPath: asset.originalPath,
+        expectedChecksum: Buffer.alloc(20, 3),
+        status: MediaHealthStatus.Missing,
+        evidence: { fixState: 'missing', partSaved: false },
+        steps: [{ step: 'undone' as const, outcome: 'info' as const, facts: { by: user.name } }],
+      };
+
+      // the files could not be moved: nothing is recorded
+      await expect(
+        sut.undoFix({ ...restore, moveFiles: () => Promise.reject(new Error('the drive went away')) }),
+      ).rejects.toThrow('the drive went away');
+      expect(await sut.listSteps(finding.id)).toHaveLength(1);
+
+      const moveFiles = vi.fn().mockResolvedValue(undefined);
+      await expect(sut.undoFix({ ...restore, moveFiles })).resolves.toBe('undone');
+
+      expect(moveFiles).toHaveBeenCalledTimes(1);
+      await expect(
+        defaultDatabase.selectFrom('asset').select(['originalPath', 'checksum']).where('id', '=', asset.id).execute(),
+      ).resolves.toEqual([{ originalPath: asset.originalPath, checksum: Buffer.alloc(20, 3) }]);
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          status: MediaHealthStatus.Missing,
+          resolvedAt: null,
+          evidence: expect.objectContaining({ fixState: 'missing' }),
+        }),
+      ]);
+      await expect(listed(sut, 'needs', user.id)).resolves.toEqual([finding.id]);
+    });
+
+    it('records that a photo with an open problem was removed', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: open } = await ctx.newAsset({ ownerId: user.id });
+      const { result: fixed } = await ctx.newAsset({ ownerId: user.id });
+      const openProblem = await arrangeProblem(sut, open);
+      const fixedProblem = await arrangeProblem(sut, fixed, {
+        evidence: { fixState: 'repaired' },
+        resolvedAt: days(1),
+      });
+
+      await sut.recordRemoved([open.id, fixed.id], { by: user.name });
+
+      await expect(sut.listSteps(openProblem.id)).resolves.toMatchObject([
+        { step: 'removed', outcome: 'info', facts: { by: user.name }, assetId: open.id },
+      ]);
+      await expect(sut.listSteps(fixedProblem.id)).resolves.toEqual([]);
     });
   });
 });

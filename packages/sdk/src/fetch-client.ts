@@ -10357,6 +10357,96 @@ export type MediaHealthBulkActionDto = {
     /** Media health finding IDs */
     ids: string[];
 };
+export type FileProblemLineDto = {
+    /** What the sentence needs: places searched, the part saved, a phone’s name, who did it… */
+    facts: {
+        [key: string]: any;
+    };
+    /** How it went: ok, not-found, failed, waiting or info */
+    outcome: string;
+    /** What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed */
+    step: string;
+};
+export type FileProblemRowDto = {
+    /** The photo or video */
+    assetId: string;
+    /** The caller may undo it, keep it, look in a folder for it or remove it: its owner only */
+    canAct: boolean;
+    category: MediaHealthCategory;
+    /** How the fixes left it. Fixed for you: repaired, part-saved, found-again, restored. Needs you: missing, waiting-phone, cant-repair, couldnt-check, or null when no fix has looked at it yet. Left as they are: left-as-is. */
+    fixState: string | null;
+    /** The problem */
+    id: string;
+    /** The step its one-line story is told from: the newest, apart from the damaged file kept beside a repair. Null while its history is empty. */
+    line: (FileProblemLineDto) | null;
+    /** The name of its file */
+    originalFileName: string;
+    /** Whose library it is in */
+    ownerId: string;
+    /** The name of the account whose library it is in */
+    ownerName: string;
+    /** A repair saved only part of the picture */
+    partSaved: boolean;
+    /** The caller may see its picture: false on another account’s file */
+    pictureAllowed: boolean;
+    /** When it last changed */
+    updatedAt: string;
+};
+export type FileProblemPageDto = {
+    /** One page of the tab, in its order */
+    items: FileProblemRowDto[];
+    /** How many the tab holds */
+    total: number;
+};
+export type FileProblemFolderDto = {
+    /** The folder, as Look in a folder names it */
+    id: string;
+    /** Its name */
+    name: string;
+};
+export type FileStepDto = {
+    /** When it happened */
+    at: string;
+    /** What the sentence needs: places searched, the part saved, a phone’s name, who did it… */
+    facts: {
+        [key: string]: any;
+    };
+    /** How it went: ok, not-found, failed, waiting or info */
+    outcome: string;
+    /** What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed */
+    step: string;
+};
+export type FileProblemDto = {
+    /** The photo or video */
+    assetId: string;
+    /** The caller may undo it, keep it, look in a folder for it or remove it: its owner only */
+    canAct: boolean;
+    category: MediaHealthCategory;
+    /** How the fixes left it. Fixed for you: repaired, part-saved, found-again, restored. Needs you: missing, waiting-phone, cant-repair, couldnt-check, or null when no fix has looked at it yet. Left as they are: left-as-is. */
+    fixState: string | null;
+    /** The problem */
+    id: string;
+    /** The step its one-line story is told from: the newest, apart from the damaged file kept beside a repair. Null while its history is empty. */
+    line: (FileProblemLineDto) | null;
+    /** The name of its file */
+    originalFileName: string;
+    /** Whose library it is in */
+    ownerId: string;
+    /** The name of the account whose library it is in */
+    ownerName: string;
+    /** A repair saved only part of the picture */
+    partSaved: boolean;
+    /** The caller may see its picture: false on another account’s file */
+    pictureAllowed: boolean;
+    /** Its history, oldest first */
+    steps: FileStepDto[];
+    /** When it last changed */
+    updatedAt: string;
+};
+export type FileProblemLookInDto = {
+    /** One of the folders the caller may search */
+    folderId: string;
+};
 export type MediaHealthLocateDto = {
     /** Media health finding IDs */
     ids: string[];
@@ -19533,6 +19623,13 @@ export type FaceSearchDto = {
     id: string;
     /** Also list faces the asset's owner hid (owner only) */
     withHidden?: boolean;
+};
+export type FileProblemListQueryDto = {
+    /** How many to skip */
+    skip?: number;
+    tab: FileProblemTab;
+    /** How many to list (1 to 200) */
+    take?: number;
 };
 export type FileTrashListQueryDto = {
     /** Page number, from 1 */
@@ -29266,6 +29363,107 @@ export function dismiss({ mediaHealthBulkActionDto }: {
         method: "POST",
         body: mediaHealthBulkActionDto
     })));
+}
+/**
+ * List damaged and missing files
+ */
+export function getFileProblems({ skip, tab, take }: {
+    skip?: number;
+    tab: FileProblemTab;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileProblemPageDto;
+    }>(`/media-health/files${QS.query(QS.explode({
+        skip,
+        tab,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * List the folders to look in for a file
+ */
+export function getFileProblemFolders(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileProblemFolderDto[];
+    }>("/media-health/files/folders", {
+        ...opts
+    }));
+}
+/**
+ * Get a damaged or missing file
+ */
+export function getFileProblem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Keep a damaged or missing file as it is
+ */
+export function keepFileProblem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}/keep`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Look in a folder for a missing or changed file
+ */
+export function lookInFolderForFileProblem({ id, fileProblemLookInDto }: {
+    id: string;
+    fileProblemLookInDto: FileProblemLookInDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}/look-in`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: fileProblemLookInDto
+    })));
+}
+/**
+ * Try to fix a damaged or missing file again
+ */
+export function tryFileProblemAgain({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}/try-again`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Undo what Frameleaf fixed
+ */
+export function undoFileProblemFix({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Locate missing media
@@ -40064,6 +40262,11 @@ export enum MediaHealthRepairMethod {
     Rebuilt = "rebuilt",
     Preview = "preview",
     Converted = "converted"
+}
+export enum FileProblemTab {
+    Needs = "needs",
+    Fixed = "fixed",
+    Kept = "kept"
 }
 export enum RawSupportSource {
     Sensor = "sensor",

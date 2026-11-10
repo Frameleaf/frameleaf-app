@@ -46,6 +46,7 @@ describe(MediaHealthOperationService.name, () => {
     restoreUntracked: any;
     setRunState: any;
     locateStep: any;
+    finishLookIn: any;
   };
 
   const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
@@ -70,6 +71,7 @@ describe(MediaHealthOperationService.name, () => {
       restoreUntracked: vi.fn().mockResolvedValue(undefined),
       setRunState: vi.fn().mockResolvedValue(undefined),
       locateStep: vi.fn(),
+      finishLookIn: vi.fn().mockResolvedValue(undefined),
     };
     sut = new MediaHealthOperationService(
       mocks.logger as never,
@@ -422,6 +424,26 @@ describe(MediaHealthOperationService.name, () => {
       await sut.run(operationOf(locateSnapshot, paused as never), 'token');
 
       expect(mediaHealth.locateStep).toHaveBeenCalledWith(locateSnapshot, continuation);
+    });
+
+    it('records what a Look in a folder found once its search is complete (FL-1337)', async () => {
+      const lookIn = { ...locateSnapshot, findingIds: ['health-1'], lookIn: { folder: 'Holiday drive' } };
+      mediaHealth.locateStep.mockResolvedValue({ checkedAssets: 1, foundAssets: 1 });
+
+      await sut.run(operationOf(lookIn), 'token');
+
+      expect(operations.complete).toHaveBeenCalled();
+      expect(mediaHealth.finishLookIn).toHaveBeenCalledWith(lookIn);
+    });
+
+    it('records nothing for a search nobody asked to look in a folder, or one that was cancelled', async () => {
+      mediaHealth.locateStep.mockResolvedValue({ checkedAssets: 2, foundAssets: 1 });
+      await sut.run(operationOf(locateSnapshot), 'token');
+
+      vi.mocked(operations.complete).mockResolvedValue(false);
+      await sut.run(operationOf({ ...locateSnapshot, lookIn: { folder: 'Holiday drive' } }), 'token');
+
+      expect(mediaHealth.finishLookIn).not.toHaveBeenCalled();
     });
   });
 

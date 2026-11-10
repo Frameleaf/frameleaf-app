@@ -393,6 +393,14 @@ export class MediaHealthOperationService {
         return;
       }
       this.logger.log(`Library Care ${snapshot.mode} ${id} finished (${counts.checked} checked)`);
+      if (snapshot.mode === 'locate' && snapshot.lookIn) {
+        // FL-1337: a person's Look in a folder says what it found, and puts back the one exact copy
+        await this.mediaHealth
+          .finishLookIn(snapshot)
+          .catch((error: unknown) =>
+            this.logger.warn(`Library Care search ${id} could not record what it found: ${bulkErrorMessage(error)}`),
+          );
+      }
       return;
     }
 
