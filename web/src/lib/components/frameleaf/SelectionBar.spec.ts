@@ -184,11 +184,17 @@ describe('one toolbar while selecting (September 24)', () => {
       await resize();
       expect(pill).not.toHaveClass('is-compact');
 
-      // A different count changes what has to fit, so the names are tried again.
+      // A different count changes what has to fit, so the names are tried again, and measured
+      // once drawn without waiting for a resize.
       layout.actionsTop = 50;
       await resize();
       expect(pill).toHaveClass('is-compact');
       await rerender({ count: 3 });
+      await tick();
+      expect(pill).toHaveClass('is-compact');
+      layout.actionsTop = 0;
+      await rerender({ count: 4 });
+      await tick();
       expect(pill).not.toHaveClass('is-compact');
     } finally {
       vi.unstubAllGlobals();
