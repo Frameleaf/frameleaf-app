@@ -260,7 +260,8 @@ export class AuthService extends BaseService {
     if (!user || !user.password || !isAuthenticated || user.importClaimPending) {
       this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
       if (user) {
-        await this.recordAccountEvent({
+        // FL-808: not awaited, so a registered email answers as fast as an unknown one (no timing oracle)
+        void this.recordAccountEvent({
           userId: user.id,
           action: AccountEventAction.SignInFailed,
           subject: user.name,

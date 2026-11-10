@@ -70,6 +70,10 @@ describe(AccountEventService.name, () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   describe('onNightlyDatabaseCleanup', () => {
     it('removes events older than 400 days', async () => {
       vi.useFakeTimers({ now: new Date('2026-11-09T00:00:00.000Z') });
@@ -79,7 +83,6 @@ describe(AccountEventService.name, () => {
 
       expect(ACCOUNT_EVENT_RETENTION_DAYS).toBe(400);
       expect(mocks.accountEvent.deleteOlderThan).toHaveBeenCalledWith(new Date('2025-10-05T00:00:00.000Z'));
-      vi.useRealTimers();
     });
   });
 });
