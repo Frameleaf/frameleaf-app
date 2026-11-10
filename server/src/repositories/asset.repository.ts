@@ -38,6 +38,7 @@ import {
   ImageEnrichmentFilter,
   LibraryScope,
   LibraryViewScope,
+  StudioExportVersionState,
   TimeBucketDateType,
 } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
@@ -61,6 +62,7 @@ import {
   hasHiddenLockedPrimary,
   hasPeople,
   hasPets,
+  hiddenByOwnerRules,
   hiddenContentAssetIdExists,
   hiddenContentOrOthersRules,
   inSharedAlbum,
@@ -1569,6 +1571,7 @@ export class AssetRepository {
       `.execute(tx);
       const assets = locked.rows;
       const ids = assets.map(({ id }) => id);
+      await this.retainPreservationLocks(ids, tx);
       await this.smartAlbums.deleteAssets(ids, tx);
       await this.deleteForkDerivedResults(ids, tx);
       // FL-97: the files live in the owner's encoded-video folder, which the user deletion removes
@@ -2020,6 +2023,7 @@ export class AssetRepository {
     }
     const stackId = await this.getStackId(tx, id);
     await lockLate(release ? release.files(lockedAsset) : [], stackId);
+    await this.retainPreservationLocks([id], tx);
     if (stackId) {
       // before the row goes: the stack's primary cannot name a removed asset
       await this.leaveStack(tx, id, stackId);
@@ -2386,6 +2390,44 @@ export class AssetRepository {
   }
   private async deleteForkDerivedResults(ids: string[], db: Kysely<DB>): Promise<void> {
     await sql`DELETE FROM public.asset_checksum WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
+  }
+  /**
+   * A retained package must not become public when removal clears its asset reference or a Studio
+   * export's private donor. Snapshot the current lock before those rows and their rule evidence go,
+   * in the removal transaction. A public donor does not freeze unrelated rules on its descendants.
+   */
+  private async retainPreservationLocks(ids: string[], db: Kysely<DB>): Promise<void> {
+    if (ids.length === 0) return;
+    const { rows } = await sql<{ id: string }>`
+      WITH RECURSIVE preservation_lineage ("assetId") AS (
+        SELECT asset.id FROM asset
+        WHERE asset.id = ANY(${ids}::uuid[])
+          AND (${isLocked()} OR ${hiddenByOwnerRules()})
+        UNION
+        SELECT version."resultAssetId"
+        FROM preservation_lineage
+        JOIN studio_export_version_source source ON source."assetId" = preservation_lineage."assetId"
+        JOIN studio_export_version version ON version.id = source."versionId"
+        WHERE version.state = ${StudioExportVersionState.Published} AND version."resultAssetId" IS NOT NULL
+      )
+      SELECT asset.id FROM asset
+      JOIN preservation_lineage ON preservation_lineage."assetId" = asset.id
+      WHERE ${isLocked()} OR ${hiddenByOwnerRules()}
+    `.execute(db);
+    const retainedIds = rows.map(({ id }) => id);
+    if (retainedIds.length === 0) return;
+    await db
+      .updateTable('preservation_item')
+      .set({ locked: true })
+      .where('assetId', '=', anyUuid(retainedIds))
+      .where('locked', '=', false)
+      .execute();
+    await db
+      .updateTable('preservation_restore_item')
+      .set({ locked: true })
+      .where('assetId', '=', anyUuid(retainedIds))
+      .where('locked', '=', false)
+      .execute();
   }
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, libraryId: DummyValue.UUID, checksum: DummyValue.BUFFER }] })
   getByChecksum({ ownerId, libraryId, checksum }: AssetGetByChecksumOptions) {

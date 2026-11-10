@@ -1670,11 +1670,16 @@ export class PreservationWorkerService {
     try {
       const entry = PreservationEntrySchema.parse(item.entry);
       const sidecar = item.sidecar ? PreservationSidecarSchema.parse(item.sidecar) : null;
-      const locked = entry.locked || !!sidecar?.lock;
-
       let assetId: string | null = null;
       let created = false;
       const rows = await this.repository.findByChecksum(context.ownerId, entry.original.sha256, entry.original.sha1);
+      // A work page may predate a source deletion. Check retained privacy after matching: if the
+      // original disappeared before this lookup, its removal transaction has already retained it.
+      const locked =
+        item.locked ||
+        entry.locked ||
+        !!sidecar?.lock ||
+        (await this.repository.lockedRestoreItemIds(context.restore.id, [item.id])).length > 0;
       const live = rows.find((row) => !row.deletedAt);
       if (live) {
         assetId = live.id;
@@ -1734,10 +1739,12 @@ export class PreservationWorkerService {
       }
 
       await this.repository.updateRestoreItem(item.id, { assetId, match: created ? 'new' : 'existing' });
-      const findings = sidecar ? await this.applyMetadata(context, item, assetId, created, sidecar) : [];
-      if (!sidecar && locked) {
+      // A Locked-rule match has a private entry but no explicit lock in its sidecar. Preserve that
+      // boundary even when the destination already has the bytes and does not have the source rule.
+      if (locked && !sidecar?.lock && !(await this.repository.getLock(assetId))) {
         await this.lock(context, assetId, 'marked');
       }
+      const findings = sidecar ? await this.applyMetadata(context, item, assetId, created, sidecar) : [];
 
       await this.repository.updateRestoreItem(item.id, {
         state: created ? 'restored' : 'matched',

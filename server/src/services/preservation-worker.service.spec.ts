@@ -178,6 +178,8 @@ describe(PreservationWorkerService.name, () => {
       findByChecksum: vi.fn().mockResolvedValue([]),
       updateRestoreItem: vi.fn(),
       getLibraryState: vi.fn().mockResolvedValue(library()),
+      getLock: vi.fn(),
+      lockedRestoreItemIds: vi.fn().mockResolvedValue([]),
       getEditRecipe: vi.fn().mockResolvedValue([]),
       setLockReason: vi.fn(),
       getFaces: vi.fn().mockResolvedValue([]),
@@ -1011,6 +1013,53 @@ describe(PreservationWorkerService.name, () => {
       for (const [, patch] of repository.updateRestoreItem.mock.calls) {
         expect(patch).not.toHaveProperty('decisions');
       }
+    });
+
+    it.each([true, false])(
+      'locks an existing original for retained privacy (entry locked: %s)',
+      async (entryLocked) => {
+        const existing = newUuid();
+        repository.findByChecksum.mockResolvedValue([
+          { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
+        ]);
+        const item = restoreItemOf({ locked: true });
+        item.entry = { ...item.entry, locked: entryLocked };
+        item.sidecar = sidecarOf(item.sourceAssetId, { description: null, lock: null }) as unknown as Record<
+          string,
+          unknown
+        >;
+
+        expect(await worker().restoreItem(contextOf(), item)).toBe('matched');
+        expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+        expect(assets.update).toHaveBeenCalledWith(expect.anything(), existing, { visibility: AssetVisibility.Locked });
+
+        // An existing explicit lock keeps its reason when the source only had a rule.
+        assets.update.mockClear();
+        repository.getLock.mockResolvedValue({ reason: 'detected', lockedAt: new Date() });
+        repository.getLibraryState.mockResolvedValue(library({ locked: true }));
+        expect(await worker().restoreItem(contextOf(), item)).toBe('matched');
+        expect(assets.update).not.toHaveBeenCalledWith(
+          expect.anything(),
+          existing,
+          expect.objectContaining({ visibility: expect.anything() }),
+        );
+        expect(repository.setLockReason).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rechecks retained privacy before recreating an original from a stale work page', async () => {
+      const created = newUuid();
+      const item = restoreItemOf();
+      repository.lockedRestoreItemIds.mockResolvedValue([item.id]);
+      assetMedia.uploadAsset.mockResolvedValue({ id: created, status: AssetMediaStatus.CREATED });
+
+      expect(await worker().restoreItem(contextOf(), item)).toBe('restored');
+      expect(assetMedia.uploadAsset).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ visibility: AssetVisibility.Locked }),
+        expect.anything(),
+      );
+      expect(repository.lockedRestoreItemIds).toHaveBeenCalledWith(expect.any(String), [item.id]);
     });
 
     it('locks a matched original the package says is Locked, and never unlocks one', async () => {
