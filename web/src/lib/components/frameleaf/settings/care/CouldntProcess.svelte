@@ -95,9 +95,7 @@
   });
 
   const owners = $derived(
-    [...new Map(files.map((file) => [file.ownerId, file.ownerName])).entries()].sort(([, a], [, b]) =>
-      a.localeCompare(b),
-    ),
+    [...new Map(files.map((file) => [file.ownerId, file.ownerName]))].sort(([, a], [, b]) => a.localeCompare(b)),
   );
   const shown = $derived(whose ? files.filter((file) => file.ownerId === whose) : files);
   const setAside = $derived(shown.filter((file) => file.setAside && !isRetrying(file)).length);

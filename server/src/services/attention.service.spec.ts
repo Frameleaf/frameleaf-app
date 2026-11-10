@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ATTENTION_KINDS, ATTENTION_REASONS } from 'src/dtos/attention.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { ATTENTION_KINDS, ATTENTION_REASONS } from 'src/dtos/attention.dto.js';
 import { QueueName, SystemMetadataKey } from 'src/enum.js';
 import { AttentionService } from 'src/services/attention.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
