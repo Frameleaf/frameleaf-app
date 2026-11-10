@@ -46,6 +46,7 @@ import { publicationTransaction } from 'src/queue/transaction.js';
 import * as physicalFiles from 'src/repositories/physical-file.repository.js';
 import { MediaService, RAW_DECODER_VERSION_KEY } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
 import { LockedKeyUnavailableError, withPlainCopy } from 'src/utils/locked-read.js';
@@ -2039,6 +2040,25 @@ describe(MediaService.name, () => {
         data: { id: asset.id, from: 'preview', message },
       });
       expect(execution.handedToCare).toBe(true);
+    });
+
+    it('a design file with no picture inside is skipped and never sent to Library care (FL-1358)', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'logo.eps', originalPath: '/data/library/logo.eps' })
+        .exif()
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const unavailable = new DesignPreviewUnavailableError(asset.originalPath);
+      mocks.media.decodeImage.mockRejectedValue(unavailable);
+      mocks.media.generateImageThumbnails.mockRejectedValue(unavailable);
+      const execution = thumbnailAttempt();
+
+      await expect(queueExecution.run(execution, () => sut.handleGenerateThumbnails({ id: asset.id }))).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(execution.handedToCare).toBeFalsy();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
     it('two attempts at the same photo at once: one failing after its own hand-off leaves the other hand-off in place', async () => {

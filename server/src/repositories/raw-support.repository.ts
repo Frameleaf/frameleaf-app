@@ -25,10 +25,8 @@ const execFile = promisify(execFileCallback);
 /** The sensor decoder `renderRawWithLibRaw` runs (utils/raw-renderer.ts). */
 export const RAW_DECODER_PATH = '/usr/local/bin/dcraw_emu';
 
-/** RAW extensions, without the dot. PSD sits in the legacy list but is a layered image, not sensor data. */
-export const RAW_EXTENSIONS = Object.keys(mimeTypes.raw)
-  .map((extension) => extension.slice(1))
-  .filter((extension) => extension !== 'psd');
+/** RAW extensions, without the dot. */
+export const RAW_EXTENSIONS = Object.keys(mimeTypes.raw).map((extension) => extension.slice(1));
 
 const RAW_NAME_PATTERN = String.raw`\.(${RAW_EXTENSIONS.join('|')})$`;
 

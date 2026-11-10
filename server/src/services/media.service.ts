@@ -73,6 +73,7 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
+import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { straightenScale } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
@@ -703,6 +704,13 @@ export class MediaService extends BaseService {
         generated = await this.generateImageThumbnails(asset, config);
       } catch (error) {
         executionSignal()?.throwIfAborted();
+        if (error instanceof DesignPreviewUnavailableError) {
+          // FL-1358: a design file with no picture inside is kept as it is and shown by the plain tile. Nothing is
+          // wrong with it, so it is not sent to Library care.
+          // ponytail: looked at again whenever missing thumbnails are queued; record the answer if that ever costs.
+          this.logger.verbose(`No preview for design file ${id}: ${error.message}`);
+          return JobStatus.Skipped;
+        }
         if (handOffDamage && this.isDecodeError(error)) {
           // FL-1337: a photo that won't open goes to Library care, which names the cause and repairs what it can.
           // Thumbnails are queued again after a fix, and their follow-up work runs then.
@@ -804,8 +812,7 @@ export class MediaService extends BaseService {
     sdrBase?: string,
     concurrency = 1,
   ) {
-    // PSD is in the legacy RAW extension list, but is a layered image, not sensor data.
-    const isRaw = mimeTypes.isRaw(asset.originalFileName) && !asset.originalFileName.toLowerCase().endsWith('.psd');
+    const isRaw = mimeTypes.isRaw(asset.originalFileName);
     const generateFullsize =
       !!sdrBase ||
       (mimeTypes.isWebSupportedImage(asset.originalPath) && asset.exifInfo.imageEncoding?.dynamicRange !== 'sdr') ||

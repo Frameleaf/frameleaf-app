@@ -206,7 +206,6 @@ where
           '%.orf',
           '%.ori',
           '%.pef',
-          '%.psd',
           '%.raf',
           '%.raw',
           '%.rw2',
@@ -215,6 +214,19 @@ where
           '%.srf',
           '%.srw',
           '%.x3f',
+          '%.ai',
+          '%.cdr',
+          '%.eps',
+          '%.fig',
+          '%.kra',
+          '%.ora',
+          '%.pdf',
+          '%.procreate',
+          '%.psb',
+          '%.psd',
+          '%.sketch',
+          '%.xcf',
+          '%.xd',
           '%.btf',
           '%.cin',
           '%.cur',
@@ -256,8 +268,7 @@ where
           '%.tga',
           '%.tif',
           '%.tiff',
-          '%.wdp',
-          '%.xcf'
+          '%.wdp'
         ]::text[]
       )
     )

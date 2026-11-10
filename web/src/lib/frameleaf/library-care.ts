@@ -224,7 +224,6 @@ const RAW_EXTENSIONS: ReadonlySet<string> = new Set([
   'orf',
   'ori',
   'pef',
-  'psd',
   'raf',
   'raw',
   'rw2',
