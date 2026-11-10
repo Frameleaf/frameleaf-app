@@ -209,6 +209,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
       'passkeys',
       'oauth',
       'authorized-devices',
+      'connected-apps',
       'api-keys',
       'user-pin-code-settings',
       'suppressed-content',
@@ -778,6 +779,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'locked-encryption': 'locked_content',
     'authorized-devices': 'devices',
     'api-keys': 'devices',
+    'connected-apps': 'devices',
   },
   // FL-421: the prototype's "Alerts" group (CommandCenter.jsx `signals: "Alerts"`).
   notifications: { notifications: 'email', 'email-preferences': 'email', signals: 'alerts' },

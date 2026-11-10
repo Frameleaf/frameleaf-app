@@ -331,6 +331,59 @@ describe('mimeTypes', () => {
     }
   });
 
+  describe('video breadth (FL-1357)', () => {
+    for (const filename of [
+      'clip.mjpeg',
+      'clip.mjpg',
+      'clip.m1v',
+      'clip.m2v',
+      'clip.m2p',
+      'clip.tp',
+      'clip.trp',
+      'clip.ogm',
+      'clip.wtv',
+      'clip.DVR-MS',
+      'clip.nut',
+      'clip.gxf',
+      'clip.mj2',
+      'clip.ivf',
+      'clip.h264',
+      'clip.h265',
+      'clip.hevc',
+      'clip.y4m',
+      'clip.dif',
+      'clip.evo',
+      'clip.apv',
+      'clip.cine',
+      'M19-0333.MLV',
+      'clip.vc1',
+    ]) {
+      it(`should import ${filename} as a video`, () => {
+        expect(mimeTypes.isVideo(filename)).toBe(true);
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Video);
+        expect(mimeTypes.isCinemaRaw(filename)).toBe(false);
+      });
+    }
+
+    // Cinema RAW has no open decoder: kept safe as a video, never promised to play.
+    for (const filename of ['A001_C001.braw', 'A001_C001_0101AB_001.R3D', 'A001C001.crm', 'DSC_0001.NEV', 'A001.arx']) {
+      it(`should keep cinema RAW ${filename} as a video`, () => {
+        expect(mimeTypes.isVideo(filename)).toBe(true);
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Video);
+        expect(mimeTypes.isCinemaRaw(filename)).toBe(true);
+      });
+    }
+
+    it('should leave ARRIRAW .ari frames with the RAW photos', () => {
+      expect(mimeTypes.isRaw('A001C001.ari')).toBe(true);
+      expect(mimeTypes.isCinemaRaw('A001C001.ari')).toBe(false);
+    });
+
+    it('should not call an ordinary video cinema RAW', () => {
+      expect(mimeTypes.isCinemaRaw('clip.mov')).toBe(false);
+    });
+  });
+
   describe('sidecar', () => {
     it('should contain only lowercase mime types', () => {
       const keys = Object.keys(mimeTypes.sidecar);
@@ -395,7 +448,7 @@ describe('mimeTypes', () => {
     });
 
     // Not decodable by the bundled libvips/ImageMagick/ExifTool/ffmpeg, so not offered (see the FL-1286 PR).
-    it.each(['a.gpr', 'a.braw', 'a.r3d', 'a.crm', 'a.ogg', 'a.mjpeg', 'a.y4m'])('does not accept %s', (filename) => {
+    it.each(['a.gpr', 'a.ogg'])('does not accept %s', (filename) => {
       expect(mimeTypes.isAsset(filename)).toBe(false);
       expect(mimeTypes.assetType(filename)).toBe(AssetType.Other);
     });

@@ -12,6 +12,7 @@ import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
+import { isUndecodableError } from 'src/utils/media-decode.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -283,6 +284,10 @@ export class MediaIntegrityService {
       if (/exited with code null/i.test(text)) {
         // killed from outside (out of memory, the host shutting down): nothing about the file
         return { status: 'transient', reason: 'decoder_resource_limit' };
+      }
+      if (mimeTypes.isCinemaRaw(input.originalFileName) && isUndecodableError(error)) {
+        // FL-1357: cinema RAW has no open decoder. What ffmpeg makes of one says nothing about the file.
+        return { status: 'unsupported', reason: 'decode_unsupported' };
       }
       const message = text
         .replace(/^ffprobe exited with code \d+:/i, '')

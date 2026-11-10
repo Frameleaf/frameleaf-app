@@ -35,8 +35,8 @@ clones that repository, so keep additions small.
 The FATE suite (`https://fate-suite.ffmpeg.org/`) states no licence, so its samples are never
 copied into a Frameleaf repository. `fetch-fate.sh <dir>` downloads the files listed in
 `fate.sha256` and fails unless every hash matches. They cover codecs we cannot encode ourselves:
-VVC, APV, VC-1, WMV, DVCPRO HD, camera MXF (XDCAM, Avid, MPEG-4), ProRes 4444 with alpha, and
-JPEG 2000 digital cinema. To add one, append its `sha256sum` line to `fate.sha256`.
+VVC, APV, VC-1, WMV, DVCPRO HD, camera MXF (XDCAM, Avid, MPEG-4), ProRes 4444 with alpha,
+JPEG 2000 digital cinema, Phantom CINE, Magic Lantern MLV and an early RED ONE R3D. To add one, append its `sha256sum` line to `fate.sha256`.
 
 ## Still wanted, no usable source
 
