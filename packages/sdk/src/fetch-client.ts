@@ -479,6 +479,8 @@ export type CloudBackupActiveRunDto = {
     bytesUploaded: number;
     /** verify: files checked so far */
     checked: number;
+    /** FL-879: this is a restore drill (its task reads as verify, which it is a kind of) */
+    drill: boolean;
     operationId: string;
     phase: CloudBackupRunPhase;
     /** 0 to 100 */
@@ -501,6 +503,42 @@ export type CloudBackupEscrowStatusDto = {
     outdated: boolean;
     stored: boolean;
     storedAt: string | null;
+};
+export type CloudBackupDrillDto = {
+    /** When the backup that was used was made */
+    backupFrom: string | null;
+    checked: number;
+    durationSeconds: number | null;
+    failedStep: CloudBackupDrillStep | null;
+    finishedAt: string | null;
+    id: string;
+    /** The signing key (RFC 7638 thumbprint of the Ed25519 key) */
+    keyFingerprint: string | null;
+    /** What the backup holds */
+    library: {
+        albums: number;
+        items: number;
+        photos: number;
+        videos: number;
+    } | null;
+    matched: number;
+    mismatches: {
+        assetId: string;
+        problem: CloudBackupDrillProblem;
+    }[];
+    /** Rows the rebuilt library data holds */
+    restored: {
+        album: number;
+        asset: number;
+        user: number;
+    } | null;
+    result: CloudBackupDrillResult;
+    sampleSize: number;
+    signed: boolean;
+    startedAt: string;
+    /** managed or byo-s3 */
+    target: string;
+    trigger: CloudBackupDrillTrigger;
 };
 export type CloudBackupLastPruneDto = {
     at: string;
@@ -594,6 +632,10 @@ export type CloudBackupStatusResponseDto = {
     configured: boolean;
     /** The newest run's coverage report (FL-362) */
     coverage: (CloudBackupCoverageStatusDto) | null;
+    /** FL-879: a restore drill runs after the next scheduled backup */
+    drillDue: boolean;
+    /** FL-879: the newest restore drill failed */
+    drillNeedsAttention: boolean;
     endpoint: string | null;
     escrow: CloudBackupEscrowStatusDto;
     instanceId: string | null;
@@ -601,6 +643,8 @@ export type CloudBackupStatusResponseDto = {
     /** The key is available to this server; false in own-memory mode until unlocked */
     keyLoaded: boolean;
     keyMode: (CloudBackupKeyMode) | null;
+    /** FL-879: the newest finished restore drill */
+    lastDrill: (CloudBackupDrillDto) | null;
     lastManifestKey: string | null;
     lastPrune: (CloudBackupLastPruneDto) | null;
     lastRestore: (CloudBackupLastRestoreDto) | null;
@@ -611,6 +655,8 @@ export type CloudBackupStatusResponseDto = {
     managed: (CloudBackupManagedDto) | null;
     /** Frameleaf-managed storage can be chosen: this server is linked to Frameleaf Cloud */
     managedAvailable: boolean;
+    /** FL-879: when the next restore drill is due; null when it is due now or backup is off */
+    nextDrillAt: string | null;
     region: string | null;
     target: CloudBackupTargetSetting;
     /** Unique files this server has in the bucket and their size */
@@ -656,6 +702,20 @@ export type CloudBackupCoverageResponseDto = {
     inventoryAt: string | null;
     runId: string | null;
     state: CloudBackupCoverageReportState;
+};
+export type CloudBackupDrillReportDto = {
+    report: {
+        [key: string]: any;
+    };
+    signature: {
+        algorithm: Algorithm;
+        keyFingerprint: string;
+        prefix: string;
+        publicKey: {
+            [key: string]: any;
+        };
+        value: string;
+    };
 };
 export type CloudBackupEscrowDto = {
     /** Wraps the bucket key before it is sent; never stored and never sent to Frameleaf Cloud */
@@ -2371,6 +2431,8 @@ export type DatabaseBackupListResponseDto = {
     backups: DatabaseBackupDto[];
 };
 export type BackupRestoreVerificationResponseDto = {
+    /** FL-879: the restore drill that recorded the last test; null when an administrator recorded it */
+    drillReportId: string | null;
     /** When the next test is due; null when a part has never been proved */
     dueAt: string | null;
     /** How often a restore test is due */
@@ -22110,6 +22172,55 @@ export function getCloudBackupCoverage(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List restore drills
+ */
+export function listCloudBackupDrills(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupDrillDto[];
+    }>("/admin/cloud/backup/drills", {
+        ...opts
+    }));
+}
+/**
+ * Run a restore drill
+ */
+export function startCloudBackupDrill(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupStatusResponseDto;
+    }>("/admin/cloud/backup/drills", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Get a restore drill
+ */
+export function getCloudBackupDrill({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupDrillDto;
+    }>(`/admin/cloud/backup/drills/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a restore drill report
+ */
+export function getCloudBackupDrillReport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupDrillReportDto;
+    }>(`/admin/cloud/backup/drills/${encodeURIComponent(id)}/report.json`, {
+        ...opts
+    }));
+}
+/**
  * Remove the key copy from Frameleaf Cloud
  */
 export function removeCloudBackupEscrow(opts?: Oazapfts.RequestOpts) {
@@ -38255,6 +38366,26 @@ export enum CloudBackupKeyMode {
     OwnStored = "own-stored",
     OwnMemory = "own-memory"
 }
+export enum CloudBackupDrillStep {
+    Fetch = "fetch",
+    Unlock = "unlock",
+    Rebuild = "rebuild",
+    Compare = "compare"
+}
+export enum CloudBackupDrillProblem {
+    Different = "different",
+    Missing = "missing",
+    NotInLibraryData = "not-in-library-data"
+}
+export enum CloudBackupDrillResult {
+    Running = "running",
+    Passed = "passed",
+    Failed = "failed"
+}
+export enum CloudBackupDrillTrigger {
+    Scheduled = "scheduled",
+    Manual = "manual"
+}
 export enum CloudBackupRestoreStatus {
     Completed = "completed",
     Failed = "failed",
@@ -38292,6 +38423,9 @@ export enum CloudBackupCoverageReportState {
     NotReported = "not-reported",
     Local = "local",
     Unknown = "unknown"
+}
+export enum Algorithm {
+    Ed25519 = "Ed25519"
 }
 export enum CloudBackupLicenceScope {
     Unknown = "unknown",

@@ -48817,6 +48817,171 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "backup_restore_report",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "backup_restore_report",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "target",
+          "tableName": "backup_restore_report",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "trigger",
+          "tableName": "backup_restore_report",
+          "nullable": false,
+          "isArray": false,
+          "default": "'manual'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "startedAt",
+          "tableName": "backup_restore_report",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "finishedAt",
+          "tableName": "backup_restore_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "result",
+          "tableName": "backup_restore_report",
+          "nullable": false,
+          "isArray": false,
+          "default": "'running'::text",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "failedStep",
+          "tableName": "backup_restore_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "counts",
+          "tableName": "backup_restore_report",
+          "nullable": false,
+          "isArray": false,
+          "default": "'{}'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "sampleSize",
+          "tableName": "backup_restore_report",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "mismatches",
+          "tableName": "backup_restore_report",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "report",
+          "tableName": "backup_restore_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "signature",
+          "tableName": "backup_restore_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "keyFingerprint",
+          "tableName": "backup_restore_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "signerKey",
+          "tableName": "backup_restore_report",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "backup_restore_report_startedAt_idx",
+          "definition": "CREATE INDEX \"backup_restore_report_startedAt_idx\" ON public.backup_restore_report USING btree (\"startedAt\")",
+          "tableName": "backup_restore_report",
+          "columnNames": [
+            "startedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "backup_restore_report_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "backup_restore_report",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
