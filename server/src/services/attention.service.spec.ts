@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { QueueName, SystemMetadataKey } from 'src/enum.js';
 import { AttentionService } from 'src/services/attention.service.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
 
 const GB = 1_000_000_000;
 const DAY_MS = 86_400_000;
 const NOW = new Date('2026-10-16T12:00:00.000Z');
 const daysAgo = (days: number) => new Date(NOW.getTime() - days * DAY_MS).toISOString();
+const admin = AuthFactory.create({ isAdmin: true }) as unknown as AuthDto;
 const idle = { active: 0, completed: 0, failed: 0, delayed: 0, waiting: 0, paused: 0 };
 
 /** A healthy server: room on the drive, Cloud Backup and the library data copy up to date, no failures. */
@@ -60,6 +63,8 @@ const setup = () => {
       state: vi.fn().mockResolvedValue({ settings: null, pairing: null, lastCompleteAt: null, run: null }),
     },
   };
+  const counts = { fixed: 0, needsYou: 0, since: null as Date | null, latest: null as Date | null };
+  const mediaHealth = { fileProblemCounts: vi.fn().mockImplementation(() => Promise.resolve({ ...counts })) };
   const sut = new AttentionService(
     mocks.logger as never,
     mocks.config as never,
@@ -67,6 +72,7 @@ const setup = () => {
     mocks.storage as never,
     mocks.job as never,
     mocks.buddy as never,
+    mediaHealth as never,
   );
   // The configuration is handed over as it is, as in the backup schedule's spec.
   const settings = { current: config as object };
@@ -74,7 +80,7 @@ const setup = () => {
   const useConfig = (next: object) => {
     settings.current = next;
   };
-  return { sut, mocks, metadata, config, useConfig };
+  return { sut, mocks, metadata, config, useConfig, mediaHealth, counts };
 };
 
 describe(AttentionService.name, () => {
@@ -90,7 +96,7 @@ describe(AttentionService.name, () => {
   it('says nothing needs attention on a healthy server, with every check in its fixed order', async () => {
     const { sut } = setup();
 
-    await expect(sut.getAttention()).resolves.toEqual({
+    await expect(sut.getAttention(admin)).resolves.toEqual({
       checkedAt: NOW.toISOString(),
       items: [],
       checks: [
@@ -100,16 +106,53 @@ describe(AttentionService.name, () => {
         { kind: 'version', state: 'ok' },
       ],
       dismissed: [],
+      fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
     });
+  });
+
+  it('counts what Frameleaf fixed this week and what needs you, since the earliest fix, to the newest (FL-1337)', async () => {
+    const { sut, mediaHealth, counts } = setup();
+    counts.fixed = 5;
+    counts.needsYou = 2;
+    counts.since = new Date(daysAgo(3));
+    counts.latest = new Date(daysAgo(1));
+
+    const response = await sut.getAttention(admin);
+    expect(response.fileProblems).toEqual({ fixed: 5, needsYou: 2, since: daysAgo(3), latest: daysAgo(1) });
+    // a count is not an attention item: nothing is added and no check changes
+    expect(response.items).toEqual([]);
+    expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
+    expect(mediaHealth.fileProblemCounts).toHaveBeenCalledWith(expect.objectContaining({ days: 7 }));
+  });
+
+  it('still answers when the damaged and missing files cannot be counted, with no counts and a warning', async () => {
+    const { sut, mocks, mediaHealth } = setup();
+    mediaHealth.fileProblemCounts.mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+
+    const response = await sut.getAttention(admin);
+
+    expect(response.fileProblems).toEqual({ fixed: 0, needsYou: 0, since: null, latest: null });
+    expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
+    expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('damaged and missing files'));
+  });
+
+  it("counts every account's problems for the administrator who asks, minus other accounts' Locked photos", async () => {
+    const { sut, mediaHealth } = setup();
+
+    await sut.getAttention(admin);
+    const [options] = mediaHealth.fileProblemCounts.mock.calls[0] as [{ ownerId?: string; privacy: object }];
+    expect(options.ownerId).toBeUndefined();
+    // the administrator's own privacy rides along, so another account's Locked photo is never counted
+    expect(options.privacy).not.toHaveProperty('lockedOwnerId');
   });
 
   it('keeps a dismissed Overview item for every administrator, and brings it back (FL-363)', async () => {
     const { sut } = setup();
 
-    await expect(sut.setDismissed({ id: 'studio', dismissed: true })).resolves.toEqual(
+    await expect(sut.setDismissed(admin, { id: 'studio', dismissed: true })).resolves.toEqual(
       expect.objectContaining({ dismissed: ['studio'] }),
     );
-    await expect(sut.setDismissed({ id: 'studio', dismissed: false })).resolves.toEqual(
+    await expect(sut.setDismissed(admin, { id: 'studio', dismissed: false })).resolves.toEqual(
       expect.objectContaining({ dismissed: [] }),
     );
   });
@@ -119,7 +162,7 @@ describe(AttentionService.name, () => {
     const old = Array.from({ length: 32 }, (_, i) => `old-${i}`);
     await mocks.metadata.set(SystemMetadataKey.OverviewDismissed, { ids: old });
 
-    await expect(sut.setDismissed({ id: 'studio', dismissed: true })).resolves.toEqual(
+    await expect(sut.setDismissed(admin, { id: 'studio', dismissed: true })).resolves.toEqual(
       expect.objectContaining({ dismissed: [...old.slice(1), 'studio'] }),
     );
   });
@@ -128,7 +171,7 @@ describe(AttentionService.name, () => {
     const { sut, mocks } = setup();
     mocks.storage.checkDiskUsage.mockResolvedValue({ available: 8 * GB, free: 8 * GB, total: 500 * GB });
 
-    const { items } = await sut.getAttention();
+    const { items } = await sut.getAttention(admin);
     expect(mocks.storage.checkDiskUsage).toHaveBeenCalledWith(expect.stringMatching(/library$/));
     expect(items).toEqual([
       expect.objectContaining({
@@ -153,7 +196,7 @@ describe(AttentionService.name, () => {
       const { sut, mocks } = setup();
       diskFor(mocks, 8, 8);
 
-      const { items, checks } = await sut.getAttention();
+      const { items, checks } = await sut.getAttention(admin);
       expect(items.map((item) => item.id)).toEqual(['storage']);
       expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
       expect(mocks.storage.checkDiskUsage).toHaveBeenCalledTimes(1);
@@ -164,7 +207,7 @@ describe(AttentionService.name, () => {
       separateDrives(mocks);
       diskFor(mocks, 400, 30);
 
-      const { items, checks } = await sut.getAttention();
+      const { items, checks } = await sut.getAttention(admin);
       expect(mocks.storage.checkDiskUsage).toHaveBeenCalledWith(expect.stringMatching(/thumbs$/));
       expect(items).toEqual([
         expect.objectContaining({
@@ -182,7 +225,7 @@ describe(AttentionService.name, () => {
       separateDrives(mocks);
       diskFor(mocks, 30, 5);
 
-      const { items } = await sut.getAttention();
+      const { items } = await sut.getAttention(admin);
       expect(items.map((item) => [item.id, item.reason, item.storage?.drive])).toEqual([
         ['storage:thumbnails', 'out-of-space', 'thumbnails'],
         ['storage', 'nearly-full', 'library'],
@@ -193,7 +236,7 @@ describe(AttentionService.name, () => {
       const { sut, mocks } = setup();
       separateDrives(mocks);
 
-      const { items, checks } = await sut.getAttention();
+      const { items, checks } = await sut.getAttention(admin);
       expect(items).toEqual([]);
       expect(checks).toContainEqual({ kind: 'storage', state: 'ok' });
       expect(mocks.storage.checkDiskUsage).toHaveBeenCalledTimes(2);
@@ -208,7 +251,7 @@ describe(AttentionService.name, () => {
           : Promise.resolve({ available: 5 * GB, free: 5 * GB, total: 500 * GB }),
       );
 
-      const { items, checks } = await sut.getAttention();
+      const { items, checks } = await sut.getAttention(admin);
       expect(items.map((item) => item.id)).toEqual(['storage']);
       expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('thumbnails drive'));
@@ -223,7 +266,7 @@ describe(AttentionService.name, () => {
           : Promise.reject(new Error('EACCES')),
       );
 
-      const { items, checks } = await sut.getAttention();
+      const { items, checks } = await sut.getAttention(admin);
       expect(items.map((item) => [item.id, item.storage?.drive])).toEqual([['storage:thumbnails', 'thumbnails']]);
       expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
     });
@@ -236,7 +279,7 @@ describe(AttentionService.name, () => {
         return Promise.resolve({ available, free: available, total: 500 * GB });
       });
 
-      const { items } = await sut.getAttention();
+      const { items } = await sut.getAttention(admin);
       expect(items.map((item) => [item.id, item.reason])).toEqual([
         ['storage:thumbnails', 'out-of-space'],
         ['storage', 'nearly-full'],
@@ -248,7 +291,7 @@ describe(AttentionService.name, () => {
       mocks.storage.getDevice.mockImplementation((path: string) => Promise.resolve(path.endsWith('thumbs') ? 7 : null));
       diskFor(mocks, 400, 5);
 
-      const { items } = await sut.getAttention();
+      const { items } = await sut.getAttention(admin);
       expect(items.map((item) => [item.id, item.storage?.drive])).toEqual([['storage:thumbnails', 'thumbnails']]);
     });
 
@@ -258,7 +301,7 @@ describe(AttentionService.name, () => {
         Promise.resolve(path.endsWith('thumbs') ? null : 42),
       );
 
-      const { items, checks } = await sut.getAttention();
+      const { items, checks } = await sut.getAttention(admin);
       expect(mocks.storage.checkDiskUsage).toHaveBeenCalledTimes(1);
       expect(items).toEqual([]);
       expect(checks).toContainEqual({ kind: 'storage', state: 'unknown' });
@@ -271,7 +314,7 @@ describe(AttentionService.name, () => {
       );
       diskFor(mocks, 5, 5);
 
-      const { items, checks } = await sut.getAttention();
+      const { items, checks } = await sut.getAttention(admin);
       expect(items.map((item) => item.id)).toEqual(['storage']);
       expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
     });
@@ -284,7 +327,7 @@ describe(AttentionService.name, () => {
           : Promise.reject(new Error('EACCES')),
       );
 
-      const { items, checks } = await sut.getAttention();
+      const { items, checks } = await sut.getAttention(admin);
       expect(items).toEqual([
         expect.objectContaining({
           id: 'storage',
@@ -318,7 +361,7 @@ describe(AttentionService.name, () => {
       'uploaded-frameleaf-db-backup-20261016T020000-v3.2.0-pg16.sql.gz',
     ]);
 
-    const { items, checks } = await sut.getAttention();
+    const { items, checks } = await sut.getAttention(admin);
     expect(items.map((item) => [item.id, item.reason])).toEqual([
       ['backup:cloud', 'backup-failed'],
       ['backup:buddy', 'backup-behind'],
@@ -337,7 +380,7 @@ describe(AttentionService.name, () => {
       run: null,
     });
 
-    const { items } = await sut.getAttention();
+    const { items } = await sut.getAttention(admin);
     expect(items.map((item) => item.id)).toEqual(['backup:none']);
   });
 
@@ -345,7 +388,7 @@ describe(AttentionService.name, () => {
     const { sut, mocks } = setup();
     mocks.storage.readdir.mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
 
-    const { items, checks } = await sut.getAttention();
+    const { items, checks } = await sut.getAttention(admin);
     expect(items).toEqual([]);
     expect(checks[0]).toEqual({ kind: 'backup', state: 'ok' });
   });
@@ -357,7 +400,7 @@ describe(AttentionService.name, () => {
       run: { place: 'local', startedAt: daysAgo(0.01), begun: false, results: {} },
     };
 
-    expect((await sut.getAttention()).items).toEqual([]);
+    expect((await sut.getAttention(admin)).items).toEqual([]);
   });
 
   it('reads every kind of work, and leaves out a pause a library move holds', async () => {
@@ -376,7 +419,7 @@ describe(AttentionService.name, () => {
       Promise.resolve(name === QueueName.FaceDetection || name === QueueName.SmartSearch),
     );
 
-    const { items } = await sut.getAttention();
+    const { items } = await sut.getAttention(admin);
     expect(mocks.job.getJobCounts).toHaveBeenCalledTimes(Object.values(QueueName).length);
     expect(items).toEqual([
       expect.objectContaining({
@@ -403,7 +446,7 @@ describe(AttentionService.name, () => {
     );
     mocks.job.isPaused.mockImplementation((name: QueueName) => Promise.resolve(name === QueueName.VideoConversion));
 
-    expect((await sut.getAttention()).items).toEqual([]);
+    expect((await sut.getAttention(admin)).items).toEqual([]);
   });
 
   it('still lists a pause an administrator made on a queue quiet hours do not hold', async () => {
@@ -415,7 +458,7 @@ describe(AttentionService.name, () => {
     );
     mocks.job.isPaused.mockImplementation((name: QueueName) => Promise.resolve(name === QueueName.VideoConversion));
 
-    expect((await sut.getAttention()).items).toEqual([
+    expect((await sut.getAttention(admin)).items).toEqual([
       expect.objectContaining({
         id: 'work:paused',
         work: { count: 3, queues: [{ name: QueueName.VideoConversion, count: 3 }] },
@@ -427,13 +470,13 @@ describe(AttentionService.name, () => {
     const { sut, metadata, config, useConfig } = setup();
     metadata[SystemMetadataKey.VersionCheckState] = { checkedAt: daysAgo(0.1), releaseVersion: 'v99.0.0' };
 
-    const { items } = await sut.getAttention();
+    const { items } = await sut.getAttention(admin);
     expect(items).toEqual([
       expect.objectContaining({ id: 'version', version: { current: serverVersion.toString(), available: '99.0.0' } }),
     ]);
 
     useConfig({ ...config, newVersionCheck: { enabled: false, channel: 'stable' } });
-    const { checks, items: none } = await sut.getAttention();
+    const { checks, items: none } = await sut.getAttention(admin);
     expect(none).toEqual([]);
     expect(checks.at(-1)).toEqual({ kind: 'version', state: 'off' });
   });
@@ -443,7 +486,7 @@ describe(AttentionService.name, () => {
     mocks.storage.checkDiskUsage.mockRejectedValue(new Error('EACCES'));
     mocks.job.getJobCounts.mockRejectedValue(new Error('pool exhausted'));
 
-    const { checks } = await sut.getAttention();
+    const { checks } = await sut.getAttention(admin);
     expect(checks).toEqual([
       { kind: 'backup', state: 'ok' },
       { kind: 'storage', state: 'unknown' },
@@ -460,6 +503,6 @@ describe(AttentionService.name, () => {
     mocks.storage.checkDiskUsage.mockResolvedValue({ available: 5 * GB, free: 5 * GB, total: 500 * GB });
     metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
 
-    expect((await sut.getAttention()).items.map((item) => item.id)).toEqual(['backup:none', 'storage', 'version']);
+    expect((await sut.getAttention(admin)).items.map((item) => item.id)).toEqual(['backup:none', 'storage', 'version']);
   });
 });

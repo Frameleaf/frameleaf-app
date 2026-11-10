@@ -40,6 +40,7 @@ const answer = (patch: Partial<AttentionResponseDto> = {}): AttentionResponseDto
   items: [],
   checks: ok(),
   dismissed: [],
+  fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
   ...patch,
 });
 /** The answer at the top, once the page has read what needs attention. */

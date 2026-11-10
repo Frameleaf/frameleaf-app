@@ -46,6 +46,7 @@ describe(MediaHealthOperationService.name, () => {
     restoreUntracked: any;
     setRunState: any;
     locateStep: any;
+    finishLookIn: any;
   };
 
   const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
@@ -70,6 +71,7 @@ describe(MediaHealthOperationService.name, () => {
       restoreUntracked: vi.fn().mockResolvedValue(undefined),
       setRunState: vi.fn().mockResolvedValue(undefined),
       locateStep: vi.fn(),
+      finishLookIn: vi.fn().mockResolvedValue(undefined),
     };
     sut = new MediaHealthOperationService(
       mocks.logger as never,
@@ -422,6 +424,31 @@ describe(MediaHealthOperationService.name, () => {
       await sut.run(operationOf(locateSnapshot, paused as never), 'token');
 
       expect(mediaHealth.locateStep).toHaveBeenCalledWith(locateSnapshot, continuation);
+    });
+
+    it('records what a Look in a folder found once its search is complete (FL-1337)', async () => {
+      const lookIn = { ...locateSnapshot, findingIds: ['health-1'], lookIn: { folder: 'Holiday drive' } };
+      const continuation = { cursor: [{ path: '/data/upload/user-1', after: 'b' }], matches: {} };
+      mediaHealth.locateStep
+        .mockResolvedValueOnce({ checkedAssets: 1, foundAssets: 0, continuation, checkedIds: ['health-1'] })
+        .mockResolvedValueOnce({ checkedAssets: 1, foundAssets: 1, checkedIds: ['health-1'] });
+
+      await sut.run(operationOf(lookIn), 'token');
+
+      expect(operations.complete).toHaveBeenCalled();
+      // it speaks for what the walk's last step checked
+      expect(mediaHealth.finishLookIn).toHaveBeenCalledTimes(1);
+      expect(mediaHealth.finishLookIn).toHaveBeenCalledWith(lookIn, ['health-1']);
+    });
+
+    it('records nothing for a search nobody asked to look in a folder, or one that was cancelled', async () => {
+      mediaHealth.locateStep.mockResolvedValue({ checkedAssets: 2, foundAssets: 1 });
+      await sut.run(operationOf(locateSnapshot), 'token');
+
+      vi.mocked(operations.complete).mockResolvedValue(false);
+      await sut.run(operationOf({ ...locateSnapshot, lookIn: { folder: 'Holiday drive' } }), 'token');
+
+      expect(mediaHealth.finishLookIn).not.toHaveBeenCalled();
     });
   });
 

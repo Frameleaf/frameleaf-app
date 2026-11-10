@@ -21,6 +21,7 @@ import {
   mdiDevices,
   mdiDownload,
   mdiFeatureSearchOutline,
+  mdiFileAlertOutline,
   mdiFileCheckOutline,
   mdiFileDocumentOutline,
   mdiFolderOutline,
@@ -142,6 +143,13 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
     },
     { id: 'geolocation', title: $t('manage_geolocation'), icon: mdiMapMarkerOutline, href: Route.geolocationUtility() },
     { id: 'takeout', title: $t('frameleaf_takeout_title'), icon: mdiImport, href: Route.takeout() },
+    // FL-1338: Library care's Damaged and missing files, every account's own list.
+    {
+      id: 'care-files',
+      title: $t('frameleaf_cc_section_files'),
+      icon: mdiFileAlertOutline,
+      href: commandCenterUrl('care', 'files'),
+    },
   ];
   for (const extra of extras) {
     pages.push({ ...extra, subtitle: $t('frameleaf_search_subtitle_page') });

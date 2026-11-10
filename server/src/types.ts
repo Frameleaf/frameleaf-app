@@ -403,6 +403,14 @@ export interface IEntityJob extends IBaseJob {
   reconcileUnfinished?: boolean;
 }
 
+export interface IGenerateThumbnailsJob extends IEntityJob {
+  /**
+   * FL-1337: Library care asked for these previews after it found the file opens. A photo that still won't make a
+   * preview then fails the job, to be retried, instead of going back to Library care (which would ask again).
+   */
+  afterCare?: boolean;
+}
+
 export interface IAssetDeleteJob extends IEntityJob {
   deleteOnDisk: boolean;
 }
@@ -464,6 +472,13 @@ export interface IMediaHealthLocateJob extends IBaseJob {
   runId?: string;
   ids?: string[];
   userId?: string;
+  /**
+   * FL-1337: the owner's shared search for the fixes waiting on it (`userId` required). Its first step
+   * claims them as `ids`; when the walk is complete it feeds each fix again.
+   */
+  pending?: boolean;
+  /** FL-1337: which shared search a step carries on: the job that started it claimed its findings as this. */
+  searchId?: string;
   managedSearch?: {
     cursor: Array<{ path: string; after?: string }>;
     matches: Record<string, Record<string, Array<'sha1' | 'sha256'>>>;
@@ -473,6 +488,31 @@ export interface IMediaHealthLocateJob extends IBaseJob {
 export interface IMediaHealthDeleteCorruptJob extends IBaseJob {
   ids: string[];
   userId: string;
+}
+
+/** FL-1337: check one damaged or missing file and fix it by itself where it can, recording each step. */
+export interface IMediaHealthFixAssetJob extends IEntityJob {
+  /** What asked: a preview that failed, a file check, an import, or a person's Try again. */
+  from: 'preview' | 'check' | 'import' | 'person';
+  /** The decoder's own words, when a failed preview asked. */
+  message?: string;
+  /** How many busy checks it has had; it stops after three. */
+  attempt?: number;
+  /** Milliseconds before it may run (an `availableAt` in the future). */
+  delay?: number;
+  /** How many times this fix has put itself back. Its key changes with it, so the store never drops it. */
+  requeue?: number;
+  /** How many times it has waited for an unplugged drive; it stops after a day. */
+  waits?: number;
+  /** How many times it has waited for Cloud Backup to be free; after a day it carries on without it. */
+  backupWaits?: number;
+  /** The owner's shared search by contents is complete: decide from what it found, without walking. */
+  searched?: boolean;
+  /**
+   * Where a fix that put itself back carries on: `backups` once the search is recorded, `treat` once the
+   * search and the backups are, straight to what is wrong with the file.
+   */
+  stage?: 'backups' | 'treat';
 }
 
 export interface INightlyJob extends IBaseJob {
@@ -587,7 +627,7 @@ export type JobItem =
 
   // Thumbnails
   | { name: JobName.AssetGenerateThumbnailsQueueAll; data: IBaseJob }
-  | { name: JobName.AssetGenerateThumbnails; data: IEntityJob }
+  | { name: JobName.AssetGenerateThumbnails; data: IGenerateThumbnailsJob }
   | { name: JobName.AssetPaletteExtract; data: IEntityJob & { sourceRevision: string } }
   | { name: JobName.AssetPaletteQueueAll; data: IBaseJob & { afterId?: string } }
 
@@ -600,6 +640,7 @@ export type JobItem =
   | { name: JobName.MediaHealthLocateMissing; data: IMediaHealthLocateJob }
   | { name: JobName.MediaHealthScanCorrupt; data: IMediaHealthScanJob }
   | { name: JobName.MediaHealthDeleteCorrupt; data: IMediaHealthDeleteCorruptJob }
+  | { name: JobName.MediaHealthFixAsset; data: IMediaHealthFixAssetJob }
 
   // User
   | { name: JobName.UserDeleteCheck; data?: IBaseJob }
@@ -1624,6 +1665,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.ProcessingReconcileLastRun]: import('src/dtos/queue-legacy.dto.js').ProcessingReconcileSummary;
   [SystemMetadataKey.OvernightSequence]: import('src/utils/overnight.js').OvernightState;
   [SystemMetadataKey.OverviewDismissed]: { ids: string[] };
+  [SystemMetadataKey.FileFixSourceRoots]: string[];
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
   [SystemMetadataKey.FrameleafMailConnection]: FrameleafMailConnection;
   [SystemMetadataKey.FrameleafMailSignIn]: FrameleafMailSignIn;

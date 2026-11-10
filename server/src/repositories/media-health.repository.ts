@@ -3,17 +3,22 @@ import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
+import type { FileProblemTab } from 'src/dtos/file-problem.dto.js';
+import type { FileStep, FindingStep, NewFileStep } from 'src/utils/file-steps.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import type { FileDigests } from 'src/utils/media-health-roots.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import {
   AssetFileType,
   AssetStatus,
   ChecksumAlgorithm,
+  JobName,
   MediaHealthCategory,
   MediaHealthSeverity,
   MediaHealthStatus,
   PhysicalFileType,
+  QueueName,
 } from 'src/enum.js';
 import { BUDDY_CAPTURE_LOCK, countPathReferences, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -25,7 +30,11 @@ import {
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
-import { isLocked } from 'src/utils/locked.js';
+import { isLocked, isNotLocked } from 'src/utils/locked.js';
+
+/** The steps for the finding a write has just recorded, written in that write's transaction (FL-1337). */
+const stepsFor = (steps: FindingStep[] | undefined, finding: { id: string; assetId: string }): NewFileStep[] =>
+  (steps ?? []).map((step) => ({ ...step, healthId: finding.id, assetId: step.assetId ?? finding.assetId }));
 /**
  * What an interactive read may show: the viewer's hidden-content settings, and their Locked media only
  * in their elevated session (`lockedOwnerId`, FL-34). Background jobs pass no privacy and see every
@@ -84,6 +93,8 @@ export type UpsertMediaHealthFinding = Omit<
   dismissedAt?: Date | null;
   resolvedAt?: Date | null;
   expectedUpdateId?: string;
+  /** FL-1337: the history it starts or adds to, written with it. */
+  steps?: FindingStep[];
 };
 export type UpsertMediaHealthCandidate = Omit<Insertable<AssetHealthCandidateTable>, 'id' | 'createdAt' | 'updatedAt'>;
 export type RelinkManagedAsset = {
@@ -121,6 +132,13 @@ export type RelinkManagedAsset = {
   candidatePath?: string;
   /** FL-69: who recovered it and from which search location, kept on the finding. */
   provenance?: Record<string, unknown>;
+  /** FL-1337: how the fix left the finding (`fixState`, `partSaved`), kept beside the relink's own evidence. */
+  evidence?: Record<string, unknown>;
+  /**
+   * FL-1337: the history the relink adds, written with it. A step carrying `undo` gets the asset's new
+   * `originalPath` and `checksum` (hex) in it, which Undo compares before it changes anything.
+   */
+  steps?: FindingStep[];
 };
 export type RelinkExternalAsset = RelinkManagedAsset & {
   expectedLibraryId: string;
@@ -131,6 +149,66 @@ export type RelinkExternalAsset = RelinkManagedAsset & {
  * repaired (`expectedChecksum`, `expectedUpdateId`), and the damaged file is kept as `retainedPath`.
  */
 export type ReplaceRepairedOriginal = Omit<RelinkManagedAsset, 'candidateId' | 'category' | 'candidatePath'>;
+/**
+ * A problem as Damaged and missing files lists it (FL-1337): the finding, whose library it is in, and the
+ * step its one-line story is told from (the newest, apart from the damaged file kept beside a repair).
+ */
+export type FileProblemRecord = MediaHealthFinding & {
+  ownerId: string;
+  ownerName: string;
+  assetDeletedAt: Date | null;
+  line: { step: string; outcome: string; facts: Record<string, unknown> } | null;
+};
+/**
+ * Undo one fix (FL-1337, design §5), in one transaction: written only while the photo is still as that fix
+ * left it (Review Focus 3).
+ */
+export type UndoFileFix = {
+  healthId: string;
+  assetId: string;
+  ownerId: string;
+  /** The step that recorded the fix. A later fix or Undo, or an edit saved or removed since it, refuses. */
+  stepId: string;
+  /** The asset as the fix left it, from that step's `undo`: any other file or checksum refuses. */
+  expectedOriginalPath: string;
+  expectedChecksum: Buffer;
+  /**
+   * A repair or a relink: the file the photo goes back to. A repair's photo takes that file's own contents as
+   * its checksum (`takeChecksum`, from `digests`); a relink keeps the photo's own, which its copy matched.
+   * Nothing at the file it leaves is touched.
+   */
+  relinkTo?: { path: string; digests?: FileDigests; takeChecksum: boolean };
+  /** A restore: moves its files, under the lock, once the photo is proven unchanged; the caller puts them back if this fails. */
+  moveFiles?: () => Promise<void>;
+  /** Where the problem goes back to: reopened, with these states merged into its evidence and these steps. */
+  status: MediaHealthStatus;
+  evidence: Record<string, unknown>;
+  steps: FindingStep[];
+};
+/**
+ * What `undoFix` did: `undone`; `changed`, when the photo is no longer as the fix left it; `open`, when the
+ * same photo has another problem open (Review Focus 5). Nothing is written or moved unless `undone`.
+ */
+export type UndoFileFixResult = 'undone' | 'changed' | 'open' | 'locked';
+/** The fix states of each tab of Damaged and missing files (FL-1337 ruling 1). */
+const NEEDS_FIX_STATES = ['missing', 'waiting-phone', 'cant-repair', 'couldnt-check'];
+const FIXED_FIX_STATES = ['repaired', 'part-saved', 'found-again', 'restored'];
+/** How long a fixed problem stays in Fixed for you. */
+const FIXED_TAB_DAYS = 30;
+/**
+ * The missing and damaged findings a person keeps with Keep (FL-1337). A RAW the decoder cannot read is not one:
+ * the fix leaves it as it is, and it still counts as an unreadable RAW.
+ */
+const KEPT_STATUSES = [
+  MediaHealthStatus.Missing,
+  MediaHealthStatus.Candidate,
+  MediaHealthStatus.Found,
+  MediaHealthStatus.CorruptSuspect,
+  MediaHealthStatus.CorruptConfirmed,
+  MediaHealthStatus.TrashQueued,
+];
+/** A search id as a claim names it: compared as a uuid, so the job's primary key is used. */
+const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 @Injectable()
 export class MediaHealthRepository {
   constructor(
@@ -265,6 +343,8 @@ export class MediaHealthRepository {
   /**
    * Library Care's queue sizes (FL-69): open findings by category and status, read with the same
    * owner scope and privacy as the list, so a count never reveals an item the list would hide.
+   * FL-1337: a photo its owner chose to keep as it is (`fixState` `left-as-is`) waits for no one, so it is not
+   * counted. An unsupported RAW the fix left as it is still counts.
    */
   async countByStatus(options: { ownerId?: string; privacy: MediaHealthPrivacy }): Promise<
     Array<{
@@ -279,6 +359,10 @@ export class MediaHealthRepository {
       .select(['asset_health.category', 'asset_health.status'])
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .where('asset.deletedAt', 'is', null)
+      .where(
+        sql<boolean>`((asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
+          OR asset_health.status NOT IN (${sql.join(KEPT_STATUSES)}))`,
+      )
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
       .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
@@ -455,7 +539,7 @@ export class MediaHealthRepository {
     });
   }
   async upsertFinding(input: UpsertMediaHealthFinding): Promise<MediaHealthFinding | undefined> {
-    const { expectedUpdateId, ...finding } = input;
+    const { expectedUpdateId, steps, ...finding } = input;
     return this.db.transaction().execute(async (trx) => {
       const asset = await trx
         .withSchema('public')
@@ -474,7 +558,7 @@ export class MediaHealthRepository {
       }
       let result: MediaHealthFinding | undefined;
       {
-        result = await this.upsertFindingInto(trx.withSchema('public'), finding);
+        result = await this.upsertFindingInto(trx.withSchema('public'), finding, steps);
       }
       return result;
     });
@@ -573,8 +657,20 @@ export class MediaHealthRepository {
       return true;
     });
   }
-  private upsertFindingInto(db: Kysely<DB>, finding: UpsertMediaHealthFinding): Promise<MediaHealthFinding> {
-    return db
+  /**
+   * Insert or replace the asset's finding of this category, and append `steps` to it in the same
+   * transaction. FL-1337: replacing keeps what a person decided (`autoRepairDeclined`, after an Undo)
+   * unless the new evidence says otherwise, and keeps how the last fix left it (`fixState`,
+   * `partSaved`) and a search it waits for (`searchPending`) while it is the same open problem. A change
+   * of status is the same problem while the finding stays open (F6: missing to found, suspected to
+   * confirmed damage); a finding that was resolved or dismissed, or is written closed, starts afresh.
+   */
+  private async upsertFindingInto(
+    db: Kysely<DB>,
+    finding: UpsertMediaHealthFinding,
+    steps?: FindingStep[],
+  ): Promise<MediaHealthFinding> {
+    const result = await db
       .insertInto('asset_health')
       .values({
         dismissedAt: null,
@@ -588,7 +684,15 @@ export class MediaHealthRepository {
           severity: eb.ref('excluded.severity'),
           originalPath: eb.ref('excluded.originalPath'),
           originalFileName: eb.ref('excluded.originalFileName'),
-          evidence: eb.ref('excluded.evidence'),
+          evidence: sql<Record<string, unknown>>`
+            CASE WHEN asset_health."resolvedAt" IS NULL AND asset_health."dismissedAt" IS NULL
+              AND excluded."resolvedAt" IS NULL AND excluded."dismissedAt" IS NULL
+            THEN jsonb_strip_nulls(jsonb_build_object(
+              'fixState', asset_health.evidence->'fixState', 'partSaved', asset_health.evidence->'partSaved',
+              'searchPending', asset_health.evidence->'searchPending'))
+            ELSE '{}'::jsonb END
+            || jsonb_strip_nulls(jsonb_build_object('autoRepairDeclined', asset_health.evidence->'autoRepairDeclined'))
+            || excluded.evidence`,
           resolution: eb.ref('excluded.resolution'),
           checkedAt: eb.ref('excluded.checkedAt'),
           dismissedAt: eb.ref('excluded.dismissedAt'),
@@ -597,6 +701,8 @@ export class MediaHealthRepository {
       )
       .returningAll()
       .executeTakeFirstOrThrow();
+    await this.appendSteps(stepsFor(steps, result), db);
+    return result;
   }
   async markResolved(category: MediaHealthCategory, assetId: string): Promise<void> {
     const resolvedAt = new Date();
@@ -722,6 +828,16 @@ export class MediaHealthRepository {
       return true;
     });
   }
+
+  /**
+   * FL-845 with FL-1337: Library care gave the photo another file (a repair, a put-back, a restore, a relink or an
+   * Undo). Its processing failures, and the steps set aside after them, were about the file it had, so they are
+   * cleared, as a successful try clears them, and its details and previews are made again from the new file.
+   */
+  async clearProcessingFailures(assetId: string): Promise<void> {
+    await this.db.deleteFrom('asset_processing_failure').where('assetId', '=', asUuid(assetId)).execute();
+  }
+
   /** True when any asset, in any state (a trashed one can still be restored), has this original. */
   async isOriginalPathInUse(originalPath: string): Promise<boolean> {
     const row = await this.db
@@ -733,18 +849,164 @@ export class MediaHealthRepository {
       .executeTakeFirst();
     return !!row;
   }
-  /** Record where a replaced damaged original is kept now (FL-69). Metadata only. */
-  async setRetainedPath(healthId: string, retainedPath: string): Promise<void> {
+  /**
+   * Record where a replaced damaged original is kept now (FL-69). Metadata only. FL-1337: `steps` (the
+   * kept file, with what Undo needs) are written with it.
+   */
+  async setRetainedPath(healthId: string, retainedPath: string, steps?: FindingStep[]): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      await trx
+      const row = await trx
         .withSchema('public')
         .updateTable('asset_health')
         .set({
           evidence: sql`coalesce(evidence, '{}'::jsonb) || jsonb_build_object('retainedPath', ${retainedPath}::text)`,
         })
         .where('id', '=', asUuid(healthId))
-        .execute();
+        .returning(['id', 'assetId'])
+        .executeTakeFirst();
+      if (row) {
+        await this.appendSteps(stepsFor(steps, row), trx);
+      }
     });
+  }
+  /**
+   * Record how a fix left a finding (FL-1337): merge `evidence` (its `fixState` and flags) into the
+   * finding's own and append `steps`, in one transaction. Keys the patch leaves out are kept, so a
+   * person's `autoRepairDeclined` survives. With `status` the finding is settled as fixed too, resolved
+   * now unless it already was. Only an undismissed finding is written, and without `status` only an
+   * open one: a finding someone dismissed, or that was resolved meanwhile, is left as it is. Returns
+   * whether it was written.
+   */
+  async settleFinding(input: {
+    healthId: string;
+    evidence: Record<string, unknown>;
+    steps?: FindingStep[];
+    status?: MediaHealthStatus;
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .withSchema('public')
+        .updateTable('asset_health')
+        .set({
+          evidence: sql`coalesce(evidence, '{}'::jsonb) || ${JSON.stringify(input.evidence)}::text::jsonb`,
+          ...(input.status && {
+            status: input.status,
+            severity: MediaHealthSeverity.Info,
+            resolvedAt: sql<Date>`coalesce("resolvedAt", now())`,
+          }),
+        })
+        .where('id', '=', asUuid(input.healthId))
+        .where('dismissedAt', 'is', null)
+        .$if(!input.status, (qb) => qb.where('resolvedAt', 'is', null))
+        .returning(['id', 'assetId'])
+        .executeTakeFirst();
+      if (!row) {
+        return false;
+      }
+      await this.appendSteps(stepsFor(input.steps, row), trx);
+      return true;
+    });
+  }
+  /**
+   * What a search by contents found for one finding (FL-1337 F7), written against the finding as it is now, not
+   * as the search read it before its walk: under the asset's lock, only while the photo still has the file the
+   * search looked for, and in one guarded update, only while the finding is still open. A person's Keep, a
+   * dismissal, an upload that put the photo back or a fix's state, all written during the walk, stay as they are.
+   * The search's own evidence keys are merged into the live evidence, and its resolution into the live one, less a
+   * choice made from the old candidate list. With `found` the finding also takes that status, severity and run, and
+   * is checked now; without it (damage the search looked behind) its status and the time it was confirmed stay.
+   * Returns whether it was written.
+   */
+  async recordSearchResult(input: {
+    healthId: string;
+    assetId: string;
+    expectedUpdateId: string;
+    originalPath: string;
+    evidence: Record<string, unknown>;
+    resolution: Record<string, unknown>;
+    found?: { status: MediaHealthStatus; severity: MediaHealthSeverity; runId: string | null };
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const asset = await trx
+        .withSchema('public')
+        .selectFrom('asset')
+        .select(['updateId', 'originalPath', 'deletedAt', 'status'])
+        .where('id', '=', asUuid(input.assetId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        asset.originalPath !== input.originalPath ||
+        asset.updateId !== input.expectedUpdateId ||
+        asset.deletedAt ||
+        asset.status !== AssetStatus.Active
+      ) {
+        return false;
+      }
+      const row = await trx
+        .withSchema('public')
+        .updateTable('asset_health')
+        .set({
+          evidence: sql`coalesce(evidence, '{}'::jsonb) || ${JSON.stringify(input.evidence)}::text::jsonb`,
+          resolution: sql`(coalesce(resolution, '{}'::jsonb) - 'chosenCandidateId') || ${JSON.stringify(input.resolution)}::text::jsonb`,
+          ...(input.found && {
+            status: input.found.status,
+            severity: input.found.severity,
+            runId: input.found.runId,
+            checkedAt: new Date(),
+          }),
+        })
+        .where('id', '=', asUuid(input.healthId))
+        .where('assetId', '=', asUuid(input.assetId))
+        .where('resolvedAt', 'is', null)
+        .where('dismissedAt', 'is', null)
+        .returning('id')
+        .executeTakeFirst();
+      return !!row;
+    });
+  }
+  /**
+   * Claim the owner's findings waiting for the shared search by contents (FL-1337) as search `searchId`:
+   * open ones marked `searchPending: true`, ones this search claimed before (a retried step), and ones a
+   * search claimed that no live job carries on any more (it failed, or was stopped for attention). A
+   * claim names its search, `{ search }`, so a search asked for meanwhile leaves it to the live one.
+   */
+  async claimSearchPending(ownerId: string, searchId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      UPDATE public.asset_health health
+      SET evidence = health.evidence || jsonb_build_object('searchPending', jsonb_build_object('search', ${searchId}::text))
+      FROM public.asset asset
+      WHERE asset.id = health."assetId" AND asset."ownerId" = ${ownerId}::uuid AND asset."deletedAt" IS NULL
+        AND health."resolvedAt" IS NULL AND health."dismissedAt" IS NULL
+        AND (
+          health.evidence->'searchPending' = 'true'::jsonb
+          OR (
+            jsonb_typeof(health.evidence->'searchPending') = 'object'
+            AND (
+              health.evidence->'searchPending'->>'search' = ${searchId}::text
+              OR NOT EXISTS (
+                SELECT 1 FROM job
+                WHERE job.queue = ${QueueName.MediaHealth} AND job.state IN ('pending', 'waiting', 'active')
+                  AND job.name = ${JobName.MediaHealthLocateMissing}
+                  AND (job.id = CASE WHEN health.evidence->'searchPending'->>'search' ~* ${UUID_PATTERN}
+                      THEN (health.evidence->'searchPending'->>'search')::uuid END
+                    OR job.data->>'searchId' = health.evidence->'searchPending'->>'search')
+              )
+            )
+          )
+        )
+      RETURNING health.id`.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+  /** Every finding of one asset, open or settled (FL-1337): at most one of each category. */
+  getFindingsForAsset(assetId: string): Promise<MediaHealthFinding[]> {
+    return this.db
+      .withSchema('public')
+      .selectFrom('asset_health')
+      .selectAll()
+      .where('assetId', '=', asUuid(assetId))
+      .orderBy('category')
+      .execute();
   }
   /**
    * Findings a trash job was queued for but no running job holds any more (FL-69): the job was
@@ -1091,6 +1353,8 @@ export class MediaHealthRepository {
         occupants.find(
           (item) => !item.isExternal && !item.libraryId && !item.deletedAt && item.status === AssetStatus.Active,
         )?.id ?? asset.id;
+      // the asset's checksum once relinked: an external original keeps a path checksum
+      const checksum = external ? createHash('sha1').update(`path:${recoveredPath}`).digest() : input.sha256;
       if (external) {
         if (!(await verify())) {
           return false;
@@ -1101,7 +1365,7 @@ export class MediaHealthRepository {
           .set({
             originalPath: recoveredPath,
             originalFileName: input.originalFileName,
-            checksum: createHash('sha1').update(`path:${recoveredPath}`).digest(),
+            checksum,
             checksumAlgorithm: ChecksumAlgorithm.sha1Path,
             fileModifiedAt: input.fileModifiedAt,
             isOffline: false,
@@ -1154,7 +1418,7 @@ export class MediaHealthRepository {
             originalPath: recoveredPath,
             // FL-417: the recovered file is the photo's own
             libraryPath: libraryPathOnRelink(recoveredPath, true),
-            checksum: input.sha256,
+            checksum,
             checksumAlgorithm: ChecksumAlgorithm.sha256File,
             fileModifiedAt: input.fileModifiedAt,
             isOffline: false,
@@ -1194,6 +1458,9 @@ export class MediaHealthRepository {
           originalPath: recoveredPath,
           originalFileName: input.originalFileName,
           evidence: {
+            // FL-1337: a person's "don't repair this again" outlives the relink; the fix says how it left it
+            ...(health.evidence?.autoRepairDeclined === true && { autoRepairDeclined: true }),
+            ...input.evidence,
             reason: repaired
               ? 'repaired_damaged_file'
               : category === MediaHealthCategory.Missing
@@ -1213,6 +1480,13 @@ export class MediaHealthRepository {
         .where('id', '=', input.healthId)
         .where('assetId', '=', asset.id)
         .execute();
+      const undoAfter = { originalPath: recoveredPath, checksum: checksum.toString('hex') };
+      await this.appendSteps(
+        stepsFor(input.steps, { id: input.healthId, assetId: asset.id }).map((step) =>
+          step.undo ? { ...step, undo: { ...step.undo, ...undoAfter } } : step,
+        ),
+        trx,
+      );
 
       await trx
         .withSchema('public')
@@ -1233,5 +1507,582 @@ export class MediaHealthRepository {
       WHERE candidate."healthId" = health.id AND health."assetId" = ANY(${assetIds}::uuid[])
     `.execute(db);
     await sql`DELETE FROM public.asset_health WHERE "assetId" = ANY(${assetIds}::uuid[])`.execute(db);
+  }
+
+  /** Append to the history of a finding; pass `trx` to write in the same transaction as the finding. */
+  async appendSteps(steps: NewFileStep[], trx?: Kysely<DB>): Promise<void> {
+    if (steps.length === 0) {
+      return;
+    }
+    await (trx ?? this.db)
+      .insertInto('asset_health_step')
+      .values(
+        steps.map(({ healthId, assetId, step, outcome, facts, undo, at }) => ({
+          healthId,
+          assetId,
+          step,
+          outcome,
+          ...(at && { at }),
+          ...(facts && { facts }),
+          undo: undo ?? null,
+        })),
+      )
+      .execute();
+  }
+
+  /**
+   * The owner's open Missing findings a phone may be able to answer (FL-1337): the photo is in the
+   * library, not in the Trash, not external and not Locked, and its checksum is the SHA-1 of its
+   * contents, which is how phones match. Only the owner's own rows, whoever asks.
+   */
+  private lostOriginals(ownerId: string) {
+    return this.db
+      .withSchema('public')
+      .selectFrom('asset_health')
+      .innerJoin('asset', 'asset.id', 'asset_health.assetId')
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .where('asset_health.category', '=', MediaHealthCategory.Missing)
+      .where('asset_health.resolvedAt', 'is', null)
+      .where('asset_health.dismissedAt', 'is', null)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.libraryId', 'is', null)
+      .where('asset.isExternal', '=', false)
+      .where('asset.checksumAlgorithm', '=', ChecksumAlgorithm.sha1File)
+      .where(isNotLocked('asset'));
+  }
+
+  /** A page of the owner's lost originals, in a stable order; one more than `take` says there is a next page. */
+  listLostOriginals(ownerId: string, take: number, skip: number) {
+    return this.lostOriginals(ownerId)
+      .select(['asset.id as assetId', 'asset.checksum', 'asset.originalFileName', 'asset.fileCreatedAt'])
+      .orderBy('asset_health.id')
+      .limit(take + 1)
+      .offset(skip)
+      .execute();
+  }
+
+  /**
+   * Whether phones are shown this lost photo (F4): its open Missing finding is one `listLostOriginals` lists, by the
+   * same rule. A photo phones are never shown can never be sent back or reported by one, so it never waits for them.
+   */
+  async isShownToPhones(ownerId: string, assetId: string): Promise<boolean> {
+    const row = await this.lostOriginals(ownerId)
+      .where('asset.id', '=', asUuid(assetId))
+      .select('asset_health.id')
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** The owner's lost originals among these SHA-1 checksums, with where each one stands. */
+  findLostOriginals(ownerId: string, checksums: Buffer[]) {
+    if (checksums.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.lostOriginals(ownerId)
+      .select(['asset_health.id as healthId', 'asset.id as assetId', 'asset_health.evidence'])
+      .where('asset.checksum', 'in', checksums)
+      .execute();
+  }
+
+  /**
+   * One phone's report, decided in one transaction against the history as it is under the lock (FL-1337).
+   * For each finding still open: the phone's `checked-on-phone` step unless it already reported since the
+   * phones were last asked; then, if the finding waits on phones (`fixState: waiting-phone`) and every phone
+   * in `phones` has reported, `asked-phones/not-found` and `fixState: missing`. A repeat report adds no
+   * step but still takes that decision, so a report that raced another cannot leave the finding waiting.
+   */
+  async recordPhoneReport(input: {
+    findings: Array<{ healthId: string; assetId: string }>;
+    sessionId: string;
+    device: string;
+    deviceId: string;
+    phones: string[];
+  }): Promise<void> {
+    if (input.findings.length === 0) {
+      return;
+    }
+    await this.db.transaction().execute(async (trx) => {
+      const open = await trx
+        .withSchema('public')
+        .selectFrom('asset_health')
+        .select(['id', 'evidence'])
+        .where(
+          'id',
+          'in',
+          input.findings.map(({ healthId }) => asUuid(healthId)),
+        )
+        .where('resolvedAt', 'is', null)
+        .where('dismissedAt', 'is', null)
+        .forUpdate()
+        .execute();
+      if (open.length === 0) {
+        return;
+      }
+      const history = await trx
+        .selectFrom('asset_health_step')
+        .select(['healthId', 'step', 'outcome', 'facts'])
+        .where(
+          'healthId',
+          'in',
+          open.map(({ id }) => id),
+        )
+        .where('step', 'in', ['asked-phones', 'checked-on-phone'])
+        .orderBy('at')
+        .orderBy('id')
+        .execute();
+      const steps: NewFileStep[] = [];
+      const settled: string[] = [];
+      for (const row of open) {
+        const finding = input.findings.find(({ healthId }) => healthId === row.id);
+        if (!finding) {
+          continue;
+        }
+        const own = history.filter(({ healthId }) => healthId === row.id);
+        const asked = own.findLastIndex(({ step, outcome }) => step === 'asked-phones' && outcome === 'waiting');
+        const answered = new Set(
+          own
+            .slice(asked + 1)
+            .filter(({ step }) => step === 'checked-on-phone')
+            .map(({ facts }) => (facts as Record<string, unknown> | null)?.session),
+        );
+        const base = { healthId: row.id, assetId: finding.assetId };
+        if (!answered.has(input.sessionId)) {
+          answered.add(input.sessionId);
+          steps.push({
+            ...base,
+            step: 'checked-on-phone',
+            outcome: 'not-found',
+            facts: {
+              ...(input.device && { device: input.device }),
+              deviceId: input.deviceId,
+              session: input.sessionId,
+            },
+          });
+        }
+        const waiting = asked !== -1 && (row.evidence as Record<string, unknown> | null)?.fixState === 'waiting-phone';
+        if (waiting && input.phones.every((phone) => answered.has(phone))) {
+          steps.push({ ...base, step: 'asked-phones', outcome: 'not-found' });
+          settled.push(row.id);
+        }
+      }
+      await this.appendSteps(steps, trx);
+      if (settled.length > 0) {
+        await trx
+          .withSchema('public')
+          .updateTable('asset_health')
+          .set({ evidence: sql`coalesce(evidence, '{}'::jsonb) || '{"fixState":"missing"}'::jsonb` })
+          .where('id', 'in', settled)
+          .execute();
+      }
+    });
+  }
+
+  /** The problems a reader may see (FL-1337): the owner's, or every account's for an administrator, with their privacy. */
+  private fileProblems(options: { ownerId?: string; privacy?: MediaHealthPrivacy }) {
+    return this.db
+      .withSchema('public')
+      .selectFrom('asset_health')
+      .innerJoin('asset', 'asset.id', 'asset_health.assetId')
+      .innerJoin('user', 'user.id', 'asset.ownerId')
+      .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
+      .$if(!!options.privacy, (qb) => qb.where((eb) => lockedOwnerScope(eb, options.privacy!.lockedOwnerId)))
+      .$call((qb) => withHiddenContentFilter(qb, options.privacy));
+  }
+
+  /**
+   * Which problems a tab holds (FL-1337 ruling 1). Needs you: open, and no fix settled it any other way
+   * (a problem no fix has looked at yet counts). Fixed for you: fixed in the last 30 days. Left as they are:
+   * kept as they are, open or settled. A dismissed problem, or one whose photo is in the Trash, is in none,
+   * and while a photo has a problem open, the list goes by that one: its settled ones are in no tab, their
+   * history still readable (Review Focus 5).
+   */
+  private inFileProblemTab(tab: FileProblemTab, fixedDays = FIXED_TAB_DAYS) {
+    const fixState = sql`(asset_health.evidence->>'fixState')`;
+    const shown = sql`asset_health."dismissedAt" IS NULL AND asset."deletedAt" IS NULL
+      AND (asset_health."resolvedAt" IS NULL OR NOT EXISTS (
+        SELECT 1 FROM public.asset_health other
+        WHERE other."assetId" = asset_health."assetId" AND other.id <> asset_health.id
+          AND other."resolvedAt" IS NULL AND other."dismissedAt" IS NULL))`;
+    switch (tab) {
+      case 'needs': {
+        return sql<boolean>`${shown} AND asset_health."resolvedAt" IS NULL
+          AND (${fixState} IS NULL OR ${fixState} IN (${sql.join(NEEDS_FIX_STATES)}))`;
+      }
+      case 'fixed': {
+        return sql<boolean>`${shown} AND ${fixState} IN (${sql.join(FIXED_FIX_STATES)})
+          AND asset_health."resolvedAt" >= now() - make_interval(days => ${fixedDays})`;
+      }
+      default: {
+        return sql<boolean>`${shown} AND ${fixState} = 'left-as-is'`;
+      }
+    }
+  }
+
+  /** The problems with what a row shows: whose they are, and the step each one's story is told from. */
+  private fileProblemRows(options: { ownerId?: string; privacy?: MediaHealthPrivacy }) {
+    return this.fileProblems(options)
+      .leftJoinLateral(
+        (eb) =>
+          eb
+            .selectFrom('asset_health_step')
+            .select(['asset_health_step.step', 'asset_health_step.outcome', 'asset_health_step.facts'])
+            .whereRef('asset_health_step.healthId', '=', 'asset_health.id')
+            .where('asset_health_step.step', '!=', 'kept-damaged')
+            .orderBy('asset_health_step.at', 'desc')
+            .orderBy('asset_health_step.id', 'desc')
+            .limit(1)
+            .as('line'),
+        (join) => join.onTrue(),
+      )
+      .selectAll('asset_health')
+      .select([
+        'asset.ownerId',
+        'user.name as ownerName',
+        'asset.deletedAt as assetDeletedAt',
+        'line.step as lineStep',
+        'line.outcome as lineOutcome',
+        'line.facts as lineFacts',
+      ]);
+  }
+
+  private toFileProblem<
+    T extends { lineStep: string | null; lineOutcome: string | null; lineFacts: Record<string, unknown> | null },
+  >({ lineStep, lineOutcome, lineFacts, ...row }: T) {
+    return {
+      ...row,
+      line: lineStep ? { step: lineStep, outcome: lineOutcome ?? 'info', facts: lineFacts ?? {} } : null,
+    } as unknown as FileProblemRecord;
+  }
+
+  /** One page of a tab (FL-1337): Fixed for you part-saved first, then newest fixed; the others newest first. */
+  async listFileProblems(options: {
+    tab: FileProblemTab;
+    ownerId?: string;
+    privacy: MediaHealthPrivacy;
+    take: number;
+    skip: number;
+  }): Promise<FileProblemRecord[]> {
+    const rows = await this.fileProblemRows(options)
+      .where(this.inFileProblemTab(options.tab))
+      .$if(options.tab === 'fixed', (qb) =>
+        qb
+          .orderBy(sql`(asset_health.evidence->>'fixState') = 'part-saved'`, 'desc')
+          .orderBy('asset_health.resolvedAt', 'desc'),
+      )
+      .orderBy('asset_health.updatedAt', 'desc')
+      .orderBy('asset_health.id', 'desc')
+      .limit(options.take)
+      .offset(options.skip)
+      .execute();
+    return rows.map((row) => this.toFileProblem(row));
+  }
+
+  /** How many problems a tab holds, read with the list's own scope and privacy. */
+  async countFileProblems(options: { tab: FileProblemTab; ownerId?: string; privacy: MediaHealthPrivacy }) {
+    const row = await this.fileProblems(options)
+      .where(this.inFileProblemTab(options.tab))
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .executeTakeFirst();
+    return Number(row?.count ?? 0);
+  }
+
+  /**
+   * The Overview's counts (FL-1337): what Frameleaf fixed in the last `days` days, the earliest and the newest of
+   * those fixes (Task 11b), and what needs the reader. Read with the list's own tab rules, scope and privacy.
+   */
+  async fileProblemCounts(options: {
+    ownerId?: string;
+    privacy: MediaHealthPrivacy;
+    days: number;
+  }): Promise<{ fixed: number; needsYou: number; since: Date | null; latest: Date | null }> {
+    const [fixed, needsYou] = await Promise.all([
+      this.fileProblems(options)
+        .where(this.inFileProblemTab('fixed', options.days))
+        .select((eb) => [
+          eb.fn.countAll<number>().as('count'),
+          eb.fn.min('asset_health.resolvedAt').as('since'),
+          eb.fn.max('asset_health.resolvedAt').as('latest'),
+        ])
+        .executeTakeFirst(),
+      this.countFileProblems({ ...options, tab: 'needs' }),
+    ]);
+    const time = (value: unknown) => (value ? new Date(value as string | Date) : null);
+    return { fixed: Number(fixed?.count ?? 0), needsYou, since: time(fixed?.since), latest: time(fixed?.latest) };
+  }
+
+  /**
+   * The problem the viewer flags on one photo (FL-1337): the open one in Needs you, the missing one when both a
+   * missing and a damaged record are open (Review Focus 5). Closed records, fixed ones and ones kept as they are
+   * never flag. Access to the photo is decided by the caller.
+   */
+  async getOpenFileProblem(assetId: string): Promise<{ id: string; category: MediaHealthCategory } | undefined> {
+    return this.fileProblems({})
+      .where('asset_health.assetId', '=', asUuid(assetId))
+      .where(this.inFileProblemTab('needs'))
+      .select(['asset_health.id', 'asset_health.category'])
+      .orderBy(sql`asset_health.category = 'missing'`, 'desc')
+      .orderBy('asset_health.updatedAt', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  /** One problem, in any state, as the reader may see it (FL-1337): its history stays readable once closed. */
+  async getFileProblem(
+    id: string,
+    ownerId?: string,
+    privacy?: MediaHealthPrivacy,
+  ): Promise<FileProblemRecord | undefined> {
+    const row = await this.fileProblemRows({ ownerId, privacy })
+      .where('asset_health.id', '=', asUuid(id))
+      .executeTakeFirst();
+    return row && this.toFileProblem(row);
+  }
+
+  /**
+   * Undo one fix (FL-1337, design §5) in one transaction, holding the owner, both paths, the asset and the
+   * problem in the order a relink holds them. `changed`, with nothing written or moved, when the photo is no
+   * longer as the fix left it (Review Focus 3): another file or checksum, in the Trash, an edit saved or removed
+   * since the fix, or a later fix or Undo; `open` while the photo has another problem open (Review Focus 5);
+   * `locked` when the photo is Locked now (Task 11b), read under its row lock. Then a repair or relink points the
+   * photo back at the file it used before, a restore moves its files, and the problem is reopened with the
+   * `undone` step.
+   */
+  async undoFix(input: UndoFileFix): Promise<UndoFileFixResult> {
+    const target = input.relinkTo && path.normalize(input.relinkTo.path);
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(trx);
+      const owner = await trx
+        .withSchema('public')
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', asUuid(input.ownerId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (!owner) {
+        return 'changed';
+      }
+      for (const filePath of [...new Set([input.expectedOriginalPath, ...(target ? [target] : [])])].sort()) {
+        await lockFilePath(trx, filePath);
+      }
+      const asset = await trx
+        .withSchema('public')
+        .selectFrom('asset')
+        .selectAll()
+        .select(isLocked('asset').as('isLocked'))
+        .where('id', '=', asUuid(input.assetId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (asset?.isLocked) {
+        // Task 11b: put in Locked since the caller looked; nothing is relinked or moved
+        return 'locked';
+      }
+      const health = await trx
+        .withSchema('public')
+        .selectFrom('asset_health')
+        .selectAll()
+        .where('id', '=', asUuid(input.healthId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        asset.ownerId !== input.ownerId ||
+        asset.deletedAt ||
+        asset.status !== AssetStatus.Active ||
+        asset.originalPath !== input.expectedOriginalPath ||
+        !asset.checksum.equals(input.expectedChecksum) ||
+        !health ||
+        health.assetId !== asset.id ||
+        health.dismissedAt ||
+        !health.resolvedAt
+      ) {
+        return 'changed';
+      }
+      // compared in SQL, where the step's time keeps its microseconds
+      const { rows } = await sql<{ known: boolean; replaced: boolean; edited: boolean; open: boolean }>`
+        SELECT
+          EXISTS (SELECT 1 FROM public.asset_health other
+            WHERE other."assetId" = ${asset.id}::uuid AND other.id <> ${health.id}::uuid
+              AND other."resolvedAt" IS NULL AND other."dismissedAt" IS NULL) AS open,
+          EXISTS (SELECT 1 FROM public.asset_health_step fix
+            WHERE fix.id = ${input.stepId}::uuid AND fix."healthId" = ${health.id}::uuid) AS known,
+          EXISTS (SELECT 1 FROM public.asset_health_step fix
+            JOIN public.asset_health_step later ON later."healthId" = fix."healthId"
+            WHERE fix.id = ${input.stepId}::uuid AND (later.at, later.id) > (fix.at, fix.id)
+              AND (later.undo IS NOT NULL OR later.step = 'undone')) AS replaced,
+          EXISTS (SELECT 1 FROM public.asset_health_step fix JOIN public.asset_edit edit ON edit."assetId" = fix."assetId"
+            WHERE fix.id = ${input.stepId}::uuid AND edit."updatedAt" > fix.at)
+          OR EXISTS (SELECT 1 FROM public.asset_health_step fix
+            JOIN public.asset_edit_audit removed ON removed."assetId" = fix."assetId"
+            WHERE fix.id = ${input.stepId}::uuid AND removed."deletedAt" > fix.at) AS edited`.execute(trx);
+      if (!rows[0]?.known || rows[0].replaced || rows[0].edited) {
+        return 'changed';
+      }
+      if (rows[0].open) {
+        return 'open';
+      }
+
+      if (target && input.relinkTo) {
+        if (asset.isExternal) {
+          // another photo of its library at that path now: it is not this photo's to take back
+          const occupied =
+            !asset.libraryId ||
+            !!(await trx
+              .withSchema('public')
+              .selectFrom('asset')
+              .select('id')
+              .where('originalPath', '=', target)
+              .where('id', '!=', asset.id)
+              .where('libraryId', '=', asUuid(asset.libraryId))
+              .executeTakeFirst());
+          if (occupied) {
+            return 'changed';
+          }
+          await trx
+            .withSchema('public')
+            .updateTable('asset')
+            .set({
+              originalPath: target,
+              checksum: createHash('sha1').update(`path:${target}`).digest(),
+              checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+            })
+            .where('id', '=', asset.id)
+            .execute();
+        } else if (!(await this.relinkManagedBack(trx, asset, target, input.relinkTo))) {
+          return 'changed';
+        }
+      }
+      await input.moveFiles?.();
+
+      await trx
+        .withSchema('public')
+        .updateTable('asset_health')
+        .set({
+          runId: null,
+          status: input.status,
+          severity: MediaHealthSeverity.Critical,
+          ...(target && { originalPath: target }),
+          evidence: sql`coalesce(evidence, '{}'::jsonb) || ${JSON.stringify(input.evidence)}::text::jsonb`,
+          checkedAt: new Date(),
+          resolvedAt: null,
+        })
+        .where('id', '=', health.id)
+        .execute();
+      await this.appendSteps(stepsFor(input.steps, health), trx);
+      return 'undone';
+    });
+  }
+
+  /**
+   * Point a stored photo back at the file it used before a fix (FL-1337). Its physical file is the one
+   * already recorded at that path, or one recorded now for a file that is there; the file it leaves keeps its
+   * record, handed to another photo that uses it when there is one, as a relink leaves its previous file.
+   * False, with nothing written, when the record at that path is not this file.
+   */
+  private async relinkManagedBack(
+    trx: Kysely<DB>,
+    asset: Selectable<AssetTable>,
+    target: string,
+    { digests, takeChecksum }: NonNullable<UndoFileFix['relinkTo']>,
+  ): Promise<boolean> {
+    const physical = await trx
+      .withSchema('public')
+      .selectFrom('physical_file')
+      .selectAll()
+      .where('path', '=', target)
+      .forUpdate()
+      .executeTakeFirst();
+    if (
+      physical &&
+      (physical.type !== PhysicalFileType.Original ||
+        (digests &&
+          !(physical.checksum.length === 20
+            ? physical.checksum.equals(digests.sha1)
+            : physical.checksum.equals(digests.sha256))))
+    ) {
+      return false;
+    }
+    let physicalId = physical?.id ?? null;
+    if (!physicalId && digests) {
+      physicalId = randomUUID();
+      await trx
+        .withSchema('public')
+        .insertInto('physical_file')
+        .values({
+          id: physicalId,
+          canonicalAssetId: asset.id,
+          checksum: digests.sha256,
+          path: target,
+          sizeInBytes: digests.sizeInBytes,
+          type: PhysicalFileType.Original,
+        })
+        .execute();
+    }
+    const checksum = takeChecksum && digests ? digests.sha256 : undefined;
+    await trx
+      .withSchema('public')
+      .updateTable('asset')
+      .set({
+        originalPath: target,
+        libraryPath: libraryPathOnRelink(target, true),
+        physicalOriginalFileId: physicalId,
+        ...(checksum && { checksum, checksumAlgorithm: ChecksumAlgorithm.sha256File }),
+      })
+      .where('id', '=', asset.id)
+      .execute();
+    if (physicalId) {
+      await sql`UPDATE public.physical_file SET "canonicalAssetId" = ${asset.id}::uuid
+        WHERE id = ${physicalId}::uuid AND NOT EXISTS (SELECT 1 FROM public.asset
+          WHERE id = physical_file."canonicalAssetId" AND "originalPath" = ${target})`.execute(trx);
+    }
+    if (asset.physicalOriginalFileId && asset.physicalOriginalFileId !== physicalId) {
+      await sql`UPDATE public.physical_file SET "canonicalAssetId" = (SELECT id FROM public.asset WHERE "physicalOriginalFileId" = ${asset.physicalOriginalFileId}::uuid ORDER BY id LIMIT 1)
+        WHERE id = ${asset.physicalOriginalFileId}::uuid AND "canonicalAssetId" = ${asset.id}::uuid`.execute(trx);
+    }
+    if (checksum && digests) {
+      await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+        VALUES (${asset.id}::uuid, ${digests.sha1}, ${digests.sha256}, ${digests.sizeInBytes}, ARRAY[${target}]::text[], 1, jsonb_build_object('source', 'recovery'::text), now(), now())
+        ON CONFLICT ("assetId") DO UPDATE SET sha1=EXCLUDED.sha1, sha256=EXCLUDED.sha256, "sizeInBytes"=EXCLUDED."sizeInBytes",
+          "verifiedPaths"=EXCLUDED."verifiedPaths", evidence=EXCLUDED.evidence, "verifiedAt"=now(), "updatedAt"=now()`.execute(
+        trx,
+      );
+    }
+    return true;
+  }
+
+  /** A photo went to the Trash (FL-1337): `removed` on each of its open problems, with who removed it. */
+  async recordRemoved(assetIds: string[], facts: Record<string, unknown>): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+    await this.db.transaction().execute(async (trx) => {
+      const open = await trx
+        .withSchema('public')
+        .selectFrom('asset_health')
+        .select(['id', 'assetId'])
+        .where('assetId', '=', anyUuid(assetIds))
+        .where('resolvedAt', 'is', null)
+        .where('dismissedAt', 'is', null)
+        .forUpdate()
+        .execute();
+      await this.appendSteps(
+        open.map((row) => ({ healthId: row.id, assetId: row.assetId, step: 'removed', outcome: 'info', facts })),
+        trx,
+      );
+    });
+  }
+
+  async listSteps(healthId: string): Promise<FileStep[]> {
+    const rows = await this.db
+      .selectFrom('asset_health_step')
+      .selectAll()
+      .where('healthId', '=', healthId)
+      .orderBy('at')
+      .orderBy('id')
+      .execute();
+    return rows.map((row) => ({
+      ...row,
+      step: row.step as FileStep['step'],
+      outcome: row.outcome as FileStep['outcome'],
+    }));
   }
 }

@@ -33,6 +33,12 @@ export type MediaHealthRoot = {
 
 export const MANAGED_ROOT_ID = 'managed';
 
+/**
+ * The hidden folder beside an account's uploads where Library care keeps what a fix put aside: a repaired
+ * copy, a damaged original it replaced, a changed file a restore moved out of the way.
+ */
+export const LIBRARY_CARE_FOLDER = '.library-care';
+
 export const libraryRootId = (libraryId: string) => `library:${libraryId}`;
 
 /** A location's path without a trailing separator, so `/mnt/backup/` and `/mnt/backup` are one location. */
@@ -155,9 +161,11 @@ export type FileDigests = { sha1: Buffer; sha256: Buffer; sizeInBytes: number };
  *
  * The bytes are written to a private temporary name, flushed, and then hard-linked into place:
  * `link` fails rather than overwrites, so a published file is either complete or absent, and an
- * original can never be overwritten by a recovery. A destination that already exists (a retried
- * batch) is accepted only when its content is exactly what was expected. The result is verified by
- * reading the published file back, not by trusting the copy.
+ * original can never be overwritten by a recovery. On a drive without hard links (exFAT, many network
+ * shares) the destination is created exclusively and written from the flushed copy instead (FL-1337), which
+ * never replaces anything either. A destination that already exists (a retried batch) is accepted only when
+ * its content is exactly what was expected. The result is verified by reading the published file back, not
+ * by trusting the copy; a written copy that does not check out is removed, and only that copy.
  */
 export const publishVerifiedCopy = async (input: {
   source: string;
@@ -172,6 +180,9 @@ export const publishVerifiedCopy = async (input: {
     digests.sha1.equals(expected.sha1) &&
     digests.sha256.equals(expected.sha256) &&
     digests.sizeInBytes === expected.sizeInBytes;
+  // Whether this call wrote the destination by copying it: only that file is ever removed. A hard link is
+  // the checked temporary copy itself.
+  let written = false;
   try {
     await copyFile(source, temporary, constants.COPYFILE_EXCL);
     const file = await open(temporary, 'r');
@@ -190,7 +201,11 @@ export const publishVerifiedCopy = async (input: {
     try {
       await link(temporary, destination);
     } catch (error) {
-      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) {
+      const code = errorCode(error);
+      if (cannotHardLink(code)) {
+        // an existing destination is left as it is, and judged by its contents below
+        written = await publishByCopy(temporary, destination, () => Promise.resolve());
+      } else if (code !== 'EEXIST') {
         throw error;
       }
     }
@@ -207,6 +222,9 @@ export const publishVerifiedCopy = async (input: {
 
   const published = await hash(destination);
   if (!matches(published)) {
+    if (written) {
+      await unlink(destination).catch(() => {});
+    }
     throw new Error('The published copy does not match the verified original');
   }
 

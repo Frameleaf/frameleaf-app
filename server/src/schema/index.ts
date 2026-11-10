@@ -71,6 +71,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import {
   AssetHealthCandidateTable,
   AssetHealthRunTable,
+  AssetHealthStepTable,
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
@@ -380,6 +381,7 @@ export class ImmichDatabase {
     AssetHealthRunTable,
     AssetHealthTable,
     AssetHealthCandidateTable,
+    AssetHealthStepTable,
     AssetExifTable,
     AssetVideoTable,
     AssetVideoFingerprintTable,
@@ -615,6 +617,7 @@ export interface DB extends QueueDatabase {
   asset_health_run: AssetHealthRunTable;
   asset_health: AssetHealthTable;
   asset_health_candidate: AssetHealthCandidateTable;
+  asset_health_step: AssetHealthStepTable;
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;

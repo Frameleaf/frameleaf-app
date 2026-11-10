@@ -61,6 +61,7 @@ import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
@@ -136,6 +137,7 @@ type BaseServiceDeps = typeof BASE_SERVICE_DEPENDENCIES;
 type MediumRepositoryKey =
   | BaseServiceDeps[number]
   | typeof LockedEncryptionRepository
+  | typeof MediaHealthRepository
   | typeof MediaOperationRepository
   | typeof StudioProjectRepository
   | typeof VideoMomentRepository;
@@ -170,15 +172,26 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
    * FL-721: services that take LockedEncryptionService by property injection get a real one, on the
    * spec's own repositories where it chose them (real or mock), a real Locked encryption table, and
    * mocks for the rest. The key files stay mocked: medium specs don't write under the upload location.
+   * FL-1337: AssetService's MediaHealthRepository (the viewer's file problem flag) is a real one, on the
+   * spec's database.
    */
   private injectProperties(Service: S) {
     // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
     const properties: { key: string; type: unknown }[] = Reflect.getMetadata(PROPERTY_DEPS_METADATA, Service) ?? [];
     for (const { key, type } of properties) {
-      if (type === LockedEncryptionService) {
-        Object.assign(this.sut, { [key]: this.newLockedEncryptionService() });
-      } else if (type === SignInSecurityService) {
-        Object.assign(this.sut, { [key]: newSignInSecurityMock() });
+      switch (type) {
+        case LockedEncryptionService: {
+          Object.assign(this.sut, { [key]: this.newLockedEncryptionService() });
+          break;
+        }
+        case SignInSecurityService: {
+          Object.assign(this.sut, { [key]: newSignInSecurityMock() });
+          break;
+        }
+        case MediaHealthRepository: {
+          Object.assign(this.sut, { [key]: this.get(MediaHealthRepository) });
+          break;
+        }
       }
     }
   }
@@ -606,6 +619,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case DuplicateRepository:
     case IntegrityRepository:
     case LockedEncryptionRepository:
+    case MediaHealthRepository:
     case MediaOperationRepository:
     case MemoryRepository:
     case MoveRepository:

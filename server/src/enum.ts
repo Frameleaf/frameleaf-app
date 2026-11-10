@@ -688,6 +688,8 @@ export enum SystemMetadataKey {
   FrameleafSetup = 'frameleaf-setup',
   /** FL-667: when the one-off removal of filler tags left by AI descriptions before FL-659 finished. */
   DescriptionFillerTagCleanup = 'description-filler-tag-cleanup',
+  /** FL-1337: the folders an Immich import read its photos from (a list of paths), searched for lost photos while mounted. */
+  FileFixSourceRoots = 'file-fix-source-roots',
 }
 
 export enum UserMetadataKey {
@@ -2358,6 +2360,8 @@ export enum JobName {
   MediaHealthLocateMissing = 'MediaHealthLocateMissing',
   MediaHealthScanCorrupt = 'MediaHealthScanCorrupt',
   MediaHealthDeleteCorrupt = 'MediaHealthDeleteCorrupt',
+  /** FL-1337: check one damaged or missing file and fix what can be fixed by itself, step by step. */
+  MediaHealthFixAsset = 'MediaHealthFixAsset',
 
   AuditTableCleanup = 'AuditTableCleanup',
 
@@ -2535,6 +2539,7 @@ export const JobNameSchema = z
     JobName.LockedUnseal,
     JobName.LockedRewrap,
     JobName.LockedSweep,
+    JobName.MediaHealthFixAsset,
   ])
   .describe('Job name')
   .meta({ id: 'JobName' });

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -8,6 +8,7 @@ import { CORRUPT_MEDIA_DELETE_CONFIRM_TEXT } from 'src/dtos/media-health.dto.js'
 import {
   AssetType,
   AssetVisibility,
+  CacheControl,
   ChecksumAlgorithm,
   JobName,
   JobStatus,
@@ -18,8 +19,12 @@ import {
   MediaOperationItemStatus,
   MediaOperationKind,
   MediaOperationStatus,
+  StorageFolder,
+  SystemMetadataKey,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { SharpOperations } from 'src/queue/sharp-operations.js';
+import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -29,7 +34,7 @@ import { MediaHealthService } from 'src/services/media-health.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
-import { MANAGED_ROOT_ID, recoveryRootId } from 'src/utils/media-health-roots.js';
+import { MANAGED_ROOT_ID, libraryRootId, recoveryRootId } from 'src/utils/media-health-roots.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -51,12 +56,14 @@ describe(MediaHealthService.name, () => {
   let mediaHealthRepository: MediaHealthRepository;
   let mediaOperationRepository: MediaOperationRepository;
   let mediaOperationService: MediaOperationService;
+  let cloudBackupService: { restoreLostOriginal: ReturnType<typeof vi.fn> };
   let recoveryRoots: Array<{ label: string; path: string }>;
 
   beforeEach(() => {
     mocks = getMocks();
     recoveryRoots = [];
     mediaHealthRepository = {
+      clearProcessingFailures: vi.fn().mockResolvedValue(undefined),
       createRun: vi.fn(),
       finishRun: vi.fn(),
       getByIds: vi.fn(),
@@ -92,6 +99,22 @@ describe(MediaHealthService.name, () => {
       relinkExternalAsset: vi.fn(),
       streamAssets: vi.fn(),
       upsertFinding: vi.fn(),
+      appendSteps: vi.fn().mockResolvedValue(undefined),
+      listSteps: vi.fn().mockResolvedValue([]),
+      settleFinding: vi.fn().mockResolvedValue(true),
+      getFindingsForAsset: vi.fn().mockResolvedValue([]),
+      claimSearchPending: vi.fn().mockResolvedValue([]),
+      recordSearchResult: vi.fn().mockResolvedValue(true),
+      // a photo is one phones are shown unless a spec says otherwise
+      isShownToPhones: vi.fn().mockResolvedValue(true),
+      listLostOriginals: vi.fn().mockResolvedValue([]),
+      findLostOriginals: vi.fn().mockResolvedValue([]),
+      recordPhoneReport: vi.fn().mockResolvedValue(undefined),
+      listFileProblems: vi.fn().mockResolvedValue([]),
+      countFileProblems: vi.fn().mockResolvedValue(0),
+      getFileProblem: vi.fn().mockResolvedValue(undefined),
+      undoFix: vi.fn().mockResolvedValue('undone'),
+      recordRemoved: vi.fn().mockResolvedValue(undefined),
     } as unknown as MediaHealthRepository;
     mediaOperationRepository = {
       list: vi.fn().mockResolvedValue({ items: [], total: 0 }),
@@ -104,6 +127,8 @@ describe(MediaHealthService.name, () => {
     mediaOperationService = {
       createBulk: vi.fn().mockResolvedValue({ id: '0195e2a0-0000-7000-8000-0000000000b1' }),
     } as unknown as MediaOperationService;
+    // Cloud Backup holds no copy unless a spec says so
+    cloudBackupService = { restoreLostOriginal: vi.fn().mockResolvedValue({ outcome: 'not-in-backup' }) };
 
     sut = new MediaHealthService(
       mocks.logger as never,
@@ -125,11 +150,15 @@ describe(MediaHealthService.name, () => {
       mocks.cron as never,
       mocks.database as never,
       mocks.systemMetadata as never,
+      cloudBackupService as never,
+      mocks.session as never,
     );
     clearConfigCache();
     vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([]);
     vi.mocked(mediaHealthRepository.count).mockResolvedValue(0);
     vi.mocked(mocks.user.getList).mockResolvedValue([]);
+    // no phone is asked unless a spec says so
+    vi.mocked(mocks.session.getByUserId).mockResolvedValue([]);
     vi.mocked(mocks.library.getAll).mockResolvedValue([]);
     // a regular file that settled long ago; a recovery never touches a file still being written
     vi.mocked(mocks.storage.stat).mockResolvedValue(settledStat({ size: 10 }) as never);
@@ -1276,10 +1305,19 @@ describe(MediaHealthService.name, () => {
           originalFileName: 'missing.jpg',
         }),
       );
+      // its details are read again as work of the asking job's run, which keeps an import's metadata rules; its
+      // previews outside it, as the run may already hold this photo's finished thumbnails (11b)
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } },
+      ]);
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
         { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
       ]);
+      // FL-845: what failed on the old file is cleared first, so a step set aside after it never blocks the new one
+      expect(mediaHealthRepository.clearProcessingFailures).toHaveBeenCalledWith('asset-1');
+      const cleared = vi.mocked(mediaHealthRepository.clearProcessingFailures).mock.invocationCallOrder[0];
+      expect(cleared).toBeLessThan(vi.mocked(mocks.job.queueAll).mock.invocationCallOrder[0]);
+      expect(cleared).toBeLessThan(vi.mocked(mocks.job.queueOutsideRun).mock.invocationCallOrder[0]);
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
     });
 
@@ -1367,6 +1405,168 @@ describe(MediaHealthService.name, () => {
         reasonKey: 'frameleaf_bulk_reason_no_permission',
       });
       expect(mediaHealthRepository.getCandidatesByHealthIds).not.toHaveBeenCalled();
+    });
+
+    describe('a copy in the folders an Immich import read from (Task 11b)', () => {
+      let root: string;
+      let uploads: string;
+      let immich: string;
+      let copy: string;
+      let own: string;
+      const bytes = Buffer.from('the photo, exactly');
+      const fromImport = () =>
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          {
+            id: 'candidate-1',
+            healthId: 'health-1',
+            candidatePath: copy,
+            status: MediaHealthStatus.Found,
+            // in no search location: the search reached it through the import's folders
+            evidence: { decodeValid: true },
+            resolution: { autoRelinkable: true },
+          },
+        ] as never);
+
+      beforeEach(async () => {
+        root = await mkdtemp(join(tmpdir(), 'library-care-relink-'));
+        uploads = join(root, 'upload');
+        const baseFolder = StorageCore.getBaseFolder.bind(StorageCore);
+        const base = vi
+          .spyOn(StorageCore, 'getBaseFolder')
+          .mockImplementation((folder) => (folder === StorageFolder.Upload ? uploads : baseFolder(folder)));
+        onTestFinished(() => base.mockRestore());
+        await mkdir(join(uploads, 'user-id'), { recursive: true });
+        await writeFile(join(uploads, '.frameleaf'), '');
+        immich = join(root, 'immich', 'library');
+        await mkdir(immich, { recursive: true });
+        copy = join(immich, 'IMG_3310.jpg');
+        await writeFile(copy, bytes);
+        own = join(uploads, 'user-id', 'IMG_3310.jpg');
+        const crypto = new CryptoRepository();
+        vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((file) => crypto.hashFileDigests(file));
+        // the drive is there while its mount file is
+        vi.mocked(mocks.storage.stat).mockImplementation((file) => stat(file) as never);
+        vi.mocked(mocks.systemMetadata.get).mockImplementation(((key: SystemMetadataKey) =>
+          Promise.resolve(key === SystemMetadataKey.FileFixSourceRoots ? [join(root, 'immich')] : undefined)) as never);
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([finding()] as never);
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([
+          missingAsset({
+            originalPath: own,
+            originalFileName: 'IMG_3310.jpg',
+            checksum: createHash('sha1').update(bytes).digest(),
+          }),
+        ] as never);
+        fromImport();
+      });
+
+      afterEach(async () => {
+        await rm(root, { recursive: true, force: true });
+      });
+
+      it('copies the reviewed copy into the photo’s own place, never linking to the old app’s folder', async () => {
+        await expect(sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry)).resolves.toEqual(
+          { id: 'asset-1', status: MediaOperationItemStatus.Ok },
+        );
+
+        // the library keeps a verified copy of its own; the old app's file is left exactly as it is
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+        await expect(readFile(own)).resolves.toEqual(bytes);
+        await expect(readFile(copy)).resolves.toEqual(bytes);
+        expect((await stat(own)).ino).not.toBe((await stat(copy)).ino);
+        // as the automatic put-back records it, with who did it, and Undo moves the copy aside
+        expect(mediaHealthRepository.settleFinding).toHaveBeenCalledExactlyOnceWith({
+          healthId: 'health-1',
+          evidence: { fixState: 'found-again', searchPending: false },
+          status: MediaHealthStatus.Relinked,
+          steps: [
+            {
+              step: 'put-back',
+              outcome: 'ok',
+              facts: { copied: true, by: authStub.user1.user.name },
+              undo: {
+                kind: 'restore',
+                previousPath: own,
+                originalPath: own,
+                checksum: createHash('sha1').update(bytes).digest('hex'),
+              },
+            },
+          ],
+        });
+        expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
+          ]),
+        );
+      });
+
+      it('never puts anything at the photo’s place for a copy that no longer matches, or over a file there', async () => {
+        await writeFile(copy, 'another photo');
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_media_health_unverified',
+        });
+        await expect(stat(own)).rejects.toThrow();
+
+        // a file came back at the photo's place meanwhile: it is never replaced
+        await writeFile(copy, bytes);
+        await writeFile(own, 'something else');
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({ status: MediaOperationItemStatus.Failed });
+        await expect(readFile(own, 'utf8')).resolves.toBe('something else');
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+      });
+
+      it('waits for the photo’s drive, copying nothing while it is away', async () => {
+        await rm(join(uploads, '.frameleaf'));
+
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({
+          status: MediaOperationItemStatus.Failed,
+          reasonKey: 'frameleaf_bulk_reason_failed',
+        });
+        await expect(stat(own)).rejects.toThrow();
+        expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+      });
+
+      it('copies only the copy a reviewer could relink: one verified, or the one chosen', async () => {
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          {
+            id: 'candidate-1',
+            healthId: 'health-1',
+            candidatePath: copy,
+            status: MediaHealthStatus.Found,
+            evidence: {},
+            resolution: { autoRelinkable: true },
+          },
+          {
+            id: 'candidate-2',
+            healthId: 'health-1',
+            candidatePath: join(immich, 'other.jpg'),
+            status: MediaHealthStatus.Found,
+            evidence: {},
+            resolution: { autoRelinkable: true },
+          },
+        ] as never);
+
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({ status: MediaOperationItemStatus.Skipped });
+        await expect(stat(own)).rejects.toThrow();
+
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+          finding({ resolution: { autoRelinkable: true, chosenCandidateId: 'candidate-1' } }),
+        ] as never);
+        await expect(sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry)).resolves.toEqual(
+          { id: 'asset-1', status: MediaOperationItemStatus.Ok },
+        );
+        await expect(readFile(own)).resolves.toEqual(bytes);
+      });
     });
 
     it('refuses an entry whose finding belongs to another item', async () => {
@@ -1905,6 +2105,7 @@ describe(MediaHealthService.name, () => {
           await Promise.resolve();
           yield {
             id: 'asset-x',
+            ownerId: 'user-1',
             originalPath: '/library/x.jpg',
             originalFileName: 'x.jpg',
             type: AssetType.Image,
@@ -2010,6 +2211,7 @@ describe(MediaHealthService.name, () => {
       const assets = [
         {
           id: 'missing-asset',
+          ownerId: 'user-1',
           originalPath: '/library/missing.jpg',
           originalFileName: 'missing.jpg',
           type: AssetType.Image,
@@ -2018,6 +2220,7 @@ describe(MediaHealthService.name, () => {
         },
         {
           id: 'corrupt-asset',
+          ownerId: 'user-1',
           originalPath: '/library/corrupt.jpg',
           originalFileName: 'corrupt.jpg',
           type: AssetType.Image,
@@ -2056,6 +2259,10 @@ describe(MediaHealthService.name, () => {
         evidence: { reason: 'source_file_missing_or_unreadable' },
         resolution: { autoRelinkable: true },
         checkedAt: expect.any(Date),
+        steps: [
+          { step: 'added', outcome: 'info', at: undefined },
+          { step: 'not-on-drive', outcome: 'failed', facts: {} },
+        ],
       });
       expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith({
         runId: 'corrupt-run',
@@ -2068,6 +2275,10 @@ describe(MediaHealthService.name, () => {
         evidence: { reason: 'image_decode_failed' },
         resolution: { reuploadRecommended: true },
         checkedAt: expect.any(Date),
+        steps: [
+          { step: 'added', outcome: 'info', at: undefined },
+          { step: 'wont-open', outcome: 'failed', facts: {} },
+        ],
       });
       expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalledWith(
         [MediaHealthCategory.Corrupt],
@@ -2178,7 +2389,7 @@ describe(MediaHealthService.name, () => {
             error: expect.stringContaining('incomplete'),
           }),
         );
-        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+        expect(mediaHealthRepository.recordSearchResult).toHaveBeenCalledWith(
           expect.objectContaining({
             evidence: expect.objectContaining({ searchTruncated: true }),
             resolution: expect.objectContaining({ autoRelinkable: false }),
@@ -2214,7 +2425,7 @@ describe(MediaHealthService.name, () => {
           'run-1',
           expect.objectContaining({ status: 'completed', error: null }),
         );
-        expect(mediaHealthRepository.upsertFinding).toHaveBeenLastCalledWith(
+        expect(mediaHealthRepository.recordSearchResult).toHaveBeenLastCalledWith(
           expect.objectContaining({
             evidence: expect.objectContaining({ searchTruncated: false }),
             resolution: { autoRelinkable: true },
@@ -2586,9 +2797,9 @@ describe(MediaHealthService.name, () => {
       expect(mediaHealthRepository.replaceCandidates).toHaveBeenCalledWith('health-1', [
         expect.objectContaining({ candidatePath: '/data/upload/user-2/sha256.jpg', status: MediaHealthStatus.Found }),
       ]);
-      expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+      expect(mediaHealthRepository.recordSearchResult).toHaveBeenCalledWith(
         expect.objectContaining({
-          status: MediaHealthStatus.Found,
+          found: expect.objectContaining({ status: MediaHealthStatus.Found }),
           resolution: expect.objectContaining({ autoRelinkable: true }),
         }),
       );
@@ -2646,23 +2857,17 @@ describe(MediaHealthService.name, () => {
           checkedAt: expect.any(Date),
         },
       ]);
-      expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith({
-        runId: 'run-1',
+      // F7: only what the search found, written onto the finding as it is now (its other evidence stays)
+      expect(mediaHealthRepository.recordSearchResult).toHaveBeenCalledWith({
+        healthId: 'health-1',
         assetId: 'asset-1',
-        category: MediaHealthCategory.Missing,
-        status: MediaHealthStatus.Found,
-        severity: MediaHealthSeverity.Warning,
+        expectedUpdateId: undefined,
         originalPath: '/library/missing.jpg',
-        originalFileName: 'missing.jpg',
-        evidence: {
-          reason: 'source_file_missing_or_unreadable',
-          candidateCount: 1,
-          validatedCandidateCount: 1,
-          searchTruncated: false,
-        },
+        evidence: { candidateCount: 1, validatedCandidateCount: 1, searchTruncated: false },
         resolution: { autoRelinkable: true },
-        checkedAt: expect.any(Date),
+        found: { status: MediaHealthStatus.Found, severity: MediaHealthSeverity.Warning, runId: 'run-1' },
       });
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
     });
   });
 
@@ -3184,6 +3389,375 @@ describe(MediaHealthService.name, () => {
       expect(mediaHealthRepository.countScanAssets).toHaveBeenCalledWith('user-id', new Date(snapshot.changedSince));
     });
 
+    it.each([
+      [{ status: 'transient', reason: 'validation_busy' }],
+      [{ status: 'transient', reason: 'io_failed' }],
+      [{ status: 'timeout', reason: 'decode_timeout' }],
+    ])('a busy validation records no damage (%j)', async (outcome) => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+      validate.mockResolvedValueOnce(outcome);
+
+      expect(await (sut as any).validateReadableAssetIntegrity(asset)).toMatchObject({ busy: true });
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ status: 'transient', reason: 'decoder_unavailable' }],
+      [{ status: 'transient', reason: 'decoder_resource_limit' }],
+      [{ status: 'transient', reason: 'file_changed' }],
+    ])('also counts %j as busy', async (outcome) => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce(outcome);
+      expect(await (sut as any).validateReadableAssetIntegrity(asset)).toMatchObject({ busy: true });
+    });
+
+    it.each([
+      [{ status: 'transient', reason: 'decode_unverified' }],
+      [{ status: 'transient', reason: 'raw_decode_damaged' }],
+    ])('keeps %j as a suspect, not busy', async (outcome) => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce(outcome);
+      expect(await (sut as any).validateReadableAssetIntegrity(asset)).toMatchObject({
+        status: MediaHealthStatus.CorruptSuspect,
+      });
+    });
+
+    it('a manual repair on a busy check refuses and records no finding', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.spyOn(sut as any, 'requireRepairable').mockReturnValue(undefined);
+      vi.spyOn(sut as any, 'isEncryptedOriginal').mockResolvedValue(false);
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        status: 'transient',
+        reason: 'validation_busy',
+      });
+
+      await expect((sut as any).damageFindingFor(authStub.admin, asset.id)).rejects.toThrow(
+        "Frameleaf couldn't check this photo just now. Try again in a few minutes.",
+      );
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
+    it('a delete revalidation on a busy check leaves the finding as it is', async () => {
+      vi.mocked(mocks.user.getForPinCode).mockResolvedValue({ password: '', pinCode: null });
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        {
+          id: 'health-1',
+          assetId: 'asset-1',
+          category: MediaHealthCategory.Corrupt,
+          status: MediaHealthStatus.CorruptConfirmed,
+          checkedAt: new Date(),
+        },
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([
+        { id: 'asset-1', originalPath: '/library/file.jpg', originalFileName: 'file.jpg', type: AssetType.Image },
+      ] as never);
+      vi.spyOn(sut as any, 'isEncryptedOriginal').mockResolvedValue(false);
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        status: 'timeout',
+        reason: 'decode_timeout',
+      });
+
+      await expect(
+        sut.deleteCorrupt(authStub.user1, { ids: ['health-1'], confirmText: CORRUPT_MEDIA_DELETE_CONFIRM_TEXT }),
+      ).rejects.toThrow('no longer failed deletion revalidation');
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.markStatus).not.toHaveBeenCalled();
+    });
+
+    it('a busy validation keeps an open corrupt finding open', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+      validate.mockResolvedValueOnce({ status: 'transient', reason: 'validation_busy' });
+
+      const found = await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+
+      expect(found).toBe('busy');
+      expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
+    describe('file checks hand what they find to the fix', () => {
+      const asset = AssetFactory.create({
+        id: 'asset-1',
+        originalPath: '/data/trips/a.jpg',
+        createdAt: new Date('2026-01-02T03:04:05Z'),
+      });
+      const queued = { name: JobName.MediaHealthFixAsset, data: { id: 'asset-1', from: 'check' } };
+
+      beforeEach(() => {
+        vi.spyOn(sut as any, 'ownerFolders').mockResolvedValue(['/data']);
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([]);
+        vi.mocked(mediaHealthRepository.upsertFinding).mockResolvedValue({ id: 'health-1' } as never);
+      });
+
+      it('a new missing file is recorded and sent to be fixed', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+
+        expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('missing');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Missing,
+            steps: [
+              { step: 'added', outcome: 'info', at: asset.createdAt },
+              { step: 'not-on-drive', outcome: 'failed', facts: { folder: 'trips', name: 'a.jpg' } },
+            ],
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+        expect(mocks.job.queue).toHaveBeenCalledWith(queued);
+      });
+
+      it('an already-open finding that was handled is not sent again', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          {
+            id: 'health-1',
+            assetId: 'asset-1',
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Missing,
+            evidence: { fixState: 'missing' },
+            resolvedAt: null,
+            dismissedAt: null,
+          },
+        ] as never);
+
+        expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('missing');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(expect.objectContaining({ steps: [] }));
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('an open finding nobody has handled yet is sent once, with no new history', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+        const open = {
+          id: 'health-1',
+          assetId: 'asset-1',
+          category: MediaHealthCategory.Missing,
+          status: MediaHealthStatus.Missing,
+          evidence: { source: 'import' },
+          resolvedAt: null,
+          dismissedAt: null,
+        };
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([open] as never);
+
+        await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(expect.objectContaining({ steps: [] }));
+        expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+        expect(mocks.job.queue).toHaveBeenCalledWith(queued);
+
+        // a search that is waiting on its next try has been handled too
+        mocks.job.queue.mockClear();
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          { ...open, evidence: { searchPending: true } },
+        ] as never);
+        await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('a resolved finding that comes back is recorded and sent again, without a second back-fill', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          {
+            id: 'health-1',
+            assetId: 'asset-1',
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Resolved,
+            resolvedAt: new Date(),
+            dismissedAt: null,
+          },
+        ] as never);
+
+        await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            steps: [{ step: 'not-on-drive', outcome: 'failed', facts: { folder: 'trips', name: 'a.jpg' } }],
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledWith(queued);
+      });
+
+      it('a new damaged file records that it will not open and is sent with the decoder message', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+        ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          status: 'corrupt',
+          reason: 'decode_failed',
+          message: 'Premature end of JPEG file',
+        });
+
+        expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('corrupt');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            category: MediaHealthCategory.Corrupt,
+            status: MediaHealthStatus.CorruptConfirmed,
+            steps: [
+              { step: 'added', outcome: 'info', at: asset.createdAt },
+              { step: 'wont-open', outcome: 'failed', facts: { folder: 'trips', name: 'a.jpg' } },
+            ],
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          ...queued,
+          data: { ...queued.data, message: 'Premature end of JPEG file' },
+        });
+      });
+
+      it('a changed file is sent without a reason passed off as the decoder’s words, and not as one that won’t open (F1)', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+        ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          status: 'corrupt',
+          reason: 'expected_mismatch',
+        });
+
+        expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('corrupt');
+
+        // it may well open: the fix looks at it and says what it found
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: MediaHealthStatus.CorruptConfirmed,
+            steps: [{ step: 'added', outcome: 'info', at: asset.createdAt }],
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith(queued);
+      });
+
+      it.each([
+        ['a file it can’t decode', { status: 'unsupported', reason: 'raw_decode_unsupported' }, []],
+        [
+          'suspected damage',
+          { status: 'transient', reason: 'decode_unverified', message: 'VipsForeignLoad: bad things' },
+          [{ step: 'wont-open', outcome: 'failed', facts: { folder: 'trips', name: 'a.jpg' } }],
+        ],
+      ])('%s is sent to the fix too, so it never sits in Needs you unlooked at (F5)', async (_, result, says) => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+        ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce(result);
+
+        expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('corrupt');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({ steps: [{ step: 'added', outcome: 'info', at: asset.createdAt }, ...says] }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+          ...queued,
+          data: { ...queued.data, ...('message' in result && { message: result.message }) },
+        });
+      });
+
+      it.each([
+        [MediaHealthStatus.Found, { fixState: 'left-as-is' }],
+        [MediaHealthStatus.Candidate, { fixState: 'missing', searchPending: false }],
+      ])(
+        'a missing file whose copies were found (%s) is the same problem: nothing new, its Keep kept (F6)',
+        async (status, evidence) => {
+          vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+          vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+            {
+              id: 'health-1',
+              assetId: 'asset-1',
+              category: MediaHealthCategory.Missing,
+              status,
+              evidence,
+              resolvedAt: null,
+              dismissedAt: null,
+            },
+          ] as never);
+
+          expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('missing');
+
+          // refreshed as missing (the repository keeps how the fix left it), with no new line and no new search
+          expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+            expect.objectContaining({ status: MediaHealthStatus.Missing, steps: [] }),
+          );
+          expect(mocks.job.queue).not.toHaveBeenCalled();
+        },
+      );
+
+      it('suspected damage confirmed later is the same problem: handed over once if nobody has, never twice', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+        const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+        const suspect = {
+          id: 'health-1',
+          assetId: 'asset-1',
+          category: MediaHealthCategory.Corrupt,
+          status: MediaHealthStatus.CorruptSuspect,
+          evidence: { reason: 'decode_unverified' },
+          resolvedAt: null,
+          dismissedAt: null,
+        };
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([suspect] as never);
+        validate.mockResolvedValueOnce({ status: 'corrupt', reason: 'decode_failed', message: 'Premature end' });
+
+        await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+
+        // nobody had looked at the suspect: it goes to the fix once, with no second "won't open"
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({ status: MediaHealthStatus.CorruptConfirmed, steps: [] }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+          ...queued,
+          data: { ...queued.data, message: 'Premature end' },
+        });
+
+        // the fix had settled it: confirmed now, it is still the problem the fix settled
+        mocks.job.queue.mockClear();
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          { ...suspect, evidence: { reason: 'decode_unverified', fixState: 'cant-repair' } },
+        ] as never);
+        validate.mockResolvedValueOnce({ status: 'corrupt', reason: 'decode_failed', message: 'Premature end' });
+        await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('a dismissed problem the check finds again is a new one: recorded and sent again', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          {
+            id: 'health-1',
+            assetId: 'asset-1',
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Missing,
+            evidence: { fixState: 'missing' },
+            resolvedAt: null,
+            dismissedAt: new Date(),
+          },
+        ] as never);
+
+        await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+
+        // the repository starts its evidence afresh (medium spec), so the fix runs instead of seeing it settled
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            steps: [{ step: 'not-on-drive', outcome: 'failed', facts: { folder: 'trips', name: 'a.jpg' } }],
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith(queued);
+      });
+
+      it('a file under an unplugged drive is not judged', async () => {
+        const upload = StorageCore.getBaseFolder(StorageFolder.Upload);
+        const lost = { ...asset, originalPath: join(upload, 'user-id', 'a.jpg') };
+        vi.mocked(mocks.storage.stat).mockImplementation((file) =>
+          file === join(upload, '.frameleaf')
+            ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+            : Promise.resolve(settledStat({ size: 10 }) as never),
+        );
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+
+        expect(await (sut as any).scanAsset(lost, 'missing-run', 'corrupt-run')).toBe('busy');
+
+        expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+    });
+
     it('verifies original checksums in a scan only while "Verify original checksums" is on', async () => {
       const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
       const withSha1 = { ...asset, checksum: Buffer.from('abc'), checksumAlgorithm: ChecksumAlgorithm.sha1File };
@@ -3478,8 +4052,11 @@ describe(MediaHealthService.name, () => {
       vi.mocked(mocks.storage.mkdtemp).mockImplementation((prefix) => mkdtemp(join(root, prefix)));
       vi.mocked(mocks.storage.readFile).mockImplementation((path) => readFile(path));
       vi.mocked(mocks.storage.unlinkDir).mockImplementation((folder, options) => rm(folder, options));
+      // as through the image worker pool: a repair the worker refused comes back as its operation error
       vi.mocked(mocks.media.repairJpeg).mockImplementation((input, output, preview, metadataSource) =>
-        operations.repairJpeg(input, output, preview, metadataSource),
+        operations.repairJpeg(input, output, preview, metadataSource).catch((error: Error) => {
+          throw new SharpOperationError(error.message);
+        }),
       );
       nestedPath = vi
         .spyOn(StorageCore, 'getNestedPath')
@@ -3537,7 +4114,60 @@ describe(MediaHealthService.name, () => {
       expect(input.originalPath).toContain('.library-care');
       expect(input.sha1.toString('hex')).toBe(checksum);
       expect(input.expectedOriginalPath).toBe(damaged);
-      expect(mocks.job.queueAll).toHaveBeenCalled();
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalled();
+    });
+
+    it('records the reviewed repair as the automatic one does, so it is fixed and can be undone (FL-1337)', async () => {
+      const { checksum } = await sut.previewRepair(owner, { findingId: 'health-1' });
+      // after the commit the finding points at the repaired file and records the damaged one as `retainedPath`
+      vi.mocked(mediaHealthRepository.getByIds).mockImplementation(() => {
+        const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0]?.[0];
+        return Promise.resolve([
+          {
+            id: 'health-1',
+            assetId: 'asset-1',
+            category: MediaHealthCategory.Corrupt,
+            status: input ? MediaHealthStatus.Resolved : MediaHealthStatus.CorruptSuspect,
+            originalPath: input?.originalPath ?? damaged,
+            evidence: input ? { retainedPath: damaged, autoRepairDeclined: true } : {},
+          },
+        ] as never);
+      });
+
+      await expect(sut.repair(owner, { findingId: 'health-1', checksum })).resolves.toEqual({
+        findingId: 'health-1',
+        assetId: 'asset-1',
+        method: 'lossless',
+      });
+
+      const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0][0];
+      // a lossless repair saves the whole picture; who reviewed it is in the history
+      expect(input.evidence).toEqual({ fixState: 'repaired', partSaved: false });
+      expect(input.steps).toEqual([
+        {
+          step: 'repaired',
+          outcome: 'ok',
+          facts: { method: 'lossless', percentSaved: 100, metadataLost: false, by: 'User 1' },
+        },
+      ]);
+      expect(input.provenance).toMatchObject({ recoveredBy: 'user-id', repairMethod: 'lossless' });
+      // the damaged file is kept beside it, with what Undo needs, in the write that records its place
+      const [healthId, keptPath, steps] = vi.mocked(mediaHealthRepository.setRetainedPath).mock.calls[0];
+      expect(healthId).toBe('health-1');
+      expect(keptPath).toContain('.library-care');
+      expect(steps).toEqual([
+        {
+          step: 'kept-damaged',
+          outcome: 'info',
+          undo: {
+            kind: 'repair',
+            previousPath: keptPath,
+            originalPath: input.originalPath,
+            checksum: input.sha256.toString('hex'),
+          },
+        },
+      ]);
+      await expect(stat(keptPath)).resolves.toBeDefined();
     });
 
     it('copies the photo’s details back when the repair lost them', async () => {
@@ -3662,6 +4292,2551 @@ describe(MediaHealthService.name, () => {
     it('says when a file has no picture to recover', async () => {
       await writeFile(damaged, 'not a picture at all');
       await expect(sut.previewRepair(owner, { findingId: 'health-1' })).rejects.toThrow('could not be repaired');
+    });
+  });
+
+  describe('the fix job (FL-1337)', () => {
+    type Written = { step: string; outcome: string; facts?: Record<string, any>; undo?: Record<string, any> | null };
+    const operations = new SharpOperations();
+    const crypto = new CryptoRepository();
+    const minutes = (count: number) => count * 60_000;
+    const care = (libraryCare: Record<string, unknown>) => {
+      clearConfigCache();
+      vi.mocked(mocks.systemMetadata.get).mockResolvedValue({ libraryCare } as never);
+    };
+    let root: string;
+    let nestedPath: { mockRestore: () => void };
+    let asset: Record<string, unknown> & { id: string; originalPath: string; checksum: Buffer };
+
+    const finding = (category: MediaHealthCategory, status: MediaHealthStatus, evidence = {}) => ({
+      id: 'health-1',
+      assetId: 'asset-1',
+      runId: null,
+      category,
+      status,
+      severity: MediaHealthSeverity.Critical,
+      originalPath: asset.originalPath,
+      originalFileName: asset.originalFileName,
+      evidence,
+      resolution: {},
+      checkedAt: new Date(),
+      resolvedAt: null,
+      dismissedAt: null,
+    });
+    const recorded = (...findings: unknown[]) => {
+      vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue(findings as never);
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue(findings as never);
+    };
+    /** The photo's original is this file, stored with its own checksum (it arrived as it is now). */
+    const original = async (file: string, bytes: Buffer, originalFileName = file.split('/').pop()!) => {
+      await writeFile(file, bytes);
+      asset = { ...asset, originalPath: file, originalFileName, checksum: createHash('sha1').update(bytes).digest() };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+    };
+    /** A JPEG whose end was cut off: the decoder says "premature end". Textured, so a cut keeps rows. */
+    const cutShort = async () => {
+      const values = Buffer.alloc(320 * 240 * 3);
+      let seed = 7;
+      for (let index = 0; index < values.length; index++) {
+        seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+        values[index] = seed >>> 24;
+      }
+      const good = await sharp(values, { raw: { width: 320, height: 240, channels: 3 } })
+        .jpeg()
+        .toBuffer();
+      await original(join(root, 'IMG_2041.jpg'), good.subarray(0, Math.floor(good.length * 0.7)));
+    };
+    const decoderSays = (result: Record<string, unknown>) =>
+      ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValue(result);
+
+    /** Every step the job wrote, in the order it wrote them, whichever write carried it. */
+    const written = (): Written[] => {
+      const repository = mediaHealthRepository as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const carried: Array<{ order: number; steps: Written[] }> = [];
+      const collect = (name: string, steps: (args: any[]) => Written[] | undefined) => {
+        const mock = repository[name];
+        for (const [index, args] of (mock?.mock.calls ?? []).entries()) {
+          carried.push({ order: mock.mock.invocationCallOrder[index], steps: steps(args) ?? [] });
+        }
+      };
+      collect('upsertFinding', ([input]) => input.steps);
+      collect('replaceRepairedOriginal', ([input]) => input.steps);
+      collect('relinkManagedAsset', ([input]) => input.steps);
+      collect('relinkExternalAsset', ([input]) => input.steps);
+      collect('setRetainedPath', (args) => args[2]);
+      collect('settleFinding', ([input]) => input.steps);
+      collect('appendSteps', ([steps]) => steps);
+      return carried.sort((a, b) => a.order - b.order).flatMap(({ steps }) => steps);
+    };
+    const stepsWritten = () => written().map(({ step, outcome }) => `${step}/${outcome}`);
+    const stepNamed = (name: string) => written().find(({ step }) => step === name);
+    /** The finding's last recorded state, from whichever write set it. */
+    const fixState = () => {
+      const repository = mediaHealthRepository as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const states: Array<{ order: number; evidence: Record<string, unknown> }> = [];
+      for (const name of ['replaceRepairedOriginal', 'relinkManagedAsset', 'relinkExternalAsset', 'settleFinding']) {
+        const mock = repository[name];
+        for (const [index, [input]] of (mock?.mock.calls ?? []).entries()) {
+          if (input?.evidence?.fixState) {
+            states.push({ order: mock.mock.invocationCallOrder[index], evidence: input.evidence });
+          }
+        }
+      }
+      return states.sort((a, b) => a.order - b.order).at(-1)?.evidence;
+    };
+
+    beforeEach(async () => {
+      root = await mkdtemp(join(tmpdir(), 'library-care-fix-'));
+      asset = {
+        id: 'asset-1',
+        ownerId: 'user-id',
+        updateId: 'update-1',
+        checksum: Buffer.alloc(20, 1),
+        checksumAlgorithm: ChecksumAlgorithm.sha1File,
+        originalPath: join(root, 'IMG_2041.jpg'),
+        originalFileName: 'IMG_2041.jpg',
+        type: AssetType.Image,
+        isExternal: false,
+        libraryId: null,
+        deletedAt: null,
+      };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([]);
+      vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([]);
+      vi.mocked(mediaHealthRepository.createRun).mockResolvedValue({ id: 'run-1' } as never);
+      vi.mocked(mediaHealthRepository.upsertFinding).mockImplementation((input) =>
+        Promise.resolve({ ...input, id: 'health-1' } as never),
+      );
+      (mediaHealthRepository as unknown as Record<string, unknown>).replaceRepairedOriginal = vi
+        .fn()
+        .mockResolvedValue(true);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      vi.mocked(mocks.storage.stat).mockImplementation((file) => stat(file) as never);
+      vi.mocked(mocks.storage.mkdtemp).mockImplementation((prefix) => mkdtemp(join(root, prefix)));
+      vi.mocked(mocks.storage.unlinkDir).mockImplementation((folder, options) => rm(folder, options));
+      vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((file) => crypto.hashFileDigests(file));
+      vi.mocked(mocks.crypto.hashFileMatching).mockImplementation((file, reference) =>
+        crypto.hashFileMatching(file, reference),
+      );
+      // as through the image worker pool: a repair the worker refused comes back as its operation error
+      vi.mocked(mocks.media.repairJpeg).mockImplementation((input, output, preview, metadataSource) =>
+        operations.repairJpeg(input, output, preview, metadataSource).catch((error: Error) => {
+          throw new SharpOperationError(error.message);
+        }),
+      );
+      nestedPath = vi
+        .spyOn(StorageCore, 'getNestedPath')
+        .mockReturnValue(join(root, 'upload', 'user-id', 'as', 'se', 'asset-1'));
+    });
+
+    afterEach(async () => {
+      nestedPath.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    it('repairs a cut-short JPEG and keeps the damaged file', async () => {
+      await cutShort();
+      // the fix looks at the file itself: it still won't open
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      const damaged = asset.originalPath;
+      // after the commit the finding points at the repaired file and records the damaged one as `retainedPath`
+      vi.mocked(mediaHealthRepository.getByIds).mockImplementation(() => {
+        const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0]?.[0];
+        return Promise.resolve([
+          {
+            ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.Resolved, { retainedPath: damaged }),
+            originalPath: input?.originalPath,
+          },
+        ] as never);
+      });
+
+      await expect(
+        sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' }),
+      ).resolves.toBe(JobStatus.Success);
+
+      expect(stepsWritten()).toEqual(['wont-open/failed', 'repaired/ok', 'kept-damaged/info']);
+      expect(stepNamed('wont-open')?.facts).toEqual({ cause: 'cut-short' });
+      const repaired = stepNamed('repaired')!;
+      expect(repaired.facts).toMatchObject({ method: 'rebuilt', metadataLost: false });
+      expect(repaired.facts!.percentSaved).toBeGreaterThan(0);
+      expect(repaired.facts!.percentSaved).toBeLessThan(100);
+      // the damaged file was moved beside the repaired one, never deleted, and Undo knows where it is
+      const kept = stepNamed('kept-damaged')!;
+      expect(kept.undo).toMatchObject({ kind: 'repair', previousPath: expect.stringContaining('.library-care') });
+      await expect(stat(kept.undo!.previousPath)).resolves.toBeDefined();
+      await expect(stat(damaged)).rejects.toThrow();
+      const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0][0];
+      expect(kept.undo).toMatchObject({ originalPath: input.originalPath, checksum: input.sha256.toString('hex') });
+      expect(input).toMatchObject({
+        expectedOriginalPath: damaged,
+        provenance: expect.objectContaining({ recoveredBy: 'user-id', automatic: true, repairMethod: 'rebuilt' }),
+      });
+      expect(fixState()).toEqual({ fixState: 'part-saved', partSaved: true });
+      // previews are made again, as after an upload, so the follow-up work runs too
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith(
+        expect.arrayContaining([{ name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } }]),
+      );
+    });
+
+    it('repairs, but leaves the damaged file where it is while the drive for the kept copy is unplugged', async () => {
+      await cutShort();
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      const damaged = asset.originalPath;
+      // the repaired copy lands in the Library care folder on the uploads drive, which then goes away
+      const uploads = join(root, 'upload');
+      const baseFolder = StorageCore.getBaseFolder.bind(StorageCore);
+      const base = vi
+        .spyOn(StorageCore, 'getBaseFolder')
+        .mockImplementation((folder) => (folder === StorageFolder.Upload ? uploads : baseFolder(folder)));
+      onTestFinished(() => base.mockRestore());
+      await mkdir(uploads, { recursive: true });
+      await writeFile(join(uploads, '.frameleaf'), '');
+      vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mockImplementation(async () => {
+        await rm(join(uploads, '.frameleaf'));
+        return true;
+      });
+      vi.mocked(mediaHealthRepository.getByIds).mockImplementation(() => {
+        const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0]?.[0];
+        return Promise.resolve([
+          {
+            ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.Resolved, { retainedPath: damaged }),
+            originalPath: input?.originalPath,
+          },
+        ] as never);
+      });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' });
+
+      expect(stepsWritten()).toEqual(['wont-open/failed', 'repaired/ok', 'kept-damaged/info']);
+      // still where it was, still recorded there: never moved into the empty mount point
+      await expect(stat(damaged)).resolves.toBeDefined();
+      expect(stepNamed('kept-damaged')?.undo).toMatchObject({ kind: 'repair', previousPath: damaged });
+      expect(mediaHealthRepository.setRetainedPath).not.toHaveBeenCalled();
+      expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('until its drive is back'));
+    });
+
+    it('waits for the Upload drive before repairing into its Library care folder (F2)', async () => {
+      await cutShort();
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      const before = await readFile(asset.originalPath);
+      // the photo is on another drive; the Upload drive, where Library care keeps repairs, is unplugged
+      const uploads = join(root, 'upload');
+      const baseFolder = StorageCore.getBaseFolder.bind(StorageCore);
+      const base = vi
+        .spyOn(StorageCore, 'getBaseFolder')
+        .mockImplementation((folder) => (folder === StorageFolder.Upload ? uploads : baseFolder(folder)));
+      onTestFinished(() => base.mockRestore());
+
+      await expect(
+        sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' }),
+      ).resolves.toBe(JobStatus.Success);
+
+      // nothing written into the empty mount point, nothing relinked; what was found is recorded once
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+      await expect(stat(join(uploads, 'user-id'))).rejects.toThrow();
+      await expect(readFile(asset.originalPath)).resolves.toEqual(before);
+      expect(stepsWritten()).toEqual(['wont-open/failed']);
+      expect(fixState()).toBeUndefined();
+      // it waits like an unplugged drive, straight back to the treatment, with the preview's words dropped
+      const queued = vi.mocked(mocks.job.queue).mock.calls.at(-1)![0];
+      expect(queued).toEqual({
+        name: JobName.MediaHealthFixAsset,
+        data: expect.objectContaining({ id: 'asset-1', waits: 1, stage: 'treat', delay: minutes(30) }),
+      });
+      expect((queued.data as Record<string, unknown>).message).toBeUndefined();
+      expect((queued.data as Record<string, unknown>).attempt).toBeUndefined();
+
+      // a day without the drive: the person can try again once it is back
+      vi.mocked(mediaHealthRepository.appendSteps).mockClear();
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed));
+      await sut.handleFixAsset({ ...(queued.data as Record<string, unknown>), waits: 48 } as never);
+      expect(stepNamed('checked')?.facts).toEqual({ cause: 'busy' });
+      expect(fixState()).toMatchObject({ fixState: 'couldnt-check' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+    });
+
+    it('leaves a Photoshop file as it is', async () => {
+      await original(join(root, 'Album-cover.psd'), Buffer.concat([Buffer.from('8BPS'), Buffer.alloc(2048, 3)]));
+      decoderSays({
+        status: 'unsupported',
+        reason: 'decode_unsupported',
+        message: 'Input buffer contains unsupported image format',
+      });
+
+      await sut.handleFixAsset({
+        id: 'asset-1',
+        from: 'preview',
+        message: 'Input buffer contains unsupported image format',
+      });
+
+      expect(stepsWritten()).toEqual(['unsupported/info']);
+      expect(fixState()).toMatchObject({ fixState: 'left-as-is' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a RAW its decoder can’t read', 'Forest.ARW', { status: 'unsupported', reason: 'raw_decode_unsupported' }],
+      ['a file of no kind it decodes', 'Voice memo.m4a', { status: 'unsupported', reason: 'media_type_unsupported' }],
+    ])('leaves %s as it is when the file check hands it over (F5)', async (_, name, verdict) => {
+      await original(join(root, name), Buffer.concat([Buffer.from('not a picture'), Buffer.alloc(2048, 3)]));
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.UnsupportedRaw));
+      decoderSays(verdict);
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Success);
+
+      // not an error: "Left as it is", out of Needs you, and nothing repaired or looked for
+      expect(stepsWritten()).toEqual(['unsupported/info']);
+      expect(fixState()).toMatchObject({ fixState: 'left-as-is' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+      expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+    });
+
+    it('does not repair when automatic repair is off', async () => {
+      care({ autoRepair: false });
+      await cutShort();
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' });
+
+      expect(stepsWritten()).toEqual(['wont-open/failed', 'checked/failed']);
+      expect(stepNamed('checked')?.facts).toEqual({ cause: 'cut-short' });
+      expect(fixState()).toMatchObject({ fixState: 'cant-repair' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+    });
+
+    it('does not repair again after Undo', async () => {
+      await cutShort();
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { autoRepairDeclined: true }));
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+
+      // the file check already said it won't open: nothing says it twice
+      expect(stepsWritten()).toEqual(['checked/failed']);
+      expect(fixState()).toMatchObject({ fixState: 'cant-repair' });
+      expect(fixState()).not.toHaveProperty('autoRepairDeclined', false);
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+    });
+
+    it('restores a changed file from Cloud Backup', async () => {
+      await cutShort();
+      // the file is no longer the one Frameleaf stored
+      asset = { ...asset, checksum: Buffer.alloc(20, 9) };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { searchPending: true }));
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      // Cloud Backup put the photo back, moving the changed file aside
+      const retainedPath = join(root, 'upload', 'user-id', 'as', 'se', '.library-care', 'asset-1-0badc0de.damaged.jpg');
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({
+        outcome: 'restored',
+        since: '2026-10-01T03:00:00.000Z',
+        retainedPath,
+      });
+
+      // the owner's shared search is complete and found no copy
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(cloudBackupService.restoreLostOriginal).toHaveBeenCalledWith('asset-1');
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/ok', 'restored/ok']);
+      expect(stepNamed('checked-backups')?.facts).toEqual({ backup: 'cloud', since: '2026-10-01T03:00:00.000Z' });
+      expect(stepNamed('restored')?.facts).toEqual({ backup: 'cloud' });
+      // Undo knows where the changed file went, to put it back
+      expect(stepNamed('restored')?.undo).toEqual({
+        kind: 'restore',
+        previousPath: asset.originalPath,
+        originalPath: asset.originalPath,
+        checksum: asset.checksum.toString('hex'),
+        retainedPath,
+      });
+      expect(fixState()).toMatchObject({ fixState: 'restored' });
+      expect(mediaHealthRepository.settleFinding).toHaveBeenLastCalledWith(
+        expect.objectContaining({ healthId: 'health-1', status: MediaHealthStatus.Resolved }),
+      );
+      // a real original always beats a repair
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+    });
+
+    it('puts back the one exact copy of a missing file', async () => {
+      const copy = join(root, 'IMG_3310+1.jpg');
+      await original(copy, Buffer.from('the photo, exactly'));
+      asset = { ...asset, originalPath: join(root, 'IMG_3310.jpg'), originalFileName: 'IMG_3310.jpg' };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Found, { searchPending: true }));
+      vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+        {
+          id: 'candidate-1',
+          healthId: 'health-1',
+          candidatePath: copy,
+          status: MediaHealthStatus.Found,
+          evidence: { rootId: MANAGED_ROOT_ID, decodeValid: true },
+          resolution: { autoRelinkable: true },
+        },
+      ] as never);
+      vi.mocked(mediaHealthRepository.relinkManagedAsset).mockResolvedValue(true);
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(stepsWritten()).toEqual(['searched-copy/ok', 'put-back/ok']);
+      expect(stepNamed('put-back')?.undo).toMatchObject({ kind: 'relink', previousPath: join(root, 'IMG_3310.jpg') });
+      expect(vi.mocked(mediaHealthRepository.relinkManagedAsset).mock.calls[0][0]).toMatchObject({
+        originalPath: copy,
+        provenance: expect.objectContaining({ relinkedBy: 'user-id', automatic: true }),
+      });
+      expect(fixState()).toMatchObject({ fixState: 'found-again' });
+    });
+
+    it('copies a missing file found in an old Immich folder into its own place, never linking to it (F3)', async () => {
+      const uploads = join(root, 'upload');
+      const baseFolder = StorageCore.getBaseFolder.bind(StorageCore);
+      const base = vi
+        .spyOn(StorageCore, 'getBaseFolder')
+        .mockImplementation((folder) => (folder === StorageFolder.Upload ? uploads : baseFolder(folder)));
+      onTestFinished(() => base.mockRestore());
+      await mkdir(join(uploads, 'user-id'), { recursive: true });
+      await writeFile(join(uploads, '.frameleaf'), '');
+      // the folder the Immich import read from, still mounted, holds the lost photo
+      const immich = join(root, 'immich', 'library');
+      const copy = join(immich, 'IMG_3310.jpg');
+      await mkdir(immich, { recursive: true });
+      await original(copy, Buffer.from('the photo, exactly'));
+      const own = join(uploads, 'user-id', 'IMG_3310.jpg');
+      asset = { ...asset, originalPath: own, originalFileName: 'IMG_3310.jpg' };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.mocked(mocks.systemMetadata.get).mockImplementation(((key: SystemMetadataKey) =>
+        Promise.resolve(key === SystemMetadataKey.FileFixSourceRoots ? [join(root, 'immich')] : undefined)) as never);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Found, { searchPending: true }));
+      vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+        {
+          id: 'candidate-1',
+          healthId: 'health-1',
+          candidatePath: copy,
+          status: MediaHealthStatus.Found,
+          // in no search location: the walk reached it through the import's folders
+          evidence: { decodeValid: true },
+          resolution: { autoRelinkable: true },
+        },
+      ] as never);
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      // never relinked to the old app's folder: the library keeps a verified copy of its own
+      expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      await expect(readFile(own, 'utf8')).resolves.toBe('the photo, exactly');
+      // the old file is left exactly as it is: deleting the old app's data later loses nothing
+      await expect(readFile(copy, 'utf8')).resolves.toBe('the photo, exactly');
+      expect((await stat(own)).ino).not.toBe((await stat(copy)).ino);
+      expect(stepsWritten()).toEqual(['searched-copy/ok', 'put-back/ok']);
+      expect(stepNamed('put-back')).toMatchObject({
+        facts: { copied: true },
+        // Undo moves the copy aside into Library care, as a restore's does
+        undo: { kind: 'restore', previousPath: own, originalPath: own, checksum: asset.checksum.toString('hex') },
+      });
+      expect(mediaHealthRepository.settleFinding).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: MediaHealthStatus.Relinked }),
+      );
+      expect(fixState()).toMatchObject({ fixState: 'found-again', searchPending: false });
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith(
+        expect.arrayContaining([{ name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } }]),
+      );
+    });
+
+    it('waits for the Upload drive before putting back a copy of a changed file (F2)', async () => {
+      await cutShort();
+      // the file is no longer the one Frameleaf stored, and the search found its one exact copy
+      asset = { ...asset, checksum: Buffer.alloc(20, 9) };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { searchPending: true }));
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+        {
+          id: 'candidate-1',
+          healthId: 'health-1',
+          candidatePath: join(root, 'IMG_2041+1.jpg'),
+          status: MediaHealthStatus.Found,
+          evidence: { rootId: MANAGED_ROOT_ID, decodeValid: true },
+          resolution: { autoRelinkable: true },
+        },
+      ] as never);
+      // the Upload drive, where the copy and the changed file would go, is unplugged
+      const uploads = join(root, 'upload');
+      const baseFolder = StorageCore.getBaseFolder.bind(StorageCore);
+      const base = vi
+        .spyOn(StorageCore, 'getBaseFolder')
+        .mockImplementation((folder) => (folder === StorageFolder.Upload ? uploads : baseFolder(folder)));
+      onTestFinished(() => base.mockRestore());
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+      expect(fixState()).toBeUndefined();
+      // it waits like an unplugged drive; the search is done, so the next try only puts it back
+      expect(mocks.job.queue).toHaveBeenLastCalledWith({
+        name: JobName.MediaHealthFixAsset,
+        data: expect.objectContaining({ id: 'asset-1', searched: true, waits: 1, delay: minutes(30) }),
+      });
+    });
+
+    it('puts back a missing file from Cloud Backup, with nothing moved aside', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({
+        outcome: 'restored',
+        since: '2026-10-01T03:00:00.000Z',
+      });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/ok', 'restored/ok']);
+      expect(stepNamed('restored')?.undo).not.toHaveProperty('retainedPath');
+      expect(mediaHealthRepository.settleFinding).toHaveBeenLastCalledWith(
+        expect.objectContaining({ healthId: 'health-1', status: MediaHealthStatus.Relinked }),
+      );
+      // the asset is unchanged: its previews are made again from the file that is back
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith(
+        expect.arrayContaining([{ name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } }]),
+      );
+    });
+
+    it('asks Cloud Backup again later while a backup runs, without searching again', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({ outcome: 'busy' });
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found']);
+      expect(mocks.job.queue).toHaveBeenLastCalledWith({
+        name: JobName.MediaHealthFixAsset,
+        data: expect.objectContaining({ id: 'asset-1', stage: 'backups', backupWaits: 1, delay: minutes(30) }),
+      });
+
+      // half an hour later it asks Cloud Backup only
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({ outcome: 'not-in-backup' });
+      await sut.handleFixAsset(vi.mocked(mocks.job.queue).mock.calls.at(-1)![0].data as never);
+      expect(stepsWritten()).toEqual([
+        'searched-copy/not-found',
+        'checked-backups/not-found',
+        'asked-phones/not-found',
+      ]);
+    });
+
+    it('stops waiting for Cloud Backup after a day, and carries on without it', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({ outcome: 'busy' });
+
+      await expect(
+        sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true, stage: 'backups', backupWaits: 48 }),
+      ).resolves.toBe(JobStatus.Success);
+
+      // not put back again: no backup is named, and the phones are asked
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+      expect(stepsWritten()).toEqual(['asked-phones/not-found']);
+      expect(fixState()).toMatchObject({ fixState: 'missing' });
+    });
+
+    it.each(['not-set-up', 'skipped'])('names no backup when Cloud Backup answers %s', async (outcome) => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({ outcome });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'asked-phones/not-found']);
+      expect(fixState()).toMatchObject({ fixState: 'missing' });
+    });
+
+    it('waits for a phone when a missing file is nowhere else', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      vi.spyOn(sut as any, 'phonesToAsk').mockResolvedValue([{ deviceId: 'session-1', name: 'iPhone' }]);
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({
+        outcome: 'not-in-backup',
+        since: '2026-10-01T03:00:00.000Z',
+      });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/not-found', 'asked-phones/waiting']);
+      // "Cloud Backup began on {date}, after this file was already lost"
+      expect(stepNamed('checked-backups')?.facts).toEqual({ backup: 'cloud', since: '2026-10-01T03:00:00.000Z' });
+      // it no longer waits for the search
+      expect(fixState()).toEqual({ fixState: 'waiting-phone', searchPending: false });
+      expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('does not wait for phones that are never shown the photo (F4)', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      vi.spyOn(sut as any, 'phonesToAsk').mockResolvedValue([{ deviceId: 'session-1', name: 'iPhone' }]);
+      // an upload's SHA-256, an external library's or a Locked photo: the lost-originals list leaves it out
+      vi.mocked(mediaHealthRepository.isShownToPhones).mockResolvedValue(false);
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(mediaHealthRepository.isShownToPhones).toHaveBeenCalledWith('user-id', 'asset-1');
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/not-found']);
+      expect(fixState()).toEqual({ fixState: 'missing', searchPending: false });
+    });
+
+    it('tries a busy file three times, then stops', async () => {
+      await cutShort();
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed));
+      decoderSays({ status: 'timeout', reason: 'decode_timeout' });
+
+      let data: Record<string, unknown> = { id: 'asset-1', from: 'check' };
+      for (const delay of [5, 30, 120]) {
+        await expect(sut.handleFixAsset(data as never)).resolves.toBe(JobStatus.Success);
+        const queued = vi.mocked(mocks.job.queue).mock.calls.at(-1)![0] as { name: JobName; data: typeof data };
+        expect(queued.name).toBe(JobName.MediaHealthFixAsset);
+        expect(queued.data).toMatchObject({ id: 'asset-1', from: 'check', delay: minutes(delay) });
+        expect(written()).toEqual([]);
+        data = queued.data;
+      }
+      expect(data).toMatchObject({ attempt: 3, requeue: 3 });
+
+      await sut.handleFixAsset(data as never);
+
+      expect(mocks.job.queue).toHaveBeenCalledTimes(3);
+      expect(stepsWritten()).toEqual(['checked/failed']);
+      expect(stepNamed('checked')?.facts).toEqual({ cause: 'busy' });
+      expect(fixState()).toMatchObject({ fixState: 'couldnt-check' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+    });
+
+    it('tries again when the image worker crashes partway through a repair, leaving the original untouched', async () => {
+      await cutShort();
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      const before = await readFile(asset.originalPath);
+      vi.mocked(mocks.media.repairJpeg).mockRejectedValue(new Error('Sharp child closed (SIGSEGV)'));
+
+      await expect(
+        sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' }),
+      ).resolves.toBe(JobStatus.Success);
+
+      expect(vi.mocked(mocks.job.queue).mock.calls[0][0]).toEqual({
+        name: JobName.MediaHealthFixAsset,
+        data: expect.objectContaining({ attempt: 1, requeue: 1, delay: minutes(5) }),
+      });
+      expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+      expect(fixState()).toBeUndefined();
+      await expect(readFile(asset.originalPath)).resolves.toEqual(before);
+    });
+
+    it('settles as "couldn’t check" when the image worker crashes on the fourth repair too (Review Focus 2)', async () => {
+      await cutShort();
+      const before = await readFile(asset.originalPath);
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      vi.mocked(mocks.media.repairJpeg).mockRejectedValue(new Error('Sharp child closed (SIGSEGV)'));
+
+      let data: Record<string, unknown> = {
+        id: 'asset-1',
+        from: 'preview',
+        message: 'VipsJpeg: Premature end of JPEG file',
+      };
+      for (const delay of [5, 30, 120]) {
+        await expect(sut.handleFixAsset(data as never)).resolves.toBe(JobStatus.Success);
+        data = vi.mocked(mocks.job.queue).mock.calls.at(-1)![0].data as typeof data;
+        expect(data).toMatchObject({ stage: 'treat', delay: minutes(delay) });
+        // the finding the first try recorded is the one the next tries carry on with
+        recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed));
+      }
+      expect(data).toMatchObject({ attempt: 3, requeue: 3 });
+
+      await expect(sut.handleFixAsset(data as never)).resolves.toBe(JobStatus.Success);
+
+      // four repairs, three tries again, then it stops: never an endless retry
+      expect(mocks.media.repairJpeg).toHaveBeenCalledTimes(4);
+      expect(mocks.job.queue).toHaveBeenCalledTimes(3);
+      expect(stepsWritten()).toEqual(['wont-open/failed', 'checked/failed']);
+      expect(stepNamed('checked')?.facts).toEqual({ cause: 'busy' });
+      expect(fixState()).toMatchObject({ fixState: 'couldnt-check' });
+      expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+      await expect(readFile(asset.originalPath)).resolves.toEqual(before);
+    });
+
+    it('waits while the drive is unplugged', async () => {
+      const upload = StorageCore.getBaseFolder(StorageFolder.Upload);
+      asset = { ...asset, originalPath: join(upload, 'user-id', 'as', 'se', 'asset-1.jpg') };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      // the drive's mount file is gone, so every file on it looks lost
+      vi.mocked(mocks.storage.stat).mockImplementation((file) =>
+        file === join(upload, '.frameleaf')
+          ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+          : Promise.resolve(settledStat({ size: 10 }) as never),
+      );
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+
+      // a preview failed with "Input file is missing": the drive was away, not the photo damaged
+      await expect(
+        sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'Input file is missing' }),
+      ).resolves.toBe(JobStatus.Success);
+
+      // F1: the preview's words are dropped, so the fix looks at the file itself once the drive is back
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.MediaHealthFixAsset,
+        data: { id: 'asset-1', from: 'preview', waits: 1, requeue: 1, delay: minutes(30) },
+      });
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+
+      // after a day of waiting it stops; the next file check or Try again starts it again
+      vi.mocked(mocks.job.queue).mockClear();
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check', waits: 48 })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+    });
+
+    it('records no damage for a preview that failed while the drive was away, once the drive is back (F1)', async () => {
+      await cutShort();
+      // back: the file opens and is the one Frameleaf stored (the validator says healthy)
+      const queued = { id: 'asset-1', from: 'preview' as const, waits: 3, requeue: 3 };
+
+      await expect(sut.handleFixAsset(queued)).resolves.toBe(JobStatus.Skipped);
+
+      expect((sut as any).integrityService.validate).toHaveBeenCalledOnce();
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+      // its thumbnail job ended when it was handed over: its previews are made again, failing as a job if they can't
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledExactlyOnceWith([
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload', afterCare: true } },
+      ]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('never trusts a preview’s words: a photo that opens is not damaged, whatever the preview said (F1)', async () => {
+      await cutShort();
+      // the preview said "premature end", but the image worker could not write it; the file itself opens
+
+      await expect(
+        sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' }),
+      ).resolves.toBe(JobStatus.Skipped);
+
+      expect((sut as any).integrityService.validate).toHaveBeenCalledOnce();
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledExactlyOnceWith([
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload', afterCare: true } },
+      ]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('settles a problem whose file is fine now with no fix state left on it', async () => {
+      await cutShort();
+      // a person tries again on a problem kept as it is; the file opens and is the one Frameleaf stored
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { fixState: 'left-as-is' }));
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'person' })).resolves.toBe(JobStatus.Success);
+
+      // a stale "left as it is" would keep a resolved problem in Left as they are for ever
+      expect(mediaHealthRepository.settleFinding).toHaveBeenCalledExactlyOnceWith({
+        healthId: 'health-1',
+        evidence: { fixState: null },
+        status: MediaHealthStatus.Resolved,
+        steps: [{ step: 'checked', outcome: 'ok' }],
+      });
+    });
+
+    it('leaves a problem settled meanwhile as it is when a fix that waited for a drive runs (F1)', async () => {
+      await cutShort();
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { fixState: 'left-as-is' }));
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+
+      // the preview's fix waited for the drive; meanwhile the person kept the photo as it is
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'preview', waits: 2, requeue: 2 })).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(written()).toEqual([]);
+      expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('looks at a busy preview again on each try, and records nothing when it stays busy', async () => {
+      await cutShort();
+      decoderSays({ status: 'timeout', reason: 'decode_timeout' });
+      const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+
+      let data: Record<string, unknown> = { id: 'asset-1', from: 'preview', message: 'Timeout' };
+      for (const delay of [5, 30, 120]) {
+        await expect(sut.handleFixAsset(data as never)).resolves.toBe(JobStatus.Success);
+        data = vi.mocked(mocks.job.queue).mock.calls.at(-1)![0].data as typeof data;
+        // the preview's words are not carried into the next try, so it checks the file itself
+        expect(data.message).toBeUndefined();
+        expect(data).toMatchObject({ from: 'preview', delay: minutes(delay) });
+      }
+      // every try looks at the file itself, the first one too (F1)
+      expect(validate).toHaveBeenCalledTimes(3);
+
+      // busy never becomes damage: with nothing recorded before, nothing is recorded now
+      await expect(sut.handleFixAsset(data as never)).resolves.toBe(JobStatus.Skipped);
+      expect(validate).toHaveBeenCalledTimes(4);
+      expect(mocks.job.queue).toHaveBeenCalledTimes(3);
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+    });
+
+    it('records nothing for a busy preview that opens on the next try', async () => {
+      await cutShort();
+      // the image worker is busy when the fix looks at the file itself
+      decoderSays({ status: 'transient', reason: 'validation_busy' });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'Sharp child closed (SIGSEGV)' });
+      const [retry] = vi.mocked(mocks.job.queue).mock.calls.map(([item]) => item);
+      expect(retry).toMatchObject({ name: JobName.MediaHealthFixAsset, data: { attempt: 1, message: undefined } });
+      // the file opens and is the one Frameleaf stored
+      decoderSays({ status: 'healthy' });
+      await expect(sut.handleFixAsset(retry.data as never)).resolves.toBe(JobStatus.Skipped);
+
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+    });
+
+    it('records a changed file that still opens as changed, never as one that will not open', async () => {
+      await cutShort();
+      // the file opens, but it is no longer the one Frameleaf stored
+      asset = { ...asset, checksum: Buffer.alloc(20, 9) };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+
+      expect(vi.mocked(mediaHealthRepository.upsertFinding).mock.calls[0][0]).toMatchObject({
+        status: MediaHealthStatus.CorruptConfirmed,
+        evidence: { reason: 'expected_mismatch', cause: 'changed' },
+        steps: [],
+      });
+      expect(written()).toEqual([]);
+
+      // it opens, so a photo without previews gets them made again while the search runs (F1)
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload', afterCare: true } },
+      ]);
+
+      // the shared search found no copy, and Cloud Backup has none: the person decides
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { searchPending: true }));
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/not-found', 'checked/failed']);
+      expect(stepNamed('checked')?.facts).toEqual({ cause: 'changed' });
+      expect(fixState()).toMatchObject({ fixState: 'cant-repair' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+    });
+
+    it('leaves the one copy of a missing Locked photo for its owner to choose', async () => {
+      const copy = join(root, 'IMG_3310+1.jpg');
+      await original(copy, Buffer.from('the photo, exactly'));
+      asset = { ...asset, originalPath: join(root, 'IMG_3310.jpg'), originalFileName: 'IMG_3310.jpg', isLocked: true };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Found, { searchPending: true }));
+      vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+        {
+          id: 'candidate-1',
+          healthId: 'health-1',
+          candidatePath: copy,
+          status: MediaHealthStatus.Found,
+          evidence: { rootId: MANAGED_ROOT_ID, decodeValid: true },
+          resolution: { autoRelinkable: true },
+        },
+      ] as never);
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      expect(stepsWritten()).toEqual(['searched-copy/ok']);
+      expect(stepNamed('searched-copy')?.facts).toMatchObject({ copies: 1 });
+      expect(fixState()).toMatchObject({ fixState: 'missing' });
+    });
+
+    it('leaves a problem a fix already settled as it is, unless a person asks', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { fixState: 'waiting-phone' }));
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Skipped);
+      expect(written()).toEqual([]);
+      expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+
+      // Try again: the person asks, so it runs
+      await cutShort();
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      care({ autoRepair: false });
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { fixState: 'cant-repair' }));
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'person' })).resolves.toBe(JobStatus.Success);
+      expect(stepsWritten()).toEqual(['checked/failed']);
+
+      // "couldn't check" may be tried again by a check
+      vi.mocked(mediaHealthRepository.settleFinding).mockClear();
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptSuspect, { fixState: 'couldnt-check' }));
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Success);
+      expect(fixState()).toMatchObject({ fixState: 'cant-repair' });
+    });
+
+    it('asks its owner’s shared search by contents, writing nothing yet', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing));
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Success);
+
+      expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
+        healthId: 'health-1',
+        evidence: { searchPending: true },
+        steps: [],
+      });
+      // F8: outside the run this fix may be in, so the run never drops it as done
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.MediaHealthLocateMissing, data: { userId: 'user-id', pending: true } },
+      ]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+      // no walk and no run of its own
+      expect(mocks.storage.walkWithCursor).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.createRun).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('asks for one shared search for two photos of one owner', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      for (const id of ['asset-1', 'asset-2']) {
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ ...asset, id }] as never);
+        recorded({
+          ...finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing),
+          id: `health-${id}`,
+          assetId: id,
+        });
+        await sut.handleFixAsset({ id, from: 'check' });
+      }
+      // the same request twice: one owner key, so the store keeps one waiting search (job.repository.spec)
+      expect(vi.mocked(mocks.job.queueOutsideRun).mock.calls.map(([items]) => items)).toEqual([
+        [{ name: JobName.MediaHealthLocateMissing, data: { userId: 'user-id', pending: true } }],
+        [{ name: JobName.MediaHealthLocateMissing, data: { userId: 'user-id', pending: true } }],
+      ]);
+    });
+
+    it('leaves a finding a search claimed to it, and still asks for a search in case that one stopped', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: { search: 'job-0' } }));
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'import' });
+
+      expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+      // the search asked for here claims it again if job-0 is no longer live (medium spec)
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.MediaHealthLocateMissing, data: { userId: 'user-id', pending: true } },
+      ]);
+    });
+
+    it('gets the finding searched when a person tries again during a claim that never finished', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: { search: 'job-0' } }));
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'person' });
+
+      // waiting again, so the next search claims it whatever became of job-0
+      expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
+        healthId: 'health-1',
+        evidence: { searchPending: true },
+        steps: [],
+      });
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.MediaHealthLocateMissing, data: { userId: 'user-id', pending: true } },
+      ]);
+    });
+
+    it('lets a retried search step claim the findings it claimed before it failed', async () => {
+      vi.mocked(mediaHealthRepository.claimSearchPending).mockResolvedValue(['health-1']);
+      vi.spyOn(sut as any, 'locateFindings').mockRejectedValueOnce(new Error('EIO: the drive went away'));
+      // the queue runs a step as its job row, and a retry runs the same row again
+      const asStep = <T>(work: () => Promise<T>) => queueExecution.run({ claim: { id: 'job-1' } } as never, work);
+
+      await expect(asStep(() => sut.handleLocateMissing({ userId: 'user-id', pending: true }))).rejects.toThrow('EIO');
+      expect(mediaHealthRepository.claimSearchPending).toHaveBeenLastCalledWith('user-id', 'job-1');
+      expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: { search: 'job-1' } }),
+      ] as never);
+      await expect(asStep(() => sut.handleLocateMissing({ userId: 'user-id', pending: true }))).resolves.toBe(
+        JobStatus.Success,
+      );
+      // the same search, so the repository hands its claims back (medium spec), and the fix is fed
+      expect(mediaHealthRepository.claimSearchPending).toHaveBeenLastCalledWith('user-id', 'job-1');
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.MediaHealthFixAsset, data: { id: 'asset-1', from: 'check', searched: true } },
+      ]);
+    });
+
+    it('feeds each fix still waiting when its owner’s shared search is complete', async () => {
+      const waiting = { ...finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: 'x' }) };
+      const decided = { ...waiting, id: 'health-2', assetId: 'asset-2', evidence: { searchPending: false } };
+      vi.mocked(mediaHealthRepository.claimSearchPending).mockResolvedValue(['health-1', 'health-2']);
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([waiting, decided] as never);
+
+      await expect(sut.handleLocateMissing({ userId: 'user-id', pending: true })).resolves.toBe(JobStatus.Success);
+
+      expect(mediaHealthRepository.claimSearchPending).toHaveBeenCalledWith('user-id', expect.any(String));
+      // one walk for every waiting finding of the owner, with no run that would stand in for their last check
+      expect(mediaHealthRepository.getByIds).toHaveBeenCalledWith(['health-1', 'health-2'], 'user-id');
+      expect(mediaHealthRepository.createRun).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.finishRun).not.toHaveBeenCalled();
+      // F8: outside any run, so a later search's feed for the same photo is never dropped as done
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.MediaHealthFixAsset, data: { id: 'asset-1', from: 'check', searched: true } },
+      ]);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('carries an incomplete shared search on with the findings it claimed, feeding no fix yet', async () => {
+      vi.mocked(mediaHealthRepository.claimSearchPending).mockResolvedValue(['health-1']);
+      const continuation = { cursor: [{ path: '/data/library' }], matches: {} };
+      vi.spyOn(sut as any, 'locateFindings').mockResolvedValue({ checkedAssets: 1, foundAssets: 0, continuation });
+
+      await queueExecution.run({ claim: { id: 'job-1' } } as never, () =>
+        sut.handleLocateMissing({ userId: 'user-id', pending: true }),
+      );
+
+      // the walk carries on as the same search, with the findings it claimed
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.MediaHealthLocateMissing,
+        data: { userId: 'user-id', pending: true, ids: ['health-1'], searchId: 'job-1', managedSearch: continuation },
+      });
+      expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+
+      // the next step walks on with the same findings, claiming nothing new
+      vi.mocked(mediaHealthRepository.claimSearchPending).mockClear();
+      await sut.handleLocateMissing({
+        userId: 'user-id',
+        pending: true,
+        ids: ['health-1'],
+        managedSearch: continuation,
+      });
+      expect(mediaHealthRepository.claimSearchPending).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when no fix waits for the shared search', async () => {
+      await expect(sut.handleLocateMissing({ userId: 'user-id', pending: true })).resolves.toBe(JobStatus.Skipped);
+      expect(mediaHealthRepository.getByIds).not.toHaveBeenCalled();
+    });
+
+    it('skips a photo that is gone or in the trash, recording nothing', async () => {
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValueOnce([]);
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Skipped);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValueOnce([{ ...asset, deletedAt: new Date() }] as never);
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Skipped);
+      expect(written()).toEqual([]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+  describe('phones and lost originals (FL-1337)', () => {
+    const owner = { ...authStub.user1, session: { id: 'session-iphone', hasElevatedPermission: false } };
+    const care = (libraryCare: Record<string, unknown>) => {
+      clearConfigCache();
+      vi.mocked(mocks.systemMetadata.get).mockResolvedValue({ libraryCare } as never);
+    };
+    const sha1 = createHash('sha1').update('lost').digest();
+    const session = (id: string, deviceOS: string, deviceType: string, daysAgo = 1) => ({
+      id,
+      deviceOS,
+      deviceType,
+      updatedAt: new Date(Date.now() - daysAgo * 86_400_000),
+    });
+    const sessions = (...rows: ReturnType<typeof session>[]) =>
+      vi.mocked(mocks.session.getByUserId).mockResolvedValue(rows as never);
+    const open = () => ({ healthId: 'health-1', assetId: 'asset-1', evidence: { fixState: 'waiting-phone' } });
+    const reported = () => vi.mocked(mediaHealthRepository.recordPhoneReport).mock.calls.at(-1)?.[0];
+
+    beforeEach(() => {
+      care({});
+      sessions(session('session-iphone', 'iOS', 'iPhone15,2'), session('session-pixel', 'Android', 'Pixel 8'));
+    });
+
+    describe('phonesToAsk', () => {
+      it('is the owner’s phones and tablets used in the last 90 days, by session', async () => {
+        sessions(
+          session('a', 'iOS', 'iPhone15,2'),
+          session('b', 'iPadOS', 'iPad13,4'),
+          session('c', 'android', 'Pixel 8'),
+          session('d', 'macOS', 'Chrome'),
+          session('e', 'Windows', 'Firefox'),
+          session('f', 'iOS', 'iPhone12,1', 91),
+          session('g', 'Android', '', 3),
+        );
+
+        await expect((sut as any).phonesToAsk('owner-1')).resolves.toEqual([
+          { deviceId: 'a', name: 'iPhone15,2' },
+          { deviceId: 'b', name: 'iPad13,4' },
+          { deviceId: 'c', name: 'Pixel 8' },
+          { deviceId: 'g', name: 'Android' },
+        ]);
+        expect(mocks.session.getByUserId).toHaveBeenCalledWith('owner-1');
+      });
+    });
+
+    describe('listLostOriginals', () => {
+      const row = (n: number) => ({
+        assetId: `asset-${n}`,
+        checksum: sha1,
+        originalFileName: `IMG_${n}.jpg`,
+        fileCreatedAt: new Date('2025-01-02T03:04:05.000Z'),
+      });
+
+      it('lists only the caller’s own, with base64 checksums', async () => {
+        vi.mocked(mediaHealthRepository.listLostOriginals).mockResolvedValue([row(1)] as never);
+
+        await expect(sut.listLostOriginals(owner, { take: 500, skip: 0 })).resolves.toEqual({
+          items: [
+            {
+              assetId: 'asset-1',
+              checksum: sha1.toString('base64'),
+              originalFileName: 'IMG_1.jpg',
+              fileCreatedAt: '2025-01-02T03:04:05.000Z',
+            },
+          ],
+          hasNextPage: false,
+        });
+        expect(mediaHealthRepository.listLostOriginals).toHaveBeenCalledWith(owner.user.id, 500, 0);
+      });
+
+      it('pages: one row beyond the page says there is more', async () => {
+        vi.mocked(mediaHealthRepository.listLostOriginals).mockResolvedValue([row(1), row(2), row(3)] as never);
+
+        const page = await sut.listLostOriginals(owner, { take: 2, skip: 4 });
+
+        expect(page.items.map(({ assetId }) => assetId)).toEqual(['asset-1', 'asset-2']);
+        expect(page.hasNextPage).toBe(true);
+        expect(mediaHealthRepository.listLostOriginals).toHaveBeenCalledWith(owner.user.id, 2, 4);
+      });
+
+      it('is empty while phones are not asked', async () => {
+        care({ askPhones: false });
+
+        await expect(sut.listLostOriginals(owner, { take: 500, skip: 0 })).resolves.toEqual({
+          items: [],
+          hasNextPage: false,
+        });
+        expect(mediaHealthRepository.listLostOriginals).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('recordPhoneChecked', () => {
+      const report = (
+        notHere = [sha1.toString('base64')],
+        auth: Parameters<typeof sut.recordPhoneChecked>[0] = owner,
+      ) => sut.recordPhoneChecked(auth, { deviceId: 'device-1', notHere });
+
+      it('hands the repository the phone, its model and every phone that is asked, to decide under the lock', async () => {
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
+
+        await report();
+
+        expect(mediaHealthRepository.findLostOriginals).toHaveBeenCalledWith(owner.user.id, [sha1]);
+        expect(reported()).toEqual({
+          findings: [open()],
+          sessionId: 'session-iphone',
+          device: 'iPhone15,2',
+          deviceId: 'device-1',
+          phones: ['session-iphone', 'session-pixel'],
+        });
+      });
+
+      it('repeats the hand-over for a phone that reported before, so a lost race can still settle', async () => {
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
+
+        await report();
+        await report();
+
+        expect(mediaHealthRepository.recordPhoneReport).toHaveBeenCalledTimes(2);
+      });
+
+      it('ignores checksums that are not the caller’s open lost originals, and anything not SHA-1', async () => {
+        // the repository finds only the caller's own open ones
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([]);
+
+        await expect(
+          report([sha1.toString('base64'), 'not base64 !', Buffer.alloc(32).toString('base64')]),
+        ).resolves.toBeUndefined();
+
+        expect(mediaHealthRepository.findLostOriginals).toHaveBeenCalledWith(owner.user.id, [sha1]);
+        expect(mediaHealthRepository.recordPhoneReport).not.toHaveBeenCalled();
+      });
+
+      it('records nothing for a session that is not a phone or tablet', async () => {
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
+        sessions(
+          session('session-iphone', 'iOS', 'iPhone15,2'),
+          session('session-browser', 'macOS', 'Chrome'),
+          session('session-stale', 'iOS', 'iPhone8,1', 120),
+        );
+
+        await report(undefined, { ...owner, session: { id: 'session-browser', hasElevatedPermission: false } });
+        await report(undefined, { ...owner, session: { id: 'session-stale', hasElevatedPermission: false } });
+
+        expect(mediaHealthRepository.recordPhoneReport).not.toHaveBeenCalled();
+      });
+
+      it('accepts a caller without a session and records nothing', async () => {
+        await expect(report(undefined, { ...owner, session: undefined })).resolves.toBeUndefined();
+
+        expect(mediaHealthRepository.findLostOriginals).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.recordPhoneReport).not.toHaveBeenCalled();
+      });
+
+      it('records nothing while phones are not asked', async () => {
+        care({ askPhones: false });
+
+        await report();
+
+        expect(mediaHealthRepository.recordPhoneReport).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('the list, the history and the actions (FL-1337)', () => {
+    const owner = authStub.user1;
+    const admin = authStub.admin;
+    const CHANGED = "This photo changed since Frameleaf fixed it, so it can't be undone.";
+    const sha1 = (bytes: Buffer | string) => createHash('sha1').update(bytes).digest();
+    const sha256 = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest();
+    const at = (iso: string) => new Date(iso);
+    let root: string;
+    let care: string;
+    let nestedPath: { mockRestore: () => void };
+
+    /** One problem as the repository reads it: the finding, whose it is, and its newest story step. */
+    const problem = (overrides: Record<string, unknown> = {}) => ({
+      id: 'health-1',
+      assetId: 'asset-1',
+      runId: null,
+      category: MediaHealthCategory.Corrupt,
+      status: MediaHealthStatus.Resolved,
+      severity: MediaHealthSeverity.Info,
+      originalPath: '/data/upload/user-id/.library-care/asset-1-health-1-0123abcd.jpg',
+      originalFileName: 'IMG_2041.jpg',
+      evidence: { fixState: 'part-saved', partSaved: true },
+      resolution: {},
+      checkedAt: at('2026-11-09T02:15:00Z'),
+      createdAt: at('2026-11-09T02:14:00Z'),
+      updatedAt: at('2026-11-09T02:15:00Z'),
+      resolvedAt: at('2026-11-09T02:15:00Z'),
+      dismissedAt: null,
+      ownerId: owner.user.id,
+      ownerName: owner.user.name,
+      assetDeletedAt: null,
+      line: { step: 'repaired', outcome: 'ok', facts: { method: 'rebuilt', percentSaved: 92 } },
+      ...overrides,
+    });
+    const step = (id: string, name: string, outcome: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      healthId: 'health-1',
+      assetId: 'asset-1',
+      at: at(`2026-11-09T02:1${id.slice(-1)}:00Z`),
+      step: name,
+      outcome,
+      facts: {},
+      undo: null,
+      ...extra,
+    });
+    const shows = (...problems: Array<ReturnType<typeof problem>>) => {
+      let index = 0;
+      vi.mocked(mediaHealthRepository.getFileProblem).mockImplementation(() =>
+        Promise.resolve(problems[Math.min(index++, problems.length - 1)] as never),
+      );
+    };
+    const history = (...steps: Array<ReturnType<typeof step>>) =>
+      vi.mocked(mediaHealthRepository.listSteps).mockResolvedValue(steps as never);
+    const photo = (overrides: Record<string, unknown>) =>
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([
+        {
+          id: 'asset-1',
+          ownerId: owner.user.id,
+          updateId: 'update-1',
+          checksumAlgorithm: ChecksumAlgorithm.sha256File,
+          originalFileName: 'IMG_2041.jpg',
+          type: AssetType.Image,
+          isExternal: false,
+          libraryId: null,
+          deletedAt: null,
+          isLocked: false,
+          ...overrides,
+        },
+      ] as never);
+
+    beforeEach(async () => {
+      root = await mkdtemp(join(tmpdir(), 'library-care-undo-'));
+      care = join(root, 'upload', 'user-id', 'as', 'se', '.library-care');
+      await mkdir(care, { recursive: true });
+      nestedPath = vi
+        .spyOn(StorageCore, 'getNestedPath')
+        .mockReturnValue(join(root, 'upload', 'user-id', 'as', 'se', 'asset-1'));
+      const crypto = new CryptoRepository();
+      vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((file) => crypto.hashFileDigests(file));
+      vi.mocked(mocks.crypto.hashFileMatching).mockImplementation((file, reference) =>
+        crypto.hashFileMatching(file, reference),
+      );
+      vi.mocked(mocks.storage.stat).mockImplementation((file) => stat(file) as never);
+      vi.mocked(mocks.user.get).mockImplementation((id) =>
+        Promise.resolve({ id, name: id === owner.user.id ? owner.user.name : 'Emma', storageLabel: null } as never),
+      );
+    });
+
+    afterEach(async () => {
+      nestedPath.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    describe('the list', () => {
+      it('lists a member’s own problems by tab', async () => {
+        vi.mocked(mediaHealthRepository.listFileProblems).mockResolvedValue([
+          problem({
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Missing,
+            evidence: {},
+            resolvedAt: null,
+            line: {
+              step: 'checked-on-phone',
+              outcome: 'not-found',
+              facts: { device: 'iPhone15,2', deviceId: 'device-1', session: 'session-1' },
+            },
+          }),
+        ] as never);
+        vi.mocked(mediaHealthRepository.countFileProblems).mockResolvedValue(12);
+
+        for (const tab of ['needs', 'fixed', 'kept'] as const) {
+          await sut.listFileProblems(owner, { tab, take: 50, skip: 100 });
+          expect(mediaHealthRepository.listFileProblems).toHaveBeenLastCalledWith({
+            tab,
+            ownerId: owner.user.id,
+            privacy: {},
+            take: 50,
+            skip: 100,
+          });
+          expect(mediaHealthRepository.countFileProblems).toHaveBeenLastCalledWith({
+            tab,
+            ownerId: owner.user.id,
+            privacy: {},
+          });
+        }
+
+        await expect(sut.listFileProblems(owner, { tab: 'needs', take: 50, skip: 0 })).resolves.toEqual({
+          total: 12,
+          items: [
+            {
+              id: 'health-1',
+              assetId: 'asset-1',
+              ownerId: owner.user.id,
+              ownerName: owner.user.name,
+              originalFileName: 'IMG_2041.jpg',
+              category: MediaHealthCategory.Missing,
+              // no fix has looked at it yet: it needs the person
+              fixState: null,
+              partSaved: false,
+              // what a sentence needs, and nothing about the session that reported it
+              line: { step: 'checked-on-phone', outcome: 'not-found', facts: { device: 'iPhone15,2' } },
+              updatedAt: '2026-11-09T02:15:00.000Z',
+              pictureAllowed: true,
+              canAct: true,
+            },
+          ],
+        });
+      });
+
+      it('says when a repair saved only part of the picture', async () => {
+        vi.mocked(mediaHealthRepository.listFileProblems).mockResolvedValue([problem()] as never);
+
+        const { items } = await sut.listFileProblems(owner, { tab: 'fixed', take: 50, skip: 0 });
+
+        expect(items[0]).toMatchObject({
+          fixState: 'part-saved',
+          partSaved: true,
+          line: { step: 'repaired', outcome: 'ok', facts: { method: 'rebuilt', percentSaved: 92 } },
+        });
+      });
+
+      it('shows its Locked problems to a member only in their unlocked session', async () => {
+        await sut.listFileProblems(elevatedOwner, { tab: 'needs', take: 50, skip: 0 });
+
+        expect(mediaHealthRepository.listFileProblems).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ownerId: owner.user.id,
+            privacy: { lockedOwnerId: owner.user.id, revealLockedOwnerId: owner.user.id },
+          }),
+        );
+      });
+
+      it('an admin sees another account’s row without its picture', async () => {
+        vi.mocked(mediaHealthRepository.listFileProblems).mockResolvedValue([
+          problem({ ownerId: 'user-2', ownerName: 'Emma' }),
+          problem({ id: 'health-2', ownerId: admin.user.id, ownerName: admin.user.name }),
+        ] as never);
+
+        const { items } = await sut.listFileProblems(authStub.adminWithElevatedPermission, {
+          tab: 'fixed',
+          take: 50,
+          skip: 0,
+        });
+
+        // every account's rows, but Locked ones only the administrator's own
+        expect(mediaHealthRepository.listFileProblems).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ownerId: undefined,
+            privacy: { lockedOwnerId: admin.user.id, revealLockedOwnerId: admin.user.id },
+          }),
+        );
+        expect(items[0]).toMatchObject({ ownerName: 'Emma', pictureAllowed: false, canAct: false });
+        expect(items[1]).toMatchObject({ ownerName: admin.user.name, pictureAllowed: true, canAct: true });
+      });
+
+      it('a member never sees another account’s rows', async () => {
+        await sut.listFileProblems(owner, { tab: 'needs', take: 50, skip: 0 });
+        expect(mediaHealthRepository.listFileProblems).toHaveBeenCalledWith(
+          expect.objectContaining({ ownerId: owner.user.id }),
+        );
+
+        // another account's problem is not there for them, and nothing about it is done
+        vi.mocked(mediaHealthRepository.getFileProblem).mockResolvedValue(undefined);
+        await expect(sut.getFileProblem(owner, 'health-2')).rejects.toThrow('Frameleaf has no record of this problem');
+        expect(mediaHealthRepository.getFileProblem).toHaveBeenCalledWith('health-2', owner.user.id, {});
+        await expect(sut.tryFileProblemAgain(owner, 'health-2')).rejects.toThrow('no record');
+        await expect(sut.undoFileProblemFix(owner, 'health-2')).rejects.toThrow('no record');
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
+      it('gives the history oldest first, without what Undo needs', async () => {
+        shows(problem());
+        history(
+          step('step-1', 'wont-open', 'failed', { facts: { cause: 'cut-short' } }),
+          step('step-2', 'repaired', 'ok', { facts: { method: 'rebuilt', percentSaved: 92 } }),
+          step('step-3', 'kept-damaged', 'info', { undo: { kind: 'repair', previousPath: '/data/upload/x.jpg' } }),
+        );
+
+        const result = await sut.getFileProblem(owner, 'health-1');
+
+        expect(result.steps).toEqual([
+          { at: '2026-11-09T02:11:00.000Z', step: 'wont-open', outcome: 'failed', facts: { cause: 'cut-short' } },
+          {
+            at: '2026-11-09T02:12:00.000Z',
+            step: 'repaired',
+            outcome: 'ok',
+            facts: { method: 'rebuilt', percentSaved: 92 },
+          },
+          { at: '2026-11-09T02:13:00.000Z', step: 'kept-damaged', outcome: 'info', facts: {} },
+        ]);
+        expect(mediaHealthRepository.listSteps).toHaveBeenCalledWith('health-1');
+      });
+
+      it('gives an administrator the history of another account’s file, without its picture', async () => {
+        shows(problem({ ownerId: 'user-2', ownerName: 'Emma' }));
+
+        await expect(sut.getFileProblem(admin, 'health-1')).resolves.toMatchObject({
+          ownerName: 'Emma',
+          pictureAllowed: false,
+          canAct: false,
+          steps: [],
+        });
+        expect(mediaHealthRepository.getFileProblem).toHaveBeenCalledWith('health-1', undefined, {});
+      });
+
+      it('lists the folders each person may search', async () => {
+        vi.mocked(mocks.library.getAll).mockResolvedValue([
+          { id: 'library-1', ownerId: owner.user.id, name: 'Holiday drive', importPaths: ['/mnt/holiday'] },
+          { id: 'library-2', ownerId: 'user-2', name: 'Emma’s drive', importPaths: ['/mnt/emma'] },
+        ] as never);
+        recoveryRoots.push({ label: 'Old NAS', path: '/mnt/old-nas' });
+
+        await expect(sut.getFileProblemFolders(owner)).resolves.toEqual([
+          { id: MANAGED_ROOT_ID, name: 'Library storage' },
+          { id: libraryRootId('library-1'), name: 'Holiday drive' },
+        ]);
+        await expect(sut.getFileProblemFolders(admin)).resolves.toEqual([
+          { id: MANAGED_ROOT_ID, name: 'Library storage' },
+          { id: libraryRootId('library-1'), name: 'Holiday drive' },
+          { id: libraryRootId('library-2'), name: 'Emma’s drive' },
+          { id: recoveryRootId('/mnt/old-nas'), name: 'Old NAS' },
+        ]);
+      });
+    });
+
+    describe('undo', () => {
+      const refused = async (promise: Promise<unknown>, message = CHANGED) => {
+        await expect(promise).rejects.toThrow(message);
+        await expect(promise).rejects.toMatchObject({ message, status: 409 });
+      };
+
+      it('undo puts the damaged file back and stops further repairs', async () => {
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        await writeFile(damaged, 'the damaged file');
+        await writeFile(repaired, 'the repaired file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+        shows(
+          problem({
+            originalPath: repaired,
+            evidence: { fixState: 'part-saved', partSaved: true, retainedPath: damaged },
+          }),
+          problem({
+            status: MediaHealthStatus.CorruptConfirmed,
+            resolvedAt: null,
+            evidence: { fixState: 'cant-repair' },
+          }),
+        );
+        history(
+          step('step-1', 'wont-open', 'failed'),
+          step('step-2', 'repaired', 'ok'),
+          step('step-3', 'kept-damaged', 'info', {
+            undo: {
+              kind: 'repair',
+              previousPath: damaged,
+              originalPath: repaired,
+              checksum: sha256('the repaired file').toString('hex'),
+            },
+          }),
+        );
+
+        const result = await sut.undoFileProblemFix(owner, 'health-1');
+
+        expect(mediaHealthRepository.undoFix).toHaveBeenCalledWith({
+          healthId: 'health-1',
+          assetId: 'asset-1',
+          ownerId: owner.user.id,
+          stepId: 'step-3',
+          expectedOriginalPath: repaired,
+          expectedChecksum: sha256('the repaired file'),
+          // the photo is the kept damaged file again, with that file's own checksum
+          relinkTo: {
+            path: damaged,
+            digests: { sha1: sha1('the damaged file'), sha256: sha256('the damaged file'), sizeInBytes: 16 },
+            takeChecksum: true,
+          },
+          // back in Needs you, and never repaired again by itself
+          status: MediaHealthStatus.CorruptConfirmed,
+          evidence: { fixState: 'cant-repair', partSaved: false, autoRepairDeclined: true },
+          steps: [{ step: 'undone', outcome: 'info', facts: { by: owner.user.name } }],
+        });
+        // the repaired file is kept where it is: nothing is deleted
+        await expect(readFile(repaired, 'utf8')).resolves.toBe('the repaired file');
+        await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
+        expect(result).toMatchObject({ fixState: 'cant-repair', canAct: true });
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        // its details and previews are read again from the file it uses now, as after a relink; the previews
+        // outside any run
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([
+          { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } },
+        ]);
+        expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+          { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
+        ]);
+      });
+
+      it('undoes a repair whose kept-damaged step was never written, from the kept file', async () => {
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        await writeFile(damaged, 'the damaged file');
+        await writeFile(repaired, 'the repaired file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+        shows(
+          problem({
+            originalPath: repaired,
+            evidence: { fixState: 'repaired', partSaved: false, retainedPath: damaged },
+          }),
+        );
+        history(step('step-1', 'wont-open', 'failed'), step('step-2', 'repaired', 'ok'));
+
+        await sut.undoFileProblemFix(owner, 'health-1');
+
+        expect(mediaHealthRepository.undoFix).toHaveBeenCalledWith(
+          expect.objectContaining({
+            stepId: 'step-2',
+            expectedOriginalPath: repaired,
+            expectedChecksum: sha256('the repaired file'),
+            relinkTo: expect.objectContaining({ path: damaged, takeChecksum: true }),
+          }),
+        );
+      });
+
+      it('undoes a relink: the photo is missing again where it was, and the copy stays', async () => {
+        const lost = join(root, 'library', 'IMG_3310.jpg');
+        const copy = join(root, 'library', 'IMG_3310+1.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(copy, 'the photo, exactly');
+        photo({ originalPath: copy, checksum: sha256('the photo, exactly') });
+        shows(
+          problem({
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Relinked,
+            originalPath: copy,
+            evidence: { fixState: 'found-again' },
+          }),
+        );
+        history(
+          step('step-1', 'not-on-drive', 'failed'),
+          step('step-2', 'searched-copy', 'ok'),
+          step('step-3', 'put-back', 'ok', {
+            undo: {
+              kind: 'relink',
+              previousPath: lost,
+              originalPath: copy,
+              checksum: sha256('the photo, exactly').toString('hex'),
+            },
+          }),
+        );
+
+        await sut.undoFileProblemFix(owner, 'health-1');
+
+        expect(mediaHealthRepository.undoFix).toHaveBeenCalledWith(
+          expect.objectContaining({
+            stepId: 'step-3',
+            expectedOriginalPath: copy,
+            // the photo keeps its own checksum: the copy had its very contents
+            relinkTo: { path: lost, takeChecksum: false },
+            status: MediaHealthStatus.Missing,
+            evidence: { fixState: 'missing', partSaved: false },
+            steps: [{ step: 'undone', outcome: 'info', facts: { by: owner.user.name } }],
+          }),
+        );
+        await expect(readFile(copy, 'utf8')).resolves.toBe('the photo, exactly');
+      });
+
+      it('undoes an in-place restore: the restored file is moved aside and the changed file put back', async () => {
+        const original = join(root, 'library', 'IMG_5520.jpg');
+        const changed = join(care, 'asset-1-0badc0de.damaged.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(original, 'the original, from Cloud Backup');
+        await writeFile(changed, 'the changed file');
+        photo({
+          originalPath: original,
+          checksum: sha1('the original, from Cloud Backup'),
+          checksumAlgorithm: ChecksumAlgorithm.sha1File,
+          originalFileName: 'IMG_5520.jpg',
+        });
+        shows(problem({ originalPath: original, evidence: { fixState: 'restored' } }));
+        history(
+          step('step-1', 'checked-backups', 'ok'),
+          step('step-2', 'restored', 'ok', {
+            undo: {
+              kind: 'restore',
+              previousPath: original,
+              originalPath: original,
+              checksum: sha1('the original, from Cloud Backup').toString('hex'),
+              retainedPath: changed,
+            },
+          }),
+        );
+        // the files move under the repository's lock, once the photo is proven unchanged
+        vi.mocked(mediaHealthRepository.undoFix).mockImplementation(async (input) => {
+          await input.moveFiles?.();
+          return 'undone';
+        });
+
+        await sut.undoFileProblemFix(owner, 'health-1');
+
+        await expect(readFile(original, 'utf8')).resolves.toBe('the changed file');
+        await expect(readFile(join(care, 'asset-1-health-1.restored.jpg'), 'utf8')).resolves.toBe(
+          'the original, from Cloud Backup',
+        );
+        await expect(stat(changed)).rejects.toThrow();
+        expect(mediaHealthRepository.undoFix).toHaveBeenCalledWith(
+          expect.objectContaining({
+            stepId: 'step-2',
+            status: MediaHealthStatus.CorruptConfirmed,
+            evidence: { fixState: 'cant-repair', partSaved: false },
+            steps: [{ step: 'undone', outcome: 'info', facts: { by: owner.user.name } }],
+          }),
+        );
+        // the photo keeps its file and its checksum: only the files at its path move
+        expect(vi.mocked(mediaHealthRepository.undoFix).mock.calls[0][0]).not.toHaveProperty('relinkTo');
+      });
+
+      it('undoes a restore of a lost file: it is missing again, and the restored file is kept aside', async () => {
+        const original = join(root, 'library', 'IMG_0877.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(original, 'the original, from Cloud Backup');
+        photo({ originalPath: original, checksum: sha256('the original, from Cloud Backup') });
+        shows(
+          problem({
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Relinked,
+            originalPath: original,
+            evidence: { fixState: 'restored' },
+          }),
+        );
+        history(
+          step('step-1', 'restored', 'ok', {
+            undo: {
+              kind: 'restore',
+              previousPath: original,
+              originalPath: original,
+              checksum: sha256('the original, from Cloud Backup').toString('hex'),
+            },
+          }),
+        );
+        vi.mocked(mediaHealthRepository.undoFix).mockImplementation(async (input) => {
+          await input.moveFiles?.();
+          return 'undone';
+        });
+
+        await sut.undoFileProblemFix(owner, 'health-1');
+
+        await expect(stat(original)).rejects.toThrow();
+        await expect(readFile(join(care, 'asset-1-health-1.restored.jpg'), 'utf8')).resolves.toBe(
+          'the original, from Cloud Backup',
+        );
+        expect(mediaHealthRepository.undoFix).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: MediaHealthStatus.Missing,
+            evidence: { fixState: 'missing', partSaved: false },
+          }),
+        );
+      });
+
+      it('puts the files back where they were when the undo cannot be recorded', async () => {
+        const original = join(root, 'library', 'IMG_5520.jpg');
+        const changed = join(care, 'asset-1-0badc0de.damaged.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(original, 'the original, from Cloud Backup');
+        await writeFile(changed, 'the changed file');
+        photo({ originalPath: original, checksum: sha256('the original, from Cloud Backup') });
+        shows(problem({ originalPath: original, evidence: { fixState: 'restored' } }));
+        history(
+          step('step-1', 'restored', 'ok', {
+            undo: {
+              kind: 'restore',
+              previousPath: original,
+              originalPath: original,
+              checksum: sha256('the original, from Cloud Backup').toString('hex'),
+              retainedPath: changed,
+            },
+          }),
+        );
+        vi.mocked(mediaHealthRepository.undoFix).mockImplementation(async (input) => {
+          await input.moveFiles?.();
+          throw new Error('connection terminated');
+        });
+
+        await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toThrow();
+
+        await expect(readFile(original, 'utf8')).resolves.toBe('the original, from Cloud Backup');
+        await expect(readFile(changed, 'utf8')).resolves.toBe('the changed file');
+        await expect(stat(join(care, 'asset-1-health-1.restored.jpg'))).rejects.toThrow();
+      });
+
+      it('undo is refused after the photo changed', async () => {
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        await writeFile(repaired, 'the repaired file');
+        await writeFile(damaged, 'the damaged file');
+        const undo = {
+          kind: 'repair',
+          previousPath: damaged,
+          originalPath: repaired,
+          checksum: sha256('the repaired file').toString('hex'),
+        };
+        shows(problem({ originalPath: repaired }));
+        history(step('step-1', 'repaired', 'ok'), step('step-2', 'kept-damaged', 'info', { undo }));
+
+        // re-uploaded: its checksum is not the one the repair left
+        photo({ originalPath: repaired, checksum: sha256('a new upload') });
+        await refused(sut.undoFileProblemFix(owner, 'health-1'));
+        // in the Trash, or another account's now
+        photo({ originalPath: repaired, checksum: sha256('the repaired file'), deletedAt: new Date() });
+        await refused(sut.undoFileProblemFix(owner, 'health-1'));
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+
+        // an edit saved since the repair: the repository finds it under its lock, and changes nothing
+        photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+        vi.mocked(mediaHealthRepository.undoFix).mockResolvedValue('changed');
+        await refused(sut.undoFileProblemFix(owner, 'health-1'));
+
+        await expect(readFile(repaired, 'utf8')).resolves.toBe('the repaired file');
+        await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+      });
+
+      it('undoes a repair after Folder layout moved the repaired file, by its checksum (F9)', async () => {
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        const moved = join(root, 'library', '2026', 'IMG_2041.jpg');
+        await mkdir(join(root, 'library', '2026'), { recursive: true });
+        await writeFile(moved, 'the repaired file');
+        await writeFile(damaged, 'the damaged file');
+        shows(problem({ originalPath: repaired, evidence: { fixState: 'repaired', partSaved: false } }));
+        history(
+          step('step-1', 'repaired', 'ok'),
+          step('step-2', 'kept-damaged', 'info', {
+            undo: {
+              kind: 'repair',
+              previousPath: damaged,
+              originalPath: repaired,
+              checksum: sha256('the repaired file').toString('hex'),
+            },
+          }),
+        );
+        // Folder layout moved it to its template path right after the fix; the file is the one the repair left
+        photo({ originalPath: moved, checksum: sha256('the repaired file') });
+
+        await sut.undoFileProblemFix(owner, 'health-1');
+
+        // held to where the photo is now, under the repository's lock
+        expect(mediaHealthRepository.undoFix).toHaveBeenCalledWith(
+          expect.objectContaining({
+            stepId: 'step-2',
+            expectedOriginalPath: moved,
+            expectedChecksum: sha256('the repaired file'),
+            relinkTo: expect.objectContaining({ path: damaged, takeChecksum: true }),
+          }),
+        );
+        await expect(readFile(moved, 'utf8')).resolves.toBe('the repaired file');
+      });
+
+      it('moves nothing for a restore the repository refuses', async () => {
+        const original = join(root, 'library', 'IMG_5520.jpg');
+        const changed = join(care, 'asset-1-0badc0de.damaged.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(original, 'the original, from Cloud Backup');
+        await writeFile(changed, 'the changed file');
+        photo({ originalPath: original, checksum: sha256('the original, from Cloud Backup') });
+        shows(problem({ originalPath: original, evidence: { fixState: 'restored' } }));
+        history(
+          step('step-1', 'restored', 'ok', {
+            undo: {
+              kind: 'restore',
+              previousPath: original,
+              originalPath: original,
+              checksum: sha256('the original, from Cloud Backup').toString('hex'),
+              retainedPath: changed,
+            },
+          }),
+        );
+        vi.mocked(mediaHealthRepository.undoFix).mockResolvedValue('changed');
+
+        await refused(sut.undoFileProblemFix(owner, 'health-1'));
+
+        await expect(readFile(original, 'utf8')).resolves.toBe('the original, from Cloud Backup');
+        await expect(readFile(changed, 'utf8')).resolves.toBe('the changed file');
+      });
+
+      it('refuses to undo a fix of a photo that is Locked now, before any file moves (Task 11b)', async () => {
+        const LOCKED = "This photo is locked, so this fix can't be undone.";
+        // a restore, whose Undo would move the restored file aside and put the changed one back
+        const original = join(root, 'library', 'IMG_5520.jpg');
+        const changed = join(care, 'asset-1-0badc0de.damaged.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(original, 'the original, from Cloud Backup');
+        await writeFile(changed, 'the changed file');
+        photo({
+          originalPath: original,
+          checksum: sha1('the original, from Cloud Backup'),
+          checksumAlgorithm: ChecksumAlgorithm.sha1File,
+          isLocked: true,
+        });
+        shows(problem({ originalPath: original, evidence: { fixState: 'restored' } }));
+        history(
+          step('step-1', 'restored', 'ok', {
+            undo: {
+              kind: 'restore',
+              previousPath: original,
+              originalPath: original,
+              checksum: sha1('the original, from Cloud Backup').toString('hex'),
+              retainedPath: changed,
+            },
+          }),
+        );
+        vi.mocked(mediaHealthRepository.undoFix).mockImplementation(async (input) => {
+          await input.moveFiles?.();
+          return 'undone';
+        });
+
+        // the owner sees it in an unlocked session, and still can't undo it
+        await refused(sut.undoFileProblemFix(elevatedOwner, 'health-1'), LOCKED);
+
+        await expect(readFile(original, 'utf8')).resolves.toBe('the original, from Cloud Backup');
+        await expect(readFile(changed, 'utf8')).resolves.toBe('the changed file');
+        await expect(stat(join(care, 'asset-1-health-1.restored.jpg'))).rejects.toThrow();
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+        expect(mocks.crypto.hashFileMatching).not.toHaveBeenCalled();
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+
+        // a repair is refused the same way: the photo stays the repaired file
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        await writeFile(damaged, 'the damaged file');
+        await writeFile(repaired, 'the repaired file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file'), isLocked: true });
+        shows(problem({ originalPath: repaired, evidence: { fixState: 'repaired', retainedPath: damaged } }));
+        history(
+          step('step-1', 'repaired', 'ok'),
+          step('step-2', 'kept-damaged', 'info', {
+            undo: {
+              kind: 'repair',
+              previousPath: damaged,
+              originalPath: repaired,
+              checksum: sha256('the repaired file').toString('hex'),
+            },
+          }),
+        );
+        await refused(sut.undoFileProblemFix(elevatedOwner, 'health-1'), LOCKED);
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
+      it('refuses to undo a fix of a photo put in Locked while the undo waited for it (Task 11b)', async () => {
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        await writeFile(damaged, 'the damaged file');
+        await writeFile(repaired, 'the repaired file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+        shows(problem({ originalPath: repaired, evidence: { fixState: 'repaired', retainedPath: damaged } }));
+        history(
+          step('step-1', 'repaired', 'ok'),
+          step('step-2', 'kept-damaged', 'info', {
+            undo: {
+              kind: 'repair',
+              previousPath: damaged,
+              originalPath: repaired,
+              checksum: sha256('the repaired file').toString('hex'),
+            },
+          }),
+        );
+        // the repository holds the photo and finds it Locked now
+        vi.mocked(mediaHealthRepository.undoFix).mockResolvedValue('locked');
+
+        await refused(sut.undoFileProblemFix(owner, 'health-1'), "This photo is locked, so this fix can't be undone.");
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+      });
+
+      it('refuses to undo a restore while the drive that keeps the copies is not there', async () => {
+        const original = join(root, 'library', 'IMG_5520.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(original, 'the original, from Cloud Backup');
+        photo({ originalPath: original, checksum: sha256('the original, from Cloud Backup') });
+        shows(problem({ originalPath: original, evidence: { fixState: 'restored' } }));
+        history(
+          step('step-1', 'restored', 'ok', {
+            undo: {
+              kind: 'restore',
+              previousPath: original,
+              originalPath: original,
+              checksum: sha256('the original, from Cloud Backup').toString('hex'),
+            },
+          }),
+        );
+        // the uploads drive has no mount file: it is not there
+        const uploads = join(root, 'upload');
+        const baseFolder = StorageCore.getBaseFolder.bind(StorageCore);
+        const base = vi
+          .spyOn(StorageCore, 'getBaseFolder')
+          .mockImplementation((folder) => (folder === StorageFolder.Upload ? uploads : baseFolder(folder)));
+        onTestFinished(() => base.mockRestore());
+
+        await refused(
+          sut.undoFileProblemFix(owner, 'health-1'),
+          "Frameleaf can't reach the drive that keeps its copies right now. Try again later.",
+        );
+        await expect(readFile(original, 'utf8')).resolves.toBe('the original, from Cloud Backup');
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
+      it('waits for the photo’s other open problem before it undoes a fix', async () => {
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        await writeFile(repaired, 'the repaired file');
+        await writeFile(damaged, 'the damaged file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+        shows(problem({ originalPath: repaired }));
+        history(
+          step('step-1', 'repaired', 'ok'),
+          step('step-2', 'kept-damaged', 'info', {
+            undo: {
+              kind: 'repair',
+              previousPath: damaged,
+              originalPath: repaired,
+              checksum: sha256('the repaired file').toString('hex'),
+            },
+          }),
+        );
+        const otherOpen = "This photo has another problem open, so this fix can't be undone yet.";
+        // the same photo went missing since: that open problem is the one that counts
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          problem(),
+          problem({ id: 'health-2', category: MediaHealthCategory.Missing, resolvedAt: null }),
+        ] as never);
+        await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toMatchObject({
+          message: otherOpen,
+          status: 409,
+        });
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+
+        // one opened meanwhile: the repository finds it under its lock
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([problem()] as never);
+        vi.mocked(mediaHealthRepository.undoFix).mockResolvedValue('open');
+        await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toMatchObject({
+          message: otherOpen,
+          status: 409,
+        });
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+      });
+
+      it('has nothing to undo on a problem that is not fixed', async () => {
+        shows(problem({ status: MediaHealthStatus.Missing, resolvedAt: null, evidence: { fixState: 'missing' } }));
+
+        await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toThrow(
+          'There is nothing to undo for this photo.',
+        );
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
+      it('lets only the photo’s owner undo it', async () => {
+        shows(problem({ ownerId: 'user-2', ownerName: 'Emma' }));
+
+        await expect(sut.undoFileProblemFix(admin, 'health-1')).rejects.toThrow("Only the photo's owner can do that");
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('the damaged file a repair kept (Task 11b)', () => {
+      const NO_FILE = "Frameleaf didn't keep a damaged file for this photo.";
+      let damaged: string;
+      let repaired: string;
+      const keptDamaged = (previousPath: string) =>
+        step('step-3', 'kept-damaged', 'info', {
+          undo: {
+            kind: 'repair',
+            previousPath,
+            originalPath: repaired,
+            checksum: sha256('the repaired file').toString('hex'),
+          },
+        });
+
+      beforeEach(async () => {
+        damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        await writeFile(damaged, 'the damaged file');
+        await writeFile(repaired, 'the repaired file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+        shows(problem({ originalPath: repaired, evidence: { fixState: 'part-saved', retainedPath: damaged } }));
+        history(step('step-1', 'wont-open', 'failed'), step('step-2', 'repaired', 'ok'), keptDamaged(damaged));
+      });
+
+      it('gives the owner the damaged file their repair kept in Library care', async () => {
+        await expect(sut.getFileProblemKeptFile(owner, 'health-1')).resolves.toEqual({
+          // the file itself, as the folder check resolved it
+          path: await realpath(damaged),
+          // named so it is never taken for the repaired photo
+          fileName: 'IMG_2041 (damaged).jpg',
+          contentType: 'image/jpeg',
+          // the route keeps it out of every cache (private, no-store), as a sealed file is
+          cacheControl: CacheControl.None,
+        });
+        // reading it changes nothing
+        await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
+        expect(mediaHealthRepository.getFileProblem).toHaveBeenCalledWith('health-1', owner.user.id, expect.anything());
+      });
+
+      it('names a photo without an extension after the kept file’s own', async () => {
+        shows(
+          problem({
+            originalPath: repaired,
+            originalFileName: 'Scan 12',
+            evidence: { fixState: 'part-saved', retainedPath: damaged },
+          }),
+        );
+        await expect(sut.getFileProblemKeptFile(owner, 'health-1')).resolves.toMatchObject({
+          fileName: 'Scan 12 (damaged).jpg',
+        });
+      });
+
+      it('also for a repair that stopped before it recorded its kept-damaged step', async () => {
+        history(step('step-1', 'wont-open', 'failed'), step('step-2', 'repaired', 'ok'));
+        await expect(sut.getFileProblemKeptFile(owner, 'health-1')).resolves.toMatchObject({
+          path: await realpath(damaged),
+        });
+      });
+
+      it('is only for the owner', async () => {
+        // an administrator sees the problem, but the file is the owner's
+        shows(problem({ ownerId: 'someone-else', ownerName: 'Emma' }));
+        await expect(sut.getFileProblemKeptFile(admin, 'health-1')).rejects.toMatchObject({
+          status: 403,
+          message: "Only the photo's owner can do that.",
+        });
+        // another member never sees the problem at all
+        shows(undefined as never);
+        const member = { user: { ...owner.user, id: 'user-2', name: 'Emma' } } as never;
+        await expect(sut.getFileProblemKeptFile(member, 'health-1')).rejects.toMatchObject({ status: 404 });
+      });
+
+      it('is refused for a photo that is Locked now, even in its owner’s unlocked session', async () => {
+        photo({ originalPath: repaired, checksum: sha256('the repaired file'), isLocked: true });
+        await expect(sut.getFileProblemKeptFile(elevatedOwner, 'health-1')).rejects.toMatchObject({
+          status: 409,
+          message: "This photo is locked, so the damaged file Frameleaf kept can't be downloaded.",
+        });
+      });
+
+      it.each([
+        [
+          'the latest fix is not a repair',
+          () =>
+            history(
+              step('step-1', 'not-on-drive', 'failed'),
+              step('step-2', 'put-back', 'ok', {
+                undo: { kind: 'relink', previousPath: damaged, originalPath: repaired },
+              }),
+            ),
+        ],
+        [
+          'the repair was undone',
+          () => history(step('step-2', 'repaired', 'ok'), keptDamaged(damaged), step('step-4', 'undone', 'info')),
+        ],
+        ['no fix was made', () => history(step('step-1', 'wont-open', 'failed'))],
+        ['the kept file is gone', async () => rm(damaged)],
+        [
+          'the kept file is not in the photo’s Library care folder',
+          async () => {
+            const elsewhere = join(root, 'library', 'IMG_2041.jpg');
+            await mkdir(join(root, 'library'), { recursive: true });
+            await writeFile(elsewhere, 'some other file');
+            history(step('step-2', 'repaired', 'ok'), keptDamaged(elsewhere));
+          },
+        ],
+        [
+          'the kept file is a link out of Library care',
+          async () => {
+            const outside = join(root, 'outside.jpg');
+            await writeFile(outside, 'not the damaged file');
+            await rm(damaged);
+            await symlink(outside, damaged);
+          },
+        ],
+      ])('has nothing to give when %s', async (_, arrange) => {
+        await arrange();
+        await expect(sut.getFileProblemKeptFile(owner, 'health-1')).rejects.toMatchObject({
+          status: 404,
+          message: NO_FILE,
+        });
+      });
+    });
+
+    describe('keep, try again and look in a folder', () => {
+      const needsYou = (overrides: Record<string, unknown> = {}) =>
+        problem({
+          category: MediaHealthCategory.Missing,
+          status: MediaHealthStatus.Missing,
+          resolvedAt: null,
+          evidence: { fixState: 'missing' },
+          ...overrides,
+        });
+
+      it('keeps a problem that needs the person as it is', async () => {
+        shows(needsYou(), needsYou({ evidence: { fixState: 'left-as-is' } }));
+
+        await expect(sut.keepFileProblem(owner, 'health-1')).resolves.toMatchObject({ fixState: 'left-as-is' });
+
+        expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
+          healthId: 'health-1',
+          evidence: { fixState: 'left-as-is' },
+          steps: [{ step: 'kept-as-is', outcome: 'info' }],
+        });
+      });
+
+      it('keeps only a problem that needs the person, and only for its owner', async () => {
+        shows(problem());
+        await expect(sut.keepFileProblem(owner, 'health-1')).rejects.toThrow(
+          'Only a photo that still needs you can be kept as it is.',
+        );
+        shows(needsYou({ ownerId: 'user-2', ownerName: 'Emma' }));
+        await expect(sut.keepFileProblem(admin, 'health-1')).rejects.toThrow("Only the photo's owner can do that");
+        expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+      });
+
+      it('tries again from the start, keeping a declined repair declined', async () => {
+        shows(needsYou({ evidence: { fixState: 'cant-repair', autoRepairDeclined: true } }));
+
+        await sut.tryFileProblemAgain(owner, 'health-1');
+
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.MediaHealthFixAsset,
+          data: { id: 'asset-1', from: 'person', attempt: 0 },
+        });
+        expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
+      it('lets an administrator try another account’s file again, and nothing else', async () => {
+        shows(needsYou({ ownerId: 'user-2', ownerName: 'Emma' }));
+
+        await expect(sut.tryFileProblemAgain(admin, 'health-1')).resolves.toMatchObject({ canAct: false });
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.MediaHealthFixAsset,
+          data: { id: 'asset-1', from: 'person', attempt: 0 },
+        });
+        await expect(sut.lookInFolderForFileProblem(admin, 'health-1', { folderId: MANAGED_ROOT_ID })).rejects.toThrow(
+          "Only the photo's owner can do that",
+        );
+        expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+      });
+
+      it('a member can only look in their own folders', async () => {
+        vi.mocked(mocks.library.getAll).mockResolvedValue([
+          { id: 'library-1', ownerId: owner.user.id, name: 'Holiday drive', importPaths: ['/mnt/holiday'] },
+          { id: 'library-2', ownerId: 'user-2', name: 'Emma’s drive', importPaths: ['/mnt/emma'] },
+        ] as never);
+        recoveryRoots.push({ label: 'Old NAS', path: '/mnt/old-nas' });
+        shows(needsYou());
+        const finding = needsYou();
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([finding] as never);
+        photo({ originalPath: '/data/upload/user-id/IMG_3310.jpg', checksum: sha1('the photo') });
+        vi.mocked(mediaHealthRepository.createRun).mockResolvedValue({ id: 'run-1' } as never);
+
+        for (const folderId of [libraryRootId('library-2'), recoveryRootId('/mnt/old-nas'), 'somewhere-else']) {
+          await expect(sut.lookInFolderForFileProblem(owner, 'health-1', { folderId })).rejects.toThrow(
+            "That folder isn't one you can search.",
+          );
+        }
+        expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+
+        await sut.lookInFolderForFileProblem(owner, 'health-1', { folderId: MANAGED_ROOT_ID });
+
+        // a one-off search of that folder, as a search Activity shows, which records what it found
+        expect(mediaOperationRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ownerId: owner.user.id,
+            kind: MediaOperationKind.MediaHealth,
+            snapshot: expect.objectContaining({
+              mode: 'locate',
+              userId: owner.user.id,
+              findingIds: ['health-1'],
+              rootIds: [MANAGED_ROOT_ID],
+              anyOwner: false,
+              lookIn: { folder: 'Library storage' },
+            }),
+          }),
+        );
+      });
+
+      it('looks only in a folder the search walks for this photo', async () => {
+        const refusedHere = "Frameleaf can't look for this photo in that folder.";
+        vi.mocked(mocks.library.getAll).mockResolvedValue([
+          { id: 'library-1', ownerId: owner.user.id, name: 'Holiday drive', importPaths: ['/mnt/holiday'] },
+          { id: 'library-3', ownerId: owner.user.id, name: 'Camera card', importPaths: ['/mnt/card'] },
+        ] as never);
+        shows(needsYou());
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
+        vi.mocked(mediaHealthRepository.createRun).mockResolvedValue({ id: 'run-1' } as never);
+
+        // a stored photo is never searched for in an external library
+        photo({ originalPath: '/data/upload/user-id/IMG_3310.jpg', checksum: sha1('the photo') });
+        await expect(
+          sut.lookInFolderForFileProblem(owner, 'health-1', { folderId: libraryRootId('library-1') }),
+        ).rejects.toThrow(refusedHere);
+
+        // an external photo only in its own library
+        photo({
+          originalPath: '/mnt/holiday/IMG_3310.jpg',
+          isExternal: true,
+          libraryId: 'library-1',
+          checksum: sha1('x'),
+        });
+        for (const folderId of [MANAGED_ROOT_ID, libraryRootId('library-3')]) {
+          const error = await sut.lookInFolderForFileProblem(owner, 'health-1', { folderId }).catch((error_) => error_);
+          expect(error).toMatchObject({ message: refusedHere, status: 400 });
+        }
+        expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+
+        await sut.lookInFolderForFileProblem(owner, 'health-1', { folderId: libraryRootId('library-1') });
+        expect(mediaOperationRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            snapshot: expect.objectContaining({
+              rootIds: [libraryRootId('library-1')],
+              lookIn: { folder: 'Holiday drive' },
+            }),
+          }),
+        );
+
+        // a changed external photo: the search never looks behind it, so the button would do nothing, ever
+        vi.mocked(mediaOperationRepository.create).mockClear();
+        shows(needsYou({ category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.CorruptConfirmed }));
+        const error = await sut
+          .lookInFolderForFileProblem(owner, 'health-1', { folderId: libraryRootId('library-1') })
+          .catch((error_) => error_);
+        expect(error).toMatchObject({
+          message: "Frameleaf can only look for an external library's photo when it is missing.",
+          status: 400,
+        });
+        expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+      });
+
+      it('keeps what earlier searches found in other folders when it looks in one', async () => {
+        recoveryRoots.push({ label: 'Old NAS', path: '/mnt/old-nas' });
+        vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-id', storageLabel: null }] as never);
+        const managed = StorageCore.getFolderLocation(StorageFolder.Upload, 'user-id');
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
+        photo({ originalPath: join(managed, 'IMG_3310.jpg'), checksum: sha1('the photo') });
+        // earlier: a copy in a recovery folder, and one in library storage that is gone now
+        const earlier = (candidatePath: string, rootId: string) => ({
+          id: `candidate-${rootId}`,
+          healthId: 'health-1',
+          candidatePath,
+          status: MediaHealthStatus.Found,
+          visualMatchScore: 1,
+          evidence: { path: candidatePath, rootId },
+          resolution: { autoRelinkable: true },
+          checkedAt: at('2026-11-01T00:00:00Z'),
+        });
+        const elsewhere = earlier('/mnt/old-nas/IMG_3310.jpg', recoveryRootId('/mnt/old-nas'));
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          elsewhere,
+          earlier(join(managed, 'gone.jpg'), MANAGED_ROOT_ID),
+        ] as never);
+        const fresh = join(managed, 'IMG_3310+1.jpg');
+        vi.spyOn(sut as any, 'locateManagedCandidates').mockResolvedValue({
+          candidates: new Map([
+            [
+              'asset-1',
+              [
+                {
+                  status: MediaHealthStatus.Found,
+                  score: 1,
+                  evidence: { path: fresh },
+                  resolution: { autoRelinkable: true },
+                },
+              ],
+            ],
+          ]),
+          continuation: undefined,
+        });
+        const snapshot = {
+          mode: 'locate' as const,
+          userId: owner.user.id,
+          runId: 'run-1',
+          findingIds: ['health-1'],
+          rootIds: [MANAGED_ROOT_ID],
+          anyOwner: false,
+        };
+
+        const step = await sut.locateStep({ ...snapshot, lookIn: { folder: 'Library storage' } }, null);
+
+        expect(step.checkedIds).toEqual(['health-1']);
+        const [, written] = vi.mocked(mediaHealthRepository.replaceCandidates).mock.calls[0];
+        expect(written.map(({ candidatePath }) => candidatePath)).toEqual(['/mnt/old-nas/IMG_3310.jpg', fresh]);
+        expect(written[0]).toMatchObject({ status: MediaHealthStatus.Found, evidence: elsewhere.evidence });
+        // two copies now: the person chooses, nothing is relinked by itself
+        expect(mediaHealthRepository.recordSearchResult).toHaveBeenCalledWith(
+          expect.objectContaining({
+            found: expect.objectContaining({ status: MediaHealthStatus.Found }),
+            resolution: expect.objectContaining({ autoRelinkable: false }),
+            evidence: expect.objectContaining({ candidateCount: 2, validatedCandidateCount: 2 }),
+          }),
+        );
+
+        // any other search replaces the whole list, as before
+        vi.mocked(mediaHealthRepository.replaceCandidates).mockClear();
+        await sut.locateStep(snapshot, null);
+        expect(vi.mocked(mediaHealthRepository.replaceCandidates).mock.calls[0][1]).toHaveLength(1);
+      });
+
+      it('also walks the folders an import read from, while they are mounted', async () => {
+        vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-id', storageLabel: null }] as never);
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
+        photo({
+          originalPath: join(StorageCore.getFolderLocation(StorageFolder.Upload, 'user-id'), 'IMG_3310.jpg'),
+          checksum: sha1('the photo'),
+        });
+        vi.mocked(mocks.systemMetadata.get).mockImplementation(((key: SystemMetadataKey) =>
+          Promise.resolve(
+            key === SystemMetadataKey.FileFixSourceRoots ? ['/mnt/immich/library', '/mnt/unplugged'] : undefined,
+          )) as never);
+        vi.mocked(mocks.storage.stat).mockImplementation(((path: string) =>
+          path === '/mnt/unplugged'
+            ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+            : Promise.resolve(settledStat({ size: 10 }))) as never);
+        const walk = vi
+          .spyOn(sut as any, 'locateManagedCandidates')
+          .mockResolvedValue({ candidates: new Map(), continuation: undefined });
+
+        await sut.locateStep(
+          {
+            mode: 'locate' as const,
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [MANAGED_ROOT_ID],
+            anyOwner: false,
+          },
+          null,
+        );
+
+        const starts = walk.mock.calls[0][2] as string[];
+        expect(starts).toContain('/mnt/immich/library');
+        expect(starts).not.toContain('/mnt/unplugged');
+      });
+
+      it('looks only for a photo that is still missing or changed', async () => {
+        shows(problem());
+        await expect(sut.lookInFolderForFileProblem(owner, 'health-1', { folderId: MANAGED_ROOT_ID })).rejects.toThrow(
+          'Frameleaf only looks for a photo that still needs you.',
+        );
+        shows(needsYou({ category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.CorruptSuspect }));
+        await expect(sut.lookInFolderForFileProblem(owner, 'health-1', { folderId: MANAGED_ROOT_ID })).rejects.toThrow(
+          'Frameleaf can only look for an exact copy of a missing photo, or of one that changed.',
+        );
+        expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+      });
+
+      it('puts back the one exact copy the search of a folder found, saying where it looked', async () => {
+        const copy = join(root, 'library', 'IMG_3310+1.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(copy, 'the photo');
+        const lost = join(root, 'library', 'IMG_3310.jpg');
+        photo({ originalPath: lost, checksum: sha1('the photo'), checksumAlgorithm: ChecksumAlgorithm.sha1File });
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+          { ...needsYou({ status: MediaHealthStatus.Found }), originalPath: lost },
+        ] as never);
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          {
+            id: 'candidate-1',
+            healthId: 'health-1',
+            candidatePath: copy,
+            status: MediaHealthStatus.Found,
+            evidence: { rootId: MANAGED_ROOT_ID, decodeValid: true },
+            resolution: { autoRelinkable: true },
+          },
+        ] as never);
+        vi.mocked(mediaHealthRepository.relinkManagedAsset).mockResolvedValue(true);
+
+        await sut.finishLookIn(
+          {
+            mode: 'locate',
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [MANAGED_ROOT_ID],
+            anyOwner: false,
+            lookIn: { folder: 'Library storage' },
+          },
+          ['health-1'],
+        );
+
+        expect(mediaHealthRepository.getByIds).toHaveBeenCalledWith(['health-1'], owner.user.id);
+        expect(vi.mocked(mediaHealthRepository.relinkManagedAsset).mock.calls[0][0]).toMatchObject({
+          originalPath: copy,
+          evidence: { fixState: 'found-again' },
+          steps: [
+            { step: 'searched-copy', outcome: 'ok', facts: { folder: 'Library storage', copies: 1 } },
+            { step: 'put-back', outcome: 'ok', undo: { kind: 'relink', previousPath: lost } },
+          ],
+        });
+      });
+
+      it('says when the folder held no copy', async () => {
+        photo({ originalPath: '/data/upload/user-id/IMG_3310.jpg', checksum: sha1('the photo') });
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([]);
+
+        await sut.finishLookIn(
+          {
+            mode: 'locate',
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [libraryRootId('library-1')],
+            anyOwner: false,
+            lookIn: { folder: 'Holiday drive' },
+          },
+          ['health-1'],
+        );
+
+        expect(mediaHealthRepository.appendSteps).toHaveBeenCalledWith([
+          {
+            healthId: 'health-1',
+            assetId: 'asset-1',
+            step: 'searched-copy',
+            outcome: 'not-found',
+            facts: { folder: 'Holiday drive' },
+          },
+        ]);
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      });
+
+      it('says nothing for a problem its search did not check', async () => {
+        photo({ originalPath: '/data/upload/user-id/IMG_3310.jpg', checksum: sha1('the photo') });
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
+
+        await sut.finishLookIn(
+          {
+            mode: 'locate',
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [MANAGED_ROOT_ID],
+            anyOwner: false,
+            lookIn: { folder: 'Library storage' },
+          },
+          [],
+        );
+
+        expect(mediaHealthRepository.appendSteps).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      });
+
+      it('counts and puts back only the copies in the folder it looked in', async () => {
+        const copy = join(root, 'library', 'IMG_3310+1.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(copy, 'the photo');
+        photo({ originalPath: join(root, 'library', 'IMG_3310.jpg'), checksum: sha1('the photo') });
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+          needsYou({ status: MediaHealthStatus.Found }),
+        ] as never);
+        // the one copy Frameleaf could use by itself is in library storage, found by an earlier search
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          {
+            id: 'candidate-1',
+            healthId: 'health-1',
+            candidatePath: copy,
+            status: MediaHealthStatus.Found,
+            evidence: { rootId: MANAGED_ROOT_ID, decodeValid: true },
+            resolution: { autoRelinkable: true },
+          },
+        ] as never);
+
+        await sut.finishLookIn(
+          {
+            mode: 'locate',
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [libraryRootId('library-1')],
+            anyOwner: false,
+            lookIn: { folder: 'Holiday drive' },
+          },
+          ['health-1'],
+        );
+
+        expect(mediaHealthRepository.appendSteps).toHaveBeenCalledWith([
+          expect.objectContaining({ step: 'searched-copy', outcome: 'not-found', facts: { folder: 'Holiday drive' } }),
+        ]);
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      });
+    });
+
+    it('records that a photo was removed when it goes to the trash', async () => {
+      await sut.onAssetTrashAll({ assetIds: ['asset-1', 'asset-2'], userId: owner.user.id });
+
+      expect(mediaHealthRepository.recordRemoved).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
+        by: owner.user.name,
+      });
     });
   });
 });

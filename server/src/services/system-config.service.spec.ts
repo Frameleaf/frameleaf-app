@@ -496,6 +496,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
     duplicateReview: true,
     incrementalEnrichment: true,
     manualMetadata: true,
+    autoRepair: true,
+    askPhones: true,
   },
   editing: {
     trimMode: VideoTrimMode.Precise,

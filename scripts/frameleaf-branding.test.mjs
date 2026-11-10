@@ -275,6 +275,10 @@ test("offline source-import wording is permitted only in its named context", () 
       "server/src/repositories/database.repository.ts",
       "Frameleaf requires an empty PostgreSQL 19 database. Use import-immich with a separate read-only source; existing Immich or legacy Frameleaf databases cannot be adopted.",
     ],
+    [
+      "server/src/immich-import/importer.ts",
+      "facts: { source: 'Immich', sourcePath: relative(within('source'), lost.immichPath) },",
+    ],
   ];
   for (const [file, passage] of passages) {
     assert.deepEqual(

@@ -56,6 +56,7 @@
   } from '$lib/frameleaf/library-care';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { utilitiesUrl } from '$lib/frameleaf/utilities';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -837,14 +838,23 @@
               </span>
             </td>
             <td>
-              <Button
-                onclick={() => {
-                  inspect = row;
-                  inspectOpen = true;
-                }}
-              >
-                {$t('library_care_inspect')}
-              </Button>
+              <span class="row-actions">
+                <Button
+                  onclick={() => {
+                    inspect = row;
+                    inspectOpen = true;
+                  }}
+                >
+                  {$t('library_care_inspect')}
+                </Button>
+                <!-- FL-1338 (design §7): this table stays the detailed view; each row's story is on its What happened sheet -->
+                <Button
+                  label={$t('frameleaf_files_what_happened_to', { values: { name: row.name } })}
+                  onclick={() => goto(commandCenterUrl('care', 'files', { file: row.id }))}
+                >
+                  {$t('frameleaf_files_what_happened')}
+                </Button>
+              </span>
             </td>
           </tr>
         {/each}
@@ -1250,6 +1260,11 @@
     display: grid;
     gap: 0.25rem;
     justify-items: start;
+  }
+  .row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .empty {
     display: grid;

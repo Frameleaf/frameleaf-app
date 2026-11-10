@@ -58,6 +58,7 @@ import {
   attemptOutputPath,
   deferJobAdoption,
   jobSignal,
+  noteJobHandedToCare,
   publishJobDiagnostic,
   publishJobResult,
   queueExecution,
@@ -75,6 +76,7 @@ import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
+import { isBusy } from 'src/utils/file-problem.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
 import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { DJI_SRT_HEAD_BYTES, getDjiSrtCandidates, parseDjiSrtColorMode } from 'src/utils/log-video-srt.js';
@@ -101,7 +103,6 @@ import {
   requiresFloatIntermediate,
   selectEncoderPixelFormat,
 } from 'src/utils/media-encode.js';
-import { isUnsupportedRawDecodeError } from 'src/utils/media-health.js';
 import {
   EditedMasterColorDecision,
   EditedMasterColorPolicy,
@@ -129,7 +130,7 @@ import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.j
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
-import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, type RawRenderFailure, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
 import {
@@ -152,6 +153,8 @@ const FILTER_DECIMAL_PLACES = 4;
 
 /** FL-1324: once the thumbnails drive was full, this much room lets thumbnails carry on. */
 const THUMBNAIL_ROOM_TO_RESUME_BYTES = 1_000_000_000;
+// A RAW the renderer could open the file for but not read. Missing tools, limits and I/O trouble retry instead.
+const DECODE_RAW_REASONS: ReadonlySet<RawRenderFailure> = new Set(['unsupported', 'damaged', 'decode_failed']);
 const DRIVE_FULL_CODES = new Set(['ENOSPC', 'EDQUOT']);
 /** Sharp and ffmpeg run in child processes, so a full drive often reaches here only as their message. */
 const DRIVE_FULL_MESSAGE = /\b(ENOSPC|EDQUOT)\b|no space left on device|disk quota exceeded/i;
@@ -452,7 +455,7 @@ export class MediaService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetGenerateThumbnails, queue: QueueName.ThumbnailGeneration })
-  async handleGenerateThumbnails({ id }: JobOf<JobName.AssetGenerateThumbnails>): Promise<JobStatus> {
+  async handleGenerateThumbnails({ id, afterCare }: JobOf<JobName.AssetGenerateThumbnails>): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForGenerateThumbnailJob(id);
     const config = await this.getConfig({ withCache: true });
 
@@ -501,6 +504,7 @@ export class MediaService extends BaseService {
           config,
           // FL-1285: the stored path, where a DJI sidecar sits; `originalPath` may be a plain copy
           asset.originalPath,
+          { handOffDamage: !afterCare },
         ),
       );
     } catch (error) {
@@ -565,6 +569,11 @@ export class MediaService extends BaseService {
     config: SystemConfig,
     /** The original's stored library path, when `asset.originalPath` is a plain copy of it. */
     storedOriginalPath = asset.originalPath,
+    /**
+     * FL-1337: whether a photo that won't open goes to Library care. Not when Library care itself asked for
+     * these previews after it found the file opens: the failure is then the job's, and it fails to be retried.
+     */
+    { handOffDamage = true }: { handOffDamage?: boolean } = {},
   ): Promise<JobStatus> {
     const id = asset.id;
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
@@ -625,8 +634,15 @@ export class MediaService extends BaseService {
         generated = await this.generateImageThumbnails(asset, config);
       } catch (error) {
         executionSignal()?.throwIfAborted();
-        if (this.shouldSkipThumbnailDecodeError(error, asset.originalFileName)) {
-          this.logger.warn(`Skipping thumbnail generation for asset ${id}: ${error}`);
+        if (handOffDamage && this.isDecodeError(error)) {
+          // FL-1337: a photo that won't open goes to Library care, which names the cause and repairs what it can.
+          // Thumbnails are queued again after a fix, and their follow-up work runs then.
+          this.logger.warn(`Sending asset ${id} to Library care: thumbnail generation failed: ${error}`);
+          await this.jobRepository.queue({
+            name: JobName.MediaHealthFixAsset,
+            data: { id: asset.id, from: 'preview', message: error.message },
+          });
+          noteJobHandedToCare();
           return JobStatus.Skipped;
         }
 
@@ -669,22 +685,19 @@ export class MediaService extends BaseService {
     return { buffer: await renderRawWithLibRaw(originalPath, signal), format: RawExtractedFormat.Tiff };
   }
 
-  private shouldSkipThumbnailDecodeError(error: unknown, fileName: string) {
-    if (error instanceof RawRenderError) {
-      return error.reason === 'unsupported';
-    }
-    if (!(error instanceof SharpOperationError)) {
+  /**
+   * A decoder said the file will not open. Timeouts, worker exits and I/O trouble are not the file's fault, so they
+   * retry. FL-1337: only the image worker's own decode failure counts (`decodeFailure`); a preview it could not write
+   * (a thumbnails folder it may not write to, a colour transform) is the job's failure, not the photo's.
+   */
+  private isDecodeError(error: unknown): error is SharpOperationError | RawRenderError {
+    if (isDriveFullError(error)) {
       return false;
     }
-    const message = error.message;
-    return (
-      isUnsupportedRawDecodeError(error) ||
-      (mimeTypes.isRaw(fileName) &&
-        (message.includes('dcraw_emu') ||
-          message.includes('Command failed') ||
-          message.includes('ENOENT') ||
-          message.includes('unsupported RAW')))
-    );
+    if (error instanceof RawRenderError) {
+      return DECODE_RAW_REASONS.has(error.reason) && !isBusy(error.message);
+    }
+    return error instanceof SharpOperationError && error.decodeFailure && !isBusy(error.message);
   }
 
   private async extractOriginalImage(

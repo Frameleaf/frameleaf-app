@@ -553,6 +553,10 @@ describe(AssetMediaService.name, () => {
         sha256: upload.checksum,
         sizeInBytes: 42,
         reason: 'restored_by_upload',
+        finding: {
+          evidence: { fixState: 'found-again' },
+          steps: [{ step: 'put-back', outcome: 'ok' }],
+        },
       });
       expect(mocks.asset.create).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
@@ -560,6 +564,66 @@ describe(AssetMediaService.name, () => {
         { name: JobName.SidecarCheck, data: { id: lost.id, source: 'upload' } },
         { name: JobName.AssetGenerateThumbnails, data: { id: lost.id, source: 'upload' } },
       ]);
+    });
+
+    it('records which device sent a lost original back, and that it was put back (FL-1337)', async () => {
+      mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
+      mocks.session.getByUserId.mockResolvedValue([
+        { id: 'other', deviceOS: 'macOS', deviceType: 'Chrome' },
+        { id: 'session-1', deviceOS: 'iOS', deviceType: 'iPhone15,2' },
+      ] as never);
+      const auth = { ...authStub.admin, session: { id: 'session-1', hasElevatedPermission: false } };
+
+      await sut.uploadAsset(auth, createDto, upload);
+
+      expect(mocks.session.getByUserId).toHaveBeenCalledWith(authStub.admin.user.id);
+      expect(mocks.physicalFile.restoreLostOriginal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          finding: {
+            evidence: { fixState: 'found-again' },
+            steps: [
+              { step: 'asked-phones', outcome: 'ok', facts: { device: 'iPhone15,2' } },
+              { step: 'put-back', outcome: 'ok' },
+            ],
+          },
+        }),
+      );
+    });
+
+    it('names the device by its system when the app sent no model (FL-1337)', async () => {
+      mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
+      mocks.session.getByUserId.mockResolvedValue([{ id: 'session-1', deviceOS: 'Android', deviceType: '' }] as never);
+      const auth = { ...authStub.admin, session: { id: 'session-1', hasElevatedPermission: false } };
+
+      await sut.uploadAsset(auth, createDto, upload);
+
+      expect(mocks.physicalFile.restoreLostOriginal).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          finding: expect.objectContaining({
+            steps: [{ step: 'asked-phones', outcome: 'ok', facts: { device: 'Android' } }, expect.anything()],
+          }),
+        }),
+      );
+    });
+
+    it.each([
+      ['a browser', { id: 'session-1', deviceOS: 'macOS', deviceType: 'Chrome' }, true],
+      ['an API key', undefined, false],
+    ])('writes only the put-back for an upload from %s (FL-1337)', async (_name, row, hasSession) => {
+      mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
+      mocks.session.getByUserId.mockResolvedValue((row ? [row] : []) as never);
+      const auth = {
+        ...authStub.admin,
+        session: hasSession ? { id: 'session-1', hasElevatedPermission: false } : undefined,
+      };
+
+      await sut.uploadAsset(auth, createDto, upload);
+
+      expect(mocks.physicalFile.restoreLostOriginal).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          finding: { evidence: { fixState: 'found-again' }, steps: [{ step: 'put-back', outcome: 'ok' }] },
+        }),
+      );
     });
 
     it('repairs a hidden photo but answers like a hidden duplicate, without its id', async () => {

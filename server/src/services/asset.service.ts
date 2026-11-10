@@ -49,12 +49,14 @@ import {
   JobName,
   JobStatus,
   LibraryScope,
+  MediaHealthCategory,
   Permission,
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { isProcessingFailureStep } from 'src/queue/processing-failure.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
@@ -159,6 +161,14 @@ export class AssetService extends BaseService {
   @Inject(LockedEncryptionService)
   private lockedEncryption!: LockedEncryptionService;
 
+  /**
+   * FL-1337: the open file problem of the photo the viewer shows (not a BaseService dependency). Nest sets it on the
+   * AssetService the controllers use. One that another service builds with `BaseService.create` (a workflow's write,
+   * an album's date healing) has none: those read the photo back for themselves, never for a viewer.
+   */
+  @Inject(MediaHealthRepository)
+  private mediaHealthRepository?: MediaHealthRepository;
+
   async getStatistics(auth: AuthDto, dto: AssetStatsDto) {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
@@ -252,6 +262,8 @@ export class AssetService extends BaseService {
 
     await this.withLandmarks(data);
 
+    data.fileProblem = await this.fileProblemFor(auth, asset);
+
     // FL-326: the viewer's own copy from a partner names the library it came from (info panel)
     if (!auth.sharedLink && asset.ownerId === auth.user.id) {
       const labels = await this.partnerOriginRepository.getOriginLabels('asset', [asset.id], auth.user.id);
@@ -274,6 +286,19 @@ export class AssetService extends BaseService {
     }
 
     return data;
+  }
+
+  /**
+   * FL-1337: the flag the viewer shows. Only the photo's owner, or an administrator, and never through a shared
+   * link, learns of a file problem that needs attention (a fixed one, or one kept as it is, sets nothing); a missing
+   * original wins over a damaged one. `readAsset`'s access check has already decided that the caller may open it.
+   */
+  private async fileProblemFor(auth: AuthDto, asset: { id: string; ownerId: string }) {
+    if (!this.mediaHealthRepository || auth.sharedLink || (asset.ownerId !== auth.user.id && !auth.user.isAdmin)) {
+      return null;
+    }
+    const problem = await this.mediaHealthRepository.getOpenFileProblem(asset.id);
+    return problem ? { findingId: problem.id, missing: problem.category === MediaHealthCategory.Missing } : null;
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {

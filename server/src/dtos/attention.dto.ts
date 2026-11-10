@@ -122,6 +122,23 @@ const AttentionCheckSchema = z
   .object({ kind: AttentionKindSchema, state: AttentionCheckStateSchema })
   .meta({ id: 'AttentionCheckDto' });
 
+const AttentionFileProblemsSchema = z
+  .object({
+    fixed: z.number().int().describe('Damaged or missing files Frameleaf fixed in the last 7 days'),
+    needsYou: z.number().int().describe('Damaged or missing files that need the reader'),
+    since: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When the earliest of those fixes was made, or null when there are none'),
+    latest: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When the newest of those fixes was made, or null when there are none'),
+  })
+  .meta({ id: 'AttentionFileProblemsDto' });
+
 const AttentionResponseSchema = z
   .object({
     checkedAt: z.string().meta({ format: 'date-time' }).describe('When the checks were made'),
@@ -130,6 +147,9 @@ const AttentionResponseSchema = z
     dismissed: z
       .array(z.string())
       .describe('Overview items an administrator dismissed (FL-363); they stop counting as needing attention'),
+    fileProblems: AttentionFileProblemsSchema.describe(
+      'FL-1337: the Overview counts of damaged and missing files, for the files the reader may see. They add no item and change no check.',
+    ),
   })
   .meta({ id: 'AttentionResponseDto' });
 

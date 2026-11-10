@@ -260,6 +260,12 @@ export const ALLOWLIST = [
     allow:
       "Frameleaf requires an empty PostgreSQL 19 database. Use import-immich with a separate read-only source; existing Immich or legacy Frameleaf databases cannot be adopted.",
   },
+  {
+    reason:
+      "FL-1337: a lost photo's history in Library care names the library it was imported from",
+    files: /^server\/src\/immich-import\/importer\.ts$/,
+    allow: "source: 'Immich'",
+  },
 ];
 
 const blank = (text) => text.replaceAll(/[^\n]/g, " ");

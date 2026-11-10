@@ -387,7 +387,14 @@
   ];
   /** Pages opened from another page of their area, and that page (`settings-v2/care/duplicates.jsx`). */
   // Approved design (2026-11-04): Graphics card check is opened from Computers and goes back there.
-  const PARENT_PAGES: Readonly<Record<string, string>> = { deduplication: 'duplicates', hardware: 'computers' };
+  // FL-1338: Damaged and missing files goes back to Things to fix (`care/files.jsx`), for an account that has it.
+  const PARENT_PAGES: Readonly<Record<string, string>> = {
+    deduplication: 'duplicates',
+    hardware: 'computers',
+    files: 'repair',
+  };
+  /** Pages that go back to their parent page but keep their area's name above the title (`care/files.jsx`). */
+  const AREA_OVERLINE_PAGES: ReadonlySet<string> = new Set(['files']);
   /** File checks, whose pages open one check's list in place (`?report=<type>`). */
   const SECTION_REPORTS = new Set(['integrity-checks', 'integrity']);
   /** One check's list names itself in the heading ("Missing files report"), not "File checks". */
@@ -443,7 +450,11 @@
       ? groupCopy[areaDefinition?.group ?? 'server']
       : areaCopy[area].title;
     return parent
-      ? { href: commandCenterUrl(area, parent.key), label: parent.title, overline: parent.title }
+      ? {
+          href: commandCenterUrl(area, parent.key),
+          label: parent.title,
+          overline: selected && AREA_OVERLINE_PAGES.has(selected.key) ? overline : parent.title,
+        }
       : { href: commandCenterUrl(area), label: areaCopy[area].title, overline };
   });
   // As in the template, the Users manager carries its own heading. Background work keeps the area's

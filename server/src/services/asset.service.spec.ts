@@ -20,12 +20,14 @@ import {
   JobName,
   JobStatus,
   LibraryScope,
+  MediaHealthCategory,
   Permission,
   StorageFolder,
 } from 'src/enum.js';
 import { AssetStats, RemovedAsset } from 'src/repositories/asset.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { BaseService } from 'src/services/base.service.js';
 import { tryPromise } from 'src/utils/promise.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -305,6 +307,118 @@ describe(AssetService.name, () => {
 
       await expect(sut.get(auth, asset.id)).resolves.toMatchObject({ origin: { rootOwnerId, rootOwnerName: 'Jamie' } });
       expect(mocks.partnerOrigin.getOriginLabels).toHaveBeenCalledWith('asset', [asset.id], asset.ownerId);
+    });
+
+    describe('the file problem flag (FL-1337)', () => {
+      const own = () => {
+        const asset = AssetFactory.create();
+        const auth = AuthFactory.create({ id: asset.ownerId });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+        return { asset, auth };
+      };
+
+      it('shows an open missing original on the photo', async () => {
+        const { asset, auth } = own();
+        mocks.mediaHealth.getOpenFileProblem.mockResolvedValue({
+          id: 'finding-1',
+          category: MediaHealthCategory.Missing,
+        });
+
+        await expect(sut.get(auth, asset.id)).resolves.toMatchObject({
+          fileProblem: { findingId: 'finding-1', missing: true },
+        });
+        expect(mocks.mediaHealth.getOpenFileProblem).toHaveBeenCalledWith(asset.id);
+      });
+
+      it('shows a damaged original as damaged, not missing', async () => {
+        const { asset, auth } = own();
+        mocks.mediaHealth.getOpenFileProblem.mockResolvedValue({
+          id: 'finding-2',
+          category: MediaHealthCategory.Corrupt,
+        });
+
+        await expect(sut.get(auth, asset.id)).resolves.toMatchObject({
+          fileProblem: { findingId: 'finding-2', missing: false },
+        });
+      });
+
+      it('asks for the one open problem, the missing one first, so missing wins when both are open', async () => {
+        const { asset, auth } = own();
+        mocks.mediaHealth.getOpenFileProblem.mockResolvedValue({
+          id: 'missing-one',
+          category: MediaHealthCategory.Missing,
+        });
+
+        const result = await sut.get(auth, asset.id);
+        expect(result).toMatchObject({ fileProblem: { findingId: 'missing-one', missing: true } });
+        // one small query by asset id, never a list to pick from here
+        expect(mocks.mediaHealth.getOpenFileProblem).toHaveBeenCalledTimes(1);
+      });
+
+      it('shows nothing for a fixed photo, or one left as it is', async () => {
+        const { asset, auth } = own();
+        mocks.mediaHealth.getOpenFileProblem.mockResolvedValue(undefined);
+
+        await expect(sut.get(auth, asset.id)).resolves.toMatchObject({ fileProblem: null });
+      });
+
+      it('never shows a shared link a file problem', async () => {
+        const asset = AssetFactory.create();
+        mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+        mocks.mediaHealth.getOpenFileProblem.mockResolvedValue({
+          id: 'finding-1',
+          category: MediaHealthCategory.Missing,
+        });
+
+        const result = await sut.get(authStub.adminSharedLink, asset.id);
+        expect((result as AssetResponseDto).fileProblem ?? null).toBeNull();
+        expect(mocks.mediaHealth.getOpenFileProblem).not.toHaveBeenCalled();
+      });
+
+      it('shows a partner nothing', async () => {
+        const asset = AssetFactory.create();
+        const partner = AuthFactory.create({ id: newUuid() });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+        mocks.mediaHealth.getOpenFileProblem.mockResolvedValue({
+          id: 'finding-1',
+          category: MediaHealthCategory.Missing,
+        });
+
+        const result = await sut.get(partner, asset.id);
+        expect((result as AssetResponseDto).fileProblem ?? null).toBeNull();
+        expect(mocks.mediaHealth.getOpenFileProblem).not.toHaveBeenCalled();
+      });
+
+      it('reads the photo back without the flag for an AssetService another service builds (a workflow write)', async () => {
+        const { asset, auth } = own();
+        mocks.mediaHealth.getOpenFileProblem.mockResolvedValue({
+          id: 'finding-1',
+          category: MediaHealthCategory.Missing,
+        });
+        // `BaseService.create` passes the BaseService repositories only, as a workflow's write does
+        const built = BaseService.create(AssetService, sut);
+
+        await expect(built.get(auth, asset.id)).resolves.toMatchObject({ fileProblem: null });
+        expect(mocks.mediaHealth.getOpenFileProblem).not.toHaveBeenCalled();
+      });
+
+      it("shows an administrator who opens another account's photo its problem", async () => {
+        const asset = AssetFactory.create();
+        const admin = AuthFactory.create({ id: newUuid(), isAdmin: true });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+        mocks.mediaHealth.getOpenFileProblem.mockResolvedValue({
+          id: 'finding-9',
+          category: MediaHealthCategory.Corrupt,
+        });
+
+        await expect(sut.get(admin, asset.id)).resolves.toMatchObject({
+          fileProblem: { findingId: 'finding-9', missing: false },
+        });
+      });
     });
 
     it('tells a partner whether an encrypted Locked copy opens, and why not (FL-721 Task 8)', async () => {

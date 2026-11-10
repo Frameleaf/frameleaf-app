@@ -269,6 +269,18 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'signIn.invitedStorageQuota = value',
   },
   {
+    pattern: 'libraryCare.askPhones',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/FileProblems.svelte',
+    evidence: 'libraryCare.askPhones',
+  },
+  {
+    pattern: 'libraryCare.autoRepair',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
+    evidence: 'libraryCare.autoRepair',
+  },
+  {
     pattern: 'libraryCare.checksumScan',
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',

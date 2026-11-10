@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
@@ -39,6 +39,7 @@ const healthy = {
     { kind: 'version', state: 'ok' },
   ],
   dismissed: [] as string[],
+  fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
 };
 
 describe('Overview (FL-363)', () => {
@@ -168,6 +169,165 @@ describe('Overview (FL-363)', () => {
     expect(sdk.setAttentionDismissed).toHaveBeenCalledWith({ attentionDismissDto: { id: 'studio', dismissed: true } });
     await waitFor(() => expect(screen.queryByText('Optional')).not.toBeInTheDocument());
     expect(screen.getByText('Needs a computer')).toBeInTheDocument();
+  });
+
+  describe('damaged and missing files (FL-1338)', () => {
+    const night = {
+      startedAt: '2026-10-20T06:00:00.000Z',
+      finishedAt: '2026-10-20T07:10:00.000Z',
+      manual: false,
+      results: {},
+    };
+    const withFiles = (
+      fileProblems: { fixed: number; needsYou: number; since: string | null; latest: string | null },
+      dismissed: string[] = [],
+    ) => sdk.getAttention.mockResolvedValue({ ...healthy, fileProblems, dismissed });
+    const lastNight = {
+      fixed: 287,
+      needsYou: 0,
+      since: '2026-10-20T06:30:00.000Z',
+      latest: '2026-10-20T07:05:00.000Z',
+    };
+
+    beforeEach(() => {
+      sdk.getAttention.mockResolvedValue(healthy);
+      sdk.getOvernight.mockResolvedValue({ timezone: 'UTC', nextRunAt: null, steps: [], run: null, nights: [night] });
+    });
+
+    it('says what Frameleaf fixed last night without making the status a warning', async () => {
+      withFiles(lastNight);
+      render(Overview);
+
+      expect(await screen.findByText('Frameleaf fixed 287 photos last night')).toBeInTheDocument();
+      expect(screen.getByText('Done for you')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Review what changed' })).toHaveAttribute(
+        'href',
+        '/user-settings?area=care&section=files&tab=fixed',
+      );
+      expect(screen.getByRole('heading', { name: 'Everything is working' })).toBeInTheDocument();
+      expect(screen.getByText(/Your library is backed up/)).toBeInTheDocument();
+      expect(screen.getByText('All there')).toBeInTheDocument();
+      expect(screen.getByText('287 fixed last night')).toBeInTheDocument();
+    });
+
+    it('says today, or this week, when the fixes were not in the last night', async () => {
+      withFiles({ fixed: 3, needsYou: 0, since: '2026-10-20T14:00:00.000Z', latest: '2026-10-20T15:00:00.000Z' });
+      const view = render(Overview);
+      expect(await screen.findByText('Frameleaf fixed 3 photos today')).toBeInTheDocument();
+      view.unmount();
+
+      withFiles({ fixed: 1, needsYou: 0, since: '2026-10-15T14:00:00.000Z', latest: '2026-10-15T14:00:00.000Z' });
+      render(Overview);
+      expect(await screen.findByText('Frameleaf fixed 1 photo this week')).toBeInTheDocument();
+    });
+
+    it('shows no row when nothing was fixed', async () => {
+      render(Overview);
+      expect(await screen.findByText('All there')).toBeInTheDocument();
+      expect(screen.queryByText('Done for you')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Frameleaf fixed/)).not.toBeInTheDocument();
+    });
+
+    it('dismisses the row on the server, and keeps it away after a reload', async () => {
+      withFiles(lastNight);
+      sdk.setAttentionDismissed.mockImplementation(async ({ attentionDismissDto: { id } }) => ({
+        ...healthy,
+        fileProblems: lastNight,
+        dismissed: [id],
+      }));
+      const view = render(Overview);
+      await screen.findByText('Frameleaf fixed 287 photos last night');
+      const row = screen.getByText('Frameleaf fixed 287 photos last night').closest('li')!;
+      await fireEvent.click(within(row).getByRole('button', { name: 'Dismiss' }));
+
+      expect(sdk.setAttentionDismissed).toHaveBeenCalledWith({
+        attentionDismissDto: { id: `fileproblems:${Date.parse(lastNight.latest)}`, dismissed: true },
+      });
+      await waitFor(() => expect(screen.queryByText('Frameleaf fixed 287 photos last night')).not.toBeInTheDocument());
+      view.unmount();
+
+      withFiles(lastNight, [`fileproblems:${Date.parse(lastNight.latest)}`]);
+      render(Overview);
+      expect(await screen.findByText('All there')).toBeInTheDocument();
+      expect(screen.queryByText('Frameleaf fixed 287 photos last night')).not.toBeInTheDocument();
+    });
+
+    it('takes back the older Done-for-you dismissals, so they never crowd out the others', async () => {
+      const older = ['fileproblems:1760000000000', 'fileproblems:1760500000000'];
+      withFiles(lastNight, ['studio', ...older]);
+      const id = `fileproblems:${Date.parse(lastNight.latest)}`;
+      let kept = ['studio', ...older];
+      sdk.setAttentionDismissed.mockImplementation(async ({ attentionDismissDto }) => {
+        kept = attentionDismissDto.dismissed
+          ? [...kept, attentionDismissDto.id]
+          : kept.filter((other) => other !== attentionDismissDto.id);
+        return { ...healthy, fileProblems: lastNight, dismissed: kept };
+      });
+      render(Overview);
+      const row = (await screen.findByText('Frameleaf fixed 287 photos last night')).closest('li')!;
+      await fireEvent.click(within(row).getByRole('button', { name: 'Dismiss' }));
+
+      await waitFor(() => expect(sdk.setAttentionDismissed).toHaveBeenCalledTimes(3));
+      expect(sdk.setAttentionDismissed.mock.calls.map(([{ attentionDismissDto }]) => attentionDismissDto)).toEqual([
+        { id, dismissed: true },
+        { id: older[0], dismissed: false },
+        { id: older[1], dismissed: false },
+      ]);
+      expect(kept).toEqual(['studio', id]);
+      expect(screen.queryByText('Frameleaf fixed 287 photos last night')).not.toBeInTheDocument();
+    });
+
+    it('takes back nothing when another need is dismissed', async () => {
+      const older = 'fileproblems:1760000000000';
+      sdk.getAttention.mockResolvedValue({ ...healthy, dismissed: [older] });
+      sdk.getRenderWorkerCompatibility.mockResolvedValue({ unavailable: ['studio-export'] });
+      sdk.setAttentionDismissed.mockResolvedValue({ ...healthy, dismissed: [older, 'studio'] });
+      render(Overview);
+      expect(await screen.findByText('Optional')).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+      await waitFor(() => expect(sdk.setAttentionDismissed).toHaveBeenCalledTimes(1));
+      expect(sdk.setAttentionDismissed).toHaveBeenCalledWith({
+        attentionDismissDto: { id: 'studio', dismissed: true },
+      });
+    });
+
+    it('says last night only when the first and the newest fix were both in it', async () => {
+      // the first fix was in last night's run, the newest after it: not "last night"
+      withFiles({ ...lastNight, latest: '2026-10-20T14:00:00.000Z' });
+      render(Overview);
+      expect(await screen.findByText('Frameleaf fixed 287 photos today')).toBeInTheDocument();
+    });
+
+    it('stays dismissed as the week rolls, and shows again when a newer fix lands', async () => {
+      const dismissedAt = `fileproblems:${Date.parse(lastNight.latest)}`;
+      // the oldest fix aged out: since moved on, latest did not
+      withFiles({ ...lastNight, fixed: 12, since: '2026-10-20T06:50:00.000Z' }, [dismissedAt]);
+      const view = render(Overview);
+      expect(await screen.findByText('All there')).toBeInTheDocument();
+      expect(screen.queryByText(/Frameleaf fixed/)).not.toBeInTheDocument();
+      view.unmount();
+
+      withFiles({ ...lastNight, fixed: 290, latest: '2026-10-20T14:00:00.000Z' }, [dismissedAt]);
+      render(Overview);
+      expect(await screen.findByText('Frameleaf fixed 290 photos today')).toBeInTheDocument();
+    });
+
+    it('adds a need, and says it in the status, when files need the person', async () => {
+      withFiles({ ...lastNight, needsYou: 13 });
+      render(Overview);
+
+      expect(await screen.findByText('13 photos are missing or can’t be repaired')).toBeInTheDocument();
+      expect(screen.getByText('When you can')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'See what you can do' })).toHaveAttribute(
+        'href',
+        '/user-settings?area=care&section=files&tab=needs',
+      );
+      expect(screen.getByText('13 missing')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Working, with 1 thing to look at' })).toBeInTheDocument();
+      expect(screen.getByText('13 photos are missing or can’t be repaired.')).toBeInTheDocument();
+      expect(screen.getByText('Frameleaf fixed 287 photos last night')).toBeInTheDocument();
+    });
   });
 });
 

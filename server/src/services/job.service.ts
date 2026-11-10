@@ -13,7 +13,7 @@ import {
   LibraryScope,
   ManualJobName,
 } from 'src/enum.js';
-import { afterJobCommit, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { afterJobCommit, jobHandedToCare, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { workerMetrics } from 'src/repositories/metrics.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -363,7 +363,11 @@ export class JobService extends BaseService {
       }
 
       case JobName.AssetGenerateThumbnails: {
-        if (item.data.reconcileUnfinished) {
+        // FL-1337: a photo handed to Library care has no picture to work from yet. Thumbnails are queued again
+        // after a fix and the follow-up work runs then, so the overnight check (FL-811) queues none of it either.
+        // The upload is still announced. The hand-off is this attempt's own: it is read from this job's execution.
+        const handedToCare = response === JobStatus.Skipped && jobHandedToCare();
+        if (item.data.reconcileUnfinished && !handedToCare) {
           await this.queueUnfinishedFollowups(item.data.id, false);
         }
         if (!item.data.notify && item.data.source !== 'upload') {
@@ -404,7 +408,7 @@ export class JobService extends BaseService {
           }
         }
 
-        await this.jobRepository.queueAll(jobs);
+        await this.jobRepository.queueAll(handedToCare ? [] : jobs);
         await afterJobCommit(async () => {
           const [asset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([item.data.id]);
           if (!asset) {

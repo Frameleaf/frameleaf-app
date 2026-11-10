@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import type { SystemConfig } from 'src/config.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -14,6 +15,7 @@ import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { isNewerRelease } from 'src/services/version.service.js';
@@ -31,11 +33,15 @@ import {
 import { effectiveBackupSchedule } from 'src/utils/backup-sequence.js';
 import { getConfig } from 'src/utils/config.js';
 import { isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { quietHoursHolds } from 'src/utils/overnight.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 /** Queues are read a few at a time, as the queue list does, so a read never fills the database pool. */
 const QUEUE_BATCH = 4;
+/** The Overview counts what was fixed in the last week. */
+const FIXED_WINDOW_DAYS = 7;
 const BACKUP_STAMP = /\d{8}T\d{6}/;
 
 /**
@@ -53,6 +59,7 @@ export class AttentionService {
     private storageRepository: StorageRepository,
     private jobRepository: JobRepository,
     private buddyRepository: BuddyBackupRepository,
+    private mediaHealthRepository: MediaHealthRepository,
   ) {
     this.logger.setContext(AttentionService.name);
   }
@@ -64,7 +71,7 @@ export class AttentionService {
     );
   }
 
-  async getAttention(): Promise<AttentionResponseDto> {
+  async getAttention(auth: AuthDto): Promise<AttentionResponseDto> {
     const now = new Date();
     const config = await this.readConfig();
     const [backup, storage, work, version] = await Promise.all([
@@ -79,7 +86,33 @@ export class AttentionService {
       items: sortAttention(ATTENTION_KINDS.flatMap((kind) => results[kind].items)),
       checks: ATTENTION_KINDS.map((kind) => ({ kind, state: results[kind].state })),
       dismissed: await this.dismissed(),
+      fileProblems: await this.fileProblems(auth),
     };
+  }
+
+  /**
+   * FL-1337: the Overview's damaged and missing file counts. This response is only built for administrators, so
+   * the scope is every account's problems, minus other accounts' Locked photos, with the administrator's own
+   * privacy settings. The tab rules are the file problems list's own. It adds no item and changes no check.
+   */
+  private async fileProblems(auth: AuthDto): Promise<AttentionResponseDto['fileProblems']> {
+    try {
+      const { fixed, needsYou, since, latest } = await this.mediaHealthRepository.fileProblemCounts({
+        privacy: { ...getHiddenContentQueryOptions(auth), ...getLockedVisibilityOptions(auth) },
+        days: FIXED_WINDOW_DAYS,
+      });
+      return {
+        fixed,
+        needsYou,
+        since: since ? since.toISOString() : null,
+        // Task 11b: the newest fix of the same window, so the Overview can tell a new one from what it showed
+        latest: fixed > 0 && latest ? latest.toISOString() : null,
+      };
+    } catch (error) {
+      // like a check that could not be read: the rest of the Overview still answers
+      this.logger.warn(`Could not count damaged and missing files for what needs attention: ${error}`);
+      return { fixed: 0, needsYou: 0, since: null, latest: null };
+    }
   }
 
   private async dismissed(): Promise<string[]> {
@@ -88,7 +121,7 @@ export class AttentionService {
   }
 
   /** FL-363: dismiss an Overview item so it stops counting, or bring it back. Kept for every administrator. */
-  async setDismissed({ id, dismissed }: AttentionDismissDto): Promise<AttentionResponseDto> {
+  async setDismissed(auth: AuthDto, { id, dismissed }: AttentionDismissDto): Promise<AttentionResponseDto> {
     const ids = new Set(await this.dismissed());
     if (dismissed) {
       ids.add(id);
@@ -96,7 +129,7 @@ export class AttentionService {
       ids.delete(id);
     }
     await this.systemMetadataRepository.set(SystemMetadataKey.OverviewDismissed, { ids: [...ids].slice(-32) });
-    return this.getAttention();
+    return this.getAttention(auth);
   }
 
   private async check(kind: AttentionKind, read: () => Promise<SignalResult>): Promise<SignalResult> {
