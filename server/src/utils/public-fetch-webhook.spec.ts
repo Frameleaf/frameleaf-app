@@ -37,6 +37,21 @@ describe('sendWebhook', () => {
     fetchMock.mockReset();
   });
 
+  it('refuses plain http to a public address even with the home network allowed', async () => {
+    await expect(sendWebhook('http://example.com/hook', message, { allowHomeNetwork: true })).rejects.toThrow(
+      PublicFetchError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['http://192.168.1.20/hook', 'http://homeassistant.local:8123/api/webhook/x', 'http://homeassistant/hook'])(
+    'allows plain http to a home destination %s when the home network is allowed',
+    async (address) => {
+      fetchMock.mockResolvedValue(new Response('ok', { status: 200 }));
+      await expect(sendWebhook(address, message, { allowHomeNetwork: true })).resolves.toMatchObject({ ok: true });
+    },
+  );
+
   it.each([
     // eslint-disable-next-line unicorn/prefer-https -- plain http is what is being refused
     ['http://example.com/hook', false],

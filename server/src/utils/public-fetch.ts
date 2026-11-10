@@ -253,6 +253,16 @@ const METADATA_HOSTS = new Set([
 const WEBHOOK_REQUEST_BYTES = 256_000;
 const WEBHOOK_RESPONSE_BYTES = 64_000;
 
+/** A home-network address or name: a private address, a single-label name or a .local/.lan/.internal/.home.arpa name. */
+const isHomeDestination = (host: string): boolean => {
+  const plain = unmapped(host);
+  const family = isIP(plain);
+  if (family !== 0) {
+    return homeNetwork.check(plain, family === 4 ? 'ipv4' : 'ipv6');
+  }
+  return !host.includes('.') || /\.(local|internal|lan|home\.arpa)$/i.test(host);
+};
+
 const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
   const url = new URL(value);
   // plain http only reaches the home network; anywhere else the message is sent encrypted
@@ -265,6 +275,12 @@ const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
     );
   }
   const host = url.hostname.replaceAll(/^\[|\]$/g, '');
+  if (url.protocol === 'http:' && !isHomeDestination(host)) {
+    // anything sent over plain http can be read on the way, so outside the home it goes encrypted
+    throw new PublicFetchError(
+      'Plain http only reaches devices on your network; use an https address for anything else',
+    );
+  }
   if (isIP(host) && !isWebhookAddressAllowed(host, allowHomeNetwork)) {
     throw new PublicFetchError(`${host} is not an address automations can reach`);
   }
