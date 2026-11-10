@@ -1566,6 +1566,8 @@ export class AssetDevelopService {
     const { data, info } = await this.mediaRepository.decodeImage(input, {
       colorspace,
       processInvalidImages: false,
+      // The result is saved as a picture of its own, so the small preview inside a file is no source for it.
+      ladder: 'pixels',
       size,
     });
     return { data, info: info as RawImageInfo, colorspace };
