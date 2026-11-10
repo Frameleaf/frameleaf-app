@@ -3969,6 +3969,8 @@ export type UserAdminHistoryResponseDto = {
     hasMore: boolean;
 };
 export type UserAdminPinCodeStateResponseDto = {
+    /** FL-836: how many passkeys the account has */
+    passkeys: number;
     /** Whether the account has a PIN set */
     pinCode: boolean;
     /** FL-793: whether the account has two-step sign-in on */
@@ -7095,6 +7097,68 @@ export type LogoutResponseDto = {
     /** Logout successful */
     successful: boolean;
 };
+export type PasskeyResponseDto = {
+    /** It syncs to the owner’s other devices */
+    backedUp: boolean;
+    /** When it was added */
+    createdAt: string;
+    /** Passkey ID */
+    id: string;
+    /** When it last signed in */
+    lastUsedAt: string | null;
+    /** The name its owner gave it */
+    name: string;
+    /** Where it is saved, such as `iCloud Keychain` or `1Password`, when the server knows it */
+    provider: string | null;
+    /** The address it was made on, and works at */
+    rpId: string;
+};
+export type PasskeyCredentialDto = {
+    /** `platform` or `cross-platform` */
+    authenticatorAttachment?: string;
+    /** Extension results */
+    clientExtensionResults?: {
+        [key: string]: any;
+    };
+    /** The credential id (base64url) */
+    id: string;
+    /** The credential id (base64url) */
+    rawId: string;
+    /** The authenticator response, as the browser encodes it in JSON */
+    response: {
+        [key: string]: any;
+    };
+    /** `public-key` */
+    "type": string;
+};
+export type PasskeyLoginDto = {
+    credential: PasskeyCredentialDto;
+    /** Keep the session after the browser closes */
+    rememberMe?: boolean;
+};
+export type PasskeyOptionsResponseDto = {
+    /** The options to pass to the browser (WebAuthn JSON); null when unavailable */
+    options: {
+        [key: string]: any;
+    } | null;
+    /** Whether passkeys work at the address the request was sent to */
+    passkeysAvailable: boolean;
+    /** Why not, when unavailable: `insecure` (a plain http address) or `address` (not the server’s external domain or Frameleaf address). New values may appear. */
+    reason: string | null;
+};
+export type PasskeyRegisterDto = {
+    credential: PasskeyCredentialDto;
+    /** A name to tell passkeys apart */
+    name?: string;
+};
+export type PasskeyRegistrationOptionsDto = {
+    /** The account password, unless it was checked in this session in the last 10 minutes */
+    password?: string;
+};
+export type PasskeyUpdateDto = {
+    /** A name to tell passkeys apart */
+    name: string;
+};
 export type PasswordLinkRedeemDto = {
     /** The password they chose (min 8 characters) */
     newPassword: string;
@@ -7138,10 +7202,14 @@ export type SessionUnlockDto = {
 export type AuthStatusResponseDto = {
     /** Session expiration date */
     expiresAt?: string;
+    /** FL-836: the account has at least one passkey */
+    hasPasskeys: boolean;
     /** Is elevated session */
     isElevated: boolean;
     /** This freshly signed-in owner needs to set their first local password */
     localPasswordRequired?: boolean;
+    /** FL-836: passkeys can be added and used at the address this request was sent to */
+    passkeysAvailable: boolean;
     /** Has password set */
     password: boolean;
     /** Has PIN code set */
@@ -24398,6 +24466,17 @@ export function getUserHistoryAdmin({ before, id, take }: {
     }));
 }
 /**
+ * Remove all passkeys of a user
+ */
+export function removeUserPasskeysAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/passkeys`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Email a link to choose a password
  */
 export function sendUserPasswordLinkAdmin({ id }: {
@@ -26935,6 +27014,101 @@ export function logout(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * List passkeys
+ */
+export function getPasskeys(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasskeyResponseDto[];
+    }>("/auth/passkeys", {
+        ...opts
+    }));
+}
+/**
+ * Sign in with a passkey
+ */
+export function loginWithPasskey({ passkeyLoginDto }: {
+    passkeyLoginDto: PasskeyLoginDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LoginResponseDto;
+    }>("/auth/passkeys/login", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passkeyLoginDto
+    })));
+}
+/**
+ * Start a passkey sign-in
+ */
+export function getPasskeyLoginOptions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasskeyOptionsResponseDto;
+    }>("/auth/passkeys/login/options", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Add a passkey
+ */
+export function registerPasskey({ passkeyRegisterDto }: {
+    passkeyRegisterDto: PasskeyRegisterDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PasskeyResponseDto;
+    }>("/auth/passkeys/register", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passkeyRegisterDto
+    })));
+}
+/**
+ * Start adding a passkey
+ */
+export function getPasskeyRegistrationOptions({ passkeyRegistrationOptionsDto }: {
+    passkeyRegistrationOptionsDto: PasskeyRegistrationOptionsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasskeyOptionsResponseDto;
+    }>("/auth/passkeys/register/options", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passkeyRegistrationOptionsDto
+    })));
+}
+/**
+ * Remove a passkey
+ */
+export function removePasskey({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/auth/passkeys/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Rename a passkey
+ */
+export function updatePasskey({ id, passkeyUpdateDto }: {
+    id: string;
+    passkeyUpdateDto: PasskeyUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasskeyResponseDto;
+    }>(`/auth/passkeys/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: passkeyUpdateDto
+    })));
 }
 /**
  * Choose a password with a link

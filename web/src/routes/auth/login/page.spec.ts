@@ -2,6 +2,7 @@ import {
   createFrameleafHandoff,
   finishFrameleafSignIn,
   getAuthStatus,
+  getPasskeyLoginOptions,
   isHttpError,
   login,
   redeemFrameleafHandoff,
@@ -34,6 +35,8 @@ vi.mock('@frameleaf/sdk', () => ({
   getAuthStatus: vi.fn(async () => ({ localPasswordRequired: false })),
   createFrameleafHandoff: vi.fn(),
   redeemFrameleafHandoff: vi.fn(),
+  getPasskeyLoginOptions: vi.fn(),
+  loginWithPasskey: vi.fn(),
 }));
 vi.mock('$lib/utils', () => ({
   oauth: {
@@ -122,6 +125,31 @@ describe('login mandatory-change routing', () => {
     const extension = { ...data(false), continueUrl: '/auth/allow-extension?client=chrome' };
     render(Page, { data: extension } as never);
     expect(screen.getByText(en.frameleaf_auth_extension_note)).toBeInTheDocument();
+  });
+
+  describe('Sign in with a passkey (FL-859)', () => {
+    afterEach(() => {
+      Reflect.deleteProperty(globalThis, 'PublicKeyCredential');
+    });
+
+    it('is offered, with saved passkeys in the email field, where passkeys work', async () => {
+      Object.assign(globalThis, { PublicKeyCredential: function PublicKeyCredential() {} });
+      vi.mocked(getPasskeyLoginOptions).mockResolvedValue({
+        passkeysAvailable: true,
+        reason: null,
+        options: { challenge: 'abc', rpId: 'localhost' },
+      });
+      render(Page, { data: data(false) as never });
+      expect(await screen.findByRole('button', { name: 'Sign in with a passkey' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Email')).toHaveAttribute('autocomplete', 'username webauthn');
+    });
+
+    it('is not offered in a browser without passkeys', async () => {
+      render(Page, { data: data(false) as never });
+      await tick();
+      expect(screen.queryByRole('button', { name: 'Sign in with a passkey' })).not.toBeInTheDocument();
+      expect(getPasskeyLoginOptions).not.toHaveBeenCalled();
+    });
   });
 
   it('says nothing about the extension for an ordinary sign-in (FL-655)', () => {
