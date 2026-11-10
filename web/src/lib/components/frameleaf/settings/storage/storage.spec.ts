@@ -181,6 +181,35 @@ describe('storage rules', () => {
   it('places the sample photo and names unknown placeholders', () => {
     expect(placeSample('{{y}}/{{MMMM}}/{{filename}}').parts).toEqual(['2024', 'June', 'IMG_1234.jpg']);
     expect(placeSample('{{y}}/{{nope}}/{{filename}}').unknown).toEqual(['{{nope}}']);
+    // Immich-era templates: album dates, camera tags, unless/else, all known
+    expect(
+      placeSample(
+        '{{#if album}}{{album-startDate-y}}/{{album-startDate-MM}} - {{album}}{{else}}{{y}}/Other{{/if}}/{{filename}}',
+      ),
+    ).toEqual({ parts: ['2024', '06 - Summer in Banff', 'IMG_1234.jpg'], unknown: [] });
+    expect(placeSample('{{album-endDate-dd}}/{{lensModel}}/{{WW}}/{{filename}}-{{SSS}}')).toEqual({
+      parts: ['20', 'XF27mm F2.8 R WR', '24', 'IMG_1234-000.jpg'],
+      unknown: [],
+    });
+    expect(placeSample('{{#unless album}}Loose{{/unless}}{{y}}/{{filename}}').parts).toEqual(['2024', 'IMG_1234.jpg']);
+    expect(placeSample('{{#if nope}}x{{/if}}{{y}}/{{filename}}').unknown).toEqual(['{{nope}}']);
+    // nested blocks, and a block left open
+    expect(placeSample('{{#if album}}{{#if make}}{{make}}/{{/if}}{{album}}{{/if}}/{{filename}}').parts).toEqual([
+      'FUJIFILM',
+      'Summer in Banff',
+      'IMG_1234.jpg',
+    ]);
+    expect(placeSample('{{#if album}}{{album}}/{{filename}}').unknown).toEqual(['{{#if album}}{{album}}/{{filename}}']);
+    // whitespace-trim marks
+    expect(placeSample('{{~y~}}/{{filename}}')).toEqual({ parts: ['2024', 'IMG_1234.jpg'], unknown: [] });
+    expect(placeSample('{{~#if nope}}x{{/if}}{{y}}/{{filename}}')).toEqual({
+      parts: ['2024', 'IMG_1234.jpg'],
+      unknown: ['{{nope}}'],
+    });
+    // a photo in no album takes the else branch, and loose album tags come out empty
+    const byAlbum = '{{#if album}}{{album-startDate-y}}/{{album}}{{else}}{{y}}/Other/{{MM}}{{/if}}/{{filename}}';
+    expect(placeSample(byAlbum, { inAlbum: false }).parts).toEqual(['2024', 'Other', '06', 'IMG_1234.jpg']);
+    expect(placeSample('{{y}}/{{album}}/{{filename}}', { inAlbum: false }).parts).toEqual(['2024', 'IMG_1234.jpg']);
     expect(layoutOf('{{y}}/{{MM}}/{{filename}}')).toBe('month');
     expect(layoutOf('{{y}}/{{album}}/{{filename}}')).toBe('custom');
   });
