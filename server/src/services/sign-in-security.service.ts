@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type { UserAdmin } from 'src/database.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
+import { mapNotification } from 'src/dtos/notification.dto.js';
 import { FrameleafEnvironment, JobName, NotificationLevel, NotificationType } from 'src/enum.js';
 import { RATE_LIMITED_MESSAGE, rateLimitAddress } from 'src/middleware/rate-limit.guard.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
@@ -8,7 +9,6 @@ import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isHomeAddress, isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
-import { mapNotification } from 'src/dtos/notification.dto.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { SIGN_IN_SECURITY_URL, signInNetwork } from 'src/utils/sign-in-security.js';
 

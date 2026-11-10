@@ -1,19 +1,19 @@
+import { Kysely } from 'kysely';
 import { type ChildProcess, fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
-import { Kysely } from 'kysely';
-import { SessionRepository } from 'src/repositories/session.repository.js';
-import type { DB } from 'src/schema/index.js';
-import { getKyselyConfig } from 'src/utils/database.js';
 import { Server } from 'socket.io';
+import type { DB } from 'src/schema/index.js';
 import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { type RateLimitHit, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { getKyselyConfig } from 'src/utils/database.js';
 import { closeSharedServicePool, createSharedServicePool, trackPoolClients } from 'src/utils/shared-service-pool.js';
 
 /** Uses the canonical PG19 medium-test template. No test performs application startup DDL. */

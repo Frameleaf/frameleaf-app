@@ -3,11 +3,11 @@ import { render, toPlainText } from '@react-email/render';
 import { createTransport } from 'nodemailer';
 import React, { createElement } from 'react';
 import type { EmailImageAttachment } from 'src/types.js';
-import { NewSignInEmail } from 'src/emails/new-sign-in.email.js';
 import { AlbumInviteEmail } from 'src/emails/album-invite.email.js';
 import { AlbumUpdateEmail } from 'src/emails/album-update.email.js';
 import { GalleryInviteEmail } from 'src/emails/gallery-invite.email.js';
 import { ItemShareEmail } from 'src/emails/item-share.email.js';
+import { NewSignInEmail } from 'src/emails/new-sign-in.email.js';
 import { PasswordLinkEmail } from 'src/emails/password-link.email.js';
 import { SignInReminderEmail } from 'src/emails/sign-in-reminder.email.js';
 import { StudioInquiryEmail } from 'src/emails/studio-inquiry.email.js';
@@ -369,7 +369,7 @@ export class EmailRepository {
       }
 
       case EmailTemplate.NEW_SIGN_IN: {
-        return React.createElement(NewSignInEmail, data);
+        return createElement(NewSignInEmail, data);
       }
       case EmailTemplate.WELCOME: {
         return createElement(WelcomeEmail, { ...data, customTemplate });

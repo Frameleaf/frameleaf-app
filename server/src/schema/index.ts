@@ -257,9 +257,9 @@ import {
   TakeoutSourceTable,
 } from 'src/schema/tables/takeout.table.js';
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
+import { UserKnownDeviceTable } from 'src/schema/tables/user-known-device.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
-import { UserKnownDeviceTable } from 'src/schema/tables/user-known-device.table.js';
 import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';

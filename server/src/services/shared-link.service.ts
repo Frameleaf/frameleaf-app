@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PostgresError } from 'postgres';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { LoginDetails } from 'src/services/auth.service.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { SharedLink } from 'src/database.js';
 import { AssetIdErrorReason, AssetIdsResponseDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -15,9 +16,8 @@ import {
   mapSharedLink,
 } from 'src/dtos/shared-link.dto.js';
 import { Permission, SharedLinkType } from 'src/enum.js';
-import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
-import type { LoginDetails } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   type HiddenContentQueryOptions,
