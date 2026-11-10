@@ -103,8 +103,7 @@ describe(MediaHealthService.name, () => {
       claimSearchPending: vi.fn().mockResolvedValue([]),
       listLostOriginals: vi.fn().mockResolvedValue([]),
       findLostOriginals: vi.fn().mockResolvedValue([]),
-      listPhoneSteps: vi.fn().mockResolvedValue([]),
-      recordPhoneReports: vi.fn().mockResolvedValue(undefined),
+      recordPhoneReport: vi.fn().mockResolvedValue(undefined),
     } as unknown as MediaHealthRepository;
     mediaOperationRepository = {
       list: vi.fn().mockResolvedValue({ items: [], total: 0 }),
@@ -4670,19 +4669,8 @@ describe(MediaHealthService.name, () => {
     });
     const sessions = (...rows: ReturnType<typeof session>[]) =>
       vi.mocked(mocks.session.getByUserId).mockResolvedValue(rows as never);
-    const open = (evidence?: Record<string, unknown>) => ({
-      healthId: 'health-1',
-      assetId: 'asset-1',
-      evidence: evidence ?? { fixState: 'waiting-phone' },
-    });
-    const waiting = { healthId: 'health-1', step: 'asked-phones', outcome: 'waiting', facts: { phones: 2 } };
-    const checkedBy = (id: string) => ({
-      healthId: 'health-1',
-      step: 'checked-on-phone',
-      outcome: 'not-found',
-      facts: { session: id },
-    });
-    const reported = () => vi.mocked(mediaHealthRepository.recordPhoneReports).mock.calls.at(-1)?.[0];
+    const open = () => ({ healthId: 'health-1', assetId: 'asset-1', evidence: { fixState: 'waiting-phone' } });
+    const reported = () => vi.mocked(mediaHealthRepository.recordPhoneReport).mock.calls.at(-1)?.[0];
 
     beforeEach(() => {
       care({});
@@ -4758,60 +4746,37 @@ describe(MediaHealthService.name, () => {
     });
 
     describe('recordPhoneChecked', () => {
-      const report = (notHere = [sha1.toString('base64')]) =>
-        sut.recordPhoneChecked(owner, { deviceId: 'device-1', notHere });
+      const report = (
+        notHere = [sha1.toString('base64')],
+        auth: Parameters<typeof sut.recordPhoneChecked>[0] = owner,
+      ) => sut.recordPhoneChecked(auth, { deviceId: 'device-1', notHere });
 
-      it('records the phone once, with its model and the app’s device id', async () => {
+      it('hands the repository the phone, its model and every phone that is asked, to decide under the lock', async () => {
         vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
-        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([waiting] as never);
 
         await report();
 
         expect(mediaHealthRepository.findLostOriginals).toHaveBeenCalledWith(owner.user.id, [sha1]);
-        expect(reported()).toEqual([
-          {
-            healthId: 'health-1',
-            assetId: 'asset-1',
-            settle: false,
-            steps: [
-              {
-                step: 'checked-on-phone',
-                outcome: 'not-found',
-                facts: { device: 'iPhone15,2', deviceId: 'device-1', session: 'session-iphone' },
-              },
-            ],
-          },
-        ]);
+        expect(reported()).toEqual({
+          findings: [open()],
+          sessionId: 'session-iphone',
+          device: 'iPhone15,2',
+          deviceId: 'device-1',
+          phones: ['session-iphone', 'session-pixel'],
+        });
       });
 
-      it('adds nothing when the same phone reports again', async () => {
+      it('repeats the hand-over for a phone that reported before, so a lost race can still settle', async () => {
         vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
-        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([
-          waiting,
-          checkedBy('session-iphone'),
-        ] as never);
 
         await report();
-
-        expect(reported()).toEqual([]);
-      });
-
-      it('counts a phone again after the phones were asked afresh', async () => {
-        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
-        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([
-          waiting,
-          checkedBy('session-iphone'),
-          waiting,
-        ] as never);
-
         await report();
 
-        expect(reported()).toHaveLength(1);
+        expect(mediaHealthRepository.recordPhoneReport).toHaveBeenCalledTimes(2);
       });
 
       it('ignores checksums that are not the caller’s open lost originals, and anything not SHA-1', async () => {
-        // the repository finds only the caller's own open ones: another account's, resolved, dismissed,
-        // trashed and unknown checksums come back as nothing
+        // the repository finds only the caller's own open ones
         vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([]);
 
         await expect(
@@ -4819,55 +4784,28 @@ describe(MediaHealthService.name, () => {
         ).resolves.toBeUndefined();
 
         expect(mediaHealthRepository.findLostOriginals).toHaveBeenCalledWith(owner.user.id, [sha1]);
-        expect(mediaHealthRepository.listPhoneSteps).not.toHaveBeenCalled();
-        expect(mediaHealthRepository.recordPhoneReports).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.recordPhoneReport).not.toHaveBeenCalled();
       });
 
-      it('settles as missing once the last phone has reported', async () => {
+      it('records nothing for a session that is not a phone or tablet', async () => {
         vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
-        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([
-          waiting,
-          checkedBy('session-pixel'),
-        ] as never);
+        sessions(
+          session('session-iphone', 'iOS', 'iPhone15,2'),
+          session('session-browser', 'macOS', 'Chrome'),
+          session('session-stale', 'iOS', 'iPhone8,1', 120),
+        );
 
-        await report();
+        await report(undefined, { ...owner, session: { id: 'session-browser', hasElevatedPermission: false } });
+        await report(undefined, { ...owner, session: { id: 'session-stale', hasElevatedPermission: false } });
 
-        expect(reported()).toEqual([
-          expect.objectContaining({
-            settle: true,
-            steps: [
-              expect.objectContaining({ step: 'checked-on-phone', outcome: 'not-found' }),
-              { step: 'asked-phones', outcome: 'not-found' },
-            ],
-          }),
-        ]);
-      });
-
-      it('keeps waiting while another phone has yet to report, and settles nothing already settled', async () => {
-        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
-        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([waiting] as never);
-        await report();
-        expect(reported()).toEqual([expect.objectContaining({ settle: false })]);
-
-        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open({ fixState: 'missing' })] as never);
-        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([
-          waiting,
-          checkedBy('session-pixel'),
-        ] as never);
-        await report();
-        expect(reported()).toEqual([expect.objectContaining({ settle: false })]);
+        expect(mediaHealthRepository.recordPhoneReport).not.toHaveBeenCalled();
       });
 
       it('accepts a caller without a session and records nothing', async () => {
-        await expect(
-          sut.recordPhoneChecked(
-            { ...authStub.user1, session: undefined },
-            { deviceId: 'device-1', notHere: [sha1.toString('base64')] },
-          ),
-        ).resolves.toBeUndefined();
+        await expect(report(undefined, { ...owner, session: undefined })).resolves.toBeUndefined();
 
         expect(mediaHealthRepository.findLostOriginals).not.toHaveBeenCalled();
-        expect(mediaHealthRepository.recordPhoneReports).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.recordPhoneReport).not.toHaveBeenCalled();
       });
 
       it('records nothing while phones are not asked', async () => {
@@ -4875,7 +4813,7 @@ describe(MediaHealthService.name, () => {
 
         await report();
 
-        expect(mediaHealthRepository.recordPhoneReports).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.recordPhoneReport).not.toHaveBeenCalled();
       });
     });
   });

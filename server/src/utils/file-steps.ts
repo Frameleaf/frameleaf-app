@@ -59,10 +59,13 @@ const PHONE_SYSTEMS = new Set(['ios', 'ipados', 'android']);
 /** Phones and tablets that have not been used for this long are no longer asked (FL-1337). */
 export const PHONE_ACTIVE_DAYS = 90;
 
+/** Whether a session is on a phone or tablet. */
+export const isPhoneSession = (session: { deviceOS: string }) =>
+  PHONE_SYSTEMS.has(session.deviceOS.trim().toLowerCase());
+
 /** Whether a session is a phone or tablet, used recently enough to still hold a lost photo. */
 export const isActivePhone = (session: { deviceOS: string; updatedAt: Date }, now = Date.now()) =>
-  PHONE_SYSTEMS.has(session.deviceOS.trim().toLowerCase()) &&
-  session.updatedAt.getTime() >= now - PHONE_ACTIVE_DAYS * 24 * 60 * 60 * 1000;
+  isPhoneSession(session) && session.updatedAt.getTime() >= now - PHONE_ACTIVE_DAYS * 24 * 60 * 60 * 1000;
 
 /** What the history calls a session's device: the model the app sends, else its system. */
 export const phoneName = (session: { deviceType: string; deviceOS: string }) =>

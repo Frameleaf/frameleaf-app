@@ -1431,56 +1431,88 @@ export class MediaHealthRepository {
       .execute();
   }
 
-  /** The questions asked of phones, and the answers so far, for these findings, oldest first. */
-  listPhoneSteps(healthIds: string[]) {
-    if (healthIds.length === 0) {
-      return Promise.resolve([]);
-    }
-    return this.db
-      .selectFrom('asset_health_step')
-      .select(['healthId', 'step', 'outcome', 'facts'])
-      .where(
-        'healthId',
-        'in',
-        healthIds.map((id) => asUuid(id)),
-      )
-      .where('step', 'in', ['asked-phones', 'checked-on-phone'])
-      .orderBy('at')
-      .orderBy('id')
-      .execute();
-  }
-
   /**
-   * What phones reported, in one transaction (FL-1337): each report's steps, and for the findings whose
-   * last phone has reported, `fixState: missing`. A finding resolved or dismissed meanwhile gets nothing.
+   * One phone's report, decided in one transaction against the history as it is under the lock (FL-1337).
+   * For each finding still open: the phone's `checked-on-phone` step unless it already reported since the
+   * phones were last asked; then, if the finding waits on phones (`fixState: waiting-phone`) and every phone
+   * in `phones` has reported, `asked-phones/not-found` and `fixState: missing`. A repeat report adds no
+   * step but still takes that decision, so a report that raced another cannot leave the finding waiting.
    */
-  async recordPhoneReports(
-    reports: Array<{ healthId: string; assetId: string; steps: FindingStep[]; settle: boolean }>,
-  ): Promise<void> {
-    if (reports.length === 0) {
+  async recordPhoneReport(input: {
+    findings: Array<{ healthId: string; assetId: string }>;
+    sessionId: string;
+    device: string;
+    deviceId: string;
+    phones: string[];
+  }): Promise<void> {
+    if (input.findings.length === 0) {
       return;
     }
     await this.db.transaction().execute(async (trx) => {
       const open = await trx
         .withSchema('public')
         .selectFrom('asset_health')
-        .select('id')
+        .select(['id', 'evidence'])
         .where(
           'id',
           'in',
-          reports.map(({ healthId }) => asUuid(healthId)),
+          input.findings.map(({ healthId }) => asUuid(healthId)),
         )
         .where('resolvedAt', 'is', null)
         .where('dismissedAt', 'is', null)
         .forUpdate()
         .execute();
-      const stillOpen = new Set(open.map(({ id }) => id));
-      const current = reports.filter(({ healthId }) => stillOpen.has(healthId));
-      await this.appendSteps(
-        current.flatMap((report) => stepsFor(report.steps, { id: report.healthId, assetId: report.assetId })),
-        trx,
-      );
-      const settled = current.filter(({ settle }) => settle).map(({ healthId }) => asUuid(healthId));
+      if (open.length === 0) {
+        return;
+      }
+      const history = await trx
+        .selectFrom('asset_health_step')
+        .select(['healthId', 'step', 'outcome', 'facts'])
+        .where(
+          'healthId',
+          'in',
+          open.map(({ id }) => id),
+        )
+        .where('step', 'in', ['asked-phones', 'checked-on-phone'])
+        .orderBy('at')
+        .orderBy('id')
+        .execute();
+      const steps: NewFileStep[] = [];
+      const settled: string[] = [];
+      for (const row of open) {
+        const finding = input.findings.find(({ healthId }) => healthId === row.id);
+        if (!finding) {
+          continue;
+        }
+        const own = history.filter(({ healthId }) => healthId === row.id);
+        const asked = own.findLastIndex(({ step, outcome }) => step === 'asked-phones' && outcome === 'waiting');
+        const answered = new Set(
+          own
+            .slice(asked + 1)
+            .filter(({ step }) => step === 'checked-on-phone')
+            .map(({ facts }) => (facts as Record<string, unknown> | null)?.session),
+        );
+        const base = { healthId: row.id, assetId: finding.assetId };
+        if (!answered.has(input.sessionId)) {
+          answered.add(input.sessionId);
+          steps.push({
+            ...base,
+            step: 'checked-on-phone',
+            outcome: 'not-found',
+            facts: {
+              ...(input.device && { device: input.device }),
+              deviceId: input.deviceId,
+              session: input.sessionId,
+            },
+          });
+        }
+        const waiting = asked !== -1 && (row.evidence as Record<string, unknown> | null)?.fixState === 'waiting-phone';
+        if (waiting && input.phones.every((phone) => answered.has(phone))) {
+          steps.push({ ...base, step: 'asked-phones', outcome: 'not-found' });
+          settled.push(row.id);
+        }
+      }
+      await this.appendSteps(steps, trx);
       if (settled.length > 0) {
         await trx
           .withSchema('public')

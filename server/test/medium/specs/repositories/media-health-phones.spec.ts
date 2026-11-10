@@ -55,37 +55,53 @@ it('lists and records only the caller’s own open lost originals a phone can ma
     expect(found.map(({ assetId }) => assetId)).toEqual([mine.asset.id]);
 
     const [{ healthId }] = found;
-    await sut.recordPhoneReports([
-      {
-        healthId,
-        assetId: mine.asset.id,
-        settle: true,
-        steps: [
-          { step: 'checked-on-phone', outcome: 'not-found', facts: { device: 'iPhone', session: 's1' } },
-          { step: 'asked-phones', outcome: 'not-found' },
-        ],
-      },
+    const asked = async (outcome: string) =>
+      sql`INSERT INTO asset_health_step ("healthId", "assetId", step, outcome, facts)
+        VALUES (${healthId}::uuid, ${mine.asset.id}::uuid, 'asked-phones', ${outcome}, '{"phones":2}')`.execute(db);
+    const report = (sessionId: string) =>
+      sut.recordPhoneReport({
+        findings: found,
+        sessionId,
+        device: 'iPhone',
+        deviceId: `device-${sessionId}`,
+        phones: ['a', 'b'],
+      });
+    const summary = async () =>
+      (await sut.listSteps(healthId)).map(({ step, outcome, facts }) => `${step}/${outcome}/${facts.session ?? ''}`);
+    const fixState = async () =>
+      (await db.selectFrom('asset_health').select('evidence').where('id', '=', healthId).executeTakeFirstOrThrow())
+        .evidence;
+    await asked('waiting');
+
+    // the first phone: recorded, still waiting for the other
+    await report('a');
+    await report('a');
+    expect(await summary()).toEqual(['asked-phones/waiting/', 'checked-on-phone/not-found/a']);
+    expect(await fixState()).toMatchObject({ fixState: 'waiting-phone' });
+
+    // the other phone's step landed meanwhile (a race): the first phone's repeat report settles it
+    await sql`INSERT INTO asset_health_step ("healthId", "assetId", step, outcome, facts)
+      VALUES (${healthId}::uuid, ${mine.asset.id}::uuid, 'checked-on-phone', 'not-found', '{"session":"b"}')`.execute(
+      db,
+    );
+    await report('a');
+    expect(await summary()).toEqual([
+      'asked-phones/waiting/',
+      'checked-on-phone/not-found/a',
+      'checked-on-phone/not-found/b',
+      'asked-phones/not-found/',
     ]);
-    const steps = await sut.listSteps(healthId);
-    expect(steps.map(({ step, outcome }) => `${step}/${outcome}`)).toEqual([
-      'checked-on-phone/not-found',
-      'asked-phones/not-found',
-    ]);
-    const [phoneStep] = await sut.listPhoneSteps([healthId]);
-    expect(phoneStep).toMatchObject({ step: 'checked-on-phone', facts: { session: 's1' } });
-    const row = await db
-      .selectFrom('asset_health')
-      .select('evidence')
-      .where('id', '=', healthId)
-      .executeTakeFirstOrThrow();
-    expect(row.evidence).toMatchObject({ fixState: 'missing' });
+    expect(await fixState()).toMatchObject({ fixState: 'missing' });
+
+    // asked afresh (Try again): a phone counts again, and nothing settles twice
+    await asked('waiting');
+    await report('b');
+    expect((await summary()).slice(4)).toEqual(['asked-phones/waiting/', 'checked-on-phone/not-found/b']);
 
     // a finding resolved meanwhile gets nothing
     await sql`UPDATE asset_health SET "resolvedAt"=now() WHERE id=${healthId}::uuid`.execute(db);
-    await sut.recordPhoneReports([
-      { healthId, assetId: mine.asset.id, settle: true, steps: [{ step: 'checked-on-phone', outcome: 'not-found' }] },
-    ]);
-    await expect(sut.listSteps(healthId)).resolves.toHaveLength(2);
+    await report('a');
+    await expect(sut.listSteps(healthId)).resolves.toHaveLength(6);
   } finally {
     await db.destroy();
   }

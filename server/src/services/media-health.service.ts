@@ -2100,47 +2100,19 @@ export class MediaHealthService {
     if (findings.length === 0) {
       return;
     }
-    const [sessions, history] = await Promise.all([
-      this.sessionRepository.getByUserId(auth.user.id),
-      this.mediaHealthRepository.listPhoneSteps(findings.map(({ healthId }) => healthId)),
-    ]);
-    const phones = this.phonesOf(sessions);
-    const reporter = sessions.find(({ id }) => id === sessionId);
-    const device = reporter ? phoneName(reporter) : '';
-    const reports = [];
-    for (const finding of findings) {
-      // what phones have said since the last time they were asked
-      const steps = history.filter(({ healthId }) => healthId === finding.healthId);
-      const asked = steps.findLastIndex(({ step, outcome }) => step === 'asked-phones' && outcome === 'waiting');
-      const answered = new Set(
-        steps
-          .slice(asked + 1)
-          .filter(({ step }) => step === 'checked-on-phone')
-          .map(({ facts }) => (facts as Record<string, unknown> | null)?.session),
-      );
-      if (answered.has(sessionId)) {
-        continue;
-      }
-      answered.add(sessionId);
-      const waiting =
-        asked !== -1 && (finding.evidence as Record<string, unknown> | null)?.fixState === 'waiting-phone';
-      const everyPhone = phones.every((phone) => answered.has(phone.deviceId));
-      const settle = waiting && everyPhone;
-      reports.push({
-        healthId: finding.healthId,
-        assetId: finding.assetId,
-        settle,
-        steps: [
-          {
-            step: 'checked-on-phone' as const,
-            outcome: 'not-found' as const,
-            facts: { ...(device && { device }), deviceId, session: sessionId },
-          },
-          ...(settle ? [{ step: 'asked-phones' as const, outcome: 'not-found' as const }] : []),
-        ],
-      });
+    const phones = this.phonesOf(await this.sessionRepository.getByUserId(auth.user.id));
+    const reporter = phones.find(({ deviceId: id }) => id === sessionId);
+    if (!reporter) {
+      // only a phone or tablet answers for the phones
+      return;
     }
-    await this.mediaHealthRepository.recordPhoneReports(reports);
+    await this.mediaHealthRepository.recordPhoneReport({
+      findings,
+      sessionId,
+      device: reporter.name,
+      deviceId,
+      phones: phones.map((phone) => phone.deviceId),
+    });
   }
 
   /**

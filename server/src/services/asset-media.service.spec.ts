@@ -552,10 +552,7 @@ describe(AssetMediaService.name, () => {
         reason: 'restored_by_upload',
         finding: {
           evidence: { fixState: 'found-again' },
-          steps: [
-            { step: 'asked-phones', outcome: 'ok' },
-            { step: 'put-back', outcome: 'ok' },
-          ],
+          steps: [{ step: 'put-back', outcome: 'ok' }],
         },
       });
       expect(mocks.asset.create).not.toHaveBeenCalled();
@@ -590,24 +587,38 @@ describe(AssetMediaService.name, () => {
       );
     });
 
-    it('names the device by its system when the app sent no model, and by nothing without a session (FL-1337)', async () => {
+    it('names the device by its system when the app sent no model (FL-1337)', async () => {
       mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
       mocks.session.getByUserId.mockResolvedValue([{ id: 'session-1', deviceOS: 'Android', deviceType: '' }] as never);
       const auth = { ...authStub.admin, session: { id: 'session-1', hasElevatedPermission: false } };
 
       await sut.uploadAsset(auth, createDto, upload);
+
       expect(mocks.physicalFile.restoreLostOriginal).toHaveBeenLastCalledWith(
         expect.objectContaining({
           finding: expect.objectContaining({
-            steps: [expect.objectContaining({ facts: { device: 'Android' } }), expect.anything()],
+            steps: [{ step: 'asked-phones', outcome: 'ok', facts: { device: 'Android' } }, expect.anything()],
           }),
         }),
       );
+    });
 
-      await sut.uploadAsset({ ...authStub.admin, session: undefined }, createDto, upload);
+    it.each([
+      ['a browser', { id: 'session-1', deviceOS: 'macOS', deviceType: 'Chrome' }, true],
+      ['an API key', undefined, false],
+    ])('writes only the put-back for an upload from %s (FL-1337)', async (_name, row, hasSession) => {
+      mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
+      mocks.session.getByUserId.mockResolvedValue((row ? [row] : []) as never);
+      const auth = {
+        ...authStub.admin,
+        session: hasSession ? { id: 'session-1', hasElevatedPermission: false } : undefined,
+      };
+
+      await sut.uploadAsset(auth, createDto, upload);
+
       expect(mocks.physicalFile.restoreLostOriginal).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          finding: expect.objectContaining({ steps: [{ step: 'asked-phones', outcome: 'ok' }, expect.anything()] }),
+          finding: { evidence: { fixState: 'found-again' }, steps: [{ step: 'put-back', outcome: 'ok' }] },
         }),
       );
     });

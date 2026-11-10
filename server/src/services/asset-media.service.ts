@@ -50,7 +50,7 @@ import { asUploadRequest } from 'src/utils/asset.util.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
-import { phoneName } from 'src/utils/file-steps.js';
+import { isPhoneSession, phoneName } from 'src/utils/file-steps.js';
 import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
 import {
   FileDownloadResponse,
@@ -198,7 +198,8 @@ export class AssetMediaService extends BaseService {
     }
     const sessionId = auth.session.id;
     const session = (await this.sessionRepository.getByUserId(auth.user.id)).find(({ id }) => id === sessionId);
-    return (session && phoneName(session)) || undefined;
+    // only a phone or tablet is the phone that was asked
+    return (session && isPhoneSession(session) && phoneName(session)) || undefined;
   }
 
   private async restoreOriginalFrom(
@@ -222,7 +223,7 @@ export class AssetMediaService extends BaseService {
       finding: {
         evidence: { fixState: 'found-again' },
         steps: [
-          { step: 'asked-phones', outcome: 'ok', ...(device && { facts: { device } }) },
+          ...(device ? [{ step: 'asked-phones' as const, outcome: 'ok' as const, facts: { device } }] : []),
           { step: 'put-back', outcome: 'ok' },
         ],
       },
