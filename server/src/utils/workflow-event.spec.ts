@@ -4,9 +4,9 @@ import { eventRunIds, isFrameleafEventTrigger, signEventBody, toEventPayload } f
 describe('Frameleaf events (FL-819)', () => {
   it('signs the timestamp, delivery id and body as HMAC-SHA256 (known vector)', () => {
     const vector = 'sha256=9cd2af4efc0ad7feb339dc6ab001fc96bc4253d5ebd2dd7a9206a5b31a99b4c6';
-    expect(signEventBody('my-secret', '1700000000', 'cloud-backup:run-1:failed', '{"event":"cloud.backup.failed"}')).toBe(
-      vector,
-    );
+    expect(
+      signEventBody('my-secret', '1700000000', 'cloud-backup:run-1:failed', '{"event":"cloud.backup.failed"}'),
+    ).toBe(vector);
     expect(signEventBody('my-secret', '1700000000', 'another', '{"event":"cloud.backup.failed"}')).not.toBe(vector);
   });
 

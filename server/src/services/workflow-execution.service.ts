@@ -36,9 +36,9 @@ import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { TagService } from 'src/services/tag.service.js';
 import { WorkflowService } from 'src/services/workflow.service.js';
+import { sendWebhook } from 'src/utils/public-fetch.js';
 import { inheritWorkflowCausation, workflowCausation, workflowOwnership } from 'src/utils/workflow-context.js';
 import { definitionFromSteps, redactRunError, workflowIssues } from 'src/utils/workflow-definition.js';
-import { sendWebhook } from 'src/utils/public-fetch.js';
 import {
   type FrameleafEventOccurrence,
   eventRunIds,

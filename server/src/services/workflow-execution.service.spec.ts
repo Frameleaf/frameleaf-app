@@ -7,8 +7,8 @@ import { JobName, JobStatus, WorkflowResult, WorkflowRunErrorCode, WorkflowType 
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { WorkflowExecutionService, getAutomaticRetryExecutionId } from 'src/services/workflow-execution.service.js';
-import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { sendWebhook } from 'src/utils/public-fetch.js';
+import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -1439,7 +1439,7 @@ describe('Frameleaf events (FL-819)', () => {
       const expected = createHmac('sha256', 'shh-secret').update(`${timestamp}.run-1:0:step-1.${body}`).digest('hex');
       expect(message.headers.get('x-frameleaf-signature')).toBe(`sha256=${expected}`);
       expect(message.headers.get('a')).toBe('b');
-      expect(JSON.stringify([...message.headers.entries()])).not.toContain('shh-secret');
+      expect(JSON.stringify(message.headers.entries().toArray())).not.toContain('shh-secret');
     });
 
     it('refuses a private address for an event unless the administrator allows the home network', async () => {

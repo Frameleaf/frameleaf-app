@@ -36,6 +36,7 @@ import {
   toDefinition,
   workflowIssues,
 } from 'src/utils/workflow-definition.js';
+import { isFrameleafEventTrigger } from 'src/utils/workflow-event.js';
 import { type PreviewAsset, getPreviewFilter, isCoreAction, passesPreviewFilter } from 'src/utils/workflow-preview.js';
 import {
   type WorkflowSource,
@@ -43,7 +44,6 @@ import {
   resolveWorkflowSource,
   workflowDefinitionHash,
 } from 'src/utils/workflow-source.js';
-import { isFrameleafEventTrigger } from 'src/utils/workflow-event.js';
 import { getFrameleafEventTriggers, getWorkflowTriggers, isMethodCompatible } from 'src/utils/workflow.js';
 
 /** FL-729: the preview checks built-in filters on at most this many matches. */

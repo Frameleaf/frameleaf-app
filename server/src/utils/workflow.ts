@@ -1,7 +1,7 @@
 import { type FrameleafEventTrigger, WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { WorkflowType } from 'src/enum.js';
-import { FRAMELEAF_EVENTS, isFrameleafEventTrigger } from 'src/utils/workflow-event.js';
 import { PluginMethodSearchResponse } from 'src/repositories/plugin.repository.js';
+import { FRAMELEAF_EVENTS, isFrameleafEventTrigger } from 'src/utils/workflow-event.js';
 
 export const triggerMap: Record<WorkflowTrigger, WorkflowType[]> = {
   [WorkflowTrigger.AssetCreate]: [WorkflowType.AssetV1],

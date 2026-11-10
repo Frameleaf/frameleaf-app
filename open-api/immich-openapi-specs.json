@@ -67431,7 +67431,9 @@
             "in": "query",
             "description": "Workflow trigger type",
             "schema": {
-              "$ref": "#/components/schemas/WorkflowTrigger"
+              "minLength": 1,
+              "maxLength": 100,
+              "type": "string"
             }
           }
         ],
@@ -164321,8 +164323,10 @@
             "type": "string"
           },
           "trigger": {
-            "$ref": "#/components/schemas/WorkflowTrigger",
-            "description": "Workflow trigger type"
+            "description": "Workflow trigger type",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "type": "object"

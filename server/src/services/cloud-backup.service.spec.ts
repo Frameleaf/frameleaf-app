@@ -1,9 +1,9 @@
-import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import {
   encryptFile as encryptLockedFile,
   generateKeyPair as generateLockedKeyPair,
   isLockedFile,
 } from '@frameleaf/locked-crypto';
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import AsyncLock from 'async-lock';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
