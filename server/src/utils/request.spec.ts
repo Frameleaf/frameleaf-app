@@ -86,10 +86,22 @@ describe(getUserAgentDetails.name, () => {
   it('includes the Frameleaf version and retains fallback device headers', () => {
     expect(
       getUserAgentDetails({ 'user-agent': 'frameleaf-ios/3.2.0', devicemodel: 'phone', devicetype: 'iOS' }),
-    ).toEqual({ deviceType: 'phone', deviceOS: 'iOS', appVersion: '3.2.0' });
+    ).toEqual({
+      deviceType: 'phone',
+      deviceOS: 'iOS',
+      appVersion: '3.2.0',
+      browserFamily: undefined,
+      deviceOSFamily: 'iOS',
+    });
   });
 
   it('retains empty details when user-agent and device headers are absent', () => {
-    expect(getUserAgentDetails({})).toEqual({ deviceType: '', deviceOS: '', appVersion: null });
+    expect(getUserAgentDetails({})).toEqual({
+      deviceType: '',
+      deviceOS: '',
+      appVersion: null,
+      browserFamily: undefined,
+      deviceOSFamily: undefined,
+    });
   });
 });

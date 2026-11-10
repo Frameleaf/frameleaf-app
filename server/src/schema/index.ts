@@ -258,6 +258,7 @@ import {
   TakeoutSourceTable,
 } from 'src/schema/tables/takeout.table.js';
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
+import { UserKnownDeviceTable } from 'src/schema/tables/user-known-device.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
 import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
@@ -492,6 +493,7 @@ export class ImmichDatabase {
     UserMetadataAuditTable,
     UserTable,
     UserTwoFactorTable,
+    UserKnownDeviceTable,
     UserRecoveryCodeTable,
     VersionHistoryTable,
     VideoMomentIndexTable,
@@ -800,6 +802,7 @@ export interface DB extends QueueDatabase {
   user_metadata_audit: UserMetadataAuditTable;
   user_recovery_code: UserRecoveryCodeTable;
   user_two_factor: UserTwoFactorTable;
+  user_known_device: UserKnownDeviceTable;
 
   version_history: VersionHistoryTable;
 

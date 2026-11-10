@@ -2,6 +2,7 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -45,6 +46,7 @@ import {
   loginEventDetails,
 } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
@@ -187,6 +189,9 @@ const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode, message?: string
  */
 @Injectable()
 export class FrameleafAuthService extends BaseService {
+  @Inject(SignInSecurityService)
+  private signInSecurity!: SignInSecurityService;
+
   /** `POST oauth/frameleaf/authorize`: the authorization URL for a registered callback. */
   async authorize(dto: OAuthConfigDto) {
     const config = await this.requireConfig();
@@ -506,6 +511,8 @@ export class FrameleafAuthService extends BaseService {
       throw error;
     }
     await this.recordFrameleafSignIn(user, session.id, loginDetails);
+    // Device observation and mail do not need to keep the Frameleaf authority locks held.
+    void this.signInSecurity.signedIn(user, loginDetails);
     return response;
   }
 

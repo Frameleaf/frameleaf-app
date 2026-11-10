@@ -14,6 +14,41 @@ import { asUuid } from 'src/utils/database.js';
 export class SessionRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** First observed device establishes the baseline. Lock the account while admitting new fingerprints. */
+  async observeKnownDevice(userId: string, fingerprintHash: Buffer): Promise<boolean> {
+    return this.db.transaction().execute(async (db) => {
+      const user = await db
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', userId)
+        .where('deletedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!user) return false;
+      const previous = await db
+        .selectFrom('user_known_device')
+        .select('userId')
+        .where('userId', '=', userId)
+        .limit(1)
+        .executeTakeFirst();
+      const inserted = await db
+        .insertInto('user_known_device')
+        .values({ userId, fingerprintHash })
+        .onConflict((conflict) => conflict.columns(['userId', 'fingerprintHash']).doNothing())
+        .returning('userId')
+        .executeTakeFirst();
+      if (!inserted) {
+        await db
+          .updateTable('user_known_device')
+          .set({ lastSeenAt: sql`now()` })
+          .where('userId', '=', userId)
+          .where('fingerprintHash', '=', fingerprintHash)
+          .execute();
+      }
+      return !!previous && !!inserted;
+    });
+  }
+
   cleanup() {
     return this.db
       .deleteFrom('session')

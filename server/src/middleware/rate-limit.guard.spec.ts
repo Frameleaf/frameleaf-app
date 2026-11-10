@@ -53,6 +53,7 @@ const keyed = (principal: string) => `rate-limit:${principal} (keyed)`;
 
 const makeRequest = (overrides: Partial<RateLimitedRequest> = {}) =>
   ({
+    configuredProxyClientIp: overrides.ip ?? '198.51.100.7',
     ip: '198.51.100.7',
     headers: {},
     query: {},
@@ -430,6 +431,19 @@ describe(RateLimitFailureInterceptor.name, () => {
     ).rejects.toBeInstanceOf(HttpException);
     expect(release).toHaveBeenCalledTimes(2);
     expect(release).toHaveBeenCalledWith('frameleaf:rate-limit:login:principal:x', WINDOW);
+  });
+
+  it('refunds the reservation when an existing password wait refuses the attempt', async () => {
+    const error = new HttpException({ code: 'rate_limited', retryAfter: 30 }, 429);
+    await expect(
+      lastValueFrom(
+        sut.intercept(
+          contextWith({ frameleafRateLimitFailures: failures }),
+          handler(() => throwError(() => error)),
+        ),
+      ),
+    ).rejects.toBe(error);
+    expect(release).toHaveBeenCalledExactlyOnceWith(failures[0].key, WINDOW);
   });
 
   it('leaves requests without failure-counted checks alone', async () => {

@@ -38,6 +38,7 @@ export const envData: EnvData = {
   },
 
   network: {
+    trustConfiguredProxies: false,
     trustedProxies: [],
   },
 

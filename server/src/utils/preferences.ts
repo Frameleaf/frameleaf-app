@@ -169,6 +169,7 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       enabled: true,
       albumInvite: true,
       albumUpdate: true,
+      newSignIn: true,
     },
     download: {
       // D5: 4 GB is 4,000,000,000 bytes. An account that stored another size keeps it exactly.
