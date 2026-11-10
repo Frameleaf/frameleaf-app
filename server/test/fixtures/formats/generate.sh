@@ -69,8 +69,11 @@ magick "$tmp/small.ppm" still/sgi.sgi
 magick "$tmp/small.ppm" still/pict.pict
 magick "$tmp/small.ppm" -compress Zip still/exr.exr
 
-# --- Design: a flat PSD is all ImageMagick can write; layered and PSB samples are in SOURCES.md ---
+# --- Design: a flat PSD is all ImageMagick can write; generate-design.py writes the rest byte by byte
+# (layered PSD with and without its flat picture, PSB, PDF, Illustrator, EPS, XCF, Fireworks PNG and the
+# ZIP-based documents). It reads jpeg/baseline.jpg, so it runs after the JPEGs.
 magick "$tmp/small.ppm" design/flat.psd
+python3 generate-design.py >/dev/null
 
 # --- Video: five frames of a test pattern per codec and container ---------------------------------
 clip() { # clip <output> <ffmpeg output options...>

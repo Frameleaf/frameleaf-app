@@ -70,7 +70,8 @@ const JPEG_EXTENSIONS = new Set(['.jpg', '.jpeg', '.jpe', '.jfif']);
 /** Only a JPEG-family name is judged by a start marker: a PSD, TIFF or HEIC can hold a JPEG thumbnail. */
 export const isJpegFileName = (name: string): boolean => JPEG_EXTENSIONS.has(extname(name).toLowerCase());
 
-const NOT_DECODED_EXTENSIONS = new Set(['.psd', '.ai', '.indd']);
+/** Kept, but never opened: InDesign has no renderer here, and its preview is not the document. */
+const NOT_DECODED_EXTENSIONS = new Set(['.indd']);
 
 // FL-1337: the image worker's own words when it crashed or stalled count too ("Sharp child closed")
 export const isBusy = (message: string) =>
@@ -113,7 +114,10 @@ export const classifyFileProblem = ({
   }
   if (
     /unsupported/i.test(message) &&
-    (NOT_DECODED_EXTENSIONS.has(shape.extension) || mimeTypes.isRaw(`file${shape.extension}`))
+    (NOT_DECODED_EXTENSIONS.has(shape.extension) ||
+      mimeTypes.isRaw(`file${shape.extension}`) ||
+      // FL-1358: a design file no renderer opens is still a whole file
+      mimeTypes.isDesign(`file${shape.extension}`))
   ) {
     return 'not-supported';
   }

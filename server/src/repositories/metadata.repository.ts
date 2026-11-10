@@ -36,6 +36,8 @@ type TagsWithWrongTypes =
 export interface ImmichTags extends Omit<Tags, TagsWithWrongTypes> {
   JPEGDigest?: string;
   ContentIdentifier?: string;
+  // FL-1358: pages in a PDF or PDF-compatible Illustrator document
+  PageCount?: number;
   // FL-1284: read numerically (`MEDIA_KIND_NUMERIC_TAGS`): iPhone writes 6 panorama, 7/8 portrait
   CustomRendered?: number | string;
   FullFrameRatePlaybackIntent?: number;

@@ -1275,7 +1275,7 @@ export class AssetDevelopService {
 
   /** The original to compute on: the file itself, or a RAW developed by LibRaw (orientation applied). */
   private async orientedOriginal(source: DevelopSource, signal?: AbortSignal): Promise<string | Buffer> {
-    const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
+    const isRaw = mimeTypes.isRaw(source.originalFileName);
     return isRaw ? renderRawWithLibRaw(source.originalPath, signal) : source.originalPath;
   }
 
@@ -1548,7 +1548,7 @@ export class AssetDevelopService {
     if (keyframe) {
       return this.decodeKeyframe(source, keyframe.timeMs, viewerId, size);
     }
-    const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
+    const isRaw = mimeTypes.isRaw(source.originalFileName);
     if (!isRaw) {
       const encoding = await this.mediaRepository.inspectImageEncoding(source.originalPath);
       if (encoding.dynamicRange === 'hdr') {

@@ -1,0 +1,44 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 2 /Kids [3 0 R 5 0 R] >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 240 180] /Contents 4 0 R /Resources << >> >>
+endobj
+4 0 obj
+<< /Length 66 >>
+stream
+0.9 0.2 0.3 rg 20 20 120 90 re f 0.1 0.4 0.8 rg 100 70 120 90 re f
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 240 180] /Contents 6 0 R /Resources << >> >>
+endobj
+6 0 obj
+<< /Length 33 >>
+stream
+0.2 0.7 0.3 rg 40 40 160 100 re f
+endstream
+endobj
+7 0 obj
+<< /Creator (Frameleaf fixture) /Producer (Frameleaf fixture) >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+0000000231 00000 n 
+0000000347 00000 n 
+0000000451 00000 n 
+0000000534 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R /Info 7 0 R >>
+startxref
+614
+%%EOF

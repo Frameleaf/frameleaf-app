@@ -1,0 +1,9 @@
+{
+  "name": "pdfium",
+  "repository": "bblanchon/pdfium-binaries",
+  "version": "chromium/8125",
+  "sha256": {
+    "x64": "e1c3ce6e270cb5e0c20816b379ad9f2c1309972697c505f508de92bf5e7d6659",
+    "arm64": "8b8818f2ec57d1b213d952ca6d7f0ffeca9d0110487d0e20ad83ba918bc92efa"
+  }
+}

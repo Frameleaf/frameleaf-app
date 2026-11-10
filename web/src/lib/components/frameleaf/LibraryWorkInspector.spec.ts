@@ -281,6 +281,29 @@ describe('LibraryWorkInspector', () => {
       expect(await screen.findByRole('textbox', { name: 'frameleaf_boards_note' })).toHaveValue('Warm light');
     });
 
+    it('names a Fireworks PNG and says how many pages a PDF holds (FL-1358)', async () => {
+      const asset = timelineAssetFactory.build();
+      const encoding = { dynamicRange: 'unknown', gainMap: 'none', reconstructionAvailable: false };
+      sdkMock.getAssetInfo.mockResolvedValue({
+        ...boardsDetail(asset.id),
+        imageEncoding: { ...encoding, variant: 'fireworks-png' },
+      } as AssetResponseDto);
+      const { unmount } = render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn() });
+      expect(await screen.findByText('frameleaf_info_fireworks_png')).toBeInTheDocument();
+      expect(screen.queryByText('image/png')).not.toBeInTheDocument();
+      expect(screen.queryByText('frameleaf_info_pages')).not.toBeInTheDocument();
+      unmount();
+
+      sdkMock.getAssetInfo.mockResolvedValue({
+        ...boardsDetail(asset.id),
+        originalMimeType: 'application/pdf',
+        imageEncoding: { ...encoding, pages: 12 },
+      } as AssetResponseDto);
+      render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn() });
+      expect(await screen.findByText('application/pdf')).toBeInTheDocument();
+      expect(screen.getByText('frameleaf_info_pages').nextElementSibling).toHaveTextContent('12');
+    });
+
     it('keeps the Photos layout for Photos items unless Boards asks for its own', async () => {
       const asset = timelineAssetFactory.build();
       sdkMock.getAssetInfo.mockResolvedValue(boardsDetail(asset.id, { libraryScope: LibraryScope.Both }));
