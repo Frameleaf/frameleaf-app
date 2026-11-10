@@ -26,6 +26,7 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
+  import { processingFailureCounts } from '$lib/frameleaf/processing-failures';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
@@ -70,6 +71,7 @@
     mdiContentCopy,
     mdiFileAlertOutline,
     mdiFileCheckOutline,
+    mdiFileClockOutline,
     mdiFileQuestionOutline,
     mdiFileSearchOutline,
     mdiImageSearchOutline,
@@ -178,6 +180,20 @@
       runs = checks;
       total = count;
       loaded = true;
+    });
+    return () => {
+      current = false;
+    };
+  });
+
+  /** FL-862: how many of the reader's files Frameleaf couldn't process. */
+  let unprocessed = $state(0);
+  $effect(() => {
+    let current = true;
+    void processingFailureCounts().then((counts) => {
+      if (current) {
+        unprocessed = counts?.count ?? 0;
+      }
     });
     return () => {
       current = false;
@@ -348,6 +364,16 @@
         status: $t('frameleaf_carehome_problem_stray_status'),
         button: $t('frameleaf_carehome_review'),
         href: commandCenterUrl('care', 'integrity-checks'),
+      },
+      // FL-862: photos and videos Frameleaf couldn't finish; every account opens its own list.
+      {
+        id: 'process',
+        count: unprocessed,
+        icon: mdiFileClockOutline,
+        name: $t('frameleaf_processing_failure_hero', { values: { count: unprocessed } }),
+        status: $t('frameleaf_carehome_problem_process_status'),
+        button: $t('frameleaf_carehome_review'),
+        href: commandCenterUrl('care', 'couldnt-process'),
       },
     ].filter((problem) => problem.count > 0),
   );

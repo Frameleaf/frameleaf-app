@@ -152,6 +152,12 @@ export type AttentionItemDto = {
     /** The kinds of work, for a work item */
     work: (AttentionWorkDto) | null;
 };
+export type AttentionProcessingFailuresDto = {
+    /** Files with a step Frameleaf could not finish, not kept as they are */
+    count: number;
+    /** Of those, files set aside after repeated tries; they are not tried again by themselves */
+    setAside: number;
+};
 export type AttentionResponseDto = {
     /** When the checks were made */
     checkedAt: string;
@@ -163,6 +169,8 @@ export type AttentionResponseDto = {
     fileProblems: AttentionFileProblemsDto;
     /** What needs attention, the most urgent first */
     items: AttentionItemDto[];
+    /** FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check. */
+    processingFailures: AttentionProcessingFailuresDto;
 };
 export type AttentionDismissDto = {
     /** True dismisses it; false brings it back */

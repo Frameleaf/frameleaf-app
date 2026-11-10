@@ -81271,6 +81271,27 @@
         ],
         "type": "string"
       },
+      "AttentionProcessingFailuresDto": {
+        "properties": {
+          "count": {
+            "description": "Files with a step Frameleaf could not finish, not kept as they are",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "setAside": {
+            "description": "Of those, files set aside after repeated tries; they are not tried again by themselves",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "setAside"
+        ],
+        "type": "object"
+      },
       "AttentionReason": {
         "description": "What was found, one value per kind of finding",
         "enum": [
@@ -81316,6 +81337,10 @@
               "$ref": "#/components/schemas/AttentionItemDto"
             },
             "type": "array"
+          },
+          "processingFailures": {
+            "$ref": "#/components/schemas/AttentionProcessingFailuresDto",
+            "description": "FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check."
           }
         },
         "required": [
@@ -81323,7 +81348,8 @@
           "checks",
           "dismissed",
           "fileProblems",
-          "items"
+          "items",
+          "processingFailures"
         ],
         "type": "object"
       },

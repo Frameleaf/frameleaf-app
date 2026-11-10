@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ATTENTION_KINDS, ATTENTION_REASONS } from 'src/dtos/attention.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -64,6 +65,8 @@ const setup = () => {
     },
   };
   const counts = { fixed: 0, needsYou: 0, since: null as Date | null, latest: null as Date | null };
+  const failures = { count: 0, setAside: 0 };
+  const assetJob = { countProcessingFailures: vi.fn().mockImplementation(() => Promise.resolve({ ...failures })) };
   const mediaHealth = { fileProblemCounts: vi.fn().mockImplementation(() => Promise.resolve({ ...counts })) };
   const sut = new AttentionService(
     mocks.logger as never,
@@ -73,6 +76,7 @@ const setup = () => {
     mocks.job as never,
     mocks.buddy as never,
     mediaHealth as never,
+    assetJob as never,
   );
   // The configuration is handed over as it is, as in the backup schedule's spec.
   const settings = { current: config as object };
@@ -80,7 +84,7 @@ const setup = () => {
   const useConfig = (next: object) => {
     settings.current = next;
   };
-  return { sut, mocks, metadata, config, useConfig, mediaHealth, counts };
+  return { sut, mocks, metadata, config, useConfig, mediaHealth, counts, assetJob, failures };
 };
 
 describe(AttentionService.name, () => {
@@ -107,7 +111,41 @@ describe(AttentionService.name, () => {
       ],
       dismissed: [],
       fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
+      processingFailures: { count: 0, setAside: 0 },
     });
+  });
+
+  it('counts the files Frameleaf could not process in a field of its own, never as a new kind or reason (FL-862)', async () => {
+    const { sut, assetJob, failures } = setup();
+    failures.count = 4;
+    failures.setAside = 2;
+
+    const response = await sut.getAttention(admin);
+    expect(response.processingFailures).toEqual({ count: 4, setAside: 2 });
+    expect(assetJob.countProcessingFailures).toHaveBeenCalledWith(admin);
+    // native apps decode these strictly: the kinds and reasons stay exactly as they were
+    expect(ATTENTION_KINDS).toEqual(['backup', 'storage', 'work', 'version']);
+    expect(ATTENTION_REASONS).toEqual([
+      'not-backed-up',
+      'backup-failed',
+      'backup-behind',
+      'nearly-full',
+      'out-of-space',
+      'work-failed',
+      'work-paused',
+      'new-version',
+    ]);
+    expect(response.items).toEqual([]);
+    expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
+  });
+
+  it('still answers when the files it could not process cannot be counted', async () => {
+    const { sut, mocks, assetJob } = setup();
+    assetJob.countProcessingFailures.mockRejectedValueOnce(new Error('connection terminated'));
+
+    const response = await sut.getAttention(admin);
+    expect(response.processingFailures).toEqual({ count: 0, setAside: 0 });
+    expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('could not process'));
   });
 
   it('counts what Frameleaf fixed this week and what needs you, since the earliest fix, to the newest (FL-1337)', async () => {

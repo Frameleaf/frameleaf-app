@@ -40,6 +40,7 @@ const healthy = {
   ],
   dismissed: [] as string[],
   fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
+  processingFailures: { count: 0, setAside: 0 },
 };
 
 describe('Overview (FL-363)', () => {
@@ -219,6 +220,17 @@ describe('Overview (FL-363)', () => {
       withFiles({ fixed: 1, needsYou: 0, since: '2026-10-15T14:00:00.000Z', latest: '2026-10-15T14:00:00.000Z' });
       render(Overview);
       expect(await screen.findByText('Frameleaf fixed 1 photo this week')).toBeInTheDocument();
+    });
+
+    it("lists the files Frameleaf couldn't process in what needs you, from a field of its own (FL-862)", async () => {
+      sdk.getAttention.mockResolvedValue({ ...healthy, processingFailures: { count: 3, setAside: 1 } });
+      render(Overview);
+
+      expect(await screen.findByText('3 files couldn’t be processed')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'See the files' })).toHaveAttribute(
+        'href',
+        '/user-settings?area=care&section=couldnt-process',
+      );
     });
 
     it('shows no row when nothing was fixed', async () => {

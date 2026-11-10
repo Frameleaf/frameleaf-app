@@ -161,6 +161,21 @@ export class AssetJobRepository {
       .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!));
   }
 
+  /** FL-862: how many files the reader may see that are waiting on a decision, and how many of them are set aside. */
+  async countProcessingFailures(auth: AuthDto) {
+    const row = await this.visibleProcessingFailures(auth, this.db)
+      .where('failure.dismissedAt', 'is', null)
+      .where('failure.step', 'in', processingFailureSteps)
+      .select([
+        sql<number>`count(distinct failure."assetId")::int`.as('count'),
+        sql<number>`count(distinct failure."assetId") filter (where failure."quarantinedAt" is not null)::int`.as(
+          'setAside',
+        ),
+      ])
+      .executeTakeFirst();
+    return { count: row?.count ?? 0, setAside: row?.setAside ?? 0 };
+  }
+
   getProcessingFailures(auth: AuthDto, { userId, take, skip }: ProcessingFailureQueryDto) {
     return this.visibleProcessingFailures(auth, this.db, userId)
       .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
