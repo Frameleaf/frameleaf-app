@@ -16,10 +16,10 @@ import { SpeechRepository } from 'src/repositories/speech.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SearchService } from 'src/services/search.service.js';
-import { SPEECH_INDEX_VERSION, speechQuery, speechWindows } from 'src/utils/speech.js';
+import { SPEECH_INDEX_VERSION, speechWindows } from 'src/utils/speech.js';
 import cases from 'test/assistant-eval/cases.json' with { type: 'json' };
 import library from 'test/assistant-eval/library.json' with { type: 'json' };
-import { requestPlan } from 'test/assistant-eval/planner.js';
+import { preparePlan, requestPlan } from 'test/assistant-eval/planner.js';
 import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
 import { EvalAnswer, EvalFilters, RESULT_LIMIT, Reason, readFixtures, score } from 'test/assistant-eval/score.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -33,6 +33,7 @@ const typeMap = { IMAGE: AssetType.Image, VIDEO: AssetType.Video };
 
 type Mode = { mode: 'replay' | 'baseline' } | { mode: 'live'; endpoint: URL };
 
+/** Run the same fixture library against reference plans, the rule planner, or a candidate worker. */
 export async function run(database: Kysely<DB>, options: Mode) {
   const { mode } = options;
   const { questions, assets, plans } = readFixtures(cases, library, replay);
@@ -193,13 +194,14 @@ export async function run(database: Kysely<DB>, options: Mode) {
       };
       ids = results.assets.items.map(({ id }) => id);
     } else {
-      const candidate = options.mode === 'live' ? await requestPlan(options.endpoint, question, catalog) : plans[id];
+      const candidate =
+        options.mode === 'live' ? await requestPlan(options.endpoint, question, catalog) : preparePlan(plans[id]);
       if (!candidate) {
-        answers.push({ id, filters: {}, hits: [], elapsedMs: performance.now() - startedAt });
+        answers.push({ id, filters: null, hits: [], elapsedMs: performance.now() - startedAt });
         continue;
       }
       validPlans++;
-      filters = candidate;
+      filters = candidate.filters;
       const filter: SearchFilter = {
         city: filters.city ? { eq: filters.city } : undefined,
         type: filters.type ? { eq: typeMap[filters.type] } : undefined,
@@ -216,9 +218,9 @@ export async function run(database: Kysely<DB>, options: Mode) {
         ocr: filters.ocr ? { matches: filters.ocr } : undefined,
         description: filters.description ? { like: filters.description } : undefined,
       };
-      if (filters.spoken) {
-        const query = `"${filters.spoken.replaceAll('"', '')}"`;
-        const { items } = await speech.search(auth, { query, size: RESULT_LIMIT, filter }, speechQuery(query));
+      if (candidate.speech) {
+        const { query, clauses } = candidate.speech;
+        const { items } = await speech.search(auth, { query, size: RESULT_LIMIT, filter }, clauses);
         ids = items.map(({ asset }) => asset.id);
       } else {
         const { assets } = await sut.searchMetadata(auth, { size: RESULT_LIMIT, filter });

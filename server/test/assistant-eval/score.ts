@@ -39,11 +39,12 @@ export type EvalAsset = z.infer<typeof assetSchema>;
 export type Reason = { field: keyof EvalFilters; value: string | boolean };
 export type EvalAnswer = {
   id: string;
-  filters: EvalFilters;
+  filters: EvalFilters | null;
   hits: { key: string; reasons: Reason[] }[];
   elapsedMs: number;
 };
 
+/** Check fixture shape and cross-references before loading PostgreSQL. */
 export function readFixtures(cases: unknown, library: unknown, replay: unknown) {
   const questions = z.array(caseSchema).min(200).parse(cases);
   const assets = z.array(assetSchema).min(300).parse(library);
@@ -97,6 +98,7 @@ const canonical = (filters: EvalFilters) => ({
   ...(filters.pets && { pets: [...filters.pets].sort() }),
 });
 
+/** Score answered cases, retaining unanswered cases in the denominator and latency sample. */
 export function score(questions: EvalCase[], library: EvalAsset[], answers: EvalAnswer[]) {
   const byId = new Map(answers.map((answer) => [answer.id, answer]));
   if (
@@ -115,6 +117,9 @@ export function score(questions: EvalCase[], library: EvalAsset[], answers: Eval
   let supported = 0;
   for (const { id, expect } of questions) {
     const { filters, hits } = byId.get(id)!;
+    if (!filters) {
+      continue;
+    }
     correctFilters += Number(isDeepStrictEqual(canonical(filters), canonical(expect.filters)));
     const page = new Map<string, Reason[]>();
     for (const { key, reasons } of hits.slice(0, RESULT_LIMIT)) {

@@ -175,3 +175,23 @@ it('counts a planner timeout as an unanswered case', async () => {
     candidate.mockRestore();
   }
 });
+
+it('gives empty-result credit only to an answered question', () => {
+  const expectNoMatches = { ...question, expect: { ...question.expect, assetKeys: [] } };
+  const response = { id: question.id, filters: question.expect.filters, hits: [], elapsedMs: 2 };
+  const unanswered = { ...response, filters: null };
+  assert.equal(score([expectNoMatches], [asset], [response]).recallAt24, 1);
+  assert.equal(score([expectNoMatches], [asset], [unanswered]).recallAt24, 0);
+});
+
+it('rejects a candidate with an unusable transcript query', async () => {
+  const candidate = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(Response.json({ tool: 'search_library', confidence: 0.9, arguments: { spoken: '!!!' } }));
+  try {
+    const catalog = { people: [], pets: [], places: [], tags: [], albums: [] };
+    await expect(requestPlan(new URL('http://127.0.0.1:3003'), 'Find the video', catalog)).resolves.toBeUndefined();
+  } finally {
+    candidate.mockRestore();
+  }
+});
