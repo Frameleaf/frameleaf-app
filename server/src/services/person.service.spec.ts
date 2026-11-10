@@ -1297,6 +1297,22 @@ describe(PersonService.name, () => {
         },
       ]);
     });
+
+    it('clears the featured face when no other face qualifies, e.g. only archived ones are left (FL-795)', async () => {
+      const person = PersonFactory.create();
+      mocks.person.getRandomFace.mockResolvedValue(undefined);
+
+      await sut.createNewFeaturePhoto([person]);
+
+      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
+      expect(mocks.person.update).toHaveBeenCalledWith({
+        ownerId: person.ownerId,
+        personGroupId: person.personGroupId,
+        faceAssetId: null,
+        thumbnailPath: '',
+      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
+    });
   });
 
   describe('reassignFacesById', () => {

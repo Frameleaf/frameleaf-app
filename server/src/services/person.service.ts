@@ -729,6 +729,10 @@ export class PersonService extends BaseService {
       if (assetFace) {
         await this.personRepository.update({ ownerId, personGroupId, faceAssetId: assetFace.id });
         jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
+      } else {
+        // No face qualifies (FL-795: e.g. every one left is archived and the owner leaves archived photos
+        // out of People), so the person shows none rather than keeping a face that has moved or gone.
+        await this.personRepository.update({ ownerId, personGroupId, faceAssetId: null, thumbnailPath: '' });
       }
     }
 
