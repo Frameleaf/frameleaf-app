@@ -1347,6 +1347,149 @@ where
 limit
   $2
 
+-- PersonRepository.getPeopleForSplitCheck
+select
+  "person"."ownerId",
+  "person"."personGroupId"
+from
+  "person"
+where
+  (
+    exists (
+      select
+        1
+      from
+        person_split_candidate
+      where
+        person_split_candidate."ownerId" = person."ownerId"
+        and person_split_candidate."personId" = person."personGroupId"
+    )
+    or (
+      true
+      and (
+        select
+          count(*)
+        from
+          asset_face
+          inner join face_search on face_search."faceId" = asset_face.id
+        where
+          asset_face."personGroupId" = person."personGroupId"
+          and asset_face."deletedAt" is null
+          and asset_face."isVisible" is true
+      ) >= $1
+    )
+  )
+
+-- PersonRepository.getFaceEmbeddings
+select
+  "asset_face"."id",
+  "face_search"."embedding"
+from
+  "asset_face"
+  inner join "face_search" on "face_search"."faceId" = "asset_face"."id"
+where
+  "asset_face"."personGroupId" = $1
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+limit
+  $2
+
+-- PersonRepository.getFacesNearerTo
+select
+  "asset_face"."id"
+from
+  "asset_face"
+  inner join "face_search" on "face_search"."faceId" = "asset_face"."id"
+where
+  "asset_face"."personGroupId" = $1
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+  and (face_search.embedding <=> $2::vector) < (face_search.embedding <=> $3::vector)
+limit
+  $4
+
+-- PersonRepository.getSplitCandidates
+select
+  "person_split_candidate"."personId",
+  "person_split_candidate"."faceIds",
+  "person_split_candidate"."distance"
+from
+  "person_split_candidate"
+  inner join "person" on "person"."ownerId" = "person_split_candidate"."ownerId"
+  and "person"."personGroupId" = "person_split_candidate"."personId"
+where
+  "person_split_candidate"."ownerId" = $1
+  and "person"."isHidden" = $2
+  and (
+    person_split_candidate."dismissedUntil" is null
+    or person_split_candidate."dismissedUntil" < now()
+  )
+order by
+  "person_split_candidate"."distance" desc
+limit
+  $3
+
+-- PersonRepository.getSplitFaceCounts
+select
+  "asset_face"."id",
+  asset_face.id = any ($1::uuid[]) as "other"
+from
+  "asset_face"
+where
+  "asset_face"."personGroupId" = $2
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+
+-- PersonRepository.getSplitEvidence
+select
+  asset_face."personGroupId" as "personGroupId",
+  "asset_face"."id" as "faceId",
+  "asset_face"."assetId",
+  "asset_face"."imageWidth",
+  "asset_face"."imageHeight",
+  "asset_face"."boundingBoxX1",
+  "asset_face"."boundingBoxY1",
+  "asset_face"."boundingBoxX2",
+  "asset_face"."boundingBoxY2"
+from
+  "asset_face"
+  inner join "asset" on "asset"."id" = "asset_face"."assetId"
+where
+  "asset_face"."personGroupId" = $1
+  and (asset_face.id = any ($2::uuid[])) = $3
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+  and "asset"."ownerId" = $4
+  and "asset"."libraryScope" in ($5, $6)
+  and "asset"."deletedAt" is null
+  and "asset"."visibility" in ('timeline', 'archive')
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+order by
+  (
+    greatest(
+      (
+        asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+      ),
+      (
+        asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+      )
+    )::float8 / greatest(
+      asset_face."imageWidth",
+      asset_face."imageHeight",
+      1
+    )
+  ) desc,
+  "asset_face"."id"
+limit
+  $7
+
 -- PersonRepository.getReferenceFaces
 select distinct
   on ("person"."personGroupId") "person"."personGroupId",

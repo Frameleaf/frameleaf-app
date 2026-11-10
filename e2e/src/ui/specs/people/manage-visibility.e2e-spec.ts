@@ -66,6 +66,7 @@ test('keeps a rejected unnamed visibility change retryable and returns to the di
     route.fulfill({ json: { operations: [], memoryExports: [], queues: [], canManageQueues: false } }),
   );
   await context.route('**/api/media-operations*', (route) => route.fulfill({ json: { items: [], total: 0 } }));
+  await context.route('**/api/people/split-suggestions', (route) => route.fulfill({ json: { suggestions: [] } }));
   await context.route('**/api/people/merge-suggestions', (route) => route.fulfill({ json: { suggestions: [] } }));
   await page.goto('/people/manage');
   const cards = page.locator('.pm-card');
@@ -129,6 +130,7 @@ test('Hide all covers people on every page and saves them together', async ({ co
       json: { people: [pageNumber === 1 ? first : second], total: 2, hidden: 0, hasNextPage: pageNumber === 1 },
     });
   });
+  await context.route('**/api/people/split-suggestions', (route) => route.fulfill({ json: { suggestions: [] } }));
   await context.route('**/api/people/merge-suggestions', (route) => route.fulfill({ json: { suggestions: [] } }));
   await context.route('**/api/albums*', (route) => route.fulfill({ json: [] }));
   await context.route('**/api/notifications*', (route) => route.fulfill({ json: [] }));

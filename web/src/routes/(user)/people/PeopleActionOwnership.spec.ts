@@ -53,6 +53,7 @@ beforeEach(() => {
   actions.rename = undefined;
   actions.banner = undefined;
   sdkMock.getAssetStatistics.mockResolvedValue({ images: 0, videos: 0, total: 0 });
+  sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [] });
   sdkMock.getMergeSuggestions.mockResolvedValue({
     suggestions: [{ person, suggestion: other, distance: 0.2, personEvidence: null, suggestionEvidence: null }],
   });

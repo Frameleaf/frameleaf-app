@@ -33,6 +33,7 @@ const setup = async (context: BrowserContext) => {
   await context.route('**/api/people*', (route) =>
     route.fulfill({ json: { people, total: people.length, hidden: 0, hasNextPage: false } }),
   );
+  await context.route('**/api/people/split-suggestions', (route) => route.fulfill({ json: { suggestions: [] } }));
   await context.route('**/api/people/merge-suggestions', (route) =>
     route.fulfill({ json: { suggestions: [{ person: people[0], suggestion: people[2], distance: 0.3 }] } }),
   );

@@ -100,6 +100,9 @@ test.describe('face history', () => {
       if (pathname === '/api/people/merge-suggestions') {
         return route.fulfill({ json: { suggestions: [] } });
       }
+      if (pathname === '/api/people/split-suggestions') {
+        return route.fulfill({ json: { suggestions: [] } });
+      }
       if (pathname === `/api/people/${personId}/statistics`) {
         return route.fulfill({ json: { assets: 2, photos: 2, videos: 0 } });
       }

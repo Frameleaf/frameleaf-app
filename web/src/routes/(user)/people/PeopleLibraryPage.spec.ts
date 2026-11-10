@@ -1,4 +1,4 @@
-import { PersonMergeVerdict } from '@frameleaf/sdk';
+import { PersonMergeVerdict, PersonSplitVerdict } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';
@@ -32,6 +32,7 @@ describe('People library page loading', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [] });
     sdkMock.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
     sdkMock.getAssetStatistics.mockResolvedValue({ images: 0, videos: 0, total: 0 });
   });
@@ -74,6 +75,7 @@ describe('People library header', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [] });
     sdkMock.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
     sdkMock.getAssetStatistics.mockResolvedValue({ images: 0, videos: 0, total: 0 });
   });
@@ -117,6 +119,7 @@ describe('People library merge suggestions', () => {
     vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
     sdkMock.getAssetStatistics.mockResolvedValue({ images: 0, videos: 0, total: 0 });
     sdkMock.getAllPeople.mockResolvedValue({ people: [ada, eve, bob], total: 3, hidden: 0, hasNextPage: false });
+    sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [] });
     sdkMock.getMergeSuggestions.mockResolvedValue({
       suggestions: [suggestion(ada, eve), suggestion(ada, bob), suggestion(eve, bob)],
     });
@@ -167,5 +170,84 @@ describe('People library merge suggestions', () => {
     await waitFor(() =>
       expect(emit).toHaveBeenCalledWith('PersonFacesChange', { personIds: ['ada', 'eve'], removedPersonIds: ['eve'] }),
     );
+  });
+});
+
+// FL-1385: "Is this all one person?" waits behind the merge suggestions; "No, split them" moves the
+// faces on the server and the toast's Undo merges the new person back.
+describe('People library mixed-person question', () => {
+  const jamie = peopleListItemFactory.build({ id: 'jamie', name: 'Jamie', isHidden: false });
+  const split = {
+    person: jamie,
+    faceCount: 4,
+    totalFaceCount: 12,
+    distance: 0.9,
+    personEvidence: [],
+    otherEvidence: [],
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    sdkMock.getAssetStatistics.mockResolvedValue({ images: 0, videos: 0, total: 0 });
+    sdkMock.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
+    sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [split] });
+    sdkMock.getAllPeople.mockResolvedValue({ people: [jamie], total: 1, hidden: 0, hasNextPage: false });
+  });
+
+  it('splits on "No, split them" and tells everything showing the person', async () => {
+    sdkMock.setSplitVerdict.mockResolvedValue({
+      personId: 'jamie',
+      verdict: PersonSplitVerdict.Split,
+      newPersonId: 'someone-new',
+      movedFaceCount: 4,
+    });
+    const changed = vi.fn();
+    const off = eventManager.on({ PersonFacesChange: changed });
+    render(PeoplePage, { data: data([jamie], false) });
+
+    await fireEvent.click(await screen.findByText('frameleaf_people_split_suggestion_split'));
+
+    await waitFor(() =>
+      expect(sdkMock.setSplitVerdict).toHaveBeenCalledWith({
+        personSplitVerdictCreateDto: { personId: 'jamie', verdict: PersonSplitVerdict.Split },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByText('frameleaf_people_split_suggestion_question')).toBeNull());
+    expect(changed).toHaveBeenCalledWith({ personIds: ['jamie', 'someone-new'], removedPersonIds: [] });
+    off();
+  });
+
+  it('stores "Yes, all Jamie" and stops asking', async () => {
+    sdkMock.setSplitVerdict.mockResolvedValue({
+      personId: 'jamie',
+      verdict: PersonSplitVerdict.Same,
+      newPersonId: null,
+      movedFaceCount: 0,
+    });
+    render(PeoplePage, { data: data([jamie], false) });
+
+    await fireEvent.click(await screen.findByText('frameleaf_people_split_suggestion_same'));
+
+    await waitFor(() =>
+      expect(sdkMock.setSplitVerdict).toHaveBeenCalledWith({
+        personSplitVerdictCreateDto: { personId: 'jamie', verdict: PersonSplitVerdict.Same },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByText('frameleaf_people_split_suggestion_question')).toBeNull());
+    expect(sdkMock.mergePeople).not.toHaveBeenCalled();
+  });
+
+  it('waits behind a merge suggestion', async () => {
+    const other = peopleListItemFactory.build({ id: 'other', name: 'Jay', isHidden: false });
+    sdkMock.getMergeSuggestions.mockResolvedValue({
+      suggestions: [
+        { person: jamie, suggestion: other, distance: 0.2, personEvidence: null, suggestionEvidence: null },
+      ],
+    });
+    render(PeoplePage, { data: data([jamie, other], false) });
+
+    expect(await screen.findByText('frameleaf_people_merge_suggestion_question')).toBeTruthy();
+    expect(screen.queryByText('frameleaf_people_split_suggestion_question')).toBeNull();
   });
 });

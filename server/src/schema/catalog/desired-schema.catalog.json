@@ -50198,6 +50198,105 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "person_split_candidate",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "person_split_candidate",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "personId",
+          "tableName": "person_split_candidate",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "faceIds",
+          "tableName": "person_split_candidate",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "real",
+          "primary": false,
+          "name": "distance",
+          "tableName": "person_split_candidate",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 24,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "dismissedUntil",
+          "tableName": "person_split_candidate",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "person_split_candidate_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", \"personId\")",
+          "tableName": "person_split_candidate",
+          "columnNames": [
+            "ownerId",
+            "personId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_split_candidate_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_split_candidate",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_split_candidate_personId_fkey",
+          "definition": "FOREIGN KEY (\"personId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_split_candidate",
+          "columnNames": [
+            "personId"
+          ],
+          "referenceTableName": "person_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [

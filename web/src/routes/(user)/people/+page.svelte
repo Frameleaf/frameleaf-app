@@ -6,6 +6,7 @@
   import BirthdayDialog from '$lib/components/frameleaf/people/BirthdayDialog.svelte';
   import MergePeopleDialog from '$lib/components/frameleaf/people/MergePeopleDialog.svelte';
   import MergeSuggestionBanner from '$lib/components/frameleaf/people/MergeSuggestionBanner.svelte';
+  import MixedPersonBanner from '$lib/components/frameleaf/people/MixedPersonBanner.svelte';
   import PersonCard from '$lib/components/frameleaf/people/PersonCard.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -23,16 +24,22 @@
   import {
     AssetVisibility,
     deleteMergeVerdict,
+    deleteSplitVerdict,
     getAllPeople,
     getAssetStatistics,
     getMergeSuggestions,
+    getSplitSuggestions,
+    mergePeople,
     PersonMergeVerdict,
+    PersonSplitVerdict,
     searchPerson,
     setMergeVerdict,
+    setSplitVerdict,
     updatePerson,
     type PeopleListItemDto,
     type PersonMergeSuggestionDto,
     type PersonResponseDto,
+    type PersonSplitSuggestionDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiAccountMultipleOutline, mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
@@ -192,6 +199,7 @@
 
   onMount(() => {
     handlePromiseError(loadMergeSuggestions());
+    handlePromiseError(loadSplitSuggestions());
     handlePromiseError(loadLibrarySize());
 
     return websocketEvents.on('on_person_thumbnail', (personId: string) => {
@@ -342,6 +350,113 @@
     toastUndo(message, () => void undo());
   };
 
+  // FL-1385: "Is this all one person?". The question waits behind the merge suggestions. "No, split
+  // them" moves the faces that look like someone else to a new, unnamed person on the server
+  // (`PUT /people/split-suggestions/verdicts`); the toast's Undo merges that person back. "Yes, all
+  // {name}" and "Ask me later" are stored answers, undone by deleting them.
+  let splitSuggestions: PersonSplitSuggestionDto[] = $state([]);
+  let splitSuggestionBusy = $state(false);
+
+  const loadSplitSuggestions = async () => {
+    try {
+      const { suggestions } = await getSplitSuggestions();
+      if (isCurrentView()) {
+        splitSuggestions = suggestions;
+      }
+    } catch (error) {
+      // Non-critical: the People grid works fine without suggestions.
+      if (isCurrentView()) {
+        handleError(error, $t('errors.failed_to_load_people'));
+      }
+    }
+  };
+
+  const answerSplit = async (suggestion: PersonSplitSuggestionDto, verdict: PersonSplitVerdict) => {
+    if (!isCurrentSession()) {
+      return;
+    }
+    const personId = suggestion.person.id;
+    const unnamed = isUnnamedPerson(suggestion.person);
+    const name = suggestion.person.name;
+    let newPersonId: string | null;
+    let movedFaceCount: number;
+    splitSuggestionBusy = true;
+    try {
+      ({ newPersonId, movedFaceCount } = await setSplitVerdict({ personSplitVerdictCreateDto: { personId, verdict } }));
+    } catch (error) {
+      if (isCurrentSession()) {
+        handleError(error, $t('frameleaf_people_verdict_error'));
+      }
+      return;
+    } finally {
+      splitSuggestionBusy = false;
+    }
+    if (!isCurrentSession()) {
+      return;
+    }
+    splitSuggestions = splitSuggestions.filter((entry) => entry.person.id !== personId);
+
+    if (verdict !== PersonSplitVerdict.Split || !newPersonId) {
+      const message =
+        verdict === PersonSplitVerdict.Same
+          ? unnamed
+            ? $t('frameleaf_people_split_suggestion_same_toast_unnamed')
+            : $t('frameleaf_people_split_suggestion_same_toast', { values: { name } })
+          : unnamed
+            ? $t('frameleaf_people_split_suggestion_later_toast_unnamed')
+            : $t('frameleaf_people_split_suggestion_later_toast', { values: { name } });
+      const undo = async () => {
+        if (!isCurrentSession()) {
+          return;
+        }
+        try {
+          await deleteSplitVerdict({ personSplitVerdictDeleteDto: { personId } });
+          if (!isCurrentSession()) {
+            return;
+          }
+          splitSuggestions = [suggestion, ...splitSuggestions.filter((entry) => entry.person.id !== personId)];
+          toastManager.primary($t('frameleaf_people_verdict_undone'));
+        } catch (error) {
+          if (isCurrentSession()) {
+            handleError(error, $t('frameleaf_people_verdict_error'));
+          }
+        }
+      };
+      toastUndo(message, () => void undo());
+      return;
+    }
+
+    // open viewers, search chips and person pages follow the faces to the new person
+    eventManager.emit('PersonFacesChange', { personIds: [personId, newPersonId], removedPersonIds: [] });
+    const createdId = newPersonId;
+    const undoSplit = async () => {
+      if (!isCurrentSession()) {
+        return;
+      }
+      try {
+        // merging the new person back is the undo: the faces return and the new person goes
+        await mergePeople({ mergePersonDto: { ids: [personId, createdId] } });
+        if (!isCurrentSession()) {
+          return;
+        }
+        eventManager.emit('PersonFacesChange', { personIds: [personId, createdId], removedPersonIds: [createdId] });
+        toastManager.primary($t('frameleaf_people_split_suggestion_undone'));
+        await reloadPeople();
+      } catch (error) {
+        if (isCurrentSession()) {
+          handleError(error, $t('frameleaf_people_split_suggestion_undo_error'));
+        }
+      }
+    };
+    toastUndo(
+      unnamed
+        ? $t('frameleaf_people_split_suggestion_split_toast_unnamed', { values: { count: movedFaceCount } })
+        : $t('frameleaf_people_split_suggestion_split_toast', { values: { count: movedFaceCount, name } }),
+      () => void undoSplit(),
+    );
+    await reloadPeople();
+  };
+
   /** Hide, show and favorite are one field each, so their toast can put the old value back. */
   const setHidden = async (person: PeopleListItemDto, isHidden: boolean, undoable = true) => {
     if (!isCurrentSession()) {
@@ -484,6 +599,15 @@
         onReject={() => recordVerdict(mergeSuggestions[0], PersonMergeVerdict.Different)}
         onSkip={() => recordVerdict(mergeSuggestions[0], PersonMergeVerdict.Later)}
         onIgnore={() => recordVerdict(mergeSuggestions[0], PersonMergeVerdict.Ignore)}
+      />
+    {:else if splitSuggestions.length > 0}
+      <MixedPersonBanner
+        suggestion={splitSuggestions[0]}
+        remaining={splitSuggestions.length - 1}
+        busy={splitSuggestionBusy}
+        onSplit={() => answerSplit(splitSuggestions[0], PersonSplitVerdict.Split)}
+        onSame={() => answerSplit(splitSuggestions[0], PersonSplitVerdict.Same)}
+        onSkip={() => answerSplit(splitSuggestions[0], PersonSplitVerdict.Later)}
       />
     {/if}
     {#if truncated}

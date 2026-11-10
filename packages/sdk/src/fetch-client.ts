@@ -12115,6 +12115,42 @@ export type PersonMergeVerdictResponseDto = {
     suggestionId: string;
     verdict: PersonMergeVerdict;
 };
+export type PersonSplitSuggestionDto = {
+    /** Face embedding distance between the two groups of faces (higher is less alike) */
+    distance: number;
+    /** How many of the faces look like someone else */
+    faceCount: number;
+    /** A few of the faces that look like someone else */
+    otherEvidence: FaceEvidenceDto[];
+    /** The person being reviewed */
+    person: PersonResponseDto;
+    /** A few of the faces that look like most of the person */
+    personEvidence: FaceEvidenceDto[];
+    /** How many faces the person has */
+    totalFaceCount: number;
+};
+export type SplitSuggestionsResponseDto = {
+    /** People who may hold two different people */
+    suggestions: PersonSplitSuggestionDto[];
+};
+export type PersonSplitVerdictDeleteDto = {
+    /** The reviewed person */
+    personId: string;
+};
+export type PersonSplitVerdictCreateDto = {
+    /** The reviewed person */
+    personId: string;
+    verdict: PersonSplitVerdict;
+};
+export type PersonSplitVerdictResponseDto = {
+    /** How many faces moved, for "split" */
+    movedFaceCount: number;
+    /** The person the faces moved to, for "split" */
+    newPersonId: string | null;
+    /** The reviewed person */
+    personId: string;
+    verdict: PersonSplitVerdict;
+};
 export type PersonUpdateDto = {
     /** Person date of birth */
     birthDate?: string | null;
@@ -31733,6 +31769,44 @@ export function setMergeVerdict({ personMergeVerdictCreateDto }: {
     })));
 }
 /**
+ * Get split suggestions
+ */
+export function getSplitSuggestions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SplitSuggestionsResponseDto;
+    }>("/people/split-suggestions", {
+        ...opts
+    }));
+}
+/**
+ * Undo a split suggestion verdict
+ */
+export function deleteSplitVerdict({ personSplitVerdictDeleteDto }: {
+    personSplitVerdictDeleteDto: PersonSplitVerdictDeleteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/people/split-suggestions/verdicts", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: personSplitVerdictDeleteDto
+    })));
+}
+/**
+ * Record a split suggestion verdict
+ */
+export function setSplitVerdict({ personSplitVerdictCreateDto }: {
+    personSplitVerdictCreateDto: PersonSplitVerdictCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonSplitVerdictResponseDto;
+    }>("/people/split-suggestions/verdicts", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: personSplitVerdictCreateDto
+    })));
+}
+/**
  * Delete person
  */
 export function deletePerson({ id }: {
@@ -41538,6 +41612,11 @@ export enum PersonMergeVerdict {
     Different = "different",
     Later = "later",
     Ignore = "ignore"
+}
+export enum PersonSplitVerdict {
+    Split = "split",
+    Same = "same",
+    Later = "later"
 }
 export enum PetSpecies {
     Cat = "cat",
