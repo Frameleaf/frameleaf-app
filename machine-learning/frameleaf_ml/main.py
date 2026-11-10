@@ -349,6 +349,13 @@ if not _expected_token:
 app.add_middleware(BearerAuthMiddleware, expected_token=_expected_token)
 inference_metrics = InferenceMetrics() if metrics_enabled() else None
 
+
+def _inference_stream_error(task: ModelTask, message: str) -> bytes:
+    if inference_metrics is not None:
+        inference_metrics.request_errors.labels(task=task.value).inc()
+    return orjson.dumps({"type": "error", "message": message}) + b"\n"
+
+
 # Each of these routes has a fixed task. The generic /predict route can contain several tasks.
 _INFERENCE_ROUTES = {
     "/predict-bound": ModelTask.SEARCH,
@@ -675,7 +682,7 @@ async def transcribe(
                     item = await reservation.run(thread_pool, next, items, None)
                 except Exception as error:
                     log.error(f"Transcription failed: {error}")
-                    yield orjson.dumps({"type": "error", "message": "Transcription failed"}) + b"\n"
+                    yield _inference_stream_error(ModelTask.TRANSCRIBE, "Transcription failed")
                     return
                 if item is None:
                     break
@@ -730,7 +737,7 @@ async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingRe
                     item = await run(next, items, None)
                 except Exception as error:
                     log.error(f"Music generation failed: {error}")
-                    yield orjson.dumps({"type": "error", "message": "Music generation failed"}) + b"\n"
+                    yield _inference_stream_error(ModelTask.MUSIC, "Music generation failed")
                     return
                 if item is None:
                     break
@@ -817,7 +824,7 @@ async def voice_cleanup(
                     item = await reservation.run(thread_pool, next, items, None)
                 except Exception as error:
                     log.error(f"Voice clean-up failed: {error}")
-                    yield orjson.dumps({"type": "error", "message": "Voice clean-up failed"}) + b"\n"
+                    yield _inference_stream_error(ModelTask.VOICE_CLEANUP, "Voice clean-up failed")
                     return
                 if item is None:
                     break
@@ -959,11 +966,11 @@ async def subject_matte(
                     item = await run(next, items, None)
                 except ValueError as error:
                     # The server reads at most 512 characters of a message (its stream schema).
-                    yield orjson.dumps({"type": "error", "message": str(error)[:512]}) + b"\n"
+                    yield _inference_stream_error(ModelTask.SUBJECT_MATTE, str(error)[:512])
                     return
                 except Exception as error:
                     log.error(f"Cut-out failed: {error}")
-                    yield orjson.dumps({"type": "error", "message": "Cut-out failed"}) + b"\n"
+                    yield _inference_stream_error(ModelTask.SUBJECT_MATTE, "Cut-out failed")
                     return
                 if item is None:
                     break
