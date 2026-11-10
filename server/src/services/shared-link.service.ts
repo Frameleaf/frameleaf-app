@@ -1,7 +1,15 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PostgresError } from 'postgres';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
+import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { SharedLink } from 'src/database.js';
 import { AssetIdErrorReason, AssetIdsResponseDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -9,21 +17,25 @@ import { AssetIdsDto } from 'src/dtos/asset.dto.js';
 import {
   SHARED_LINK_PASSWORD_MASK,
   SharedLinkCreateDto,
+  SharedLinkDirectImageDto,
   SharedLinkEditDto,
   SharedLinkLoginDto,
   SharedLinkResponseDto,
   SharedLinkSearchDto,
+  isDirectImageLink,
   mapSharedLink,
 } from 'src/dtos/shared-link.dto.js';
-import { AccountEventAction, Permission, SharedLinkType } from 'src/enum.js';
+import { AccountEventAction, AssetFileType, CacheControl, Permission, SharedLinkType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   type HiddenContentQueryOptions,
   everyOwnersRules,
   getHiddenContentQueryOptions,
 } from 'src/utils/hidden-content.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
 import { getSharedLinkToken, requireSharedLinkUnlocked, sharedLinkSecretEqual } from 'src/utils/shared-link.js';
 
@@ -352,6 +364,88 @@ export class SharedLinkService extends BaseService {
       description: sharedLink.description || `${assetCount} shared photos & videos`,
       imageUrl: base ? new URL(imagePath, base).href : undefined,
     };
+  }
+
+  /**
+   * FL-788: the photo of a link to exactly one photo, as an image file anyone holding the address can
+   * embed. Every refusal is the same 404, so the address says nothing about why a link stopped serving:
+   * a password, an expiry, downloads turned off, more than one item, a video, a removed link, or an item
+   * now Locked or hidden by its owner's rules. The link is read afresh on every request, so turning any
+   * of those on (or removing the link) stops the image at once; only a cache that already holds it keeps
+   * it, for at most the hour the response allows. The file is always handed out without its location
+   * (previews carry no metadata; a full-size copy is checked and cleaned like a link's playback), and the
+   * full-size copy is served only where full-resolution files may go (FL-161).
+   */
+  async getDirectImage(
+    keyOrSlug: string,
+    dto: SharedLinkDirectImageDto,
+    via: FrameleafVia | null = null,
+  ): Promise<FileDownloadResponse> {
+    const notFound = () => new NotFoundException('Image not found');
+
+    const found = await this.findDirectLink(keyOrSlug);
+    if (!found?.user || found.password || !found.allowDownload) {
+      throw notFound();
+    }
+
+    const sharedLink = await this.sharedLinkRepository.get(found.userId, found.id);
+    if (!sharedLink || !isDirectImageLink(sharedLink)) {
+      throw notFound();
+    }
+
+    const [asset] = sharedLink.assets;
+    const hidden = await this.assetRepository.getHiddenContentAssetIds([asset.id], everyOwnersRules);
+    if (hidden.has(asset.id)) {
+      throw notFound();
+    }
+
+    const wantsFullSize = dto.size === 'fullsize' && (await this.fullSizeAllowed(via));
+    const fullSize = wantsFullSize
+      ? await this.assetRepository.getForThumbnail(asset.id, AssetFileType.FullSize, true)
+      : undefined;
+    // a full-size copy that was never generated (or is turned off) is answered with the preview
+    const file = fullSize?.path
+      ? fullSize
+      : await this.assetRepository.getForThumbnail(asset.id, AssetFileType.Preview, true);
+    if (!file.path) {
+      throw notFound();
+    }
+
+    const lease = await this.metadataRepository.acquireLocationFreeOriginal(file.path).catch(() => {
+      throw notFound();
+    });
+    return new FileDownloadResponse({
+      path: lease.path,
+      release: lease.release,
+      fileName: `${asset.id}${fullSize?.path ? '_fullsize' : ''}.jpg`,
+      contentType: mimeTypes.lookup(file.path),
+      // the caller sets the public, hour-long cache header itself (see the controller)
+      cacheControl: CacheControl.None,
+      viewerId: null,
+    });
+  }
+
+  /** A direct image address names its link by slug, or by key when the link has no slug. */
+  private async findDirectLink(keyOrSlug: string) {
+    const bySlug = await this.sharedLinkRepository.getBySlug(keyOrSlug);
+    if (bySlug) {
+      return bySlug;
+    }
+    const key = Buffer.from(keyOrSlug, 'base64url');
+    // only a well-formed key (50 random bytes, see create) is looked up
+    if (key.length !== 50 || key.toString('base64url') !== keyOrSlug) {
+      return;
+    }
+    return this.sharedLinkRepository.getByKey(key);
+  }
+
+  /** FL-161: whether full-resolution files may go to a request that arrived this way. */
+  private async fullSizeAllowed(via: FrameleafVia | null): Promise<boolean> {
+    if (via !== 'relay') {
+      return true;
+    }
+    const { frameleafCloud } = await this.getConfig({ withCache: true });
+    return frameleafCloud.remoteAccess.allowOriginalsOverRelay;
   }
 
   /** `undefined` keeps the password, an empty value removes it, anything else is hashed. */

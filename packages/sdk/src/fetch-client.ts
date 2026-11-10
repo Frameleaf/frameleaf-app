@@ -16476,6 +16476,8 @@ export type SharedLinkResponseDto = {
     createdAt: string;
     /** Link description */
     description: string | null;
+    /** FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root (/api/shared-links/direct/...). */
+    directUrl: string | null;
     /** Expiration date */
     expiresAt: string | null;
     /** Shared link ID */
@@ -20595,6 +20597,9 @@ export type SearchSuggestionRequestDto = {
     /** Filter by state/province */
     state?: string;
     "type": SearchSuggestionType;
+};
+export type SharedLinkDirectImageDto = {
+    size?: SharedLinkDirectImageSize;
 };
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
@@ -34110,6 +34115,22 @@ export function createSharedLink({ sharedLinkCreateDto }: {
     })));
 }
 /**
+ * View the image of a single-photo shared link
+ */
+export function getSharedLinkDirectImage({ keyOrSlug, size }: {
+    keyOrSlug: string;
+    size?: SharedLinkDirectImageSize;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-links/direct/${encodeURIComponent(keyOrSlug)}.jpg${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Shared link login
  */
 export function sharedLinkLogin({ key, slug, sharedLinkLoginDto }: {
@@ -41871,6 +41892,10 @@ export enum ReleaseType {
 export enum SharedLinkType {
     Album = "ALBUM",
     Individual = "INDIVIDUAL"
+}
+export enum SharedLinkDirectImageSize {
+    Preview = "preview",
+    Fullsize = "fullsize"
 }
 export enum AssetIdErrorReason {
     Duplicate = "duplicate",
