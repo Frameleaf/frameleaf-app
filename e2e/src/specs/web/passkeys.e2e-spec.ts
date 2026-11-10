@@ -10,7 +10,7 @@ const { password } = loginDto.admin;
 const addVirtualAuthenticator = async (context: BrowserContext, page: Page) => {
   const cdp = await context.newCDPSession(page);
   await cdp.send('WebAuthn.enable');
-  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+  await cdp.send('WebAuthn.addVirtualAuthenticator', {
     options: {
       protocol: 'ctap2',
       transport: 'internal',
@@ -20,10 +20,6 @@ const addVirtualAuthenticator = async (context: BrowserContext, page: Page) => {
       automaticPresenceSimulation: true,
     },
   });
-  /** Whether the authenticator answers a request by itself, as if someone touched it. */
-  const answers = (enabled: boolean) =>
-    cdp.send('WebAuthn.setAutomaticPresenceSimulation', { authenticatorId, enabled });
-  return { answers };
 };
 
 test.describe('Passkeys', () => {
@@ -38,7 +34,7 @@ test.describe('Passkeys', () => {
   });
 
   test('adds a passkey, signs in with it and removes it', async ({ context, page }) => {
-    const authenticator = await addVirtualAuthenticator(context, page);
+    await addVirtualAuthenticator(context, page);
     // signed in with the password on localhost (the cookies belong to the address the page is open on)
     await utils.setAuthCookies(context, accessToken, 'localhost');
 
@@ -57,11 +53,12 @@ test.describe('Passkeys', () => {
     await context.clearCookies();
     // FL-1375: the email field also asks for saved passkeys as the page opens. No real browser answers that
     // without someone picking one, but the virtual authenticator would at once, signing in before the button
-    // is pressed. It is held until the button's own request is the one waiting.
-    await authenticator.answers(false);
+    // is pressed. So this page says it can't offer passkeys in a field, and only the button asks.
+    await page.addInitScript(() => {
+      PublicKeyCredential.isConditionalMediationAvailable = () => Promise.resolve(false);
+    });
     await page.goto(`${local}/auth/login`);
     await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
-    await authenticator.answers(true);
     await page.waitForURL(/\/photos/);
 
     await page.goto(`${local}/user-settings?area=privacy&section=passkeys`);
