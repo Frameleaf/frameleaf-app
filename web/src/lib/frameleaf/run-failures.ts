@@ -72,16 +72,18 @@ export const CAUSE_VIEW: Record<
 export const runCauses = (run: DurableJobRun): RunCauseCount[] => run.failureCauses ?? [];
 
 /**
- * How many photos need a look: the sum of the causes shown beside it, so the line always adds up (live counts can
- * run ahead of the run's own failed count). A finished run summarised before causes were kept has none, and falls
- * back to its failed count; an unfinished run without causes has nothing failed.
+ * How many photos need a look: the server's `leftOver`, which is the sum of the causes shown beside it, so the line
+ * always adds up (live counts can run ahead of the run's own failed count). Without it, the causes are summed; a
+ * finished run summarised before causes were kept has none, and falls back to its failed count; an unfinished run
+ * without causes has nothing failed.
  */
 export const leftOver = (run: DurableJobRun) =>
-  run.failureCauses
+  run.leftOver ??
+  (run.failureCauses
     ? run.failureCauses.reduce((sum, { count }) => sum + count, 0)
     : isRunSettled(run)
       ? run.failed + run.needsAttention
-      : 0;
+      : 0);
 
 /** A cause's sentence in the review sheet: the drive by name, and what Library care already repaired. */
 export const causeBody = (

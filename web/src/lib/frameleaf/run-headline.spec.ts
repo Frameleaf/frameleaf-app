@@ -57,7 +57,11 @@ describe('one state and one reason per piece of work (FL-1349)', () => {
     expect(runHeadline(durableRun({ ...settled, state: 'completed' })).status).toBe(
       'frameleaf_job_runs_status_finished',
     );
-    // Every left-over photo was stopped: nothing needs a look.
+    // Every left-over photo was stopped: nothing needs a look, though the run's own failed count stays.
+    expect(
+      runHeadline(durableRun({ ...settled, state: 'completed_with_errors', failed: 9, leftOver: 0, failureCauses: [] }))
+        .status,
+    ).toBe('frameleaf_job_runs_status_finished');
     expect(runHeadline(durableRun({ ...settled, state: 'completed_with_errors', failureCauses: [] })).status).toBe(
       'frameleaf_job_runs_status_finished',
     );
@@ -76,6 +80,9 @@ describe('one state and one reason per piece of work (FL-1349)', () => {
       why: 'frameleaf_job_runs_streak',
       values: { count: 863, nights: 2 },
     });
+    expect(runHeadline({ ...run, leftOverStreak: { photos: 863, nights: 7, capped: true } }).why).toBe(
+      'frameleaf_job_runs_streak_capped',
+    );
     expect(runHeadline({ ...run, leftOverStreak: { photos: 863, nights: 1 } }).why).toBeNull();
   });
   it('setup holds offer Release, and say how many photos wait', () => {

@@ -28,6 +28,9 @@ describe('left-over photos by cause (FL-1349)', () => {
       ],
     });
     expect(leftOver(run)).toBe(10);
+    // The server's own sum wins when it sends one.
+    expect(leftOver({ ...run, leftOver: 10 })).toBe(10);
+    expect(leftOver(durableRun({ state: 'completed_with_errors', failed: 5, leftOver: 0 }))).toBe(0);
     expect(runCauses(run)).toHaveLength(2);
   });
   it('falls back to the failed count only for a finished run summarised before causes were kept', () => {

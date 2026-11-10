@@ -9515,6 +9515,7 @@
   "frameleaf_job_runs_stop_trying": "Stop trying",
   "frameleaf_job_runs_stopped_said": "Stopped. {count, plural, one {This file is} other {These # files are}} kept as {count, plural, one {it is} other {they are}} and won’t be tried again.",
   "frameleaf_job_runs_streak": "The same {count, plural, one {photo has} other {# photos have}} been left over {nights} nights in a row. Sorting them out once stops them coming back.",
+  "frameleaf_job_runs_streak_capped": "The same {count, plural, one {photo has} other {# photos have}} been left over {nights} or more nights in a row. Sorting them out once stops them coming back.",
   "frameleaf_job_runs_tasks": "{count, plural, one {{done} of # task} other {{done} of # tasks}}",
   "frameleaf_job_runs_tasks_so_far": "{count, plural, one {# task done so far} other {# tasks done so far}}",
   "frameleaf_job_runs_technical": "Technical details",

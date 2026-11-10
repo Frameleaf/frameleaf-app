@@ -43,7 +43,10 @@ export const runHeadline = (run: DurableJobRun): Headline => {
   if (isRunSettled(run)) {
     const streak = run.leftOverStreak && run.leftOverStreak.nights >= 2 ? run.leftOverStreak : undefined;
     const why = streak
-      ? { why: 'frameleaf_job_runs_streak' as Translations, values: { count: streak.photos, nights: streak.nights } }
+      ? {
+          why: (streak.capped ? 'frameleaf_job_runs_streak_capped' : 'frameleaf_job_runs_streak') as Translations,
+          values: { count: streak.photos, nights: streak.nights },
+        }
       : { why: null };
     if (leftOver(run) > 0) {
       return { status: 'frameleaf_job_runs_status_left_over', tone: 'warn', ...why, action: null };
