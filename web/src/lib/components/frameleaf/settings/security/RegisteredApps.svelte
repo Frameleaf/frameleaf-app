@@ -10,7 +10,8 @@
   import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { deleteOAuthAppClient, getOAuthAppClients, type OAuthAppAdminClientDto } from '@frameleaf/sdk';
+  import { deleteOAuthAppClient, getOAuthAppClients, isHttpError, type OAuthAppAdminClientDto } from '@frameleaf/sdk';
+  import { handleError } from '$lib/utils/handle-error';
   import { mdiApplicationOutline, mdiChatOutline, mdiCreationOutline, mdiHomeAutomation } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
@@ -54,8 +55,11 @@
     try {
       await deleteOAuthAppClient({ id: removing.client.id });
       said = $t('frameleaf_apps_admin_removed', { values: { name } });
-    } catch {
-      // it may already be gone: show the list as it is now
+    } catch (error) {
+      // 404: someone already removed it; anything else is a real failure to report
+      if (!(isHttpError(error) && error.status === 404)) {
+        handleError(error, $t('frameleaf_apps_admin_remove_failed', { values: { name } }));
+      }
     } finally {
       working = false;
       open = false;

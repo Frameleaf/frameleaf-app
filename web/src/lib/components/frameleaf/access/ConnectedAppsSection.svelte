@@ -37,7 +37,8 @@
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { copyToClipboard } from '$lib/utils';
-  import { getOAuthAppGrants, revokeOAuthAppGrant, type OAuthAppGrantDto } from '@frameleaf/sdk';
+  import { getOAuthAppGrants, isHttpError, revokeOAuthAppGrant, type OAuthAppGrantDto } from '@frameleaf/sdk';
+  import { handleError } from '$lib/utils/handle-error';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiApplicationOutline,
@@ -170,9 +171,12 @@
       grants = grants.filter((item) => item.id !== grant.id);
       dialogOpen = false;
       said = $t('frameleaf_apps_removed', { values: { name: grant.client.name } });
-    } catch {
-      // the list may be out of date: show what the server has now
+    } catch (error) {
       dialogOpen = false;
+      // 404: the app was already removed (elsewhere); anything else is a real failure to report
+      if (!(isHttpError(error) && error.status === 404)) {
+        handleError(error, $t('frameleaf_apps_remove_failed', { values: { name: grant.client.name } }));
+      }
       await refresh();
     } finally {
       working = false;

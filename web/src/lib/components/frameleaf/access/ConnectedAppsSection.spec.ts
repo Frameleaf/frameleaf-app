@@ -6,7 +6,10 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ConnectedAppsSection from '$lib/components/frameleaf/access/ConnectedAppsSection.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
+import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../../i18n/en.json';
+
+vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
 const grant = (overrides: Partial<OAuthAppGrantDto> = {}): OAuthAppGrantDto => ({
   id: 'grant-1',
@@ -90,6 +93,28 @@ describe('ConnectedAppsSection (FL-860)', () => {
     await waitFor(() => expect(sdkMock.revokeOAuthAppGrant).toHaveBeenCalledWith({ id: 'grant-1' }));
     expect(await screen.findByText('Claude can no longer use your library.')).toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_apps_hero_none)).toBeInTheDocument();
+  });
+
+  it('reports a removal that failed, but not one already gone (404)', async () => {
+    sdkMock.getOAuthAppGrants.mockResolvedValue([grant()]);
+    sdkMock.revokeOAuthAppGrant.mockRejectedValueOnce({ status: 500 });
+    sdkMock.isHttpError.mockImplementation((error) => typeof error === 'object' && !!error && 'status' in error);
+    render(ConnectedAppsSection);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Remove Claude’s access' }));
+    await fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: en.frameleaf_apps_remove_access }),
+    );
+    await waitFor(() => expect(handleError).toHaveBeenCalledTimes(1));
+
+    vi.mocked(handleError).mockClear();
+    sdkMock.revokeOAuthAppGrant.mockRejectedValueOnce({ status: 404 });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Remove Claude’s access' }));
+    await fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: en.frameleaf_apps_remove_access }),
+    );
+    await waitFor(() => expect(sdkMock.getOAuthAppGrants).toHaveBeenCalledTimes(3));
+    expect(handleError).not.toHaveBeenCalled();
   });
 
   it('with remote access, shows the remote assistant address and the Claude steps', async () => {
