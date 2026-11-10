@@ -9,6 +9,7 @@
    * selected, pressing a tile adds it to the selection or takes it out. Ctrl or ⌘ selects, Shift
    * selects a range, and a double-click opens a picture or video large (`onOpenLarge`).
    */
+  import BrokenAsset from '$lib/components/assets/BrokenAsset.svelte';
   import { libraryReferenceUrl } from '$lib/frameleaf/library-reference';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import { formatDuration } from '$lib/frameleaf/viewer-headline';
@@ -59,6 +60,10 @@
     onEndReached,
     empty,
   }: Props = $props();
+
+  /** Tiles whose thumbnail did not load. Keyed with the thumbhash, so a preview made later is tried again. */
+  let previewFailed = $state<Record<string, boolean>>({});
+  const previewKey = (asset: TimelineAsset) => `${asset.id}:${asset.thumbhash ?? ''}`;
 
   /** File types worth a badge: not the everyday photo formats (prototype shows SVG, GIF…). */
   const PLAIN_TYPES = new Set(['JPG', 'JPEG', 'PNG', 'HEIC', 'HEIF', 'MP4', 'MOV', 'M4V']);
@@ -134,6 +139,10 @@
       return;
     }
     session.setScrollAnchor(tile.key);
+    if (tile.kind === 'asset') {
+      // Opening an item tries its thumbnail again: a load that failed for a moment is not left on the placeholder.
+      delete previewFailed[previewKey(tile.asset)];
+    }
     onOpen(tile.key);
   };
 
@@ -210,17 +219,28 @@
               {#if tile.host}<small><Icon icon={mdiLinkVariant} size="13" aria-hidden={true} />{tile.host}</small>{/if}
             </span>
           {:else}
-            <img
-              src={getAssetMediaUrl({
-                id: tile.asset.id,
-                size: AssetMediaSize.Thumbnail,
-                cacheKey: tile.asset.thumbhash,
-              })}
-              alt=""
-              loading="lazy"
-              draggable="false"
-              style:aspect-ratio={layout === 'board' ? String(tile.asset.ratio || 1) : undefined}
-            />
+            {#if previewFailed[previewKey(tile.asset)]}
+              <!-- No preview (a design file with no picture inside, or one still being made): the quiet placeholder. -->
+              <span
+                class="bg-missing"
+                style:aspect-ratio={layout === 'board' ? String(tile.asset.ratio || 1) : undefined}
+              >
+                <BrokenAsset hideMessage width="100%" height="100%" />
+              </span>
+            {:else}
+              <img
+                src={getAssetMediaUrl({
+                  id: tile.asset.id,
+                  size: AssetMediaSize.Thumbnail,
+                  cacheKey: tile.asset.thumbhash,
+                })}
+                alt=""
+                loading="lazy"
+                draggable="false"
+                style:aspect-ratio={layout === 'board' ? String(tile.asset.ratio || 1) : undefined}
+                onerror={() => (previewFailed[previewKey(tile.asset)] = true)}
+              />
+            {/if}
             {#if showNames}<span class="bg-name">{tile.name}</span>{/if}
           {/if}
         </button>
@@ -311,6 +331,15 @@
     object-fit: cover;
   }
   .bg-grid.grid .bg-tile.asset img {
+    aspect-ratio: 1;
+  }
+  /* The placeholder keeps the picture's own shape, so a tile does not change size when its thumbnail fails. */
+  .bg-missing {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+  }
+  .bg-grid.grid .bg-tile.asset .bg-missing {
     aspect-ratio: 1;
   }
   .bg-link-picture,

@@ -4,7 +4,7 @@
 // base-image bump cannot drop a format without anyone noticing. Something that is missing on purpose,
 // or not yet built, goes in KNOWN_GAPS with the reason; an entry that is no longer a gap fails the
 // run until it is removed.
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -18,12 +18,10 @@ const KNOWN_GAPS = {};
 
 const present = new Map(); // "<group> <name>" -> true | reason it is missing
 const check = (group, name, ok, why = 'missing') => present.set(`${group} ${name}`, ok ? true : why);
+// Both streams, whatever the exit code: `djpeg -version` answers on stderr and exits cleanly.
 const output = (command, args) => {
-  try {
-    return execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (error) {
-    return `${error.stdout ?? ''}${error.stderr ?? ''}`;
-  }
+  const { stdout, stderr } = spawnSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return `${stdout ?? ''}${stderr ?? ''}`;
 };
 
 // libvips loaders, as sharp reports them (sharp names the JPEG 2000 loader "jp2").
@@ -38,6 +36,8 @@ for (const [name, key] of Object.entries({
   svg: 'svg',
   magick: 'magick',
   dcraw: 'dcraw',
+  // FL-1358: PDF and PDF-compatible Illustrator files, through pdfium
+  pdf: 'pdf',
   // FL-1356: what the djpeg rung writes
   ppm: 'ppm',
 })) {
@@ -124,12 +124,48 @@ for (const name of [
   'jpeg2000',
   'ffv1',
   'theora',
+  // FL-1357: bare and broadcast streams (.m1v, .y4m, Phantom .cine, Magic Lantern .mlv)
+  'mpeg1video',
+  'rawvideo',
 ]) {
   check('ffmpeg decoder', name, decoders.has(name));
 }
 const demuxers = names('-demuxers');
-for (const name of ['mov', 'matroska', 'mxf', 'mpegts', 'avi', 'asf', 'flv']) {
+for (const name of [
+  'mov',
+  'matroska',
+  'mxf',
+  'mpegts',
+  'avi',
+  'asf',
+  'flv',
+  // FL-1357: one per extension added to the video table
+  'mjpeg', // .mjpeg .mjpg
+  'mpegvideo', // .m1v .m2v
+  'mpeg', // .m2p .evo
+  'ogg', // .ogm
+  'wtv',
+  'nut',
+  'gxf',
+  'mj2',
+  'ivf',
+  'h264',
+  'hevc', // .h265 .hevc
+  'yuv4mpegpipe', // .y4m
+  'dv', // .dif
+  'apv',
+  'vc1',
+  'cine',
+  'mlv',
+  'r3d', // early RED ONE .r3d; newer ones are kept but do not play
+]) {
   check('ffmpeg demuxer', name, demuxers.has(name));
+}
+// Dolby Vision profile 5 is reshaped by libplacebo. Built in is all this can say: whether it runs depends on
+// the host having a Vulkan device, which the server finds out by trying (MediaRepository.hasLibplacebo).
+const filters = names('-filters');
+for (const name of ['libplacebo', 'tonemapx']) {
+  check('ffmpeg filter', name, filters.has(name));
 }
 
 // LibRaw: the version compiled into the library must be the pinned one (sources/libraw.json beside this script).

@@ -35,17 +35,24 @@ clones that repository, so keep additions small.
 The FATE suite (`https://fate-suite.ffmpeg.org/`) states no licence, so its samples are never
 copied into a Frameleaf repository. `fetch-fate.sh <dir>` downloads the files listed in
 `fate.sha256` and fails unless every hash matches. They cover codecs we cannot encode ourselves:
-VVC, APV, VC-1, WMV, DVCPRO HD, camera MXF (XDCAM, Avid, MPEG-4), ProRes 4444 with alpha, and
-JPEG 2000 digital cinema. To add one, append its `sha256sum` line to `fate.sha256`.
+VVC, APV, VC-1, WMV, DVCPRO HD, camera MXF (XDCAM, Avid, MPEG-4), ProRes 4444 with alpha,
+JPEG 2000 digital cinema, Phantom CINE, Magic Lantern MLV and an early RED ONE R3D. To add one, append its `sha256sum` line to `fate.sha256`.
 
 ## Still wanted, no usable source
 
 The owner decided on 2026-11-10 to ship without these and have beta users test them live.
 
 - JPEG XL ProRAW from an iPhone 16 or 17 Pro (raw.pixls.us stops at the iPhone 12 Pro).
-- PSD saved with and without "Maximize Compatibility", 16-bit, CMYK, layered; PSB. The FATE `psd/`
-  samples use the Lena photograph, which has no usable licence.
-- A real Fireworks PNG with pages and layers; PDF and PDF-compatible AI.
+- Design files as their applications write them (FL-1358). `generate-design.py` writes the fixtures in
+  `design/` byte by byte from one test pattern: they prove which loader opens a format and where a
+  container's preview is read from, not that every real file opens. Wanted, as the owner's or beta
+  users' own work: PSD and PSB from Photoshop (both "Maximize Compatibility" settings, smart objects,
+  16/32-bit with layers, a multi-gigabyte PSB); a real Fireworks PNG with pages, states and layers; AI
+  saved with and without "Create PDF Compatible File" and an EPS from Illustrator; Sketch, XD, Figma
+  (.fig), Procreate, Krita, OpenRaster and CorelDRAW documents. The FATE `psd/` samples use the Lena
+  photograph, which has no usable licence.
+- Affinity (.afdesign .afphoto .afpub) and InDesign (.indd): not accepted yet, because an extension
+  needs a fixture.
 - The reported files themselves: an old JPEG shown as damaged, a RAW that failed to import.
 - ProRes RAW, Blackmagic RAW, RED R3D, Canon Cinema RAW Light, Nikon N-RAW, Dolby Vision profile 5
   and 7 clips.

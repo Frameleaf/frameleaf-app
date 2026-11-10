@@ -222,6 +222,48 @@ describe(MediaIntegrityService.name, () => {
       mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [] } as never);
       expect(await sut.validate(video())).toEqual({ status: 'unsupported', reason: 'decode_unsupported' });
     });
+    it('walks the main picture track, the one thumbnails are cut from, not track 0 (FL-1357)', async () => {
+      // probe lists the main track first: here a cover picture sits at index 0 and the film at index 2
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 10 },
+        videoStreams: [
+          { ...stream, index: 2 },
+          { ...stream, index: 0, duration: 0 },
+        ],
+      } as never);
+      expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
+      expect(mocks.media.probePackets).toHaveBeenCalledWith(input.path, 2, expect.any(Object));
+    });
+    it.each(['A001_C001.braw', 'A001.R3D', 'A001.crm', 'DSC_0001.nev', 'A001.arx'])(
+      'cinema RAW %s that ffmpeg cannot open is unsupported, never damaged (FL-1357)',
+      async (originalFileName) => {
+        mocks.media.probe.mockRejectedValue(
+          new Error(`ffprobe exited with code 1: ${input.path}: Invalid data found when processing input\n`),
+        );
+        expect(await sut.validate({ ...video(), originalFileName })).toEqual({
+          status: 'unsupported',
+          reason: 'decode_unsupported',
+        });
+        mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [stream] } as never);
+        mocks.media.probePackets.mockRejectedValue(new Error('ffprobe exited with code 1: moov atom not found'));
+        expect(await sut.validate({ ...video(), originalFileName })).toEqual({
+          status: 'unsupported',
+          reason: 'decode_unsupported',
+        });
+      },
+    );
+    it('cinema RAW still reports a decoder that is missing or a check that stalled as they are', async () => {
+      mocks.media.probe.mockRejectedValue(Object.assign(new Error('spawn ffprobe ENOENT'), { code: 'ENOENT' }));
+      expect(await sut.validate({ ...video(), originalFileName: 'A001.braw' })).toEqual({
+        status: 'transient',
+        reason: 'decoder_unavailable',
+      });
+      mocks.media.probe.mockRejectedValue(new Error('Media process stopped making progress'));
+      expect(await sut.validate({ ...video(), originalFileName: 'A001.braw' })).toEqual({
+        status: 'timeout',
+        reason: 'decode_timeout',
+      });
+    });
     it('a large file is given as long as it keeps making progress', async () => {
       vi.useFakeTimers();
       const crypto = new CryptoRepository();
@@ -361,14 +403,49 @@ describe(MediaIntegrityService.name, () => {
       message: 'Input buffer contains unsupported image format',
     });
   });
-  it('an unsupported-format message on a PSD with an embedded JPEG stays unsupported', async () => {
-    const psd = join(directory, 'original.psd');
-    await writeFile(psd, Buffer.concat([Buffer.alloc(128, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]));
-    mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
-    expect(await sut.validate({ ...input, path: psd, originalFileName: 'original.psd', deep: true })).toEqual({
-      status: 'unsupported',
-      reason: 'decode_unsupported',
-      message: 'Input buffer contains unsupported image format',
+  describe('design files (FL-1358)', () => {
+    const design = async (name: string, bytes: Buffer) => {
+      const path = join(directory, name);
+      await writeFile(path, bytes);
+      return sut.validate({ ...input, path, originalFileName: name, deep: true });
+    };
+
+    it('are proved by their checksum and signature, and never decoded', async () => {
+      mocks.media.decodeImage.mockRejectedValue(new Error('magickload: corrupt image, premature end of file'));
+      for (const [name, start] of [
+        ['layers.psd', '8BPS\0\u{1}'],
+        ['poster.psb', '8BPS\0\u{2}'],
+        ['brochure.pdf', '%PDF-1.7'],
+        ['logo.ai', '%PDF-1.5'],
+        ['logo.eps', '%!PS-Adobe-3.0 EPSF-3.0'],
+        ['screens.sketch', 'PK\u{3}\u{4}'],
+      ]) {
+        const result = await design(name, Buffer.concat([Buffer.from(start, 'latin1'), Buffer.alloc(64, 7)]));
+        expect(result, name).toMatchObject({ status: 'healthy' });
+      }
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+    });
+
+    it('with another format inside are not supported, never damaged', async () => {
+      // A JPEG thumbnail further in does not make a file a JPEG, and a wrong start is not proof of damage.
+      const bytes = Buffer.concat([Buffer.alloc(128, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]);
+      expect(await design('original.psd', bytes)).toEqual({ status: 'unsupported', reason: 'media_type_unsupported' });
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
+
+    it('still report bytes that changed since they were stored', async () => {
+      const path = join(directory, 'layers.psd');
+      await writeFile(path, Buffer.from('8BPS\0\u{1} changed'));
+      expect(
+        await sut.validate({
+          ...input,
+          path,
+          originalFileName: 'layers.psd',
+          deep: true,
+          expected: { sha1: Buffer.alloc(20, 1) },
+        }),
+      ).toEqual({ status: 'corrupt', reason: 'expected_mismatch' });
     });
   });
   it('an unsupported-format message on a JPEG it could not read back is busy, never unsupported', async () => {
@@ -437,14 +514,6 @@ describe(MediaIntegrityService.name, () => {
     expect(await result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
     expect(decoderSignal?.aborted).toBe(true);
     expect(mocks.media.decodeImage).not.toHaveBeenCalled();
-  });
-
-  it('preserves layered PSD decoding without treating it as camera sensor data', async () => {
-    expect(await sut.validate({ ...input, originalFileName: 'original.psd', deep: true })).toMatchObject({
-      status: 'healthy',
-    });
-    expect(renderRawWithLibRaw).not.toHaveBeenCalled();
-    expect(mocks.media.decodeImage).toHaveBeenCalledWith(input.path, expect.any(Object));
   });
 
   it('reports malformed image', async () => {

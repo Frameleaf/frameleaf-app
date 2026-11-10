@@ -98,7 +98,7 @@ const CHECKED_CAUSES = new Set([
   'busy',
 ]);
 const REPAIRABLE_CAUSES = new Set(['cut-short', 'junk-in-front', 'broken-details']);
-/** The formats Frameleaf never decodes, named as people know them; any other is its extension. */
+/** Formats named as people know them when one of their files can't be shown; any other is its extension. */
 const KINDS: Readonly<Record<string, Translations>> = {
   '.psd': 'frameleaf_file_kind_psd',
   '.ai': 'frameleaf_file_kind_ai',
