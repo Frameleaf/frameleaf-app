@@ -1,7 +1,12 @@
+import { NotFoundException } from '@nestjs/common';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from 'supertest';
 import { SharedLinkController } from 'src/controllers/shared-link.controller.js';
-import { Permission, SharedLinkType } from 'src/enum.js';
+import { CacheControl, Permission, SharedLinkType } from 'src/enum.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { errorDto } from 'test/medium/responses.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
@@ -28,6 +33,53 @@ describe(SharedLinkController.name, () => {
           metadata: expect.objectContaining({ sharedLinkRoute: true, sharedLinkPassword: false }),
         }),
       );
+    });
+  });
+
+  describe('GET /shared-links/direct/{s,key}/:x.jpg (FL-788)', () => {
+    it('is public and passes the slug without the extension', async () => {
+      service.getDirectImage.mockRejectedValue(new NotFoundException('Image not found'));
+      const { status, headers } = await request(ctx.getHttpServer()).get(
+        '/shared-links/direct/s/summer.trip.jpg?size=fullsize',
+      );
+      expect(status).toBe(404);
+      expect(service.getDirectImage).toHaveBeenCalledWith({ slug: 'summer.trip' }, { size: 'fullsize' }, null);
+      // a refusal is never cached as if it were the image
+      expect(headers['cache-control']).not.toBe('public, max-age=3600');
+    });
+
+    it('serves the image for an hour of public caching, embeddable from other sites', async () => {
+      const path = join(await mkdtemp(join(tmpdir(), 'direct-image-')), 'preview.jpg');
+      await writeFile(path, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+      service.getDirectImage.mockResolvedValue(
+        new FileDownloadResponse({
+          path,
+          fileName: 'photo.jpg',
+          contentType: 'image/jpeg',
+          cacheControl: CacheControl.None,
+          viewerId: null,
+        }),
+      );
+      const { status, headers } = await request(ctx.getHttpServer()).get(
+        `/shared-links/direct/key/${'k'.repeat(67)}.jpg`,
+      );
+      expect(status).toBe(200);
+      expect(headers['cache-control']).toBe('public, max-age=3600');
+      expect(headers['cross-origin-resource-policy']).toBe('cross-origin');
+      expect(headers['content-disposition']).toMatch(/^inline;/);
+      expect(service.getDirectImage).toHaveBeenCalledWith({ key: 'k'.repeat(67) }, {}, null);
+    });
+
+    it('has no form that leaves the service to guess between a slug and a key', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/shared-links/direct/summer.jpg');
+      expect(status).toBe(404);
+      expect(service.getDirectImage).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown size', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/shared-links/direct/s/summer.jpg?size=original');
+      expect(status).toBe(400);
+      expect(service.getDirectImage).not.toHaveBeenCalled();
     });
   });
 

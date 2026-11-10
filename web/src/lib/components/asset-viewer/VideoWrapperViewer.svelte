@@ -18,6 +18,8 @@
     onVideoEnded?: () => void;
     onVideoStarted?: () => void;
     onPlayEncoded?: () => void;
+    /** FL-801: a flat video zooms and pans; a 360 video keeps its own look-around. */
+    zoomable?: boolean;
   }
 
   let {
@@ -34,6 +36,7 @@
     onVideoEnded,
     onVideoStarted,
     onPlayEncoded,
+    zoomable = false,
   }: Props = $props();
 
   const effectiveAssetId = $derived(assetId ?? asset.id);
@@ -55,5 +58,6 @@
     {onVideoStarted}
     {onClose}
     {onPlayEncoded}
+    {zoomable}
   />
 {/if}

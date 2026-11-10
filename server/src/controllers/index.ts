@@ -82,9 +82,15 @@ import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
+import {
+  OAuthAppAdminController,
+  OAuthAppController,
+  OAuthAppWellKnownController,
+} from 'src/controllers/oauth-app.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
 import { OvernightController } from 'src/controllers/overnight.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
+import { PasskeyController } from 'src/controllers/passkey.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
 import {
@@ -157,6 +163,9 @@ export const controllers = [
   AssetPaletteController,
   CaptureController,
   BrowserExtensionSignInController,
+  OAuthAppController,
+  OAuthAppAdminController,
+  OAuthAppWellKnownController,
   AlbumItemsController,
   AssetSourceController,
   BookmarkController,
@@ -246,6 +255,7 @@ export const controllers = [
   NotificationAdminController,
   MailConnectionController,
   OAuthController,
+  PasskeyController,
   PartnerController,
   PersonController,
   PetController,

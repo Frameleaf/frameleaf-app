@@ -20,7 +20,14 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Tiles from '$lib/components/frameleaf/settings/kit/Tiles.svelte';
-  import { FOLDER_LAYOUTS, layoutOf, placeSample } from '$lib/components/frameleaf/settings/storage/storage';
+  import {
+    EXAMPLE_PATTERNS,
+    FOLDER_LAYOUTS,
+    layoutOf,
+    placeSample,
+    sampleValue,
+    TAG_GROUPS,
+  } from '$lib/components/frameleaf/settings/storage/storage';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -136,7 +143,12 @@
     }
   };
 
-  const TERMS = ['y', 'MM', 'MMMM', 'dd', 'HH', 'filename', 'ext', 'album', 'slash'] as const;
+  const BLOCKS = [
+    { tag: '/', key: 'slash' },
+    { tag: '{{#if album}}…{{else}}…{{/if}}', key: 'if_album' },
+  ] as const;
+  const termText = (tag: string) => $t(`frameleaf_layout_term_${tag.replaceAll('-', '_')}` as Translations);
+  const slashed = (template: string, inAlbum = true) => placeSample(template, { inAlbum }).parts.join('/');
 </script>
 
 <KitPage>
@@ -246,12 +258,43 @@
         disabled={disabled || !sorted}
         oninput={(event) => draft && (draft.storageTemplate.template = event.currentTarget.value)}
       />
+      <p class="hint">{$t('frameleaf_layout_tags_intro')}</p>
       <dl class="terms">
-        {#each TERMS as term (term)}
-          <dt>{term === 'slash' ? '/' : `{{${term}}}`}</dt>
-          <dd>{$t(`frameleaf_layout_term_${term}` as Translations)}</dd>
+        {#each BLOCKS as block (block.key)}
+          <dt>{block.tag}</dt>
+          <dd>{$t(`frameleaf_layout_term_${block.key}` as Translations)}</dd>
         {/each}
       </dl>
+      {#each TAG_GROUPS as group (group.id)}
+        <h3 class="group">{$t(`frameleaf_layout_tags_${group.id}` as Translations)}</h3>
+        <dl class="terms">
+          {#each group.tags as tag (tag)}
+            <dt>{`{{${tag}}}`}</dt>
+            <dd>{termText(tag)} <span class="value">{sampleValue(tag)}</span></dd>
+          {/each}
+        </dl>
+        {#if group.id === 'album'}
+          <p class="hint">
+            {$t('frameleaf_layout_tags_album_dates', {
+              values: { example: '{{album-startDate-MMMM}}', condition: '{{#if album}}' },
+            })}
+          </p>
+        {/if}
+      {/each}
+      <h3 class="group">{$t('frameleaf_layout_examples')}</h3>
+      <ul class="examples">
+        {#each EXAMPLE_PATTERNS as pattern (pattern.template)}
+          <li>
+            <code>{pattern.template}</code>
+            {#if pattern.album}
+              <span>{$t('frameleaf_layout_examples_in_album')} {slashed(pattern.template)}</span>
+              <span>{$t('frameleaf_layout_examples_no_album')} {slashed(pattern.template, false)}</span>
+            {:else}
+              <span>{slashed(pattern.template)}</span>
+            {/if}
+          </li>
+        {/each}
+      </ul>
       <p class="hint">{$t('frameleaf_layout_pattern_rules')}</p>
     </Advanced>
   </Section>
@@ -307,6 +350,38 @@
   .terms dd {
     margin: 0;
     color: var(--fl-muted);
+  }
+  .terms .value {
+    margin-inline-start: var(--fl-space-2);
+    color: var(--fl-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .group {
+    margin: var(--fl-space-4) 0 var(--fl-space-2);
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+  }
+  .examples {
+    display: grid;
+    gap: var(--fl-space-3);
+    margin: 0 0 var(--fl-space-4);
+    padding: 0;
+    list-style: none;
+    font-size: var(--fl-font-small);
+  }
+  .examples li {
+    display: grid;
+    gap: var(--fl-space-1);
+  }
+  .examples code {
+    color: var(--fl-text);
+    font-family: inherit;
+    overflow-wrap: anywhere;
+  }
+  .examples span {
+    color: var(--fl-muted);
+    overflow-wrap: anywhere;
   }
   .hint {
     margin: 0 0 var(--fl-space-4);

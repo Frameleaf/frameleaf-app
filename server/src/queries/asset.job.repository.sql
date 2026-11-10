@@ -187,7 +187,6 @@ where
           '%.ari',
           '%.arw',
           '%.cap',
-          '%.cin',
           '%.cr2',
           '%.cr3',
           '%.crw',
@@ -215,24 +214,49 @@ where
           '%.srf',
           '%.srw',
           '%.x3f',
+          '%.btf',
+          '%.cin',
+          '%.cur',
+          '%.dds',
+          '%.dpx',
+          '%.exr',
+          '%.fits',
+          '%.hdp',
           '%.hdr',
           '%.heic',
           '%.heics',
           '%.heif',
           '%.hif',
+          '%.ico',
           '%.insp',
+          '%.j2c',
+          '%.j2k',
           '%.jp2',
-          '%.jpe',
+          '%.jpc',
+          '%.jpf',
+          '%.jps',
+          '%.jpx',
           '%.jxl',
+          '%.jxr',
           '%.mpo',
+          '%.pam',
           '%.pbm',
+          '%.pct',
+          '%.pcx',
           '%.pfm',
           '%.pgm',
+          '%.pict',
           '%.pnm',
           '%.ppm',
+          '%.qoi',
+          '%.sgi',
           '%.svg',
+          '%.svgz',
+          '%.tga',
           '%.tif',
-          '%.tiff'
+          '%.tiff',
+          '%.wdp',
+          '%.xcf'
         ]::text[]
       )
     )
@@ -420,13 +444,23 @@ select
     from
       (
         select
-          "asset_face".*
+          "asset_face".*,
+          "person" as "person"
         from
           "asset_face"
+          left join lateral (
+            select
+              "person".*
+            from
+              "person"
+            where
+              "person"."personGroupId" = "asset_face"."personGroupId"
+              and "person"."ownerId" = "asset"."ownerId"
+          ) as "person" on true
         where
           "asset_face"."assetId" = "asset"."id"
           and "asset_face"."deletedAt" is null
-          and "asset_face"."isVisible" = $1
+          and "asset_face"."isVisible" is true
       ) as agg
   ) as "faces",
   (
@@ -445,7 +479,7 @@ select
           "asset_file"
         where
           "asset_file"."assetId" = "asset"."id"
-          and "asset_file"."type" = $2
+          and "asset_file"."type" = $1
       ) as agg
   ) as "files",
   "user"."clusterGroupId"
@@ -453,7 +487,7 @@ from
   "asset"
   inner join "user" on "user"."id" = "asset"."ownerId"
 where
-  "asset"."id" = $3
+  "asset"."id" = $2
 
 -- AssetJobRepository.getLockedPropertiesForMetadataExtraction
 select

@@ -21,12 +21,14 @@ import {
   isNotLockedAsset,
   nsfwAssetIdExists,
   removeUndefinedKeys,
+  withDefaultVisibility,
   withFilePath,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
-import { effectiveVisibility, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
+import { effectiveVisibility, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
+import { archivedAllowedInPeople, isPeopleVisible } from 'src/utils/people-visibility.js';
 
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
   withHidden: boolean;
@@ -409,6 +411,12 @@ export class PersonRepository {
             .where('asset_face.deletedAt', 'is', null)
             .where('asset_face.isVisible', '=', true)
             .where((eb) => isNotLockedAsset(eb))
+            // FL-795: an archived face only when the owner includes archived photos in People, or when it
+            // is already the person's featured face (one picked by hand stays)
+            .where(
+              (eb) =>
+                sql<boolean>`(${archivedAllowedInPeople(sql.ref('person.ownerId'))} or ${eb.ref('asset_face.id')} = ${eb.ref('person.faceAssetId')})`,
+            )
             .orderBy(sql`(asset_face.id = person."faceAssetId") desc nulls last`)
             .orderBy(sql`${nsfwAssetIdExists(sql.ref('asset_face.assetId'))} asc`)
             .orderBy('asset_face.id')
@@ -460,12 +468,14 @@ export class PersonRepository {
         join
           .onRef('asset_face.assetId', '=', 'asset.id')
           .onRef('asset.ownerId', '=', 'person.ownerId')
-          .on(isTimelineVisible('asset', options?.revealLockedOwnerId))
+          // FL-795: archived photos too when the viewer includes them in People
+          .on(isPeopleVisible(userId, 'asset', options?.revealLockedOwnerId))
           .on('asset.deletedAt', 'is', null),
       )
       // FL-37: the People grid shows "N items" per card and sorts by photo count or by the
       // most recent capture. Both come from the rows this query already joins (timeline-visible,
-      // not deleted, not locked), so the counts never include content the grid would not show.
+      // or archived when the viewer includes those; not deleted, not locked), so the counts never
+      // include content the grid would not show.
       .select((eb) => [
         eb.fn.count<number>('asset_face.assetId').distinct().as('assetCount'),
         eb.fn.max('asset.fileCreatedAt').as('lastSeenAt'),
@@ -704,6 +714,38 @@ export class PersonRepository {
       .executeTakeFirst();
     return Number(result.numUpdatedRows);
   }
+  /**
+   * FL-809: the named people `viewerId` sees in an album, most often first. A person is the viewer's own
+   * name for a face group, so a member sees the names they gave. Only Timeline and Archive items count:
+   * never Locked (anyone's, whatever the session), trashed, or hidden by the viewer's privacy options.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, {}, 50] })
+  getAlbumPeople(albumId: string, viewerId: string, options: HiddenContentQueryOptions = {}, limit = 50) {
+    return this.db
+      .selectFrom('asset')
+      .$call((qb) => withDefaultVisibility(qb))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .innerJoin('asset_face', 'asset_face.assetId', 'asset.id')
+      .innerJoin('person', (join) =>
+        join.onRef('person.personGroupId', '=', 'asset_face.personGroupId').on('person.ownerId', '=', viewerId),
+      )
+      .where('album_asset.albumId', '=', albumId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .where('person.isHidden', 'is', false)
+      .where('person.name', '!=', '')
+      .select(['person.personGroupId as id', 'person.name', 'person.updatedAt'])
+      .select(sql<number>`count(distinct "asset"."id")::int`.as('count'))
+      .groupBy(['person.personGroupId', 'person.name', 'person.updatedAt'])
+      .orderBy('count', 'desc')
+      .orderBy('person.name', 'asc')
+      .orderBy('person.personGroupId', 'asc')
+      .limit(limit)
+      .execute();
+  }
+
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, personGroupId: DummyValue.UUID }] })
   getByGroupId({ ownerId, personGroupId }: PersonId) {
     return this.db //
@@ -733,7 +775,7 @@ export class PersonRepository {
             .innerJoin('asset', (join) =>
               join
                 .onRef('asset.id', '=', 'asset_face.assetId')
-                .on(isTimelineVisible('asset', options.revealLockedOwnerId))
+                .on(isPeopleVisible(userId, 'asset', options.revealLockedOwnerId))
                 .on('asset.deletedAt', 'is', null),
             )
             .where(libraryScopePredicate(LibraryScope.Personal))
@@ -766,7 +808,8 @@ export class PersonRepository {
       .leftJoin('asset', (join) =>
         join
           .onRef('asset.id', '=', 'asset_face.assetId')
-          .on(isTimelineVisible('asset', options.revealLockedOwnerId))
+          // FL-795: the viewer's own choice decides whether archived photos count, partners' included
+          .on(isPeopleVisible(userId, 'asset', options.revealLockedOwnerId))
           .on('asset.deletedAt', 'is', null)
           .on((eb) => eb.or([eb('asset.ownerId', '=', asUuid(userId)), inSharedAlbum(eb, userId)])),
       )
@@ -810,7 +853,7 @@ export class PersonRepository {
                 eb
                   .selectFrom('asset')
                   .whereRef('asset.id', '=', 'asset_face.assetId')
-                  .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+                  .where(isPeopleVisible(userId, 'asset', options.revealLockedOwnerId))
                   .where('asset.deletedAt', 'is', null)
                   .$call((qb) => withHiddenContentFilter(qb, options)),
               ),
@@ -1009,8 +1052,8 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .execute();
   }
-  @GenerateSql({ params: [DummyValue.UUID] })
-  getRandomFace(personGroupId: string) {
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getRandomFace(personGroupId: string, ownerId: string) {
     return (
       this.db
         .selectFrom('asset_face')
@@ -1020,6 +1063,8 @@ export class PersonRepository {
         .innerJoin('asset', (join) =>
           join.onRef('asset.id', '=', 'asset_face.assetId').on((eb) => isNotLockedAsset(eb)),
         )
+        // FL-795: nor an archived photo, unless the person's owner includes archived photos in People
+        .where(archivedAllowedInPeople(ownerId))
         .where(libraryScopePredicate(LibraryScope.Personal))
         .where('asset_face.personGroupId', '=', personGroupId)
         .where('asset_face.deletedAt', 'is', null)

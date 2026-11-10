@@ -3,7 +3,9 @@
    * Import & export › Phones (FL-540, the prototype's "See phones", `backup › devices-backup`): every
    * account's phones that back up here (`listAllBackupDevices`, the app's own reports), longest quiet
    * first, so an administrator can see whose phone stopped sending photos. Getting the app and
-   * connecting a phone stay on Utilities › Mobile apps.
+   * connecting a phone stay on Utilities › Mobile apps. FL-792 adds each phone's counts (on the
+   * phone, safely on the server, waiting) and how long ago the server checked it: counts only, never
+   * another person's waiting reasons or photos.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -13,6 +15,8 @@
   import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { checkedWords, receiptLine } from '$lib/components/frameleaf/settings/utilities/receipt-words';
+  import { allDevices, receiptScope, receiptState } from '$lib/frameleaf/backup-receipt';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { locale } from '$lib/stores/preferences.store';
   import { listAllBackupDevices, searchUsersAdmin, type BackupDeviceDto } from '@frameleaf/sdk';
@@ -24,15 +28,18 @@
   let phones = $state<BackupDeviceDto[] | null>(null);
   let owners = $state<Record<string, string>>({});
   let failed = $state(false);
+  let scoped = $state(false);
 
   onMount(() => {
     void (async () => {
       try {
-        const [devices, users] = await Promise.all([
-          listAllBackupDevices({ limit: 200 }),
+        const [devices, users, scope] = await Promise.all([
+          allDevices((query) => listAllBackupDevices(query)),
           searchUsersAdmin({}).catch(() => []),
+          receiptScope(),
         ]);
-        phones = devices.devices;
+        scoped = scope;
+        phones = devices;
         owners = Object.fromEntries(users.map((user) => [user.id, user.name]));
       } catch {
         failed = true;
@@ -85,16 +92,23 @@
             <Item
               icon={mdiCellphone}
               name={phone.displayName}
-              detail={[owners[phone.ownerId], phone.model, phone.platform].filter(Boolean).join(' · ')}
+              detail={[owners[phone.ownerId], phone.model, receiptLine($t, phone, receiptState(phone, scoped))]
+                .filter(Boolean)
+                .join(' · ')}
               tone={isBehind(phone) ? 'warn' : phone.lastSuccessfulBackupAt ? 'good' : 'off'}
               status={isBehind(phone)
                 ? $t('frameleaf_phones_quiet', { values: { count: phone.quietForDays ?? 0 } })
                 : phone.lastSuccessfulBackupAt
                   ? $t('frameleaf_phones_backing_up')
                   : $t('frameleaf_phones_not_yet')}
-              note={phone.lastSuccessfulBackupAt
-                ? $t('frameleaf_phones_last', { values: { ago: ago(phone.lastSuccessfulBackupAt) } })
-                : undefined}
+              note={[
+                phone.lastSuccessfulBackupAt
+                  ? $t('frameleaf_phones_last', { values: { ago: ago(phone.lastSuccessfulBackupAt) } })
+                  : undefined,
+                checkedWords($t, phone, receiptState(phone, scoped), ago),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             />
           {/each}
         </ItemList>

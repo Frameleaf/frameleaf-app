@@ -73,7 +73,8 @@ export const isServerManagedConfigPath = (path: string) => SERVER_MANAGED_CONFIG
  * section's form saved before the draft existed; "Reset this page" restores exactly these groups.
  */
 export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminConfigDto)[]>> = Object.freeze({
-  authentication: ['passwordLogin', 'oauth'],
+  // FL-803: `connectedApps.allowRegistration` (apps registering themselves) sits with sign-in.
+  authentication: ['passwordLogin', 'oauth', 'connectedApps'],
   backup: ['backup'],
   image: ['image'],
   'cloud-processing': ['frameleafCloud'],

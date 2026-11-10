@@ -119,8 +119,18 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     // Identify photo locations (prototype `care/location-scan.jsx`): its own page, opened from the landing's
     // Place names row and kept out of the navigation, as the prototype does. FL-1338: Damaged and missing
     // files (prototype `care/files.jsx`) is every account's own list, opened from Things to fix and File checks.
-    personal: ['repair', 'files', 'location-scan'],
-    order: ['integrity-checks', 'repair', 'files', 'duplicates', 'enrichment-care', 'unused-files', 'location-scan'],
+    // FL-862: Couldn't process, every account's own list, opened from Things to fix and the landing page.
+    personal: ['repair', 'files', 'couldnt-process', 'location-scan'],
+    order: [
+      'integrity-checks',
+      'repair',
+      'files',
+      'couldnt-process',
+      'duplicates',
+      'enrichment-care',
+      'unused-files',
+      'location-scan',
+    ],
   },
   // Computers & background work (FL-364; before it "Compute & jobs", FL-71). Approved design
   // (2026-11-04): two pages, Background work and Computers, each with Everyday and Advanced; the area
@@ -166,7 +176,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'server',
     group: 'server',
-    sections: ['version-check', 'server', 'location', 'logging', 'theme', 'configuration'],
+    sections: ['version-check', 'server', 'location', 'logging', 'logs', 'theme', 'configuration'],
   },
   // FL-71: the old /admin/maintenance page (Maintenance.jsx): mode, database backups, integrity.
   { id: 'maintenance', group: 'server', sections: ['mode', 'backups', 'integrity'] },
@@ -196,6 +206,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     sections: [],
     personal: [
       'password',
+      'passkeys',
       'oauth',
       'authorized-devices',
       'api-keys',
@@ -260,7 +271,7 @@ export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area
  */
 export const NAV_HIDDEN_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
   processing: ['hardware'],
-  care: ['location-scan'],
+  care: ['location-scan', 'couldnt-process'],
 });
 
 /**
@@ -314,6 +325,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   integrity: 'frameleaf_page_file_checks_description',
   repair: 'frameleaf_page_repair_description',
   files: 'frameleaf_page_files_description',
+  'couldnt-process': 'frameleaf_page_couldnt_process_description',
   'enrichment-care': 'frameleaf_page_enrichment_description',
   duplicates: 'frameleaf_page_duplicates_description',
   'unused-files': 'frameleaf_page_unused_files_description',
@@ -323,10 +335,12 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   'version-check': 'frameleaf_page_versions_description',
   server: 'frameleaf_page_identity_description',
   logging: 'frameleaf_page_diagnostics_description',
+  logs: 'frameleaf_page_logs_description',
   theme: 'frameleaf_page_branding_description',
   'locked-encryption': 'frameleaf_le_page_description',
   // "How you sign in" (Personal.jsx MySignIn): the password, Frameleaf account and provider on one page.
   password: 'frameleaf_how_page_description',
+  passkeys: 'frameleaf_passkey_page_description',
   // Sign-in methods (SignInMethods.jsx): "How people may sign in to this server, and how to get back in."
   authentication: 'frameleaf_signin_page_description',
   'frameleaf-signin': 'frameleaf_signin_frameleaf_page_description',
@@ -334,7 +348,8 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
 
 /** Pages a landing page keeps behind "Advanced": kept, and closed until asked for. */
 export const ADVANCED_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
-  server: ['logging', 'theme', 'configuration'],
+  // FL-893: Server logs sits under Advanced beside Troubleshooting, as in the prototype (FL-798).
+  server: ['logging', 'logs', 'theme', 'configuration'],
 });
 
 /**
@@ -728,6 +743,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'integrity-checks': 'health',
     repair: 'repairs',
     files: 'repairs',
+    'couldnt-process': 'repairs',
     duplicates: 'identical_files',
     deduplication: 'identical_files',
     'unused-files': 'identical_files',
@@ -755,6 +771,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   },
   privacy: {
     password: 'sign_in',
+    passkeys: 'sign_in',
     oauth: 'sign_in',
     'user-pin-code-settings': 'locked_content',
     'suppressed-content': 'locked_content',
@@ -769,6 +786,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     theme: 'this_server',
     'version-check': 'updates',
     logging: 'updates',
+    logs: 'updates',
     configuration: 'updates',
     location: 'maps',
   },

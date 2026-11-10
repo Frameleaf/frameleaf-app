@@ -22,9 +22,11 @@ import {
   mdiDownload,
   mdiFeatureSearchOutline,
   mdiFileAlertOutline,
+  mdiFileClockOutline,
   mdiFileCheckOutline,
   mdiFileDocumentOutline,
   mdiFolderOutline,
+  mdiFingerprint,
   mdiFormTextboxPassword,
   mdiImageAlbum,
   mdiImageEditOutline,
@@ -44,6 +46,7 @@ import {
   mdiShieldKeyOutline,
   mdiShieldLockOutline,
   mdiSync,
+  mdiTextBoxSearchOutline,
   mdiTrashCanOutline,
   mdiUpdate,
   mdiVideoOutline,
@@ -149,6 +152,13 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       title: $t('frameleaf_cc_section_files'),
       icon: mdiFileAlertOutline,
       href: commandCenterUrl('care', 'files'),
+    },
+    // FL-862: Library care's Couldn't process, every account's own list.
+    {
+      id: 'care-couldnt-process',
+      title: $t('frameleaf_cc_section_couldnt_process'),
+      icon: mdiFileClockOutline,
+      href: commandCenterUrl('care', 'couldnt-process'),
     },
   ];
   for (const extra of extras) {
@@ -266,6 +276,13 @@ export const USER_SETTINGS_AREAS: readonly {
     descriptionKey: 'frameleaf_how_description',
     icon: mdiFormTextboxPassword,
   },
+  // FL-859: passkeys, opened from How you sign in (FL-767 prototype `Passkeys.jsx`).
+  {
+    key: 'passkeys',
+    titleKey: 'frameleaf_passkey_title',
+    descriptionKey: 'frameleaf_passkey_subtitle',
+    icon: mdiFingerprint,
+  },
   {
     key: 'user-pin-code-settings',
     titleKey: 'frameleaf_access_pin_title',
@@ -319,6 +336,8 @@ export const SETTINGS_SECTION_KEYWORDS: Readonly<Record<string, readonly Transla
   server: ['frameleaf_server_identity_zone', 'frameleaf_remote_public_url_title'],
   // FL-421: the prototype finds "What needs your attention" by its alerts.
   signals: ['frameleaf_attention_search_keywords'],
+  // FL-893: the log viewer is found by the words people use for it.
+  logs: ['frameleaf_logs_search_keywords'],
   // Deleted items holds the Trash's retention, so searching "trash" finds it beside the Trash pages.
   trash: ['trash', 'frameleaf_deleted_keep_photos', 'frameleaf_deleted_keep_account'],
 });
@@ -419,6 +438,13 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_diagnostics',
     descriptionKey: 'frameleaf_cc_section_diagnostics_description',
     icon: mdiFileDocumentOutline,
+  },
+  // FL-893: Server & updates › Advanced › Server logs.
+  {
+    key: 'logs',
+    titleKey: 'frameleaf_cc_section_logs',
+    descriptionKey: 'frameleaf_cc_section_logs_description',
+    icon: mdiTextBoxSearchOutline,
   },
   // FL-366: Search & intelligence is one page per feature.
   {

@@ -96,10 +96,12 @@ import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
+import { OAuthAppRepository } from 'src/repositories/oauth-app.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PhotoLocationsRepository } from 'src/repositories/photo-locations.repository.js';
@@ -159,6 +161,7 @@ export const repositories = [
   AssetPaletteRepository,
   CaptureRepository,
   BrowserExtensionSignInRepository,
+  OAuthAppRepository,
   AssetSourceRepository,
   BookmarkRepository,
   DevelopBatchRepository,
@@ -249,6 +252,7 @@ export const repositories = [
   MoveRepository,
   NotificationRepository,
   OAuthRepository,
+  PasskeyRepository,
   OcrRepository,
   ClassificationRepository,
   ClusterGroupRepository,

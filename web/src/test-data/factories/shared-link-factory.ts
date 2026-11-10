@@ -20,4 +20,5 @@ export const sharedLinkFactory = Sync.makeFactory<SharedLinkResponseDto>({
   showMetadata: Sync.each(() => faker.datatype.boolean()),
   slug: null,
   url: null,
+  directUrl: null,
 });

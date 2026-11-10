@@ -12,7 +12,7 @@ import { isHomeAddress, isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { SIGN_IN_SECURITY_URL, signInNetwork } from 'src/utils/sign-in-security.js';
 
-type BackoffKind = 'password' | 'two-factor' | 'shared-link';
+type BackoffKind = 'password' | 'two-factor' | 'passkey' | 'shared-link';
 type AlertUser = Pick<UserAdmin, 'id' | 'email' | 'metadata'>;
 const SIGN_IN_FAILURE_TITLE = 'Someone tried to sign in to your account';
 const SIGN_IN_FAILURE_DESCRIPTION =
@@ -48,14 +48,23 @@ export class SignInSecurityService extends BaseService {
         'sign-in-backoff',
         JSON.stringify([kind, principal, rateLimitAddress(details.securityClientIp ?? details.clientIp)]),
       );
-      attempt = await this.counters.acquireSignInAttempt(`sign-in-backoff:${hash}`);
+      const keys = [`sign-in-backoff:${hash}`];
+      if (kind === 'password') {
+        // FL-850: a password guesser behind a trusted proxy can send a new forwarded address with every try, so
+        // wrong passwords for one account also count from every address. This wait holds back only further
+        // passwords for that account: passkeys and Frameleaf sign-in are never behind it. Both locks are held on
+        // one connection, so a burst of sign-ins cannot use up the pool twice as fast.
+        const account = await this.key('sign-in-backoff', JSON.stringify([kind, principal.trim().toLowerCase()]));
+        keys.push(`sign-in-backoff:account:${account}`);
+      }
+      // another check for the same key is running now: wait for it
+      attempt = await this.counters.acquireSignInAttempt(keys);
       wait = attempt ? await attempt.getWait() : 1;
     } catch {
       await attempt?.release();
+      // Fail closed: a credential is never checked without its backoff, at home or away.
       this.logger.warn('Sign-in backoff counters are unavailable');
-      if (isRemoteVia(details.via))
-        throw new ServiceUnavailableException('This server is busy. Try again in a moment.');
-      return;
+      throw new ServiceUnavailableException('This server is busy. Try again in a moment.');
     }
     if (wait > 0) {
       await attempt?.release();

@@ -165,7 +165,10 @@ export const getForMetadataExtraction = (
   isEdited: asset.isEdited,
   width: asset.width,
   height: asset.height,
-  faces: asset.faces.map((face) => getDehydrated(face)),
+  faces: asset.faces.map((face) => ({
+    ...getDehydrated(face),
+    person: face.person ? getDehydrated(face.person) : null,
+  })),
   files: asset.files.map((file) => getDehydrated(file)),
 });
 

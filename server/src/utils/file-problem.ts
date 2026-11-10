@@ -33,7 +33,10 @@ export const findJpegMarker = (bytes: Buffer): number | null => {
   return null;
 };
 
-/** Reads the file once. A 0-byte file counts as blank. */
+/**
+ * Reads the file once, and only as far as it must: past the head, it stops at the first chunk that shows
+ * the file is not blank, so a 50 GB video is not read end to end (FL-1353). A 0-byte file counts as blank.
+ */
 export const readFileShape = async (path: string): Promise<FileShape> => {
   const head: Buffer[] = [];
   let headLength = 0;
@@ -50,6 +53,9 @@ export const readFileShape = async (path: string): Promise<FileShape> => {
     }
     if (allOnes && chunk.some((byte) => byte !== 0xff)) {
       allOnes = false;
+    }
+    if (!allZero && !allOnes && headLength >= JPEG_MARKER_WINDOW) {
+      break;
     }
   }
   return {

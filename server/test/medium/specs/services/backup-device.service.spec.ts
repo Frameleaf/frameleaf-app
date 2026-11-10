@@ -252,9 +252,14 @@ describe('backup device registry and measured inventory reconciliation', () => {
       const device = await sut.register(auth, report());
       await sut.start(auth, device.id, { buckets: bucketInventory([]) });
       await expect(sut.receipt(otherAuth, device.id)).rejects.toThrow('not found');
+      const listedBy = async (session: Parameters<typeof sut.list>[0]) =>
+        (await sut.list(session, { limit: 200, offset: 0 }, true)).devices.find(({ id }) => id === device.id);
+      // FL-771: check counts are receipt data, so an administrator sees them only in an elevated session
       const admin = factory.auth({ user: { ...other, isAdmin: true } });
-      const listed = (await sut.list(admin, { limit: 200, offset: 0 }, true)).devices.find(
-        ({ id }) => id === device.id,
+      const plain = await listedBy(admin);
+      expect(plain).toMatchObject({ id: device.id, lastCheck: null });
+      const listed = await listedBy(
+        factory.auth({ user: { ...other, isAdmin: true }, session: { hasElevatedPermission: true } }),
       );
       expect(listed?.lastCheck).toEqual(expect.objectContaining({ itemsChecked: 0, itemsMissing: 0 }));
       expect(JSON.stringify(listed)).not.toMatch(/[a-f\d]{64}/);

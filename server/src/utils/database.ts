@@ -403,7 +403,7 @@ export function withFacesAndPeople({ viewingUserId, withHidden, withDeletedFace 
           (join) => join.onTrue(),
         )
         .selectAll('asset_face')
-        .select((eb) => eb.table('person').$castTo<ShallowDehydrateObject<Person>>().as('person'))
+        .select((eb) => eb.table('person').$castTo<ShallowDehydrateObject<Person> | null>().as('person'))
         .whereRef('asset_face.assetId', '=', 'asset.id')
         .$if(!withDeletedFace, (qb) => qb.where('asset_face.deletedAt', 'is', null))
         .$if(!withHidden, (qb) => qb.where('asset_face.isVisible', 'is', true)),

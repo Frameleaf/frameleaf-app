@@ -5,6 +5,7 @@
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import AlbumHeader from '$lib/components/frameleaf/AlbumHeader.svelte';
+  import AlbumPeopleChips from '$lib/components/frameleaf/AlbumPeopleChips.svelte';
   import AlbumSuggestions from '$lib/components/frameleaf/AlbumSuggestions.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LibraryItemsView from '$lib/components/frameleaf/LibraryItemsView.svelte';
@@ -788,6 +789,10 @@
 
       <!-- Under the header's hairline, as the prototype's notices sit (review-1030-shell.css). -->
       {#snippet subheader()}
+        <!-- FL-809: the people in this album, as chips that narrow it to everyone chosen. -->
+        {#key albumId}
+          <AlbumPeopleChips {albumId} refreshKey={album.assetCount} />
+        {/key}
         <div class="fl-album-suggestions">{@render suggestions()}</div>
       {/snippet}
 

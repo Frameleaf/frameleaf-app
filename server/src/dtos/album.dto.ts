@@ -438,6 +438,16 @@ const AlbumDescendantCountResponseSchema = z
   })
   .meta({ id: 'AlbumDescendantCountResponseDto' });
 
+const AlbumPersonResponseSchema = z
+  .object({
+    id: z.uuidv4().describe('Person ID'),
+    name: z.string().describe('Person name'),
+    count: z.int().min(1).describe('Number of album items showing this person'),
+    updatedAt: z.string().meta({ format: 'date-time' }).describe('Last update date, for the thumbnail cache'),
+  })
+  .describe('A named person who appears in an album, with how many of its items show them')
+  .meta({ id: 'AlbumPersonResponseDto' });
+
 const AlbumUserParamSchema = z.object({
   id: z.uuidv4().describe('Album ID'),
   // TODO: disallow 'me' as a shortcut in v4 and type userId as uuidv4
@@ -464,6 +474,7 @@ export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResp
 export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}
 export class AlbumResponseDto extends createZodDto(AlbumResponseSchema) {}
 export class AlbumDescendantCountResponseDto extends createZodDto(AlbumDescendantCountResponseSchema) {}
+export class AlbumPersonResponseDto extends createZodDto(AlbumPersonResponseSchema) {}
 export class MoveAlbumDto extends createZodDto(MoveAlbumSchema) {}
 export class AlbumOrderDto extends createZodDto(AlbumOrderSchema) {}
 export class AlbumCollectionResponseDto extends createZodDto(AlbumCollectionResponseSchema) {}
