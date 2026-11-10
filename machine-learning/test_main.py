@@ -3522,7 +3522,13 @@ def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
     monkeypatch.setattr(hardware_report, "_torch_gpus", lambda: ([], None, None))
     monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
     monkeypatch.setattr(hardware_report, "_render_nodes", lambda: nodes)
+    resources = {
+        "memoryBytes": {"status": "limited", "value": 1073741824},
+        "cpuCores": {"status": "limited", "value": 0.5},
+    }
+    monkeypatch.setattr(hardware_report, "container_resources", lambda: resources)
     report = hardware_report.container_report(["CPUExecutionProvider"], ["CPU"])
+    assert report["resources"] == resources
     assert report["backend"] == "CPU"
     assert report["gpus"] == []
     assert report["devices"]["renderNodes"] == nodes
