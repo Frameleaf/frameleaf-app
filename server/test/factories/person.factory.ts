@@ -18,6 +18,7 @@ export class PersonFactory {
       faceAssetId: null,
       personGroupId: newUuid(),
       isFavorite: false,
+      isFeaturedFaceManual: false,
       isHidden: false,
       name: 'person',
       ownerId: newUuid(),

@@ -269,7 +269,7 @@ describe('library scope persistence and personal defaults', () => {
         .getRecapSubjects(user.id, { from: new Date('1900-01-01'), to: new Date('2100-01-01') }, 1, 20),
     ).toEqual([]);
     expect(await people.selectionForThumbnails(true, user.id).execute()).toEqual([]);
-    expect(await people.getRandomFace(person.personGroupId, user.id)).toBeUndefined();
+    expect(await people.getBestFace(person.personGroupId, user.id)).toBeUndefined();
     expect(
       await people.getDataForThumbnailGenerationJob({ ownerId: user.id, personGroupId: person.personGroupId }),
     ).toBeUndefined();

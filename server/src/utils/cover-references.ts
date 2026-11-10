@@ -173,7 +173,7 @@ const releaseSharedSpacePersonCovers = async (db: Kysely<DB>, assetIds: string[]
 /**
  * The face that stands in for a person once their featured face is on a Locked photo: another of
  * their visible faces on a photo neither Locked nor trashed; faces on photos that are not sensitive
- * first (as `PersonRepository.getRandomFace` does), then Best Photos, then the newest. None when there
+ * first (as `PersonRepository.getBestFace` does), then Best Photos, then the newest. None when there
  * is no such face. An archived photo only when the owner includes archived photos in People (FL-795).
  */
 export const nextPersonFace = (eb: ExpressionBuilder<DB, 'person'>, scores: BestPhotoScoreTable) =>
@@ -195,7 +195,8 @@ export const nextPersonFace = (eb: ExpressionBuilder<DB, 'person'>, scores: Best
 const releasePersonFaces = async (db: Kysely<DB>, assetIds: string[], scores: BestPhotoScoreTable) => {
   await db
     .updateTable('person')
-    .set((eb) => ({ faceAssetId: nextPersonFace(eb, scores), thumbnailPath: '' }))
+    // FL-1383: the stand-in is chosen here, not by the owner, even when the Locked one was their pick
+    .set((eb) => ({ faceAssetId: nextPersonFace(eb, scores), thumbnailPath: '', isFeaturedFaceManual: false }))
     .where('person.faceAssetId', 'in', (eb) =>
       eb
         .selectFrom('asset_face')

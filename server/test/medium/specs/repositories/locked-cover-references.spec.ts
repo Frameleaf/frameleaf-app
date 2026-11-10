@@ -301,12 +301,12 @@ describe('Locked cover references (FL-53)', () => {
       await lockBehindTheRelease(ctx.database, seeded.cover.id);
 
       await expect(
-        ctx.get(PersonRepository).getRandomFace(seeded.person.personGroupId, seeded.person.ownerId),
+        ctx.get(PersonRepository).getBestFace(seeded.person.personGroupId, seeded.person.ownerId),
       ).resolves.toEqual(expect.objectContaining({ id: seeded.nextFace.id }));
 
       await lockBehindTheRelease(ctx.database, seeded.fallback.id);
       await expect(
-        ctx.get(PersonRepository).getRandomFace(seeded.person.personGroupId, seeded.person.ownerId),
+        ctx.get(PersonRepository).getBestFace(seeded.person.personGroupId, seeded.person.ownerId),
       ).resolves.toBeUndefined();
     });
 

@@ -121,6 +121,9 @@ const correctionConflict = (reason: CorrectionConflictReason, message: string) =
 
 const isDefinedId = (id: string | null): id is string => !!id;
 
+/** FL-1384: up to this many people, merge candidates are worked out when the People page asks. */
+const MERGE_LIVE_PEOPLE = 500;
+
 /** A face as detection found it: its box on the unedited preview, and whether a crop still shows it. */
 type DetectedFaceBox = FaceBoxPixels & { isVisible: boolean };
 const DETECTED_FACE_BOX_KEYS = [
@@ -205,10 +208,11 @@ export class PersonService extends BaseService {
     // answers about people recognition has since rebuilt follow them first (see `reanchorMergeVerdicts`)
     await this.reanchorMergeVerdicts(auth.user.id);
     const { machineLearning } = await this.getConfig({ withCache: true });
-    const candidates = await this.personRepository.getMergeSuggestions(auth.user.id, {
-      maxDistance: machineLearning.facialRecognition.maxDistance,
-      limit: 20,
-    });
+    const { maxDistance } = machineLearning.facialRecognition;
+    // FL-1384: the pairs are stored. A library of up to 500 people is worked out again as it is read
+    // (about 125,000 comparisons); a larger one is worked out overnight (`refreshMergeCandidates`).
+    await this.personRepository.refreshMergeCandidates(auth.user.id, maxDistance, MERGE_LIVE_PEOPLE);
+    const candidates = await this.personRepository.getMergeSuggestions(auth.user.id, { maxDistance, limit: 20 });
     if (candidates.length === 0) {
       return { suggestions: [] };
     }
@@ -737,10 +741,16 @@ export class PersonService extends BaseService {
 
     const jobs: JobItem[] = [];
     for (const { ownerId, personGroupId } of changeFeaturePhoto) {
-      const assetFace = await this.personRepository.getRandomFace(personGroupId, ownerId);
+      const assetFace = await this.personRepository.getBestFace(personGroupId, ownerId);
 
       if (assetFace) {
-        await this.personRepository.update({ ownerId, personGroupId, faceAssetId: assetFace.id });
+        // FL-1383: chosen here, not by the owner, so a better face may replace it later
+        await this.personRepository.update({
+          ownerId,
+          personGroupId,
+          faceAssetId: assetFace.id,
+          isFeaturedFaceManual: false,
+        });
         jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
       } else {
         // No face qualifies (FL-795: e.g. every one left is archived and the owner leaves archived photos
@@ -871,6 +881,8 @@ export class PersonService extends BaseService {
         ownerId,
         personGroupId,
         faceAssetId: faceId,
+        // FL-1383: a featured photo the owner picked is theirs to keep (a bulk edit sends the current one back)
+        ...(faceId && faceId !== current.faceAssetId && { isFeaturedFaceManual: true }),
         name,
         birthDate,
         isHidden,
@@ -973,7 +985,80 @@ export class PersonService extends BaseService {
 
     this.logger.debug(`Deleted ${personGroups} empty person groups and ${clusterGroups} orphaned cluster groups`);
 
+    await this.refreshPoorMainPhotos();
+    await this.refreshMergeCandidates();
+
     return JobStatus.Success;
+  }
+
+  /**
+   * FL-1384: works out each account's merge candidates again, on nights when a face was added, moved or
+   * changed since the last time (and the first night). Answers the owner already gave keep applying
+   * when the suggestions are read.
+   */
+  private async refreshMergeCandidates() {
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    const { maxDistance } = machineLearning.facialRecognition;
+    // the stored pairs were kept under the distance of that night: a wider one since can add pairs
+    if (
+      state?.mergeCandidatesAt &&
+      (state.mergeCandidatesDistance ?? 0) >= maxDistance &&
+      !(await this.personRepository.hasFaceChangesSince(new Date(state.mergeCandidatesAt)))
+    ) {
+      return;
+    }
+    const mergeCandidatesAt = new Date().toISOString();
+    let pairs = 0;
+    for (const ownerId of await this.personRepository.getPersonOwnerIds()) {
+      pairs += (await this.personRepository.refreshMergeCandidates(ownerId, maxDistance)) ?? 0;
+    }
+    // read again: the main photo pass above may have set its own date meanwhile
+    const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
+    await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, {
+      ...latest,
+      mergeCandidatesAt,
+      mergeCandidatesDistance: maxDistance,
+    });
+    this.logger.debug(`Found ${pairs} pairs of people that may be the same person`);
+  }
+
+  /**
+   * FL-1383: a main photo that is sideways, cut off by the frame or tiny gives way to the person's best
+   * face when that one passes the same checks. One the owner picked is never replaced. Where nothing
+   * better exists a sideways face keeps its place and its thumbnail is made again, once, so the
+   * thumbnail job can turn it upright (thumbnails made from now on are turned as they are made).
+   */
+  private async refreshPoorMainPhotos() {
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    // the one pass is spent only once faces are on, since the thumbnail job needs the face detector
+    // ponytail: a detector that is on but away that night still spends it; record the pass per person
+    // from the thumbnail job if that leaves sideways thumbnails behind.
+    const firstPass = !state?.uprightPassAt && isFacialRecognitionEnabled(machineLearning);
+    const people = await this.personRepository.getPeopleWithPoorMainPhoto();
+    const jobs: JobItem[] = [];
+    let replaced = 0;
+    for (const { ownerId, personGroupId, faceId, manual, sideways } of people) {
+      const best = manual ? undefined : await this.personRepository.getBestFace(personGroupId, ownerId);
+      if (best && !best.poor && best.id !== faceId) {
+        // only while the main photo is still the automatic one read above: the owner may pick one meanwhile
+        if (await this.personRepository.replaceAutomaticFeaturedFace({ ownerId, personGroupId }, faceId, best.id)) {
+          jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
+          replaced++;
+        }
+      } else if (sideways && firstPass) {
+        jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
+      }
+    }
+    await this.jobRepository.queueAll(jobs);
+    if (firstPass) {
+      await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, {
+        ...state,
+        uprightPassAt: new Date().toISOString(),
+      });
+    }
+    this.logger.debug(`Replaced ${replaced} poor main photos of ${people.length}; ${jobs.length} thumbnails queued`);
   }
 
   @OnJob({ name: JobName.AssetDetectFacesQueueAll, queue: QueueName.FaceDetection })

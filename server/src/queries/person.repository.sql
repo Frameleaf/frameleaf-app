@@ -877,52 +877,243 @@ where
   ) in (($2, $3))
   and "asset_face"."deletedAt" is null
 
--- PersonRepository.getRandomFace
-select
-  "asset_face".*
-from
-  "asset_face"
-  inner join "asset" on "asset"."id" = "asset_face"."assetId"
-  and not exists (
+-- PersonRepository.getBestFace
+with
+  "candidate" as (
     select
-      1
+      "asset_face".*,
+      exists (
+        select
+          1
+        from
+          public.asset as nsfw_asset
+        where
+          nsfw_asset.id = "asset_face"."assetId"
+          and nsfw_asset.is_nsfw = true
+      ) as "nsfw",
+      (
+        (
+          (
+            asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+          ) > 1.2 * (
+            asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+          )
+        )
+        or asset_face."boundingBoxX1" <= 0
+        or asset_face."boundingBoxY1" <= 0
+        or asset_face."boundingBoxX2" >= asset_face."imageWidth" - 1
+        or asset_face."boundingBoxY2" >= asset_face."imageHeight" - 1
+        or (
+          greatest(
+            (
+              asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+            ),
+            (
+              asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+            )
+          )::float8 / greatest(
+            asset_face."imageWidth",
+            asset_face."imageHeight",
+            1
+          )
+        ) < 0.06
+      ) as "poor",
+      (
+        (
+          asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+        ) > 1.2 * (
+          asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+        )
+      ) as "sideways",
+      asset.type = 'IMAGE' as "still",
+      (
+        greatest(
+          (
+            asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+          ),
+          (
+            asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+          )
+        )::float8 / greatest(
+          asset_face."imageWidth",
+          asset_face."imageHeight",
+          1
+        )
+      ) as "share"
     from
-      asset_lock
+      "asset_face"
+      inner join "asset" on "asset"."id" = "asset_face"."assetId"
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
     where
-      asset_lock."assetId" = "asset"."id"
+      (
+        "asset"."visibility" != 'archive'
+        or coalesce(
+          (
+            select
+              (
+                user_metadata.value -> 'people' ->> 'includeArchived'
+              )::boolean
+            from
+              user_metadata
+            where
+              user_metadata."userId" = $1
+              and user_metadata.key = 'preferences'
+          ),
+          false
+        )
+      )
+      and "asset"."libraryScope" in ($2, $3)
+      and "asset_face"."personGroupId" = $4
+      and "asset_face"."deletedAt" is null
+      and "asset_face"."isVisible" is true
+    order by
+      exists (
+        select
+          1
+        from
+          public.asset as nsfw_asset
+        where
+          nsfw_asset.id = "asset_face"."assetId"
+          and nsfw_asset.is_nsfw = true
+      ) asc,
+      (
+        (
+          (
+            asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+          ) > 1.2 * (
+            asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+          )
+        )
+        or asset_face."boundingBoxX1" <= 0
+        or asset_face."boundingBoxY1" <= 0
+        or asset_face."boundingBoxX2" >= asset_face."imageWidth" - 1
+        or asset_face."boundingBoxY2" >= asset_face."imageHeight" - 1
+        or (
+          greatest(
+            (
+              asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+            ),
+            (
+              asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+            )
+          )::float8 / greatest(
+            asset_face."imageWidth",
+            asset_face."imageHeight",
+            1
+          )
+        ) < 0.06
+      ) asc,
+      (
+        (
+          asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+        ) > 1.2 * (
+          asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+        )
+      ) asc,
+      asset.type = 'IMAGE' desc,
+      (
+        greatest(
+          (
+            asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+          ),
+          (
+            asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+          )
+        )::float8 / greatest(
+          asset_face."imageWidth",
+          asset_face."imageHeight",
+          1
+        )
+      ) desc
+    limit
+      $5
   )
-where
-  (
-    "asset"."visibility" != 'archive'
-    or coalesce(
+select
+  "candidate"."id",
+  "candidate"."poor"
+from
+  "candidate"
+  left join "face_search" on "face_search"."faceId" = "candidate"."id"
+order by
+  "candidate"."nsfw" asc,
+  "candidate"."poor" asc,
+  "candidate"."sideways" asc,
+  "candidate"."still" desc,
+  face_search.embedding <=> (
+    select
+      avg(sample.embedding)
+    from
       (
         select
-          (
-            user_metadata.value -> 'people' ->> 'includeArchived'
-          )::boolean
+          face_search.embedding
         from
-          user_metadata
+          face_search
+          inner join asset_face as member on member.id = face_search."faceId"
         where
-          user_metadata."userId" = $1
-          and user_metadata.key = 'preferences'
-      ),
-      false
+          member."personGroupId" = $6
+          and member."deletedAt" is null
+          and member."isVisible" is true
+        limit
+          500
+      ) as sample
+  ) asc nulls last,
+  "candidate"."share" desc,
+  "candidate"."id"
+limit
+  $7
+
+-- PersonRepository.getPeopleWithPoorMainPhoto
+select
+  "person"."ownerId",
+  "person"."personGroupId",
+  "asset_face"."id" as "faceId",
+  "person"."isFeaturedFaceManual" as "manual",
+  (
+    (
+      asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+    ) > 1.2 * (
+      asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
     )
+  ) as "sideways"
+from
+  "person"
+  inner join "asset_face" on "asset_face"."id" = "person"."faceAssetId"
+where
+  "asset_face"."deletedAt" is null
+  and (
+    (
+      (
+        asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+      ) > 1.2 * (
+        asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+      )
+    )
+    or asset_face."boundingBoxX1" <= 0
+    or asset_face."boundingBoxY1" <= 0
+    or asset_face."boundingBoxX2" >= asset_face."imageWidth" - 1
+    or asset_face."boundingBoxY2" >= asset_face."imageHeight" - 1
+    or (
+      greatest(
+        (
+          asset_face."boundingBoxX2" - asset_face."boundingBoxX1"
+        ),
+        (
+          asset_face."boundingBoxY2" - asset_face."boundingBoxY1"
+        )
+      )::float8 / greatest(
+        asset_face."imageWidth",
+        asset_face."imageHeight",
+        1
+      )
+    ) < 0.06
   )
-  and "asset"."libraryScope" in ($2, $3)
-  and "asset_face"."personGroupId" = $4
-  and "asset_face"."deletedAt" is null
-  and "asset_face"."isVisible" is true
-order by
-  exists (
-    select
-      1
-    from
-      public.asset as nsfw_asset
-    where
-      nsfw_asset.id = "asset_face"."assetId"
-      and nsfw_asset.is_nsfw = true
-  ) asc
 
 -- PersonRepository.getMissingThumbnailsForAssets
 select
@@ -1044,29 +1235,21 @@ order by
   "person"."ownerId"
 
 -- PersonRepository.getMergeSuggestions
-with
-  "candidates" as (
-    select
-      "p1"."personGroupId" as "personId",
-      "p2"."personGroupId" as "suggestionId",
-      fs1.embedding <=> fs2.embedding as "distance"
-    from
-      "person" as "p1"
-      inner join "face_search" as "fs1" on "fs1"."faceId" = "p1"."faceAssetId"
-      inner join "person" as "p2" on "p2"."ownerId" = "p1"."ownerId"
-      and "p2"."personGroupId" > "p1"."personGroupId"
-      inner join "face_search" as "fs2" on "fs2"."faceId" = "p2"."faceAssetId"
-    where
-      "p1"."ownerId" = $1
-      and "p1"."isHidden" = $2
-      and "p2"."isHidden" = $3
-  )
 select
-  *
+  "candidates"."personId",
+  "candidates"."suggestionId",
+  "candidates"."distance"
 from
-  "candidates"
+  "person_merge_candidate" as "candidates"
+  inner join "person" as "p1" on "p1"."ownerId" = "candidates"."ownerId"
+  and "p1"."personGroupId" = "candidates"."personId"
+  inner join "person" as "p2" on "p2"."ownerId" = "candidates"."ownerId"
+  and "p2"."personGroupId" = "candidates"."suggestionId"
 where
-  "candidates"."distance" < $4
+  "candidates"."ownerId" = $1
+  and "p1"."isHidden" = $2
+  and "p2"."isHidden" = $3
+  and "candidates"."distance" < $4
   and not exists (
     select
       1
@@ -1098,6 +1281,71 @@ order by
   "candidates"."distance" asc
 limit
   $7
+
+-- PersonRepository.refreshMergeCandidates
+begin
+delete from "person_merge_candidate"
+where
+  "ownerId" = $1
+with
+  centre as materialized (
+    select
+      person."personGroupId" as id,
+      sample.embedding
+    from
+      person
+      cross join lateral (
+        select
+          avg(member.embedding) as embedding
+        from
+          (
+            select
+              face_search.embedding
+            from
+              asset_face
+              inner join face_search on face_search."faceId" = asset_face.id
+            where
+              asset_face."personGroupId" = person."personGroupId"
+              and asset_face."deletedAt" is null
+              and asset_face."isVisible" is true
+            limit
+              10
+          ) as member
+      ) as sample
+    where
+      person."ownerId" = $1
+      and sample.embedding is not null
+  )
+insert into
+  person_merge_candidate ("ownerId", "personId", "suggestionId", distance)
+select
+  $2,
+  a.id,
+  b.id,
+  a.embedding <=> b.embedding
+from
+  centre as a
+  inner join centre as b on b.id > a.id
+where
+  a.embedding <=> b.embedding < $3
+on conflict do nothing
+commit
+
+-- PersonRepository.getPersonOwnerIds
+select distinct
+  "person"."ownerId"
+from
+  "person"
+
+-- PersonRepository.hasFaceChangesSince
+select
+  "asset_face"."id"
+from
+  "asset_face"
+where
+  "asset_face"."updatedAt" > $1
+limit
+  $2
 
 -- PersonRepository.getReferenceFaces
 select distinct
