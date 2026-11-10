@@ -185,6 +185,59 @@ describe(NotificationService.name, () => {
     }
   });
 
+  describe('restore drill email (FL-900)', () => {
+    const drill = {
+      reportId: '00000000-0000-7000-8000-000000000001',
+      result: 'failed' as const,
+      target: 'managed',
+      startedAt: '2026-11-08T03:40:00.000Z',
+      backupFrom: '2026-11-08T02:00:00.000Z',
+      sample: 0,
+      matched: 0,
+      durationSeconds: 372,
+      failure: 'The recovery key on this server didn’t unlock the backup.',
+      failedStep: 'unlock',
+    };
+
+    it('emails each administrator who gets emails, once, with the step that failed', async () => {
+      const wants = UserFactory.create({ isAdmin: true, email: 'taylor@example.test' });
+      const declined = {
+        ...UserFactory.create({ isAdmin: true, email: 'off@example.test' }),
+        metadata: [{ key: 'preferences', value: { emailNotifications: { enabled: false } } }],
+      };
+      mocks.user.getAdmins.mockResolvedValue([wants, declined] as never);
+      mocks.systemMetadata.get.mockResolvedValue({ notifications: { smtp: { enabled: true } } });
+      mocks.email.renderEmail.mockResolvedValue({ html: '<p/>', text: 'text' });
+
+      await sut.onRestoreDrillFinished(drill);
+
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            result: 'failed',
+            source: 'Frameleaf Cloud',
+            stoppedAt: 'Unlock it with your recovery key',
+            duration: '6 minutes 12 seconds',
+            link: '/user-settings?area=backups&section=cloud',
+          }),
+        }),
+      );
+      const mails = mocks.job.queue.mock.calls.filter(([job]) => job.name === JobName.SendMail);
+      expect(mails).toHaveLength(1);
+      expect(mails[0][0].data).toMatchObject({
+        to: 'taylor@example.test',
+        subject: 'Your backup didn’t restore: please look',
+      });
+    });
+
+    it('sends nothing when email is not set up', async () => {
+      mocks.user.getAdmins.mockResolvedValue([UserFactory.create({ isAdmin: true })] as never);
+      mocks.systemMetadata.get.mockResolvedValue({ notifications: { smtp: { enabled: false } } });
+      await sut.onRestoreDrillFinished({ ...drill, result: 'passed', failedStep: null, failure: null });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+
   describe('notifyAdmins (FL-155)', () => {
     const notice = {
       type: NotificationType.SystemMessage,

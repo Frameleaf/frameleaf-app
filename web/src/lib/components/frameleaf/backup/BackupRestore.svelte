@@ -4,9 +4,15 @@
    * dates each place can go back to, and holds the restore steps the app already has for Cloud Backup
    * and Buddy Backup; restoring only the library data is on the "On this server" page, with its
    * saved snapshots. Nothing here is a new way to restore: each row opens today's steps for that job.
+   *
+   * FL-900: with Cloud Backup set up, the restore drill card (FL-879) heads the page and replaces the
+   * manual "Practice restore" record, as in the prototype; `&drill=<id>` opens a drill's report. Without
+   * Cloud Backup there is nothing to drill, so the manual record stays.
    */
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import MaintenanceRestoreTest from '$lib/components/frameleaf/MaintenanceRestoreTest.svelte';
+  import RestoreDrillCard from '$lib/components/frameleaf/backup/RestoreDrillCard.svelte';
+  import RestoreDrillReport from '$lib/components/frameleaf/backup/RestoreDrillReport.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { BACKUP_PLACE_COPY } from '$lib/components/frameleaf/backup/backup-places';
   import BuddyBackupSection from '$lib/components/frameleaf/cloud/BuddyBackupSection.svelte';
@@ -35,6 +41,7 @@
   import { page } from '$app/state';
 
   /** FL-520: "Restore from a backup" on Library care › File checks names the findings to restore. */
+  const drillReport = $derived(page.url.searchParams.get('drill'));
   const findings = $derived.by(() => {
     const value = page.url.searchParams.get('files');
     return value === 'missing' || value === 'damaged' ? value : undefined;
@@ -152,60 +159,70 @@
   const dates = $derived(restoreDates(points, 8));
 </script>
 
-<Section title={$t('frameleaf_backup_restore_what')} description={$t('frameleaf_backup_restore_what_description')}>
-  <Links rows={choices} />
-</Section>
-
-<Section title={$t('frameleaf_backup_restore_dates')} description={$t('frameleaf_backup_restore_dates_description')}>
-  {#if !loaded}
-    <div class="pad" role="status" aria-busy="true">
-      <span class="sr-only">{$t('loading')}</span>
-      <Skeleton variant="text" lines={3} />
-    </div>
-  {:else}
-    {#if failed}
-      <div class="pad"><InlineError compact message={$t('frameleaf_backup_status_failed')} onRetry={load} /></div>
-    {/if}
-    {#if dates.length > 0}
-      <HistoryList>
-        {#each dates as date (date.day)}
-          <HistoryRow when={when(date.newest)} datetime={date.newest.toISOString()}>
-            {#snippet middle()}
-              <span class="chips">
-                {#each date.places as place (place)}
-                  <a
-                    href={PLACE_HREF[place]}
-                    aria-label={$t('frameleaf_backup_restore_from', {
-                      values: { place: $t(BACKUP_PLACE_COPY[place].name), when: when(date.newest) },
-                    })}
-                  >
-                    <Icon icon={BACKUP_PLACE_COPY[place].icon} size="14" aria-hidden />
-                    {$t(BACKUP_PLACE_COPY[place].name)}
-                  </a>
-                {/each}
-              </span>
-            {/snippet}
-          </HistoryRow>
-        {/each}
-      </HistoryList>
-    {:else}
-      <p class="pad empty">{$t('frameleaf_backup_restore_dates_empty')}</p>
-    {/if}
+{#if drillReport}
+  <RestoreDrillReport id={drillReport} />
+{:else}
+  {#if cloud?.configured}
+    <RestoreDrillCard status={cloud} onStatus={(next) => (cloud = next)} />
   {/if}
-</Section>
 
-{#if cloud?.configured}
-  <div id="restore-cloud" class="tool">
-    <CloudBackupRestoreSection status={cloud} {formatWhen} onStatus={(next) => (cloud = next)} {findings} />
-  </div>
-{/if}
-{#if buddyOn}
-  <div id="restore-buddy" class="tool">
-    <BuddyBackupSection view="restore" />
-  </div>
-{/if}
+  <Section title={$t('frameleaf_backup_restore_what')} description={$t('frameleaf_backup_restore_what_description')}>
+    <Links rows={choices} />
+  </Section>
 
-<MaintenanceRestoreTest />
+  <Section title={$t('frameleaf_backup_restore_dates')} description={$t('frameleaf_backup_restore_dates_description')}>
+    {#if !loaded}
+      <div class="pad" role="status" aria-busy="true">
+        <span class="sr-only">{$t('loading')}</span>
+        <Skeleton variant="text" lines={3} />
+      </div>
+    {:else}
+      {#if failed}
+        <div class="pad"><InlineError compact message={$t('frameleaf_backup_status_failed')} onRetry={load} /></div>
+      {/if}
+      {#if dates.length > 0}
+        <HistoryList>
+          {#each dates as date (date.day)}
+            <HistoryRow when={when(date.newest)} datetime={date.newest.toISOString()}>
+              {#snippet middle()}
+                <span class="chips">
+                  {#each date.places as place (place)}
+                    <a
+                      href={PLACE_HREF[place]}
+                      aria-label={$t('frameleaf_backup_restore_from', {
+                        values: { place: $t(BACKUP_PLACE_COPY[place].name), when: when(date.newest) },
+                      })}
+                    >
+                      <Icon icon={BACKUP_PLACE_COPY[place].icon} size="14" aria-hidden />
+                      {$t(BACKUP_PLACE_COPY[place].name)}
+                    </a>
+                  {/each}
+                </span>
+              {/snippet}
+            </HistoryRow>
+          {/each}
+        </HistoryList>
+      {:else}
+        <p class="pad empty">{$t('frameleaf_backup_restore_dates_empty')}</p>
+      {/if}
+    {/if}
+  </Section>
+
+  {#if cloud?.configured}
+    <div id="restore-cloud" class="tool">
+      <CloudBackupRestoreSection status={cloud} {formatWhen} onStatus={(next) => (cloud = next)} {findings} />
+    </div>
+  {/if}
+  {#if buddyOn}
+    <div id="restore-buddy" class="tool">
+      <BuddyBackupSection view="restore" />
+    </div>
+  {/if}
+
+  {#if loaded && !cloud?.configured}
+    <MaintenanceRestoreTest />
+  {/if}
+{/if}
 
 <style>
   .pad {

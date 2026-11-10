@@ -46,7 +46,7 @@
   "/(user)/tags/[[photos=photos]]/[[assetId=id]]": 622272,
   "/(user)/takeout": 450436,
   "/(user)/trash/[[photos=photos]]/[[assetId=id]]": 450439,
-  "/(user)/user-settings": 1217808,
+  "/(user)/user-settings": 1281979,
   "/(user)/utilities": 450540,
   "/(user)/utilities/corrupt-media": 450553,
   "/(user)/utilities/downloads": 450549,
