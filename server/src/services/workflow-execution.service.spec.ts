@@ -2,6 +2,7 @@ import { CurrentPlugin } from '@extism/extism';
 import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { createHash, createHmac } from 'node:crypto';
 import { Mocked, vitest } from 'vitest';
+import type { FrameleafEventOccurrence } from 'src/utils/workflow-event.js';
 import { JobName, JobStatus, WorkflowResult, WorkflowRunErrorCode, WorkflowType } from 'src/enum.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -1223,7 +1224,7 @@ describe('Frameleaf events (FL-819)', () => {
   const workflowId = newUuid();
   const stepId = newUuid();
   const lockedPhoto = newUuid();
-  const event = {
+  const event: FrameleafEventOccurrence = {
     trigger: WorkflowTrigger.CloudBackupFailed,
     ownerId,
     deliveryId: 'cloud-backup:run-1:failed',
