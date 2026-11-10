@@ -51,6 +51,10 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'nightlyTasks.reprocessUnfinished': { label: 'frameleaf_overnight_reprocess_unfinished' },
   // Intelligence › Faces (FL-927)
   'metadata.faces.write': { label: 'frameleaf_intel_faces_write' },
+  // Intelligence › Visual search › Library Assistant (FL-885)
+  'localFeatures.assistant.enabled': { label: 'frameleaf_intel_assistant_setting' },
+  'localFeatures.assistant.maxResults': { label: 'frameleaf_intel_assistant_most' },
+  'localFeatures.assistant.planner': { label: 'frameleaf_intel_assistant_planner' },
   // People & sharing
   'server.publicUsers': { label: 'frameleaf_sharing_find_label' },
   // Server & updates › Server name & welcome
