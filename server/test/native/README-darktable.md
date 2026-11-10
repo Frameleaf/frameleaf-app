@@ -66,17 +66,18 @@ The stage reuses the existing pinned LibRaw/jpegli/media builds, forbids an inte
 uses portable CPU code, and disables darktable's own AI/download feature. Semantic masks use local ML.
 
 LibRaw uses the upstream master snapshot
-[`7bfffe2efa508da00c0d8af299c37cd426a4528d`](https://github.com/LibRaw/LibRaw/commit/7bfffe2efa508da00c0d8af299c37cd426a4528d),
-labelled `0.22.0-dev.7bfffe2e` to distinguish its development snapshot from a stable tag;
-its upstream header reports `0.22.0-Release`.
-It is not the latest stable release. The [0.22.2 tag](https://github.com/LibRaw/LibRaw/releases/tag/0.22.2)
-resolves to `b93f6e45c194f5df9b02a43b1af9a54b4f41f33f`; replacing the snapshot with it
-would remove Sony ARW6 CRAW HQ decoding (TIFF compression 32766), its black/white/linear-max
-calibration, and camera registrations for Canon EOS R50 V, Hasselblad X2D II 100C,
-Sony ILCE-1M2 and Sony ILCE-7M5. Public API headers otherwise match, but stable uses
-`libraw.so.25` while the snapshot and packaged Darktable use `libraw.so.26`.
-The stable swap is rejected until an upstream release preserves these decoder/calibration paths
-and its dependent native binaries are rebuilt and qualified. No local codec patches are substituted.
+[`a9a14b1970d188c25dade81f8326ff00a6e33649`](https://github.com/LibRaw/LibRaw/commit/a9a14b1970d188c25dade81f8326ff00a6e33649)
+(2026-11-08), labelled `0.23.0-dev.a9a14b19`; its upstream header reports `0.23.0-Snapshot202611`
+and builds `libraw.so.27`. It replaced snapshot `7bfffe2e` (2026-10-09) under FL-1355.
+It is not the latest stable release. The [0.22.3 tag](https://github.com/LibRaw/LibRaw/releases/tag/0.22.3)
+resolves to `cf02d66eb5c19d4e46df7aee0582e47a4918509a` and is a bugfix-only release whose fixes are
+already in the snapshot; replacing the snapshot with it would remove Nikon High Efficiency decoding,
+Sony ARW6 CRAW HQ decoding (TIFF compression 32766), its black/white/linear-max calibration, and the
+camera registrations added since 0.22 (among them Canon EOS R50 V and R6 Mark III, Hasselblad X2D II 100C,
+Sony ILCE-1M2, ILCE-7M5 and ILCE-7RM6, Nikon Z 5 II, Fujifilm X-E5). The stable swap is rejected until an
+upstream release preserves these decoder/calibration paths. LibRaw is configured with libjpeg, zlib,
+LCMS 2, OpenMP and its bundled Foveon X3F reader (`-DUSE_X3FTOOLS`); GoPro GPR and JPEG XL DNG stay off
+because both need the Adobe DNG SDK. No local codec patches are substituted.
 
 Compared with the previous `e419de08` pin, the development snapshot preserves all public headers,
 exported symbols, ARW6 decoder/dispatch/calibration, camera metadata and colour tables. The A1 II

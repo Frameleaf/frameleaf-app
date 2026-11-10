@@ -273,6 +273,26 @@ export class MediaIntegrityService {
     }
   }
 
+  /**
+   * What a RAW original is checked by: its sensor data, or, for a camera or compression no open decoder
+   * reads (Nikon High Efficiency, GoPro), the picture the camera stored inside the file. The checksum has
+   * already shown the bytes are the ones stored; a decoder that cannot read them is not a fault in the file.
+   */
+  private async rawCheckSource(path: string, signal: AbortSignal): Promise<Buffer> {
+    try {
+      return await renderRawWithLibRaw(path, signal, { halfSize: true });
+    } catch (error) {
+      const preview =
+        error instanceof RawRenderError && error.reason === 'unsupported'
+          ? await this.mediaRepository.extract(path)
+          : null;
+      if (!preview) {
+        throw error;
+      }
+      return preview.buffer;
+    }
+  }
+
   private async decode(
     input: MediaIntegrityInput,
     signal: AbortSignal,
@@ -284,8 +304,8 @@ export class MediaIntegrityService {
     const isRaw = mimeTypes.isRaw(input.originalFileName) && !input.originalFileName.toLowerCase().endsWith('.psd');
     try {
       if (input.type === AssetType.Image) {
-        // RAW previews do not prove the original sensor data can be decoded.
-        const source = isRaw ? await renderRawWithLibRaw(input.path, signal) : input.path;
+        // FL-1355: a half-size sensor render reads every byte of the sensor data at a quarter of the cost.
+        const source = isRaw ? await this.rawCheckSource(input.path, signal) : input.path;
         if (signal.aborted) {
           return { status: 'timeout', reason: 'validation_timeout' };
         }

@@ -130,7 +130,7 @@ const libraw =
   library &&
   readFileSync(join('/usr/local/lib', library))
     .toString('latin1')
-    .match(/\b0\.\d+\.\d+-(?:Release|Devel\d*|Beta\d*|Alpha\d*)/)?.[0];
+    .match(/\b0\.\d+\.\d+-(?:Release|Snapshot\d*|Devel\d*|Beta\d*|Alpha\d*)/)?.[0];
 const series = (version) => version?.match(/^\d+\.\d+/)?.[0];
 check(
   'LibRaw',

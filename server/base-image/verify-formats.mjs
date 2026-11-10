@@ -6,7 +6,7 @@
 //   kind     decode entry point                                             rungs
 //   still    MediaRepository.decodeImage, strict then lenient               strict | lenient
 //   design   the same as still (ImageMagick behind libvips today)           strict | lenient
-//   raw      renderRawWithLibRaw, then a full 16-bit decode of its TIFF     libraw
+//   raw      MediaRepository.renderRaw, the RAW ladder (FL-1355)            libraw | darktable | preview
 //   video    MediaRepository.probe, then ffmpeg decodes the first frame     ffmpeg
 //   font     libvips text with the font file (no server entry point yet)    specimen
 //
@@ -22,6 +22,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { availableParallelism } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -46,7 +47,6 @@ const { MediaRepository } = await load('repositories/media.repository.js');
 const { StorageRepository } = await load('repositories/storage.repository.js');
 const { CryptoRepository } = await load('repositories/crypto.repository.js');
 const { MediaIntegrityService } = await load('services/media-integrity.service.js');
-const { renderRawWithLibRaw } = await load('utils/raw-renderer.js');
 
 const logger = LoggingRepository.create();
 const media = new MediaRepository(logger);
@@ -65,23 +65,29 @@ const decoders = {
     }
   },
   async raw(file) {
-    // The checks verify-raw.mjs makes: LibRaw from /usr/local, real 16-bit TIFF bytes with a profile,
-    // every pixel decoded, and the original left untouched.
+    // The server's own RAW ladder (MediaRepository.renderRaw). On the libraw rung, the checks
+    // verify-raw.mjs makes: LibRaw from /usr/local, real 16-bit TIFF bytes with a profile, every pixel
+    // decoded. On the darktable and preview rungs, the picture must decode. The original is never touched.
     const linkage = (await run('ldd', ['/usr/local/bin/dcraw_emu'])).stdout;
     assert.match(linkage, /libraw(?:_r)?\.so.*=> \/usr\/local\/lib\//);
     assert.doesNotMatch(linkage, /not found/);
     const before = sha256(file);
-    const tiff = await renderRawWithLibRaw(file);
-    assert.ok(['49492a00', '4d4d002a'].includes(tiff.subarray(0, 4).toString('hex')), 'not TIFF bytes');
-    const metadata = await sharp(tiff).metadata();
-    assert.equal(metadata.depth, 'ushort', 'sensor rendering must retain 16-bit channels');
-    assert.ok(metadata.icc?.length, 'sensor rendering must embed its output profile');
-    const { info } = await sharp(tiff)
-      .toColourspace('rgb16')
-      .raw({ depth: 'ushort' })
-      .toBuffer({ resolveWithObject: true });
-    assert.equal(sha256(file), before, 'sensor rendering must preserve the original');
-    return { rung: 'libraw', width: info.width, height: info.height };
+    const { rung, buffer } = await media.renderRaw(file, { threads: availableParallelism() });
+    let info;
+    if (rung === 'libraw') {
+      assert.ok(['49492a00', '4d4d002a'].includes(buffer.subarray(0, 4).toString('hex')), 'not TIFF bytes');
+      const metadata = await sharp(buffer).metadata();
+      assert.equal(metadata.depth, 'ushort', 'sensor rendering must retain 16-bit channels');
+      assert.ok(metadata.icc?.length, 'sensor rendering must embed its output profile');
+      ({ info } = await sharp(buffer)
+        .toColourspace('rgb16')
+        .raw({ depth: 'ushort' })
+        .toBuffer({ resolveWithObject: true }));
+    } else {
+      ({ info } = await media.decodeImage(buffer, { colorspace: 'srgb', processInvalidImages: false }));
+    }
+    assert.equal(sha256(file), before, 'rendering must preserve the original');
+    return { rung, width: info.width, height: info.height };
   },
   async video(file) {
     const [stream] = (await media.probe(file)).videoStreams;

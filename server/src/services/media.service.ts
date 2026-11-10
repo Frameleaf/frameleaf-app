@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import type { ThumbnailOutput } from 'src/queue/sharp-operations.js';
 import type { AssetEditRepository, VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
@@ -130,7 +131,7 @@ import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.j
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
-import { RawRenderError, type RawRenderFailure, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, type RawRenderFailure } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
 import {
@@ -255,6 +256,30 @@ export class MediaService extends BaseService {
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
     this.videoInterfaces = await this.storageCore.getVideoInterfaces();
+    await this.retryRawAfterDecoderUpdate().catch((error) =>
+      this.logger.warn(`Could not check for a RAW decoder update: ${error}`),
+    );
+  }
+
+  /**
+   * FL-1355: files showing the camera's preview, or nothing, because the decoder could not render them get
+   * another try when the server starts with a different decoder. The first start only notes the version.
+   */
+  private async retryRawAfterDecoderUpdate() {
+    const version = (await this.serverInfoRepository.getBuildVersions()).libraw;
+    if (!version) {
+      return;
+    }
+    const last = await this.systemMetadataRepository.get(SystemMetadataKey.RawDecoderVersion);
+    if (last?.version === version) {
+      return;
+    }
+    if (last) {
+      const ids = await this.assetJobRepository.getRawRungAssetIds();
+      this.logger.log(`RAW decoder changed to ${version}: trying ${ids.length} files again`);
+      await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.AssetGenerateThumbnails, data: { id } })));
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.RawDecoderVersion, { version });
   }
 
   @OnJob({ name: JobName.AssetGenerateThumbnailsQueueAll, queue: QueueName.ThumbnailGeneration })
@@ -436,7 +461,16 @@ export class MediaService extends BaseService {
 
     let thumbhash: Buffer | undefined = generated?.thumbhash;
     if (!thumbhash) {
-      thumbhash = (await this.extractOriginalImage(asset, config.image)).thumbhash;
+      thumbhash = (
+        await this.extractOriginalImage(
+          asset,
+          config.image,
+          false,
+          undefined,
+          undefined,
+          config.job.thumbnailGeneration.concurrency,
+        )
+      ).thumbhash;
     }
 
     if (
@@ -645,6 +679,12 @@ export class MediaService extends BaseService {
           noteJobHandedToCare();
           return JobStatus.Skipped;
         }
+        if (error instanceof RawRenderError && error.ladderExhausted) {
+          // FL-1355: a RAW file is kept and listed under RAW support; out of time or memory is not a reason to
+          // set it aside. It is tried again when the decoder is updated.
+          this.logger.warn(`No picture yet for RAW asset ${id}: ${error.reason}`);
+          return JobStatus.Skipped;
+        }
 
         throw error;
       }
@@ -679,10 +719,30 @@ export class MediaService extends BaseService {
     return extracted;
   }
 
-  private async renderRawImage(originalPath: string) {
+  /**
+   * FL-1355: a RAW original through the ladder (`mediaRepository.renderRaw`). Without a full-size rendition to
+   * make, the sensor is rendered at half size when that still covers the preview. Edits are drawn on the sensor
+   * picture, so they never take the camera's preview.
+   */
+  private async renderRawImage(
+    asset: ThumbnailAsset,
+    image: SystemConfig['image'],
+    { fullsize, useEdits, concurrency }: { fullsize: boolean; useEdits: boolean; concurrency: number },
+  ) {
     const signal = executionSignal();
     signal?.throwIfAborted();
-    return { buffer: await renderRawWithLibRaw(originalPath, signal), format: RawExtractedFormat.Tiff };
+    const { exifImageWidth: width, exifImageHeight: height } = asset.exifInfo;
+    const rendered = await this.mediaRepository.renderRaw(asset.originalPath, {
+      signal,
+      pixels: width && height ? width * height : undefined,
+      halfSize: !fullsize && !!width && !!height && Math.max(width, height) / 2 >= image.preview.size,
+      // The processors are shared between the thumbnail jobs running at once.
+      threads: Math.max(1, Math.floor(availableParallelism() / Math.max(1, concurrency))),
+    });
+    if (rendered.rung === 'preview' && useEdits && rendered.failure) {
+      throw rendered.failure;
+    }
+    return rendered;
   }
 
   /**
@@ -706,6 +766,7 @@ export class MediaService extends BaseService {
     useEdits = false,
     outputs?: Record<'thumbnail' | 'preview' | 'fullsize', ThumbnailOutput>,
     sdrBase?: string,
+    concurrency = 1,
   ) {
     // PSD is in the legacy RAW extension list, but is a layered image, not sensor data.
     const isRaw = mimeTypes.isRaw(asset.originalFileName) && !asset.originalFileName.toLowerCase().endsWith('.psd');
@@ -727,10 +788,14 @@ export class MediaService extends BaseService {
           })
         : null;
     let sensorRendered = false;
-    if (isRaw && !extracted) {
-      extracted = await this.renderRawImage(asset.originalPath);
-      sensorRendered = true;
-    }
+    // Set once the ladder has run: the decoder's failure when it ended on the camera's preview.
+    let ladder: { failure?: RawRenderError } | undefined;
+    const climbLadder = async () => {
+      const rendered = await this.renderRawImage(asset, image, { fullsize: generateFullsize, useEdits, concurrency });
+      extracted = { buffer: rendered.buffer, format: RawExtractedFormat.Tiff };
+      sensorRendered = rendered.rung !== 'preview';
+      ladder = { failure: sensorRendered ? undefined : rendered.failure };
+    };
 
     const colorspace = this.isSRGB(asset.exifInfo) ? Colorspace.Srgb : image.colorspace;
     const decodeSource = () => {
@@ -751,24 +816,51 @@ export class MediaService extends BaseService {
         })
         .then((decoded) => ({ ...decoded, convertFullsize }));
     };
+    const decodeLadder = async () => {
+      await climbLadder();
+      try {
+        return await decodeSource();
+      } catch (error) {
+        const failure = ladder?.failure;
+        if (!failure || !(error instanceof SharpOperationError) || !error.decodeFailure) {
+          throw error;
+        }
+        // The ladder's last rung, the camera's preview, does not open either.
+        failure.ladderExhausted = true;
+        throw failure;
+      }
+    };
     let decoded: Awaited<ReturnType<typeof decodeSource>>;
     try {
-      decoded = await decodeSource();
-    } catch (error) {
-      executionSignal()?.throwIfAborted();
-      if (!(error instanceof SharpOperationError) || !error.decodeFailure || !isRaw || sensorRendered) {
-        throw error;
+      try {
+        decoded = await (isRaw && !extracted ? decodeLadder() : decodeSource());
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        if (!(error instanceof SharpOperationError) || !error.decodeFailure || !isRaw || ladder) {
+          throw error;
+        }
+        // An unreadable embedded preview gets one trip down the ladder, never a repeated repository/CLI fallback.
+        decoded = await decodeLadder();
       }
-      // An unreadable embedded preview gets one sensor attempt, never a repeated repository/CLI fallback.
-      extracted = await this.renderRawImage(asset.originalPath);
-      sensorRendered = true;
-      decoded = await decodeSource();
+    } catch (error) {
+      if (error instanceof RawRenderError && error.ladderExhausted && !useEdits) {
+        await this.assetJobRepository.setRawRung(asset.id, `placeholder/${error.reason}`);
+      }
+      throw error;
+    }
+    if (ladder && !useEdits) {
+      const { failure } = ladder as { failure?: RawRenderError };
+      await this.assetJobRepository.setRawRung(asset.id, failure ? `embedded/${failure.reason}` : null);
     }
 
     return decoded;
   }
 
-  private async generateImageThumbnails(asset: ThumbnailAsset, { image }: SystemConfig, useEdits: boolean = false) {
+  private async generateImageThumbnails(
+    asset: ThumbnailAsset,
+    { image, job }: SystemConfig,
+    useEdits: boolean = false,
+  ) {
     const previewFile = this.getImageFile(asset, {
       fileType: AssetFileType.Preview,
       format: image.preview.format,
@@ -877,6 +969,7 @@ export class MediaService extends BaseService {
         },
       },
       hdrMaster,
+      job.thumbnailGeneration.concurrency,
     );
     const files = convertFullsize ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile];
     files.push(...hdrFiles);

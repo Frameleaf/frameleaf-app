@@ -17,7 +17,7 @@ import {
   MediaHealthCategory,
   QueueName,
 } from 'src/enum.js';
-import { processingFailureSteps } from 'src/queue/processing-failure.js';
+import { RAW_RUNG_STEP, processingFailureSteps } from 'src/queue/processing-failure.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -144,6 +144,38 @@ export class AssetJobRepository {
           and ${subject} = asset.id::text ${liveRange}
         offset 0
       )`);
+  }
+
+  /**
+   * FL-1355: which rung of the RAW ladder a file's preview came from, when it was not the sensor:
+   * `embedded/<why>` (showing the camera's preview) or `placeholder/<why>` (no picture yet). It is kept as a
+   * row of its own step, so no job is set aside by it, the "Couldn't process" inbox never lists it, and it
+   * goes when the photo gets another file. `null` clears it: the sensor rendered.
+   */
+  async setRawRung(assetId: string, rung: string | null): Promise<void> {
+    await (rung
+      ? this.db
+          .insertInto('asset_processing_failure')
+          .values({ assetId, step: RAW_RUNG_STEP, attempts: 1, lastError: rung, lastFailedAt: new Date() })
+          .onConflict((oc) =>
+            oc.columns(['assetId', 'step']).doUpdateSet({ lastError: rung, lastFailedAt: new Date() }),
+          )
+          .execute()
+      : this.db
+          .deleteFrom('asset_processing_failure')
+          .where('assetId', '=', assetId)
+          .where('step', '=', RAW_RUNG_STEP)
+          .execute());
+  }
+
+  /** FL-1355: every RAW original whose sensor has not rendered, to try again with a newer decoder. */
+  async getRawRungAssetIds(): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('asset_processing_failure')
+      .select('assetId')
+      .where('step', '=', RAW_RUNG_STEP)
+      .execute();
+    return rows.map(({ assetId }) => assetId);
   }
 
   private visibleProcessingFailures(auth: AuthDto, db: Kysely<DB>, userId?: string) {

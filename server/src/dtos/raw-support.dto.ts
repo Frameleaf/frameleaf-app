@@ -9,7 +9,10 @@ import z from 'zod';
 export enum RawSupportStatus {
   /** A preview rendered from the sensor data exists. */
   Ready = 'ready',
-  /** Only the camera's embedded preview is used (embedded previews are on and no full-size render exists). */
+  /**
+   * Showing the camera's preview: embedded previews are on and no full-size render exists, or the sensor data
+   * could not be rendered (FL-1355).
+   */
   Preview = 'preview',
   /** No preview yet: not processed, or the last attempt failed without a recorded reason. */
   Pending = 'pending',
