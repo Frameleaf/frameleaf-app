@@ -350,6 +350,7 @@ export const isJournalSafe = (change: ConfigChange) =>
 export const redactConfigForExport = <T extends object>(config: T): T => {
   const next = cloneConfig(config) as Record<string, unknown>;
   delete next.revision;
+  delete next.metrics;
   for (const [path, value] of configLeaves(next)) {
     if (isServerManagedConfigPath(path)) {
       unset(next, path);
