@@ -432,6 +432,19 @@ describe(RateLimitFailureInterceptor.name, () => {
     expect(release).toHaveBeenCalledWith('frameleaf:rate-limit:login:principal:x', WINDOW);
   });
 
+  it('refunds the reservation when an existing password wait refuses the attempt', async () => {
+    const error = new HttpException({ code: 'rate_limited', retryAfter: 30 }, 429);
+    await expect(
+      lastValueFrom(
+        sut.intercept(
+          contextWith({ frameleafRateLimitFailures: failures }),
+          handler(() => throwError(() => error)),
+        ),
+      ),
+    ).rejects.toBe(error);
+    expect(release).toHaveBeenCalledExactlyOnceWith(failures[0].key, WINDOW);
+  });
+
   it('leaves requests without failure-counted checks alone', async () => {
     const error = new UnauthorizedException();
     await expect(

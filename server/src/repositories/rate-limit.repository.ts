@@ -73,6 +73,50 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
     return rows[0];
   }
 
+  async getSignInWait(key: string): Promise<number> {
+    const { rows } = await this.getClient().query<{ wait: number }>(
+      `select greatest(0, ceil(extract(epoch from expires_at - statement_timestamp() - interval '1 hour')
+        + least(1800, 30 * (1 << least(6, count - 5)))))::int as wait
+       from public.frameleaf_rate_limit where key = $1 and count >= 5 and expires_at > statement_timestamp()`,
+      [key],
+    );
+    return rows[0]?.wait ?? 0;
+  }
+
+  async recordSignInFailure(key: string): Promise<void> {
+    await this.getClient().query(
+      `insert into public.frameleaf_rate_limit as counter (key, count, expires_at)
+       values ($1, 1, clock_timestamp() + interval '1 hour')
+       on conflict (key) do update set
+         count = case when counter.expires_at <= clock_timestamp() then 1 else least(counter.count + 1, 11) end,
+         expires_at = clock_timestamp() + interval '1 hour'`,
+      [key],
+    );
+    this.cleanExpired();
+  }
+
+  async clearSignInFailures(key: string): Promise<void> {
+    await this.getClient().query('delete from public.frameleaf_rate_limit where key = $1', [key]);
+  }
+
+  /** Keep the latest 20 actual failures across addresses. This counter is never consulted by admission. */
+  async recordSignInBurst(key: string): Promise<boolean> {
+    const { rows } = await this.getClient().query<{ notice: boolean }>(
+      `insert into public.frameleaf_rate_limit as counter (key, count, expires_at, failure_times)
+       values ($1, 0, clock_timestamp() + interval '1 hour', array[clock_timestamp()])
+       on conflict (key) do update set
+         failure_times = array_prepend(clock_timestamp(), array(
+           select t from unnest(counter.failure_times) as t
+           where t > clock_timestamp() - interval '1 hour' order by t desc limit 19
+         )),
+         expires_at = clock_timestamp() + interval '1 hour'
+       returning cardinality(failure_times) = 20 as notice`,
+      [key],
+    );
+    this.cleanExpired();
+    return rows[0].notice;
+  }
+
   /** Row-locked decrement never recreates an expired counter; zero starts a fresh window on the next hit. */
   async release(key: string, windowExpiresAt: string): Promise<void> {
     await this.getClient().query(

@@ -104,6 +104,7 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { LockedSealService } from 'src/services/locked-seal.service.js';
 import { RepositoryInterface } from 'src/types.js';
@@ -278,6 +279,7 @@ export type ServiceOverrides = {
   access: AccessRepository;
   activity: ActivityRepository;
   adminAudit: AdminAuditRepository;
+  signInSecurity: Pick<SignInSecurityService, 'check' | 'failed' | 'succeeded' | 'signedIn'>;
   album: AlbumRepository;
   albumSummary: AlbumSummaryRepository;
   albumUser: AlbumUserRepository;
@@ -402,6 +404,7 @@ export const getMocks = () => {
     activity: automock(ActivityRepository),
     // recording an administrator's change is incidental to most tests (FL-76)
     adminAudit: automock(AdminAuditRepository, { strict: false }),
+    signInSecurity: newSignInSecurityMock(),
     album: automock(AlbumRepository, { args: [database], strict: false }),
     albumSummary: automock(AlbumSummaryRepository, { args: [database], strict: false }),
     albumUser: automock(AlbumUserRepository),
@@ -560,6 +563,13 @@ export const getMocks = () => {
   return mocks;
 };
 
+export const newSignInSecurityMock = () => ({
+  check: vitest.fn<SignInSecurityService['check']>(),
+  failed: vitest.fn<SignInSecurityService['failed']>(),
+  succeeded: vitest.fn<SignInSecurityService['succeeded']>(),
+  signedIn: vitest.fn<SignInSecurityService['signedIn']>(),
+});
+
 export const newTestService = <T extends BaseService>(
   Service: Constructor<T, BaseServiceArgs>,
   overrides: Partial<ServiceOverrides> = {},
@@ -653,6 +663,8 @@ export const newTestService = <T extends BaseService>(
   for (const { key, type } of properties) {
     if (type === LockedEncryptionService) {
       Object.assign(sut, { [key]: newLockedEncryptionService(mocks) });
+    } else if (type === SignInSecurityService) {
+      Object.assign(sut, { [key]: mocks.signInSecurity });
     }
   }
 

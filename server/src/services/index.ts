@@ -150,6 +150,7 @@ import { SafetyService } from 'src/services/safety.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { SeenLabelsService } from 'src/services/seen-labels.service.js';
 import { ServerService } from 'src/services/server.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { SessionService } from 'src/services/session.service.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
@@ -352,6 +353,7 @@ export const services = [
   SearchService,
   ServerService,
   SessionService,
+  SignInSecurityService,
   SharedLinkService,
   ItemShareService,
   AlbumSourceService,

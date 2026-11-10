@@ -111,6 +111,27 @@ describe(EmailRepository.name, () => {
       }
     });
 
+    it('renders a new-device notice with a trusted account link and a link-free fallback', async () => {
+      const data = {
+        kind: 'new-device' as const,
+        device: 'Safari on iOS',
+        place: 'Home network',
+        time: '2026-11-09T21:30:00.000Z',
+      };
+      const linked = await sut.renderEmail({
+        template: EmailTemplate.NEW_SIGN_IN,
+        data: { ...data, baseUrl: 'https://photos.example.com' },
+      });
+      expect(linked.text).toContain('Safari on iOS');
+      expect(linked.text).toContain('Home network');
+      expect(linked.html).toContain(
+        'https://photos.example.com/user-settings?area=privacy&amp;section=authorized-devices',
+      );
+      const unlinked = await sut.renderEmail({ template: EmailTemplate.NEW_SIGN_IN, data });
+      expect(unlinked.text).toContain('change your password');
+      expect(unlinked.html).not.toContain('href=');
+    });
+
     it('should render the email correctly for TEST_EMAIL template', async () => {
       const request: EmailRenderRequest = {
         template: EmailTemplate.TEST_EMAIL,

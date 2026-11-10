@@ -33,5 +33,13 @@ export const getUserAgentDetails = (headers: IncomingHttpHeaders) => {
     deviceType: userAgent.browser.name || userAgent.device.type || (headers['devicemodel'] as string) || '',
     deviceOS: userAgent.os.name || (headers['devicetype'] as string) || '',
     appVersion,
+    browserFamily: userAgent.browser.name,
+    deviceOSFamily:
+      userAgent.os.name ??
+      (/^(?:frameleaf-ios\/|Immich_iOS_)/.test(headers['user-agent'] ?? '')
+        ? 'iOS'
+        : /^(?:frameleaf-android\/|Immich_Android_)/.test(headers['user-agent'] ?? '')
+          ? 'Android'
+          : undefined),
   };
 };

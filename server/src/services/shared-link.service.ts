@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PostgresError } from 'postgres';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -15,6 +15,8 @@ import {
   mapSharedLink,
 } from 'src/dtos/shared-link.dto.js';
 import { Permission, SharedLinkType } from 'src/enum.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
+import type { LoginDetails } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
@@ -42,6 +44,9 @@ export const isBcryptHash = (value: string) => BCRYPT_HASH.test(value);
  */
 @Injectable()
 export class SharedLinkService extends BaseService {
+  @Inject(SignInSecurityService)
+  private signInSecurity!: SignInSecurityService;
+
   async getAll(auth: AuthDto, { id, albumId }: SharedLinkSearchDto): Promise<SharedLinkResponseDto[]> {
     const searchOptions = { userId: auth.user.id, id, albumId };
     const nsfwOptions = this.nsfwOptions(auth);
@@ -51,7 +56,7 @@ export class SharedLinkService extends BaseService {
     return Promise.all(links.map((link) => this.mapSharedLink(auth, link, { stripAssetMetadata: false })));
   }
 
-  async login(auth: AuthDto, dto: SharedLinkLoginDto) {
+  async login(auth: AuthDto, dto: SharedLinkLoginDto, details?: LoginDetails) {
     if (!auth.sharedLink) {
       throw new ForbiddenException();
     }
@@ -63,14 +68,17 @@ export class SharedLinkService extends BaseService {
       throw new BadRequestException('Shared link is not password protected');
     }
 
+    const backoff = details && (await this.signInSecurity.check('shared-link', id, details));
     const legacy = !isBcryptHash(password);
     const valid = legacy
       ? sharedLinkSecretEqual(dto.password, password)
       : await this.cryptoRepository.compareBcrypt(dto.password, password);
     if (!valid) {
+      await this.signInSecurity.failed(backoff);
       throw new UnauthorizedException('Invalid password');
     }
 
+    await this.signInSecurity.succeeded(backoff);
     const stored = legacy ? await this.hashLegacyPassword(auth, id, password, dto.password) : password;
 
     return {

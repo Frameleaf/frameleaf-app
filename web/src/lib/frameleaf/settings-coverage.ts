@@ -1610,6 +1610,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'emailNotifications.albumUpdate',
   },
   {
+    pattern: 'emailNotifications.newSignIn',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/NotificationsSettings.svelte',
+    evidence: 'emailNotifications.newSignIn',
+  },
+  {
     pattern: 'emailNotifications.enabled',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/NotificationsSettings.svelte',

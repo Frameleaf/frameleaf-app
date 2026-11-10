@@ -67,6 +67,23 @@ describe(AuthService.name, () => {
   });
 
   describe('login', () => {
+    it('checks the address-scoped wait before looking up an account', async () => {
+      const wait = new Error('Wait before trying again');
+      mocks.signInSecurity.check.mockRejectedValue(wait);
+      await expect(sut.login(dto, loginDetails)).rejects.toBe(wait);
+      expect(mocks.signInSecurity.check).toHaveBeenCalledWith('password', dto.email, loginDetails);
+      expect(mocks.user.getByEmail).not.toHaveBeenCalled();
+    });
+
+    it('counts an actual failure and supplies an owner only for a known account', async () => {
+      const user = UserFactory.create({ password: 'hashed-password' });
+      mocks.signInSecurity.check.mockResolvedValue('address-scoped-counter');
+      mocks.user.getByEmail.mockResolvedValue(user);
+      mocks.crypto.compareBcrypt.mockResolvedValue(false);
+      await expect(sut.login(dto, loginDetails)).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.signInSecurity.failed).toHaveBeenCalledWith('address-scoped-counter', user);
+    });
+
     it('signs in with a preserved source password and can replace it with a native password', async () => {
       const password = 'synthetic imported password';
       const user = UserFactory.create({ importClaimPending: false });
@@ -153,6 +170,8 @@ describe(AuthService.name, () => {
       expect(mocks.session.create).toHaveBeenCalledWith(expect.objectContaining({ userId: user.id }), user.password);
 
       expect(mocks.user.getByEmail).toHaveBeenCalledTimes(1);
+      expect(mocks.signInSecurity.succeeded).toHaveBeenCalled();
+      expect(mocks.signInSecurity.signedIn).toHaveBeenCalledWith(user, loginDetails);
     });
   });
 

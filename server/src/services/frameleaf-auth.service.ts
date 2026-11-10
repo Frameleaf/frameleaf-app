@@ -2,6 +2,7 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -38,6 +39,7 @@ import {
 } from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
@@ -181,6 +183,9 @@ const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode, message?: string
  */
 @Injectable()
 export class FrameleafAuthService extends BaseService {
+  @Inject(SignInSecurityService)
+  private signInSecurity!: SignInSecurityService;
+
   /** `POST oauth/frameleaf/authorize`: the authorization URL for a registered callback. */
   async authorize(dto: OAuthConfigDto) {
     const config = await this.requireConfig();
@@ -499,6 +504,7 @@ export class FrameleafAuthService extends BaseService {
       await this.endSessions([session.id]);
       throw error;
     }
+    await this.signInSecurity.signedIn(user, loginDetails);
     return response;
   }
 
