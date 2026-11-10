@@ -189,7 +189,9 @@ export class RawSupportService {
         this.logger.debug(`RAW development engine not usable: ${developer}`);
       }
     }
-    const libraw = versions?.libraw?.match(/LibRaw\s+[\w.-]+/)?.[0] ?? null;
+    // the build lock gives the bare version; an older build's command output named the library itself
+    const libraw =
+      versions?.libraw?.match(/LibRaw\s+[\w.-]+/)?.[0] ?? (versions?.libraw ? `LibRaw ${versions.libraw}` : null);
     return {
       decoder: { available: hasDecoder, version: hasDecoder ? libraw : null },
       developer: { available: developerAvailable, version: developer },

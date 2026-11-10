@@ -872,13 +872,16 @@ export class MediaService extends BaseService {
       }
     } catch (error) {
       if (error instanceof RawRenderError && error.ladderExhausted && !useEdits) {
-        await this.assetJobRepository.setRawRung(asset.id, `placeholder/${error.reason}`);
+        // with the job's own result, so a run that is not accepted leaves the record as it was
+        const rung = `placeholder/${error.reason}`;
+        await publishJobResult(() => this.assetJobRepository.setRawRung(asset.id, rung));
       }
       throw error;
     }
     if (ladder && !useEdits) {
       const { failure } = ladder as { failure?: RawRenderError };
-      await this.assetJobRepository.setRawRung(asset.id, failure ? `embedded/${failure.reason}` : null);
+      const rung = failure ? `embedded/${failure.reason}` : null;
+      await publishJobResult(() => this.assetJobRepository.setRawRung(asset.id, rung));
     }
 
     return decoded;
