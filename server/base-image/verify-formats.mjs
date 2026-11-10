@@ -1,4 +1,5 @@
 // Format matrix (FL-1354): node verify-formats.mjs <manifest.json> <name>=<dir>... [--dist <server dist>]
+// Fixtures whose root is not given a directory are not run, and the summary says so.
 //
 // Runs inside the built server image. Every fixture in the manifest goes through the decode entry
 // points the server itself uses, and the result is compared with what the manifest expects:
@@ -129,10 +130,14 @@ const assetTypes = {
 };
 
 const rows = [];
+const skipped = new Set();
 let failed = 0;
 for (const fixture of manifest.fixtures) {
   const { file, root, kind, expectedFailure, failsOn = [], ...expected } = fixture;
-  assert.ok(roots[root], `${file}: no directory given for root "${root}"`);
+  if (!roots[root]) {
+    skipped.add(root); // a root left off the command line, e.g. a local run without the FATE downloads
+    continue;
+  }
   assert.ok(decoders[kind], `${file}: unknown kind "${kind}"`);
   const path = resolve(roots[root], file);
   readFileSync(path); // a missing fixture is a broken run, not a decode result
@@ -186,6 +191,9 @@ if (shown.length > 0) {
   console.table(shown);
 }
 const count = (prefix) => rows.filter((row) => row.outcome.startsWith(prefix)).length;
+if (skipped.size > 0) {
+  console.log(`Not run, no directory given for: ${[...skipped].join(', ')}`);
+}
 console.log(
   `Format matrix: ${count('pass')} passed, ${count('expected')} expected failures, ${failed} failed, of ${rows.length}`,
 );
