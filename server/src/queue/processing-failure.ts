@@ -50,6 +50,13 @@ export async function recordProcessingFailure(
   lifecycle?: 'crashed' | 'timed-out',
 ): Promise<boolean> {
   if (!isProcessingFailureStep(name) || !assetId || !isUuid(assetId)) return false;
+  // A worker can lose permission to publish because the original changed. That does not condemn the new source.
+  if (
+    !lifecycle &&
+    (reason === 'Prepared output source changed' || reason.endsWith('source changed before publication'))
+  ) {
+    return false;
+  }
   const cause = processingFailureCause(reason, lifecycle);
   // Store a fixed cause rather than exception text, which can contain paths or private metadata.
   const { rows } = await sql<{ setAside: boolean }>`insert into asset_processing_failure as f

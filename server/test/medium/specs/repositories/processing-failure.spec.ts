@@ -130,7 +130,7 @@ it('records real decoder failures and an expired worker claim without changing e
   for (const { id, queue, step, decode } of cases) {
     await store.enqueue([{ queue, name: step, data: { id }, safeToRetry: true, sensitive: false, deadlineMs: 30_000 }]);
     let [claim] = await store.claim(queue, worker, 1);
-    const error: unknown = await decode().catch((failure: unknown) => failure);
+    const error: unknown = await decode().catch((error_: unknown) => error_);
     expect(error).toBeInstanceOf(Error);
     expect(await store.fail(claim, (error as Error).message)).toBe(true);
     await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
