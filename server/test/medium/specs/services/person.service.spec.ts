@@ -861,6 +861,7 @@ describe(PersonService.name, () => {
         imageHeight: 400,
         ...shown,
       });
+      await ctx.get(PersonRepository).update({ ...person, faceAssetId: assetFace.id });
       ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
         imageWidth: 1000,
         imageHeight: 500,
@@ -892,6 +893,13 @@ describe(PersonService.name, () => {
       ).resolves.toEqual([
         { boundingBoxX1: 10, imageWidth: 1000, isVisible: false },
         { boundingBoxX1: 400, imageWidth: 1000, isVisible: true },
+      ]);
+      // the person's main photo was cut from the old box, so it is made again
+      expect(ctx.getMock(JobRepository).queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PersonGenerateThumbnail,
+          data: { ownerId: user.id, personGroupId: person.personGroupId },
+        },
       ]);
     });
 

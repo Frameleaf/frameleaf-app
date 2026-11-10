@@ -49,6 +49,7 @@ describe(PersonService.name, () => {
     mocks.person.getAssetIdsForPeople.mockResolvedValue([]);
     mocks.person.getOrphanedFaceCorrections.mockResolvedValue([]);
     mocks.person.getFaceDecisionChecksums.mockResolvedValue(new Map());
+    mocks.person.moveDetectedFace.mockResolvedValue([]);
     // imported faces arrive without an embedding
     mocks.person.getUnembeddedFaceIds.mockImplementation((ids) => Promise.resolve(new Set(ids)));
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
@@ -2250,6 +2251,20 @@ describe(PersonService.name, () => {
           [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }],
         );
         expect(mocks.person.moveDetectedFace).toHaveBeenCalledExactlyOnceWith(face.id, moved);
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      });
+
+      it("makes a person's main photo again when the face it is cut from moves", async () => {
+        const featured = { ownerId: newUuid(), personGroupId: newUuid() };
+        const face = AssetFaceFactory.create({ personGroupId: featured.personGroupId });
+        const asset = foundAgain(face);
+        mocks.person.moveDetectedFace.mockResolvedValue([featured]);
+
+        await sut.handleDetectFaces({ id: asset.id });
+
+        expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([
+          { name: JobName.PersonGenerateThumbnail, data: featured },
+        ]);
       });
 
       it.each([

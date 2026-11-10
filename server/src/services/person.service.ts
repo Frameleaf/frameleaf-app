@@ -1196,7 +1196,13 @@ export class PersonService extends BaseService {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
       }
       for (const { id: faceId, ...box } of facesToMove) {
-        await this.personRepository.moveDetectedFace(faceId, box);
+        // a person's main photo is cut from this box, so it is made again from the new one
+        const featured = await this.personRepository.moveDetectedFace(faceId, box);
+        if (featured.length > 0) {
+          await this.jobRepository.queueAll(
+            featured.map((data) => ({ name: JobName.PersonGenerateThumbnail, data }) as const),
+          );
+        }
       }
 
       const reapplied =
