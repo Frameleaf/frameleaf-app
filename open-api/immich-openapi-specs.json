@@ -289,6 +289,122 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/activity": {
+      "get": {
+        "description": "Every account’s activity log merged with what administrators did (`source: admin`), newest first. Filter by `userId`, `action`, `from` and `to`; page with `before` and `take`.",
+        "operationId": "getAccountActivityAdmin",
+        "parameters": [
+          {
+            "name": "action",
+            "required": false,
+            "in": "query",
+            "description": "Only this action",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Only events older than this event, for paging",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "Only events at or after this time",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 50 by default",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Only events before this time",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Only this account",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountActivityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve account activity",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminUser.read",
+        "x-immich-state": "Beta"
+      }
+    },
     "/admin/attention": {
       "get": {
         "description": "What needs an administrator on this server now: the drive the library is on filling up, a missed backup, background work that stopped, or a new version. Worked out from the server’s own records on every read.",
@@ -62833,6 +62949,75 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/users/me/activity": {
+      "get": {
+        "description": "What happened to your account, newest first: sign-ins (and failed ones), sign-outs, signed-out devices, password, PIN and two-step sign-in changes, API keys, shared links, partners and shared items. Kept 400 days. Page with `before` and `take`.",
+        "operationId": "getMyActivity",
+        "parameters": [
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Only events older than this event, for paging",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 50 by default",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountActivityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve my account activity",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "user.read",
+        "x-immich-state": "Beta"
+      }
+    },
     "/users/me/backup-devices": {
       "get": {
         "operationId": "listBackupDevices",
@@ -66982,6 +67167,112 @@
       }
     },
     "schemas": {
+      "AccountActivityResponseDto": {
+        "properties": {
+          "events": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/AccountEventResponseDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "True when older events exist beyond this page",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "AccountEventResponseDto": {
+        "properties": {
+          "action": {
+            "description": "What happened, for example `signed-in`, `sign-in-failed`, `signed-out`, `session-revoked`, `password-changed`, `pin-changed`, `api-key-created`, `shared-link-created`, `partner-added` or `item-shared`; admin events use the administrator history actions. New values may appear.",
+            "type": "string"
+          },
+          "actorId": {
+            "description": "For admin events, the administrator; null otherwise",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "actorName": {
+            "description": "For admin events, the administrator's name; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it happened",
+            "format": "date-time",
+            "type": "string"
+          },
+          "detail": {
+            "description": "What the action carries, such as how someone signed in; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "deviceOS": {
+            "description": "The client's operating system",
+            "nullable": true,
+            "type": "string"
+          },
+          "deviceType": {
+            "description": "The client, as the session list names it",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Event ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "ipPrefix": {
+            "description": "The client address cut to its /24 or /48; null when unknown",
+            "nullable": true,
+            "type": "string"
+          },
+          "source": {
+            "description": "`account` for what the account did, `admin` for what an administrator did to it",
+            "type": "string"
+          },
+          "subject": {
+            "description": "A name: a device, an API key, a partner, an album or the account",
+            "type": "string"
+          },
+          "userId": {
+            "description": "The account the event is about",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "via": {
+            "description": "`home`, `direct` or `relay`; null when not known",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "actorId",
+          "actorName",
+          "createdAt",
+          "detail",
+          "deviceOS",
+          "deviceType",
+          "id",
+          "ipPrefix",
+          "source",
+          "subject",
+          "userId",
+          "via"
+        ],
+        "type": "object"
+      },
       "ActivityCreateDto": {
         "description": "Activity create",
         "properties": {
@@ -67488,6 +67779,9 @@
           },
           "metadata": {
             "$ref": "#/components/schemas/AdminConfigMetadataDto"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsStatusDto"
           },
           "newVersionCheck": {
             "$ref": "#/components/schemas/AdminConfigNewVersionCheckDto"
@@ -80691,6 +80985,10 @@
             "description": "Is elevated session",
             "type": "boolean"
           },
+          "localPasswordRequired": {
+            "description": "This freshly signed-in owner needs to set their first local password",
+            "type": "boolean"
+          },
           "password": {
             "description": "Has password set",
             "type": "boolean"
@@ -84232,7 +84530,7 @@
             "type": "string"
           },
           "password": {
-            "description": "Current password",
+            "description": "Current password, or empty when setting the linked owner’s first local password",
             "example": "password",
             "type": "string"
           }
@@ -111660,6 +111958,19 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "MetricsStatusDto": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the local metrics listener is configured to run",
+            "type": "boolean"
+          }
+        },
+        "readOnly": true,
+        "required": [
+          "enabled"
+        ],
         "type": "object"
       },
       "MirrorAxis": {

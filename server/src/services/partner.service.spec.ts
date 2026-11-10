@@ -7,7 +7,7 @@ import { AuthFactory } from 'test/factories/auth.factory.js';
 import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { getForPartner } from 'test/mappers.js';
-import { ServiceMocks, newTestService } from 'test/utils.js';
+import { ServiceMocks, expectNoSecretsInAccountEvents, newTestService } from 'test/utils.js';
 
 describe(PartnerService.name, () => {
   let sut: PartnerService;
@@ -136,6 +136,11 @@ describe(PartnerService.name, () => {
         sharedById: partner.sharedById,
         sharedWithId: partner.sharedWithId,
       });
+      // FL-808: the partner's name only
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: user1.id, action: 'partner-added', subject: user2.name }),
+      );
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, [user2.email]);
     });
 
     it('tells the partner by push that they gained access (FL-228)', async () => {
@@ -236,6 +241,10 @@ describe(PartnerService.name, () => {
       await sut.remove(auth, user2.id);
 
       expect(mocks.partner.remove).toHaveBeenCalledWith({ sharedById: user1.id, sharedWithId: user2.id });
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: user1.id, action: 'partner-removed', subject: user2.name }),
+      );
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, [user2.email]);
     });
 
     it('tells both people at once so open pages drop what they loaded (FL-54)', async () => {

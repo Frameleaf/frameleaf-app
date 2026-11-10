@@ -1446,6 +1446,12 @@ const unwrap = (schema: z.ZodType): z.ZodType => {
   return schema instanceof z.ZodPipe ? (schema.def.in as z.ZodType) : schema;
 };
 
+const MetricsStatusSchema = z
+  .object({
+    enabled: z.boolean().describe('Whether the local metrics listener is configured to run'),
+  })
+  .meta({ id: 'MetricsStatusDto', readOnly: true });
+
 const visibleSchemas = new Map<z.ZodType, Map<ConfigVisibility, z.ZodType | undefined>>();
 
 const applyVisibility = (visibility: ConfigVisibility): z.ZodType | undefined => {
@@ -1490,6 +1496,10 @@ const applyVisibilityRecursive = (
     }
   }
 
+  if (visibility === Admin && schema === AdminConfigSchemaWithVisibility) {
+    shape.metrics = MetricsStatusSchema.optional();
+  }
+
   let visible: z.ZodType | undefined;
   if (Object.keys(shape).length > 0) {
     visible = z.object(shape).meta({
@@ -1530,7 +1540,9 @@ export const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
   return schema;
 };
 
-export const AdminConfigSchema = applyVisibility(Admin)! as z.ZodType<SystemConfig>;
+export const AdminConfigSchema = applyVisibility(Admin)! as z.ZodType<
+  SystemConfig & { metrics?: z.infer<typeof MetricsStatusSchema> }
+>;
 const UserConfigSchema = applyVisibility(User)! as z.ZodType<DeepPartial<SystemConfig>>;
 /** FL-158, FL-161: how a request reached this server, as the edge worker vouched for it. */
 export const FrameleafViaSchema = z

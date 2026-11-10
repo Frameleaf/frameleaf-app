@@ -99,9 +99,16 @@ describe('SessionService', () => {
       const otherSession = SessionFactory.create();
       const auth = AuthFactory.from().session(currentSession).build();
 
+      mocks.session.getByUserId.mockResolvedValue([currentSession, otherSession]);
       mocks.session.invalidateAll.mockResolvedValue([otherSession.id]);
 
       await sut.deleteAll(auth);
+
+      // FL-808: one row per signed-out device, none for the current one
+      expect(mocks.accountEvent.create).toHaveBeenCalledTimes(1);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'session-revoked', subject: 'android · mobile', userId: auth.user.id }),
+      );
 
       expect(mocks.session.invalidateAll).toHaveBeenCalledWith({
         userId: auth.user.id,
@@ -151,9 +158,21 @@ describe('SessionService', () => {
   describe('logoutDevice', () => {
     it('should logout the device', async () => {
       mocks.access.authDevice.checkOwnerAccess.mockResolvedValue(new Set(['token-1']));
+      mocks.session.getByUserId.mockResolvedValue([
+        SessionFactory.create({ id: 'token-1', deviceType: 'Safari', deviceOS: 'iOS' }),
+      ]);
       mocks.session.delete.mockResolvedValue();
 
       await sut.delete(authStub.user1, 'token-1');
+
+      // FL-808: exactly one row, naming the device
+      expect(mocks.accountEvent.create).toHaveBeenCalledTimes(1);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith({
+        userId: authStub.user1.user.id,
+        sessionId: authStub.user1.session?.id ?? null,
+        action: 'session-revoked',
+        subject: 'iOS · Safari',
+      });
 
       expect(mocks.access.authDevice.checkOwnerAccess).toHaveBeenCalledWith(
         authStub.user1.user.id,
@@ -163,6 +182,18 @@ describe('SessionService', () => {
       expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'token-1' });
     });
 
+    it('still signs the device out when its name cannot be read for the activity log (FL-808)', async () => {
+      mocks.access.authDevice.checkOwnerAccess.mockResolvedValue(new Set(['token-1']));
+      mocks.session.getByUserId.mockRejectedValue(new Error('database busy'));
+      mocks.session.delete.mockResolvedValue();
+
+      await sut.delete(authStub.user1, 'token-1');
+
+      expect(mocks.session.delete).toHaveBeenCalledWith('token-1');
+      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'token-1' });
+      expect(mocks.accountEvent.create).not.toHaveBeenCalled();
+    });
+
     it('neither deletes nor announces a session of another owner', async () => {
       mocks.access.authDevice.checkOwnerAccess.mockResolvedValue(new Set());
 
@@ -170,6 +201,7 @@ describe('SessionService', () => {
 
       expect(mocks.session.delete).not.toHaveBeenCalled();
       expect(mocks.event.emit).not.toHaveBeenCalledWith('SessionDelete', expect.anything());
+      expect(mocks.accountEvent.create).not.toHaveBeenCalled();
     });
   });
 });

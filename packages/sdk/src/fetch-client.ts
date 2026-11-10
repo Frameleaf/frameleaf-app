@@ -54,6 +54,40 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type AccountEventResponseDto = {
+    /** What happened, for example `signed-in`, `sign-in-failed`, `signed-out`, `session-revoked`, `password-changed`, `pin-changed`, `api-key-created`, `shared-link-created`, `partner-added` or `item-shared`; admin events use the administrator history actions. New values may appear. */
+    action: string;
+    /** For admin events, the administrator; null otherwise */
+    actorId: string | null;
+    /** For admin events, the administrator's name; null otherwise */
+    actorName: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** What the action carries, such as how someone signed in; null otherwise */
+    detail: string | null;
+    /** The client's operating system */
+    deviceOS: string | null;
+    /** The client, as the session list names it */
+    deviceType: string | null;
+    /** Event ID */
+    id: string;
+    /** The client address cut to its /24 or /48; null when unknown */
+    ipPrefix: string | null;
+    /** `account` for what the account did, `admin` for what an administrator did to it */
+    source: string;
+    /** A name: a device, an API key, a partner, an album or the account */
+    subject: string;
+    /** The account the event is about */
+    userId: string;
+    /** `home`, `direct` or `relay`; null when not known */
+    via: string | null;
+};
+export type AccountActivityResponseDto = {
+    /** Newest first */
+    events: AccountEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
+};
 export type AttentionCheckDto = {
     kind: AttentionKind;
     state: AttentionCheckState;
@@ -1960,6 +1994,14 @@ export type AdminConfigFacesDto = {
 export type AdminConfigMetadataDto = {
     faces: AdminConfigFacesDto;
 };
+export type MetricsStatusDto = {
+    /** Whether the local metrics listener is configured to run */
+    enabled: boolean;
+};
+export type MetricsStatusDtoRead = {
+    /** Whether the local metrics listener is configured to run */
+    enabled: boolean;
+};
 export type AdminConfigNewVersionCheckDto = {
     channel: ReleaseChannel;
     /** Enabled */
@@ -2192,6 +2234,41 @@ export type AdminConfigDto = {
     machineLearning: AdminConfigMachineLearningDto;
     map: AdminConfigMapDto;
     metadata: AdminConfigMetadataDto;
+    metrics?: MetricsStatusDto;
+    newVersionCheck: AdminConfigNewVersionCheckDto;
+    nightlyTasks: AdminConfigNightlyTasksDto;
+    notifications: AdminConfigNotificationsDto;
+    oauth: AdminConfigOAuthDto;
+    passwordLogin: AdminConfigPasswordLoginDto;
+    reverseGeocoding: AdminConfigReverseGeocodingDto;
+    server: AdminConfigServerDto;
+    smartAlbums?: AdminConfigSmartAlbumsDto;
+    storageTemplate: AdminConfigStorageTemplateDto;
+    storageWarning?: AdminConfigStorageWarningDto;
+    templates: AdminConfigTemplatesDto;
+    theme: AdminConfigThemeDto;
+    trash: AdminConfigTrashDto;
+    user: AdminConfigUserDto;
+};
+export type AdminConfigDtoRead = {
+    analytics?: AdminConfigAnalyticsDto;
+    backup: AdminConfigBackupsDto;
+    editing?: AdminConfigEditingDto;
+    ffmpeg: AdminConfigFFmpegDto;
+    frameleafCloud?: AdminConfigFrameleafCloudDto;
+    help?: AdminConfigHelpDto;
+    icloud?: AdminConfigICloudDto;
+    image: AdminConfigImageDto;
+    integrityChecks: AdminConfigIntegrityChecksDto;
+    job: AdminConfigJobDto;
+    library: AdminConfigLibraryDto;
+    libraryCare?: AdminConfigLibraryCareDto;
+    localFeatures?: AdminConfigLocalFeaturesDto;
+    logging: AdminConfigLoggingDto;
+    machineLearning: AdminConfigMachineLearningDto;
+    map: AdminConfigMapDto;
+    metadata: AdminConfigMetadataDto;
+    metrics?: MetricsStatusDtoRead;
     newVersionCheck: AdminConfigNewVersionCheckDto;
     nightlyTasks: AdminConfigNightlyTasksDto;
     notifications: AdminConfigNotificationsDto;
@@ -2252,8 +2329,18 @@ export type AdminConfigRevisionResponseDto = {
     /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
     revision: string;
 };
+export type AdminConfigRevisionResponseDtoRead = {
+    config: AdminConfigDtoRead;
+    /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
+    revision: string;
+};
 export type AdminConfigRevisionUpdateDto = {
     config: AdminConfigDto;
+    /** The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed */
+    expectedRevision: string;
+};
+export type AdminConfigRevisionUpdateDtoRead = {
+    config: AdminConfigDtoRead;
     /** The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed */
     expectedRevision: string;
 };
@@ -6856,7 +6943,7 @@ export type ChangePasswordDto = {
     invalidateSessions?: boolean;
     /** New password (min 8 characters) */
     newPassword: string;
-    /** Current password */
+    /** Current password, or empty when setting the linked owner’s first local password */
     password: string;
 };
 export type LoginCredentialDto = {
@@ -6952,6 +7039,8 @@ export type AuthStatusResponseDto = {
     expiresAt?: string;
     /** Is elevated session */
     isElevated: boolean;
+    /** This freshly signed-in owner needs to set their first local password */
+    localPasswordRequired?: boolean;
     /** Has password set */
     password: boolean;
     /** Has PIN code set */
@@ -21520,6 +21609,31 @@ export function deleteActivity({ id }: {
     }));
 }
 /**
+ * Retrieve account activity
+ */
+export function getAccountActivityAdmin({ action, before, $from, take, to, userId }: {
+    action?: string;
+    before?: string;
+    $from?: string;
+    take?: number;
+    to?: string;
+    userId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AccountActivityResponseDto;
+    }>(`/admin/activity${QS.query(QS.explode({
+        action,
+        before,
+        "from": $from,
+        take,
+        to,
+        userId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Get what needs attention
  */
 export function getAttention(opts?: Oazapfts.RequestOpts) {
@@ -22688,7 +22802,7 @@ export function markCloudTourSeen({ cloudTourSeenDto }: {
 export function getAdminConfig(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/admin/config", {
         ...opts
     }));
@@ -22701,7 +22815,7 @@ export function updateAdminConfig({ adminConfigDto }: {
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/admin/config", oazapfts.json({
         ...opts,
         method: "PUT",
@@ -22755,7 +22869,7 @@ export function updateConfigCredential({ name, configCredentialUpdateDto }: {
 export function getAdminConfigDefaults(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/admin/config/defaults", {
         ...opts
     }));
@@ -22777,7 +22891,7 @@ export function getAdminConfigHistory(opts?: Oazapfts.RequestOpts) {
 export function getAdminConfigWithRevision(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigRevisionResponseDto;
+        data: AdminConfigRevisionResponseDtoRead;
     }>("/admin/config/revision", {
         ...opts
     }));
@@ -22790,7 +22904,7 @@ export function updateAdminConfigWithRevision({ adminConfigRevisionUpdateDto }: 
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigRevisionResponseDto;
+        data: AdminConfigRevisionResponseDtoRead;
     } | {
         status: 409;
     }>("/admin/config/revision", oazapfts.json({
@@ -35650,7 +35764,7 @@ export function getSyncStream({ syncStreamDto }: {
 export function getConfig(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/system-config", {
         ...opts
     }));
@@ -35663,7 +35777,7 @@ export function updateConfig({ adminConfigDto }: {
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/system-config", oazapfts.json({
         ...opts,
         method: "PUT",
@@ -35702,7 +35816,7 @@ export function reloadConfigFile({ configFileReloadDto }: {
 export function getConfigDefaults(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/system-config/defaults", {
         ...opts
     }));
@@ -36770,6 +36884,23 @@ export function updateMyUser({ userUpdateMeDto }: {
         method: "PUT",
         body: userUpdateMeDto
     })));
+}
+/**
+ * Retrieve my account activity
+ */
+export function getMyActivity({ before, take }: {
+    before?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AccountActivityResponseDto;
+    }>(`/users/me/activity${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * List own backup devices

@@ -1,0 +1,2978 @@
+[
+  {
+    "id": "people-01",
+    "family": "people",
+    "question": "Which photos did we take of Maya in Banff from January 2023?",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2023-01-01T00:00:00.000Z",
+        "takenBefore": "2023-01-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Maya"]
+      },
+      "assetKeys": ["e01-01", "e01-02"]
+    }
+  },
+  {
+    "id": "pets-01",
+    "family": "pets",
+    "question": "Do I have photos of Biscuit in Banff from January 2023?",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2023-01-01T00:00:00.000Z",
+        "takenBefore": "2023-01-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Biscuit"]
+      },
+      "assetKeys": ["e01-02", "e01-03"]
+    }
+  },
+  {
+    "id": "favorite-video-01",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Banff from January 2023?",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2023-01-01T00:00:00.000Z",
+        "takenBefore": "2023-01-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e01-04"]
+    }
+  },
+  {
+    "id": "place-date-01",
+    "family": "place-date",
+    "question": "Find the pictures taken in Banff from January 2023.",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2023-01-01T00:00:00.000Z",
+        "takenBefore": "2023-01-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e01-01", "e01-02", "e01-03", "e01-07", "e01-10"]
+    }
+  },
+  {
+    "id": "ocr-01",
+    "family": "ocr",
+    "question": "I need the picture from Banff where the sign reads \"Rental return by 7pm\".",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "type": "IMAGE",
+        "ocr": "Rental return by 7pm"
+      },
+      "assetKeys": ["e01-07"]
+    }
+  },
+  {
+    "id": "spoken-01",
+    "family": "spoken",
+    "question": "Play the clip from Banff where someone says \"meet me by the rink\".",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "type": "VIDEO",
+        "spoken": "meet me by the rink"
+      },
+      "assetKeys": ["e01-06"]
+    }
+  },
+  {
+    "id": "description-01",
+    "family": "description",
+    "question": "Find a picture described as \"skaters pass under string lights\" in Banff.",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "type": "IMAGE",
+        "description": "skaters pass under string lights"
+      },
+      "assetKeys": ["e01-01"]
+    }
+  },
+  {
+    "id": "people-02",
+    "family": "people",
+    "question": "Find pictures with Sam in Calgary from February 2023.",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2023-02-01T00:00:00.000Z",
+        "takenBefore": "2023-02-28T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Sam"]
+      },
+      "assetKeys": ["e02-01", "e02-02"]
+    }
+  },
+  {
+    "id": "pets-02",
+    "family": "pets",
+    "question": "Find the pictures with Rex in Calgary during February 2023.",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2023-02-01T00:00:00.000Z",
+        "takenBefore": "2023-02-28T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Rex"]
+      },
+      "assetKeys": ["e02-02", "e02-03"]
+    }
+  },
+  {
+    "id": "favorite-video-02",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Calgary during February 2023.",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2023-02-01T00:00:00.000Z",
+        "takenBefore": "2023-02-28T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e02-04"]
+    }
+  },
+  {
+    "id": "place-date-02",
+    "family": "place-date",
+    "question": "Can you show photos in Calgary from February 2023?",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2023-02-01T00:00:00.000Z",
+        "takenBefore": "2023-02-28T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e02-01", "e02-02", "e02-03", "e02-07", "e02-10"]
+    }
+  },
+  {
+    "id": "ocr-02",
+    "family": "ocr",
+    "question": "Which photo from Calgary has the words \"Table twelve\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "type": "IMAGE",
+        "ocr": "Table twelve"
+      },
+      "assetKeys": ["e02-07"]
+    }
+  },
+  {
+    "id": "spoken-02",
+    "family": "spoken",
+    "question": "Who was saying \"try the maple latte\" in a video from Calgary?",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "type": "VIDEO",
+        "spoken": "try the maple latte"
+      },
+      "assetKeys": ["e02-06"]
+    }
+  },
+  {
+    "id": "description-02",
+    "family": "description",
+    "question": "Is there a photo with the description \"mugs next to a rainy window\" from Calgary?",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "type": "IMAGE",
+        "description": "mugs next to a rainy window"
+      },
+      "assetKeys": ["e02-01"]
+    }
+  },
+  {
+    "id": "people-03",
+    "family": "people",
+    "question": "Show photos of Alice in Vancouver during March 2023.",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2023-03-01T00:00:00.000Z",
+        "takenBefore": "2023-03-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Alice"]
+      },
+      "assetKeys": ["e03-01", "e03-02"]
+    }
+  },
+  {
+    "id": "pets-03",
+    "family": "pets",
+    "question": "Show photos with Pepper in Vancouver from March 2023.",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2023-03-01T00:00:00.000Z",
+        "takenBefore": "2023-03-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Pepper"]
+      },
+      "assetKeys": ["e03-02", "e03-03"]
+    }
+  },
+  {
+    "id": "favorite-video-03",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Vancouver from March 2023?",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2023-03-01T00:00:00.000Z",
+        "takenBefore": "2023-03-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e03-04"]
+    }
+  },
+  {
+    "id": "place-date-03",
+    "family": "place-date",
+    "question": "What pictures do I have in Vancouver during March 2023?",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2023-03-01T00:00:00.000Z",
+        "takenBefore": "2023-03-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e03-01", "e03-02", "e03-03", "e03-07", "e03-10"]
+    }
+  },
+  {
+    "id": "ocr-03",
+    "family": "ocr",
+    "question": "Look in Vancouver for the photo with \"Keep the park clean\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "type": "IMAGE",
+        "ocr": "Keep the park clean"
+      },
+      "assetKeys": ["e03-07"]
+    }
+  },
+  {
+    "id": "spoken-03",
+    "family": "spoken",
+    "question": "Find a video from Vancouver with the spoken words \"save me a seat\".",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "type": "VIDEO",
+        "spoken": "save me a seat"
+      },
+      "assetKeys": ["e03-06"]
+    }
+  },
+  {
+    "id": "description-03",
+    "family": "description",
+    "question": "Find the picture from Vancouver with a caption about picnic blanket covered with daffodils.",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "type": "IMAGE",
+        "description": "picnic blanket covered with daffodils"
+      },
+      "assetKeys": ["e03-01"]
+    }
+  },
+  {
+    "id": "people-04",
+    "family": "people",
+    "question": "Which photos did we take of Bea in Victoria from April 2023?",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2023-04-01T00:00:00.000Z",
+        "takenBefore": "2023-04-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Bea"]
+      },
+      "assetKeys": ["e04-01", "e04-02"]
+    }
+  },
+  {
+    "id": "pets-04",
+    "family": "pets",
+    "question": "Do I have photos of Scout in Victoria from April 2023?",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2023-04-01T00:00:00.000Z",
+        "takenBefore": "2023-04-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Scout"]
+      },
+      "assetKeys": ["e04-02", "e04-03"]
+    }
+  },
+  {
+    "id": "favorite-video-04",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Victoria from April 2023?",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2023-04-01T00:00:00.000Z",
+        "takenBefore": "2023-04-30T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e04-04"]
+    }
+  },
+  {
+    "id": "place-date-04",
+    "family": "place-date",
+    "question": "Find the pictures taken in Victoria from April 2023.",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2023-04-01T00:00:00.000Z",
+        "takenBefore": "2023-04-30T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e04-01", "e04-02", "e04-03", "e04-07", "e04-10"]
+    }
+  },
+  {
+    "id": "ocr-04",
+    "family": "ocr",
+    "question": "I need the picture from Victoria where the sign reads \"Bike lane closed\".",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "type": "IMAGE",
+        "ocr": "Bike lane closed"
+      },
+      "assetKeys": ["e04-07"]
+    }
+  },
+  {
+    "id": "spoken-04",
+    "family": "spoken",
+    "question": "Play the clip from Victoria where someone says \"watch the ferry\".",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "type": "VIDEO",
+        "spoken": "watch the ferry"
+      },
+      "assetKeys": ["e04-06"]
+    }
+  },
+  {
+    "id": "description-04",
+    "family": "description",
+    "question": "Find a picture described as \"cycles beside the marina\" in Victoria.",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "type": "IMAGE",
+        "description": "cycles beside the marina"
+      },
+      "assetKeys": ["e04-01"]
+    }
+  },
+  {
+    "id": "people-05",
+    "family": "people",
+    "question": "Find pictures with Rob in Seattle from May 2023.",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2023-05-01T00:00:00.000Z",
+        "takenBefore": "2023-05-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Rob"]
+      },
+      "assetKeys": ["e05-01", "e05-02"]
+    }
+  },
+  {
+    "id": "pets-05",
+    "family": "pets",
+    "question": "Find the pictures with Mocha in Seattle during May 2023.",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2023-05-01T00:00:00.000Z",
+        "takenBefore": "2023-05-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Mocha"]
+      },
+      "assetKeys": ["e05-02", "e05-03"]
+    }
+  },
+  {
+    "id": "favorite-video-05",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Seattle during May 2023.",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2023-05-01T00:00:00.000Z",
+        "takenBefore": "2023-05-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e05-04"]
+    }
+  },
+  {
+    "id": "place-date-05",
+    "family": "place-date",
+    "question": "Can you show photos in Seattle from May 2023?",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2023-05-01T00:00:00.000Z",
+        "takenBefore": "2023-05-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e05-01", "e05-02", "e05-03", "e05-07", "e05-10"]
+    }
+  },
+  {
+    "id": "ocr-05",
+    "family": "ocr",
+    "question": "Which photo from Seattle has the words \"Trailhead parking\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "type": "IMAGE",
+        "ocr": "Trailhead parking"
+      },
+      "assetKeys": ["e05-07"]
+    }
+  },
+  {
+    "id": "spoken-05",
+    "family": "spoken",
+    "question": "Who was saying \"we should rent a canoe\" in a video from Seattle?",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "type": "VIDEO",
+        "spoken": "we should rent a canoe"
+      },
+      "assetKeys": ["e05-06"]
+    }
+  },
+  {
+    "id": "description-05",
+    "family": "description",
+    "question": "Is there a photo with the description \"canoe on a green lake\" from Seattle?",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "type": "IMAGE",
+        "description": "canoe on a green lake"
+      },
+      "assetKeys": ["e05-01"]
+    }
+  },
+  {
+    "id": "people-06",
+    "family": "people",
+    "question": "Show photos of Inez in Portland during June 2023.",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2023-06-01T00:00:00.000Z",
+        "takenBefore": "2023-06-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Inez"]
+      },
+      "assetKeys": ["e06-01", "e06-02"]
+    }
+  },
+  {
+    "id": "pets-06",
+    "family": "pets",
+    "question": "Show photos with Milo in Portland from June 2023.",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2023-06-01T00:00:00.000Z",
+        "takenBefore": "2023-06-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Milo"]
+      },
+      "assetKeys": ["e06-02", "e06-03"]
+    }
+  },
+  {
+    "id": "favorite-video-06",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Portland from June 2023?",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2023-06-01T00:00:00.000Z",
+        "takenBefore": "2023-06-30T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e06-04"]
+    }
+  },
+  {
+    "id": "place-date-06",
+    "family": "place-date",
+    "question": "What pictures do I have in Portland during June 2023?",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2023-06-01T00:00:00.000Z",
+        "takenBefore": "2023-06-30T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e06-01", "e06-02", "e06-03", "e06-07", "e06-10"]
+    }
+  },
+  {
+    "id": "ocr-06",
+    "family": "ocr",
+    "question": "Look in Portland for the photo with \"Fresh peaches\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "type": "IMAGE",
+        "ocr": "Fresh peaches"
+      },
+      "assetKeys": ["e06-07"]
+    }
+  },
+  {
+    "id": "spoken-06",
+    "family": "spoken",
+    "question": "Find a video from Portland with the spoken words \"these plums are ripe\".",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "type": "VIDEO",
+        "spoken": "these plums are ripe"
+      },
+      "assetKeys": ["e06-06"]
+    }
+  },
+  {
+    "id": "description-06",
+    "family": "description",
+    "question": "Find the picture from Portland with a caption about wooden crates of fruit.",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "type": "IMAGE",
+        "description": "wooden crates of fruit"
+      },
+      "assetKeys": ["e06-01"]
+    }
+  },
+  {
+    "id": "people-07",
+    "family": "people",
+    "question": "Which photos did we take of Lina in Montreal from July 2023?",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2023-07-01T00:00:00.000Z",
+        "takenBefore": "2023-07-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Lina"]
+      },
+      "assetKeys": ["e07-01", "e07-02"]
+    }
+  },
+  {
+    "id": "pets-07",
+    "family": "pets",
+    "question": "Do I have photos of Poppy in Montreal from July 2023?",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2023-07-01T00:00:00.000Z",
+        "takenBefore": "2023-07-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Poppy"]
+      },
+      "assetKeys": ["e07-02", "e07-03"]
+    }
+  },
+  {
+    "id": "favorite-video-07",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Montreal from July 2023?",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2023-07-01T00:00:00.000Z",
+        "takenBefore": "2023-07-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e07-04"]
+    }
+  },
+  {
+    "id": "place-date-07",
+    "family": "place-date",
+    "question": "Find the pictures taken in Montreal from July 2023.",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2023-07-01T00:00:00.000Z",
+        "takenBefore": "2023-07-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e07-01", "e07-02", "e07-03", "e07-07", "e07-10"]
+    }
+  },
+  {
+    "id": "ocr-07",
+    "family": "ocr",
+    "question": "I need the picture from Montreal where the sign reads \"Quiet after ten\".",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "type": "IMAGE",
+        "ocr": "Quiet after ten"
+      },
+      "assetKeys": ["e07-07"]
+    }
+  },
+  {
+    "id": "spoken-07",
+    "family": "spoken",
+    "question": "Play the clip from Montreal where someone says \"the fire is going out\".",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "type": "VIDEO",
+        "spoken": "the fire is going out"
+      },
+      "assetKeys": ["e07-06"]
+    }
+  },
+  {
+    "id": "description-07",
+    "family": "description",
+    "question": "Find a picture described as \"tent by a fire ring\" in Montreal.",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "type": "IMAGE",
+        "description": "tent by a fire ring"
+      },
+      "assetKeys": ["e07-01"]
+    }
+  },
+  {
+    "id": "people-08",
+    "family": "people",
+    "question": "Find pictures with Omar in Quebec from August 2023.",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2023-08-01T00:00:00.000Z",
+        "takenBefore": "2023-08-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Omar"]
+      },
+      "assetKeys": ["e08-01", "e08-02"]
+    }
+  },
+  {
+    "id": "pets-08",
+    "family": "pets",
+    "question": "Find the pictures with Maple in Quebec during August 2023.",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2023-08-01T00:00:00.000Z",
+        "takenBefore": "2023-08-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Maple"]
+      },
+      "assetKeys": ["e08-02", "e08-03"]
+    }
+  },
+  {
+    "id": "favorite-video-08",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Quebec during August 2023.",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2023-08-01T00:00:00.000Z",
+        "takenBefore": "2023-08-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e08-04"]
+    }
+  },
+  {
+    "id": "place-date-08",
+    "family": "place-date",
+    "question": "Can you show photos in Quebec from August 2023?",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2023-08-01T00:00:00.000Z",
+        "takenBefore": "2023-08-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e08-01", "e08-02", "e08-03", "e08-07", "e08-10"]
+    }
+  },
+  {
+    "id": "ocr-08",
+    "family": "ocr",
+    "question": "Which photo from Quebec has the words \"Check in at the tent\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "type": "IMAGE",
+        "ocr": "Check in at the tent"
+      },
+      "assetKeys": ["e08-07"]
+    }
+  },
+  {
+    "id": "spoken-08",
+    "family": "spoken",
+    "question": "Who was saying \"look how high it goes\" in a video from Quebec?",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "type": "VIDEO",
+        "spoken": "look how high it goes"
+      },
+      "assetKeys": ["e08-06"]
+    }
+  },
+  {
+    "id": "description-08",
+    "family": "description",
+    "question": "Is there a photo with the description \"red kites above the field\" from Quebec?",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "type": "IMAGE",
+        "description": "red kites above the field"
+      },
+      "assetKeys": ["e08-01"]
+    }
+  },
+  {
+    "id": "people-09",
+    "family": "people",
+    "question": "Show photos of Felix in Toronto during September 2023.",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2023-09-01T00:00:00.000Z",
+        "takenBefore": "2023-09-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Felix"]
+      },
+      "assetKeys": ["e09-01", "e09-02"]
+    }
+  },
+  {
+    "id": "pets-09",
+    "family": "pets",
+    "question": "Show photos with Clover in Toronto from September 2023.",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2023-09-01T00:00:00.000Z",
+        "takenBefore": "2023-09-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Clover"]
+      },
+      "assetKeys": ["e09-02", "e09-03"]
+    }
+  },
+  {
+    "id": "favorite-video-09",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Toronto from September 2023?",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2023-09-01T00:00:00.000Z",
+        "takenBefore": "2023-09-30T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e09-04"]
+    }
+  },
+  {
+    "id": "place-date-09",
+    "family": "place-date",
+    "question": "What pictures do I have in Toronto during September 2023?",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2023-09-01T00:00:00.000Z",
+        "takenBefore": "2023-09-30T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e09-01", "e09-02", "e09-03", "e09-07", "e09-10"]
+    }
+  },
+  {
+    "id": "ocr-09",
+    "family": "ocr",
+    "question": "Look in Toronto for the photo with \"Bridge closed\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "type": "IMAGE",
+        "ocr": "Bridge closed"
+      },
+      "assetKeys": ["e09-07"]
+    }
+  },
+  {
+    "id": "spoken-09",
+    "family": "spoken",
+    "question": "Find a video from Toronto with the spoken words \"the creek is louder today\".",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "type": "VIDEO",
+        "spoken": "the creek is louder today"
+      },
+      "assetKeys": ["e09-06"]
+    }
+  },
+  {
+    "id": "description-09",
+    "family": "description",
+    "question": "Find the picture from Toronto with a caption about fallen yellow leaves by a bridge.",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "type": "IMAGE",
+        "description": "fallen yellow leaves by a bridge"
+      },
+      "assetKeys": ["e09-01"]
+    }
+  },
+  {
+    "id": "people-10",
+    "family": "people",
+    "question": "Which photos did we take of Nora in Ottawa from October 2023?",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2023-10-01T00:00:00.000Z",
+        "takenBefore": "2023-10-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Nora"]
+      },
+      "assetKeys": ["e10-01", "e10-02"]
+    }
+  },
+  {
+    "id": "pets-10",
+    "family": "pets",
+    "question": "Do I have photos of Ginger in Ottawa from October 2023?",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2023-10-01T00:00:00.000Z",
+        "takenBefore": "2023-10-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Ginger"]
+      },
+      "assetKeys": ["e10-02", "e10-03"]
+    }
+  },
+  {
+    "id": "favorite-video-10",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Ottawa from October 2023?",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2023-10-01T00:00:00.000Z",
+        "takenBefore": "2023-10-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e10-04"]
+    }
+  },
+  {
+    "id": "place-date-10",
+    "family": "place-date",
+    "question": "Find the pictures taken in Ottawa from October 2023.",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2023-10-01T00:00:00.000Z",
+        "takenBefore": "2023-10-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e10-01", "e10-02", "e10-03", "e10-07", "e10-10"]
+    }
+  },
+  {
+    "id": "ocr-10",
+    "family": "ocr",
+    "question": "I need the picture from Ottawa where the sign reads \"Gallery closes at six\".",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "type": "IMAGE",
+        "ocr": "Gallery closes at six"
+      },
+      "assetKeys": ["e10-07"]
+    }
+  },
+  {
+    "id": "spoken-10",
+    "family": "spoken",
+    "question": "Play the clip from Ottawa where someone says \"look at the blue vase\".",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "type": "VIDEO",
+        "spoken": "look at the blue vase"
+      },
+      "assetKeys": ["e10-06"]
+    }
+  },
+  {
+    "id": "description-10",
+    "family": "description",
+    "question": "Find a picture described as \"blue pottery in a glass cabinet\" in Ottawa.",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "type": "IMAGE",
+        "description": "blue pottery in a glass cabinet"
+      },
+      "assetKeys": ["e10-01"]
+    }
+  },
+  {
+    "id": "people-11",
+    "family": "people",
+    "question": "Find pictures with Maya in Banff from January 2024.",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2024-01-01T00:00:00.000Z",
+        "takenBefore": "2024-01-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Maya"]
+      },
+      "assetKeys": ["e11-01", "e11-02"]
+    }
+  },
+  {
+    "id": "pets-11",
+    "family": "pets",
+    "question": "Find the pictures with Biscuit in Banff during January 2024.",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2024-01-01T00:00:00.000Z",
+        "takenBefore": "2024-01-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Biscuit"]
+      },
+      "assetKeys": ["e11-02", "e11-03"]
+    }
+  },
+  {
+    "id": "favorite-video-11",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Banff during January 2024.",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2024-01-01T00:00:00.000Z",
+        "takenBefore": "2024-01-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e11-04"]
+    }
+  },
+  {
+    "id": "place-date-11",
+    "family": "place-date",
+    "question": "Can you show photos in Banff from January 2024?",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2024-01-01T00:00:00.000Z",
+        "takenBefore": "2024-01-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e11-01", "e11-02", "e11-03", "e11-07", "e11-10"]
+    }
+  },
+  {
+    "id": "ocr-11",
+    "family": "ocr",
+    "question": "Which photo from Banff has the words \"Special of the day\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "type": "IMAGE",
+        "ocr": "Special of the day"
+      },
+      "assetKeys": ["e11-07"]
+    }
+  },
+  {
+    "id": "spoken-11",
+    "family": "spoken",
+    "question": "Who was saying \"pass the roast potatoes\" in a video from Banff?",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "type": "VIDEO",
+        "spoken": "pass the roast potatoes"
+      },
+      "assetKeys": ["e11-06"]
+    }
+  },
+  {
+    "id": "description-11",
+    "family": "description",
+    "question": "Is there a photo with the description \"candlelit dinner with roast potatoes\" from Banff?",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "type": "IMAGE",
+        "description": "candlelit dinner with roast potatoes"
+      },
+      "assetKeys": ["e11-01"]
+    }
+  },
+  {
+    "id": "people-12",
+    "family": "people",
+    "question": "Show photos of Sam in Calgary during February 2024.",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2024-02-01T00:00:00.000Z",
+        "takenBefore": "2024-02-29T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Sam"]
+      },
+      "assetKeys": ["e12-01", "e12-02"]
+    }
+  },
+  {
+    "id": "pets-12",
+    "family": "pets",
+    "question": "Show photos with Rex in Calgary from February 2024.",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2024-02-01T00:00:00.000Z",
+        "takenBefore": "2024-02-29T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Rex"]
+      },
+      "assetKeys": ["e12-02", "e12-03"]
+    }
+  },
+  {
+    "id": "favorite-video-12",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Calgary from February 2024?",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2024-02-01T00:00:00.000Z",
+        "takenBefore": "2024-02-29T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e12-04"]
+    }
+  },
+  {
+    "id": "place-date-12",
+    "family": "place-date",
+    "question": "What pictures do I have in Calgary during February 2024?",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2024-02-01T00:00:00.000Z",
+        "takenBefore": "2024-02-29T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e12-01", "e12-02", "e12-03", "e12-07", "e12-10"]
+    }
+  },
+  {
+    "id": "ocr-12",
+    "family": "ocr",
+    "question": "Look in Calgary for the photo with \"Lost mittens\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "type": "IMAGE",
+        "ocr": "Lost mittens"
+      },
+      "assetKeys": ["e12-07"]
+    }
+  },
+  {
+    "id": "spoken-12",
+    "family": "spoken",
+    "question": "Find a video from Calgary with the spoken words \"the lights are on\".",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "type": "VIDEO",
+        "spoken": "the lights are on"
+      },
+      "assetKeys": ["e12-06"]
+    }
+  },
+  {
+    "id": "description-12",
+    "family": "description",
+    "question": "Find the picture from Calgary with a caption about snowy houses covered in lights.",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "type": "IMAGE",
+        "description": "snowy houses covered in lights"
+      },
+      "assetKeys": ["e12-01"]
+    }
+  },
+  {
+    "id": "people-13",
+    "family": "people",
+    "question": "Which photos did we take of Alice in Vancouver from March 2024?",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2024-03-01T00:00:00.000Z",
+        "takenBefore": "2024-03-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Alice"]
+      },
+      "assetKeys": ["e13-01", "e13-02"]
+    }
+  },
+  {
+    "id": "pets-13",
+    "family": "pets",
+    "question": "Do I have photos of Pepper in Vancouver from March 2024?",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2024-03-01T00:00:00.000Z",
+        "takenBefore": "2024-03-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Pepper"]
+      },
+      "assetKeys": ["e13-02", "e13-03"]
+    }
+  },
+  {
+    "id": "favorite-video-13",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Vancouver from March 2024?",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2024-03-01T00:00:00.000Z",
+        "takenBefore": "2024-03-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e13-04"]
+    }
+  },
+  {
+    "id": "place-date-13",
+    "family": "place-date",
+    "question": "Find the pictures taken in Vancouver from March 2024.",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2024-03-01T00:00:00.000Z",
+        "takenBefore": "2024-03-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e13-01", "e13-02", "e13-03", "e13-07", "e13-10"]
+    }
+  },
+  {
+    "id": "ocr-13",
+    "family": "ocr",
+    "question": "I need the picture from Vancouver where the sign reads \"Thin ice ahead\".",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "type": "IMAGE",
+        "ocr": "Thin ice ahead"
+      },
+      "assetKeys": ["e13-07"]
+    }
+  },
+  {
+    "id": "spoken-13",
+    "family": "spoken",
+    "question": "Play the clip from Vancouver where someone says \"the auger is in the truck\".",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "type": "VIDEO",
+        "spoken": "the auger is in the truck"
+      },
+      "assetKeys": ["e13-06"]
+    }
+  },
+  {
+    "id": "description-13",
+    "family": "description",
+    "question": "Find a picture described as \"fishing hut on a frozen lake\" in Vancouver.",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "type": "IMAGE",
+        "description": "fishing hut on a frozen lake"
+      },
+      "assetKeys": ["e13-01"]
+    }
+  },
+  {
+    "id": "people-14",
+    "family": "people",
+    "question": "Find pictures with Bea in Victoria from April 2024.",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2024-04-01T00:00:00.000Z",
+        "takenBefore": "2024-04-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Bea"]
+      },
+      "assetKeys": ["e14-01", "e14-02"]
+    }
+  },
+  {
+    "id": "pets-14",
+    "family": "pets",
+    "question": "Find the pictures with Scout in Victoria during April 2024.",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2024-04-01T00:00:00.000Z",
+        "takenBefore": "2024-04-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Scout"]
+      },
+      "assetKeys": ["e14-02", "e14-03"]
+    }
+  },
+  {
+    "id": "favorite-video-14",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Victoria during April 2024.",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2024-04-01T00:00:00.000Z",
+        "takenBefore": "2024-04-30T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e14-04"]
+    }
+  },
+  {
+    "id": "place-date-14",
+    "family": "place-date",
+    "question": "Can you show photos in Victoria from April 2024?",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2024-04-01T00:00:00.000Z",
+        "takenBefore": "2024-04-30T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e14-01", "e14-02", "e14-03", "e14-07", "e14-10"]
+    }
+  },
+  {
+    "id": "ocr-14",
+    "family": "ocr",
+    "question": "Which photo from Victoria has the words \"Reserved for six\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "type": "IMAGE",
+        "ocr": "Reserved for six"
+      },
+      "assetKeys": ["e14-07"]
+    }
+  },
+  {
+    "id": "spoken-14",
+    "family": "spoken",
+    "question": "Who was saying \"make a wish\" in a video from Victoria?",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "type": "VIDEO",
+        "spoken": "make a wish"
+      },
+      "assetKeys": ["e14-06"]
+    }
+  },
+  {
+    "id": "description-14",
+    "family": "description",
+    "question": "Is there a photo with the description \"birthday cake with blue icing\" from Victoria?",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "type": "IMAGE",
+        "description": "birthday cake with blue icing"
+      },
+      "assetKeys": ["e14-01"]
+    }
+  },
+  {
+    "id": "people-15",
+    "family": "people",
+    "question": "Show photos of Rob in Seattle during May 2024.",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2024-05-01T00:00:00.000Z",
+        "takenBefore": "2024-05-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Rob"]
+      },
+      "assetKeys": ["e15-01", "e15-02"]
+    }
+  },
+  {
+    "id": "pets-15",
+    "family": "pets",
+    "question": "Show photos with Mocha in Seattle from May 2024.",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2024-05-01T00:00:00.000Z",
+        "takenBefore": "2024-05-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Mocha"]
+      },
+      "assetKeys": ["e15-02", "e15-03"]
+    }
+  },
+  {
+    "id": "favorite-video-15",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Seattle from May 2024?",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2024-05-01T00:00:00.000Z",
+        "takenBefore": "2024-05-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e15-04"]
+    }
+  },
+  {
+    "id": "place-date-15",
+    "family": "place-date",
+    "question": "What pictures do I have in Seattle during May 2024?",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2024-05-01T00:00:00.000Z",
+        "takenBefore": "2024-05-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e15-01", "e15-02", "e15-03", "e15-07", "e15-10"]
+    }
+  },
+  {
+    "id": "ocr-15",
+    "family": "ocr",
+    "question": "Look in Seattle for the photo with \"Dogs on leash\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "type": "IMAGE",
+        "ocr": "Dogs on leash"
+      },
+      "assetKeys": ["e15-07"]
+    }
+  },
+  {
+    "id": "spoken-15",
+    "family": "spoken",
+    "question": "Find a video from Seattle with the spoken words \"throw the tennis ball\".",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "type": "VIDEO",
+        "spoken": "throw the tennis ball"
+      },
+      "assetKeys": ["e15-06"]
+    }
+  },
+  {
+    "id": "description-15",
+    "family": "description",
+    "question": "Find the picture from Seattle with a caption about tennis ball under an oak tree.",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "type": "IMAGE",
+        "description": "tennis ball under an oak tree"
+      },
+      "assetKeys": ["e15-01"]
+    }
+  },
+  {
+    "id": "people-16",
+    "family": "people",
+    "question": "Which photos did we take of Inez in Portland from June 2024?",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2024-06-01T00:00:00.000Z",
+        "takenBefore": "2024-06-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Inez"]
+      },
+      "assetKeys": ["e16-01", "e16-02"]
+    }
+  },
+  {
+    "id": "pets-16",
+    "family": "pets",
+    "question": "Do I have photos of Milo in Portland from June 2024?",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2024-06-01T00:00:00.000Z",
+        "takenBefore": "2024-06-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Milo"]
+      },
+      "assetKeys": ["e16-02", "e16-03"]
+    }
+  },
+  {
+    "id": "favorite-video-16",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Portland from June 2024?",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2024-06-01T00:00:00.000Z",
+        "takenBefore": "2024-06-30T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e16-04"]
+    }
+  },
+  {
+    "id": "place-date-16",
+    "family": "place-date",
+    "question": "Find the pictures taken in Portland from June 2024.",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2024-06-01T00:00:00.000Z",
+        "takenBefore": "2024-06-30T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e16-01", "e16-02", "e16-03", "e16-07", "e16-10"]
+    }
+  },
+  {
+    "id": "ocr-16",
+    "family": "ocr",
+    "question": "I need the picture from Portland where the sign reads \"Ticket booth\".",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "type": "IMAGE",
+        "ocr": "Ticket booth"
+      },
+      "assetKeys": ["e16-07"]
+    }
+  },
+  {
+    "id": "spoken-16",
+    "family": "spoken",
+    "question": "Play the clip from Portland where someone says \"the band starts at noon\".",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "type": "VIDEO",
+        "spoken": "the band starts at noon"
+      },
+      "assetKeys": ["e16-06"]
+    }
+  },
+  {
+    "id": "description-16",
+    "family": "description",
+    "question": "Find a picture described as \"brass band marching downtown\" in Portland.",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "type": "IMAGE",
+        "description": "brass band marching downtown"
+      },
+      "assetKeys": ["e16-01"]
+    }
+  },
+  {
+    "id": "people-17",
+    "family": "people",
+    "question": "Find pictures with Lina in Montreal from July 2024.",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2024-07-01T00:00:00.000Z",
+        "takenBefore": "2024-07-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Lina"]
+      },
+      "assetKeys": ["e17-01", "e17-02"]
+    }
+  },
+  {
+    "id": "pets-17",
+    "family": "pets",
+    "question": "Find the pictures with Poppy in Montreal during July 2024.",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2024-07-01T00:00:00.000Z",
+        "takenBefore": "2024-07-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Poppy"]
+      },
+      "assetKeys": ["e17-02", "e17-03"]
+    }
+  },
+  {
+    "id": "favorite-video-17",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Montreal during July 2024.",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2024-07-01T00:00:00.000Z",
+        "takenBefore": "2024-07-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e17-04"]
+    }
+  },
+  {
+    "id": "place-date-17",
+    "family": "place-date",
+    "question": "Can you show photos in Montreal from July 2024?",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2024-07-01T00:00:00.000Z",
+        "takenBefore": "2024-07-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e17-01", "e17-02", "e17-03", "e17-07", "e17-10"]
+    }
+  },
+  {
+    "id": "ocr-17",
+    "family": "ocr",
+    "question": "Which photo from Montreal has the words \"Pick only ripe fruit\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "type": "IMAGE",
+        "ocr": "Pick only ripe fruit"
+      },
+      "assetKeys": ["e17-07"]
+    }
+  },
+  {
+    "id": "spoken-17",
+    "family": "spoken",
+    "question": "Who was saying \"this basket is heavy\" in a video from Montreal?",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "type": "VIDEO",
+        "spoken": "this basket is heavy"
+      },
+      "assetKeys": ["e17-06"]
+    }
+  },
+  {
+    "id": "description-17",
+    "family": "description",
+    "question": "Is there a photo with the description \"cherry trees above a wooden basket\" from Montreal?",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "type": "IMAGE",
+        "description": "cherry trees above a wooden basket"
+      },
+      "assetKeys": ["e17-01"]
+    }
+  },
+  {
+    "id": "people-18",
+    "family": "people",
+    "question": "Show photos of Omar in Quebec during August 2024.",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2024-08-01T00:00:00.000Z",
+        "takenBefore": "2024-08-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Omar"]
+      },
+      "assetKeys": ["e18-01", "e18-02"]
+    }
+  },
+  {
+    "id": "pets-18",
+    "family": "pets",
+    "question": "Show photos with Maple in Quebec from August 2024.",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2024-08-01T00:00:00.000Z",
+        "takenBefore": "2024-08-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Maple"]
+      },
+      "assetKeys": ["e18-02", "e18-03"]
+    }
+  },
+  {
+    "id": "favorite-video-18",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Quebec from August 2024?",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2024-08-01T00:00:00.000Z",
+        "takenBefore": "2024-08-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e18-04"]
+    }
+  },
+  {
+    "id": "place-date-18",
+    "family": "place-date",
+    "question": "What pictures do I have in Quebec during August 2024?",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2024-08-01T00:00:00.000Z",
+        "takenBefore": "2024-08-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e18-01", "e18-02", "e18-03", "e18-07", "e18-10"]
+    }
+  },
+  {
+    "id": "ocr-18",
+    "family": "ocr",
+    "question": "Look in Quebec for the photo with \"Shut the gate\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "type": "IMAGE",
+        "ocr": "Shut the gate"
+      },
+      "assetKeys": ["e18-07"]
+    }
+  },
+  {
+    "id": "spoken-18",
+    "family": "spoken",
+    "question": "Find a video from Quebec with the spoken words \"there is wood on the porch\".",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "type": "VIDEO",
+        "spoken": "there is wood on the porch"
+      },
+      "assetKeys": ["e18-06"]
+    }
+  },
+  {
+    "id": "description-18",
+    "family": "description",
+    "question": "Find the picture from Quebec with a caption about cabin porch stacked with firewood.",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "type": "IMAGE",
+        "description": "cabin porch stacked with firewood"
+      },
+      "assetKeys": ["e18-01"]
+    }
+  },
+  {
+    "id": "people-19",
+    "family": "people",
+    "question": "Which photos did we take of Felix in Toronto from September 2024?",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2024-09-01T00:00:00.000Z",
+        "takenBefore": "2024-09-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Felix"]
+      },
+      "assetKeys": ["e19-01", "e19-02"]
+    }
+  },
+  {
+    "id": "pets-19",
+    "family": "pets",
+    "question": "Do I have photos of Clover in Toronto from September 2024?",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2024-09-01T00:00:00.000Z",
+        "takenBefore": "2024-09-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Clover"]
+      },
+      "assetKeys": ["e19-02", "e19-03"]
+    }
+  },
+  {
+    "id": "favorite-video-19",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Toronto from September 2024?",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2024-09-01T00:00:00.000Z",
+        "takenBefore": "2024-09-30T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e19-04"]
+    }
+  },
+  {
+    "id": "place-date-19",
+    "family": "place-date",
+    "question": "Find the pictures taken in Toronto from September 2024.",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2024-09-01T00:00:00.000Z",
+        "takenBefore": "2024-09-30T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e19-01", "e19-02", "e19-03", "e19-07", "e19-10"]
+    }
+  },
+  {
+    "id": "ocr-19",
+    "family": "ocr",
+    "question": "I need the picture from Toronto where the sign reads \"Field number four\".",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "type": "IMAGE",
+        "ocr": "Field number four"
+      },
+      "assetKeys": ["e19-07"]
+    }
+  },
+  {
+    "id": "spoken-19",
+    "family": "spoken",
+    "question": "Play the clip from Toronto where someone says \"the score is tied\".",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "type": "VIDEO",
+        "spoken": "the score is tied"
+      },
+      "assetKeys": ["e19-06"]
+    }
+  },
+  {
+    "id": "description-19",
+    "family": "description",
+    "question": "Find a picture described as \"soccer players under floodlights\" in Toronto.",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "type": "IMAGE",
+        "description": "soccer players under floodlights"
+      },
+      "assetKeys": ["e19-01"]
+    }
+  },
+  {
+    "id": "people-20",
+    "family": "people",
+    "question": "Find pictures with Nora in Ottawa from October 2024.",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2024-10-01T00:00:00.000Z",
+        "takenBefore": "2024-10-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Nora"]
+      },
+      "assetKeys": ["e20-01", "e20-02"]
+    }
+  },
+  {
+    "id": "pets-20",
+    "family": "pets",
+    "question": "Find the pictures with Ginger in Ottawa during October 2024.",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2024-10-01T00:00:00.000Z",
+        "takenBefore": "2024-10-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Ginger"]
+      },
+      "assetKeys": ["e20-02", "e20-03"]
+    }
+  },
+  {
+    "id": "favorite-video-20",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Ottawa during October 2024.",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2024-10-01T00:00:00.000Z",
+        "takenBefore": "2024-10-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e20-04"]
+    }
+  },
+  {
+    "id": "place-date-20",
+    "family": "place-date",
+    "question": "Can you show photos in Ottawa from October 2024?",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2024-10-01T00:00:00.000Z",
+        "takenBefore": "2024-10-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e20-01", "e20-02", "e20-03", "e20-07", "e20-10"]
+    }
+  },
+  {
+    "id": "ocr-20",
+    "family": "ocr",
+    "question": "Which photo from Ottawa has the words \"Lifeguard off duty\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "type": "IMAGE",
+        "ocr": "Lifeguard off duty"
+      },
+      "assetKeys": ["e20-07"]
+    }
+  },
+  {
+    "id": "spoken-20",
+    "family": "spoken",
+    "question": "Who was saying \"we missed the sunset\" in a video from Ottawa?",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "type": "VIDEO",
+        "spoken": "we missed the sunset"
+      },
+      "assetKeys": ["e20-06"]
+    }
+  },
+  {
+    "id": "description-20",
+    "family": "description",
+    "question": "Is there a photo with the description \"sandcastles next to a tide pool\" from Ottawa?",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "type": "IMAGE",
+        "description": "sandcastles next to a tide pool"
+      },
+      "assetKeys": ["e20-01"]
+    }
+  },
+  {
+    "id": "people-21",
+    "family": "people",
+    "question": "Show photos of Maya in Banff during January 2025.",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2025-01-01T00:00:00.000Z",
+        "takenBefore": "2025-01-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Maya"]
+      },
+      "assetKeys": ["e21-01", "e21-02"]
+    }
+  },
+  {
+    "id": "pets-21",
+    "family": "pets",
+    "question": "Show photos with Biscuit in Banff from January 2025.",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2025-01-01T00:00:00.000Z",
+        "takenBefore": "2025-01-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Biscuit"]
+      },
+      "assetKeys": ["e21-02", "e21-03"]
+    }
+  },
+  {
+    "id": "favorite-video-21",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Banff from January 2025?",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2025-01-01T00:00:00.000Z",
+        "takenBefore": "2025-01-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e21-04"]
+    }
+  },
+  {
+    "id": "place-date-21",
+    "family": "place-date",
+    "question": "What pictures do I have in Banff during January 2025?",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "takenAfter": "2025-01-01T00:00:00.000Z",
+        "takenBefore": "2025-01-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e21-01", "e21-02", "e21-03", "e21-07", "e21-10"]
+    }
+  },
+  {
+    "id": "ocr-21",
+    "family": "ocr",
+    "question": "Look in Banff for the photo with \"Cast and crew\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "type": "IMAGE",
+        "ocr": "Cast and crew"
+      },
+      "assetKeys": ["e21-07"]
+    }
+  },
+  {
+    "id": "spoken-21",
+    "family": "spoken",
+    "question": "Find a video from Banff with the spoken words \"the curtain is stuck\".",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "type": "VIDEO",
+        "spoken": "the curtain is stuck"
+      },
+      "assetKeys": ["e21-06"]
+    }
+  },
+  {
+    "id": "description-21",
+    "family": "description",
+    "question": "Find the picture from Banff with a caption about children wearing paper crowns.",
+    "expect": {
+      "filters": {
+        "city": "Banff",
+        "type": "IMAGE",
+        "description": "children wearing paper crowns"
+      },
+      "assetKeys": ["e21-01"]
+    }
+  },
+  {
+    "id": "people-22",
+    "family": "people",
+    "question": "Which photos did we take of Sam in Calgary from February 2025?",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2025-02-01T00:00:00.000Z",
+        "takenBefore": "2025-02-28T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Sam"]
+      },
+      "assetKeys": ["e22-01", "e22-02"]
+    }
+  },
+  {
+    "id": "pets-22",
+    "family": "pets",
+    "question": "Do I have photos of Rex in Calgary from February 2025?",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2025-02-01T00:00:00.000Z",
+        "takenBefore": "2025-02-28T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Rex"]
+      },
+      "assetKeys": ["e22-02", "e22-03"]
+    }
+  },
+  {
+    "id": "favorite-video-22",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Calgary from February 2025?",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2025-02-01T00:00:00.000Z",
+        "takenBefore": "2025-02-28T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e22-04"]
+    }
+  },
+  {
+    "id": "place-date-22",
+    "family": "place-date",
+    "question": "Find the pictures taken in Calgary from February 2025.",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "takenAfter": "2025-02-01T00:00:00.000Z",
+        "takenBefore": "2025-02-28T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e22-01", "e22-02", "e22-03", "e22-07", "e22-10"]
+    }
+  },
+  {
+    "id": "ocr-22",
+    "family": "ocr",
+    "question": "I need the picture from Calgary where the sign reads \"Please stay on the path\".",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "type": "IMAGE",
+        "ocr": "Please stay on the path"
+      },
+      "assetKeys": ["e22-07"]
+    }
+  },
+  {
+    "id": "spoken-22",
+    "family": "spoken",
+    "question": "Play the clip from Calgary where someone says \"the roses smell amazing\".",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "type": "VIDEO",
+        "spoken": "the roses smell amazing"
+      },
+      "assetKeys": ["e22-06"]
+    }
+  },
+  {
+    "id": "description-22",
+    "family": "description",
+    "question": "Find a picture described as \"pink roses along a gravel path\" in Calgary.",
+    "expect": {
+      "filters": {
+        "city": "Calgary",
+        "type": "IMAGE",
+        "description": "pink roses along a gravel path"
+      },
+      "assetKeys": ["e22-01"]
+    }
+  },
+  {
+    "id": "people-23",
+    "family": "people",
+    "question": "Find pictures with Alice in Vancouver from March 2025.",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2025-03-01T00:00:00.000Z",
+        "takenBefore": "2025-03-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Alice"]
+      },
+      "assetKeys": ["e23-01", "e23-02"]
+    }
+  },
+  {
+    "id": "pets-23",
+    "family": "pets",
+    "question": "Find the pictures with Pepper in Vancouver during March 2025.",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2025-03-01T00:00:00.000Z",
+        "takenBefore": "2025-03-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Pepper"]
+      },
+      "assetKeys": ["e23-02", "e23-03"]
+    }
+  },
+  {
+    "id": "favorite-video-23",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Vancouver during March 2025.",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2025-03-01T00:00:00.000Z",
+        "takenBefore": "2025-03-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e23-04"]
+    }
+  },
+  {
+    "id": "place-date-23",
+    "family": "place-date",
+    "question": "Can you show photos in Vancouver from March 2025?",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "takenAfter": "2025-03-01T00:00:00.000Z",
+        "takenBefore": "2025-03-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e23-01", "e23-02", "e23-03", "e23-07", "e23-10"]
+    }
+  },
+  {
+    "id": "ocr-23",
+    "family": "ocr",
+    "question": "Which photo from Vancouver has the words \"Do not feed the goats\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "type": "IMAGE",
+        "ocr": "Do not feed the goats"
+      },
+      "assetKeys": ["e23-07"]
+    }
+  },
+  {
+    "id": "spoken-23",
+    "family": "spoken",
+    "question": "Who was saying \"the pony has a bell\" in a video from Vancouver?",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "type": "VIDEO",
+        "spoken": "the pony has a bell"
+      },
+      "assetKeys": ["e23-06"]
+    }
+  },
+  {
+    "id": "description-23",
+    "family": "description",
+    "question": "Is there a photo with the description \"small pony beside a red barn\" from Vancouver?",
+    "expect": {
+      "filters": {
+        "city": "Vancouver",
+        "type": "IMAGE",
+        "description": "small pony beside a red barn"
+      },
+      "assetKeys": ["e23-01"]
+    }
+  },
+  {
+    "id": "people-24",
+    "family": "people",
+    "question": "Show photos of Bea in Victoria during April 2025.",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2025-04-01T00:00:00.000Z",
+        "takenBefore": "2025-04-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Bea"]
+      },
+      "assetKeys": ["e24-01", "e24-02"]
+    }
+  },
+  {
+    "id": "pets-24",
+    "family": "pets",
+    "question": "Show photos with Scout in Victoria from April 2025.",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2025-04-01T00:00:00.000Z",
+        "takenBefore": "2025-04-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Scout"]
+      },
+      "assetKeys": ["e24-02", "e24-03"]
+    }
+  },
+  {
+    "id": "favorite-video-24",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Victoria from April 2025?",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2025-04-01T00:00:00.000Z",
+        "takenBefore": "2025-04-30T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e24-04"]
+    }
+  },
+  {
+    "id": "place-date-24",
+    "family": "place-date",
+    "question": "What pictures do I have in Victoria during April 2025?",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "takenAfter": "2025-04-01T00:00:00.000Z",
+        "takenBefore": "2025-04-30T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e24-01", "e24-02", "e24-03", "e24-07", "e24-10"]
+    }
+  },
+  {
+    "id": "ocr-24",
+    "family": "ocr",
+    "question": "Look in Victoria for the photo with \"Platform seven\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "type": "IMAGE",
+        "ocr": "Platform seven"
+      },
+      "assetKeys": ["e24-07"]
+    }
+  },
+  {
+    "id": "spoken-24",
+    "family": "spoken",
+    "question": "Find a video from Victoria with the spoken words \"the next stop is ours\".",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "type": "VIDEO",
+        "spoken": "the next stop is ours"
+      },
+      "assetKeys": ["e24-06"]
+    }
+  },
+  {
+    "id": "description-24",
+    "family": "description",
+    "question": "Find the picture from Victoria with a caption about train crossing an iron bridge.",
+    "expect": {
+      "filters": {
+        "city": "Victoria",
+        "type": "IMAGE",
+        "description": "train crossing an iron bridge"
+      },
+      "assetKeys": ["e24-01"]
+    }
+  },
+  {
+    "id": "people-25",
+    "family": "people",
+    "question": "Which photos did we take of Rob in Seattle from May 2025?",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2025-05-01T00:00:00.000Z",
+        "takenBefore": "2025-05-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Rob"]
+      },
+      "assetKeys": ["e25-01", "e25-02"]
+    }
+  },
+  {
+    "id": "pets-25",
+    "family": "pets",
+    "question": "Do I have photos of Mocha in Seattle from May 2025?",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2025-05-01T00:00:00.000Z",
+        "takenBefore": "2025-05-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Mocha"]
+      },
+      "assetKeys": ["e25-02", "e25-03"]
+    }
+  },
+  {
+    "id": "favorite-video-25",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Seattle from May 2025?",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2025-05-01T00:00:00.000Z",
+        "takenBefore": "2025-05-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e25-04"]
+    }
+  },
+  {
+    "id": "place-date-25",
+    "family": "place-date",
+    "question": "Find the pictures taken in Seattle from May 2025.",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "takenAfter": "2025-05-01T00:00:00.000Z",
+        "takenBefore": "2025-05-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e25-01", "e25-02", "e25-03", "e25-07", "e25-10"]
+    }
+  },
+  {
+    "id": "ocr-25",
+    "family": "ocr",
+    "question": "I need the picture from Seattle where the sign reads \"Mulled cider\".",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "type": "IMAGE",
+        "ocr": "Mulled cider"
+      },
+      "assetKeys": ["e25-07"]
+    }
+  },
+  {
+    "id": "spoken-25",
+    "family": "spoken",
+    "question": "Play the clip from Seattle where someone says \"buy another jar of jam\".",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "type": "VIDEO",
+        "spoken": "buy another jar of jam"
+      },
+      "assetKeys": ["e25-06"]
+    }
+  },
+  {
+    "id": "description-25",
+    "family": "description",
+    "question": "Find a picture described as \"jars of jam under paper lanterns\" in Seattle.",
+    "expect": {
+      "filters": {
+        "city": "Seattle",
+        "type": "IMAGE",
+        "description": "jars of jam under paper lanterns"
+      },
+      "assetKeys": ["e25-01"]
+    }
+  },
+  {
+    "id": "people-26",
+    "family": "people",
+    "question": "Find pictures with Inez in Portland from June 2025.",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2025-06-01T00:00:00.000Z",
+        "takenBefore": "2025-06-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Inez"]
+      },
+      "assetKeys": ["e26-01", "e26-02"]
+    }
+  },
+  {
+    "id": "pets-26",
+    "family": "pets",
+    "question": "Find the pictures with Milo in Portland during June 2025.",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2025-06-01T00:00:00.000Z",
+        "takenBefore": "2025-06-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Milo"]
+      },
+      "assetKeys": ["e26-02", "e26-03"]
+    }
+  },
+  {
+    "id": "favorite-video-26",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Portland during June 2025.",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2025-06-01T00:00:00.000Z",
+        "takenBefore": "2025-06-30T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e26-04"]
+    }
+  },
+  {
+    "id": "place-date-26",
+    "family": "place-date",
+    "question": "Can you show photos in Portland from June 2025?",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "takenAfter": "2025-06-01T00:00:00.000Z",
+        "takenBefore": "2025-06-30T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e26-01", "e26-02", "e26-03", "e26-07", "e26-10"]
+    }
+  },
+  {
+    "id": "ocr-26",
+    "family": "ocr",
+    "question": "Which photo from Portland has the words \"Shark feeding at three\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "type": "IMAGE",
+        "ocr": "Shark feeding at three"
+      },
+      "assetKeys": ["e26-07"]
+    }
+  },
+  {
+    "id": "spoken-26",
+    "family": "spoken",
+    "question": "Who was saying \"the rays are coming closer\" in a video from Portland?",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "type": "VIDEO",
+        "spoken": "the rays are coming closer"
+      },
+      "assetKeys": ["e26-06"]
+    }
+  },
+  {
+    "id": "description-26",
+    "family": "description",
+    "question": "Is there a photo with the description \"stingrays against a blue window\" from Portland?",
+    "expect": {
+      "filters": {
+        "city": "Portland",
+        "type": "IMAGE",
+        "description": "stingrays against a blue window"
+      },
+      "assetKeys": ["e26-01"]
+    }
+  },
+  {
+    "id": "people-27",
+    "family": "people",
+    "question": "Show photos of Lina in Montreal during July 2025.",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2025-07-01T00:00:00.000Z",
+        "takenBefore": "2025-07-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Lina"]
+      },
+      "assetKeys": ["e27-01", "e27-02"]
+    }
+  },
+  {
+    "id": "pets-27",
+    "family": "pets",
+    "question": "Show photos with Poppy in Montreal from July 2025.",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2025-07-01T00:00:00.000Z",
+        "takenBefore": "2025-07-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Poppy"]
+      },
+      "assetKeys": ["e27-02", "e27-03"]
+    }
+  },
+  {
+    "id": "favorite-video-27",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Montreal from July 2025?",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2025-07-01T00:00:00.000Z",
+        "takenBefore": "2025-07-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e27-04"]
+    }
+  },
+  {
+    "id": "place-date-27",
+    "family": "place-date",
+    "question": "What pictures do I have in Montreal during July 2025?",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "takenAfter": "2025-07-01T00:00:00.000Z",
+        "takenBefore": "2025-07-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e27-01", "e27-02", "e27-03", "e27-07", "e27-10"]
+    }
+  },
+  {
+    "id": "ocr-27",
+    "family": "ocr",
+    "question": "Look in Montreal for the photo with \"Life jackets required\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "type": "IMAGE",
+        "ocr": "Life jackets required"
+      },
+      "assetKeys": ["e27-07"]
+    }
+  },
+  {
+    "id": "spoken-27",
+    "family": "spoken",
+    "question": "Find a video from Montreal with the spoken words \"paddle to the left\".",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "type": "VIDEO",
+        "spoken": "paddle to the left"
+      },
+      "assetKeys": ["e27-06"]
+    }
+  },
+  {
+    "id": "description-27",
+    "family": "description",
+    "question": "Find the picture from Montreal with a caption about yellow kayak drifting past reeds.",
+    "expect": {
+      "filters": {
+        "city": "Montreal",
+        "type": "IMAGE",
+        "description": "yellow kayak drifting past reeds"
+      },
+      "assetKeys": ["e27-01"]
+    }
+  },
+  {
+    "id": "people-28",
+    "family": "people",
+    "question": "Which photos did we take of Omar in Quebec from August 2025?",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2025-08-01T00:00:00.000Z",
+        "takenBefore": "2025-08-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Omar"]
+      },
+      "assetKeys": ["e28-01", "e28-02"]
+    }
+  },
+  {
+    "id": "pets-28",
+    "family": "pets",
+    "question": "Do I have photos of Maple in Quebec from August 2025?",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2025-08-01T00:00:00.000Z",
+        "takenBefore": "2025-08-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Maple"]
+      },
+      "assetKeys": ["e28-02", "e28-03"]
+    }
+  },
+  {
+    "id": "favorite-video-28",
+    "family": "favorite-video",
+    "question": "What are my favorite videos in Quebec from August 2025?",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2025-08-01T00:00:00.000Z",
+        "takenBefore": "2025-08-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e28-04"]
+    }
+  },
+  {
+    "id": "place-date-28",
+    "family": "place-date",
+    "question": "Find the pictures taken in Quebec from August 2025.",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "takenAfter": "2025-08-01T00:00:00.000Z",
+        "takenBefore": "2025-08-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e28-01", "e28-02", "e28-03", "e28-07", "e28-10"]
+    }
+  },
+  {
+    "id": "ocr-28",
+    "family": "ocr",
+    "question": "I need the picture from Quebec where the sign reads \"Artist talk upstairs\".",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "type": "IMAGE",
+        "ocr": "Artist talk upstairs"
+      },
+      "assetKeys": ["e28-07"]
+    }
+  },
+  {
+    "id": "spoken-28",
+    "family": "spoken",
+    "question": "Play the clip from Quebec where someone says \"that is a watercolor\".",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "type": "VIDEO",
+        "spoken": "that is a watercolor"
+      },
+      "assetKeys": ["e28-06"]
+    }
+  },
+  {
+    "id": "description-28",
+    "family": "description",
+    "question": "Find a picture described as \"watercolor landscape in a white frame\" in Quebec.",
+    "expect": {
+      "filters": {
+        "city": "Quebec",
+        "type": "IMAGE",
+        "description": "watercolor landscape in a white frame"
+      },
+      "assetKeys": ["e28-01"]
+    }
+  },
+  {
+    "id": "people-29",
+    "family": "people",
+    "question": "Find pictures with Felix in Toronto from September 2025.",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2025-09-01T00:00:00.000Z",
+        "takenBefore": "2025-09-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Felix"]
+      },
+      "assetKeys": ["e29-01", "e29-02"]
+    }
+  },
+  {
+    "id": "pets-29",
+    "family": "pets",
+    "question": "Find the pictures with Clover in Toronto during September 2025.",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2025-09-01T00:00:00.000Z",
+        "takenBefore": "2025-09-30T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Clover"]
+      },
+      "assetKeys": ["e29-02", "e29-03"]
+    }
+  },
+  {
+    "id": "favorite-video-29",
+    "family": "favorite-video",
+    "question": "Pull up starred movies in Toronto during September 2025.",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2025-09-01T00:00:00.000Z",
+        "takenBefore": "2025-09-30T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e29-04"]
+    }
+  },
+  {
+    "id": "place-date-29",
+    "family": "place-date",
+    "question": "Can you show photos in Toronto from September 2025?",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "takenAfter": "2025-09-01T00:00:00.000Z",
+        "takenBefore": "2025-09-30T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e29-01", "e29-02", "e29-03", "e29-07", "e29-10"]
+    }
+  },
+  {
+    "id": "ocr-29",
+    "family": "ocr",
+    "question": "Which photo from Toronto has the words \"No outside drinks\" in the image?",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "type": "IMAGE",
+        "ocr": "No outside drinks"
+      },
+      "assetKeys": ["e29-07"]
+    }
+  },
+  {
+    "id": "spoken-29",
+    "family": "spoken",
+    "question": "Who was saying \"this is my favorite song\" in a video from Toronto?",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "type": "VIDEO",
+        "spoken": "this is my favorite song"
+      },
+      "assetKeys": ["e29-06"]
+    }
+  },
+  {
+    "id": "description-29",
+    "family": "description",
+    "question": "Is there a photo with the description \"guitar player in a green jacket\" from Toronto?",
+    "expect": {
+      "filters": {
+        "city": "Toronto",
+        "type": "IMAGE",
+        "description": "guitar player in a green jacket"
+      },
+      "assetKeys": ["e29-01"]
+    }
+  },
+  {
+    "id": "people-30",
+    "family": "people",
+    "question": "Show photos of Nora in Ottawa during October 2025.",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2025-10-01T00:00:00.000Z",
+        "takenBefore": "2025-10-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "people": ["Nora"]
+      },
+      "assetKeys": ["e30-01", "e30-02"]
+    }
+  },
+  {
+    "id": "pets-30",
+    "family": "pets",
+    "question": "Show photos with Ginger in Ottawa from October 2025.",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2025-10-01T00:00:00.000Z",
+        "takenBefore": "2025-10-31T23:59:59.999Z",
+        "type": "IMAGE",
+        "pets": ["Ginger"]
+      },
+      "assetKeys": ["e30-02", "e30-03"]
+    }
+  },
+  {
+    "id": "favorite-video-30",
+    "family": "favorite-video",
+    "question": "Can I see the videos I favorited in Ottawa from October 2025?",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2025-10-01T00:00:00.000Z",
+        "takenBefore": "2025-10-31T23:59:59.999Z",
+        "type": "VIDEO",
+        "favorite": true
+      },
+      "assetKeys": ["e30-04"]
+    }
+  },
+  {
+    "id": "place-date-30",
+    "family": "place-date",
+    "question": "What pictures do I have in Ottawa during October 2025?",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "takenAfter": "2025-10-01T00:00:00.000Z",
+        "takenBefore": "2025-10-31T23:59:59.999Z",
+        "type": "IMAGE"
+      },
+      "assetKeys": ["e30-01", "e30-02", "e30-03", "e30-07", "e30-10"]
+    }
+  },
+  {
+    "id": "ocr-30",
+    "family": "ocr",
+    "question": "Look in Ottawa for the photo with \"Heavy duty shelving\" written on it.",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "type": "IMAGE",
+        "ocr": "Heavy duty shelving"
+      },
+      "assetKeys": ["e30-07"]
+    }
+  },
+  {
+    "id": "spoken-30",
+    "family": "spoken",
+    "question": "Find a video from Ottawa with the spoken words \"put the paint upstairs\".",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "type": "VIDEO",
+        "spoken": "put the paint upstairs"
+      },
+      "assetKeys": ["e30-06"]
+    }
+  },
+  {
+    "id": "description-30",
+    "family": "description",
+    "question": "Find the picture from Ottawa with a caption about paint cans on metal shelving.",
+    "expect": {
+      "filters": {
+        "city": "Ottawa",
+        "type": "IMAGE",
+        "description": "paint cans on metal shelving"
+      },
+      "assetKeys": ["e30-01"]
+    }
+  },
+  {
+    "id": "missing-place",
+    "family": "place-date",
+    "question": "Do I have any photos in Whitehorse?",
+    "expect": {
+      "filters": {
+        "type": "IMAGE",
+        "city": "Whitehorse"
+      },
+      "assetKeys": []
+    }
+  },
+  {
+    "id": "missing-text",
+    "family": "ocr",
+    "question": "Is there a picture containing the words \"Moon base gate 79\"?",
+    "expect": {
+      "filters": {
+        "type": "IMAGE",
+        "ocr": "Moon base gate 79"
+      },
+      "assetKeys": []
+    }
+  },
+  {
+    "id": "missing-dialogue",
+    "family": "spoken",
+    "question": "Find the video where someone says \"the carousel is closed\".",
+    "expect": {
+      "filters": {
+        "type": "VIDEO",
+        "spoken": "the carousel is closed"
+      },
+      "assetKeys": []
+    }
+  }
+]

@@ -1,4 +1,11 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { parseCookie as parse } from 'cookie';
 import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
@@ -39,15 +46,18 @@ import {
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import {
+  AccountEventAction,
   AdminAuditAction,
   AuthCookie,
   AuthType,
+  DatabaseLock,
   JobName,
   Permission,
   RequestHeader,
   RequestQuery,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { toAccountEventVia, toIpPrefix } from 'src/repositories/account-event.repository.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
@@ -114,6 +124,17 @@ export interface LoginDetails {
   /** FL-161: how the request arrived, as the edge worker vouched for it (absent or null: not vouched for). */
   via?: FrameleafVia | null;
 }
+
+/** FL-808: the device, via and address prefix of a sign-in, for the account activity log. */
+export const loginEventDetails = (details: LoginDetails) => ({
+  deviceType: details.deviceType || null,
+  deviceOS: details.deviceOS || null,
+  via: toAccountEventVia(details.via),
+  ipPrefix: toIpPrefix(details.clientIp),
+});
+
+/** FL-808: how a session was started, the `signed-in` detail. */
+type SignInMethod = 'password' | 'two-factor' | 'oauth';
 
 interface ClaimOptions<T> {
   key: string;
@@ -246,6 +267,16 @@ export class AuthService extends BaseService {
 
     if (!user || !user.password || !isAuthenticated || user.importClaimPending) {
       this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
+      if (user) {
+        // FL-808: not awaited, so a registered email answers as fast as an unknown one (no timing oracle)
+        void this.recordAccountEvent({
+          userId: user.id,
+          action: AccountEventAction.SignInFailed,
+          subject: user.name,
+          detail: 'password',
+          ...loginEventDetails(details),
+        });
+      }
       throw new UnauthorizedException('Incorrect email or password');
     }
 
@@ -277,7 +308,7 @@ export class AuthService extends BaseService {
       };
     }
 
-    return this.createLoginResponse(user, details, { passwordHash: user.password });
+    return this.createLoginResponse(user, details, { passwordHash: user.password }, 'password');
   }
 
   private async requirePasswordLogin(details: LoginDetails) {
@@ -321,10 +352,17 @@ export class AuthService extends BaseService {
 
     if (!(await this.checkSecondFactor(user.id, twoFactor.secret, dto, now))) {
       this.logger.warn(`Failed two-step sign-in for user ${user.email} from ip address ${details.clientIp}`);
+      await this.recordAccountEvent({
+        userId: user.id,
+        action: AccountEventAction.SignInFailed,
+        subject: user.name,
+        detail: 'two-factor',
+        ...loginEventDetails(details),
+      });
       throw new UnauthorizedException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
     }
 
-    const response = await this.createLoginResponse(user, details, { passwordHash: password });
+    const response = await this.createLoginResponse(user, details, { passwordHash: password }, 'two-factor');
     const trust: TwoFactorTrust = {
       sub: user.id,
       en: twoFactor.enabledAt.getTime(),
@@ -366,13 +404,26 @@ export class AuthService extends BaseService {
     ) {
       throw new BadRequestException('Two-step sign-in is already on');
     }
+    await this.recordTwoFactorChange(auth, 'enabled');
     return { recoveryCodes };
+  }
+
+  /** FL-808: two-step sign-in turned on, off or moved, in the account's own activity log. */
+  private recordTwoFactorChange(auth: AuthDto, detail: 'enabled' | 'disabled' | 'moved') {
+    return this.recordAccountEvent({
+      userId: auth.user.id,
+      sessionId: auth.session?.id ?? null,
+      action: AccountEventAction.TwoFactorChanged,
+      subject: auth.user.name,
+      detail,
+    });
   }
 
   /** FL-793: turn two-step sign-in off with the password and a code (or a recovery code). */
   async disableTwoFactor(auth: AuthDto, dto: TwoFactorProofDto): Promise<void> {
     await this.requireTwoFactorProof(auth.user.id, dto);
     await this.userRepository.deleteTwoFactor(auth.user.id);
+    await this.recordTwoFactorChange(auth, 'disabled');
   }
 
   /**
@@ -415,6 +466,7 @@ export class AuthService extends BaseService {
         detail: 'two-factor-moved',
       },
     ]);
+    await this.recordTwoFactorChange(auth, 'moved');
   }
 
   /** The password, two-step sign-in on, and exactly one right second factor (a recovery code is spent). */
@@ -514,6 +566,12 @@ export class AuthService extends BaseService {
       frameleafRedirect = await this.frameleafLogoutRedirect(auth.session.id, oauthBearerToken);
       await this.sessionRepository.delete(auth.session.id);
       await this.eventRepository.emit('SessionDelete', { sessionId: auth.session.id });
+      await this.recordAccountEvent({
+        userId: auth.user.id,
+        sessionId: auth.session.id,
+        action: AccountEventAction.SignedOut,
+        subject: auth.user.name,
+      });
     }
 
     return {
@@ -645,25 +703,56 @@ export class AuthService extends BaseService {
   async changePassword(auth: AuthDto, dto: ChangePasswordDto): Promise<UserAdminResponseDto> {
     const { password, newPassword } = dto;
     const user = await this.userRepository.getForChangePassword(auth.user.id);
-    const isValid = await this.validateSecret(password, user.password);
-    if (!isValid) {
-      throw new BadRequestException('Wrong password');
-    }
-
-    const hashedPassword = await this.cryptoRepository.hashBcrypt(newPassword, SALT_ROUNDS);
-
-    const updatedUser = await this.userRepository.update(user.id, {
-      password: hashedPassword,
-      shouldChangePassword: false,
-    });
+    const initial = !user.password && password === '';
+    const updatedUser = initial
+      ? await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+          const owner = await this.initialPasswordOwner(auth);
+          if (!owner) throw new BadRequestException('Sign in again with the Frameleaf account that owns this library');
+          const hash = await this.cryptoRepository.hashBcrypt(newPassword, SALT_ROUNDS);
+          const updated = await this.userRepository.setInitialLocalPassword(user.id, hash, owner);
+          if (!updated) throw new ConflictException('The sign-in changed. Sign in again to continue');
+          return updated;
+        })
+      : await this.changeExistingPassword(user, password, newPassword);
 
     await this.eventRepository.emit('AuthChangePassword', {
       userId: user.id,
       currentSessionId: auth.session?.id,
       invalidateSessions: dto.invalidateSessions,
     });
+    await this.recordAccountEvent({
+      userId: user.id,
+      sessionId: auth.session?.id ?? null,
+      action: AccountEventAction.PasswordChanged,
+      subject: auth.user.name,
+    });
 
     return mapUserAdmin(updatedUser);
+  }
+
+  private async changeExistingPassword(
+    user: { id: string; password: string | null },
+    password: string,
+    newPassword: string,
+  ) {
+    if (!(await this.validateSecret(password, user.password))) throw new BadRequestException('Wrong password');
+    return this.userRepository.update(user.id, {
+      password: await this.cryptoRepository.hashBcrypt(newPassword, SALT_ROUNDS),
+      shouldChangePassword: false,
+    });
+  }
+
+  /** Only a fresh session tagged to the current instance owner can choose this account’s first password. */
+  private async initialPasswordOwner(auth: AuthDto) {
+    if (!auth.user.isAdmin || !auth.session || auth.apiKey || auth.sharedLink) return;
+    const tag = await this.frameleafAccountRepository.getSession(auth.session.id);
+    const notBefore = new Date(Date.now() - 10 * 60_000);
+    if (!tag || tag.userId !== auth.user.id || tag.createdAt < notBefore) return;
+    const { link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    if (linked && link?.accountId === tag.sub) return { sessionId: auth.session.id, subject: tag.sub, notBefore };
   }
 
   /** FL-538: who an emailed "choose a password" link is for, while it can still be used. */
@@ -693,6 +782,12 @@ export class AuthService extends BaseService {
       throw new BadRequestException('This link has expired or was already used');
     }
     await this.eventRepository.emit('AuthChangePassword', { userId: user.id, invalidateSessions: true });
+    await this.recordAccountEvent({
+      userId: user.id,
+      action: AccountEventAction.PasswordChanged,
+      subject: account.name,
+      detail: 'link',
+    });
   }
 
   async setupPinCode(auth: AuthDto, { pinCode }: PinCodeSetupDto) {
@@ -712,6 +807,18 @@ export class AuthService extends BaseService {
       const undo = await this.lockedEncryption.onPinSet(auth.user.id, pinCode);
       await this.storePinCode(auth.user.id, user, hashed, undo);
     });
+    await this.recordPinChange(auth, 'set');
+  }
+
+  /** FL-808: a PIN set, changed or reset, never its value. */
+  private recordPinChange(auth: AuthDto, detail: 'set' | 'changed' | 'reset') {
+    return this.recordAccountEvent({
+      userId: auth.user.id,
+      sessionId: auth.session?.id ?? null,
+      action: AccountEventAction.PinChanged,
+      subject: auth.user.name,
+      detail,
+    });
   }
 
   async resetPinCode(auth: AuthDto, dto: PinCodeResetDto) {
@@ -725,6 +832,7 @@ export class AuthService extends BaseService {
     await this.lockedEncryption.onSessionsLocked(auth.user.id);
     // FL-34: every open tab of every session of this account drops what it unlocked
     this.websocketRepository.clientSend('on_session_lock', auth.user.id);
+    await this.recordPinChange(auth, 'reset');
   }
 
   async changePinCode(auth: AuthDto, dto: PinCodeChangeDto) {
@@ -738,6 +846,7 @@ export class AuthService extends BaseService {
     });
     // FL-34: an elevation granted by the old PIN ends with it, in every session of the account
     this.websocketRepository.clientSend('on_session_lock', auth.user.id);
+    await this.recordPinChange(auth, 'changed');
   }
 
   /** Stores a PIN (locking every session); `undo` puts the Locked key file back if it isn't stored. */
@@ -1138,7 +1247,7 @@ export class AuthService extends BaseService {
       await this.syncProfilePicture(user, profile.picture);
     }
 
-    return this.createLoginResponse(user, loginDetails, { sid: oauthSid, bearerToken: oauthBearerToken });
+    return this.createLoginResponse(user, loginDetails, { sid: oauthSid, bearerToken: oauthBearerToken }, 'oauth');
   }
 
   private async syncProfilePicture(user: UserAdmin, url: string) {
@@ -1468,15 +1577,24 @@ export class AuthService extends BaseService {
   private async createLoginResponse(
     user: UserAdmin,
     loginDetails: LoginDetails,
-    identity: { sid?: string; bearerToken?: string; passwordHash?: string } = {},
+    identity: { sid?: string; bearerToken?: string; passwordHash?: string },
+    method: SignInMethod,
   ) {
-    const { response } = await createSession(
+    const { session, response } = await createSession(
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
       user,
       loginDetails,
       identity,
       identity.passwordHash,
     );
+    await this.recordAccountEvent({
+      userId: user.id,
+      sessionId: session.id,
+      action: AccountEventAction.SignedIn,
+      subject: user.name,
+      detail: method,
+      ...loginEventDetails(loginDetails),
+    });
     return response;
   }
 
@@ -1524,6 +1642,7 @@ export class AuthService extends BaseService {
       recoveryCodesRemaining: twoFactorEnabled ? await this.userRepository.countRecoveryCodes(auth.user.id) : 0,
       pinCode: !!user.pinCode,
       password: !!user.password,
+      ...(!user.password && (await this.initialPasswordOwner(auth)) && { localPasswordRequired: true }),
       isElevated: !!auth.session?.hasElevatedPermission,
       expiresAt: session?.expiresAt?.toISOString(),
       pinExpiresAt: session?.pinExpiresAt?.toISOString(),

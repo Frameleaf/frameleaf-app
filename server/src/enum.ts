@@ -3140,6 +3140,41 @@ export const AdminAuditActionSchema = z
   .meta({ id: 'AdminAuditAction' });
 
 /**
+ * FL-808 (E16-02): what happened to an account, as its own activity log records it. Stored and
+ * served as plain text (`AccountEventResponseDto.action`), never as an API enum, so new actions
+ * don't break the apps' strict decoders. Rows hold names only: never a password, PIN, token, API
+ * key secret or file path.
+ */
+export enum AccountEventAction {
+  /** `detail` is how: `password`, `two-factor`, `oauth` or `frameleaf`. */
+  SignedIn = 'signed-in',
+  /** `detail` is the step that failed: `password` or `two-factor`. */
+  SignInFailed = 'sign-in-failed',
+  SignedOut = 'signed-out',
+  /** `subject` is the signed-out device, as the session list names it. */
+  SessionRevoked = 'session-revoked',
+  PasswordChanged = 'password-changed',
+  /** `detail` is `set`, `changed` or `reset`. */
+  PinChanged = 'pin-changed',
+  /** `detail` is `enabled`, `disabled`, `moved` or `admin-reset`. */
+  TwoFactorChanged = 'two-factor-changed',
+  /** `subject` is the key's name. */
+  ApiKeyCreated = 'api-key-created',
+  ApiKeyDeleted = 'api-key-deleted',
+  /** `subject` is the album name or link description; `detail` is the link type. */
+  SharedLinkCreated = 'shared-link-created',
+  SharedLinkRemoved = 'shared-link-removed',
+  /** `subject` is the partner's name. */
+  PartnerAdded = 'partner-added',
+  PartnerRemoved = 'partner-removed',
+  /** `subject` is the recipient's name; `detail` is how many items. */
+  ItemShared = 'item-shared',
+  /** Written by Frameleaf Connect (E3); `subject` is the app's name. */
+  AppConnected = 'app-connected',
+  AppDisconnected = 'app-disconnected',
+}
+
+/**
  * Why an external library import folder was accepted or refused (FL-78). The web client turns these
  * into sentences; `message` on the same result stays operator detail.
  */
