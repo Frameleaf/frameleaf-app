@@ -40,6 +40,16 @@ export const BOARDS_EXTENSIONS: readonly string[] = [
   'mp4',
   'mov',
   'webm',
+  // FL-1359: fonts are Boards items
+  'ttf',
+  'otf',
+  'ttc',
+  'otc',
+  'woff',
+  'woff2',
+  'dfont',
+  'pfb',
+  'pfa',
 ];
 
 /** The default new collection the import goes into. */

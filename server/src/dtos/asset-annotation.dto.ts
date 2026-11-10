@@ -31,6 +31,34 @@ export const AssetAnnotationGeometrySchema = z
   })
   .meta({ id: 'AssetAnnotationGeometry' });
 
+/**
+ * FL-1359: how a text annotation is drawn. Every part is optional; what is left out is drawn the
+ * standard way. A font is a font item in Boards the caller may see; if it has since been removed, or
+ * the viewer may not load it (a shared link without downloads), the text is drawn in the standard font.
+ */
+export const AssetAnnotationStyleSchema = z
+  .strictObject({
+    fontAssetId: z.uuid().optional().describe('A font item in Boards to draw the text in'),
+    size: z
+      .number()
+      .min(0.25)
+      .max(8)
+      .meta({ format: 'double' })
+      .optional()
+      .describe('Text size as a multiple of the standard size (1 when left out)'),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .optional()
+      .describe('Text colour as #RRGGBB'),
+    variation: z
+      .record(z.string().regex(/^[ -~]{4}$/), z.number().meta({ format: 'double' }))
+      .refine((axes) => Object.keys(axes).length <= 16, 'At most 16 axes')
+      .optional()
+      .describe('Variable-font axis values by tag, for example {"wght": 650}'),
+  })
+  .meta({ id: 'AssetAnnotationStyle' });
+
 export const AssetAnnotationItemSchema = z
   .strictObject({
     id: z
@@ -43,6 +71,7 @@ export const AssetAnnotationItemSchema = z
     text: z.string().max(ASSET_ANNOTATION_TEXT_MAX).optional().describe('Text annotations only: the words drawn'),
     note: z.string().max(ASSET_ANNOTATION_NOTE_MAX).optional(),
     origin: AssetAnnotationOriginSchema.optional().describe('Set when the annotation was brought over from Eagle'),
+    style: AssetAnnotationStyleSchema.optional().describe('Text annotations only: font, size and colour'),
   })
   .superRefine((item, context) => {
     const { x, y, width, height, endX, endY } = item.geometry;
@@ -60,6 +89,8 @@ export const AssetAnnotationItemSchema = z
     }
     if (item.text !== undefined && item.kind !== 'text')
       context.addIssue({ code: 'custom', message: 'Only text annotations carry text', path: ['text'] });
+    if (item.style !== undefined && item.kind !== 'text')
+      context.addIssue({ code: 'custom', message: 'Only text annotations carry a text style', path: ['style'] });
   })
   .meta({ id: 'AssetAnnotationItem' });
 export type AssetAnnotationItem = z.infer<typeof AssetAnnotationItemSchema>;

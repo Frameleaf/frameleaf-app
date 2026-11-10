@@ -455,13 +455,15 @@ export class JobService extends BaseService {
 
         const { machineLearning } = await this.getConfig({ withCache: true });
         const jobs: JobItem[] = [];
-        if (isSmartSearchEnabled(machineLearning)) {
+        // FL-1359: a font's thumbnail is its specimen; search, faces and text reading are for pictures
+        const picture = asset.type !== AssetType.Other;
+        if (picture && isSmartSearchEnabled(machineLearning)) {
           jobs.push({ name: JobName.SmartSearch, data: item.data });
         }
-        if (asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
+        if (picture && asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
           jobs.push({ name: JobName.AssetDetectFaces, data: item.data });
         }
-        if (isOcrEnabled(machineLearning)) {
+        if (picture && isOcrEnabled(machineLearning)) {
           jobs.push({ name: JobName.Ocr, data: item.data });
         }
 

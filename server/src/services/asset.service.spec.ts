@@ -3190,6 +3190,62 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('getFont (FL-1359)', () => {
+    const row = (font: object | null, originalFileName = 'Inter.ttf') => ({
+      originalFileName,
+      type: AssetType.Other,
+      font,
+    });
+    const facts = {
+      assetId: 'asset-1',
+      updatedAt: '2026-11-10T00:00:00Z',
+      family: 'Inter',
+      style: 'Regular',
+      weight: 400,
+      italic: false,
+      glyphCount: 2937,
+      axes: [{ tag: 'wght', name: 'Weight', min: 100, default: 400, max: 900 }],
+      instances: [{ name: 'Bold', coordinates: { wght: 700 } }],
+      features: ['liga'],
+      scripts: ['latin'],
+      license: null,
+      licenseUrl: 'https://openfontlicense.org',
+      faces: [],
+    };
+    beforeEach(() => mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1'])));
+
+    it('needs permission to see the item', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(sut.getFont(authStub.admin, 'asset-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.getFont).not.toHaveBeenCalled();
+    });
+
+    it('returns the stored facts, without the row’s own columns', async () => {
+      mocks.asset.getFont.mockResolvedValue(row(facts) as never);
+      const { assetId: _, updatedAt: __, ...expected } = facts;
+      await expect(sut.getFont(authStub.admin, 'asset-1')).resolves.toEqual({
+        ...expected,
+        browserLoadable: true,
+        ready: true,
+      });
+    });
+
+    it('answers from the file name until the font has been read, and says a collection has no live tester', async () => {
+      mocks.asset.getFont.mockResolvedValue(row(null, 'Noto Sans CJK.ttc') as never);
+      await expect(sut.getFont(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        family: 'Noto Sans CJK',
+        glyphCount: 0,
+        browserLoadable: false,
+        ready: false,
+      });
+    });
+
+    it('is not found for a photo', async () => {
+      mocks.asset.getFont.mockResolvedValue({ originalFileName: 'a.jpg', type: AssetType.Image, font: null } as never);
+      await expect(sut.getFont(authStub.admin, 'asset-1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   describe('getOcr', () => {
     it('should require asset read permission', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());

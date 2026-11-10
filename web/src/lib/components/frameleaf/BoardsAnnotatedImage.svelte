@@ -5,7 +5,12 @@
    * preview size. In the viewer's annotate mode every annotation is focusable, in list order and
    * with the list's number; in the details panel the list beside it is the way in, so the drawing
    * is hidden from screen readers.
+   *
+   * FL-1359: text can carry a style: a font from Boards, a size, a colour and a variable font's
+   * axis values. A font that cannot be loaded (removed, or a shared link without downloads) leaves
+   * the text in the standard font.
    */
+  import { loadBoardsFont, variationCss } from '$lib/frameleaf/boards-fonts';
   import { arrowHead, createAnnotation, type AnnotationTool, type Point } from '$lib/frameleaf/boards-annotations';
   import { AssetAnnotationKind, type AssetAnnotationItem } from '@frameleaf/sdk';
   import { untrack } from 'svelte';
@@ -137,7 +142,38 @@
     drag = { kind: 'move', id, last: at(event) };
   };
 
-  const textWidth = (label: string) => label.length * FONT * 0.56 + FONT;
+  /** CSS family names of the Boards fonts loaded so far, by font item. */
+  let families = $state<Record<string, string>>({});
+  /** Each font is asked for once: one that cannot be loaded is not asked for again on every edit. */
+  const asked = new Set<string>();
+  $effect(() => {
+    for (const id of new Set(items.flatMap((item) => item.style?.fontAssetId ?? []))) {
+      if (!asked.has(id)) {
+        asked.add(id);
+        void loadBoardsFont(id)
+          .then((family) => (families[id] = family))
+          .catch(() => {});
+      }
+    }
+  });
+
+  let measure: CanvasRenderingContext2D | null | undefined;
+  const textWidth = (label: string, size: number, family?: string, weight = 400) => {
+    if (family) {
+      try {
+        measure ??= document.createElement('canvas').getContext('2d');
+        if (measure) {
+          measure.font = `${size}px "${family}"`;
+          // ponytail: canvas measures the font at its default weight, so heavier variable weights
+          // get an allowance; measure the drawn text instead if labels ever clip.
+          return measure.measureText(label).width * (1 + Math.max(0, weight - 400) / 2500) + size;
+        }
+      } catch {
+        // no canvas here: estimate below
+      }
+    }
+    return label.length * size * 0.56 + size;
+  };
 </script>
 
 <div
@@ -167,7 +203,10 @@
         {@const x = g.x * width}
         {@const y = g.y * height}
         {@const label = item.text || defaultText}
-        {@const badgeY = item.kind === AssetAnnotationKind.Text ? y - FONT * 1.2 : y}
+        {@const style = item.kind === AssetAnnotationKind.Text ? item.style : undefined}
+        {@const size = FONT * (style?.size ?? 1)}
+        {@const family = style?.fontAssetId ? families[style.fontAssetId] : undefined}
+        {@const badgeY = item.kind === AssetAnnotationKind.Text ? y - size * 1.2 : y}
         {#snippet body()}
           {#if item.kind === AssetAnnotationKind.Rect}
             <rect {x} {y} width={(g.width ?? 0) * width} height={(g.height ?? 0) * height} rx={STROKE} />
@@ -177,11 +216,30 @@
             <line x1={x} y1={y} {x2} {y2} />
             <polygon points={arrowHead(x, y, x2, y2, STROKE * 5)} class="head" />
           {:else}
-            <rect {x} y={y - FONT * 1.2} width={textWidth(label)} height={FONT * 1.6} rx={STROKE} class="label" />
-            <text x={x + FONT * 0.5} {y} font-size={FONT}>{label}</text>
+            <rect
+              {x}
+              y={y - size * 1.2}
+              width={textWidth(label, size, family, style?.variation?.wght)}
+              height={size * 1.6}
+              rx={STROKE}
+              class="label"
+            />
+            <text
+              x={x + size * 0.5}
+              {y}
+              font-size={size}
+              style:font-family={family ? `"${family}"` : undefined}
+              style:font-weight={family ? 'normal' : undefined}
+              style:font-variation-settings={family ? variationCss(style?.variation) : undefined}>{label}</text
+            >
           {/if}
         {/snippet}
-        <g class="ann {item.kind}" class:on={selected === item.id}>
+        <g
+          class="ann {item.kind}"
+          class:on={selected === item.id}
+          class:coloured={!!style?.color}
+          style:--ann-colour={style?.color}
+        >
           <g class="halo">{@render body()}</g>
           <g class="line">{@render body()}</g>
           <circle cx={x} cy={badgeY} r={BADGE} class="badge" />
@@ -268,6 +326,12 @@
   }
   .ann.text .halo > :global(text) {
     fill: none;
+  }
+  .ann.coloured.text .line > :global(text) {
+    fill: var(--ann-colour);
+  }
+  .ann.coloured.text .line > :global(.label) {
+    stroke: var(--ann-colour);
   }
   .badge {
     fill: var(--fl-warning);

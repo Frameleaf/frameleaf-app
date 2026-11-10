@@ -33,7 +33,11 @@ type EagleImportRow = Selectable<EagleImportTable>;
 
 /** File types the server import brings over: the ones Boards holds that this server takes. */
 export const eagleServerSupported = () =>
-  new Set(BOARDS_EXTENSIONS.filter((extension) => mimeTypes.isAsset(`file.${extension}`)));
+  new Set(
+    BOARDS_EXTENSIONS.filter(
+      (extension) => mimeTypes.isAsset(`file.${extension}`) || mimeTypes.isFont(`file.${extension}`),
+    ),
+  );
 
 export const isLibraryFolder = (folder: string) => path.basename(folder).toLowerCase().endsWith('.library');
 

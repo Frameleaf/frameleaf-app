@@ -19,6 +19,7 @@ import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
+import type { FontFacts } from 'src/utils/font-file.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetFile, LockableProperty, Stack } from 'src/database.js';
@@ -107,6 +108,7 @@ import {
   visibilityIs,
 } from 'src/utils/locked.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { filterNamesPeople } from 'src/utils/search-filter.js';
@@ -1649,6 +1651,37 @@ export class AssetRepository {
       .limit(1)
       .executeTakeFirst();
   }
+  /** FL-1359: the facts read from a font in Boards, with the name its file was added under. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFont(id: string) {
+    return this.db
+      .selectFrom('asset')
+      .leftJoin('asset_font', 'asset_font.assetId', 'asset.id')
+      .select(['asset.originalFileName', 'asset.type'])
+      .select(sql<(FontFacts & { assetId: string }) | null>`to_jsonb(asset_font)`.as('font'))
+      .where('asset.id', '=', asUuid(id))
+      .executeTakeFirst();
+  }
+
+  async upsertFont(assetId: string, facts: FontFacts): Promise<void> {
+    // jsonb takes its text: the driver would send a JavaScript array as a Postgres array, and a bare
+    // string parameter as a JSON string (the whole list in quotes)
+    const json = (value: unknown) => sql<never>`${JSON.stringify(value)}::text::jsonb`;
+    const row = {
+      ...facts,
+      axes: json(facts.axes),
+      instances: json(facts.instances),
+      features: json(facts.features),
+      scripts: json(facts.scripts),
+      faces: json(facts.faces),
+    };
+    await this.db
+      .insertInto('asset_font')
+      .values({ assetId, ...row })
+      .onConflict((oc) => oc.column('assetId').doUpdateSet(row))
+      .execute();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   getById(
     id: string,
@@ -1864,6 +1897,9 @@ export class AssetRepository {
       const rows = await assets.getByIds(requested);
       if (rows.length !== requested.length || rows.some((row) => row.ownerId !== ownerId))
         throw new BadRequestException('Asset not found');
+      // FL-1359: a font is a Boards item; Photos has no place for one
+      if (libraryScope !== LibraryScope.Design && rows.some((row) => mimeTypes.isFont(row.originalFileName)))
+        throw new BadRequestException('Fonts stay in Boards');
       await assets.updateAll(requested, { libraryScope });
       const motionIds = [
         ...new Set(rows.map(({ livePhotoVideoId }) => livePhotoVideoId).filter((id): id is string => !!id)),

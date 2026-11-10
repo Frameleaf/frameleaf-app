@@ -19471,6 +19471,74 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/{id}/font": {
+      "get": {
+        "description": "Family, style, weight, glyph count, variable axes and named styles, features, writing systems and licence of a font item (an asset of type OTHER in the design workspace). 404 for anything that is not a font. The font file is the asset original, which a shared link sends only when it allows downloads.",
+        "operationId": "getAssetFont",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFontResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read what a font in Boards says about itself",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/assets/{id}/image-enrichment": {
       "get": {
         "description": "Retrieve private image description, tag, and NSFW detection metadata for a specific asset.",
@@ -77887,6 +77955,10 @@
             "$ref": "#/components/schemas/AssetAnnotationOrigin",
             "description": "Set when the annotation was brought over from Eagle"
           },
+          "style": {
+            "$ref": "#/components/schemas/AssetAnnotationStyle",
+            "description": "Text annotations only: font, size and colour"
+          },
           "text": {
             "description": "Text annotations only: the words drawn",
             "maxLength": 200,
@@ -77913,6 +77985,38 @@
           "eagle"
         ],
         "type": "string"
+      },
+      "AssetAnnotationStyle": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "description": "Text colour as #RRGGBB",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "fontAssetId": {
+            "description": "A font item in Boards to draw the text in",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "size": {
+            "description": "Text size as a multiple of the standard size (1 when left out)",
+            "format": "double",
+            "maximum": 8,
+            "minimum": 0.25,
+            "type": "number"
+          },
+          "variation": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "Variable-font axis values by tag, for example {\"wght\": 650}",
+            "type": "object"
+          }
+        },
+        "type": "object"
       },
       "AssetAnnotationsDto": {
         "properties": {
@@ -80312,6 +80416,193 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "AssetFontAxisDto": {
+        "properties": {
+          "default": {
+            "format": "double",
+            "type": "number"
+          },
+          "max": {
+            "format": "double",
+            "type": "number"
+          },
+          "min": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "description": "The name the font gives the axis, for example \"Weight\"",
+            "type": "string"
+          },
+          "tag": {
+            "description": "The axis tag, for example \"wght\"",
+            "type": "string"
+          }
+        },
+        "required": [
+          "default",
+          "max",
+          "min",
+          "name",
+          "tag"
+        ],
+        "type": "object"
+      },
+      "AssetFontFaceDto": {
+        "properties": {
+          "family": {
+            "description": "Family name, for example \"Source Serif 4\"",
+            "type": "string"
+          },
+          "glyphCount": {
+            "description": "How many glyphs the face holds; 0 when unknown",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "style": {
+            "description": "Style name, for example \"Bold Italic\"",
+            "type": "string"
+          },
+          "weight": {
+            "description": "Weight class from 1 to 1000 (400 is regular), or null when the file does not say",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "family",
+          "glyphCount",
+          "italic",
+          "style",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "AssetFontInstanceDto": {
+        "properties": {
+          "coordinates": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "Axis tag to value",
+            "type": "object"
+          },
+          "name": {
+            "description": "A named style of a variable font, for example \"SemiBold\"",
+            "type": "string"
+          }
+        },
+        "required": [
+          "coordinates",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AssetFontResponseDto": {
+        "properties": {
+          "axes": {
+            "description": "Variable-font axes; empty for a static font",
+            "items": {
+              "$ref": "#/components/schemas/AssetFontAxisDto"
+            },
+            "type": "array"
+          },
+          "browserLoadable": {
+            "description": "True when a browser can load the original itself (TTF, OTF, WOFF, WOFF2) for a live type tester. Collections and Type 1 fonts show the specimen picture only.",
+            "type": "boolean"
+          },
+          "faces": {
+            "description": "Every face of a font collection; empty for a single font",
+            "items": {
+              "$ref": "#/components/schemas/AssetFontFaceDto"
+            },
+            "type": "array"
+          },
+          "family": {
+            "description": "Family name, for example \"Source Serif 4\"",
+            "type": "string"
+          },
+          "features": {
+            "description": "OpenType feature tags the font offers, for example \"liga\"",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "glyphCount": {
+            "description": "How many glyphs the face holds; 0 when unknown",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "instances": {
+            "description": "Named styles of a variable font",
+            "items": {
+              "$ref": "#/components/schemas/AssetFontInstanceDto"
+            },
+            "type": "array"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "license": {
+            "description": "The licence text the file carries, if any",
+            "nullable": true,
+            "type": "string"
+          },
+          "licenseUrl": {
+            "description": "The licence link the file carries, if any",
+            "nullable": true,
+            "type": "string"
+          },
+          "ready": {
+            "description": "False until the file has been read; the facts are then placeholders from its name",
+            "type": "boolean"
+          },
+          "scripts": {
+            "description": "Writing systems the font covers, as lower-case names such as \"latin\", \"cyrillic\", \"han\"",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "style": {
+            "description": "Style name, for example \"Bold Italic\"",
+            "type": "string"
+          },
+          "weight": {
+            "description": "Weight class from 1 to 1000 (400 is regular), or null when the file does not say",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "axes",
+          "browserLoadable",
+          "faces",
+          "family",
+          "features",
+          "glyphCount",
+          "instances",
+          "italic",
+          "license",
+          "licenseUrl",
+          "ready",
+          "scripts",
+          "style",
+          "weight"
+        ],
         "type": "object"
       },
       "AssetIdErrorReason": {
@@ -146108,6 +146399,13 @@
       },
       "ServerMediaTypesResponseDto": {
         "properties": {
+          "font": {
+            "description": "Font file extensions an upload into Boards (libraryScope=design) accepts",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "image": {
             "description": "Supported image MIME types",
             "items": {
@@ -146131,6 +146429,7 @@
           }
         },
         "required": [
+          "font",
           "image",
           "sidecar",
           "video"

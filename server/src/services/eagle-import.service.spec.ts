@@ -222,7 +222,8 @@ describe('FL-653 Eagle import from a server folder', () => {
       ['I4', true],
     ]);
     expect(library.supported).toContain('jpg');
-    expect(library.supported).not.toContain('otf');
+    // FL-1359: fonts are Boards items now
+    expect(library.supported).toContain('otf');
     expect(JSON.stringify(library)).not.toContain(root);
   });
 
@@ -342,11 +343,12 @@ describe('FL-653 Eagle import from a server folder', () => {
         { albumName: 'Hero sections', libraryScope: LibraryScope.Design, parentId: 'album-2', color: 'amber' },
         { albumName: 'Type', libraryScope: LibraryScope.Design, parentId: 'album-1' },
       ]);
-      // The font doesn't come over; the rest go through the upload path, into Boards only.
+      // Everything, the font too (FL-1359), goes through the upload path, into Boards only.
       expect(assetMedia.uploadAsset.mock.calls.map(([, dto]) => [dto.filename, dto.libraryScope])).toEqual([
         ['hero.jpg', LibraryScope.Design],
         ['loose.png', LibraryScope.Design],
         ['already.png', LibraryScope.Design],
+        ['Lodge Serif.otf', LibraryScope.Design],
       ]);
       expect(albums.addAssetsToAlbums).toHaveBeenCalledWith(expect.anything(), {
         albumIds: ['album-3', 'album-4'],
@@ -379,8 +381,9 @@ describe('FL-653 Eagle import from a server folder', () => {
         ['I1', 'asset-hero.jpg', false],
         ['I2', 'asset-loose.png', false],
         ['I3', 'existing-already', true],
+        ['I4', 'asset-Lodge Serif.otf', false],
       ]);
-      expect(repository.save).toHaveBeenCalledWith(expect.any(String), workerId, { total: 3 });
+      expect(repository.save).toHaveBeenCalledWith(expect.any(String), workerId, { total: 4 });
       expect(repository.finish).toHaveBeenCalledWith(expect.any(String), workerId, 'finished');
     });
 
@@ -396,7 +399,11 @@ describe('FL-653 Eagle import from a server folder', () => {
       );
       expect(albums.create).not.toHaveBeenCalled();
       expect(tags.upsert).not.toHaveBeenCalled();
-      expect(assetMedia.uploadAsset.mock.calls.map(([, dto]) => dto.filename)).toEqual(['loose.png', 'already.png']);
+      expect(assetMedia.uploadAsset.mock.calls.map(([, dto]) => dto.filename)).toEqual([
+        'loose.png',
+        'already.png',
+        'Lodge Serif.otf',
+      ]);
     });
 
     it('stops after the item in hand when Stop was pressed', async () => {
@@ -411,7 +418,7 @@ describe('FL-653 Eagle import from a server folder', () => {
     it('lists an item that could not come over and goes on with the next', async () => {
       assetMedia.uploadAsset.mockRejectedValueOnce(new Error('disk full'));
       await worker.run(row({ fingerprint }) as never);
-      expect(repository.addOutcome).toHaveBeenCalledTimes(2);
+      expect(repository.addOutcome).toHaveBeenCalledTimes(3);
       expect(repository.save).toHaveBeenCalledWith(expect.any(String), workerId, { failed: ['I1'] });
       expect(repository.finish).toHaveBeenCalledWith(expect.any(String), workerId, 'finished');
     });

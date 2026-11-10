@@ -10,7 +10,7 @@ const setup = () => {
   // eslint-disable-next-line unicorn/prefer-event-target -- Chokidar uses Node EventEmitter semantics.
   const watcher = Object.assign(new EventEmitter(), { close: vi.fn().mockResolvedValue(undefined) });
   vi.mocked(watch).mockReturnValue(watcher as unknown as FSWatcher);
-  vi.mocked(getSupportedMediaTypes).mockResolvedValue({ image: ['.jpg'], sidecar: [], video: [] });
+  vi.mocked(getSupportedMediaTypes).mockResolvedValue({ image: ['.jpg'], sidecar: [], video: [], font: [] });
   return watcher;
 };
 
