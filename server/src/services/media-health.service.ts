@@ -141,7 +141,7 @@ import { fileIdentity } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { JPEG_REPAIR_EXTENSIONS, type JpegRepairResult } from 'src/utils/jpeg-repair.js';
-import { isLockedPath } from 'src/utils/locked-read.js';
+import { isLockedPath, lockedPathState } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
   MediaHealthLocateSnapshot,
@@ -4551,10 +4551,12 @@ export class MediaHealthService {
    * FL-1364: a file Library care kept of the photo is sealed with it while it is Locked and encrypted, and
    * opened again when it leaves (the Locked file registry lists it). One that is still sealed (it was on a
    * drive that was away while the photo left Locked) is ciphertext: never downloaded or put back by Undo.
+   * Strict (`lockedPathState`): one that is there but can't be read may be sealed, and counts as sealed.
    */
   private async keptFileSealed(ownerId: string, paths: string[]): Promise<boolean> {
     for (const kept of paths) {
-      if (await isLockedPath(kept)) {
+      const state = await lockedPathState(kept);
+      if (state === 'sealed' || state === 'unreadable') {
         await this.queueKeptFileRetry(ownerId);
         return true;
       }

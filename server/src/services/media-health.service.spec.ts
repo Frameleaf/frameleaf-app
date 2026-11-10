@@ -6554,6 +6554,18 @@ describe(MediaHealthService.name, () => {
         expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LockedSweep, data: { userId: owner.user.id } });
       });
 
+      it('refuses an Undo whose kept file is there but can’t be read: it may be sealed (FL-1364)', async () => {
+        await rm(damaged);
+        await mkdir(damaged);
+
+        await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toMatchObject({
+          status: 409,
+          message:
+            "A file Frameleaf kept for this photo can't be opened yet, so this fix can't be undone now. Frameleaf will try again; try later.",
+        });
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
       it('refuses an Undo whose kept file was sealed after the check, found under its path lock (FL-1364)', async () => {
         const crypto = new CryptoRepository();
         vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((file) => crypto.hashFileDigests(file));

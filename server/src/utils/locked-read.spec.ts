@@ -21,6 +21,7 @@ import {
   hashPlainFile,
   isLockedPath,
   isPlainCopyPath,
+  lockedPathState,
   makeWorkDir,
   makeWorkDirFor,
   openLockedRead,
@@ -104,6 +105,18 @@ describe('locked-read', () => {
       await fs.rm(sealed);
       await fs.copyFile(join(dir, 'IMG_0001.jpg.src'), sealed);
       await expect(isLockedPath(sealed)).resolves.toBe(false);
+    });
+  });
+
+  describe(lockedPathState.name, () => {
+    it('is strict: only an empty path is missing, and what can’t be read as a file is unreadable (FL-1364)', async () => {
+      await expect(lockedPathState(sealed)).resolves.toBe('sealed');
+      await expect(lockedPathState(join(dir, 'IMG_0001.jpg.src'))).resolves.toBe('plain');
+      await expect(lockedPathState(join(dir, 'missing.jpg'))).resolves.toBe('missing');
+      // a directory (unreadable as a file even to root), where isLockedPath says "not sealed"
+      await fs.mkdir(join(dir, 'kept.jpg'));
+      await expect(isLockedPath(join(dir, 'kept.jpg'))).resolves.toBe(false);
+      await expect(lockedPathState(join(dir, 'kept.jpg'))).resolves.toBe('unreadable');
     });
   });
 

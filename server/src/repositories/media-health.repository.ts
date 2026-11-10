@@ -30,7 +30,7 @@ import {
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
-import { isLockedPath } from 'src/utils/locked-read.js';
+import { lockedPathState } from 'src/utils/locked-read.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 
 /** The steps for the finding a write has just recorded, written in that write's transaction (FL-1337). */
@@ -1912,8 +1912,10 @@ export class MediaHealthRepository {
         return 'locked';
       }
       for (const keptPath of kept) {
-        // FL-1364: read again under the path lock a seal or unseal of it holds, so none can change it meanwhile
-        if (await isLockedPath(keptPath)) {
+        // FL-1364: read again under the path lock a seal or unseal of it holds, so none can change it meanwhile.
+        // Strict: one that is there but can't be read may be sealed. Missing is allowed (a missing-file relink)
+        const state = await lockedPathState(keptPath);
+        if (state === 'sealed' || state === 'unreadable') {
           return 'sealed';
         }
       }
