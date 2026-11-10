@@ -21,7 +21,14 @@
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
-  import { damagedFileName, dispositionFileName, offersLookIn, offersRepair, problemKind, storyWords } from '$lib/frameleaf/file-steps';
+  import {
+    damagedFileName,
+    dispositionFileName,
+    offersLookIn,
+    offersRepair,
+    problemKind,
+    storyWords,
+  } from '$lib/frameleaf/file-steps';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob, getAssetMediaUrl } from '$lib/utils';

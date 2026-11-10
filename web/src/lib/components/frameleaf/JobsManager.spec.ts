@@ -869,7 +869,10 @@ describe('One job at a time (approved design, 2026-11-04)', () => {
     };
 
     it('a failed job for a photo with a file problem links to Library care', async () => {
-      vi.mocked(getAssetInfo).mockResolvedValue({ id: 'asset-1', fileProblem: { findingId: 'finding-1', missing: false } } as never);
+      vi.mocked(getAssetInfo).mockResolvedValue({
+        id: 'asset-1',
+        fileProblem: { findingId: 'finding-1', missing: false },
+      } as never);
       const dialog = await openDetail();
 
       const link = await within(dialog).findByRole('link', { name: 'In Library care' });

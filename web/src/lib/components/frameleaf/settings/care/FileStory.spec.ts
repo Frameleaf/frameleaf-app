@@ -262,7 +262,11 @@ describe('What happened (FL-1338)', () => {
       const { sheet, onDone } = show(repaired);
 
       await sheet().findByText('Repaired it');
-      expect(buttons(screen.getByRole('dialog'))).toEqual(['Undo repair', 'Download damaged file', 'Keep repaired photo']);
+      expect(buttons(screen.getByRole('dialog'))).toEqual([
+        'Undo repair',
+        'Download damaged file',
+        'Keep repaired photo',
+      ]);
       await fireEvent.click(sheet().getByRole('button', { name: 'Download damaged file' }));
 
       expect(sdkMock.downloadFileProblemKeptFile).toHaveBeenCalledWith({ id: 'img-2041' }, expect.anything());
@@ -277,10 +281,15 @@ describe('What happened (FL-1338)', () => {
       const download = vi.spyOn(utils, 'downloadBlob').mockImplementation(() => {});
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
         new Response('x', {
-          headers: { 'content-disposition': "attachment; filename=\"fallback.jpg\"; filename*=UTF-8''Caf%C3%A9%20(damaged).jpg" },
+          headers: {
+            'content-disposition': 'attachment; filename="fallback.jpg"; filename*=UTF-8\'\'Caf%C3%A9%20(damaged).jpg',
+          },
         }),
       );
-      sdkMock.downloadFileProblemKeptFile.mockImplementation((async (_args: unknown, opts?: RequestInit & { fetch?: typeof fetch }) => {
+      sdkMock.downloadFileProblemKeptFile.mockImplementation((async (
+        _args: unknown,
+        opts?: RequestInit & { fetch?: typeof fetch },
+      ) => {
         await opts?.fetch?.('/api/media-health/files/img-2041/kept-file');
         return blob;
       }) as never);
@@ -332,7 +341,10 @@ describe('What happened (FL-1338)', () => {
     });
 
     it('is not offered once the photo is Locked', async () => {
-      sdkMock.getAssetInfo.mockResolvedValue({ localDateTime: '2019-03-12T16:31:00.000Z', visibility: 'locked' } as never);
+      sdkMock.getAssetInfo.mockResolvedValue({
+        localDateTime: '2019-03-12T16:31:00.000Z',
+        visibility: 'locked',
+      } as never);
       const { sheet } = show(repaired);
 
       await sheet().findByText('Repaired it');
