@@ -1235,29 +1235,21 @@ order by
   "person"."ownerId"
 
 -- PersonRepository.getMergeSuggestions
-with
-  "candidates" as (
-    select
-      "p1"."personGroupId" as "personId",
-      "p2"."personGroupId" as "suggestionId",
-      fs1.embedding <=> fs2.embedding as "distance"
-    from
-      "person" as "p1"
-      inner join "face_search" as "fs1" on "fs1"."faceId" = "p1"."faceAssetId"
-      inner join "person" as "p2" on "p2"."ownerId" = "p1"."ownerId"
-      and "p2"."personGroupId" > "p1"."personGroupId"
-      inner join "face_search" as "fs2" on "fs2"."faceId" = "p2"."faceAssetId"
-    where
-      "p1"."ownerId" = $1
-      and "p1"."isHidden" = $2
-      and "p2"."isHidden" = $3
-  )
 select
-  *
+  "candidates"."personId",
+  "candidates"."suggestionId",
+  "candidates"."distance"
 from
-  "candidates"
+  "person_merge_candidate" as "candidates"
+  inner join "person" as "p1" on "p1"."ownerId" = "candidates"."ownerId"
+  and "p1"."personGroupId" = "candidates"."personId"
+  inner join "person" as "p2" on "p2"."ownerId" = "candidates"."ownerId"
+  and "p2"."personGroupId" = "candidates"."suggestionId"
 where
-  "candidates"."distance" < $4
+  "candidates"."ownerId" = $1
+  and "p1"."isHidden" = $2
+  and "p2"."isHidden" = $3
+  and "candidates"."distance" < $4
   and not exists (
     select
       1
@@ -1289,6 +1281,71 @@ order by
   "candidates"."distance" asc
 limit
   $7
+
+-- PersonRepository.refreshMergeCandidates
+begin
+delete from "person_merge_candidate"
+where
+  "ownerId" = $1
+with
+  centre as materialized (
+    select
+      person."personGroupId" as id,
+      sample.embedding
+    from
+      person
+      cross join lateral (
+        select
+          avg(member.embedding) as embedding
+        from
+          (
+            select
+              face_search.embedding
+            from
+              asset_face
+              inner join face_search on face_search."faceId" = asset_face.id
+            where
+              asset_face."personGroupId" = person."personGroupId"
+              and asset_face."deletedAt" is null
+              and asset_face."isVisible" is true
+            limit
+              10
+          ) as member
+      ) as sample
+    where
+      person."ownerId" = $1
+      and sample.embedding is not null
+  )
+insert into
+  person_merge_candidate ("ownerId", "personId", "suggestionId", distance)
+select
+  $2,
+  a.id,
+  b.id,
+  a.embedding <=> b.embedding
+from
+  centre as a
+  inner join centre as b on b.id > a.id
+where
+  a.embedding <=> b.embedding < $3
+on conflict do nothing
+commit
+
+-- PersonRepository.getPersonOwnerIds
+select distinct
+  "person"."ownerId"
+from
+  "person"
+
+-- PersonRepository.hasFaceChangesSince
+select
+  "asset_face"."id"
+from
+  "asset_face"
+where
+  "asset_face"."updatedAt" > $1
+limit
+  $2
 
 -- PersonRepository.getReferenceFaces
 select distinct

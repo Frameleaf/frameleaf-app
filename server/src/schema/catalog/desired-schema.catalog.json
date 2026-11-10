@@ -50091,6 +50091,113 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "person_merge_candidate",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "person_merge_candidate",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "personId",
+          "tableName": "person_merge_candidate",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "suggestionId",
+          "tableName": "person_merge_candidate",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "real",
+          "primary": false,
+          "name": "distance",
+          "tableName": "person_merge_candidate",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 24,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "person_merge_candidate_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", \"personId\", \"suggestionId\")",
+          "tableName": "person_merge_candidate",
+          "columnNames": [
+            "ownerId",
+            "personId",
+            "suggestionId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_merge_candidate_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_merge_candidate",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_merge_candidate_personId_fkey",
+          "definition": "FOREIGN KEY (\"personId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_merge_candidate",
+          "columnNames": [
+            "personId"
+          ],
+          "referenceTableName": "person_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_merge_candidate_suggestionId_fkey",
+          "definition": "FOREIGN KEY (\"suggestionId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_merge_candidate",
+          "columnNames": [
+            "suggestionId"
+          ],
+          "referenceTableName": "person_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
