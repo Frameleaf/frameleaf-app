@@ -279,7 +279,7 @@ export class PreservationService {
     }
     const active = await this.repository.activeOperation(auth.user.id, 'packageId', found.id);
     if (active) {
-      return mapOperation(active);
+      return this.presentOperation(auth, active);
     }
     if (found.includeLocked && !this.isUnlocked(auth)) {
       throw new ForbiddenException('Unlock the Locked view to retry a package that includes Locked items');
@@ -308,7 +308,7 @@ export class PreservationService {
       estimate: null,
       totalUnits: null,
     });
-    return mapOperation(created);
+    return this.presentOperation(auth, created);
   }
 
   /** Queue a check of every file in a package against its manifest. */
@@ -320,7 +320,7 @@ export class PreservationService {
     const active = await this.repository.activeOperation(auth.user.id, 'packageId', found.id);
     if (active) {
       if (active.kind === MediaOperationKind.PreservationVerify) {
-        return mapOperation(active);
+        return this.presentOperation(auth, active);
       }
       throw new ConflictException('Wait for the package’s current job to finish before verifying it');
     }
@@ -344,7 +344,7 @@ export class PreservationService {
       estimate: null,
       totalUnits: null,
     });
-    return mapOperation(created);
+    return this.presentOperation(auth, created);
   }
 
   /**
@@ -437,10 +437,11 @@ export class PreservationService {
     this.requireAccount(auth);
     const packages = await this.repository.listPackages(auth.user.id);
     const ids = packages.map((item) => item.id);
-    const [counts, operations, restrictedBookmarks] = await Promise.all([
+    const [counts, operations, restrictedBookmarks, restrictedPackages] = await Promise.all([
       this.repository.countItems(ids, { excludeLocked: !this.isUnlocked(auth) }),
       this.repository.latestOperations(auth.user.id, 'packageId', ids),
       this.isUnlocked(auth) ? Promise.resolve(new Set<string>()) : this.repository.lockedBookmarkPackageIds(ids),
+      this.isUnlocked(auth) ? Promise.resolve(new Set<string>()) : this.repository.restrictedPackageIds(ids),
     ]);
     return Promise.all(
       packages.map((item) =>
@@ -448,6 +449,7 @@ export class PreservationService {
           counts: counts.get(item.id),
           operation: operations.get(item.id),
           bookmarksRestricted: restrictedBookmarks.has(item.id),
+          restricted: restrictedPackages.has(item.id),
         }),
       ),
     );
@@ -737,7 +739,7 @@ export class PreservationService {
     const active = await this.repository.activeOperation(auth.user.id, 'restoreId', found.id);
     if (active) {
       if (active.kind === MediaOperationKind.PreservationRestore) {
-        return mapOperation(active);
+        return this.presentOperation(auth, active);
       }
       throw new ConflictException('Wait for the review to finish');
     }
@@ -771,7 +773,7 @@ export class PreservationService {
       totalUnits: null,
     });
     await this.repository.updateRestore(found.id, { status: 'restoring' });
-    return mapOperation(created);
+    return this.presentOperation(auth, created);
   }
 
   /* ------------------------------------------------------------------ */
@@ -843,7 +845,10 @@ export class PreservationService {
     if (found.origin !== 'export' || found.removedAt || (found.status !== 'ready' && found.status !== 'incomplete')) {
       throw new BadRequestException('This package is not ready to download');
     }
-    if (!this.isUnlocked(auth) && (found.includeLocked || (await this.repository.hasLockedItems(found.id)))) {
+    if (
+      !this.isUnlocked(auth) &&
+      (found.includeLocked || (await this.repository.restrictedPackageIds([found.id])).has(found.id))
+    ) {
       // A package made with Locked items, by the owner's own choice, says why. One whose items were
       // locked after it was written gets the ordinary answer: a locked session learns nothing of them.
       if (found.includeLocked) {
@@ -892,9 +897,14 @@ export class PreservationService {
       counts?: { states: Record<string, number>; locked: number; bytes: number };
       operation?: MediaOperation;
       bookmarksRestricted: boolean;
+      restricted: boolean;
     },
   ): Promise<PreservationPackageDto> {
     const unlocked = this.isUnlocked(auth);
+    const restricted =
+      !unlocked &&
+      (item.includeLocked ||
+        (preloaded ? preloaded.restricted : (await this.repository.restrictedPackageIds([item.id])).has(item.id)));
     const counts = preloaded
       ? preloaded.counts
       : (await this.repository.countItems([item.id], { excludeLocked: !unlocked })).get(item.id);
@@ -931,10 +941,16 @@ export class PreservationService {
       origin: oneOf(['export', 'upload', 'server'] as const, item.origin, 'export'),
       status,
       format: item.format === 'zip' ? 'zip' : 'directory',
-      sizeBytes: item.sizeBytes === null ? (counts?.bytes ? String(counts.bytes) : null) : String(item.sizeBytes),
+      sizeBytes: restricted
+        ? null
+        : item.sizeBytes === null
+          ? counts?.bytes
+            ? String(counts.bytes)
+            : null
+          : String(item.sizeBytes),
       includeLocked: item.includeLocked,
       includeMetadata: item.includeMetadata,
-      scopeDescription: asText(asRecord(item.scope).description),
+      scopeDescription: restricted ? null : asText(asRecord(item.scope).description),
       createdAt: asIso(item.createdAt)!,
       updatedAt: asIso(item.updatedAt)!,
       expiresAt: asIso(item.expiresAt),
@@ -954,23 +970,24 @@ export class PreservationService {
         listed: states.listed ?? 0,
         locked: unlocked ? (counts?.locked ?? 0) : 0,
       },
-      manifest: hasManifest
-        ? {
-            packageId: manifest.packageId as string,
-            createdAt: asIso(asText(manifest.createdAt)) ?? asIso(item.createdAt)!,
-            producerVersion: asText(manifest.producerVersion) ?? '',
-            complete: manifest.complete === true,
-            exported: asInt(manifestCounts.exported),
-            failed: asInt(manifestCounts.failed),
-            skipped: asInt(manifestCounts.skipped),
-            locked: unlocked ? asInt(manifestCounts.locked) : 0,
-            includeMetadata: manifestScope.includeMetadata !== false,
-            includeLocked: manifestScope.includeLocked === true,
-            scopeDescription: asText(manifestScope.description) ?? '',
-          }
-        : null,
+      manifest:
+        hasManifest && !restricted
+          ? {
+              packageId: manifest.packageId as string,
+              createdAt: asIso(asText(manifest.createdAt)) ?? asIso(item.createdAt)!,
+              producerVersion: asText(manifest.producerVersion) ?? '',
+              complete: manifest.complete === true,
+              exported: asInt(manifestCounts.exported),
+              failed: asInt(manifestCounts.failed),
+              skipped: asInt(manifestCounts.skipped),
+              locked: unlocked ? asInt(manifestCounts.locked) : 0,
+              includeMetadata: manifestScope.includeMetadata !== false,
+              includeLocked: manifestScope.includeLocked === true,
+              scopeDescription: asText(manifestScope.description) ?? '',
+            }
+          : null,
       verification:
-        typeof verification.status === 'string'
+        !restricted && typeof verification.status === 'string'
           ? {
               status: oneOf(['verified', 'problems', 'unreadable'] as const, verification.status, 'problems'),
               reasonKey: asText(verification.reasonKey),
@@ -985,7 +1002,7 @@ export class PreservationService {
               finishedAt: asIso(asText(verification.finishedAt)) ?? asIso(item.updatedAt)!,
             }
           : null,
-      operation: operation ? mapOperation(operation) : null,
+      operation: operation ? mapOperation(operation, undefined, restricted) : null,
       downloadable:
         item.origin === 'export' && !item.removedAt && (status === 'ready' || status === 'incomplete') && !running,
       restorable:
@@ -1026,6 +1043,9 @@ export class PreservationService {
     const operation =
       preloaded ?? (await this.repository.latestOperations(auth.user.id, 'restoreId', [item.id])).get(item.id);
     const unlocked = this.isUnlocked(auth);
+    const restricted =
+      !unlocked &&
+      (!item.packageId || (await this.repository.restrictedPackageIds([item.packageId])).has(item.packageId));
     const counts = await this.repository.countRestoreItems(item.id, { excludeLocked: !unlocked });
     const options = asRecord(item.options);
     const summary = asRecord(item.summary);
@@ -1036,15 +1056,23 @@ export class PreservationService {
       status: oneOf(restoreStatuses, item.status, 'reviewing'),
       restoreEditRecipes: options.restoreEditRecipes !== false,
       conflictDefault: options.conflictDefault === 'replace' ? 'replace' : 'keep',
-      reasonKey: asText(summary.reasonKey),
-      albums: asInt(summary.albums),
-      people: asInt(summary.people),
+      reasonKey: restricted ? null : asText(summary.reasonKey),
+      albums: restricted ? 0 : asInt(summary.albums),
+      people: restricted ? 0 : asInt(summary.people),
       counts: { ...counts, locked: unlocked ? counts.locked : 0 },
       createdAt: asIso(item.createdAt)!,
       updatedAt: asIso(item.updatedAt)!,
-      operation: operation ? mapOperation(operation) : null,
+      operation: operation ? mapOperation(operation, undefined, restricted) : null,
       support: preservationSupportFor(summary.includeMetadata !== false),
     };
+  }
+
+  private async presentOperation(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
+    const packageId = asText(asRecord(operation.snapshot).packageId);
+    const restricted =
+      !this.isUnlocked(auth) &&
+      (!packageId || (await this.repository.restrictedPackageIds([packageId])).has(packageId));
+    return mapOperation(operation, undefined, restricted);
   }
 
   /** One restoration item. Only an unlocked session is ever given a Locked one. */

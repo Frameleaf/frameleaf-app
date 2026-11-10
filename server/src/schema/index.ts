@@ -34,6 +34,7 @@ import {
   user_delete_audit,
   user_metadata_audit,
 } from 'src/schema/functions.js';
+import { AccountEventTable } from 'src/schema/tables/account-event.table.js';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.js';
@@ -341,6 +342,7 @@ export class ImmichDatabase {
     AssetViewTable,
     BookmarkTagTable,
     AssetSourceTable,
+    AccountEventTable,
     ActivityTable,
     AdminAuditEventTable,
     AlbumAssetTable,
@@ -581,6 +583,7 @@ export interface DB extends QueueDatabase {
   backup_reconciliation: BackupReconciliationTable;
   frameleaf_migrations: { timestamp: string; name: string };
 
+  account_event: AccountEventTable;
   activity: ActivityTable;
   admin_audit_event: AdminAuditEventTable;
 
