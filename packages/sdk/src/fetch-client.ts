@@ -58,6 +58,14 @@ export type AttentionCheckDto = {
     kind: AttentionKind;
     state: AttentionCheckState;
 };
+export type AttentionFileProblemsDto = {
+    /** Damaged or missing files Frameleaf fixed in the last 7 days */
+    fixed: number;
+    /** Damaged or missing files that need the reader */
+    needsYou: number;
+    /** When the earliest of those fixes was made, or null when there are none */
+    since: string | null;
+};
 export type AttentionBackupDto = {
     /** Whole days since it last finished, when it is behind */
     days: number | null;
@@ -115,6 +123,8 @@ export type AttentionResponseDto = {
     checks: AttentionCheckDto[];
     /** Overview items an administrator dismissed (FL-363); they stop counting as needing attention */
     dismissed: string[];
+    /** FL-1337: the Overview counts of damaged and missing files, for the files the reader may see. They add no item and change no check. */
+    fileProblems: AttentionFileProblemsDto;
     /** What needs attention, the most urgent first */
     items: AttentionItemDto[];
 };
@@ -4817,6 +4827,12 @@ export type ExifResponseDto = {
     /** Time zone */
     timeZone?: string | null;
 };
+export type AssetFileProblemDto = {
+    /** The file problem to open, as the file problems list names it */
+    findingId: string;
+    /** True when the original is gone; false when the file is damaged */
+    missing: boolean;
+};
 export type ImageEncodingInfo = {
     bitDepth?: number;
     codec?: string;
@@ -4935,6 +4951,8 @@ export type AssetResponseDto = {
     fileCreatedAt: string;
     /** The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken. */
     fileModifiedAt: string;
+    /** Set on GET /assets/{id} only, for the photo's owner or an administrator: the file problem that needs attention on this photo. Null when there is none. */
+    fileProblem?: (AssetFileProblemDto) | null;
     /** Whether asset has metadata */
     hasMetadata: boolean;
     /** Asset height */
@@ -6988,6 +7006,8 @@ export type BestPhotoAssetResponseDto = {
     fileCreatedAt: string;
     /** The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken. */
     fileModifiedAt: string;
+    /** Set on GET /assets/{id} only, for the photo's owner or an administrator: the file problem that needs attention on this photo. Null when there is none. */
+    fileProblem?: (AssetFileProblemDto) | null;
     /** Whether asset has metadata */
     hasMetadata: boolean;
     /** Asset height */

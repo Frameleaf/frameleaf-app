@@ -77728,6 +77728,23 @@
         ],
         "type": "object"
       },
+      "AssetFileProblemDto": {
+        "properties": {
+          "findingId": {
+            "description": "The file problem to open, as the file problems list names it",
+            "type": "string"
+          },
+          "missing": {
+            "description": "True when the original is gone; false when the file is damaged",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "findingId",
+          "missing"
+        ],
+        "type": "object"
+      },
       "AssetFileResponseDto": {
         "properties": {
           "createdAt": {
@@ -78684,6 +78701,15 @@
             "description": "The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken.",
             "format": "date-time",
             "type": "string"
+          },
+          "fileProblem": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetFileProblemDto"
+              }
+            ],
+            "description": "Set on GET /assets/{id} only, for the photo's owner or an administrator: the file problem that needs attention on this photo. Null when there is none.",
+            "nullable": true
           },
           "hasMetadata": {
             "description": "Whether asset has metadata",
@@ -80233,6 +80259,34 @@
         ],
         "type": "object"
       },
+      "AttentionFileProblemsDto": {
+        "properties": {
+          "fixed": {
+            "description": "Damaged or missing files Frameleaf fixed in the last 7 days",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "needsYou": {
+            "description": "Damaged or missing files that need the reader",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "since": {
+            "description": "When the earliest of those fixes was made, or null when there are none",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "fixed",
+          "needsYou",
+          "since"
+        ],
+        "type": "object"
+      },
       "AttentionItemDto": {
         "properties": {
           "backup": {
@@ -80357,6 +80411,10 @@
             },
             "type": "array"
           },
+          "fileProblems": {
+            "$ref": "#/components/schemas/AttentionFileProblemsDto",
+            "description": "FL-1337: the Overview counts of damaged and missing files, for the files the reader may see. They add no item and change no check."
+          },
           "items": {
             "description": "What needs attention, the most urgent first",
             "items": {
@@ -80369,6 +80427,7 @@
           "checkedAt",
           "checks",
           "dismissed",
+          "fileProblems",
           "items"
         ],
         "type": "object"
@@ -80907,6 +80966,15 @@
             "description": "The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken.",
             "format": "date-time",
             "type": "string"
+          },
+          "fileProblem": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetFileProblemDto"
+              }
+            ],
+            "description": "Set on GET /assets/{id} only, for the photo's owner or an administrator: the file problem that needs attention on this photo. Null when there is none.",
+            "nullable": true
           },
           "hasMetadata": {
             "description": "Whether asset has metadata",

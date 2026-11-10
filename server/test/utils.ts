@@ -65,6 +65,7 @@ import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
@@ -307,6 +308,8 @@ export type ServiceOverrides = {
   lockedKey: LockedKeyRepository;
   /** FL-721: not a BaseService dependency either; `LockedEncryptionService` takes it explicitly. */
   lockedEncryption: LockedEncryptionRepository;
+  /** FL-1337: not a BaseService dependency; `AssetService` and `AttentionService` take it explicitly. */
+  mediaHealth: MediaHealthRepository;
   /** FL-721: `LockedSealService` only. */
   lockedFile: LockedFileRepository;
   logger: LoggingRepository;
@@ -428,6 +431,7 @@ export const getMocks = () => {
     library: automock(LibraryRepository, { strict: false }),
     lockedKey: automock(LockedKeyRepository),
     lockedEncryption: automock(LockedEncryptionRepository, { args: [database], strict: false }),
+    mediaHealth: automock(MediaHealthRepository, { args: [database], strict: false }),
     lockedFile: automock(LockedFileRepository, { args: [database], strict: false }),
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
     map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
@@ -653,6 +657,9 @@ export const newTestService = <T extends BaseService>(
   for (const { key, type } of properties) {
     if (type === LockedEncryptionService) {
       Object.assign(sut, { [key]: newLockedEncryptionService(mocks) });
+    }
+    if (type === MediaHealthRepository) {
+      Object.assign(sut, { [key]: mocks.mediaHealth });
     }
   }
 

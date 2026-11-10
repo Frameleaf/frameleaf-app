@@ -1591,7 +1591,7 @@ export class MediaHealthRepository {
    * and while a photo has a problem open, the list goes by that one: its settled ones are in no tab, their
    * history still readable (Review Focus 5).
    */
-  private inFileProblemTab(tab: FileProblemTab) {
+  private inFileProblemTab(tab: FileProblemTab, fixedDays = FIXED_TAB_DAYS) {
     const fixState = sql`(asset_health.evidence->>'fixState')`;
     const shown = sql`asset_health."dismissedAt" IS NULL AND asset."deletedAt" IS NULL
       AND (asset_health."resolvedAt" IS NULL OR NOT EXISTS (
@@ -1605,7 +1605,7 @@ export class MediaHealthRepository {
       }
       case 'fixed': {
         return sql<boolean>`${shown} AND ${fixState} IN (${sql.join(FIXED_FIX_STATES)})
-          AND asset_health."resolvedAt" >= now() - make_interval(days => ${FIXED_TAB_DAYS})`;
+          AND asset_health."resolvedAt" >= now() - make_interval(days => ${fixedDays})`;
       }
       default: {
         return sql<boolean>`${shown} AND ${fixState} = 'left-as-is'`;
@@ -1679,6 +1679,45 @@ export class MediaHealthRepository {
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .executeTakeFirst();
     return Number(row?.count ?? 0);
+  }
+
+  /**
+   * The Overview's counts (FL-1337): what Frameleaf fixed in the last `days` days, the earliest of those fixes, and
+   * what needs the reader. Read with the list's own tab rules, scope and privacy.
+   */
+  async fileProblemCounts(options: {
+    ownerId?: string;
+    privacy: MediaHealthPrivacy;
+    days: number;
+  }): Promise<{ fixed: number; needsYou: number; since: Date | null }> {
+    const [fixed, needsYou] = await Promise.all([
+      this.fileProblems(options)
+        .where(this.inFileProblemTab('fixed', options.days))
+        .select((eb) => [eb.fn.countAll<number>().as('count'), eb.fn.min('asset_health.resolvedAt').as('since')])
+        .executeTakeFirst(),
+      this.countFileProblems({ ...options, tab: 'needs' }),
+    ]);
+    return {
+      fixed: Number(fixed?.count ?? 0),
+      needsYou,
+      since: fixed?.since ? new Date(fixed.since as unknown as string | Date) : null,
+    };
+  }
+
+  /**
+   * The problem the viewer flags on one photo (FL-1337): the open one in Needs you, the missing one when both a
+   * missing and a damaged record are open (Review Focus 5). Closed records, fixed ones and ones kept as they are
+   * never flag. Access to the photo is decided by the caller.
+   */
+  async getOpenFileProblem(assetId: string): Promise<{ id: string; category: MediaHealthCategory } | undefined> {
+    return this.fileProblems({})
+      .where('asset_health.assetId', '=', asUuid(assetId))
+      .where(this.inFileProblemTab('needs'))
+      .select(['asset_health.id', 'asset_health.category'])
+      .orderBy(sql`asset_health.category = 'missing'`, 'desc')
+      .orderBy('asset_health.updatedAt', 'desc')
+      .limit(1)
+      .executeTakeFirst();
   }
 
   /** One problem, in any state, as the reader may see it (FL-1337): its history stays readable once closed. */

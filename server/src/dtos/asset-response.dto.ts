@@ -107,6 +107,18 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     lockedEncryption: PartnerLockedEncryptionSchema.optional().describe(
       "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})",
     ),
+    // FL-1337
+    fileProblem: z
+      .object({
+        findingId: z.string().describe('The file problem to open, as the file problems list names it'),
+        missing: z.boolean().describe('True when the original is gone; false when the file is damaged'),
+      })
+      .meta({ id: 'AssetFileProblemDto' })
+      .nullable()
+      .optional()
+      .describe(
+        "Set on GET /assets/{id} only, for the photo's owner or an administrator: the file problem that needs attention on this photo. Null when there is none.",
+      ),
     libraryId: z
       .uuidv4()
       .nullish()

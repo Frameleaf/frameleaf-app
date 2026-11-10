@@ -1183,6 +1183,66 @@ describe(MediaHealthRepository.name, () => {
       privacy: { lockedOwnerId?: string } = {},
     ) => (await sut.listFileProblems({ tab, ownerId, privacy, take: 50, skip: 0 })).map(({ id }) => id);
 
+    it('flags a photo by its open problem only, the missing one first (viewer)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const damaged = await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'cant-repair' },
+      });
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toEqual({
+        id: damaged.id,
+        category: MediaHealthCategory.Corrupt,
+      });
+
+      const missing = await arrangeProblem(sut, asset, { category: MediaHealthCategory.Missing });
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toEqual({
+        id: missing.id,
+        category: MediaHealthCategory.Missing,
+      });
+
+      // fixed and kept as it is flag nothing
+      await defaultDatabase
+        .updateTable('asset_health')
+        .set({ resolvedAt: new Date(), evidence: sql`'{"fixState":"repaired"}'::jsonb` })
+        .where('id', '=', missing.id)
+        .execute();
+      await defaultDatabase
+        .updateTable('asset_health')
+        .set({ evidence: sql`'{"fixState":"left-as-is"}'::jsonb` })
+        .where('id', '=', damaged.id)
+        .execute();
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeUndefined();
+    });
+
+    it('counts what was fixed in the last 7 days, since the earliest, and what needs the reader', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const photo = async (ownerId = user.id) => (await ctx.newAsset({ ownerId })).result;
+      // the database is shared with the other specs: an unscoped count is read as a change
+      const before = await sut.fileProblemCounts({ privacy: {}, days: 7 });
+      const earliest = days(5);
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'repaired' }, resolvedAt: days(1) });
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'part-saved' }, resolvedAt: earliest });
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'found-again' }, resolvedAt: days(20) });
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'cant-repair' } });
+      await arrangeProblem(sut, await photo(other.id), { evidence: { fixState: 'missing' } });
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'left-as-is' } });
+
+      const mine = await sut.fileProblemCounts({ ownerId: user.id, privacy: {}, days: 7 });
+      expect(mine).toMatchObject({ fixed: 2, needsYou: 1 });
+      expect(Math.abs((mine.since?.getTime() ?? 0) - earliest.getTime())).toBeLessThan(5000);
+      const all = await sut.fileProblemCounts({ privacy: {}, days: 7 });
+      expect([all.fixed - before.fixed, all.needsYou - before.needsYou]).toEqual([2, 2]);
+      await expect(sut.fileProblemCounts({ ownerId: other.id, privacy: {}, days: 7 })).resolves.toEqual({
+        fixed: 0,
+        needsYou: 1,
+        since: null,
+      });
+    });
+
     it('puts each problem in its tab, newest first, part-saved first among the fixed', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

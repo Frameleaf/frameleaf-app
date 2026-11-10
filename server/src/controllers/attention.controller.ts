@@ -1,9 +1,10 @@
 import { Body, Controller, Get, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AttentionDismissDto, AttentionResponseDto } from 'src/dtos/attention.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AttentionService } from 'src/services/attention.service.js';
 
 @ApiTags(ApiTag.Attention)
@@ -20,8 +21,8 @@ export class AttentionController {
       'What needs an administrator on this server now: the drive the library is on filling up, a missed backup, background work that stopped, or a new version. Worked out from the server’s own records on every read.',
     history: new HistoryBuilder().added('v3').alpha('v3'),
   })
-  getAttention(): Promise<AttentionResponseDto> {
-    return this.service.getAttention();
+  getAttention(@Auth() auth: AuthDto): Promise<AttentionResponseDto> {
+    return this.service.getAttention(auth);
   }
 
   // FL-363: the Overview's "Dismiss", kept on the server so it holds for every administrator.
@@ -33,7 +34,7 @@ export class AttentionController {
       'Dismisses an Overview item so it no longer counts as needing attention, or brings it back. It stays in the list of what was checked.',
     history: new HistoryBuilder().added('v3').alpha('v3'),
   })
-  setAttentionDismissed(@Body() dto: AttentionDismissDto): Promise<AttentionResponseDto> {
-    return this.service.setDismissed(dto);
+  setAttentionDismissed(@Auth() auth: AuthDto, @Body() dto: AttentionDismissDto): Promise<AttentionResponseDto> {
+    return this.service.setDismissed(auth, dto);
   }
 }
