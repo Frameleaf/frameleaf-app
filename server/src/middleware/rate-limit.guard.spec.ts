@@ -53,6 +53,7 @@ const keyed = (principal: string) => `rate-limit:${principal} (keyed)`;
 
 const makeRequest = (overrides: Partial<RateLimitedRequest> = {}) =>
   ({
+    configuredProxyClientIp: overrides.ip ?? '198.51.100.7',
     ip: '198.51.100.7',
     headers: {},
     query: {},

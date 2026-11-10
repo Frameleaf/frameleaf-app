@@ -109,6 +109,7 @@ const requireOneSecondFactor = (dto: { code?: string; recoveryCode?: string }) =
 export interface LoginDetails {
   isSecure: boolean;
   clientIp: string;
+  securityClientIp?: string;
   deviceType: string;
   deviceOS: string;
   browserFamily?: string;

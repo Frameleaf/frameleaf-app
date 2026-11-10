@@ -13,7 +13,7 @@ import { Reflector } from '@nestjs/core';
 import { isIP } from 'node:net';
 import { Observable, catchError, from, map, mergeMap, throwError } from 'rxjs';
 import type { Request, Response } from 'express';
-import type { FrameleafRequest } from 'src/middleware/frameleaf-via.middleware.js';
+import { requestSecurityAddress, type FrameleafRequest } from 'src/middleware/frameleaf-via.middleware.js';
 import { AuthCookie, FrameleafEnvironment, MetadataKey, RequestHeader, RequestQuery } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -43,9 +43,9 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  *   which a timeline requests by the hundred, count toward the higher `REMOTE_MEDIA_CEILING`
  *   instead. The edge worker must send `X-Forwarded-For`, or every remote visitor shares the loopback
  *   address's counter.
- * - The client address is Express's `request.ip`: behind a reverse proxy on an address outside the
- *   private ranges (for example a Tailscale `100.64.0.0/10` address), set `FRAMELEAF_TRUSTED_PROXIES`,
- *   or every visitor shares the proxy's counter.
+ * - Counters use the socket address unless the authenticated edge forwards the client address or
+ *   an administrator configures a reverse proxy with `FRAMELEAF_TRUSTED_PROXIES`. Behind another
+ *   reverse proxy, configure its exact addresses so clients get separate counters.
  *
  * Going over answers 429 with `Retry-After` (seconds until the window ends) and the error code
  * `rate_limited`. If the counters cannot be reached, remote-access requests are refused (503) and
@@ -300,7 +300,7 @@ export const rateLimitChecks = async (
   rule: RateLimitRule | undefined,
   options: { media: boolean; keyOf: (principal: string) => Promise<string> },
 ): Promise<RateLimitCheck[]> => {
-  const address = rateLimitAddress(request.frameleafForwarded?.for ?? request.ip ?? request.socket?.remoteAddress);
+  const address = rateLimitAddress(requestSecurityAddress(request));
   const checks: RateLimitCheck[] = [];
   if (isRemoteVia(request.frameleafVia)) {
     const ceiling = options.media ? REMOTE_MEDIA_CEILING : REMOTE_ACCESS_CEILING;

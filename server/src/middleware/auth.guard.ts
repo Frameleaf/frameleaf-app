@@ -12,7 +12,7 @@ import { ApiBearerAuth, ApiCookieAuth, ApiExtension, ApiOkResponse, ApiQuery, Ap
 import { Request } from 'express';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ApiCustomExtension, MetadataKey, Permission, RequestQuery } from 'src/enum.js';
-import { type FrameleafRequest, requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { type FrameleafRequest, requestSecurityAddress, requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService, LoginDetails } from 'src/services/auth.service.js';
 import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
@@ -115,6 +115,7 @@ export const GetLoginDetails = createParamDecorator((data, context: ExecutionCon
 
   return {
     clientIp: (request as FrameleafRequest).frameleafForwarded?.for ?? request.ip ?? '',
+    securityClientIp: requestSecurityAddress(request) ?? '',
     isSecure: request.secure,
     ...device,
     via: requestVia(request),

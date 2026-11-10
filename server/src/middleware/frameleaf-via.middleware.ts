@@ -62,6 +62,8 @@ export type FrameleafArrival = {
 export interface FrameleafRequest extends Request {
   frameleafVia?: FrameleafVia | null;
   frameleafForwarded?: FrameleafForwarded | null;
+  /** Express client address only when an administrator configured trusted proxies. */
+  configuredProxyClientIp?: string;
 }
 
 const firstValue = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
@@ -109,7 +111,8 @@ export const stripFrameleafHeaders = (headers: IncomingHttpHeaders, remote: bool
 
 /** Registered right after `cookieParser()`, before any route, guard or server-side render. */
 export const frameleafViaMiddleware =
-  (edgeSecret: string | null) => (request: Request, response: Response, next: NextFunction) => {
+  (edgeSecret: string | null, trustConfiguredProxies = false) =>
+  (request: Request, response: Response, next: NextFunction) => {
     const arrival = readFrameleafArrival(request.headers, edgeSecret);
     if (!arrival.via && claimsFrameleafVia(request.headers)) {
       response.status(403).json({
@@ -123,8 +126,13 @@ export const frameleafViaMiddleware =
     const marked = request as FrameleafRequest;
     marked.frameleafVia = arrival.via;
     marked.frameleafForwarded = arrival.forwarded;
+    if (trustConfiguredProxies) marked.configuredProxyClientIp = request.ip;
     next();
   };
 
 /** How a request arrived, as the middleware recorded it (`null` when not vouched for). */
 export const requestVia = (request: Request): FrameleafVia | null => (request as FrameleafRequest).frameleafVia ?? null;
+
+/** The authenticated edge or configured reverse proxy may vouch for a visitor's address. */
+export const requestSecurityAddress = (request: FrameleafRequest): string | undefined =>
+  request.frameleafForwarded?.for ?? request.configuredProxyClientIp ?? request.socket?.remoteAddress;

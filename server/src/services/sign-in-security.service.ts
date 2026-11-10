@@ -32,7 +32,7 @@ export class SignInSecurityService extends BaseService {
     try {
       const hash = await this.key(
         'sign-in-backoff',
-        JSON.stringify([kind, principal, rateLimitAddress(details.clientIp)]),
+        JSON.stringify([kind, principal, rateLimitAddress(details.securityClientIp ?? details.clientIp)]),
       );
       key = `sign-in-backoff:${hash}`;
       wait = await this.counters.getSignInWait(key);
@@ -74,7 +74,8 @@ export class SignInSecurityService extends BaseService {
   async signedIn(user: AlertUser, details: LoginDetails): Promise<void> {
     if (this.configRepository.getEnv().environment === FrameleafEnvironment.Testing) return;
     try {
-      const network = signInNetwork(details.clientIp);
+      const clientIp = details.securityClientIp ?? details.clientIp;
+      const network = signInNetwork(clientIp);
       if (!network) return;
       const fingerprint = await this.key(
         'sign-in-device',
@@ -87,7 +88,7 @@ export class SignInSecurityService extends BaseService {
       );
       if (!(await this.sessionRepository.observeKnownDevice(user.id, Buffer.from(fingerprint, 'base64url')))) return;
 
-      const home = !isRemoteVia(details.via) && isHomeAddress(details.clientIp, []);
+      const home = !isRemoteVia(details.via) && isHomeAddress(clientIp, []);
       // Browser and OS families come from the UA parser, not the arbitrary device request headers.
       const device = [details.browserFamily, details.deviceOSFamily].filter(Boolean).join(' on ') || 'Unknown device';
       await this.sendAlert(user, {
