@@ -1,4 +1,4 @@
-import { MediaHealthCategory, type FileProblemDto } from '@frameleaf/sdk';
+import { MediaHealthCategory, MediaHealthRepairMethod, type FileProblemDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -7,8 +7,10 @@ import en from '../../../../../../../i18n/en.json';
 import FileStory from './FileStory.svelte';
 
 const auth = vi.hoisted(() => ({ user: { id: 'u1', isAdmin: false }, params: {} }));
+const confirmFrameleaf = vi.hoisted(() => vi.fn());
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
+vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: (...args: unknown[]) => confirmFrameleaf(...args) }));
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 9, 2, minutes)).toISOString();
 
@@ -252,6 +254,119 @@ describe('What happened (FL-1338)', () => {
     expect(await look.findByRole('radio', { name: 'USB drive' })).toBeInTheDocument();
     expect(look.queryByText('Couldn’t read the folders just now. Try again in a moment.')).not.toBeInTheDocument();
     expect(sdkMock.getFileProblemFolders).toHaveBeenCalledTimes(2);
+  });
+
+  describe('a link to a problem Frameleaf has no record of', () => {
+    const httpError = (status: number, message: string) =>
+      Object.assign(new Error(message), { status, data: { message } });
+
+    it.each([
+      ['a hand-edited link', httpError(400, 'id must be a UUID')],
+      ['a stale link', httpError(404, 'Frameleaf has no record of this problem.')],
+    ])('says so plainly for %s, without the server’s words or a Try again', async (_label, error) => {
+      sdkMock.getFileProblem.mockRejectedValue(error);
+      render(FileStory, { id: 'not-a-problem', onDone: vi.fn(), onClose: vi.fn() });
+
+      const sheet = within(screen.getByRole('dialog', { name: 'What happened' }));
+      expect(await sheet.findByText('Frameleaf has no record of this file problem.')).toBeInTheDocument();
+      expect(sheet.queryByText('id must be a UUID')).not.toBeInTheDocument();
+      expect(sheet.queryByText(en.frameleaf_files_action_failed)).not.toBeInTheDocument();
+      expect(buttons(screen.getByRole('dialog'))).toEqual(['Done']);
+    });
+
+    it('says it didn’t work when the server couldn’t answer', async () => {
+      sdkMock.getFileProblem.mockRejectedValue(httpError(500, 'Internal server error'));
+      render(FileStory, { id: 'img-0611', onDone: vi.fn(), onClose: vi.fn() });
+
+      expect(await screen.findByText(en.frameleaf_files_action_failed)).toBeInTheDocument();
+      expect(screen.queryByText('Internal server error')).not.toBeInTheDocument();
+    });
+  });
+
+  it.each([
+    ['fixed', { ...repaired, canAct: false, pictureAllowed: false, ownerName: 'Emma' }],
+    ['found again', { ...emmas, fixState: 'found-again' }],
+    ['kept as it is', { ...emmas, fixState: 'left-as-is' }],
+  ])('offers an administrator no Try again on another account’s photo that was %s', async (_label, problem) => {
+    auth.user.isAdmin = true;
+    const { sheet } = show(problem);
+
+    await sheet().findByText('In Emma’s library');
+    expect(buttons(screen.getByRole('dialog'))).toEqual(['Done']);
+  });
+
+  describe('Remove from library', () => {
+    it('asks first, then moves this photo to the Trash', async () => {
+      confirmFrameleaf.mockResolvedValue(true);
+      sdkMock.deleteAssets.mockResolvedValue(undefined as never);
+      const { sheet, onDone } = show(missing);
+
+      await fireEvent.click(await sheet().findByRole('button', { name: 'Remove from library…' }));
+
+      expect(confirmFrameleaf).toHaveBeenCalledWith({
+        title: 'Remove IMG_0611.jpg from the library?',
+        prompt: 'It goes to the Trash, and its small preview goes with it.',
+        confirmText: 'Remove from library',
+      });
+      // the Trash, as everywhere else: never deleted for good from here
+      await vi.waitFor(() =>
+        expect(sdkMock.deleteAssets).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: ['asset-0611'] } }),
+      );
+      await vi.waitFor(() => expect(onDone).toHaveBeenCalledWith('IMG_0611.jpg is in the Trash.'));
+    });
+
+    it('removes nothing when the person changes their mind', async () => {
+      confirmFrameleaf.mockResolvedValue(false);
+      const { sheet, onDone } = show(blank);
+
+      await fireEvent.click(await sheet().findByRole('button', { name: 'Remove from library…' }));
+
+      await vi.waitFor(() =>
+        expect(confirmFrameleaf).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'It goes to the Trash.' })),
+      );
+      expect(sdkMock.deleteAssets).not.toHaveBeenCalled();
+      expect(onDone).not.toHaveBeenCalled();
+    });
+  });
+
+  it('opens Repair… for a damaged JPEG repair was off for, and says when it is repaired', async () => {
+    const off: FileProblemDto = {
+      ...blank,
+      id: 'img-3310',
+      assetId: 'asset-3310',
+      originalFileName: 'IMG_3310.jpg',
+      line: { step: 'checked', outcome: 'failed', facts: { cause: 'cut-short' } },
+      steps: [{ at: at(19), step: 'checked', outcome: 'failed', facts: { cause: 'cut-short' } }],
+    };
+    sdkMock.previewRepair.mockResolvedValue({
+      findingId: 'img-3310',
+      checksum: 'abc123',
+      preview: 'data:image/jpeg;base64,AAAA',
+      width: 4032,
+      height: 3024,
+      sizeInBytes: 2_000_000,
+      method: MediaHealthRepairMethod.Rebuilt,
+      metadataKept: true,
+    });
+    sdkMock.repair.mockResolvedValue(undefined as never);
+    const { sheet, onDone } = show(off);
+
+    expect(await sheet().findByRole('button', { name: 'Repair…' })).toHaveClass('primary');
+    expect(buttons(screen.getByRole('dialog'))).toEqual(['Remove from library…', 'Keep as it is', 'Repair…']);
+    await fireEvent.click(sheet().getByRole('button', { name: 'Repair…' }));
+
+    const dialog = within(await screen.findByRole('dialog', { name: 'Repair IMG_3310.jpg' }));
+    expect(sdkMock.previewRepair).toHaveBeenCalledWith({ mediaHealthRepairPreviewDto: { findingId: 'img-3310' } });
+    const approve = await dialog.findByRole('button', { name: 'Replace with repaired photo' });
+    await vi.waitFor(() => expect(approve).toBeEnabled());
+    await fireEvent.click(approve);
+
+    expect(sdkMock.repair).toHaveBeenCalledWith({
+      mediaHealthRepairDto: { findingId: 'img-3310', checksum: 'abc123' },
+    });
+    await vi.waitFor(() =>
+      expect(onDone).toHaveBeenCalledWith('IMG_3310.jpg was repaired. The damaged file was kept.'),
+    );
   });
 
   describe('the damaged file a repair kept', () => {

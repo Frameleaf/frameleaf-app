@@ -124,7 +124,11 @@
         }
       } catch (error) {
         if (active) {
-          loadFailed = failureOf(error);
+          // a hand-edited or stale link: say so plainly, without the validator's words or a Try again that can't help
+          loadFailed =
+            isHttpError(error) && (error.status === 400 || error.status === 404)
+              ? $t('frameleaf_files_story_no_record')
+              : $t('frameleaf_files_action_failed');
         }
       }
     })();
@@ -327,8 +331,12 @@
       return [done];
     }
     if (!own) {
-      // another account's file: an administrator may only ask Frameleaf to try again
-      return isAdmin ? [{ id: 'again', label: $t('frameleaf_files_try_again'), run: tryAgain }, done] : [done];
+      // another account's file: an administrator may only ask Frameleaf to try again, and only while it needs
+      // someone; a fixed or kept one has nothing left to try
+      const needing = kind === 'missing' || kind === 'unrepairable' || kind === 'unchecked';
+      return isAdmin && needing
+        ? [{ id: 'again', label: $t('frameleaf_files_try_again'), run: tryAgain }, done]
+        : [done];
     }
     const removeAction: Action = { id: 'remove', label: $t('frameleaf_files_remove'), run: remove };
     const keepAction: Action = { id: 'keep', label: $t('frameleaf_files_keep'), run: keep };

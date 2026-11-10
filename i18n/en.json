@@ -8161,6 +8161,7 @@
   "frameleaf_files_story_damaged_kept": "Damaged file, kept",
   "frameleaf_files_story_heading": "What happened",
   "frameleaf_files_story_loading": "Reading what happened to this file…",
+  "frameleaf_files_story_no_record": "Frameleaf has no record of this file problem.",
   "frameleaf_files_story_preview_before": "Its preview from before",
   "frameleaf_files_story_preview_left": "The small preview Frameleaf still has",
   "frameleaf_files_story_private_body": "Only {owner} sees this photo and can undo or replace it, from Library care when signed in.",
