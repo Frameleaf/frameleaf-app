@@ -511,8 +511,6 @@ export class FrameleafAuthService extends BaseService {
       throw error;
     }
     await this.recordFrameleafSignIn(user, session.id, loginDetails);
-    // Device observation and mail do not need to keep the Frameleaf authority locks held.
-    void this.signInSecurity.signedIn(user, loginDetails);
     return response;
   }
 
@@ -622,9 +620,9 @@ export class FrameleafAuthService extends BaseService {
     return response;
   }
 
-  /** FL-808: a Sign in with Frameleaf session, in the account's activity log. */
-  private recordFrameleafSignIn(user: { id: string; name: string }, sessionId: string, details: LoginDetails) {
-    return this.recordAccountEvent({
+  /** Record a successful Sign in with Frameleaf for account activity and new-device alerts. */
+  private async recordFrameleafSignIn(user: UserAdmin, sessionId: string, details: LoginDetails) {
+    await this.recordAccountEvent({
       userId: user.id,
       sessionId,
       action: AccountEventAction.SignedIn,
@@ -632,6 +630,8 @@ export class FrameleafAuthService extends BaseService {
       detail: 'frameleaf',
       ...loginEventDetails(details),
     });
+    // Device observation and mail do not need to keep the Frameleaf authority locks held.
+    void this.signInSecurity.signedIn(user, details);
   }
 
   /** `GET oauth/frameleaf/link`: this person's Frameleaf account link. */
