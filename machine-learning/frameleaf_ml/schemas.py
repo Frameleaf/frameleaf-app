@@ -314,6 +314,11 @@ class VoiceCleanupOptions(_OptionsBase):
     humHz: Literal[50, 60] | None = None
 
 
+class AssistantPlanOptions(_OptionsBase):
+    """The planner (FL-847) takes no per-request options: `/assistant/plan` names its model itself, and
+    `/predict` must never pass anything (such as a cache directory) into the planner's constructor."""
+
+
 class TranslateOptions(_OptionsBase):
     """Options for the translate task (Studio captions in other languages, FL-641).
 
@@ -342,6 +347,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SUBJECT_MATTE, ModelType.VISUAL): SubjectMatteOptions,
     (ModelTask.VOICE_CLEANUP, ModelType.AUDIO): VoiceCleanupOptions,
     (ModelTask.TRANSLATE, ModelType.TEXTUAL): TranslateOptions,
+    (ModelTask.ASSISTANT_PLAN, ModelType.TEXTUAL): AssistantPlanOptions,
 }
 
 

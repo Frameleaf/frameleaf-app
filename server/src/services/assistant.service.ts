@@ -33,9 +33,15 @@ export const ASSISTANT_PLANNER_CONFIDENCE_FLOOR = 0.5;
 const CATALOG_CAP = 200;
 
 /** The JSON schema of the `search_library` arguments, as the planner is told them. */
-export const ASSISTANT_TOOL_SCHEMA = z.toJSONSchema(z.strictObject(assistantPlanFiltersShape), {
-  target: 'draft-2020-12',
-});
+// Inline only: the planner's validator takes no references, so the media type is restated without its
+// registered id (which would turn into `$defs`).
+export const ASSISTANT_TOOL_SCHEMA = z.toJSONSchema(
+  z.strictObject({
+    ...assistantPlanFiltersShape,
+    type: z.enum(['IMAGE', 'VIDEO']).optional().describe('Photos or videos only'),
+  }),
+  { target: 'draft-2020-12' },
+);
 
 type NamedId = { id: string; name: string };
 type Catalog = { people: NamedId[]; pets: NamedId[]; albums: NamedId[]; tags: NamedId[]; places: string[] };
@@ -94,6 +100,7 @@ export class AssistantService {
     this.logger.debug(`Library Assistant question (${query.length} characters)`);
 
     const catalog = await this.loadCatalog(auth);
+    const smartSearch = isSmartSearchEnabled(machineLearning);
     const warnings: string[] = [];
     let answeredBy = 'rules';
     let plan: ResolvedPlan | undefined;
@@ -101,14 +108,13 @@ export class AssistantService {
       const planned = await this.planWithModel(query, dto.language ?? 'en', catalog);
       if (planned && 'clarify' in planned) {
         warnings.push(planned.clarify);
-      } else if (planned) {
+      } else if (planned && this.isRunnable(planned, smartSearch)) {
         plan = planned;
         answeredBy = 'planner';
       }
     }
     plan ??= await this.planWithRules(auth, query, size, catalog, warnings);
 
-    const smartSearch = isSmartSearchEnabled(machineLearning);
     if (plan.filters.visual && !smartSearch) {
       warnings.push('Visual search is off, so only names, places, dates and text were searched.');
       delete plan.filters.visual;
@@ -314,6 +320,11 @@ export class AssistantService {
     } as SearchFilter;
   }
 
+  /** A planner plan the search can run: a structured filter, or visual search when it is on. */
+  private isRunnable(plan: ResolvedPlan, smartSearch: boolean) {
+    return this.hasStructuredFilter(plan) || (!!plan.filters.visual && smartSearch);
+  }
+
   private hasStructuredFilter(plan: ResolvedPlan) {
     const { visual: _visual, ...rest } = plan.filters;
     return Object.keys(rest).length > 0 || !!plan.fileName || plan.people.length > 0 || plan.pets.length > 0;
@@ -396,9 +407,13 @@ export class AssistantService {
         });
       }
     }
-    for (const album of plan.albums) {
+    // the search asked for any of the albums, so with several the reason names them all
+    if (plan.albums.length === 1) {
+      const [album] = plan.albums;
       items.push({ kind: 'album', text: `In the album ${album.name}`, value: album.name });
-      break;
+    } else if (plan.albums.length > 1) {
+      const names = plan.albums.map(({ name }) => name).join(', ');
+      items.push({ kind: 'album', text: `In one of the albums ${names}` });
     }
     for (const tag of plan.tags) {
       items.push({ kind: 'tag', text: `Tagged ${tag.name}`, value: tag.name });

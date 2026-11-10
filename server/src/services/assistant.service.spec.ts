@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { AssetType, AssetVisibility, Permission } from 'src/enum.js';
@@ -181,12 +182,65 @@ describe(AssistantService.name, () => {
     ['the planner names someone not in the catalogue', () => Promise.resolve(plannerAnswer({ people: ['Zed'] }))],
     ['the planner is unsure', () => Promise.resolve(plannerAnswer({ city: 'Lisbon' }, 0.2))],
     ['the planner breaks the schema', () => Promise.resolve(plannerAnswer({ city: 'Lisbon', delete: true }))],
+    ['the planner plans nothing', () => Promise.resolve(plannerAnswer({}))],
   ])('falls back to the rules when %s', async (_name, answer) => {
     const { sut, machineLearning } = setup({ planner: true });
     machineLearning.planAssistantSearch.mockImplementation(answer);
     const response = await sut.ask(auth, { query: 'beach photos of Mara Quill' });
     expect(response.answeredBy).toBe('rules');
     expect(response.results.assets.items).toHaveLength(1);
+  });
+
+  it('falls back to the rules when the planner plans only a visual search and visual search is off', async () => {
+    const { sut, search, machineLearning } = setup({ planner: true });
+    search.getConfig.mockResolvedValue({
+      ...defaults,
+      machineLearning: { ...defaults.machineLearning, enabled: false },
+      localFeatures: { ...defaults.localFeatures, assistant: { ...defaults.localFeatures.assistant, planner: true } },
+    });
+    machineLearning.planAssistantSearch.mockResolvedValue(plannerAnswer({ visual: 'beach' }));
+    const response = await sut.ask(auth, { query: 'beach photos of Mara Quill' });
+    expect(response.answeredBy).toBe('rules');
+  });
+
+  it('names every planned album when the result only has to be in one of them', async () => {
+    const { sut, albums, machineLearning } = setup({ planner: true });
+    albums.getAll.mockResolvedValue([trip, { id: '0195e2a0-0000-4000-8000-000000000004', albumName: 'Porto' }]);
+    machineLearning.planAssistantSearch.mockResolvedValue(plannerAnswer({ albums: ['Lisbon trip', 'Porto'] }));
+    const response = await sut.ask(auth, { query: 'photos from my Lisbon or Porto albums' });
+    expect(response.reasons[0].items).toContainEqual({
+      kind: 'album',
+      text: 'In one of the albums Lisbon trip, Porto',
+    });
+  });
+
+  it('sends a tool schema the planner worker can validate (no references, only keywords it checks)', () => {
+    // the worker's own keyword lists (machine-learning/frameleaf_ml/models/assistant_planner.py)
+    const source = readFileSync(
+      new URL('../../../machine-learning/frameleaf_ml/models/assistant_planner.py', import.meta.url),
+      'utf8',
+    );
+    const words = (name: string) => {
+      const body = source.match(new RegExp(String.raw`${name} = \{([^}]*)\}`, 's'))![1];
+      return body
+        .matchAll(/"([^"]+)"/g)
+        .map(([, word]) => word)
+        .toArray();
+    };
+    const allowed = new Set([...words('_ANNOTATIONS'), ...words('_CHECKED')]);
+    const visit = (schema: Record<string, unknown>, depth = 0) => {
+      for (const keyword of Object.keys(schema)) {
+        expect(allowed, `keyword ${keyword}`).toContain(keyword);
+      }
+      for (const child of Object.values((schema.properties as Record<string, Record<string, unknown>>) ?? {})) {
+        visit(child, depth + 1);
+      }
+      if (schema.items && typeof schema.items === 'object') {
+        visit(schema.items as Record<string, unknown>, depth + 1);
+      }
+    };
+    expect(ASSISTANT_TOOL_SCHEMA.type).toBe('object');
+    visit(ASSISTANT_TOOL_SCHEMA as Record<string, unknown>);
   });
 
   it('falls back to the rules when the planner takes too long', async () => {

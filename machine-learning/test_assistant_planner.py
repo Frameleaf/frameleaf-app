@@ -215,3 +215,23 @@ class TestEndpoint:
         body = TestClient(main.app).get("/capabilities").json()
         assert body["tasks"]["assistant-plan"]["available"] is False
         assert "assistant-plan" not in body["workloads"]
+
+
+class TestHardening:
+    def test_predict_cannot_pass_options_to_the_planner(self) -> None:
+        from pydantic import ValidationError
+
+        from frameleaf_ml.schemas import validate_options
+
+        with pytest.raises(ValidationError):
+            validate_options(ModelTask.ASSISTANT_PLAN, ModelType.TEXTUAL, {"cache_dir": "/etc"})
+        assert validate_options(ModelTask.ASSISTANT_PLAN, ModelType.TEXTUAL, {}) == {}
+
+    def test_downloads_only_the_pinned_files(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        pinned = FAKE_MODEL._replace(files=(("textual/config.json", "0" * 64),))
+        mocker.patch.dict(assistant_planner.PLANNER_MODELS, {"fake-planner": pinned})
+        model = AssistantPlannerModel("fake-planner", cache_dir=tmp_path)
+        download = mocker.patch.object(model, "_download_from_source")
+        with pytest.raises(Exception):
+            model._download()  # the file never arrives, so it is refused
+        download.assert_called_once_with("fake-planner", allow_patterns=["textual/config.json"])

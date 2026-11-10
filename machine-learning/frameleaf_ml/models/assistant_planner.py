@@ -367,7 +367,8 @@ class AssistantPlannerModel(InferenceModel):
         if source is None:
             raise self._unavailable(f"{MODEL_SOURCE_ORG}/{self.model_name}", model_source_url(), "is not a planner")
         repo_id = f"{MODEL_SOURCE_ORG}/{source.repo}"
-        self._download_from_source(source.repo, allow_patterns=[f"{self.model_type.value}/*"])
+        # only the pinned files, so nothing unlisted (a generation config, say) reaches the runtime
+        self._download_from_source(source.repo, allow_patterns=[path for path, _ in source.files])
         for path, expected in source.files:
             file = self.cache_dir / path
             if not file.is_file():
