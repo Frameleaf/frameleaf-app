@@ -265,10 +265,57 @@ describe('What happened (FL-1338)', () => {
       expect(buttons(screen.getByRole('dialog'))).toEqual(['Undo repair', 'Download damaged file', 'Keep repaired photo']);
       await fireEvent.click(sheet().getByRole('button', { name: 'Download damaged file' }));
 
-      expect(sdkMock.downloadFileProblemKeptFile).toHaveBeenCalledWith({ id: 'img-2041' });
+      expect(sdkMock.downloadFileProblemKeptFile).toHaveBeenCalledWith({ id: 'img-2041' }, expect.anything());
       await vi.waitFor(() => expect(download).toHaveBeenCalledWith(blob, 'IMG_2041 (damaged).jpg'));
       // the sheet stays open: the person is still looking at the repair
       expect(onDone).not.toHaveBeenCalled();
+      download.mockRestore();
+    });
+
+    it('saves it under the name in the server’s Content-Disposition', async () => {
+      const blob = new Blob(['damaged']);
+      const download = vi.spyOn(utils, 'downloadBlob').mockImplementation(() => {});
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response('x', {
+          headers: { 'content-disposition': "attachment; filename=\"fallback.jpg\"; filename*=UTF-8''Caf%C3%A9%20(damaged).jpg" },
+        }),
+      );
+      sdkMock.downloadFileProblemKeptFile.mockImplementation((async (_args: unknown, opts?: RequestInit & { fetch?: typeof fetch }) => {
+        await opts?.fetch?.('/api/media-health/files/img-2041/kept-file');
+        return blob;
+      }) as never);
+      const { sheet } = show(repaired);
+
+      await fireEvent.click(await sheet().findByRole('button', { name: 'Download damaged file' }));
+
+      await vi.waitFor(() => expect(download).toHaveBeenCalledWith(blob, 'Café (damaged).jpg'));
+      download.mockRestore();
+      fetchSpy.mockRestore();
+    });
+
+    it.each([
+      ['a part-saved repair', repaired],
+      ['a whole repair', { ...repaired, fixState: 'repaired', partSaved: false }],
+    ])('is offered for %s', async (_label, problem) => {
+      const { sheet } = show(problem);
+      expect(await sheet().findByRole('button', { name: 'Download damaged file' })).toBeInTheDocument();
+    });
+
+    it.each([
+      ['IMG_2041', 'IMG_2041 (damaged)'],
+      ['.bashrc', '.bashrc (damaged)'],
+      ['photo.final.JPG', 'photo.final (damaged).JPG'],
+    ])('names the file for %s as the server does when it sends no name', async (originalFileName, expected) => {
+      const blob = new Blob(['damaged']);
+      const download = vi.spyOn(utils, 'downloadBlob').mockImplementation(() => {});
+      sdkMock.downloadFileProblemKeptFile.mockResolvedValue(blob as never);
+      const problem = { ...repaired, originalFileName };
+      sdkMock.getFileProblem.mockResolvedValue(problem);
+      render(FileStory, { id: problem.id, row: problem, onDone: vi.fn(), onClose: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Download damaged file' }));
+
+      await vi.waitFor(() => expect(download).toHaveBeenCalledWith(blob, expected));
       download.mockRestore();
     });
 

@@ -21,7 +21,7 @@
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
-  import { offersLookIn, offersRepair, problemKind, storyWords } from '$lib/frameleaf/file-steps';
+  import { damagedFileName, dispositionFileName, offersLookIn, offersRepair, problemKind, storyWords } from '$lib/frameleaf/file-steps';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob, getAssetMediaUrl } from '$lib/utils';
@@ -233,14 +233,23 @@
       () => tryFileProblemAgain({ id }),
       () => $t('frameleaf_files_trying', { values: { name } }),
     );
-  /** The damaged file a repair kept, saved as the server names it: "<name> (damaged).<extension>". */
+  /** The damaged file a repair kept, saved under the name the server gives it (its `Content-Disposition`). */
   const downloadDamaged = async () => {
     working = true;
     failure = undefined;
     try {
-      const blob = await downloadFileProblemKeptFile({ id });
-      const extension = /\.[^./\\]*$/.exec(name)?.[0] ?? '';
-      downloadBlob(blob, `${name.slice(0, name.length - extension.length)} (damaged)${extension}`);
+      let disposition: string | null = null;
+      const blob = await downloadFileProblemKeptFile(
+        { id },
+        {
+          fetch: async (...args) => {
+            const response = await fetch(...args);
+            disposition = response.headers.get('content-disposition');
+            return response;
+          },
+        },
+      );
+      downloadBlob(blob, dispositionFileName(disposition) ?? damagedFileName(name));
     } catch (error) {
       failure = failureOf(error, [400, 403, 404, 409]);
     } finally {

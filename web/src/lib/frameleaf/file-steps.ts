@@ -500,3 +500,32 @@ export const offersLookIn = (
   }
   return kind === 'unrepairable' && latestCause(problem.steps) === 'changed';
 };
+
+/**
+ * The name the server gives a repair's kept damaged file when it can't be read from the download's
+ * `Content-Disposition`: "<name> (damaged).<extension>", the extension by Node's `path.extname` (none for
+ * a dotfile or a name with no dot; the server then borrows the kept file's, which the browser can't see).
+ */
+export const damagedFileName = (originalFileName: string) => {
+  const dot = originalFileName.lastIndexOf('.');
+  const extension = dot <= 0 || originalFileName === '..' ? '' : originalFileName.slice(dot);
+  return `${originalFileName.slice(0, originalFileName.length - extension.length)} (damaged)${extension}`;
+};
+
+/** The file name a `Content-Disposition` header carries: `filename*` (UTF-8) first, then `filename`. */
+export const dispositionFileName = (header: string | null | undefined) => {
+  if (!header) {
+    return;
+  }
+  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim());
+    } catch {
+      // fall through to the plain name
+    }
+  }
+  const plain = /filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;]+))/i.exec(header);
+  const value = plain?.[1]?.replaceAll(/\\(.)/g, '$1') ?? plain?.[2]?.trim();
+  return value || undefined;
+};
