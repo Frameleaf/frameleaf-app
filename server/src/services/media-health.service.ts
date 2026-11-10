@@ -2945,6 +2945,7 @@ export class MediaHealthService {
     );
     const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
     const queued: MediaHealthFinding[] = [];
+    let unchecked = 0;
     const resultStatusById = new Map<string, MediaHealthStatus>();
 
     for (const finding of accepted) {
@@ -2959,6 +2960,7 @@ export class MediaHealthService {
       const result = await this.validateAssetIntegrity(asset);
       if (result && 'busy' in result) {
         // Not a verdict: the finding stays exactly as it is
+        unchecked++;
         continue;
       }
 
@@ -2982,6 +2984,10 @@ export class MediaHealthService {
       });
     }
 
+    if (queued.length === 0 && unchecked > 0) {
+      // nothing was decided: say so, and not that the files are fine now
+      throw new BadRequestException('The selected files could not be checked just now. Try again in a moment.');
+    }
     if (queued.length === 0) {
       throw new BadRequestException('Selected corrupt media no longer failed deletion revalidation');
     }

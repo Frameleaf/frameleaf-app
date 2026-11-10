@@ -3485,7 +3485,7 @@ describe(MediaHealthService.name, () => {
 
       await expect(
         sut.deleteCorrupt(authStub.user1, { ids: ['health-1'], confirmText: CORRUPT_MEDIA_DELETE_CONFIRM_TEXT }),
-      ).rejects.toThrow('no longer failed deletion revalidation');
+      ).rejects.toThrow('The selected files could not be checked just now');
       expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
       expect(mediaHealthRepository.markStatus).not.toHaveBeenCalled();
     });

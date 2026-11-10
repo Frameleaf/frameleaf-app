@@ -206,6 +206,10 @@ describe(MediaIntegrityService.name, () => {
       mocks.media.probePackets.mockResolvedValueOnce(walked(4) as never).mockResolvedValueOnce(walked(5) as never);
       expect(await sut.validate(video())).toEqual({ status: 'transient', reason: 'decode_unverified' });
     });
+    it('a short read whose repeat cannot be timed is no verdict', async () => {
+      mocks.media.probePackets.mockResolvedValueOnce(walked(4) as never).mockResolvedValueOnce(null);
+      expect(await sut.validate(video())).toEqual({ status: 'transient', reason: 'decode_unverified' });
+    });
     it('"End of file" is also what a failed read says, so it is not damage', async () => {
       mocks.media.probe.mockRejectedValue(new Error(`ffprobe exited with code 1: ${input.path}: End of file\n`));
       expect(await sut.validate(video())).toEqual({

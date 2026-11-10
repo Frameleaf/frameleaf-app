@@ -249,6 +249,9 @@ export class MediaIntegrityService {
         // A read that failed partway also ends early. The file is only cut short when a second read stops
         // at the same place; anything else is a drive that could not be read, which is no verdict.
         const again = await readable();
+        if (again === undefined) {
+          return { status: 'transient', reason: 'decode_unverified' };
+        }
         if (!short(again)) {
           return undefined;
         }
