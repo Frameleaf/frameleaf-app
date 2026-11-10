@@ -1,6 +1,7 @@
 import { Kysely, type QueryExecutorProvider, type RawBuilder, type SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { validate as isUuid } from 'uuid';
 import type { DB } from 'src/schema/index.js';
 import { JobName, MediaOperationKind, QueueName } from 'src/enum.js';
 import { costReusedRead } from 'src/queue/coalesced-task.js';
@@ -178,12 +179,12 @@ export class SqlQueueStore {
     }
     let inserted = 0;
     for (const intent of intents) {
-      if (isProcessingFailureStep(intent.name)) {
-        const id = typeof intent.data.id === 'string' ? intent.data.id : null;
+      const { id } = intent.data;
+      if (isProcessingFailureStep(intent.name) && typeof id === 'string' && isUuid(id)) {
         const {
           rows: [check],
         } = await sql<{ setAside: boolean }>`select ${processingIsSetAside(
-          sql`case when pg_input_is_valid(${id}, 'uuid') then ${id}::uuid end`,
+          sql`${id}::uuid`,
           sql`${intent.name}`,
           sql`${intent.data.includeSetAside === true}::boolean`,
         )} as "setAside"`.execute(db);
@@ -350,7 +351,7 @@ export class SqlQueueStore {
         ${
           isProcessingFailureStep(intent.name)
             ? sql`where not ${processingIsSetAside(
-                sql`s.id`,
+                sql`case when pg_input_is_valid(s.id::text, 'uuid') then s.id::text::uuid end`,
                 sql`${intent.name}`,
                 sql`${intent.data.includeSetAside === true}::boolean`,
               )}`

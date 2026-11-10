@@ -79,7 +79,7 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
       step: 'UnknownLaterStep',
       attempts: 1,
       lastError: 'unreadable',
-      lastFailedAt: new Date(Date.now() + 1_000),
+      lastFailedAt: new Date(Date.now() + 1000),
     })
     .execute();
   const query = { skip: 0, take: 1 };
