@@ -38,6 +38,9 @@ const albums = vi.hoisted(() => ({
 vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn(), beforeNavigate: vi.fn(), goto: vi.fn() }));
 vi.mock('$lib/frameleaf/own-preferences-draft', () => ({ createOwnPreferencesDraft: () => albums }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { preferences: {}, user: {} } }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
+  featureFlagsManager: { value: { assistant: true } },
+}));
 
 describe('AppSettings: Look & playback (FL-368)', () => {
   beforeAll(() => {
@@ -125,6 +128,15 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     // an account preference: it waits for the Save bar
     await fireEvent.click(screen.getByRole('switch', { name: 'Show archived photos in search' }));
     expect(albums.set).toHaveBeenCalledWith('search.includeArchived', true);
+  });
+
+  it('FL-918: keeps "Use classic search" as an account preference', async () => {
+    render(AppSettings);
+    const toggle = screen.getByRole('switch', { name: 'Use classic search' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(/instead of asking the Library Assistant/)).toBeInTheDocument();
+    await fireEvent.click(toggle);
+    expect(albums.set).toHaveBeenLastCalledWith('search.classic', true);
   });
 
   it('FL-556: lets uploads bring back deleted photos for 24 hours, as an account preference', async () => {

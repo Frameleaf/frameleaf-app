@@ -38,6 +38,7 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   },
   search: {
     includeArchived: false,
+    classic: false,
   },
   privacy: {
     suppression: {

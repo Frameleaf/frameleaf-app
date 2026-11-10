@@ -1841,6 +1841,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'savedSearches',
   },
   {
+    pattern: 'search.classic',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: "'search.classic'",
+  },
+  {
     pattern: 'search.includeArchived',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/AppSettings.svelte',

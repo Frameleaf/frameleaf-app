@@ -80,6 +80,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         },
         search: {
           includeArchived: false,
+          classic: false,
         },
         purchase: {
           showSupportBadge: true,
