@@ -132,6 +132,8 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   // FL-1333: a retired switch the server ignores (every copy is checked); the promise is said on Folder layout only
   'storageTemplate.hashVerificationEnabled': { label: 'frameleaf_folders_copy_check_retired' },
   'storageTemplate.template': { label: 'frameleaf_layout_pattern' },
+  // Library care › File checks › When a check finds a problem (FL-1337)
+  'libraryCare.autoRepair': { label: 'frameleaf_care_fc_when_problem_repair_name' },
   // Access & security › Sign in with Frameleaf
   'frameleafCloud.signIn.showOnLocalLogin': { label: 'frameleaf_signin_offer_home' },
   'frameleafCloud.signIn.buttonText': { label: 'frameleaf_signin_words' },

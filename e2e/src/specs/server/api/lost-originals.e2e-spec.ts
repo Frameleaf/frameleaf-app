@@ -50,6 +50,11 @@ describe('/assets/lost-originals', () => {
       utils.userSetup(admin.accessToken, createUserDto.user1),
       utils.userSetup(admin.accessToken, createUserDto.user2),
     ]);
+    // Only a phone or tablet answers for the phones, and a test login is neither: make both accounts' sessions iOS.
+    const db = await utils.connectDatabase();
+    await db.query(`UPDATE public.session SET "deviceOS" = 'iOS', "deviceType" = 'iPhone' WHERE "userId" = ANY($1)`, [
+      [user1.userId, user2.userId],
+    ]);
     mine = await lose(user1.accessToken, 'mine');
     theirs = await lose(user2.accessToken, 'theirs');
   });

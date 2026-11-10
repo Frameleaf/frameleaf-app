@@ -5072,7 +5072,7 @@
   "frameleaf_care_fc_unplugged_notice": "Check the drive before anything else",
   "frameleaf_care_fc_unplugged_notice_body": "Once the drive is plugged back in or the folder is put back, check again and the list clears by itself. Moving these photos to Trash takes them out of your library.",
   "frameleaf_care_fc_when_problem_description": "Frameleaf tries to fix it at once and lists what it did, so you can review it.",
-  "frameleaf_care_fc_when_problem_look_detail": "Compares files on this server’s drives, in the folders Immich used and in your backups by their contents, so a renamed or moved copy is still found.",
+  "frameleaf_care_fc_when_problem_look_detail": "Compares files on this server’s drives, in the folders your old photo app used and in your backups by their contents, so a renamed or moved copy is still found.",
   "frameleaf_care_fc_when_problem_look_name": "Look for missing files",
   "frameleaf_care_fc_when_problem_repair_name": "Repair damaged photos by themselves",
   "frameleaf_care_fc_when_problem_repair_off": "Damaged photos wait for you. You see each repair before choosing it.",

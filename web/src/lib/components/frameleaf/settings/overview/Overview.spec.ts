@@ -39,6 +39,7 @@ const healthy = {
     { kind: 'version', state: 'ok' },
   ],
   dismissed: [] as string[],
+  fileProblems: { fixed: 0, needsYou: 0, since: null },
 };
 
 describe('Overview (FL-363)', () => {
