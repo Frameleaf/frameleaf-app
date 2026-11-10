@@ -313,7 +313,7 @@ describe(MediaIntegrityService.name, () => {
     const strictOnly = (message: string) =>
       mocks.media.decodeImage.mockImplementation((_input, options) =>
         options.processInvalidImages
-          ? Promise.resolve({ data: bytes, info: {} } as never)
+          ? Promise.resolve({ data: bytes, info: {}, rung: 'lenient' } as never)
           : Promise.reject(new SharpOperationError(message, true)),
       );
     it('an old JPEG that only lacks its end marker opens, so it is healthy', async () => {
@@ -328,6 +328,22 @@ describe(MediaIntegrityService.name, () => {
         status: 'corrupt',
         reason: 'decode_failed',
         message: 'VipsJpeg: Premature end of JPEG file',
+      });
+    });
+    it('a JPEG only another decoder can read is healthy, and its rows are not counted (FL-1356)', async () => {
+      mocks.media.decodeImage.mockImplementation((_input, options) =>
+        options.ladder === 'strict'
+          ? Promise.reject(new SharpOperationError('VipsJpeg: Premature end of JPEG file', true))
+          : Promise.resolve({ data: bytes, info: {}, rung: 'djpeg' } as never),
+      );
+      mocks.media.pictureSaved.mockResolvedValue(10);
+      expect(await sut.validate({ ...input, deep: true })).toMatchObject({ status: 'healthy' });
+      expect(mocks.media.pictureSaved).not.toHaveBeenCalled();
+      // the preview stored inside a file proves nothing about the picture, so that rung is not asked for
+      expect(mocks.media.decodeImage).toHaveBeenLastCalledWith(input.path, {
+        colorspace: 'srgb',
+        processInvalidImages: true,
+        ladder: 'pixels',
       });
     });
     it('any other complaint about a picture that opens is not damage', async () => {
@@ -422,7 +438,11 @@ describe(MediaIntegrityService.name, () => {
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toMatchObject({
       status: 'healthy',
     });
-    expect(mocks.media.decodeImage).toHaveBeenCalledWith(bytes, { colorspace: 'srgb', processInvalidImages: false });
+    expect(mocks.media.decodeImage).toHaveBeenCalledWith(bytes, {
+      colorspace: 'srgb',
+      processInvalidImages: false,
+      ladder: 'strict',
+    });
     expect(mocks.media.extract).not.toHaveBeenCalled();
   });
   it.each([

@@ -122,6 +122,29 @@ export type DecodeQualification = {
   reshapeDolbyVision?: true;
 };
 
+/**
+ * FL-1357: whether a failed ffprobe or ffmpeg run is about the file's format, as opposed to the machine or the
+ * drive letting it down (could not start, killed, timed out, read error, full drive). Only the first kind makes
+ * cinema RAW "can't play here yet"; the second kind is retried like any other failure.
+ * ponytail: a list of what is known to be temporary, because what ffmpeg says about a format it does not
+ * know varies by container. Add to the list when a new temporary failure turns up.
+ */
+export const isUndecodableError = (error: unknown): boolean => {
+  for (let current = error, depth = 0; current && depth < 5; current = (current as Error).cause, depth++) {
+    const { code, message } = current as NodeJS.ErrnoException;
+    if (
+      typeof code === 'string' ||
+      (typeof message === 'string' &&
+        /input\/output error|exited with code null|deadline exceeded|stopped making progress|was cancelled|no space left on device|disk quota exceeded|\b(?:ENOSPC|EDQUOT|EIO|EAGAIN)\b|resource temporarily unavailable|permission denied|cannot allocate memory/i.test(
+          message,
+        ))
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
 /** FL-1357: what the playback-copy job may do that an edit or a Studio render, which must lose nothing, may not. */
 export type PlaybackDecode = {
   /** Play the HDR10 base layer of a dual-layer (profile 7) source by itself, as every ordinary player does. */

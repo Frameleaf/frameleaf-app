@@ -1,6 +1,11 @@
 import { AssetType } from 'src/enum.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
+// Offered before the format matrix existed (FL-1354); new extensions need a fixture.
+const LEGACY_STILLS = new Set(
+  '.hdr .heic .heics .heif .hif .insp .jxl .mpo .pbm .pfm .pgm .pnm .ppm .svg .tiff'.split(' '),
+);
+
 describe('mimeTypes', () => {
   it('classifies supported extensions consistently across filename forms', () => {
     const animated = new Set(['.apng', '.avif', '.avifs', '.gif', '.heic', '.heics', '.heif', '.jxl', '.png', '.webp']);
@@ -113,7 +118,6 @@ describe('mimeTypes', () => {
     { mimetype: 'image/x-olympus-ori', extension: '.ori' },
     { mimetype: 'image/x-panasonic-raw', extension: '.raw' },
     { mimetype: 'image/x-pentax-pef', extension: '.pef' },
-    { mimetype: 'image/x-phantom-cin', extension: '.cin' },
     { mimetype: 'image/x-phaseone-cap', extension: '.cap' },
     { mimetype: 'image/x-phaseone-iiq', extension: '.iiq' },
     { mimetype: 'image/x-portable-anymap', extension: '.pnm' },
@@ -440,13 +444,56 @@ describe('mimeTypes', () => {
     });
 
     // Not decodable by the bundled libvips/ImageMagick/ExifTool/ffmpeg, so not offered (see the FL-1286 PR).
-    it.each(['a.exr', 'a.j2k', 'a.jpf', 'a.jpx', 'a.jxr', 'a.tga', 'a.qoi', 'a.pam', 'a.gpr', 'a.ogg'])(
-      'does not accept %s',
-      (filename) => {
-        expect(mimeTypes.isAsset(filename)).toBe(false);
-        expect(mimeTypes.assetType(filename)).toBe(AssetType.Other);
-      },
-    );
+    it.each(['a.gpr', 'a.ogg'])('does not accept %s', (filename) => {
+      expect(mimeTypes.isAsset(filename)).toBe(false);
+      expect(mimeTypes.assetType(filename)).toBe(AssetType.Other);
+    });
+  });
+
+  describe('FL-1356 still formats', () => {
+    it('serves every JPEG name to the browser as it is', () => {
+      for (const filename of ['a.jpe', 'a.jfi', 'a.JIF']) {
+        expect(mimeTypes.isWebSupportedImage(filename)).toBe(true);
+        expect(mimeTypes.lookup(filename)).toBe('image/jpeg');
+      }
+    });
+
+    it('reads a Cineon scan as a picture, not as sensor data', () => {
+      expect(mimeTypes.isRaw('scan.cin')).toBe(false);
+      expect(mimeTypes.isImage('scan.CIN')).toBe(true);
+    });
+
+    it.each(
+      '.jps .j2k .j2c .jpc .jpf .jpx .jxr .wdp .hdp .exr .tga .ico .cur .pcx .dds .dpx .cin .sgi .xcf .pict .pct .fits .qoi .pam .btf .svgz'.split(
+        ' ',
+      ),
+    )('shows %s through a preview', (extension) => {
+      expect(mimeTypes.assetType(`a${extension}`)).toBe(AssetType.Image);
+      expect(mimeTypes.isWebSupportedImage(`a${extension}`)).toBe(false);
+      expect(mimeTypes.isRaw(`a${extension}`)).toBe(false);
+    });
+
+    // FL-968: a camera's .thm sits beside its video and must not become a photo of its own.
+    // AVC-coded HEIF needs an H.264 decoder in libheif, which the image does not have.
+    it.each(['a.thm', 'a.avci', 'a.avcs'])('does not accept %s', (filename) => {
+      expect(mimeTypes.isAsset(filename)).toBe(false);
+    });
+
+    it('offers no extension without a fixture that proves it', async () => {
+      const { readFileSync } = await import('node:fs');
+      const manifest = JSON.parse(
+        readFileSync(new URL('../../test/fixtures/formats/manifest.json', import.meta.url), 'utf8'),
+      ) as { fixtures: { file: string; expectedFailure?: string }[] };
+      const proven = new Set(
+        manifest.fixtures
+          .filter((fixture) => !fixture.expectedFailure)
+          .map(({ file }) => file.slice(file.lastIndexOf('.')).toLowerCase()),
+      );
+      const added = Object.keys(mimeTypes.webUnsupportedImage).filter(
+        (extension) => !mimeTypes.isRaw(`a${extension}`) && !LEGACY_STILLS.has(extension),
+      );
+      expect(added.filter((extension) => !proven.has(extension))).toEqual([]);
+    });
   });
 
   describe('raw', () => {

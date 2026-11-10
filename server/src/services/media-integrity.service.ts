@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { open } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
+import type { StillRung } from 'src/types.js';
 import { AssetType, Colorspace, MediaHealthStatus } from 'src/enum.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -10,6 +11,7 @@ import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
+import { isUndecodableError } from 'src/utils/media-decode.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -282,7 +284,7 @@ export class MediaIntegrityService {
         // killed from outside (out of memory, the host shutting down): nothing about the file
         return { status: 'transient', reason: 'decoder_resource_limit' };
       }
-      if (mimeTypes.isCinemaRaw(input.originalFileName)) {
+      if (mimeTypes.isCinemaRaw(input.originalFileName) && isUndecodableError(error)) {
         // FL-1357: cinema RAW has no open decoder. What ffmpeg makes of one says nothing about the file.
         return { status: 'unsupported', reason: 'decode_unsupported' };
       }
@@ -315,7 +317,12 @@ export class MediaIntegrityService {
         if (signal.aborted) {
           return { status: 'timeout', reason: 'validation_timeout' };
         }
-        await this.mediaRepository.decodeImage(source, { colorspace: Colorspace.Srgb, processInvalidImages: false });
+        // The strict reading only: what it complains about decides between "healthy" and "cut short" below.
+        await this.mediaRepository.decodeImage(source, {
+          colorspace: Colorspace.Srgb,
+          processInvalidImages: false,
+          ladder: 'strict',
+        });
       } else {
         return { status: 'unsupported', reason: 'media_type_unsupported' };
       }
@@ -375,10 +382,13 @@ export class MediaIntegrityService {
       const said = message ? { message } : {};
       // FL-1353 (owner 2026-11-10): a picture that opens when read leniently is not damaged because a strict
       // decoder complains about it. The one exception is a JPEG cut short with rows really missing.
-      const lenient = { colorspace: Colorspace.Srgb, processInvalidImages: true };
+      // FL-1356: the rest of the still ladder counts too (another decoder reading the picture itself), but
+      // not the small preview stored inside the file, which says nothing about the picture.
+      const lenient = { colorspace: Colorspace.Srgb, processInvalidImages: true, ladder: 'pixels' as const };
+      let rung: StillRung | undefined;
       let opens = true;
       try {
-        await this.mediaRepository.decodeImage(input.path, lenient);
+        rung = (await this.mediaRepository.decodeImage(input.path, lenient)).rung;
       } catch (lenientError) {
         // the second read could not finish: that says nothing about the file
         if (signal.aborted) {
@@ -390,7 +400,9 @@ export class MediaIntegrityService {
         opens = false;
       }
       if (opens) {
+        // Rows can only be counted in what libvips itself read: another decoder's copy is whole or absent.
         const cutShort =
+          rung === 'lenient' &&
           isJpegFileName(input.originalFileName) &&
           /premature end|truncated|incomplete|unexpected end/i.test(message) &&
           (await this.mediaRepository.pictureSaved(input.path)) < 100;

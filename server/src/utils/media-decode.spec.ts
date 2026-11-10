@@ -20,6 +20,7 @@ import {
   classifySourceTransfer,
   describeDolbyVisionInput,
   parseSourcePixelLayout,
+  isUndecodableError,
   qualifySourceDecode,
   selectDecodeAcceleration,
 } from 'src/utils/media-decode.js';
@@ -438,5 +439,26 @@ describe('advertised matrix consistency', () => {
     // A guard against the probe mapping drifting: these are the values media.repository writes.
     expect(ColorPrimaries.Bt2020).toBeDefined();
     expect(ColorMatrix.Bt2020Nc).toBeDefined();
+  });
+});
+
+describe('isUndecodableError (FL-1357)', () => {
+  it.each([
+    'ffprobe exited with code 1: Invalid data found when processing input',
+    'ffmpeg exited with code 1: Decoder (codec none) not found for input stream #0:0',
+    'moov atom not found',
+  ])('"%s" is about the format', (message) => {
+    expect(isUndecodableError(new Error(message))).toBe(true);
+  });
+
+  it.each([
+    new Error('ffprobe exited with code 1: /library/A001.braw: Input/output error'),
+    new Error('ffprobe exited with code null: '),
+    new Error('Media process stopped making progress'),
+    new Error('av_interleaved_write_frame(): No space left on device'),
+    Object.assign(new Error('spawn ffprobe ENOENT'), { code: 'ENOENT' }),
+    new Error('Failed to probe', { cause: Object.assign(new Error('read'), { code: 'EIO' }) }),
+  ])('%s is the machine or the drive, and is retried', (error) => {
+    expect(isUndecodableError(error)).toBe(false);
   });
 });

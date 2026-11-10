@@ -51,6 +51,7 @@ import { executionSignal } from 'src/utils/execution-signal.js';
 import { boxIou, fractionBox, normalizedBox } from 'src/utils/face-anchor.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
+import { isUndecodableError } from 'src/utils/media-decode.js';
 import { detectMediaKinds } from 'src/utils/media-kinds.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
@@ -1170,7 +1171,7 @@ export class MetadataService extends BaseService {
       shouldProbe
         ? this.getVideoTags(asset.originalPath).catch((error) => {
             executionSignal()?.throwIfAborted();
-            if (!mimeTypes.isCinemaRaw(asset.originalPath)) {
+            if (!mimeTypes.isCinemaRaw(asset.originalPath) || !isUndecodableError(error)) {
               throw error;
             }
             // FL-1357: cinema RAW that ffmpeg cannot open is kept with what ExifTool reads; it is not a failure
