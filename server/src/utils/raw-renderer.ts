@@ -48,9 +48,13 @@ const classifyExit = (code: number | null, killedBy: NodeJS.Signals | null, diag
   if (/error while loading shared libraries/i.test(diagnostic)) {
     return new RawRenderError('dependency_missing', 'ENOENT');
   }
+  if (/no space left/i.test(diagnostic)) {
+    // a full drive is the server's trouble, named so that nobody settles for a lower rung because of it
+    return new RawRenderError('resource_limit', 'ENOSPC');
+  }
   if (
     killedBy ||
-    /insufficient memory|unsufficient memory|libraw internal mempool overflowed|out of memory|cannot allocate|too big|no space left/i.test(
+    /insufficient memory|unsufficient memory|libraw internal mempool overflowed|out of memory|cannot allocate|too big/i.test(
       diagnostic,
     )
   ) {
@@ -174,7 +178,7 @@ export async function renderRawWithLibRaw(
       throw new RawRenderError('dependency_missing', 'ENOENT', error);
     }
     if (['ENOSPC', 'ENOMEM', 'ERR_FS_FILE_TOO_LARGE'].includes(code as string)) {
-      throw new RawRenderError('resource_limit', 'ERR_RAW_RESOURCE_LIMIT', error);
+      throw new RawRenderError('resource_limit', code === 'ENOSPC' ? 'ENOSPC' : 'ERR_RAW_RESOURCE_LIMIT', error);
     }
     if (code === 'EACCES' || code === 'EPERM') {
       throw new RawRenderError('io', code, error);

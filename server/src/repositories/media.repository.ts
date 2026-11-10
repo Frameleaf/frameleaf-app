@@ -247,7 +247,13 @@ export class MediaRepository {
     try {
       return { rung: 'libraw', buffer: await renderRawWithLibRaw(input, signal, options) };
     } catch (error) {
-      if (!(error instanceof RawRenderError) || error.reason === 'cancelled' || error.reason === 'io') {
+      // A full drive is the server's to sort out and try again, not a reason to settle for a lower rung.
+      if (
+        !(error instanceof RawRenderError) ||
+        error.reason === 'cancelled' ||
+        error.reason === 'io' ||
+        error.code === 'ENOSPC'
+      ) {
         throw error;
       }
       failure = error;

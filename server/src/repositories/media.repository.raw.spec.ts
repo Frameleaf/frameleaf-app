@@ -192,6 +192,14 @@ describe('MediaRepository.renderRaw (FL-1355 ladder)', () => {
     expect(most).toBe(1);
   });
 
+  it('does not settle for a lower rung because the drive is full', async () => {
+    const failure = new RawRenderError('resource_limit', 'ENOSPC');
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+    await expect(sut.renderRaw('a.nef')).rejects.toBe(failure);
+    expect(failure.ladderExhausted).toBe(false);
+    expect(sut.extract).not.toHaveBeenCalled();
+  });
+
   it('stops when cancelled during the second decoder', async () => {
     const controller = new AbortController();
     vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
