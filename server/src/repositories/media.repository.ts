@@ -9,6 +9,7 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { Writable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import { parentPort } from 'node:worker_threads';
 import type { HdrCodecCapabilities } from 'src/queue/image-hdr.js';
 import type { SharpArguments, SharpResult } from 'src/queue/sharp-protocol.js';
@@ -25,6 +26,7 @@ import type {
   VideoPacketInfo,
 } from 'src/types.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
+import type { FontFacts } from 'src/utils/font-file.js';
 import { Exif } from 'src/database.js';
 import {
   AacProfile,
@@ -432,6 +434,29 @@ export class MediaRepository {
       (source, decode) => sharpProcessPool.run('decodeImage', [source, decode]),
       () => true,
     );
+  }
+
+  /**
+   * FL-1359: a font's facts, read in a process of its own with half a gigabyte of heap and half a minute.
+   * It rejects when the font cannot be read within those; the caller keeps the font's name only.
+   */
+  async readFontFacts(path: string, filename: string): Promise<{ facts: FontFacts; sample: string }> {
+    const script = fileURLToPath(new URL('../utils/font-facts-cli.js', import.meta.url));
+    const stdout = await new Promise<string>((resolve, reject) =>
+      execFile(
+        process.execPath,
+        ['--max-old-space-size=512', script, path, filename],
+        { timeout: 30_000, maxBuffer: 8 * 1024 * 1024, signal: executionSignal() },
+        (error, out) => (error ? reject(error) : resolve(out)),
+      ),
+    );
+    return JSON.parse(stdout);
+  }
+
+  /** FL-1359: a font's specimen picture, capped at one minute. The child that drew it is not used again. */
+  renderFontSpecimen(...args: SharpArguments<'renderFontSpecimen'>): Promise<Buffer> {
+    const signals = [executionSignal(), AbortSignal.timeout(60_000)].filter((signal) => !!signal);
+    return sharpProcessPool.run('renderFontSpecimen', args, AbortSignal.any(signals));
   }
 
   async generateThumbnail(input: string | Buffer, options: GenerateThumbnailOptions, output: string): Promise<void> {

@@ -280,6 +280,28 @@ describe(AssistantService.name, () => {
     ]);
   });
 
+  it('searches spoken words on their own and claims no visual match for them', async () => {
+    const { sut, speech, search, machineLearning } = setup({ planner: true });
+    machineLearning.planAssistantSearch.mockResolvedValue(plannerAnswer({ spoken: 'happy birthday', visual: 'cake' }));
+    const response = await sut.ask(auth, { query: 'the video with the cake where we sing happy birthday' });
+    expect(speech.search).toHaveBeenCalled();
+    expect(search.searchSmart).not.toHaveBeenCalled();
+    expect(response.plan.visual).toBeUndefined();
+    expect(response.summary).not.toContain('look like');
+    expect(response.warnings[0]).toContain('Spoken words are searched on their own');
+  });
+
+  it('asks the planner in English when the language is empty', async () => {
+    const { sut, machineLearning } = setup({ planner: true });
+    machineLearning.planAssistantSearch.mockResolvedValue(plannerAnswer({ city: 'Lisbon' }));
+    await sut.ask(auth, { query: 'photos in Lisbon', language: '' });
+    expect(machineLearning.planAssistantSearch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ language: 'en' }),
+      expect.any(AbortSignal),
+    );
+  });
+
   it('reads only the catalogue kinds an API key is granted', async () => {
     const { sut, people, albums } = setup();
     await sut.ask(factory.auth({ apiKey: { permissions: [Permission.AssetRead] } }), { query: 'beach' });

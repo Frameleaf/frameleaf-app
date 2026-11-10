@@ -126,6 +126,10 @@ const SearchPreferencesUpdateSchema = z
       .describe(
         'Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none',
       ),
+    classic: z
+      .boolean()
+      .optional()
+      .describe('FL-918: whether search questions use classic search instead of the Library Assistant'),
   })
   .optional()
   .meta({ id: 'SearchPreferencesUpdate' });
@@ -380,6 +384,9 @@ const SearchPreferencesResponseSchema = z
       .describe(
         'Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none',
       ),
+    classic: z
+      .boolean()
+      .describe('FL-918: whether search questions use classic search instead of the Library Assistant'),
   })
   .meta({ id: 'SearchPreferencesResponse' });
 

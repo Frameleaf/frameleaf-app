@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "f57a9cdf5d3f2688913774440c7f6292d400c90e",
+  "sourceCommit": "4f5e6b0f1ab376a2a528a0d9d5be1894f3127f1d",
   "sourceHashes": {
     "src/enum.ts": "ec9e5dcfd99e55aaa8e4532b4f8b8e1163ec5f1f3d533e36157b89857d5fef1c",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,7 +8,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "73ec605fc1a3a7ab270e6ad8183b0c76a56f5d1c28c1b637b30ee1d084887db5",
-    "src/schema/index.ts": "4b2f9c1b234883280436f1be59cf014abb16ceb10811aca628eddde19cfd4c8c",
+    "src/schema/index.ts": "d2155e13f3f256542a103fd8c15559affa248027cb40759ace3c0c308aa5c1c6",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -40,6 +40,7 @@
     "src/schema/tables/asset-face-audit.table.ts": "b24df9a765cce0fd089496042f7c702c8c8b37b1eea134e4800abe03c46d3a1e",
     "src/schema/tables/asset-face.table.ts": "69c216f6f94873a74f53bd1ca80ec584188532d9c08af2306a70210a3e482c43",
     "src/schema/tables/asset-file.table.ts": "67d155381476c79d6d6a1b6f458baeea1216cbb891c73ec95bc9ac5ee7662cfe",
+    "src/schema/tables/asset-font.table.ts": "282da11abac6c38f29d8bf215dabafca0bb645eef62063c013f082da7a744ee7",
     "src/schema/tables/asset-health.table.ts": "7ff758f764539a7dd51d38ebd28bfc9c4bdccb35e9d9444d2c8751fd4b1bae88",
     "src/schema/tables/asset-job-status.table.ts": "a858a8c2cbcc9d577613a7d10f0ee8dedc04b24304cd55216603da571c4313b3",
     "src/schema/tables/asset-local-effect.table.ts": "5f45865af1335a7b60e3c71f3e760a2afb60751f79e392172ecac216bd18feac",
@@ -107,7 +108,6 @@
     "src/schema/tables/person-group-audit.table.ts": "19bf276917c6883284d334f0a53c30761073d0b5af57f3b97562e8298faa9e0e",
     "src/schema/tables/person-group.table.ts": "20d0bc1efac183db55decff5d872755c351a54a3e3f180280a64aef02f1a79c8",
     "src/schema/tables/person-merge-candidate.table.ts": "9437449b380d13540219f8128eaaf987cd603141f90efb42fdd1a426d9005538",
-    "src/schema/tables/person-split-candidate.table.ts": "8b83192e0ec5b8b4e24cea748075ebc9ff61c5a0d1422d9678d6cd3445093a74",
     "src/schema/tables/person.table.ts": "58b39d9e260ae6dab24d86af7f4ae3f343a0fc66c53c7e1b2dd08ce40eec92ce",
     "src/schema/tables/pet-audit.table.ts": "f4af0e691a34f5f4cbba68f22eda676fa09ff218dd2e3c938ac3678a374d0f43",
     "src/schema/tables/pet-observation-audit.table.ts": "ecb7a4e85d894c9cf13325bbe0a45ab25d255f8bb720a0962947851b488976be",
@@ -174,6 +174,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "6f07604845111a8b3e3c4b352ecf2e65ecc046e58de9faf74c250aefaa08d643",
-  "rawMetadataSha256": "53b52536e24c3060d0945c6c972884538d35f910c74776fec634056e4747f85c"
+  "dumpSha256": "ac9abbc354b2ae17e0dfb3935b295da1795bafd7c862bbe1822b04255a497864",
+  "rawMetadataSha256": "8a6e23aa99905059d62fee7698dc7c28733199d94d783d1b0ce671f02fb4f2d6"
 }

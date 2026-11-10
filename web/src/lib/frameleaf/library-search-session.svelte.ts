@@ -1,4 +1,5 @@
 import {
+  askAssistant,
   askSearch,
   searchLibraryItems,
   LibraryAssetItemKind,
@@ -9,6 +10,7 @@ import {
   searchSmart,
   type AlbumResponseDto,
   type AskSearchResponseDto,
+  type AssistantAskResponseDto,
   type AssetResponseDto,
   type MetadataSearchDto,
   type SmartSearchDto,
@@ -17,6 +19,8 @@ import {
 export type LibrarySearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
 export type LibrarySearchQuery =
   | { kind: 'ask'; query: string }
+  /** FL-918: the Library Assistant answers in one page; it has no next page. */
+  | { kind: 'assistant'; query: string }
   | { kind: 'metadata' | 'smart'; terms: LibrarySearchTerms }
   | { kind: 'library'; terms: LibraryItemSearchDto };
 
@@ -28,6 +32,7 @@ export class LibrarySearchSession {
   assets = $state<AssetResponseDto[]>([]);
   albums = $state<AlbumResponseDto[]>([]);
   askResponse = $state<AskSearchResponseDto>();
+  assistantResponse = $state<AssistantAskResponseDto>();
   loading = $state(false);
   nextPage = $state<number | null>(null);
   nextCursor = $state<string | null>(null);
@@ -45,6 +50,7 @@ export class LibrarySearchSession {
     this.assets = [];
     this.albums = [];
     this.askResponse = undefined;
+    this.assistantResponse = undefined;
     this.nextPage = query ? 1 : null;
     this.nextCursor = null;
     this.loading = false;
@@ -86,6 +92,20 @@ export class LibrarySearchSession {
         this.countCapped = response.countCapped;
         this.nextPage = null;
         this.nextCursor = response.nextCursor;
+        return;
+      }
+      if (query.kind === 'assistant') {
+        const answer = await askAssistant(
+          { assistantAskDto: { query: query.query, language: options.language } },
+          { signal: request.signal },
+        );
+        if (this.#request !== request) {
+          return;
+        }
+        this.assets = answer.results.assets.items;
+        this.assistantResponse = answer;
+        this.nextPage = null;
+        this.nextCursor = null;
         return;
       }
       let response;

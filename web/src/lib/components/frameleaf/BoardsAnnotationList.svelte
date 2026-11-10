@@ -2,7 +2,7 @@
   /**
    * The annotations as a list (FL-652, approved prototype `AnnotationList`): the same order and
    * numbers as on the picture. In the viewer's annotate mode the chosen one opens its note (and,
-   * for text, the words on the picture) and each row has Delete.
+   * for text, the words on the picture and their style, FL-1359) and each row has Delete.
    */
   import { ANNOTATION_ICON, annotationLabelValues, NOTE_MAX, TEXT_MAX } from '$lib/frameleaf/boards-annotations';
   import { AssetAnnotationKind, type AssetAnnotationItem } from '@frameleaf/sdk';
@@ -69,6 +69,12 @@
                   oninput={(event) => onEdit?.(item.id, { text: event.currentTarget.value }, true)}
                 />
               </label>
+              {#await import('$lib/components/frameleaf/BoardsTextStyle.svelte') then { default: BoardsTextStyle }}
+                <BoardsTextStyle
+                  style={item.style}
+                  onChange={(style, typing) => onEdit?.(item.id, { style }, typing)}
+                />
+              {/await}
             {/if}
             <label>
               <span>{$t('frameleaf_boards_note')}</span>

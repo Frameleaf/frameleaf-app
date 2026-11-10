@@ -278,6 +278,7 @@ describe('/server', () => {
         sidecar: ['.xmp'],
         image: expect.any(Array),
         video: expect.any(Array),
+        font: expect.any(Array),
       });
     });
   });

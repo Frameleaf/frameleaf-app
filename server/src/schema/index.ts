@@ -68,6 +68,7 @@ import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceAuditTable } from 'src/schema/tables/asset-face-audit.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
+import { AssetFontTable } from 'src/schema/tables/asset-font.table.js';
 import {
   AssetHealthCandidateTable,
   AssetHealthRunTable,
@@ -347,6 +348,7 @@ export class ImmichDatabase {
     BackupReconciliationTable,
     AssetPaletteTable,
     AssetPaletteSwatchTable,
+    AssetFontTable,
     AssetAnnotationTable,
     CaptureReceiptTable,
     BrowserExtensionSignInCodeTable,
@@ -654,6 +656,7 @@ export interface DB extends QueueDatabase {
   asset_location_insight: AssetLocationInsightTable;
   asset_palette: AssetPaletteTable;
   asset_palette_swatch: AssetPaletteSwatchTable;
+  asset_font: AssetFontTable;
   asset_annotation: AssetAnnotationTable;
   capture_receipt: CaptureReceiptTable;
   browser_extension_sign_in_code: BrowserExtensionSignInCodeTable;

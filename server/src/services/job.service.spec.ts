@@ -283,6 +283,19 @@ describe(JobService.name, () => {
         stub: [AssetFactory.create({ id: 'asset-1', type: AssetType.Video, libraryScope: LibraryScope.Design })],
       },
       {
+        // FL-1359: a font's thumbnail is its specimen, not a picture to search, read or caption
+        item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
+        jobs: [],
+        stub: [
+          AssetFactory.create({
+            id: 'asset-1',
+            type: AssetType.Other,
+            originalFileName: 'Lodge.ttf',
+            libraryScope: LibraryScope.Design,
+          }),
+        ],
+      },
+      {
         // FL-58: a fresh CLIP embedding is read by pet recognition
         item: { name: JobName.SmartSearch, data: { id: 'asset-1' } },
         jobs: [JobName.PetRecognition],

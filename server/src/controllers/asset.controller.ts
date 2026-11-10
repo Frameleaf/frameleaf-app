@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { AssetFontResponseDto } from 'src/dtos/asset-font.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import {
@@ -324,6 +325,18 @@ export class AssetController {
   })
   getAssetMetadata(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetMetadataResponseDto[]> {
     return this.service.getMetadata(auth, id);
+  }
+
+  @Get(':id/font')
+  @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
+  @Endpoint({
+    summary: 'Read what a font in Boards says about itself',
+    description:
+      'Family, style, weight, glyph count, variable axes and named styles, features, writing systems and licence of a font item (an asset of type OTHER in the design workspace). 404 for anything that is not a font. The font file is the asset original, which a shared link sends only when it allows downloads.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAssetFont(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetFontResponseDto> {
+    return this.service.getFont(auth, id);
   }
 
   @Post(':id/views')

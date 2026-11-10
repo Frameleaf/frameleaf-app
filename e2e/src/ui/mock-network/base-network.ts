@@ -80,6 +80,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         },
         search: {
           includeArchived: false,
+          classic: false,
         },
         purchase: {
           showSupportBadge: true,
@@ -264,6 +265,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
           '.tiff',
         ],
         sidecar: ['.xmp'],
+        font: ['.otf', '.ttf', '.woff', '.woff2'],
       },
     });
   });

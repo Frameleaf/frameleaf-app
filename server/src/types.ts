@@ -1828,6 +1828,8 @@ export type UserPreferences = {
   /** ACCOUNT-P3: the search screens show archived photos; the client sends the visibility, the server stores it only */
   search: {
     includeArchived: boolean;
+    /** FL-918: search questions go to classic search instead of the Library Assistant */
+    classic: boolean;
   };
   purchase: {
     showSupportBadge: boolean;

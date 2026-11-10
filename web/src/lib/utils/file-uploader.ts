@@ -94,10 +94,14 @@ export const openFilePicker = async (options: FilePickerParam = {}) => {
   });
 };
 
+/** FL-1359: Boards also takes fonts; the server accepts them nowhere else. */
+const uploadExtensions = (libraryScope: LibraryScope | undefined) =>
+  libraryScope === LibraryScope.Design ? uploadManager.getBoardsExtensions() : uploadManager.getExtensions();
+
 export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
   const { albumId, multiple = true, directory = false, isLockedAssets, libraryScope } = options;
   const current = authManager.captureSession();
-  const extensions = uploadManager.getExtensions();
+  const extensions = uploadExtensions(libraryScope);
   const files = await openFilePicker({
     multiple,
     // A directory picker ignores `accept`; fileUploadHandler still filters unsupported
@@ -129,7 +133,7 @@ export const fileUploadHandler = async ({
   checksums,
   onResult,
 }: FileUploadHandlerParams): Promise<string[]> => {
-  const extensions = uploadManager.getExtensions();
+  const extensions = uploadExtensions(libraryScope);
   const context: UploadContext = {
     current: authManager.captureSession(),
     owner: authManager.authenticated ? authManager.user.id : undefined,

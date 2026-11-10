@@ -106,7 +106,7 @@ export class AssistantService {
     let answeredBy = 'rules';
     let plan: ResolvedPlan | undefined;
     if (settings.planner) {
-      const planned = await this.planWithModel(query, dto.language ?? 'en', catalog);
+      const planned = await this.planWithModel(query, dto.language || 'en', catalog);
       if (planned && 'clarify' in planned) {
         warnings.push(planned.clarify);
       } else if (planned && this.isRunnable(planned, smartSearch)) {
@@ -120,7 +120,12 @@ export class AssistantService {
       warnings.push('Visual search is off, so only names, places, dates and text were searched.');
       delete plan.filters.visual;
     }
-    const { assets, hits } = await this.execute(auth, plan, size, dto.language);
+    if (plan.filters.spoken && plan.filters.visual) {
+      // spoken words are searched on their own; a visual reason would claim a search that did not run
+      warnings.push('Spoken words are searched on their own, so what the photos look like was not searched.');
+      delete plan.filters.visual;
+    }
+    const { assets, hits } = await this.execute(auth, plan, size, dto.language || undefined);
     const reasons = assets.map((asset, index) => ({
       assetId: asset.id,
       items: this.reasonsFor(asset, plan, hits, index),

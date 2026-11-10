@@ -28,6 +28,8 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     removeLocation: vitest.fn().mockResolvedValue(true),
     copyTagGroup: vitest.fn().mockImplementation(() => Promise.resolve()),
     generateThumbhash: vitest.fn().mockResolvedValue(Buffer.from('')),
+    renderFontSpecimen: vitest.fn().mockResolvedValue(Buffer.from('')),
+    readFontFacts: vitest.fn(),
     extractAssetPalette: vitest.fn().mockResolvedValue({ swatches: [], hasTransparency: false }),
     decodeImage: vitest.fn().mockResolvedValue({ data: Buffer.from(''), info: {} }),
     extract: vitest.fn().mockResolvedValue(null),
