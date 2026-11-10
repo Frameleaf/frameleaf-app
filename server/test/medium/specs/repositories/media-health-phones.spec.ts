@@ -177,3 +177,49 @@ it('writes the put-back history with the resolve, and nothing for a problem alre
     await db.destroy();
   }
 });
+
+it('asks phones only about a photo the lost-originals list shows them, by the same rule (FL-1337 F4)', async () => {
+  const db = await getKyselyDB('media_health_shown_to_phones');
+  const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
+  try {
+    const { user } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    const lost = async (ownerId: string, name: string, extra: Record<string, unknown> = {}) => {
+      const { asset } = await ctx.newAsset({
+        ownerId,
+        originalPath: `/data/upload/${ownerId}/aa/bb/${name}.jpg`,
+        originalFileName: `${name}.jpg`,
+        checksum: sha1Of(name),
+        checksumAlgorithm: ChecksumAlgorithm.sha1File,
+        ...extra,
+      });
+      await sql`INSERT INTO asset_health ("assetId", category, status, severity, "originalPath", "originalFileName", evidence, resolution, "checkedAt")
+        VALUES (${asset.id}::uuid, 'missing', 'missing', 'critical', ${asset.originalPath}, ${name + '.jpg'}, '{}', '{}', now())`.execute(
+        db,
+      );
+      return asset;
+    };
+    const imported = await lost(user.id, 'imported');
+    // every photo uploaded to Frameleaf is stored with a SHA-256 of its contents, which phones don't match
+    const uploaded = await lost(user.id, 'uploaded', {
+      checksum: createHash('sha256').update('uploaded').digest(),
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+    const external = await lost(user.id, 'external', { isExternal: true });
+    const locked = await lost(user.id, 'locked');
+    await sql`INSERT INTO asset_lock ("assetId", reason) VALUES (${locked.id}::uuid, 'manual')`.execute(db);
+    const theirs = await lost(other.id, 'theirs');
+    const sut = new MediaHealthRepository(db);
+
+    const listed = (await sut.listLostOriginals(user.id, 10, 0)).map(({ assetId }) => assetId);
+    expect(listed).toEqual([imported.id]);
+    for (const asset of [imported, uploaded, external, locked]) {
+      await expect(sut.isShownToPhones(user.id, asset.id)).resolves.toBe(listed.includes(asset.id));
+    }
+    // only the owner's own
+    await expect(sut.isShownToPhones(user.id, theirs.id)).resolves.toBe(false);
+    await expect(sut.isShownToPhones(other.id, theirs.id)).resolves.toBe(true);
+  } finally {
+    await db.destroy();
+  }
+});

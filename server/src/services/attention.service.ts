@@ -96,11 +96,23 @@ export class AttentionService {
    * privacy settings. The tab rules are the file problems list's own. It adds no item and changes no check.
    */
   private async fileProblems(auth: AuthDto): Promise<AttentionResponseDto['fileProblems']> {
-    const { fixed, needsYou, since } = await this.mediaHealthRepository.fileProblemCounts({
-      privacy: { ...getHiddenContentQueryOptions(auth), ...getLockedVisibilityOptions(auth) },
-      days: FIXED_WINDOW_DAYS,
-    });
-    return { fixed, needsYou, since: since ? since.toISOString() : null };
+    try {
+      const { fixed, needsYou, since, latest } = await this.mediaHealthRepository.fileProblemCounts({
+        privacy: { ...getHiddenContentQueryOptions(auth), ...getLockedVisibilityOptions(auth) },
+        days: FIXED_WINDOW_DAYS,
+      });
+      return {
+        fixed,
+        needsYou,
+        since: since ? since.toISOString() : null,
+        // Task 11b: the newest fix of the same window, so the Overview can tell a new one from what it showed
+        latest: fixed > 0 && latest ? latest.toISOString() : null,
+      };
+    } catch (error) {
+      // like a check that could not be read: the rest of the Overview still answers
+      this.logger.warn(`Could not count damaged and missing files for what needs attention: ${error}`);
+      return { fixed: 0, needsYou: 0, since: null, latest: null };
+    }
   }
 
   private async dismissed(): Promise<string[]> {

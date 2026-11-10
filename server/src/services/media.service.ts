@@ -449,7 +449,7 @@ export class MediaService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetGenerateThumbnails, queue: QueueName.ThumbnailGeneration })
-  async handleGenerateThumbnails({ id }: JobOf<JobName.AssetGenerateThumbnails>): Promise<JobStatus> {
+  async handleGenerateThumbnails({ id, afterCare }: JobOf<JobName.AssetGenerateThumbnails>): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForGenerateThumbnailJob(id);
     const config = await this.getConfig({ withCache: true });
 
@@ -498,6 +498,7 @@ export class MediaService extends BaseService {
           config,
           // FL-1285: the stored path, where a DJI sidecar sits; `originalPath` may be a plain copy
           asset.originalPath,
+          { handOffDamage: !afterCare },
         ),
       );
     } catch (error) {
@@ -562,6 +563,11 @@ export class MediaService extends BaseService {
     config: SystemConfig,
     /** The original's stored library path, when `asset.originalPath` is a plain copy of it. */
     storedOriginalPath = asset.originalPath,
+    /**
+     * FL-1337: whether a photo that won't open goes to Library care. Not when Library care itself asked for
+     * these previews after it found the file opens: the failure is then the job's, and it fails to be retried.
+     */
+    { handOffDamage = true }: { handOffDamage?: boolean } = {},
   ): Promise<JobStatus> {
     const id = asset.id;
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
@@ -622,7 +628,7 @@ export class MediaService extends BaseService {
         generated = await this.generateImageThumbnails(asset, config);
       } catch (error) {
         executionSignal()?.throwIfAborted();
-        if (this.isDecodeError(error)) {
+        if (handOffDamage && this.isDecodeError(error)) {
           // FL-1337: a photo that won't open goes to Library care, which names the cause and repairs what it can.
           // Thumbnails are queued again after a fix, and their follow-up work runs then.
           this.logger.warn(`Sending asset ${id} to Library care: thumbnail generation failed: ${error}`);
@@ -673,7 +679,11 @@ export class MediaService extends BaseService {
     return { buffer: await renderRawWithLibRaw(originalPath, signal), format: RawExtractedFormat.Tiff };
   }
 
-  /** A decoder said the file will not open. Timeouts, worker exits and I/O trouble are not the file's fault, so they retry. */
+  /**
+   * A decoder said the file will not open. Timeouts, worker exits and I/O trouble are not the file's fault, so they
+   * retry. FL-1337: only the image worker's own decode failure counts (`decodeFailure`); a preview it could not write
+   * (a thumbnails folder it may not write to, a colour transform) is the job's failure, not the photo's.
+   */
   private isDecodeError(error: unknown): error is SharpOperationError | RawRenderError {
     if (isDriveFullError(error)) {
       return false;
@@ -681,7 +691,7 @@ export class MediaService extends BaseService {
     if (error instanceof RawRenderError) {
       return DECODE_RAW_REASONS.has(error.reason) && !isBusy(error.message);
     }
-    return error instanceof SharpOperationError && !isBusy(error.message);
+    return error instanceof SharpOperationError && error.decodeFailure && !isBusy(error.message);
   }
 
   private async extractOriginalImage(

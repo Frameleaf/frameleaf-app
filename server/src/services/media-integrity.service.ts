@@ -15,7 +15,8 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
 const execFile = promisify(execFileCallback);
-const hasJpegMarker = async (path: string): Promise<boolean> => {
+/** Whether the file's first 64 KiB hold a JPEG start marker; undefined when it could not be read (FL-1337). */
+const hasJpegMarker = async (path: string): Promise<boolean | undefined> => {
   try {
     const file = await open(path, 'r');
     try {
@@ -25,7 +26,7 @@ const hasJpegMarker = async (path: string): Promise<boolean> => {
       await file.close();
     }
   } catch {
-    return false;
+    return undefined;
   }
 };
 // Admin override for full decoding of long videos. Native operations retain their concurrency slot after timeout.
@@ -258,12 +259,15 @@ export class MediaIntegrityService {
       const said = message ? { message } : {};
       if (/unsupported|decoder.*not found|unknown decoder/i.test(message)) {
         // "Unsupported" on a file that holds a JPEG start marker is a damaged JPEG, not an unknown format.
-        if (
-          /unsupported/i.test(message) &&
-          isJpegFileName(input.originalFileName) &&
-          (await hasJpegMarker(input.path))
-        ) {
-          return { status: 'corrupt', reason: 'decode_failed', ...said };
+        if (/unsupported/i.test(message) && isJpegFileName(input.originalFileName)) {
+          const marked = await hasJpegMarker(input.path);
+          if (marked === undefined) {
+            // FL-1337: a read that failed says nothing, and an unsupported file is left as it is: so it is busy
+            return { status: 'transient', reason: 'io_failed' };
+          }
+          if (marked) {
+            return { status: 'corrupt', reason: 'decode_failed', ...said };
+          }
         }
         return { status: 'unsupported', reason: 'decode_unsupported', ...said };
       }

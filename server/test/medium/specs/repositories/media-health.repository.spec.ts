@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import {
+  AssetLockReason,
   AssetStatus,
   AssetVisibility,
   ChecksumAlgorithm,
@@ -844,24 +845,33 @@ describe(MediaHealthRepository.name, () => {
       const search = randomUUID();
       const live = randomUUID();
       const liveJob = randomUUID();
-      const step = (id: string, data: Record<string, unknown>) =>
+      const step = (id: string, data: Record<string, unknown>, queue = 'mediaHealth') =>
         sql`INSERT INTO job (id, queue, name, data, "safeToRetry", "deadlineMs")
-          VALUES (${id}::uuid, 'media_health', 'MediaHealthLocateMissing', ${JSON.stringify(data)}::text::jsonb, true, 60000)`.execute(
+          VALUES (${id}::uuid, ${queue}, 'MediaHealthLocateMissing', ${JSON.stringify(data)}::text::jsonb, true, 60000)`.execute(
           defaultDatabase,
         );
-      await sql`INSERT INTO job_queue (name) VALUES ('media_health') ON CONFLICT DO NOTHING`.execute(defaultDatabase);
+      await sql`INSERT INTO job_queue (name) VALUES ('mediaHealth'), ('elsewhere') ON CONFLICT DO NOTHING`.execute(
+        defaultDatabase,
+      );
       await step(search, { userId: user.id, pending: true });
       await step(liveJob, { userId: user.id, pending: true, searchId: live, ids: [] });
+      // a job of that name in another queue is not Library care's search: it carries no claim
+      const stray = randomUUID();
+      const strayJob = randomUUID();
+      await step(strayJob, { userId: user.id, pending: true, searchId: stray, ids: [] }, 'elsewhere');
       const waiting = await waitingFor(user.id, true);
       const walking = await waitingFor(user.id, { search: live });
       const stopped = await waitingFor(user.id, { search: randomUUID() });
+      const strayed = await waitingFor(user.id, { search: stray });
+      // a claim that does not name a search by its id is never mistaken for one, and fails nothing
+      const unnamed = await waitingFor(user.id, { search: 'not-a-job-id' });
       await waitingFor(user.id, false);
       await waitingFor(user.id, true, true);
       await waitingFor(other.id, true);
 
       try {
         await expect(sut.claimSearchPending(user.id, search).then((ids) => ids.sort())).resolves.toEqual(
-          [waiting, stopped].sort(),
+          [waiting, stopped, strayed, unnamed].sort(),
         );
         const [claimed] = await sut.getByIds([waiting]);
         expect(claimed.evidence).toEqual({ reason: 'stat failed', searchPending: { search } });
@@ -872,7 +882,7 @@ describe(MediaHealthRepository.name, () => {
         ]);
         // a retried step claims the same findings again
         await expect(sut.claimSearchPending(user.id, search).then((ids) => ids.sort())).resolves.toEqual(
-          [waiting, stopped].sort(),
+          [waiting, stopped, strayed, unnamed].sort(),
         );
         // once no step of the live search is live (it failed or was stopped), the next search claims its findings
         await sql`UPDATE job SET state = 'failed', "finishedAt" = now() WHERE id = ${liveJob}::uuid`.execute(
@@ -880,7 +890,9 @@ describe(MediaHealthRepository.name, () => {
         );
         await expect(sut.claimSearchPending(user.id, randomUUID())).resolves.toEqual([walking]);
       } finally {
-        await sql`DELETE FROM job WHERE id IN (${search}::uuid, ${liveJob}::uuid)`.execute(defaultDatabase);
+        await sql`DELETE FROM job WHERE id IN (${search}::uuid, ${liveJob}::uuid, ${strayJob}::uuid)`.execute(
+          defaultDatabase,
+        );
       }
     });
 
@@ -963,10 +975,155 @@ describe(MediaHealthRepository.name, () => {
         }),
       ]);
 
-      // a new verdict starts the fix state afresh, but never forgets "don't repair this again"
+      // F6: another status while it stays open is the same problem, and keeps how the fix left it
       await sut.upsertFinding({ ...damaged, status: MediaHealthStatus.CorruptSuspect, evidence: { reason: 'x' } });
       await expect(sut.getByIds([finding.id])).resolves.toEqual([
-        expect.objectContaining({ evidence: { reason: 'x', autoRepairDeclined: true } }),
+        expect.objectContaining({ evidence: { reason: 'x', fixState: 'cant-repair', autoRepairDeclined: true } }),
+      ]);
+
+      // a closed problem that comes back starts the fix state afresh, but never forgets "don't repair this again"
+      await sut.markResolved(MediaHealthCategory.Corrupt, asset.id);
+      await sut.upsertFinding({ ...damaged, evidence: { reason: 'y' } });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({ evidence: { reason: 'y', autoRepairDeclined: true }, resolvedAt: null }),
+      ]);
+    });
+
+    it('keeps a missing file’s Keep and search while its copies come and go, and starts afresh once dismissed (F6)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const missing = findingDto(asset.id, asset.originalPath, null);
+      const finding = await sut.upsertFinding(missing);
+      assert.isDefined(finding);
+      await sut.settleFinding({ healthId: finding.id, evidence: { fixState: 'left-as-is', searchPending: false } });
+      const evidence = async () => (await sut.getByIds([finding.id]))[0].evidence;
+
+      // a search found copies Frameleaf may not use by itself, then the weekly check finds it missing again
+      for (const status of [MediaHealthStatus.Found, MediaHealthStatus.Candidate, MediaHealthStatus.Missing]) {
+        await sut.upsertFinding({ ...missing, status, evidence: { reason: 'source_file_missing_or_unreadable' } });
+        await expect(evidence()).resolves.toEqual({
+          reason: 'source_file_missing_or_unreadable',
+          fixState: 'left-as-is',
+          searchPending: false,
+        });
+      }
+
+      // dismissed, then found again by a check: a new problem, for the fix to look at afresh
+      await sut.markDismissed([finding.id]);
+      await sut.upsertFinding({ ...missing, evidence: { reason: 'source_file_missing_or_unreadable' } });
+      const [reopened] = await sut.getByIds([finding.id]);
+      expect(reopened).toMatchObject({ dismissedAt: null, evidence: { reason: 'source_file_missing_or_unreadable' } });
+      expect(reopened.evidence).not.toHaveProperty('fixState');
+    });
+
+    it('writes what a search found onto the finding as it is now, and never onto a closed one (F7)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const [current] = await sut.getAssets([asset.id]);
+      const run = await sut.createRun(MediaHealthCategory.Missing, user.id);
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        evidence: { reason: 'source_file_missing_or_unreadable', source: 'import' },
+        resolution: { chosenCandidateId: randomUUID(), note: 'kept' },
+      });
+      assert.isDefined(finding);
+      // the search claimed it and walked; meanwhile the person kept it as it is
+      await sut.settleFinding({ healthId: finding.id, evidence: { searchPending: { search: 'walk' } } });
+      await sut.settleFinding({ healthId: finding.id, evidence: { fixState: 'left-as-is', searchPending: false } });
+      const result = {
+        healthId: finding.id,
+        assetId: asset.id,
+        expectedUpdateId: current.updateId,
+        originalPath: asset.originalPath,
+        evidence: { candidateCount: 2, validatedCandidateCount: 2, searchTruncated: false },
+        resolution: { autoRelinkable: false },
+      };
+
+      await expect(
+        sut.recordSearchResult({
+          ...result,
+          found: { status: MediaHealthStatus.Found, severity: MediaHealthSeverity.Warning, runId: run.id },
+        }),
+      ).resolves.toBe(true);
+      const [written] = await sut.getByIds([finding.id]);
+      expect(written).toMatchObject({
+        status: MediaHealthStatus.Found,
+        severity: MediaHealthSeverity.Warning,
+        runId: run.id,
+        dismissedAt: null,
+        resolvedAt: null,
+        // the Keep made during the walk stays; only the search's own keys are added
+        evidence: {
+          reason: 'source_file_missing_or_unreadable',
+          source: 'import',
+          fixState: 'left-as-is',
+          searchPending: false,
+          candidateCount: 2,
+          validatedCandidateCount: 2,
+          searchTruncated: false,
+        },
+        // a choice from the old candidate list no longer applies
+        resolution: { note: 'kept', autoRelinkable: false },
+      });
+
+      // damage the search looked behind keeps its status and the time it was confirmed
+      const confirmedAt = written.checkedAt;
+      await sut.recordSearchResult({ ...result, evidence: { candidateCount: 0 }, resolution: {} });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({ status: MediaHealthStatus.Found, checkedAt: confirmedAt }),
+      ]);
+
+      // dismissed during the walk: left as it is
+      await sut.markDismissed([finding.id]);
+      await expect(sut.recordSearchResult(result)).resolves.toBe(false);
+      const [dismissed] = await sut.getByIds([finding.id]);
+      expect(dismissed.dismissedAt).not.toBeNull();
+      expect(dismissed.evidence).toMatchObject({ candidateCount: 0 });
+
+      // put back by an upload during the walk (resolved): left as it is too
+      await sut.reopenFinding(finding.id, MediaHealthStatus.Dismissed, MediaHealthStatus.Found);
+      await sut.settleFinding({
+        healthId: finding.id,
+        evidence: { fixState: 'found-again' },
+        status: MediaHealthStatus.Relinked,
+      });
+      await expect(
+        sut.recordSearchResult({
+          ...result,
+          found: { status: MediaHealthStatus.Missing, severity: MediaHealthSeverity.Critical, runId: null },
+        }),
+      ).resolves.toBe(false);
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          status: MediaHealthStatus.Relinked,
+          evidence: expect.objectContaining({ fixState: 'found-again' }),
+        }),
+      ]);
+    });
+
+    it('writes no search result once the photo has another file than the one searched for', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const [current] = await sut.getAssets([asset.id]);
+      const finding = await sut.upsertFinding(findingDto(asset.id, asset.originalPath, null));
+      assert.isDefined(finding);
+      const result = {
+        healthId: finding.id,
+        assetId: asset.id,
+        originalPath: asset.originalPath,
+        evidence: { candidateCount: 1 },
+        resolution: {},
+      };
+
+      await expect(sut.recordSearchResult({ ...result, expectedUpdateId: randomUUID() })).resolves.toBe(false);
+      await expect(
+        sut.recordSearchResult({ ...result, expectedUpdateId: current.updateId, originalPath: '/elsewhere.jpg' }),
+      ).resolves.toBe(false);
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({ evidence: { reason: 'stat failed' } }),
       ]);
     });
 
@@ -1216,7 +1373,7 @@ describe(MediaHealthRepository.name, () => {
       await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeUndefined();
     });
 
-    it('counts what was fixed in the last 7 days, since the earliest, and what needs the reader', async () => {
+    it('counts what was fixed in the last 7 days, from the earliest to the newest, and what needs the reader', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const { user: other } = await ctx.newUser();
@@ -1224,7 +1381,8 @@ describe(MediaHealthRepository.name, () => {
       // the database is shared with the other specs: an unscoped count is read as a change
       const before = await sut.fileProblemCounts({ privacy: {}, days: 7 });
       const earliest = days(5);
-      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'repaired' }, resolvedAt: days(1) });
+      const newest = days(1);
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'repaired' }, resolvedAt: newest });
       await arrangeProblem(sut, await photo(), { evidence: { fixState: 'part-saved' }, resolvedAt: earliest });
       await arrangeProblem(sut, await photo(), { evidence: { fixState: 'found-again' }, resolvedAt: days(20) });
       await arrangeProblem(sut, await photo(), { evidence: { fixState: 'cant-repair' } });
@@ -1234,12 +1392,15 @@ describe(MediaHealthRepository.name, () => {
       const mine = await sut.fileProblemCounts({ ownerId: user.id, privacy: {}, days: 7 });
       expect(mine).toMatchObject({ fixed: 2, needsYou: 1 });
       expect(Math.abs((mine.since?.getTime() ?? 0) - earliest.getTime())).toBeLessThan(5000);
+      // the newest fix in the window, never the one 20 days ago or a problem still open
+      expect(Math.abs((mine.latest?.getTime() ?? 0) - newest.getTime())).toBeLessThan(5000);
       const all = await sut.fileProblemCounts({ privacy: {}, days: 7 });
       expect([all.fixed - before.fixed, all.needsYou - before.needsYou]).toEqual([2, 2]);
       await expect(sut.fileProblemCounts({ ownerId: other.id, privacy: {}, days: 7 })).resolves.toEqual({
         fixed: 0,
         needsYou: 1,
         since: null,
+        latest: null,
       });
     });
 
@@ -1540,6 +1701,29 @@ describe(MediaHealthRepository.name, () => {
       await defaultDatabase.deleteFrom('asset_edit').where('assetId', '=', asset.id).execute();
       await expect(sut.undoFix(undo)).resolves.toBe('changed');
       await unchanged();
+    });
+
+    it('undoFix moves and relinks nothing for a photo locked meanwhile (Task 11b)', async () => {
+      const { sut, asset, finding, repairedPath, undo, assetRow } = await arrangeRepaired();
+      // the photo was put in Locked after the service looked, before the undo took its lock
+      await defaultDatabase
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Marked })
+        .execute();
+      const moveFiles = vi.fn();
+
+      await expect(sut.undoFix({ ...undo, moveFiles })).resolves.toBe('locked');
+
+      expect(moveFiles).not.toHaveBeenCalled();
+      await expect(assetRow()).resolves.toMatchObject({ originalPath: repairedPath });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({ status: MediaHealthStatus.Resolved, resolvedAt: expect.any(Date) }),
+      ]);
+      expect((await sut.listSteps(finding.id)).map(({ step }) => step)).toEqual(['repaired', 'kept-damaged']);
+
+      // unlocked again, the same undo goes through
+      await defaultDatabase.deleteFrom('asset_lock').where('assetId', '=', asset.id).execute();
+      await expect(sut.undoFix(undo)).resolves.toBe('undone');
     });
 
     it('undoFix leaves a fix that a later fix or an undo replaced', async () => {

@@ -1150,6 +1150,20 @@ export class JobRepository {
     return this.queueAll([item]);
   }
 
+  /**
+   * FL-1337: queue work that belongs to no job run, even when a job of a run asks for it, such as a person's shared
+   * search by contents and the fixes it feeds. A run keeps one job row per item and stage (`job_run_stage`), so a
+   * second request inside the same run would be dropped silently and its findings would wait for ever. Outside a
+   * run, the work's own keys decide what collapses. It is not tied to the asking job's claim: it is safe to run
+   * twice. During a job's completion it is written in that completion's transaction.
+   */
+  async queueOutsideRun(items: JobItem[]): Promise<void> {
+    if (runAdmission.getStore()) throw new Error('Run admission cannot queue work outside its run');
+    const intents = queueExecution.exit(() => runSubmission.exit(() => items.map((item) => this.intent(item))));
+    const completion = queueExecution.getStore()?.buffering ? publicationTransaction.getStore() : undefined;
+    await this.store.enqueue(intents, completion);
+  }
+
   /** Held work (an import waiting for setup) is not waited for. */
   async waitForQueueCompletion(...queues: QueueName[]): Promise<void> {
     while ((await Promise.all(queues.map((queue) => this.store.hasUnfinishedWork(queue, false)))).some(Boolean)) {

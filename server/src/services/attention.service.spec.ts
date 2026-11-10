@@ -63,7 +63,7 @@ const setup = () => {
       state: vi.fn().mockResolvedValue({ settings: null, pairing: null, lastCompleteAt: null, run: null }),
     },
   };
-  const counts = { fixed: 0, needsYou: 0, since: null as Date | null };
+  const counts = { fixed: 0, needsYou: 0, since: null as Date | null, latest: null as Date | null };
   const mediaHealth = { fileProblemCounts: vi.fn().mockImplementation(() => Promise.resolve({ ...counts })) };
   const sut = new AttentionService(
     mocks.logger as never,
@@ -106,22 +106,34 @@ describe(AttentionService.name, () => {
         { kind: 'version', state: 'ok' },
       ],
       dismissed: [],
-      fileProblems: { fixed: 0, needsYou: 0, since: null },
+      fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
     });
   });
 
-  it('counts what Frameleaf fixed this week and what needs you, since the earliest fix (FL-1337)', async () => {
+  it('counts what Frameleaf fixed this week and what needs you, since the earliest fix, to the newest (FL-1337)', async () => {
     const { sut, mediaHealth, counts } = setup();
     counts.fixed = 5;
     counts.needsYou = 2;
     counts.since = new Date(daysAgo(3));
+    counts.latest = new Date(daysAgo(1));
 
     const response = await sut.getAttention(admin);
-    expect(response.fileProblems).toEqual({ fixed: 5, needsYou: 2, since: daysAgo(3) });
+    expect(response.fileProblems).toEqual({ fixed: 5, needsYou: 2, since: daysAgo(3), latest: daysAgo(1) });
     // a count is not an attention item: nothing is added and no check changes
     expect(response.items).toEqual([]);
     expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
     expect(mediaHealth.fileProblemCounts).toHaveBeenCalledWith(expect.objectContaining({ days: 7 }));
+  });
+
+  it('still answers when the damaged and missing files cannot be counted, with no counts and a warning', async () => {
+    const { sut, mocks, mediaHealth } = setup();
+    mediaHealth.fileProblemCounts.mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+
+    const response = await sut.getAttention(admin);
+
+    expect(response.fileProblems).toEqual({ fixed: 0, needsYou: 0, since: null, latest: null });
+    expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
+    expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('damaged and missing files'));
   });
 
   it("counts every account's problems for the administrator who asks, minus other accounts' Locked photos", async () => {

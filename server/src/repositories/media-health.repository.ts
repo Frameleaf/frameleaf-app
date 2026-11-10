@@ -13,10 +13,12 @@ import {
   AssetFileType,
   AssetStatus,
   ChecksumAlgorithm,
+  JobName,
   MediaHealthCategory,
   MediaHealthSeverity,
   MediaHealthStatus,
   PhysicalFileType,
+  QueueName,
 } from 'src/enum.js';
 import { BUDDY_CAPTURE_LOCK, countPathReferences, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -187,12 +189,14 @@ export type UndoFileFix = {
  * What `undoFix` did: `undone`; `changed`, when the photo is no longer as the fix left it; `open`, when the
  * same photo has another problem open (Review Focus 5). Nothing is written or moved unless `undone`.
  */
-export type UndoFileFixResult = 'undone' | 'changed' | 'open';
+export type UndoFileFixResult = 'undone' | 'changed' | 'open' | 'locked';
 /** The fix states of each tab of Damaged and missing files (FL-1337 ruling 1). */
 const NEEDS_FIX_STATES = ['missing', 'waiting-phone', 'cant-repair', 'couldnt-check'];
 const FIXED_FIX_STATES = ['repaired', 'part-saved', 'found-again', 'restored'];
 /** How long a fixed problem stays in Fixed for you. */
 const FIXED_TAB_DAYS = 30;
+/** A search id as a claim names it: compared as a uuid, so the job's primary key is used. */
+const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 @Injectable()
 export class MediaHealthRepository {
   constructor(
@@ -639,8 +643,9 @@ export class MediaHealthRepository {
    * Insert or replace the asset's finding of this category, and append `steps` to it in the same
    * transaction. FL-1337: replacing keeps what a person decided (`autoRepairDeclined`, after an Undo)
    * unless the new evidence says otherwise, and keeps how the last fix left it (`fixState`,
-   * `partSaved`) and a search it waits for (`searchPending`) while it is the same open problem; a new
-   * verdict or a closed finding starts afresh.
+   * `partSaved`) and a search it waits for (`searchPending`) while it is the same open problem. A change
+   * of status is the same problem while the finding stays open (F6: missing to found, suspected to
+   * confirmed damage); a finding that was resolved or dismissed, or is written closed, starts afresh.
    */
   private async upsertFindingInto(
     db: Kysely<DB>,
@@ -662,8 +667,8 @@ export class MediaHealthRepository {
           originalPath: eb.ref('excluded.originalPath'),
           originalFileName: eb.ref('excluded.originalFileName'),
           evidence: sql<Record<string, unknown>>`
-            CASE WHEN asset_health."resolvedAt" IS NULL AND excluded."resolvedAt" IS NULL
-              AND asset_health.status = excluded.status
+            CASE WHEN asset_health."resolvedAt" IS NULL AND asset_health."dismissedAt" IS NULL
+              AND excluded."resolvedAt" IS NULL AND excluded."dismissedAt" IS NULL
             THEN jsonb_strip_nulls(jsonb_build_object(
               'fixState', asset_health.evidence->'fixState', 'partSaved', asset_health.evidence->'partSaved',
               'searchPending', asset_health.evidence->'searchPending'))
@@ -875,6 +880,64 @@ export class MediaHealthRepository {
     });
   }
   /**
+   * What a search by contents found for one finding (FL-1337 F7), written against the finding as it is now, not
+   * as the search read it before its walk: under the asset's lock, only while the photo still has the file the
+   * search looked for, and in one guarded update, only while the finding is still open. A person's Keep, a
+   * dismissal, an upload that put the photo back or a fix's state, all written during the walk, stay as they are.
+   * The search's own evidence keys are merged into the live evidence, and its resolution into the live one, less a
+   * choice made from the old candidate list. With `found` the finding also takes that status, severity and run, and
+   * is checked now; without it (damage the search looked behind) its status and the time it was confirmed stay.
+   * Returns whether it was written.
+   */
+  async recordSearchResult(input: {
+    healthId: string;
+    assetId: string;
+    expectedUpdateId: string;
+    originalPath: string;
+    evidence: Record<string, unknown>;
+    resolution: Record<string, unknown>;
+    found?: { status: MediaHealthStatus; severity: MediaHealthSeverity; runId: string | null };
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const asset = await trx
+        .withSchema('public')
+        .selectFrom('asset')
+        .select(['updateId', 'originalPath', 'deletedAt', 'status'])
+        .where('id', '=', asUuid(input.assetId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        asset.originalPath !== input.originalPath ||
+        asset.updateId !== input.expectedUpdateId ||
+        asset.deletedAt ||
+        asset.status !== AssetStatus.Active
+      ) {
+        return false;
+      }
+      const row = await trx
+        .withSchema('public')
+        .updateTable('asset_health')
+        .set({
+          evidence: sql`coalesce(evidence, '{}'::jsonb) || ${JSON.stringify(input.evidence)}::text::jsonb`,
+          resolution: sql`(coalesce(resolution, '{}'::jsonb) - 'chosenCandidateId') || ${JSON.stringify(input.resolution)}::text::jsonb`,
+          ...(input.found && {
+            status: input.found.status,
+            severity: input.found.severity,
+            runId: input.found.runId,
+            checkedAt: new Date(),
+          }),
+        })
+        .where('id', '=', asUuid(input.healthId))
+        .where('assetId', '=', asUuid(input.assetId))
+        .where('resolvedAt', 'is', null)
+        .where('dismissedAt', 'is', null)
+        .returning('id')
+        .executeTakeFirst();
+      return !!row;
+    });
+  }
+  /**
    * Claim the owner's findings waiting for the shared search by contents (FL-1337) as search `searchId`:
    * open ones marked `searchPending: true`, ones this search claimed before (a retried step), and ones a
    * search claimed that no live job carries on any more (it failed, or was stopped for attention). A
@@ -895,8 +958,10 @@ export class MediaHealthRepository {
               health.evidence->'searchPending'->>'search' = ${searchId}::text
               OR NOT EXISTS (
                 SELECT 1 FROM job
-                WHERE job.name = ${'MediaHealthLocateMissing'} AND job.state IN ('pending', 'waiting', 'active')
-                  AND (job.id::text = health.evidence->'searchPending'->>'search'
+                WHERE job.queue = ${QueueName.MediaHealth} AND job.state IN ('pending', 'waiting', 'active')
+                  AND job.name = ${JobName.MediaHealthLocateMissing}
+                  AND (job.id = CASE WHEN health.evidence->'searchPending'->>'search' ~* ${UUID_PATTERN}
+                      THEN (health.evidence->'searchPending'->>'search')::uuid END
                     OR job.data->>'searchId' = health.evidence->'searchPending'->>'search')
               )
             )
@@ -1468,6 +1533,18 @@ export class MediaHealthRepository {
       .execute();
   }
 
+  /**
+   * Whether phones are shown this lost photo (F4): its open Missing finding is one `listLostOriginals` lists, by the
+   * same rule. A photo phones are never shown can never be sent back or reported by one, so it never waits for them.
+   */
+  async isShownToPhones(ownerId: string, assetId: string): Promise<boolean> {
+    const row = await this.lostOriginals(ownerId)
+      .where('asset.id', '=', asUuid(assetId))
+      .select('asset_health.id')
+      .executeTakeFirst();
+    return !!row;
+  }
+
   /** The owner's lost originals among these SHA-1 checksums, with where each one stands. */
   findLostOriginals(ownerId: string, checksums: Buffer[]) {
     if (checksums.length === 0) {
@@ -1682,26 +1759,27 @@ export class MediaHealthRepository {
   }
 
   /**
-   * The Overview's counts (FL-1337): what Frameleaf fixed in the last `days` days, the earliest of those fixes, and
-   * what needs the reader. Read with the list's own tab rules, scope and privacy.
+   * The Overview's counts (FL-1337): what Frameleaf fixed in the last `days` days, the earliest and the newest of
+   * those fixes (Task 11b), and what needs the reader. Read with the list's own tab rules, scope and privacy.
    */
   async fileProblemCounts(options: {
     ownerId?: string;
     privacy: MediaHealthPrivacy;
     days: number;
-  }): Promise<{ fixed: number; needsYou: number; since: Date | null }> {
+  }): Promise<{ fixed: number; needsYou: number; since: Date | null; latest: Date | null }> {
     const [fixed, needsYou] = await Promise.all([
       this.fileProblems(options)
         .where(this.inFileProblemTab('fixed', options.days))
-        .select((eb) => [eb.fn.countAll<number>().as('count'), eb.fn.min('asset_health.resolvedAt').as('since')])
+        .select((eb) => [
+          eb.fn.countAll<number>().as('count'),
+          eb.fn.min('asset_health.resolvedAt').as('since'),
+          eb.fn.max('asset_health.resolvedAt').as('latest'),
+        ])
         .executeTakeFirst(),
       this.countFileProblems({ ...options, tab: 'needs' }),
     ]);
-    return {
-      fixed: Number(fixed?.count ?? 0),
-      needsYou,
-      since: fixed?.since ? new Date(fixed.since as unknown as string | Date) : null,
-    };
+    const time = (value: unknown) => (value ? new Date(value as string | Date) : null);
+    return { fixed: Number(fixed?.count ?? 0), needsYou, since: time(fixed?.since), latest: time(fixed?.latest) };
   }
 
   /**
@@ -1736,9 +1814,10 @@ export class MediaHealthRepository {
    * Undo one fix (FL-1337, design §5) in one transaction, holding the owner, both paths, the asset and the
    * problem in the order a relink holds them. `changed`, with nothing written or moved, when the photo is no
    * longer as the fix left it (Review Focus 3): another file or checksum, in the Trash, an edit saved or removed
-   * since the fix, or a later fix or Undo; `open` while the photo has another problem open (Review Focus 5).
-   * Then a repair or relink points the photo back at the file it used before, a restore moves its files, and
-   * the problem is reopened with the `undone` step.
+   * since the fix, or a later fix or Undo; `open` while the photo has another problem open (Review Focus 5);
+   * `locked` when the photo is Locked now (Task 11b), read under its row lock. Then a repair or relink points the
+   * photo back at the file it used before, a restore moves its files, and the problem is reopened with the
+   * `undone` step.
    */
   async undoFix(input: UndoFileFix): Promise<UndoFileFixResult> {
     const target = input.relinkTo && path.normalize(input.relinkTo.path);
@@ -1761,9 +1840,14 @@ export class MediaHealthRepository {
         .withSchema('public')
         .selectFrom('asset')
         .selectAll()
+        .select(isLocked('asset').as('isLocked'))
         .where('id', '=', asUuid(input.assetId))
         .forUpdate()
         .executeTakeFirst();
+      if (asset?.isLocked) {
+        // Task 11b: put in Locked since the caller looked; nothing is relinked or moved
+        return 'locked';
+      }
       const health = await trx
         .withSchema('public')
         .selectFrom('asset_health')

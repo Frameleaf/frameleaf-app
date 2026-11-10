@@ -401,6 +401,14 @@ export interface IEntityJob extends IBaseJob {
   notify?: boolean;
 }
 
+export interface IGenerateThumbnailsJob extends IEntityJob {
+  /**
+   * FL-1337: Library care asked for these previews after it found the file opens. A photo that still won't make a
+   * preview then fails the job, to be retried, instead of going back to Library care (which would ask again).
+   */
+  afterCare?: boolean;
+}
+
 export interface IAssetDeleteJob extends IEntityJob {
   deleteOnDisk: boolean;
 }
@@ -617,7 +625,7 @@ export type JobItem =
 
   // Thumbnails
   | { name: JobName.AssetGenerateThumbnailsQueueAll; data: IBaseJob }
-  | { name: JobName.AssetGenerateThumbnails; data: IEntityJob }
+  | { name: JobName.AssetGenerateThumbnails; data: IGenerateThumbnailsJob }
   | { name: JobName.AssetPaletteExtract; data: IEntityJob & { sourceRevision: string } }
   | { name: JobName.AssetPaletteQueueAll; data: IBaseJob & { afterId?: string } }
 

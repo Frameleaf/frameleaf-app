@@ -104,6 +104,40 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('queues the shared search and its feeds outside the run of the job that asks (FL-1337 F8)', async () => {
+    const execution = context();
+    await queueExecution.run(execution, () =>
+      sut.queueOutsideRun([
+        { name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', pending: true } },
+        { name: JobName.MediaHealthFixAsset, data: { id: 'asset', from: 'check', searched: true } },
+      ]),
+    );
+
+    // no run, no item key and no parent: `job_run_stage` can never drop a second one in the same run
+    const [[intents, db]] = enqueue.mock.calls;
+    expect(intents).toHaveLength(2);
+    for (const intent of intents) {
+      expect(intent).toMatchObject({ runId: undefined, itemKey: undefined, rootItemKey: null, parentId: undefined });
+    }
+    // their own keys still collapse a burst
+    expect(intents.map(({ options }: { options: unknown }) => options)).toEqual([
+      {
+        delay: 120_000,
+        deduplication: { id: 'MediaHealthLocateMissing:pending:owner', keepLastIfActive: true },
+      },
+      { jobId: 'fix-asset/searched' },
+    ]);
+    // not held back as the asking job's follow-ups (which join its run), and in a transaction of its own
+    expect(execution.followups).toEqual([]);
+    expect(db).toBeUndefined();
+
+    // the same request through `queue` joins the asking job's run, one item per owner
+    const inRun = queueExecution.run(context(), () =>
+      sut['intent']({ name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', pending: true } }),
+    );
+    expect(inRun).toMatchObject({ runId: 'run', itemKey: expect.stringContaining('MediaHealthLocateMissing:pending') });
+  });
+
   it('deduplicates palette work per source revision and backfill cursor', async () => {
     await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev1' } });
     await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev2' } });

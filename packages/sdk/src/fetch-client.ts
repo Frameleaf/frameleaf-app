@@ -61,6 +61,8 @@ export type AttentionCheckDto = {
 export type AttentionFileProblemsDto = {
     /** Damaged or missing files Frameleaf fixed in the last 7 days */
     fixed: number;
+    /** When the newest of those fixes was made, or null when there are none */
+    latest: string | null;
     /** Damaged or missing files that need the reader */
     needsYou: number;
     /** When the earliest of those fixes was made, or null when there are none */
@@ -152,15 +154,32 @@ export type OAuthCheckResponseDto = {
     /** Whether the provider answered */
     ok: boolean;
 };
+export type BackupDeviceLastCheckDto = {
+    checkedAt: string;
+    completedAt: string;
+    id: string;
+    itemsChecked: number;
+    itemsMissing: number;
+};
+export type BackupPendingReasonDto = {
+    /** Free-form reason code, e.g. wifi, charging, low-power, too-large; stored verbatim */
+    code: string;
+    count: number;
+};
 export type BackupDeviceDto = {
     appVersion: string;
     deviceKey: string;
     displayName: string;
     id: string;
+    /** Latest completed server check; incomplete runs are ignored, null before any completes */
+    lastCheck: (BackupDeviceLastCheckDto) | null;
     lastSuccessfulBackupAt: string | null;
     model: string;
     ownerId: string;
     pendingCount: number;
+    pendingReasons: BackupPendingReasonDto[];
+    /** Device-reported item count; null until reported */
+    phoneItemCount: number | null;
     platform: string;
     /** Elapsed whole days since reported success; null if never reported */
     quietForDays: number | null;
@@ -18732,7 +18751,32 @@ export type BackupDeviceWriteDto = {
     lastSuccessfulBackupAt: string | null;
     model: string;
     pendingCount: number;
+    /** Why items wait, by reason code; omitted keeps the stored value */
+    pendingReasons?: BackupPendingReasonDto[];
+    /** Items the device holds for backup; omitted keeps the stored value */
+    phoneItemCount?: number;
     platform: string;
+};
+export type BackupDeviceReceiptDto = {
+    appVersion: string;
+    deviceKey: string;
+    displayName: string;
+    id: string;
+    /** Latest completed server check; incomplete runs are ignored, null before any completes */
+    lastCheck: (BackupDeviceLastCheckDto) | null;
+    lastSuccessfulBackupAt: string | null;
+    model: string;
+    ownerId: string;
+    pendingCount: number;
+    pendingReasons: BackupPendingReasonDto[];
+    /** Device-reported item count; null until reported */
+    phoneItemCount: number | null;
+    platform: string;
+    /** Elapsed whole days since reported success; null if never reported */
+    quietForDays: number | null;
+    reportedAt: string;
+    /** Items the latest completed check found on the server (checked minus missing); null before any */
+    serverVerifiedCount: number | null;
 };
 export type ReconciliationHistoryDto = {
     nextOffset: number | null;
@@ -29442,6 +29486,19 @@ export function keepFileProblem({ id }: {
     }));
 }
 /**
+ * Download the damaged file a repair kept
+ */
+export function downloadFileProblemKeptFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-health/files/${encodeURIComponent(id)}/kept-file`, {
+        ...opts
+    }));
+}
+/**
  * Look in a folder for a missing or changed file
  */
 export function lookInFolderForFileProblem({ id, fileProblemLookInDto }: {
@@ -36755,6 +36812,19 @@ export function removeBackupDevice({ id }: {
     return oazapfts.ok(oazapfts.fetchText(`/users/me/backup-devices/${encodeURIComponent(id)}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * Get the backup receipt for an own device
+ */
+export function getBackupDeviceReceipt({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupDeviceReceiptDto;
+    }>(`/users/me/backup-devices/${encodeURIComponent(id)}/receipt`, {
+        ...opts
     }));
 }
 /**
