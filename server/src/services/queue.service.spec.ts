@@ -69,14 +69,20 @@ describe(QueueService.name, () => {
 
   describe('handleNightlyJobs', () => {
     beforeEach(() => {
-      mocks.job.queueSelection.mockResolvedValue({ runId: factory.uuid(), inserted: 0 });
+      mocks.job.queueSelection.mockImplementation(async (_name, selection) => {
+        if (typeof selection === 'function') selection(null);
+        return { runId: factory.uuid(), inserted: 0 };
+      });
       mocks.assetJob.selectionForUnfinished.mockReturnValue({} as never);
       mocks.job.getQueueName.mockReturnValue(QueueName.BackgroundTask);
       mocks.systemMetadata.set.mockResolvedValue();
     });
 
     it('reconciles missing outputs even on nights without the tidy-up', async () => {
-      mocks.job.queueSelection.mockResolvedValue({ runId: factory.uuid(), inserted: 3 });
+      mocks.job.queueSelection.mockImplementation(async (_name, selection) => {
+        if (typeof selection === 'function') selection(null);
+        return { runId: factory.uuid(), inserted: 3 };
+      });
       await sut.handleNightlyJobs({ cleanup: false });
 
       expect(mocks.assetJob.selectionForUnfinished.mock.calls.map(([name]) => name)).toEqual([
@@ -100,7 +106,6 @@ describe(QueueService.name, () => {
 
     it('only reconciles local processing when machine learning is off', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { enabled: false } });
-      mocks.job.queueSelection.mockResolvedValue({ runId: factory.uuid(), inserted: 0 });
       await sut.handleNightlyJobs();
       expect(mocks.assetJob.selectionForUnfinished.mock.calls.map(([name]) => name)).toEqual([
         JobName.AssetExtractMetadata,

@@ -958,7 +958,9 @@ export class JobRepository {
    */
   async queueSelection(
     name: JobName,
-    selection: SelectQueryBuilder<any, any, { id: string }>,
+    selection:
+      | SelectQueryBuilder<any, any, { id: string }>
+      | ((after: string | null) => SelectQueryBuilder<any, any, { id: string }>),
     data: Record<string, unknown> = {},
     pageSize = SELECTION_PAGE,
   ): Promise<{ runId: string; inserted: number }> {
@@ -968,6 +970,7 @@ export class JobRepository {
     const producerRun = submitted ?? (await this.ensureProducerRun());
     const intent = this.intent({ name, data } as JobItem);
     let inserted = 0;
+    const selectPage = (after: string | null) => (typeof selection === 'function' ? selection(after) : selection);
     if (!context) {
       // Nothing would resume a partial selection: it is inserted in one transaction.
       return this.store.db.transaction().execute(async (tx) => {
@@ -977,7 +980,13 @@ export class JobRepository {
             values (${runId}::uuid, ${name}, '{}'::jsonb, true)`.execute(tx);
         }
         for (let after: string | null = null; ;) {
-          const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, pageSize, tx);
+          const page = await this.store.insertSelectionPage(
+            { ...intent, runId },
+            selectPage(after),
+            after,
+            pageSize,
+            tx,
+          );
           inserted += page.inserted;
           after = page.last;
           if (after === null) return { runId, inserted };
@@ -993,7 +1002,7 @@ export class JobRepository {
     let after = checkpoint?.after ?? null;
     do {
       const page = await this.fenced(context, async (tx) => {
-        const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, pageSize, tx);
+        const page = await this.store.insertSelectionPage({ ...intent, runId }, selectPage(after), after, pageSize, tx);
         await sql`update job set data = jsonb_set(data, '{_selectionCursor}', coalesce(data->'_selectionCursor', '{}'::jsonb)
           || jsonb_build_object(${name}::text, jsonb_build_object('after', ${page.last}::text, 'done', ${page.last === null},
             'inserted', ${inserted + page.inserted}::int)))

@@ -39,7 +39,6 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { videoProcessingPolicy } from 'src/utils/video-processing-policy.js';
 import { publishJobResult } from 'src/queue/context.js';
 import { BaseService } from 'src/services/base.service.js';
 
@@ -59,12 +58,13 @@ const RUN_ONE_JOBS: Partial<Record<QueueName, JobName>> = {
 import {
   handlePromiseError,
   isFacialRecognitionEnabled,
-  isOcrEnabled,
   isImageDescriptionEnabled,
   isNsfwDetectionEnabled,
+  isOcrEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
 import { overnightCron } from 'src/utils/overnight.js';
+import { videoProcessingPolicy } from 'src/utils/video-processing-policy.js';
 
 /** FL-71: the machine-learning workload whose routed destination runs a queue's jobs. */
 const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
@@ -666,10 +666,9 @@ export class QueueService extends BaseService {
     for (const step of Object.keys(selections) as Array<keyof typeof selections>) {
       const [name, enabled] = selections[step];
       if (enabled) {
-        const selection = this.assetJobRepository.selectionForUnfinished(name, {
-          ...options,
-          queue: this.jobRepository.getQueueName(name),
-        });
+        const queue = this.jobRepository.getQueueName(name);
+        const selection = (after: string | null) =>
+          this.assetJobRepository.selectionForUnfinished(name, { ...options, queue, after });
         const { inserted } = await this.jobRepository.queueSelection(name, selection, {}, 1000);
         counts[step] = inserted;
       }

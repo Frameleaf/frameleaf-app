@@ -75,7 +75,7 @@ export class AssetJobRepository {
   /** Select only inputs each normal processor can use, with no other live job for the same step. */
   selectionForUnfinished(
     name: ReconciledJob,
-    options: { queue: QueueName; fullsizeEnabled: boolean; videoPolicy: string },
+    options: { queue: QueueName; fullsizeEnabled: boolean; videoPolicy: string; after?: string | null },
   ) {
     const selection = {
       [JobName.AssetExtractMetadata]: () => this.selectionForMetadataExtraction(false),
@@ -92,10 +92,13 @@ export class AssetJobRepository {
       [JobName.Ocr]: () => this.assetsWithPreviews().select('asset.id').where('job_status.ocrAt', 'is', null),
     }[name]();
 
+    // Earlier pages only enqueue IDs below this cursor. Keep those rows out of the live-job lookup.
+    const subject = sql`(job.data->>'id') collate "C"`;
+    const liveRange = options.after ? sql`and ${subject} > ${options.after}` : sql``;
     return selection.where(sql<boolean>`asset.status = 'active' and not asset."isOffline" and not exists (
         select 1 from job
         where job.queue = ${options.queue} and job.name = ${name} and job.state in ('pending', 'waiting', 'active')
-          and job.data->>'id' = asset.id::text
+          and ${subject} = asset.id::text ${liveRange}
       )`);
   }
 

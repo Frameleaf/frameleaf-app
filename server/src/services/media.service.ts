@@ -100,7 +100,6 @@ import {
   requiresFloatIntermediate,
   selectEncoderPixelFormat,
 } from 'src/utils/media-encode.js';
-import { videoProcessingPolicy } from 'src/utils/video-processing-policy.js';
 import { isUnsupportedRawDecodeError } from 'src/utils/media-health.js';
 import {
   EditedMasterColorDecision,
@@ -142,6 +141,7 @@ import {
   toStitchedStream,
 } from 'src/utils/video-360.js';
 import { videoDevelopFilters } from 'src/utils/video-develop.js';
+import { videoProcessingPolicy } from 'src/utils/video-processing-policy.js';
 
 /**
  * Decimal places in a generated ffmpeg filter argument. Four has always been this service's
