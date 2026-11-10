@@ -7,7 +7,7 @@ import secrets
 import signal
 import threading
 import time
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import ExitStack, asynccontextmanager
 from functools import partial
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable
@@ -582,25 +582,29 @@ async def predict(
     text: str | None = Form(default=None),
     mask: bytes | None = File(default=None),
 ) -> Any:
-    if image is not None:
-        decoded = await run(lambda: decode_pil(image))
-        if decoded.width == 0 or decoded.height == 0:
-            raise HTTPException(400, "Image has zero width or height")
-        inputs: Image | str = decoded
-    elif text is not None:
-        inputs = text
-    else:
-        raise HTTPException(400, "Either image or text must be provided")
-    # Clean Up Remove fills (`inpaint`): a greyscale mask the same size as the image, 255 where content is removed.
-    decoded_mask: Image | None = None
-    if mask is not None:
-        if not isinstance(inputs, Image):
-            raise HTTPException(400, "A mask needs an image")
-        decoded_mask = await run(lambda: decode_pil(mask))
-        if decoded_mask.size != inputs.size:
-            raise HTTPException(400, "The mask must be the same size as the image")
-    response = await run_inference(inputs, entries, decoded_mask)
-    return ORJSONResponse(response)
+    with ExitStack() as observations:
+        if inference_metrics is not None:
+            for task in {str(entry["task"]) for stage in entries for entry in stage}:
+                observations.enter_context(inference_metrics.request(task))
+        if image is not None:
+            decoded = await run(lambda: decode_pil(image))
+            if decoded.width == 0 or decoded.height == 0:
+                raise HTTPException(400, "Image has zero width or height")
+            inputs: Image | str = decoded
+        elif text is not None:
+            inputs = text
+        else:
+            raise HTTPException(400, "Either image or text must be provided")
+        # Clean Up Remove fills (`inpaint`): a greyscale mask the same size as the image, 255 where content is removed.
+        decoded_mask: Image | None = None
+        if mask is not None:
+            if not isinstance(inputs, Image):
+                raise HTTPException(400, "A mask needs an image")
+            decoded_mask = await run(lambda: decode_pil(mask))
+            if decoded_mask.size != inputs.size:
+                raise HTTPException(400, "The mask must be the same size as the image")
+        response = await run_inference(inputs, entries, decoded_mask)
+        return ORJSONResponse(response)
 
 
 @app.get("/transcribe/info")
@@ -1031,8 +1035,7 @@ async def run_inference(
 
     async def admitted(entry: InferenceEntry) -> None:
         async with capacity:
-            with inference_metrics.request(str(entry["task"])) if inference_metrics else nullcontext():
-                await _run_inference(entry)
+            await _run_inference(entry)
 
     without_deps, with_deps = entries
     await asyncio.gather(*[admitted(entry) for entry in without_deps])
