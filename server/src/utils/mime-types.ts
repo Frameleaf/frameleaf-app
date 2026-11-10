@@ -6,7 +6,6 @@ const raw = {
   '.ari': ['image/ari', 'image/x-arriflex-ari'],
   '.arw': ['image/arw', 'image/x-sony-arw'],
   '.cap': ['image/cap', 'image/x-phaseone-cap'],
-  '.cin': ['image/cin', 'image/x-phantom-cin'],
   '.cr2': ['image/cr2', 'image/x-canon-cr2'],
   '.cr3': ['image/cr3', 'image/x-canon-cr3'],
   '.crw': ['image/crw', 'image/x-canon-crw'],
@@ -48,7 +47,10 @@ const webSupportedImage = {
   '.avifs': ['image/avif'],
   '.bmp': ['image/bmp'],
   '.gif': ['image/gif'],
+  '.jfi': ['image/jpeg'],
   '.jfif': ['image/jpeg'],
+  '.jif': ['image/jpeg'],
+  '.jpe': ['image/jpeg'],
   '.jpeg': ['image/jpeg'],
   '.jpg': ['image/jpeg'],
   '.pjp': ['image/jpeg'],
@@ -57,26 +59,55 @@ const webSupportedImage = {
   '.webp': ['image/webp'],
 };
 
+// FL-1356: every extension below `...raw` has a fixture in server/test/fixtures/formats/manifest.json that
+// decodes in the built image. Add one only together with its fixture.
 const webUnsupportedImage = {
   ...raw,
+  '.btf': ['image/tiff'],
+  // Kodak Cineon film scans. Not sensor data: FL-1356 moved it out of the RAW list.
+  '.cin': ['image/cin', 'image/cineon'],
+  '.cur': ['image/vnd.microsoft.icon'],
+  '.dds': ['image/vnd-ms.dds'],
+  '.dpx': ['image/dpx'],
+  '.exr': ['image/x-exr'],
+  '.fits': ['image/fits'],
+  '.hdp': ['image/vnd.ms-photo'],
   '.hdr': ['image/vnd.radiance'],
   '.heic': ['image/heic'],
   '.heics': ['image/heic-sequence'],
   '.heif': ['image/heif'],
   '.hif': ['image/hif'],
+  '.ico': ['image/vnd.microsoft.icon', 'image/x-icon'],
   '.insp': ['image/jpeg'],
+  '.j2c': ['image/j2c'],
+  '.j2k': ['image/j2c'],
   '.jp2': ['image/jp2'],
-  '.jpe': ['image/jpeg'],
+  '.jpc': ['image/j2c'],
+  '.jpf': ['image/jpx'],
+  // a stereo pair, side by side in one JPEG
+  '.jps': ['image/jpeg'],
+  '.jpx': ['image/jpx'],
   '.jxl': ['image/jxl'],
+  '.jxr': ['image/jxr', 'image/vnd.ms-photo'],
   '.mpo': ['image/jpeg'],
+  '.pam': ['image/x-portable-arbitrarymap'],
   '.pbm': ['image/x-portable-bitmap'],
+  '.pct': ['image/x-pict'],
+  '.pcx': ['image/vnd.zbrush.pcx', 'image/x-pcx'],
   '.pfm': ['image/x-portable-floatmap'],
   '.pgm': ['image/x-portable-graymap'],
+  '.pict': ['image/x-pict'],
   '.pnm': ['image/x-portable-anymap'],
   '.ppm': ['image/x-portable-pixmap'],
+  '.qoi': ['image/qoi'],
+  '.sgi': ['image/sgi'],
   '.svg': ['image/svg'],
+  '.svgz': ['image/svg'],
+  '.tga': ['image/x-tga', 'image/x-targa'],
   '.tif': ['image/tiff'],
   '.tiff': ['image/tiff'],
+  '.wdp': ['image/vnd.ms-photo'],
+  '.xcf': ['image/x-xcf'],
 };
 
 const image: Record<string, string[]> = {
@@ -124,24 +155,52 @@ const profile: Record<string, string[]> = Object.fromEntries(
   Object.entries(image).filter(([key]) => profileExtensions.has(key)),
 );
 
+/**
+ * FL-1357: cinema camera RAW. No open decoder exists for these (owner 2026-11-10: no closed SDKs), so they are
+ * kept safe as videos (stored, checksummed, searchable, downloadable) and are never promised to play.
+ * ARRIRAW `.ari` frames stay with the RAW photos above, where LibRaw opens them.
+ */
+const cinemaRaw = new Set(['.arx', '.braw', '.crm', '.nev', '.r3d']);
+
+// DJI `.lrf` and GoPro `.lrv` preview files are left out on purpose (FL-968): they duplicate the real recording.
 const video: Record<string, string[]> = {
   // FL-968: GoPro MAX 360° recordings (two cubemap tracks in an MP4 container)
   '.360': ['video/mp4'],
   '.3g2': ['video/3gpp2'],
   '.3gp': ['video/3gpp'],
   '.3gpp': ['video/3gpp'],
+  '.apv': ['video/x-apv'],
+  '.arx': ['video/x-arri-arx'],
   '.asf': ['video/x-ms-asf'],
   '.avi': ['video/avi', 'video/msvideo', 'video/vnd.avi', 'video/x-msvideo'],
+  '.braw': ['video/x-braw'],
+  '.cine': ['video/x-phantom-cine'],
+  '.crm': ['video/x-canon-crm'],
+  '.dif': ['video/x-dv', 'video/dv'],
   '.divx': ['video/divx'],
   '.dv': ['video/x-dv', 'video/dv'],
+  '.dvr-ms': ['video/x-ms-dvr'],
+  '.evo': ['video/mpeg'],
   '.f4v': ['video/x-f4v', 'video/mp4'],
   '.flv': ['video/x-flv'],
+  '.gxf': ['video/x-gxf'],
+  '.h264': ['video/h264'],
+  '.h265': ['video/h265'],
+  '.hevc': ['video/h265'],
   '.insv': ['video/mp4'],
+  '.ivf': ['video/x-ivf'],
+  '.m1v': ['video/mpeg'],
+  '.m2p': ['video/mp2p'],
   '.m2t': ['video/mp2t'],
   '.m2ts': ['video/mp2t'],
+  '.m2v': ['video/mpeg'],
   '.m4v': ['video/x-m4v'],
+  '.mj2': ['video/mj2'],
+  '.mjpeg': ['video/x-motion-jpeg'],
+  '.mjpg': ['video/x-motion-jpeg'],
   '.mk3d': ['video/x-matroska'],
   '.mkv': ['video/x-matroska'],
+  '.mlv': ['video/x-magic-lantern'],
   '.mod': ['video/mpeg'],
   '.mov': ['video/quicktime'],
   '.mp4': ['video/mp4'],
@@ -150,18 +209,27 @@ const video: Record<string, string[]> = {
   '.mpg': ['video/mpeg'],
   '.mts': ['video/mp2t'],
   '.mxf': ['application/mxf'],
+  '.nev': ['video/x-nikon-nev'],
+  '.nut': ['video/x-nut'],
+  '.ogm': ['video/ogg'],
   '.ogv': ['video/ogg'],
   // FL-968: DJI Osmo 360 recordings (dual fisheye in an MP4 container)
   '.osv': ['video/mp4'],
   '.qt': ['video/quicktime'],
+  '.r3d': ['video/x-red-r3d'],
   '.rm': ['video/vnd.rn-realvideo'],
   '.rmvb': ['video/vnd.rn-realvideo'],
   '.tod': ['video/mp2t'],
+  '.tp': ['video/mp2t'],
+  '.trp': ['video/mp2t'],
   '.ts': ['video/mp2t'],
+  '.vc1': ['video/vc1'],
   '.vob': ['video/mpeg'],
   '.vro': ['video/mpeg'],
   '.webm': ['video/webm'],
   '.wmv': ['video/x-ms-wmv'],
+  '.wtv': ['video/x-ms-wtv'],
+  '.y4m': ['video/x-yuv4mpeg'],
 };
 
 const sidecar: Record<string, string[]> = {
@@ -199,6 +267,7 @@ export const mimeTypes = {
   canBeTransparent: (filename: string) =>
     transparentCapableExtensions.has(getFilenameExtension(filename).toLowerCase()),
   isRaw: (filename: string) => isType(filename, raw),
+  isCinemaRaw: (filename: string) => cinemaRaw.has(getFilenameExtension(filename).toLowerCase()),
   isHeic: (filename: string) => heicExtensions.has(getFilenameExtension(filename).toLowerCase()),
   lookup,
   assetType: (filename: string) => {

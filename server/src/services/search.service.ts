@@ -699,7 +699,18 @@ export class SearchService extends BaseService {
     };
   }
 
-  private async buildAskSearchPlan(auth: AuthDto, query: string, pagination: { page?: number; size: number }) {
+  /** FL-885: the rule planner, for the Library Assistant's fallback. The same plan `askSearch` runs. */
+  planAskSearch(auth: AuthDto, query: string, size: number) {
+    // the assistant's catalogue lists pets only with the person permission; its rules may not resolve more
+    return this.buildAskSearchPlan(auth, query, { size }, { petsNeedPersonRead: true });
+  }
+
+  private async buildAskSearchPlan(
+    auth: AuthDto,
+    query: string,
+    pagination: { page?: number; size: number },
+    access: { petsNeedPersonRead?: boolean } = {},
+  ) {
     const normalizedQuery = query.trim().replaceAll(/\s+/g, ' ');
     const lower = normalizedQuery.toLowerCase();
     const filters: MetadataSearchDto = { page: pagination.page ?? 1, size: pagination.size, withExif: true };
@@ -788,7 +799,7 @@ export class SearchService extends BaseService {
       warnings.push('Document categories are approximated with OCR until Document Intelligence is enabled.');
     }
 
-    const { personIds, petIds } = await this.resolveAskSearchNames(auth, normalizedQuery);
+    const { personIds, petIds } = await this.resolveAskSearchNames(auth, normalizedQuery, access);
     if (personIds.length > 0) {
       filters.personIds = personIds;
     }
@@ -958,9 +969,10 @@ export class SearchService extends BaseService {
   private async resolveAskSearchNames(
     auth: AuthDto,
     query: string,
+    access: { petsNeedPersonRead?: boolean } = {},
   ): Promise<{ personIds: string[]; petIds: string[] }> {
     const canResolvePeople = this.canResolveAskSearchPeople(auth);
-    const canResolvePets = this.canResolveAskSearchPets(auth);
+    const canResolvePets = this.canResolveAskSearchPets(auth) && (!access.petsNeedPersonRead || canResolvePeople);
     if (!canResolvePeople && !canResolvePets) {
       return { personIds: [], petIds: [] };
     }

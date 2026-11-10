@@ -1,24 +1,16 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetType } from 'src/enum.js';
+import { SharpOperationError } from 'src/queue/sharp-pool.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getMocks } from 'test/utils.js';
 
-const exec = vi.hoisted(() => ({ error: undefined as Error | undefined }));
-vi.mock('node:child_process', async (original) => ({
-  ...(await original<typeof import('node:child_process')>()),
-  execFile: (
-    _file: string,
-    _args: string[],
-    _options: unknown,
-    callback: (error: Error | undefined, stdout: string, stderr: string) => void,
-  ) => callback(exec.error, '', ''),
-}));
 // a file that cannot be opened for reading now, though it was hashed a moment before (FL-1337)
 const unreadable = vi.hoisted(() => ({ path: undefined as string | undefined }));
 vi.mock('node:fs/promises', async (original) => {
@@ -43,7 +35,6 @@ describe(MediaIntegrityService.name, () => {
   let sut: MediaIntegrityService;
   beforeEach(async () => {
     vi.clearAllMocks();
-    exec.error = undefined;
     vi.mocked(renderRawWithLibRaw).mockReset();
     directory = await mkdtemp(join(tmpdir(), 'integrity-test-'));
     input = { path: join(directory, 'original.jpg'), originalFileName: 'original.jpg', type: AssetType.Image };
@@ -154,17 +145,254 @@ describe(MediaIntegrityService.name, () => {
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toEqual({ status, reason });
     expect(mocks.media.extract).not.toHaveBeenCalled();
   });
-  it.each([
-    [Object.assign(new Error('private'), { killed: true }), { status: 'timeout', reason: 'decode_timeout' }],
-    [Object.assign(new Error('private'), { code: 'ENOENT' }), { status: 'transient', reason: 'decoder_unavailable' }],
-    [
-      new Error('Invalid data found when processing input'),
-      // FL-1337: a decode failure carries the decoder's words, for telling its cause
-      { status: 'corrupt', reason: 'decode_failed', message: 'Invalid data found when processing input' },
-    ],
-  ])('classifies ffmpeg failure %j', async (error, expected) => {
-    exec.error = error;
-    expect(await sut.validate({ ...input, type: AssetType.Video, deep: true })).toEqual(expected);
+  describe('video (FL-1353)', () => {
+    const video = () => ({ ...input, type: AssetType.Video, deep: true });
+    const stream = { index: 0, timeBase: 30_000, duration: 10 };
+    const walked = (seconds: number) => ({ presentation: { startPts: 0, endPts: seconds * stream.timeBase } });
+    beforeEach(() => {
+      mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [stream] } as never);
+      mocks.media.probePackets.mockResolvedValue(walked(10) as never);
+    });
+    it('a video whose container opens and whose packets all read is healthy, with no decode', async () => {
+      expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
+      expect(mocks.media.probePackets).toHaveBeenCalledWith(input.path, 0, expect.any(Object));
+    });
+    it.each([
+      ['Media process stopped making progress', { status: 'timeout', reason: 'decode_timeout' }],
+      ['Media process execution deadline exceeded', { status: 'timeout', reason: 'decode_timeout' }],
+      // killed from outside (out of memory, the host): nothing about the file
+      ['ffprobe exited with code null: ', { status: 'transient', reason: 'decoder_resource_limit' }],
+    ])('"%s" is no verdict on the file', async (message, expected) => {
+      mocks.media.probePackets.mockRejectedValue(new Error(message));
+      expect(await sut.validate(video())).toEqual(expected);
+    });
+    it('a probe that cannot start is a missing decoder', async () => {
+      mocks.media.probe.mockRejectedValue(Object.assign(new Error('spawn ffprobe ENOENT'), { code: 'ENOENT' }));
+      expect(await sut.validate(video())).toEqual({ status: 'transient', reason: 'decoder_unavailable' });
+    });
+    it('a container that will not open is damaged, in the decoder’s words without the path', async () => {
+      mocks.media.probe.mockRejectedValue(
+        new Error(`ffprobe exited with code 1: ${input.path}: Invalid data found when processing input\n`),
+      );
+      expect(await sut.validate(video())).toEqual({
+        status: 'corrupt',
+        reason: 'decode_failed',
+        message: 'Invalid data found when processing input',
+      });
+    });
+    it('words in the file’s path never decide the verdict', async () => {
+      const path = join(directory, 'corrupt invalid damaged truncated.mp4');
+      await writeFile(path, bytes);
+      mocks.media.probe.mockRejectedValue(new Error(`ffprobe exited with code 1: ${path}: Protocol not found`));
+      expect(await sut.validate({ ...video(), path })).toEqual({
+        status: 'transient',
+        reason: 'decode_unverified',
+        message: 'Protocol not found',
+      });
+    });
+    it('a video that ends well before its stated length is cut short', async () => {
+      mocks.media.probePackets.mockResolvedValue(walked(4) as never);
+      expect(await sut.validate(video())).toMatchObject({
+        status: 'corrupt',
+        reason: 'decode_failed',
+        message: expect.stringContaining('truncated'),
+      });
+    });
+    it('a read that stops early once and not again is a drive that could not be read, not damage', async () => {
+      mocks.media.probePackets.mockResolvedValueOnce(walked(4) as never);
+      expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
+    });
+    it('two short reads that stop in different places are no verdict', async () => {
+      mocks.media.probePackets.mockResolvedValueOnce(walked(4) as never).mockResolvedValueOnce(walked(5) as never);
+      expect(await sut.validate(video())).toEqual({ status: 'transient', reason: 'decode_unverified' });
+    });
+    it('"End of file" is also what a failed read says, so it is not damage', async () => {
+      mocks.media.probe.mockRejectedValue(new Error(`ffprobe exited with code 1: ${input.path}: End of file\n`));
+      expect(await sut.validate(video())).toEqual({
+        status: 'transient',
+        reason: 'decode_unverified',
+        message: 'End of file',
+      });
+    });
+    it('packets that cannot be timed say nothing about the length', async () => {
+      mocks.media.probePackets.mockResolvedValue(null);
+      expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
+    });
+    it('a file with no picture track is not a video Frameleaf can check', async () => {
+      mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [] } as never);
+      expect(await sut.validate(video())).toEqual({ status: 'unsupported', reason: 'decode_unsupported' });
+    });
+    it('walks the main picture track, the one thumbnails are cut from, not track 0 (FL-1357)', async () => {
+      // probe lists the main track first: here a cover picture sits at index 0 and the film at index 2
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 10 },
+        videoStreams: [
+          { ...stream, index: 2 },
+          { ...stream, index: 0, duration: 0 },
+        ],
+      } as never);
+      expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
+      expect(mocks.media.probePackets).toHaveBeenCalledWith(input.path, 2, expect.any(Object));
+    });
+    it.each(['A001_C001.braw', 'A001.R3D', 'A001.crm', 'DSC_0001.nev', 'A001.arx'])(
+      'cinema RAW %s that ffmpeg cannot open is unsupported, never damaged (FL-1357)',
+      async (originalFileName) => {
+        mocks.media.probe.mockRejectedValue(
+          new Error(`ffprobe exited with code 1: ${input.path}: Invalid data found when processing input\n`),
+        );
+        expect(await sut.validate({ ...video(), originalFileName })).toEqual({
+          status: 'unsupported',
+          reason: 'decode_unsupported',
+        });
+        mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [stream] } as never);
+        mocks.media.probePackets.mockRejectedValue(new Error('ffprobe exited with code 1: moov atom not found'));
+        expect(await sut.validate({ ...video(), originalFileName })).toEqual({
+          status: 'unsupported',
+          reason: 'decode_unsupported',
+        });
+      },
+    );
+    it('cinema RAW still reports a decoder that is missing or a check that stalled as they are', async () => {
+      mocks.media.probe.mockRejectedValue(Object.assign(new Error('spawn ffprobe ENOENT'), { code: 'ENOENT' }));
+      expect(await sut.validate({ ...video(), originalFileName: 'A001.braw' })).toEqual({
+        status: 'transient',
+        reason: 'decoder_unavailable',
+      });
+      mocks.media.probe.mockRejectedValue(new Error('Media process stopped making progress'));
+      expect(await sut.validate({ ...video(), originalFileName: 'A001.braw' })).toEqual({
+        status: 'timeout',
+        reason: 'decode_timeout',
+      });
+    });
+    it('a large file is given as long as it keeps making progress', async () => {
+      vi.useFakeTimers();
+      const crypto = new CryptoRepository();
+      const digests = { sha1: Buffer.alloc(20), sha256: Buffer.alloc(32), sizeInBytes: bytes.length };
+      const entered = Promise.withResolvers<void>();
+      vi.spyOn(crypto, 'hashFileDigests').mockImplementation(async (_path, options) => {
+        entered.resolve();
+        // ten minutes of hashing, a chunk a minute
+        for (let minute = 0; minute < 10; minute++) {
+          await new Promise((resolve) => setTimeout(resolve, 60_000));
+          options?.onProgress?.(1);
+        }
+        return digests;
+      });
+      mocks.media.probePackets.mockImplementation(async (_path, _index, options) => {
+        for (let minute = 0; minute < 10; minute++) {
+          await new Promise((resolve) => setTimeout(resolve, 60_000));
+          options?.onProgress?.();
+        }
+        return walked(10) as never;
+      });
+      sut = new MediaIntegrityService(new StorageRepository(mocks.logger as never), crypto, mocks.media as never);
+      const result = sut.validate(video());
+      await entered.promise; // the checks before hashing read the real file
+      await vi.advanceTimersByTimeAsync(20 * 60_000);
+      expect(await result).toMatchObject({ status: 'healthy' });
+    });
+    it('hashing that stalls is stopped, and told to stop', async () => {
+      vi.useFakeTimers();
+      const crypto = new CryptoRepository();
+      let hashSignal: AbortSignal | undefined;
+      const entered = Promise.withResolvers<void>();
+      vi.spyOn(crypto, 'hashFileDigests').mockImplementation((_path, options) => {
+        hashSignal = options?.signal;
+        entered.resolve();
+        return new Promise(() => {});
+      });
+      sut = new MediaIntegrityService(new StorageRepository(mocks.logger as never), crypto, mocks.media as never);
+      const result = sut.validate(video());
+      await entered.promise;
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
+      expect(hashSignal?.aborted).toBe(true);
+    });
+  });
+  describe('a picture a strict decoder complains about (FL-1353)', () => {
+    const strictOnly = (message: string) =>
+      mocks.media.decodeImage.mockImplementation((_input, options) =>
+        options.processInvalidImages
+          ? Promise.resolve({ data: bytes, info: {}, rung: 'lenient' } as never)
+          : Promise.reject(new SharpOperationError(message, true)),
+      );
+    it('an old JPEG that only lacks its end marker opens, so it is healthy', async () => {
+      strictOnly('VipsJpeg: Premature end of JPEG file');
+      mocks.media.pictureSaved.mockResolvedValue(100);
+      expect(await sut.validate({ ...input, deep: true })).toMatchObject({ status: 'healthy' });
+    });
+    it('a JPEG really missing rows of its picture is cut short', async () => {
+      strictOnly('VipsJpeg: Premature end of JPEG file');
+      mocks.media.pictureSaved.mockResolvedValue(60);
+      expect(await sut.validate({ ...input, deep: true })).toEqual({
+        status: 'corrupt',
+        reason: 'decode_failed',
+        message: 'VipsJpeg: Premature end of JPEG file',
+      });
+    });
+    it('a JPEG only another decoder can read is healthy, and its rows are not counted (FL-1356)', async () => {
+      mocks.media.decodeImage.mockImplementation((_input, options) =>
+        options.ladder === 'strict'
+          ? Promise.reject(new SharpOperationError('VipsJpeg: Premature end of JPEG file', true))
+          : Promise.resolve({ data: bytes, info: {}, rung: 'djpeg' } as never),
+      );
+      mocks.media.pictureSaved.mockResolvedValue(10);
+      expect(await sut.validate({ ...input, deep: true })).toMatchObject({ status: 'healthy' });
+      expect(mocks.media.pictureSaved).not.toHaveBeenCalled();
+      // the preview stored inside a file proves nothing about the picture, so that rung is not asked for
+      expect(mocks.media.decodeImage).toHaveBeenLastCalledWith(input.path, {
+        colorspace: 'srgb',
+        processInvalidImages: true,
+        ladder: 'pixels',
+      });
+    });
+    it('any other complaint about a picture that opens is not damage', async () => {
+      strictOnly('VipsJpeg: Invalid SOS parameters for sequential JPEG');
+      expect(await sut.validate({ ...input, deep: true })).toMatchObject({ status: 'healthy' });
+      expect(mocks.media.pictureSaved).not.toHaveBeenCalled();
+    });
+    it('a second read that was killed is no verdict, whatever the strict reader said', async () => {
+      mocks.media.decodeImage.mockImplementation((_input, options) =>
+        Promise.reject(
+          options.processInvalidImages
+            ? new SharpOperationError('Sharp child closed (SIGKILL)')
+            : new SharpOperationError('VipsJpeg: Premature end of JPEG file', true),
+        ),
+      );
+      expect(await sut.validate({ ...input, deep: true })).toEqual({
+        status: 'transient',
+        reason: 'decoder_resource_limit',
+      });
+    });
+    it('a damage word in the folder name is not read as damage', async () => {
+      const folder = join(directory, 'corrupt');
+      await mkdir(folder);
+      const path = join(folder, 'original.jpg');
+      await writeFile(path, bytes);
+      mocks.media.decodeImage.mockRejectedValue(new SharpOperationError(`Input file ${path} could not be read`, true));
+      expect(await sut.validate({ ...input, path, deep: true })).toMatchObject({
+        status: 'transient',
+        reason: 'decode_unverified',
+      });
+    });
+    it('"invalid" alone, on a picture that will not open, is a suspicion and not confirmed damage', async () => {
+      mocks.media.decodeImage.mockRejectedValue(new SharpOperationError('VipsJpeg: Invalid component ID', true));
+      expect(await sut.validate({ ...input, deep: true })).toEqual({
+        status: 'transient',
+        reason: 'decode_unverified',
+        message: 'VipsJpeg: Invalid component ID',
+      });
+    });
+    it.each([
+      [new SharpResourceLimitError('Input image exceeds pixel limit')],
+      [new SharpOperationError('Sharp child closed (SIGKILL)')],
+    ])('%s is no verdict on the file', async (error) => {
+      mocks.media.decodeImage.mockRejectedValue(error);
+      expect(await sut.validate({ ...input, deep: true })).toEqual({
+        status: 'transient',
+        reason: 'decoder_resource_limit',
+      });
+    });
   });
   it('an unsupported-format message on a JPEG with junk in front is corrupt', async () => {
     await writeFile(input.path, Buffer.concat([Buffer.alloc(300, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]));
@@ -210,7 +438,11 @@ describe(MediaIntegrityService.name, () => {
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toMatchObject({
       status: 'healthy',
     });
-    expect(mocks.media.decodeImage).toHaveBeenCalledWith(bytes, { colorspace: 'srgb', processInvalidImages: false });
+    expect(mocks.media.decodeImage).toHaveBeenCalledWith(bytes, {
+      colorspace: 'srgb',
+      processInvalidImages: false,
+      ladder: 'strict',
+    });
     expect(mocks.media.extract).not.toHaveBeenCalled();
   });
   it.each([

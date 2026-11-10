@@ -162,6 +162,12 @@ import { MlWorkloadRouteOriginTable } from 'src/schema/tables/ml-workload-route-
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { NotificationTable } from 'src/schema/tables/notification.table.js';
+import {
+  OAuthAuthorizationCodeTable,
+  OAuthClientTable,
+  OAuthGrantTable,
+  OAuthSpentRefreshTokenTable,
+} from 'src/schema/tables/oauth-app.table.js';
 import { OcrSearchTable } from 'src/schema/tables/ocr-search.table.js';
 import { OperationalMetricSampleTable } from 'src/schema/tables/operational-metric-sample.table.js';
 import { PartnerAuditTable } from 'src/schema/tables/partner-audit.table.js';
@@ -263,6 +269,12 @@ import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
 import { UserKnownDeviceTable } from 'src/schema/tables/user-known-device.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
+import {
+  AuthChallengeTable,
+  SessionPasskeyTable,
+  UserCredentialVersionTable,
+  UserPasskeyTable,
+} from 'src/schema/tables/user-passkey.table.js';
 import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
@@ -336,6 +348,10 @@ export class ImmichDatabase {
     CaptureReceiptTable,
     BrowserExtensionSignInCodeTable,
     BrowserExtensionAccessTable,
+    OAuthClientTable,
+    OAuthGrantTable,
+    OAuthAuthorizationCodeTable,
+    OAuthSpentRefreshTokenTable,
     BookmarkTable,
     AlbumBookmarkTable,
     AlbumChangeRunTable,
@@ -499,6 +515,10 @@ export class ImmichDatabase {
     UserTwoFactorTable,
     UserKnownDeviceTable,
     UserRecoveryCodeTable,
+    UserPasskeyTable,
+    AuthChallengeTable,
+    SessionPasskeyTable,
+    UserCredentialVersionTable,
     VersionHistoryTable,
     VideoMomentIndexTable,
     VideoMomentFrameTable,
@@ -632,6 +652,10 @@ export interface DB extends QueueDatabase {
   capture_receipt: CaptureReceiptTable;
   browser_extension_sign_in_code: BrowserExtensionSignInCodeTable;
   browser_extension_access: BrowserExtensionAccessTable;
+  oauth_client: OAuthClientTable;
+  oauth_grant: OAuthGrantTable;
+  oauth_authorization_code: OAuthAuthorizationCodeTable;
+  oauth_spent_refresh_token: OAuthSpentRefreshTokenTable;
   bookmark: BookmarkTable;
   album_bookmark: AlbumBookmarkTable;
   album_change_run: AlbumChangeRunTable;
@@ -809,6 +833,10 @@ export interface DB extends QueueDatabase {
   user_recovery_code: UserRecoveryCodeTable;
   user_two_factor: UserTwoFactorTable;
   user_known_device: UserKnownDeviceTable;
+  user_passkey: UserPasskeyTable;
+  auth_challenge: AuthChallengeTable;
+  session_passkey: SessionPasskeyTable;
+  user_credential_version: UserCredentialVersionTable;
 
   version_history: VersionHistoryTable;
 

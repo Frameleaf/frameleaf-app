@@ -5,7 +5,7 @@ import cookieParser from 'cookie-parser';
 import helmetMiddleware from 'helmet';
 import { existsSync } from 'node:fs';
 import sirv from 'sirv';
-import { IMMICH_SERVER_START, excludePaths, serverVersion } from 'src/constants.js';
+import { IMMICH_SERVER_START, excludePaths, excludeRoutePatterns, serverVersion } from 'src/constants.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
 import { expressTrustProxy, frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
 import { requestLogMiddleware } from 'src/middleware/logging.interceptor.js';
@@ -81,7 +81,7 @@ export async function configureExpress(
     app.enableCors();
   }
 
-  app.setGlobalPrefix('api', { exclude: excludePaths });
+  app.setGlobalPrefix('api', { exclude: [...excludePaths, ...excludeRoutePatterns] });
   // Nest initializes gateways before AppBootstrap; their PostgreSQL transport needs the schema first.
   // Maintenance deliberately remains available without the normal database/import activation gate.
   if (ssr === ApiService) {

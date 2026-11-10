@@ -214,6 +214,11 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST auth/two-factor/recovery-codes': RATE_LIMITS.twoFactorChange,
   'POST auth/two-factor/move': RATE_LIMITS.twoFactorChange,
   'POST auth/two-factor/move/confirm': RATE_LIMITS.twoFactorChange,
+  // FL-836: a passkey sign-in counts like a password sign-in; adding one may take the password
+  'POST auth/passkeys/login': RATE_LIMITS.login,
+  'POST auth/passkeys/login/options': RATE_LIMITS.passkeyLoginOptions,
+  'POST auth/passkeys/register/options': RATE_LIMITS.passkeyChange,
+  'POST auth/passkeys/register': RATE_LIMITS.passkeyChange,
   // FL-538: a choose-a-password link is checked and used without signing in, bounded like a sign-in.
   'POST auth/password-link/check': RATE_LIMITS.login,
   'POST auth/password-link': RATE_LIMITS.login,
@@ -238,6 +243,13 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST browser-extension/sign-in/start': RATE_LIMITS.extensionSignIn,
   'POST browser-extension/sign-in/authorize': RATE_LIMITS.extensionSignIn,
   'POST browser-extension/sign-in/exchange': RATE_LIMITS.extensionSignIn,
+  // FL-803: connected apps (OAuth 2.1)
+  'GET oauth/apps/authorize': RATE_LIMITS.oauthAppAuthorize,
+  'POST oauth/apps/authorize/start': RATE_LIMITS.oauthAppAuthorize,
+  'POST oauth/apps/authorize': RATE_LIMITS.oauthAppAuthorize,
+  'POST oauth/apps/token': RATE_LIMITS.oauthAppToken,
+  'POST oauth/apps/revoke': RATE_LIMITS.oauthAppToken,
+  'POST oauth/apps/register': RATE_LIMITS.oauthAppRegister,
   'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
   // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
   'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },

@@ -4,6 +4,7 @@
    * `settings-v2/library/utilities.jsx`): whether a phone is backing up, the two stores, a code to
    * scan that fills in this server's address (the app still signs in with each person's own account),
    * and "Your phones", each person seeing only their own. The apps come only from the stores (FL-1200).
+   * Each phone carries its backup receipt in one line and opens it on Tools › Phones (FL-792).
    *
    * The code carries only this server's address (the public address when one is set, else the one
    * this page was opened at): never a password or a key.
@@ -16,6 +17,10 @@
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { receiptLine } from '$lib/components/frameleaf/settings/utilities/receipt-words';
+  import { allDevices, receiptScope, receiptState } from '$lib/frameleaf/backup-receipt';
+  import { utilitiesUrl } from '$lib/frameleaf/utilities';
+  import { goto } from '$app/navigation';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { copyToClipboard } from '$lib/utils';
@@ -26,7 +31,7 @@
     type ServerAppReleasesResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAndroid, mdiApple, mdiCellphone, mdiCellphoneCheck } from '@mdi/js';
+  import { mdiAndroid, mdiApple, mdiCellphone, mdiCellphoneCheck, mdiChevronRight } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -34,14 +39,21 @@
   let releases = $state<ServerAppReleasesResponseDto | null>(null);
   let phones = $state<BackupDeviceDto[] | null>(null);
   let said = $state('');
+  let scoped = $state(false);
 
   onMount(() => {
     void getAppReleases()
       .then((answer) => (releases = answer))
       .catch(() => (releases = null));
-    void listBackupDevices({ limit: 100 })
-      .then(({ devices }) => (phones = devices))
-      .catch(() => (phones = []));
+    void (async () => {
+      try {
+        const devices = await allDevices((query) => listBackupDevices(query));
+        scoped = await receiptScope(devices.find((device) => !device.lastCheck)?.id);
+        phones = devices;
+      } catch {
+        phones = [];
+      }
+    })();
   });
 
   const address = $derived(serverConfigManager.value.externalDomain || location.origin);
@@ -137,7 +149,7 @@
           <Item
             icon={mdiCellphone}
             name={phone.displayName}
-            detail={`${phone.model} · ${phone.platform}`}
+            detail={receiptLine($t, phone, receiptState(phone, scoped))}
             tone={phone.quietForDays !== null && phone.quietForDays >= 7 ? 'warn' : 'good'}
             status={phone.quietForDays !== null && phone.quietForDays >= 7
               ? $t('frameleaf_mobile_phone_quiet')
@@ -145,7 +157,17 @@
             note={phone.lastSuccessfulBackupAt
               ? $t('frameleaf_mobile_phone_last', { values: { ago: ago(phone.lastSuccessfulBackupAt) } })
               : undefined}
-          />
+          >
+            {#snippet action()}
+              <Button
+                label={$t('frameleaf_phones_open', { values: { name: phone.displayName } })}
+                onclick={() => goto(utilitiesUrl('phones', { phone: phone.id }))}
+              >
+                {$t('frameleaf_phones_manage')}
+                <Icon icon={mdiChevronRight} size="18" aria-hidden />
+              </Button>
+            {/snippet}
+          </Item>
         {/each}
       {:else}
         <Item

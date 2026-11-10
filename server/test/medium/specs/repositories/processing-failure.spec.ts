@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { AssetType, JobName, QueueName } from 'src/enum.js';
-import { recordProcessingFailure } from 'src/queue/processing-failure.js';
+import { clearProcessingFailure, recordProcessingFailure } from 'src/queue/processing-failure.js';
 import { SharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -51,7 +51,7 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
     if (attempt === 3) await enqueue(corrupt.id);
     const [claim] = await store.claim(queue, worker, 1);
     expect(claim.data.id).toBe(corrupt.id);
-    expect(await store.fail(claim, 'unsupported format in /private/original.jpg')).toBe(true);
+    expect(await store.fail(claim, 'bad data in /private/original.jpg')).toBe(true);
     await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
   }
 
@@ -61,11 +61,20 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
       assetId: corrupt.id,
       step: JobName.AssetGenerateThumbnails,
       attempts: 3,
-      lastError: 'unsupported',
+      lastError: 'unreadable',
       quarantinedAt: expect.any(Date),
     }),
   ]);
   expect(await enqueue(corrupt.id)).toBe(0);
+  // FL-1356: a file no decoder can open is set aside on its first failure, not its third
+  const unopened = { name: JobName.AssetGenerateThumbnails, assetId: healthy.id };
+  expect(await recordProcessingFailure(db, unopened, 'Unsupported image: no decoder could open it')).toBe(true);
+  expect(
+    await sql`select attempts, "lastError" from asset_processing_failure where "assetId" = ${healthy.id}::uuid and "quarantinedAt" is not null`.execute(
+      db,
+    ),
+  ).toMatchObject({ rows: [{ attempts: 1, lastError: 'unsupported' }] });
+  await clearProcessingFailure(db, unopened.name, unopened.assetId);
   await enqueue(healthy.id);
   const [next] = await store.claim(queue, worker, 1);
   expect(next.data.id).toBe(healthy.id);
@@ -87,15 +96,20 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
     .execute();
   const query = { skip: 0, take: 1 };
   expect(await repository.getProcessingFailures(auth, query)).toMatchObject([
-    { assetId: corrupt.id, cause: 'unsupported' },
+    { assetId: corrupt.id, cause: 'unreadable' },
   ]);
   expect(await repository.getProcessingFailures(other, { ...query, userId: user.id })).toEqual([]);
   expect(await repository.getProcessingFailures(admin, { ...query, userId: user.id })).toHaveLength(1);
+  // FL-862: the count under the same rules, once per file, steps it doesn't know left out
+  expect(await repository.countProcessingFailures(auth)).toEqual({ count: 1, setAside: 1 });
+  expect(await repository.countProcessingFailures(other)).toEqual({ count: 0, setAside: 0 });
+  expect(await repository.countProcessingFailures(admin)).toEqual({ count: 1, setAside: 1 });
 
   const action = { items: [{ assetId: corrupt.id, step: JobName.AssetGenerateThumbnails as const }] };
   await expect(repository.updateProcessingFailures(other, action)).rejects.toThrow('Processing failure not found');
   await repository.updateProcessingFailures(auth, action);
   expect(await repository.getProcessingFailures(auth, query)).toEqual([]);
+  expect(await repository.countProcessingFailures(auth)).toEqual({ count: 0, setAside: 0 });
 
   const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
   jobs['handlers'][JobName.AssetGenerateThumbnails] = { queueName: queue } as never;

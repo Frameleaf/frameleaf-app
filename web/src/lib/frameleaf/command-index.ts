@@ -19,12 +19,15 @@ import {
   mdiCogOutline,
   mdiContentDuplicate,
   mdiDevices,
+  mdiPuzzleOutline,
   mdiDownload,
   mdiFeatureSearchOutline,
   mdiFileAlertOutline,
+  mdiFileClockOutline,
   mdiFileCheckOutline,
   mdiFileDocumentOutline,
   mdiFolderOutline,
+  mdiFingerprint,
   mdiFormTextboxPassword,
   mdiImageAlbum,
   mdiImageEditOutline,
@@ -151,6 +154,13 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       icon: mdiFileAlertOutline,
       href: commandCenterUrl('care', 'files'),
     },
+    // FL-862: Library care's Couldn't process, every account's own list.
+    {
+      id: 'care-couldnt-process',
+      title: $t('frameleaf_cc_section_couldnt_process'),
+      icon: mdiFileClockOutline,
+      href: commandCenterUrl('care', 'couldnt-process'),
+    },
   ];
   for (const extra of extras) {
     pages.push({ ...extra, subtitle: $t('frameleaf_search_subtitle_page') });
@@ -242,6 +252,13 @@ export const USER_SETTINGS_AREAS: readonly {
     descriptionKey: 'frameleaf_access_devices_description',
     icon: mdiDevices,
   },
+  // FL-860: AI assistants, Home Assistant and other apps you allowed (OAuth, FL-803).
+  {
+    key: 'connected-apps',
+    titleKey: 'frameleaf_apps_title',
+    descriptionKey: 'frameleaf_apps_row_description',
+    icon: mdiPuzzleOutline,
+  },
   {
     key: 'download-settings',
     titleKey: 'frameleaf_prefs_downloads_title',
@@ -266,6 +283,13 @@ export const USER_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_how_title',
     descriptionKey: 'frameleaf_how_description',
     icon: mdiFormTextboxPassword,
+  },
+  // FL-859: passkeys, opened from How you sign in (FL-767 prototype `Passkeys.jsx`).
+  {
+    key: 'passkeys',
+    titleKey: 'frameleaf_passkey_title',
+    descriptionKey: 'frameleaf_passkey_subtitle',
+    icon: mdiFingerprint,
   },
   {
     key: 'user-pin-code-settings',

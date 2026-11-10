@@ -22,6 +22,7 @@ vi.mock('src/repositories/logging.repository.js', () => ({ LoggingRepository: cl
 vi.mock('src/repositories/machine-learning.repository.js', () => ({ MachineLearningRepository: class {} }));
 vi.mock('src/services/auth.service.js', () => ({ AuthService: class {} }));
 vi.mock('src/services/locked-encryption.service.js', () => ({ LockedEncryptionService: class {} }));
+vi.mock('src/services/oauth-app.service.js', () => ({ OAuthAppService: class {} }));
 vi.mock('src/services/sign-in-security.service.js', () => ({ SignInSecurityService: class {} }));
 vi.mock('src/utils/database.js', () => ({ getKyselyConfig: vi.fn() }));
 vi.mock('src/repositories/config.repository.js', () => ({

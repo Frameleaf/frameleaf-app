@@ -80,6 +80,7 @@
   "/admin/users/(list)/new": 431440,
   "/admin/users/[id]": 431453,
   "/admin/users/[id]/edit": 431452,
+  "/auth/allow-app": 447056,
   "/auth/allow-extension": 438820,
   "/auth/change-password": 438590,
   "/auth/choose-password": 438654,

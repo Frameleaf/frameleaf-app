@@ -291,6 +291,9 @@ export const adminConfigDefaults = {
   passwordLogin: {
     enabled: true,
   },
+  connectedApps: {
+    allowRegistration: true,
+  },
   physicalDeduplication: {
     enabled: false,
     masterUserId: null,
@@ -303,6 +306,11 @@ export const adminConfigDefaults = {
     askSearch: {
       enabled: true,
       maxResults: 100,
+    },
+    assistant: {
+      enabled: true,
+      maxResults: 100,
+      planner: false,
     },
   },
   storageTemplate: {

@@ -440,11 +440,17 @@ export class BaseConfig implements VideoCodecSWConfig {
   }
 
   getToneMapping(videoStream: VideoStreamInfo) {
+    const { primaries, transfer, matrix } = this.getColors();
+    if (videoStream.dolbyVisionReshape && this.config.tonemap !== ToneMapping.Disabled) {
+      // FL-1357: profile 5 pictures are IPT-PQ-C2; only libplacebo undoes that, so it also does the tone mapping
+      return [
+        `libplacebo=apply_dolbyvision=true:tonemapping=${this.config.tonemap}:colorspace=${matrix}:color_primaries=${primaries}:color_trc=${transfer}:range=pc:format=yuv420p`,
+      ];
+    }
     if (!this.shouldToneMap(videoStream)) {
       return [];
     }
 
-    const { primaries, transfer, matrix } = this.getColors();
     const options = `tonemapx=tonemap=${this.config.tonemap}:desat=0:p=${primaries}:t=${transfer}:m=${matrix}:r=pc:peak=100:format=yuv420p`;
     return [options];
   }

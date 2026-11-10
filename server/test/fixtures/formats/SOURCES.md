@@ -4,92 +4,50 @@
 
 | Root          | Location                                         | Origin                                                      |
 | ------------- | ------------------------------------------------ | ----------------------------------------------------------- |
-| `generated`   | this folder (`jpeg/ still/ design/ video/`)       | Made by `generate.sh` from test patterns. No third-party rights. |
+| `generated`   | this folder (`jpeg/ still/ design/ video/`)       | Made by `generate.sh` and `generate-more-stills.sh` from test patterns. No third-party rights. |
 | `test-assets` | `e2e/test-assets` (`Frameleaf/frameleaf-test-assets`, pinned in `scripts/checkout-test-assets.sh`) | Third-party samples, each with its own licence. |
 | `resources`   | `server/resources`                               | Files the server already ships (the bundled OFL Studio fonts). |
+| `fate`        | downloaded by `fetch-fate.sh`, never committed   | FFmpeg FATE samples, pinned by SHA-256 in `fate.sha256`. |
 
-## Still to add to `Frameleaf/frameleaf-test-assets`
+## Third-party fixtures in `Frameleaf/frameleaf-test-assets`
 
-Nothing below is in the fixture repository yet. Adding them needs an owner push there, then a bump of
-`fixture_commit` in `scripts/checkout-test-assets.sh` and of the tarball name in
-`.github/workflows/test-fixtures.yml`, then manifest entries here. Directory listings were checked on
-2026-11-10; licences are as the source states them and must be confirmed per file before the push.
+Added on 2026-11-10 (fixture commit `63a12e4f97e7`). That repository is public, so only files with a
+clear licence go there. `FRAMELEAF-FORMAT-FIXTURES.md` at its root lists each file with its source
+URL, licence and SHA-256; the licence texts sit beside the files.
 
-### RAW (raw.pixls.us)
-
-Most of the archive is CC0, but not every file: the licence shown on each file's page decides.
-Base URL `https://raw.pixls.us/data/`.
-
-| Why | File | Suggested path |
+| Files | Source | Licence |
 | --- | --- | --- |
-| 45 MP, over the 256 MiB render cap | `Canon/EOS R5/Canon_EOS_R5_RAW_ISO_100_nocrop_nodual.CR3` | `formats/raw/Canon/` |
-| CR3 lossy (CRAW) | `Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3` | `formats/raw/Canon/` |
-| Compressed NEF, 45 MP | `Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF` | `formats/raw/Nikon/` |
-| High Efficiency NEF (no open sensor decoder: preview rung) | `Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF` and `..._Star).NEF` | `formats/raw/Nikon/` |
-| ARW lossless compressed, 50 MP | `Sony/ILCE-1/A1_full_lossless_compressed.ARW` | `formats/raw/Sony/` |
-| ARW lossy compressed | `Sony/ILCE-1/A1_full_compressed.ARW` | `formats/raw/Sony/` |
-| RAF compressed, 102 MP | `Fujifilm/GFX100S/Fujifilm-GFX100S-14bits-compress-4_3.RAF` | `formats/raw/Fujifilm/` |
-| RAF lossless, X-Trans | `Fujifilm/X-T5/DSCF0021.RAF` | `formats/raw/Fujifilm/` |
-| Foveon X3F | `Sigma/sd Quattro H/SDIM0061.X3F` | `formats/raw/Sigma/` |
-| GoPro GPR | `GoPro/HERO9 Black/GOPR0017.GPR` | `formats/raw/GoPro/` |
-| Panasonic high-resolution RW2 | `Panasonic/DC-S5M2/P1126473_96MP.RW2` | `formats/raw/Panasonic/` |
-| Samsung SRW | `Samsung/NX1/2016-07-23-142101_sam_9364.srw` | `formats/raw/Samsung/` |
-| Olympus ORF | `Olympus/E-M1MarkIII/_3160529.ORF` | `formats/raw/Olympus/` |
-| OM System 14-bit | one file from `OM System/OM-1 Mark II/` | `formats/raw/OM/` |
+| `formats/raw/`: Canon EOS R5 RAW and CRAW (45 MP), Nikon Z 9 lossless and High Efficiency\* (45 MP), Sony A1 lossless compressed (50 MP), Fujifilm GFX100S compressed (102 MP) and X-T5 compressed, Sigma sd Quattro H (X3F), GoPro HERO9 (GPR), Panasonic S5 II, Samsung NX1 | `https://raw.pixls.us/data/` | CC0 1.0, checked per file against the site's index |
+| `formats/jpeg/libjpeg-turbo/testimgari.jpg` | `https://github.com/libjpeg-turbo/libjpeg-turbo/tree/main/testimages` | IJG licence |
+| `formats/exr/openexr-images/` | `https://github.com/AcademySoftwareFoundation/openexr-images` | BSD-3-Clause |
+| `formats/fonts/Inter/InterVariable.ttf` (variable) | `https://github.com/rsms/inter` | SIL OFL 1.1 |
+| `formats/fonts/SourceSerif/` (OTF with CFF outlines, WOFF, WOFF2) | `https://github.com/adobe-fonts/source-serif` | SIL OFL 1.1 |
+| `formats/fonts/NotoColorEmoji/Noto-COLRv1-noflags.ttf` (colour) | `https://github.com/googlefonts/noto-emoji` | SIL OFL 1.1 |
+| `formats/fonts/NotoSansCJK/NotoSansCJK-Regular.ttc` (CJK, collection) | `https://github.com/notofonts/noto-cjk` | SIL OFL 1.1 |
 
-Not on raw.pixls.us (newest iPhone there is the 12 Pro): a JPEG XL ProRAW DNG from an iPhone 16 or
-17 Pro. The owner needs to shoot one.
+To add more: push to the `frameleaf-frozen` branch there, then change `fixture_commit` in
+`scripts/checkout-test-assets.sh` and the same hash in `.github/workflows/test-fixtures.yml`,
+`scripts/frameleaf-workflows.test.mjs` and `docker/README.md`. Every CI job that uses fixtures
+clones that repository, so keep additions small.
 
-### Stills
+## FFmpeg FATE samples (fetched, not committed)
 
-| Why | Source | Licence |
-| --- | --- | --- |
-| Reference arithmetic and 12-bit JPEGs (`testimgari.jpg`, `testorig12.jpg`) | `https://github.com/libjpeg-turbo/libjpeg-turbo/tree/main/testimages` | IJG / BSD-3-Clause |
-| Every BMP header and compression variant, including the questionable ones | `https://entropymine.com/jason/bmpsuite/` | Public domain (author's statement) |
-| PNG edge cases, bad CRC included | `http://www.schaik.com/pngsuite/` | Free to use and distribute (author's statement) |
-| EXR compression and channel variants | `https://github.com/AcademySoftwareFoundation/openexr-images` | BSD-3-Clause |
-| JPEG 2000 conformance (`.j2k .jp2 .jpx`) | `https://github.com/uclouvain/openjpeg-data` | Mixed: check per folder |
-| JPEG XR (`.jxr .wdp`) | none found under a clear licence; make one with `JxrEncApp` from jxrlib (BSD-2-Clause) | own work |
+The FATE suite (`https://fate-suite.ffmpeg.org/`) states no licence, so its samples are never
+copied into a Frameleaf repository. `fetch-fate.sh <dir>` downloads the files listed in
+`fate.sha256` and fails unless every hash matches. They cover codecs we cannot encode ourselves:
+VVC, APV, VC-1, WMV, DVCPRO HD, camera MXF (XDCAM, Avid, MPEG-4), ProRes 4444 with alpha,
+JPEG 2000 digital cinema, Phantom CINE, Magic Lantern MLV and an early RED ONE R3D. To add one, append its `sha256sum` line to `fate.sha256`.
 
-### Video (FFmpeg FATE suite)
+## Still wanted, no usable source
 
-Base URL `https://fate-suite.ffmpeg.org/`. The suite carries no blanket licence: these are samples
-gathered for decoder testing, so the owner decides whether redistribution in our repository is
-acceptable or whether CI should fetch them at run time instead.
+The owner decided on 2026-11-10 to ship without these and have beta users test them live.
 
-| Why (no encoder to make our own) | File |
-| --- | --- |
-| VVC / H.266 | `vvc-conformance/10b422_L_5.bit` |
-| APV | `apv/profile_422-10.apv` |
-| VC-1 (and WMV3 in ASF) | `vc1/SA00040.vc1`, `wmv8/wmv8_x8intra.wmv` |
-| DV / DVCPRO HD | `dv/dvcprohd_720p50.mov` |
-| Camera MXF (XDCAM, Avid) | `mxf/Sony-00001.mxf`, `mxf/Avid-00005.mxf`, `mxf/C0023S01.mxf` |
-| ProRes in MXF, HDR10 | `mxf/Meridian-Apple_ProResProxy-HDR10.mxf` |
-| ProRes 4444 with alpha | `prores/prores4444_with_transparency.mov` |
-| JPEG 2000 digital cinema | `jpeg2000/chiens_dcinema2K.mxf` |
-| RED R3D (kept safe, no playback: placeholder) | one file from `r3d/` |
-
-Still wanted, source not found: ProRes RAW, Blackmagic RAW, Canon Cinema RAW Light, Nikon N-RAW, and
-Dolby Vision profile 5 and 7 clips. Owner-supplied camera files are the likely route.
-
-### Design files
-
-| Why | Source |
-| --- | --- |
-| PSD saved with and without "Maximize Compatibility", 16-bit, CMYK, layered | Owner: save from Photoshop (own work) |
-| PSB over 30,000 px | Owner: save from Photoshop (own work) |
-| Fireworks PNG with pages and layers | Owner: one of the reported files, or save from Fireworks |
-| PDF and PDF-compatible AI | Owner: own work, or generate with a script once pdfium lands |
-
-The FATE suite's `psd/` samples use the Lena photograph, which has no usable licence: do not add them.
-
-### Fonts (SIL Open Font License 1.1)
-
-| Why | Source |
-| --- | --- |
-| Static TTF | already shipped: `server/resources/studio-fonts/` (root `resources`) |
-| Variable font, many axes | `https://github.com/rsms/inter/releases` (`InterVariable.ttf`) |
-| Static OTF (CFF outlines) and WOFF, WOFF2 | `https://github.com/adobe-fonts/source-serif/releases` |
-| Colour font (COLRv1) | `https://github.com/googlefonts/noto-emoji` (`fonts/Noto-COLRv1.ttf`) |
-| CJK and a TrueType collection | `https://github.com/notofonts/noto-cjk` (`Sans/OTC/NotoSansCJK-Regular.ttc`, about 20 MB: consider one weight only) |
-| Type 1 (`.pfb`) | none found under OFL; convert an OFL font with FontForge |
+- JPEG XL ProRAW from an iPhone 16 or 17 Pro (raw.pixls.us stops at the iPhone 12 Pro).
+- PSD saved with and without "Maximize Compatibility", 16-bit, CMYK, layered; PSB. The FATE `psd/`
+  samples use the Lena photograph, which has no usable licence.
+- A real Fireworks PNG with pages and layers; PDF and PDF-compatible AI.
+- The reported files themselves: an old JPEG shown as damaged, a RAW that failed to import.
+- ProRes RAW, Blackmagic RAW, RED R3D, Canon Cinema RAW Light, Nikon N-RAW, Dolby Vision profile 5
+  and 7 clips.
+- JPEG XR, a 12-bit JPEG with a clear licence (the generated one covers the decoder), bmpsuite and
+  PngSuite edge cases, JPEG 2000 conformance files (mixed licences), a Type 1 font.

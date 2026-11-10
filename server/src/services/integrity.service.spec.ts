@@ -235,6 +235,8 @@ describe(IntegrityService.name, () => {
         expect.objectContaining({ result, actualSha256: null }),
       );
       expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
+      // FL-1353: a file that could not be read is not a checksum failure
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
     });
 
     it('records repeated successful checks independently of the immutable baseline', async () => {

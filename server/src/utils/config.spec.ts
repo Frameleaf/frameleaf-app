@@ -1,7 +1,7 @@
 import { cloneDeep } from 'lodash-es';
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaults } from 'src/dtos/config.dto.js';
+import { assistantSettings, defaults } from 'src/dtos/config.dto.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import {
   clearConfigCache,
@@ -192,6 +192,33 @@ describe('canonical system configuration storage', () => {
     mocks.systemMetadata.readFile.mockResolvedValue(
       JSON.stringify({ ...partial, trash: { days: legacy.trash.days + 1 } }),
     );
+    const restarted = getMocks().config;
+    restarted.getEnv.mockReturnValue({ ...mockEnvData({}), configFile: 'settings.json' });
+    await expect(readConfig({ ...repos(), configRepo: restarted as never })).rejects.toThrow(
+      'effective_config_activation_required',
+    );
+  });
+
+  it('FL-885: keeps a file approved before the Library Assistant settings existed, and still refuses an edit', async () => {
+    const approved = cloneDeep(defaults) as Partial<typeof defaults> & typeof defaults;
+    delete (approved.localFeatures as Partial<typeof defaults.localFeatures>).assistant;
+    const partial = { trash: { days: defaults.trash.days } };
+    mocks.config.getEnv.mockReturnValue({ ...mockEnvData({}), configFile: 'settings.json' });
+    mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify(partial));
+    mocks.systemMetadata.getEffectiveConfigEpoch.mockResolvedValue({
+      format: 1 as const,
+      epoch: 1,
+      sourceKind: 'file' as const,
+      digest: createHash('sha256').update(canonicalJson(approved)).digest('hex'),
+      trashEnabled: approved.trash.enabled,
+    });
+
+    const config = await readConfig(repos());
+    expect(config).toEqual(approved);
+    expect(assistantSettings(config)).toEqual(defaults.localFeatures.assistant);
+    expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+
+    mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ trash: { days: defaults.trash.days + 1 } }));
     const restarted = getMocks().config;
     restarted.getEnv.mockReturnValue({ ...mockEnvData({}), configFile: 'settings.json' });
     await expect(readConfig({ ...repos(), configRepo: restarted as never })).rejects.toThrow(

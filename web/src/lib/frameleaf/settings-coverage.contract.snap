@@ -21,6 +21,9 @@
   "backup.schedule.cronExpression": {
     "type": "unknown"
   },
+  "connectedApps.allowRegistration": {
+    "type": "boolean"
+  },
   "editing.restoration.style": {
     "type": "string",
     "enum": [
@@ -644,6 +647,17 @@
     "type": "integer",
     "minimum": 1,
     "maximum": 1000
+  },
+  "localFeatures.assistant.enabled": {
+    "type": "boolean"
+  },
+  "localFeatures.assistant.maxResults": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 500
+  },
+  "localFeatures.assistant.planner": {
+    "type": "boolean"
   },
   "logging.enabled": {
     "type": "boolean"

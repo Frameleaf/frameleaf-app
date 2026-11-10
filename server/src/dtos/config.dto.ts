@@ -1186,6 +1186,15 @@ const AdminConfigSchemaWithVisibility = z
     passwordLogin: z
       .object({ enabled: configBool.describe('Enabled').meta({ visibility: Public }) })
       .meta({ id: 'AdminConfigPasswordLoginDto' }),
+    // FL-803: apps people connect to their library (AI assistants, Home Assistant) through OAuth.
+    connectedApps: z
+      .object({
+        allowRegistration: configBool.describe(
+          'Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything.',
+        ),
+      })
+      .meta({ id: 'AdminConfigConnectedAppsDto' })
+      .default({ allowRegistration: true }),
     // FL-71: the template's "Logs & diagnostics" local analytics rows. The nightly collector only
     // reads counts and sizes into this server's database; external telemetry stays off regardless.
     analytics: z
@@ -1203,9 +1212,22 @@ const AdminConfigSchemaWithVisibility = z
             maxResults: z.int().min(1).max(1000).describe('Maximum number of Ask Search results'),
           })
           .meta({ id: 'AdminConfigAskSearchDto' }),
+        // FL-885: the Library Assistant answers search questions with "why this matched" on every result.
+        // It plans with the rules by default; `planner` also asks a planner model when one is installed.
+        assistant: z
+          .object({
+            enabled: configBool.describe('Enable the Library Assistant in search'),
+            maxResults: z.int().min(1).max(500).describe('Maximum number of Library Assistant results'),
+            planner: configBool.describe('Plan questions with an installed planner model before the rules'),
+          })
+          .meta({ id: 'AdminConfigAssistantDto' })
+          .default({ enabled: true, maxResults: 100, planner: false }),
       })
       .meta({ id: 'AdminConfigLocalFeaturesDto' })
-      .default({ askSearch: { enabled: true, maxResults: 100 } }),
+      .default({
+        askSearch: { enabled: true, maxResults: 100 },
+        assistant: { enabled: true, maxResults: 100, planner: false },
+      }),
     storageTemplate: z
       .object({
         enabled: configBool.describe('Enabled'),
@@ -1852,6 +1874,9 @@ export const defaults = Object.freeze<SystemConfig>({
   passwordLogin: {
     enabled: true,
   },
+  connectedApps: {
+    allowRegistration: true,
+  },
   analytics: {
     enabled: true,
     historyDays: 730,
@@ -1860,6 +1885,11 @@ export const defaults = Object.freeze<SystemConfig>({
     askSearch: {
       enabled: true,
       maxResults: 100,
+    },
+    assistant: {
+      enabled: true,
+      maxResults: 100,
+      planner: false,
     },
   },
   storageTemplate: {
@@ -1982,3 +2012,12 @@ export const defaults = Object.freeze<SystemConfig>({
   help: helpDefaults,
   icloud: icloudDefaults,
 });
+
+/**
+ * FL-885: the Library Assistant settings. A configuration file approved before they existed keeps its
+ * approval and has no `localFeatures.assistant`; it reads as the defaults.
+ */
+export const assistantSettings = (
+  config: Pick<SystemConfig, 'localFeatures'>,
+): SystemConfig['localFeatures']['assistant'] =>
+  (config.localFeatures as Partial<SystemConfig['localFeatures']>).assistant ?? defaults.localFeatures.assistant;

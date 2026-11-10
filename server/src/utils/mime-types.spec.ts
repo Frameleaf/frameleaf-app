@@ -1,6 +1,11 @@
 import { AssetType } from 'src/enum.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
+// Offered before the format matrix existed (FL-1354); new extensions need a fixture.
+const LEGACY_STILLS = new Set(
+  '.hdr .heic .heics .heif .hif .insp .jxl .mpo .pbm .pfm .pgm .pnm .ppm .svg .tiff'.split(' '),
+);
+
 describe('mimeTypes', () => {
   it('classifies supported extensions consistently across filename forms', () => {
     const animated = new Set(['.apng', '.avif', '.avifs', '.gif', '.heic', '.heics', '.heif', '.jxl', '.png', '.webp']);
@@ -113,7 +118,6 @@ describe('mimeTypes', () => {
     { mimetype: 'image/x-olympus-ori', extension: '.ori' },
     { mimetype: 'image/x-panasonic-raw', extension: '.raw' },
     { mimetype: 'image/x-pentax-pef', extension: '.pef' },
-    { mimetype: 'image/x-phantom-cin', extension: '.cin' },
     { mimetype: 'image/x-phaseone-cap', extension: '.cap' },
     { mimetype: 'image/x-phaseone-iiq', extension: '.iiq' },
     { mimetype: 'image/x-portable-anymap', extension: '.pnm' },
@@ -323,6 +327,59 @@ describe('mimeTypes', () => {
     }
   });
 
+  describe('video breadth (FL-1357)', () => {
+    for (const filename of [
+      'clip.mjpeg',
+      'clip.mjpg',
+      'clip.m1v',
+      'clip.m2v',
+      'clip.m2p',
+      'clip.tp',
+      'clip.trp',
+      'clip.ogm',
+      'clip.wtv',
+      'clip.DVR-MS',
+      'clip.nut',
+      'clip.gxf',
+      'clip.mj2',
+      'clip.ivf',
+      'clip.h264',
+      'clip.h265',
+      'clip.hevc',
+      'clip.y4m',
+      'clip.dif',
+      'clip.evo',
+      'clip.apv',
+      'clip.cine',
+      'M19-0333.MLV',
+      'clip.vc1',
+    ]) {
+      it(`should import ${filename} as a video`, () => {
+        expect(mimeTypes.isVideo(filename)).toBe(true);
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Video);
+        expect(mimeTypes.isCinemaRaw(filename)).toBe(false);
+      });
+    }
+
+    // Cinema RAW has no open decoder: kept safe as a video, never promised to play.
+    for (const filename of ['A001_C001.braw', 'A001_C001_0101AB_001.R3D', 'A001C001.crm', 'DSC_0001.NEV', 'A001.arx']) {
+      it(`should keep cinema RAW ${filename} as a video`, () => {
+        expect(mimeTypes.isVideo(filename)).toBe(true);
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Video);
+        expect(mimeTypes.isCinemaRaw(filename)).toBe(true);
+      });
+    }
+
+    it('should leave ARRIRAW .ari frames with the RAW photos', () => {
+      expect(mimeTypes.isRaw('A001C001.ari')).toBe(true);
+      expect(mimeTypes.isCinemaRaw('A001C001.ari')).toBe(false);
+    });
+
+    it('should not call an ordinary video cinema RAW', () => {
+      expect(mimeTypes.isCinemaRaw('clip.mov')).toBe(false);
+    });
+  });
+
   describe('sidecar', () => {
     it('should contain only lowercase mime types', () => {
       const keys = Object.keys(mimeTypes.sidecar);
@@ -387,25 +444,55 @@ describe('mimeTypes', () => {
     });
 
     // Not decodable by the bundled libvips/ImageMagick/ExifTool/ffmpeg, so not offered (see the FL-1286 PR).
-    it.each([
-      'a.exr',
-      'a.j2k',
-      'a.jpf',
-      'a.jpx',
-      'a.jxr',
-      'a.tga',
-      'a.qoi',
-      'a.pam',
-      'a.gpr',
-      'a.braw',
-      'a.r3d',
-      'a.crm',
-      'a.ogg',
-      'a.mjpeg',
-      'a.y4m',
-    ])('does not accept %s', (filename) => {
+    it.each(['a.gpr', 'a.ogg'])('does not accept %s', (filename) => {
       expect(mimeTypes.isAsset(filename)).toBe(false);
       expect(mimeTypes.assetType(filename)).toBe(AssetType.Other);
+    });
+  });
+
+  describe('FL-1356 still formats', () => {
+    it('serves every JPEG name to the browser as it is', () => {
+      for (const filename of ['a.jpe', 'a.jfi', 'a.JIF']) {
+        expect(mimeTypes.isWebSupportedImage(filename)).toBe(true);
+        expect(mimeTypes.lookup(filename)).toBe('image/jpeg');
+      }
+    });
+
+    it('reads a Cineon scan as a picture, not as sensor data', () => {
+      expect(mimeTypes.isRaw('scan.cin')).toBe(false);
+      expect(mimeTypes.isImage('scan.CIN')).toBe(true);
+    });
+
+    it.each(
+      '.jps .j2k .j2c .jpc .jpf .jpx .jxr .wdp .hdp .exr .tga .ico .cur .pcx .dds .dpx .cin .sgi .xcf .pict .pct .fits .qoi .pam .btf .svgz'.split(
+        ' ',
+      ),
+    )('shows %s through a preview', (extension) => {
+      expect(mimeTypes.assetType(`a${extension}`)).toBe(AssetType.Image);
+      expect(mimeTypes.isWebSupportedImage(`a${extension}`)).toBe(false);
+      expect(mimeTypes.isRaw(`a${extension}`)).toBe(false);
+    });
+
+    // FL-968: a camera's .thm sits beside its video and must not become a photo of its own.
+    // AVC-coded HEIF needs an H.264 decoder in libheif, which the image does not have.
+    it.each(['a.thm', 'a.avci', 'a.avcs'])('does not accept %s', (filename) => {
+      expect(mimeTypes.isAsset(filename)).toBe(false);
+    });
+
+    it('offers no extension without a fixture that proves it', async () => {
+      const { readFileSync } = await import('node:fs');
+      const manifest = JSON.parse(
+        readFileSync(new URL('../../test/fixtures/formats/manifest.json', import.meta.url), 'utf8'),
+      ) as { fixtures: { file: string; expectedFailure?: string }[] };
+      const proven = new Set(
+        manifest.fixtures
+          .filter((fixture) => !fixture.expectedFailure)
+          .map(({ file }) => file.slice(file.lastIndexOf('.')).toLowerCase()),
+      );
+      const added = Object.keys(mimeTypes.webUnsupportedImage).filter(
+        (extension) => !mimeTypes.isRaw(`a${extension}`) && !LEGACY_STILLS.has(extension),
+      );
+      expect(added.filter((extension) => !proven.has(extension))).toEqual([]);
     });
   });
 

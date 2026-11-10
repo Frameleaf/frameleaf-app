@@ -7,11 +7,13 @@
    * existing `?isOpen=` and `?open=oauth` links still land on it.
    */
   import ApiKeysSection from '$lib/components/frameleaf/access/ApiKeysSection.svelte';
+  import ConnectedAppsSection from '$lib/components/frameleaf/access/ConnectedAppsSection.svelte';
   import DevicesSection from '$lib/components/frameleaf/access/DevicesSection.svelte';
   import FrameleafAccountSection from '$lib/components/frameleaf/access/FrameleafAccountSection.svelte';
   import LockedRulesPanel from '$lib/components/frameleaf/access/LockedRulesPanel.svelte';
   import LockedEncryptionPage from '$lib/components/frameleaf/settings/security/locked-encryption/LockedEncryptionPage.svelte';
   import HowYouSignInPage from '$lib/components/frameleaf/access/HowYouSignInPage.svelte';
+  import PasskeysSection from '$lib/components/frameleaf/access/PasskeysSection.svelte';
   import PinSection from '$lib/components/frameleaf/access/PinSection.svelte';
   import ProfileSection from '$lib/components/frameleaf/access/ProfileSection.svelte';
   import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
@@ -68,6 +70,9 @@
   <ApiKeysSection bind:keys />
 {:else if section === 'authorized-devices'}
   <DevicesSection bind:sessions />
+{:else if section === 'connected-apps'}
+  <!-- FL-860: apps you allowed through OAuth (FL-803), and how to connect an AI assistant. -->
+  <ConnectedAppsSection />
 {:else if section === 'download-settings'}
   <DownloadSettings />
 {:else if section === 'preservation'}
@@ -86,6 +91,9 @@
 {:else if section === 'password' || section === 'oauth'}
   <!-- The prototype's "How you sign in": password, Frameleaf account and sign-in provider on one page. -->
   <HowYouSignInPage onSessionsChanged={refreshSessions} />
+{:else if section === 'passkeys'}
+  <!-- FL-859: add, rename and remove passkeys (FL-767 prototype `Passkeys.jsx`). -->
+  <PasskeysSection />
 {:else if section === 'frameleaf-account'}
   <FrameleafAccountSection view="page" />
 {:else if section === 'user-pin-code-settings'}

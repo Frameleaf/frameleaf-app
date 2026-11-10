@@ -77,6 +77,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       cronExpression: '',
     },
   },
+  connectedApps: { allowRegistration: true },
   analytics: {
     enabled: true,
     historyDays: 730,
@@ -85,6 +86,11 @@ const updatedConfig = Object.freeze<SystemConfig>({
     askSearch: {
       enabled: true,
       maxResults: 100,
+    },
+    assistant: {
+      enabled: true,
+      maxResults: 100,
+      planner: false,
     },
   },
   ffmpeg: {

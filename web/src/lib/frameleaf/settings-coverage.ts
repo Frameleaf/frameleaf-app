@@ -329,6 +329,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'libraryCare.rawRecovery',
   },
   {
+    pattern: 'connectedApps.allowRegistration',
+    // FL-860: Sign-in › Connected apps
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
+    evidence: 'connectedApps?.allowRegistration',
+  },
+  {
     pattern: 'libraryCare.healthScanCronExpression',
     // FL-363: the overnight schedule starts the checks; this stored start no longer does
     kind: 'api-only',
@@ -688,6 +695,24 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
     evidence: 'askSearch.maxResults',
+  },
+  {
+    pattern: 'localFeatures.assistant.enabled',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
+    evidence: 'assistant.enabled',
+  },
+  {
+    pattern: 'localFeatures.assistant.maxResults',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
+    evidence: 'assistant.maxResults',
+  },
+  {
+    pattern: 'localFeatures.assistant.planner',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
+    evidence: 'assistant.planner',
   },
   {
     pattern: 'logging.enabled',

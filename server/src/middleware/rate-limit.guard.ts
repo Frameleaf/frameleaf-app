@@ -118,6 +118,22 @@ export const RATE_LIMITS = Object.freeze({
     principal: 'credential',
     principalLimit: 10,
   },
+  /**
+   * FL-836: starting and finishing adding a passkey (`auth/passkeys/register*`), which may take the
+   * password: 30 per address and 10 per session in ten minutes, like two-step sign-in changes.
+   */
+  passkeyChange: {
+    bucket: 'passkey-change',
+    limit: 30,
+    windowSeconds: 10 * MINUTE,
+    principal: 'credential',
+    principalLimit: 10,
+  },
+  /**
+   * FL-836: `POST auth/passkeys/login/options`, asked each time the sign-in page opens on a secure
+   * address. The sign-in itself (`auth/passkeys/login`) counts toward `login`.
+   */
+  passkeyLoginOptions: { bucket: 'passkey-login-options', limit: 60, windowSeconds: 10 * MINUTE },
   /** The administrator's own provider: `POST oauth/callback` and `POST oauth/link`. */
   oauthCallback: {
     bucket: 'oauth-callback',
@@ -147,6 +163,24 @@ export const RATE_LIMITS = Object.freeze({
   extensionSignIn: {
     bucket: 'extension-sign-in',
     limit: 30,
+    windowSeconds: 10 * MINUTE,
+  },
+  /** FL-803: connected apps' authorization (the redirect, the Allow page's check and Allow/Deny). */
+  oauthAppAuthorize: {
+    bucket: 'oauth-app-authorize',
+    limit: 60,
+    windowSeconds: 10 * MINUTE,
+  },
+  /** FL-803: connected apps' token and revocation endpoints; apps refresh about once an hour. */
+  oauthAppToken: {
+    bucket: 'oauth-app-token',
+    limit: 120,
+    windowSeconds: 10 * MINUTE,
+  },
+  /** FL-803: apps registering themselves (RFC 7591), which also caps how many can pile up. */
+  oauthAppRegister: {
+    bucket: 'oauth-app-register',
+    limit: 10,
     windowSeconds: 10 * MINUTE,
   },
   /** `POST shared-links/login`. */

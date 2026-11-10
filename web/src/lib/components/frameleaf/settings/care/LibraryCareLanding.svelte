@@ -26,6 +26,7 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
+  import { processingFailureCounts } from '$lib/frameleaf/processing-failures';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
@@ -70,6 +71,7 @@
     mdiContentCopy,
     mdiFileAlertOutline,
     mdiFileCheckOutline,
+    mdiFileClockOutline,
     mdiFileQuestionOutline,
     mdiFileSearchOutline,
     mdiImageSearchOutline,
@@ -184,6 +186,20 @@
     };
   });
 
+  /** FL-862: how many of the reader's files Frameleaf couldn't process. */
+  let unprocessed = $state(0);
+  $effect(() => {
+    let current = true;
+    void processingFailureCounts().then((counts) => {
+      if (current) {
+        unprocessed = counts?.count ?? 0;
+      }
+    });
+    return () => {
+      current = false;
+    };
+  });
+
   /** FL-1300: Magic Albums cleanup lives here once the banner on Albums is gone. */
   let cleanup = $state<AlbumCleanupStatusResponseDto>();
   let lastRun = $state<AlbumChangeRunResponseDto | null>(null);
@@ -263,6 +279,15 @@
         body: lastChecked
           ? $t('frameleaf_carehome_hero_attention_body', { values: { when: when(lastChecked) } })
           : $t('frameleaf_carehome_hero_attention_body_unchecked'),
+      };
+    }
+    // FL-862: files Frameleaf couldn't process, when the checks found nothing else.
+    if (unprocessed > 0) {
+      return {
+        tone: 'warn' as const,
+        icon: mdiFileClockOutline,
+        title: $t('frameleaf_processing_failure_hero', { values: { count: unprocessed } }),
+        body: $t('frameleaf_care_fix_hero_process_body'),
       };
     }
     if (!lastChecked) {
@@ -348,6 +373,16 @@
         status: $t('frameleaf_carehome_problem_stray_status'),
         button: $t('frameleaf_carehome_review'),
         href: commandCenterUrl('care', 'integrity-checks'),
+      },
+      // FL-862: photos and videos Frameleaf couldn't finish; every account opens its own list.
+      {
+        id: 'process',
+        count: unprocessed,
+        icon: mdiFileClockOutline,
+        name: $t('frameleaf_processing_failure_hero', { values: { count: unprocessed } }),
+        status: $t('frameleaf_carehome_problem_process_status'),
+        button: $t('frameleaf_carehome_review'),
+        href: commandCenterUrl('care', 'couldnt-process'),
       },
     ].filter((problem) => problem.count > 0),
   );
@@ -490,9 +525,10 @@
       {#if loaded && problems.length > 0}
         <Button
           variant="primary"
-          onclick={() => goto(isAdmin ? commandCenterUrl('care', 'integrity-checks') : problems[0].href)}
+          onclick={() =>
+            goto(isAdmin && attention > 0 ? commandCenterUrl('care', 'integrity-checks') : problems[0].href)}
         >
-          {isAdmin ? $t('frameleaf_carehome_see_found') : $t('frameleaf_carehome_review_it')}
+          {isAdmin && attention > 0 ? $t('frameleaf_carehome_see_found') : $t('frameleaf_carehome_review_it')}
         </Button>
       {:else if loaded && isAdmin}
         <Button variant="primary" disabled={starting} onclick={checkNow}>

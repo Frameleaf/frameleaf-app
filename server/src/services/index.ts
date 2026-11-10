@@ -22,6 +22,7 @@ import { AssetSourceService } from 'src/services/asset-source.service.js';
 import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { AssistantService } from 'src/services/assistant.service.js';
 import { AttentionService } from 'src/services/attention.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -119,6 +120,7 @@ import { MetadataService } from 'src/services/metadata.service.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
+import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
 import { OvernightService } from 'src/services/overnight.service.js';
 import { PartnerCopyService } from 'src/services/partner-copy.service.js';
@@ -126,6 +128,7 @@ import { PartnerLockService } from 'src/services/partner-lock.service.js';
 import { PartnerLockedNoticeService } from 'src/services/partner-locked-notice.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
+import { PasskeyService } from 'src/services/passkey.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
@@ -216,6 +219,7 @@ export const services = [
   AssetPaletteService,
   CaptureService,
   BrowserExtensionSignInService,
+  OAuthAppService,
   AlbumItemsService,
   AssetSourceService,
   BookmarkService,
@@ -281,6 +285,7 @@ export const services = [
   ArchiveOperationService,
   ActivityService,
   AlbumService,
+  AssistantService,
   AlbumSuggestionService,
   ApiService,
   AssetDevelopService,
@@ -343,6 +348,7 @@ export const services = [
   PartnerLockedNoticeService,
   PartnerPeopleService,
   PartnerService,
+  PasskeyService,
   PartnerCopyService,
   PersonService,
   PinnedCollectionService,

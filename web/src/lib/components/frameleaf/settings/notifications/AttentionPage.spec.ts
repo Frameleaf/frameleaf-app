@@ -41,6 +41,7 @@ const answer = (patch: Partial<AttentionResponseDto> = {}): AttentionResponseDto
   checks: ok(),
   dismissed: [],
   fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
+  processingFailures: { count: 0, setAside: 0 },
   ...patch,
 });
 /** The answer at the top, once the page has read what needs attention. */

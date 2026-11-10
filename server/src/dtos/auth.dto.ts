@@ -27,11 +27,27 @@ const chosenPassword = (description: string) =>
     .min(MIN_PASSWORD_LENGTH, `Use at least ${MIN_PASSWORD_LENGTH} characters`)
     .describe(`${description} (min ${MIN_PASSWORD_LENGTH} characters)`);
 
+/** FL-803: the connected app behind a request, from its grant. */
+export type AuthOAuthApp = {
+  grantId: string;
+  clientId: string;
+  clientName: string;
+  scopes: string[];
+  /** The resource (RFC 8707) the app's access was issued for, if it named one. */
+  resource: string | null;
+};
+
 export type AuthDto = {
   user: AuthUser;
   /** Internal durable worker authority; never populated from a request. */
   system?: true;
+  /**
+   * FL-803: for a connected app's access token this carries the grant's id and the permissions its
+   * scopes map to, so every rule for API keys applies to apps too; `oauthApp` then says it is an app.
+   */
   apiKey?: AuthApiKey;
+  /** FL-803: set when a connected app's access token made the request (never with a session). */
+  oauthApp?: AuthOAuthApp;
   sharedLink?: AuthSharedLink;
   session?: AuthSession;
   hideNsfwAssets?: boolean;
@@ -263,6 +279,10 @@ const AuthStatusResponseSchema = z
     pinExpiresAt: z.string().optional().describe('PIN expiration date'),
     twoFactorEnabled: z.boolean().describe('FL-793: two-step sign-in is on'),
     recoveryCodesRemaining: z.int().min(0).describe('FL-793: unused recovery codes (0 when two-step sign-in is off)'),
+    passkeysAvailable: z
+      .boolean()
+      .describe('FL-836: passkeys can be added and used at the address this request was sent to'),
+    hasPasskeys: z.boolean().describe('FL-836: the account has at least one passkey'),
   })
   .meta({ id: 'AuthStatusResponseDto' });
 

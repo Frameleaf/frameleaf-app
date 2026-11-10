@@ -152,6 +152,12 @@ export type AttentionItemDto = {
     /** The kinds of work, for a work item */
     work: (AttentionWorkDto) | null;
 };
+export type AttentionProcessingFailuresDto = {
+    /** Files with a step Frameleaf could not finish, not kept as they are */
+    count: number;
+    /** Of those, files set aside after repeated tries; they are not tried again by themselves */
+    setAside: number;
+};
 export type AttentionResponseDto = {
     /** When the checks were made */
     checkedAt: string;
@@ -163,6 +169,8 @@ export type AttentionResponseDto = {
     fileProblems: AttentionFileProblemsDto;
     /** What needs attention, the most urgent first */
     items: AttentionItemDto[];
+    /** FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check. */
+    processingFailures: AttentionProcessingFailuresDto;
 };
 export type AttentionDismissDto = {
     /** True dismisses it; false brings it back */
@@ -1520,6 +1528,10 @@ export type AdminConfigBackupsDto = {
     database: AdminConfigDatabaseBackupDto;
     schedule: AdminConfigBackupScheduleDto;
 };
+export type AdminConfigConnectedAppsDto = {
+    /** Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything. */
+    allowRegistration: boolean;
+};
 export type AdminConfigEditingRestorationDto = {
     style: RestorationStyle;
 };
@@ -1828,8 +1840,17 @@ export type AdminConfigAskSearchDto = {
     /** Maximum number of Ask Search results */
     maxResults: number;
 };
+export type AdminConfigAssistantDto = {
+    /** Enable the Library Assistant in search */
+    enabled: boolean;
+    /** Maximum number of Library Assistant results */
+    maxResults: number;
+    /** Plan questions with an installed planner model before the rules */
+    planner: boolean;
+};
 export type AdminConfigLocalFeaturesDto = {
     askSearch: AdminConfigAskSearchDto;
+    assistant?: AdminConfigAssistantDto;
 };
 export type AdminConfigLoggingDto = {
     /** Enabled */
@@ -2231,6 +2252,7 @@ export type AdminConfigUserDto = {
 export type AdminConfigDto = {
     analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
+    connectedApps?: AdminConfigConnectedAppsDto;
     editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
@@ -2265,6 +2287,7 @@ export type AdminConfigDto = {
 export type AdminConfigDtoRead = {
     analytics?: AdminConfigAnalyticsDto;
     backup: AdminConfigBackupsDto;
+    connectedApps?: AdminConfigConnectedAppsDto;
     editing?: AdminConfigEditingDto;
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
@@ -3097,6 +3120,28 @@ export type TemplateResponseDto = {
 export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
+};
+export type OAuthAppClientDto = {
+    /** The app’s client id */
+    id: string;
+    /** Free text naming a verified app for its icon (claude, chatgpt, homeassistant); null otherwise */
+    knownApp: string | null;
+    /** Who made a verified app; null otherwise */
+    maker: string | null;
+    /** For a verified app the name Frameleaf knows it by; otherwise the name the app gave itself (plain text) */
+    name: string;
+    /** Where the app sends you back to, such as claude.ai or localhost:33418 */
+    returnTo: string;
+    /** Frameleaf checked who made this app (every return address is that app’s own) */
+    verified: boolean;
+};
+export type OAuthAppAdminClientDto = {
+    /** How many people currently allow it */
+    activeUsers: number;
+    client: OAuthAppClientDto;
+    createdAt: string;
+    /** The app registered itself */
+    selfRegistered: boolean;
 };
 export type OvernightResultsDto = {
     cleanup?: OvernightStepResult;
@@ -3933,6 +3978,8 @@ export type UserAdminHistoryResponseDto = {
     hasMore: boolean;
 };
 export type UserAdminPinCodeStateResponseDto = {
+    /** FL-836: how many passkeys the account has */
+    passkeys: number;
     /** Whether the account has a PIN set */
     pinCode: boolean;
     /** FL-793: whether the account has two-step sign-in on */
@@ -6995,6 +7042,110 @@ export type AssetWaveformResponseDto = {
     /** Changes whenever the video changes */
     version: string;
 };
+export type AssistantAskDto = {
+    /** Language of the question */
+    language?: string;
+    /** The question, as the person typed it */
+    query: string;
+    /** Most results to return */
+    size?: number;
+};
+export type AssistantPlanFiltersDto = {
+    /** Albums holding the item, by name */
+    albums?: string[];
+    /** City the item was taken in */
+    city?: string;
+    /** A phrase in the description */
+    description?: string;
+    /** Favorites only */
+    favorite?: boolean;
+    /** Text visible in the photo */
+    ocr?: string;
+    /** People in the photo, by name */
+    people?: string[];
+    /** Pets in the photo, by name */
+    pets?: string[];
+    /** Words spoken in the video */
+    spoken?: string;
+    /** Tags on the item, by name */
+    tags?: string[];
+    /** Taken at or after this time */
+    takenAfter?: string;
+    /** Taken at or before this time */
+    takenBefore?: string;
+    /** Photos or videos only */
+    "type"?: AssistantMediaType;
+    /** What the photo looks like, for visual search */
+    visual?: string;
+};
+export type AssistantReasonItemDto = {
+    /** What the reason rests on: person, pet, place, date, favorite, type, album, tag, text, speech, description or visual. Plain string; new kinds may appear */
+    kind: string;
+    /** The reason as a short sentence, from the stored data of this item */
+    text: string;
+    /** The stored value the reason names (a name, place, date or quoted text) */
+    value?: string;
+};
+export type AssistantReasonDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Why this item matched, most specific first */
+    items: AssistantReasonItemDto[];
+};
+export type SearchFacetCountResponseDto = {
+    /** Number of assets with this facet value */
+    count: number;
+    /** The newest matching asset with this value (by capture time), when `facetCovers` was asked for */
+    coverAssetId?: string | null;
+    /** Display name when the value is an id (a person or a tag); the viewer's own name for it */
+    label?: string | null;
+    /** Facet value */
+    value: string;
+};
+export type SearchFacetResponseDto = {
+    counts: SearchFacetCountResponseDto[];
+    /** Facet field name */
+    fieldName: string;
+};
+export type SearchAlbumResponseDto = {
+    /** Number of albums in this page */
+    count: number;
+    facets: SearchFacetResponseDto[];
+    items: AlbumResponseDto[];
+    /** Total number of matching albums */
+    total: number;
+};
+export type SearchAssetResponseDto = {
+    /** Number of assets in this page */
+    count: number;
+    facets: SearchFacetResponseDto[];
+    items: AssetResponseDto[];
+    /** Cursor for the next page of results */
+    nextCursor: string | null;
+    /** Next page token */
+    nextPage: string | null;
+    /** Total number of matching assets */
+    total: number;
+};
+export type SearchResponseDto = {
+    albums: SearchAlbumResponseDto;
+    assets: SearchAssetResponseDto;
+};
+export type AssistantAskResponseDto = {
+    /** What planned the search: `planner` (a planner model) or `rules`. Plain string; new values may appear */
+    answeredBy: string;
+    /** The search that was run */
+    plan: AssistantPlanFiltersDto;
+    /** The question as asked */
+    query: string;
+    /** Why each result matched, one entry per result */
+    reasons: AssistantReasonDto[];
+    results: SearchResponseDto;
+    /** One line describing what was searched */
+    summary: string;
+    /** Parts of the question that could not be used */
+    warnings: string[];
+};
 export type SignUpDto = {
     /** User email */
     email: string;
@@ -7059,6 +7210,68 @@ export type LogoutResponseDto = {
     /** Logout successful */
     successful: boolean;
 };
+export type PasskeyResponseDto = {
+    /** It syncs to the owner’s other devices */
+    backedUp: boolean;
+    /** When it was added */
+    createdAt: string;
+    /** Passkey ID */
+    id: string;
+    /** When it last signed in */
+    lastUsedAt: string | null;
+    /** The name its owner gave it */
+    name: string;
+    /** Where it is saved, such as `iCloud Keychain` or `1Password`, when the server knows it */
+    provider: string | null;
+    /** The address it was made on, and works at */
+    rpId: string;
+};
+export type PasskeyCredentialDto = {
+    /** `platform` or `cross-platform` */
+    authenticatorAttachment?: string;
+    /** Extension results */
+    clientExtensionResults?: {
+        [key: string]: any;
+    };
+    /** The credential id (base64url) */
+    id: string;
+    /** The credential id (base64url) */
+    rawId: string;
+    /** The authenticator response, as the browser encodes it in JSON */
+    response: {
+        [key: string]: any;
+    };
+    /** `public-key` */
+    "type": string;
+};
+export type PasskeyLoginDto = {
+    credential: PasskeyCredentialDto;
+    /** Keep the session after the browser closes */
+    rememberMe?: boolean;
+};
+export type PasskeyOptionsResponseDto = {
+    /** The options to pass to the browser (WebAuthn JSON); null when unavailable */
+    options: {
+        [key: string]: any;
+    } | null;
+    /** Whether passkeys work at the address the request was sent to */
+    passkeysAvailable: boolean;
+    /** Why not, when unavailable: `insecure` (a plain http address) or `address` (not the server’s external domain or Frameleaf address). New values may appear. */
+    reason: string | null;
+};
+export type PasskeyRegisterDto = {
+    credential: PasskeyCredentialDto;
+    /** A name to tell passkeys apart */
+    name?: string;
+};
+export type PasskeyRegistrationOptionsDto = {
+    /** The account password, unless it was checked in this session in the last 10 minutes */
+    password?: string;
+};
+export type PasskeyUpdateDto = {
+    /** A name to tell passkeys apart */
+    name: string;
+};
 export type PasswordLinkRedeemDto = {
     /** The password they chose (min 8 characters) */
     newPassword: string;
@@ -7102,10 +7315,14 @@ export type SessionUnlockDto = {
 export type AuthStatusResponseDto = {
     /** Session expiration date */
     expiresAt?: string;
+    /** FL-836: the account has at least one passkey */
+    hasPasskeys: boolean;
     /** Is elevated session */
     isElevated: boolean;
     /** This freshly signed-in owner needs to set their first local password */
     localPasswordRequired?: boolean;
+    /** FL-836: passkeys can be added and used at the address this request was sent to */
+    passkeysAvailable: boolean;
     /** Has password set */
     password: boolean;
     /** Has PIN code set */
@@ -11463,6 +11680,66 @@ export type NotificationUpdateDto = {
     /** Date when notification was read */
     readAt?: string | null;
 };
+export type OAuthAppAuthorizeDto = {
+    /** true for Allow, false for Deny */
+    allow: boolean;
+    /** The app’s client id */
+    clientId: string;
+    /** The base64url SHA-256 of the app’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: string;
+    /** The return address, exactly as the app registered it */
+    redirectUri: string;
+    /** The resource (RFC 8707) the app wants access to */
+    resource?: string;
+    /** Must be `code` */
+    responseType: string;
+    /** Space-separated scopes; empty means `library:read` */
+    scope?: string;
+    /** Returned unchanged to the app */
+    state?: string;
+};
+export type OAuthAppAuthorizeResponseDto = {
+    /** Where the browser goes next: the app’s return address with the code (or access_denied), state and iss */
+    redirectUrl: string;
+};
+export type OAuthAppAuthorizeStartDto = {
+    /** The app’s client id */
+    clientId: string;
+    /** The base64url SHA-256 of the app’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: string;
+    /** The return address, exactly as the app registered it */
+    redirectUri: string;
+    /** The resource (RFC 8707) the app wants access to */
+    resource?: string;
+    /** Must be `code` */
+    responseType: string;
+    /** Space-separated scopes; empty means `library:read` */
+    scope?: string;
+    /** Returned unchanged to the app */
+    state?: string;
+};
+export type OAuthAppAuthorizeStartResponseDto = {
+    client: OAuthAppClientDto;
+    /** The scopes the app asked for, all of which this server offers */
+    scopes: string[];
+};
+export type OAuthAppGrantDto = {
+    client: OAuthAppClientDto;
+    /** When you chose Allow */
+    createdAt: string;
+    /** The grant id; Remove revokes it */
+    id: string;
+    /** When the app last used its access, to the hour; null if never */
+    lastUsedAt: string | null;
+    /** How it last connected, as free text: home, direct or relay (remote access); null if unknown */
+    lastUsedVia: string | null;
+    /** What you allowed */
+    scopes: string[];
+};
 export type OAuthConfigDto = {
     /** OAuth code challenge (PKCE) */
     codeChallenge?: string;
@@ -15394,45 +15671,6 @@ export type AskSearchPlanDto = {
     /** Normalized query text */
     normalizedQuery: string;
 };
-export type SearchFacetCountResponseDto = {
-    /** Number of assets with this facet value */
-    count: number;
-    /** The newest matching asset with this value (by capture time), when `facetCovers` was asked for */
-    coverAssetId?: string | null;
-    /** Display name when the value is an id (a person or a tag); the viewer's own name for it */
-    label?: string | null;
-    /** Facet value */
-    value: string;
-};
-export type SearchFacetResponseDto = {
-    counts: SearchFacetCountResponseDto[];
-    /** Facet field name */
-    fieldName: string;
-};
-export type SearchAlbumResponseDto = {
-    /** Number of albums in this page */
-    count: number;
-    facets: SearchFacetResponseDto[];
-    items: AlbumResponseDto[];
-    /** Total number of matching albums */
-    total: number;
-};
-export type SearchAssetResponseDto = {
-    /** Number of assets in this page */
-    count: number;
-    facets: SearchFacetResponseDto[];
-    items: AssetResponseDto[];
-    /** Cursor for the next page of results */
-    nextCursor: string | null;
-    /** Next page token */
-    nextPage: string | null;
-    /** Total number of matching assets */
-    total: number;
-};
-export type SearchResponseDto = {
-    albums: SearchAlbumResponseDto;
-    assets: SearchAssetResponseDto;
-};
 export type AskSearchResponseDto = {
     /** Short explanation of how the query was interpreted */
     explanation: string;
@@ -16129,6 +16367,8 @@ export type ServerJobCapacityDto = {
 export type ServerFeaturesDto = {
     /** Whether Ask Search (natural-language questions about the library) is enabled and can answer */
     askSearch: boolean;
+    /** Whether the Library Assistant answers search questions (POST /assistant/ask) */
+    assistant: boolean;
     /** Whether the Frameleaf Cloud plan includes cloud backup (FL-156) */
     cloudBackup: boolean;
     /** Whether the Frameleaf Cloud plan includes cloud processing (FL-156) */
@@ -23852,6 +24092,28 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
     })));
 }
 /**
+ * List registered apps
+ */
+export function getOAuthAppClients(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAdminClientDto[];
+    }>("/admin/oauth/apps", {
+        ...opts
+    }));
+}
+/**
+ * Remove a registered app
+ */
+export function deleteOAuthAppClient({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/oauth/apps/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Get the overnight schedule
  */
 export function getOvernight(opts?: Oazapfts.RequestOpts) {
@@ -24277,6 +24539,17 @@ export function getUserHistoryAdmin({ before, id, take }: {
         take
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * Remove all passkeys of a user
+ */
+export function removeUserPasskeysAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/passkeys`, {
+        ...opts,
+        method: "DELETE"
     }));
 }
 /**
@@ -26747,6 +27020,21 @@ export function getAssetWaveform({ buckets, channels, id, key, slug }: {
     }));
 }
 /**
+ * Ask the Library Assistant
+ */
+export function askAssistant({ assistantAskDto }: {
+    assistantAskDto: AssistantAskDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssistantAskResponseDto;
+    }>("/assistant/ask", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantAskDto
+    })));
+}
+/**
  * Register admin
  */
 export function signUpAdmin({ signUpDto }: {
@@ -26817,6 +27105,101 @@ export function logout(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * List passkeys
+ */
+export function getPasskeys(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasskeyResponseDto[];
+    }>("/auth/passkeys", {
+        ...opts
+    }));
+}
+/**
+ * Sign in with a passkey
+ */
+export function loginWithPasskey({ passkeyLoginDto }: {
+    passkeyLoginDto: PasskeyLoginDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LoginResponseDto;
+    }>("/auth/passkeys/login", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passkeyLoginDto
+    })));
+}
+/**
+ * Start a passkey sign-in
+ */
+export function getPasskeyLoginOptions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasskeyOptionsResponseDto;
+    }>("/auth/passkeys/login/options", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Add a passkey
+ */
+export function registerPasskey({ passkeyRegisterDto }: {
+    passkeyRegisterDto: PasskeyRegisterDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PasskeyResponseDto;
+    }>("/auth/passkeys/register", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passkeyRegisterDto
+    })));
+}
+/**
+ * Start adding a passkey
+ */
+export function getPasskeyRegistrationOptions({ passkeyRegistrationOptionsDto }: {
+    passkeyRegistrationOptionsDto: PasskeyRegistrationOptionsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasskeyOptionsResponseDto;
+    }>("/auth/passkeys/register/options", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passkeyRegistrationOptionsDto
+    })));
+}
+/**
+ * Remove a passkey
+ */
+export function removePasskey({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/auth/passkeys/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Rename a passkey
+ */
+export function updatePasskey({ id, passkeyUpdateDto }: {
+    id: string;
+    passkeyUpdateDto: PasskeyUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasskeyResponseDto;
+    }>(`/auth/passkeys/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: passkeyUpdateDto
+    })));
 }
 /**
  * Choose a password with a link
@@ -30736,6 +31119,58 @@ export function updateNotification({ id, notificationUpdateDto }: {
         method: "PUT",
         body: notificationUpdateDto
     })));
+}
+/**
+ * Allow or deny an app
+ */
+export function authorizeOAuthApp({ oAuthAppAuthorizeDto }: {
+    oAuthAppAuthorizeDto: OAuthAppAuthorizeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAuthorizeResponseDto;
+    }>("/oauth/apps/authorize", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthAppAuthorizeDto
+    })));
+}
+/**
+ * Check an app’s request before Allow
+ */
+export function startOAuthAppAuthorization({ oAuthAppAuthorizeStartDto }: {
+    oAuthAppAuthorizeStartDto: OAuthAppAuthorizeStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAuthorizeStartResponseDto;
+    }>("/oauth/apps/authorize/start", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthAppAuthorizeStartDto
+    })));
+}
+/**
+ * List your connected apps
+ */
+export function getOAuthAppGrants(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppGrantDto[];
+    }>("/oauth/apps/grants", {
+        ...opts
+    }));
+}
+/**
+ * Remove a connected app’s access
+ */
+export function revokeOAuthAppGrant({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/oauth/apps/grants/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Start OAuth
@@ -40187,6 +40622,10 @@ export enum AssetMediaSize {
 export enum AssetWaveformChannelMode {
     Mono = "mono",
     All = "all"
+}
+export enum AssistantMediaType {
+    Image = "IMAGE",
+    Video = "VIDEO"
 }
 export enum BrowserExtensionClient {
     Chrome = "chrome",
