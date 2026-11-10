@@ -41,6 +41,8 @@ beforeEach(() => {
   sdkMock.isHttpError.mockImplementation((error) => typeof error === 'object' && !!error && 'status' in error);
   addMessages('dev', en);
   plan(true);
+  // the assistant address answers (an MCP server asks for sign-in)
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 401 }));
 });
 
 describe('ConnectedAppsSection (FL-860)', () => {
@@ -60,7 +62,7 @@ describe('ConnectedAppsSection (FL-860)', () => {
     render(ConnectedAppsSection);
 
     expect(await screen.findByText(en.frameleaf_apps_hero_none)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: en.frameleaf_apps_connect_assistant })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: en.frameleaf_apps_connect_assistant })).toBeInTheDocument();
   });
 
   it('says when the list couldn’t be loaded and tries again', async () => {
@@ -115,6 +117,17 @@ describe('ConnectedAppsSection (FL-860)', () => {
     );
     await waitFor(() => expect(sdkMock.getOAuthAppGrants).toHaveBeenCalledTimes(3));
     expect(handleError).not.toHaveBeenCalled();
+  });
+
+  it('offers no assistant setup while the server has no assistant address yet', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 404 }));
+    sdkMock.getOAuthAppGrants.mockResolvedValue([]);
+    render(ConnectedAppsSection);
+
+    expect(await screen.findByText(en.frameleaf_apps_hero_none)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_apps_setup_title)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.frameleaf_apps_connect_assistant })).not.toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith('/api/mcp', expect.anything());
   });
 
   it('with remote access, shows the remote assistant address and the Claude steps', async () => {

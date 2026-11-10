@@ -75,7 +75,24 @@
       load = 'error';
     }
   };
-  onMount(() => void refresh());
+  /**
+   * Whether this server answers at the assistant address yet (the MCP endpoint, FL-844). Until it
+   * does (404), the setup steps are not offered: they would lead an assistant nowhere.
+   */
+  let assistantReady = $state(false);
+  const checkAssistant = async () => {
+    try {
+      const response = await fetch(assistantAddress(''), { method: 'GET', headers: { Accept: 'application/json' } });
+      assistantReady = response.status !== 404;
+    } catch {
+      assistantReady = false;
+    }
+  };
+
+  onMount(() => {
+    void refresh();
+    void checkAssistant();
+  });
 
   /**
    * Remote access comes with a Frameleaf plan: then the assistant address is the published remote
@@ -238,7 +255,7 @@
       title={$t('frameleaf_apps_hero_none')}
       body={$t('frameleaf_apps_hero_none_body')}
       label={$t('frameleaf_apps_title')}
-      actions={connectAction}
+      actions={assistantReady ? connectAction : undefined}
     />
   {:else if stale}
     <Hero
@@ -293,60 +310,62 @@
     </Section>
   {/if}
 
-  <Section
-    id="connected-apps-setup"
-    title={$t('frameleaf_apps_setup_title')}
-    description={$t('frameleaf_apps_setup_description')}
-  >
-    <div class="card">
-      <div class="address">
-        <span class="label">{$t('frameleaf_apps_setup_address')}</span>
-        <div class="copy">
-          <strong class="value">{address}</strong>
-          <Button label={$t('frameleaf_apps_setup_address_copy')} onclick={copyAddress}
-            ><Icon icon={mdiContentCopy} size="1.1em" aria-hidden />{$t('frameleaf_apps_copy')}</Button
-          >
+  {#if assistantReady}
+    <Section
+      id="connected-apps-setup"
+      title={$t('frameleaf_apps_setup_title')}
+      description={$t('frameleaf_apps_setup_description')}
+    >
+      <div class="card">
+        <div class="address">
+          <span class="label">{$t('frameleaf_apps_setup_address')}</span>
+          <div class="copy">
+            <strong class="value">{address}</strong>
+            <Button label={$t('frameleaf_apps_setup_address_copy')} onclick={copyAddress}
+              ><Icon icon={mdiContentCopy} size="1.1em" aria-hidden />{$t('frameleaf_apps_copy')}</Button
+            >
+          </div>
+          <p class="hint">
+            {remote ? $t('frameleaf_apps_setup_address_remote') : $t('frameleaf_apps_setup_address_home')}
+          </p>
         </div>
-        <p class="hint">
-          {remote ? $t('frameleaf_apps_setup_address_remote') : $t('frameleaf_apps_setup_address_home')}
-        </p>
+        {#if !remote}
+          <Notice
+            tone="warn"
+            icon={mdiHomeOutline}
+            title={$t('frameleaf_apps_setup_needs_remote_title')}
+            action={remoteAction}
+          >
+            {$t('frameleaf_apps_setup_needs_remote_body')}
+          </Notice>
+        {/if}
+        <div class="client">
+          <span class="label">{$t('frameleaf_apps_setup_which')}</span>
+          <SegmentedControl
+            label={$t('frameleaf_apps_setup_which')}
+            options={[
+              { value: 'claude', label: 'Claude' },
+              { value: 'chatgpt', label: 'ChatGPT' },
+              { value: 'local', label: $t('frameleaf_apps_setup_local') },
+            ]}
+            value={client}
+            onChange={(value: string) => (client = value as AssistantClient)}
+          />
+        </div>
+        {#if blocked}
+          <p class="blocked">
+            <Icon icon={mdiLockOutline} size="18" aria-hidden />
+            {$t('frameleaf_apps_setup_blocked', { values: { name: clientName } })}
+          </p>
+        {:else}
+          <Steps {steps} stacked label={$t('frameleaf_apps_setup_title')} />
+        {/if}
       </div>
-      {#if !remote}
-        <Notice
-          tone="warn"
-          icon={mdiHomeOutline}
-          title={$t('frameleaf_apps_setup_needs_remote_title')}
-          action={remoteAction}
-        >
-          {$t('frameleaf_apps_setup_needs_remote_body')}
-        </Notice>
-      {/if}
-      <div class="client">
-        <span class="label">{$t('frameleaf_apps_setup_which')}</span>
-        <SegmentedControl
-          label={$t('frameleaf_apps_setup_which')}
-          options={[
-            { value: 'claude', label: 'Claude' },
-            { value: 'chatgpt', label: 'ChatGPT' },
-            { value: 'local', label: $t('frameleaf_apps_setup_local') },
-          ]}
-          value={client}
-          onChange={(value: string) => (client = value as AssistantClient)}
-        />
-      </div>
-      {#if blocked}
-        <p class="blocked">
-          <Icon icon={mdiLockOutline} size="18" aria-hidden />
-          {$t('frameleaf_apps_setup_blocked', { values: { name: clientName } })}
-        </p>
-      {:else}
-        <Steps {steps} stacked label={$t('frameleaf_apps_setup_title')} />
-      {/if}
-    </div>
-    <Advanced>
-      <p class="hint">{$t('frameleaf_apps_setup_advanced')}</p>
-    </Advanced>
-  </Section>
+      <Advanced>
+        <p class="hint">{$t('frameleaf_apps_setup_advanced')}</p>
+      </Advanced>
+    </Section>
+  {/if}
 
   <Section title={$t('frameleaf_apps_ha_title')} description={$t('frameleaf_apps_ha_description')}>
     <div class="card ha">
