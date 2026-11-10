@@ -69,6 +69,8 @@ Frameleaf keeps redacted server logs on the library volume under `logs/`. API, j
 
 An administrator with a signed-in session can read, follow or download the logs through the server's admin logs API. Remote access requires a recent Frameleaf sign-in. The ZIP download contains JSON Lines. Keep the machine-learning port on the private container network. Logs stay on the Library server.
 
+If the server uses `FRAMELEAF_ML_AUTH_TOKEN`, configure a verified HTTPS URL for the bundled or loopback ML worker in Machine learning settings to collect its logs. The TLS endpoint must privately forward `/logs` without the forwarding headers listed below. With the token configured, Frameleaf skips HTTP workers for log collection. The default bundled worker can still supply logs over the private container network without a token.
+
 ## Local monitoring with Prometheus and Grafana
 
 Local metrics are off by default. They are collected only while monitoring is enabled and are available for Prometheus to pull over the private network. Frameleaf does not send them anywhere. Keep ports 8081, 8082 and 3003 off the public network and out of reverse proxy rules.

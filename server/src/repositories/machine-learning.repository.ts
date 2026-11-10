@@ -683,11 +683,13 @@ export class MachineLearningRepository implements RestorationInference {
 
   /** Only the bundled or loopback worker can supply diagnostics for this server's log. */
   async readBundledWorkerLogs(since: string): Promise<string | undefined> {
+    const authToken = process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim();
     const endpoint = this.getLocalUrls()
       .map((url) => URL.parse(url))
       .find(
         (url) =>
-          url?.protocol === 'http:' &&
+          url &&
+          (url.protocol === 'https:' || (!authToken && url.protocol === 'http:')) &&
           !url.username &&
           !url.password &&
           ['frameleaf-machine-learning', 'immich-machine-learning', '127.0.0.1', '[::1]', 'localhost'].includes(
@@ -701,7 +703,7 @@ export class MachineLearningRepository implements RestorationInference {
       url,
       {
         redirect: 'error',
-        headers: this.authHeaders({ url: endpoint.origin, authToken: process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim() }),
+        headers: this.authHeaders({ url: endpoint.origin, authToken }),
       },
       3000,
       64 * 1024 ** 2,
