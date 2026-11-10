@@ -3,9 +3,10 @@ import signal
 import subprocess
 from ipaddress import ip_address
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from .config import DEPRECATED_ENV, log, non_prefixed_settings, settings
-from .env_aliases import deprecated_env_warning
+from .env_aliases import deprecated_env_warning, read_env
 from .studio_worker import start_studio_worker
 
 if source_ref := os.getenv("FRAMELEAF_SOURCE_REF"):
@@ -47,6 +48,12 @@ mimalloc_preload = Path("/etc/frameleaf-mimalloc-preload")
 if mimalloc_preload.is_file() and (library := mimalloc_preload.read_text().strip()):
     inference_env["LD_PRELOAD"] = library
 
+metrics_dir = None
+if read_env(os.environ, "FRAMELEAF_ML_METRICS_ENABLED").strip().lower() in {"1", "true", "yes", "on"}:
+    # Each supervisor launch gets fresh counter storage shared by all its inference workers.
+    metrics_dir = TemporaryDirectory(prefix="frameleaf-ml-metrics-")
+    inference_env["PROMETHEUS_MULTIPROC_DIR"] = metrics_dir.name
+
 try:
     with subprocess.Popen(
         [
@@ -78,6 +85,8 @@ try:
 except KeyboardInterrupt:
     cmd.send_signal(signal.SIGINT)
 finally:
+    if metrics_dir is not None:
+        metrics_dir.cleanup()
     if studio_worker is not None:
         studio_worker.stop()
 exit(cmd.returncode)

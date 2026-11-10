@@ -12,6 +12,7 @@ import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { attachLockedKeyIpc } from 'src/utils/locked-key-ipc.js';
 import { isStartUpError } from 'src/utils/misc.js';
 import { closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
+import { prepareWorkerMetrics } from 'src/utils/worker-metrics.js';
 
 /** Starts the microservices worker (job queues, no HTTP) and logs its ready line. */
 export async function bootstrap() {
@@ -25,11 +26,15 @@ export async function bootstrap() {
   const logger = await app.resolve(LoggingRepository);
   const configRepository = app.get(ConfigRepository);
   const jobRepository = app.get(JobRepository);
+  const metrics = prepareWorkerMetrics(app, 'microservices');
   const appRepository = app.get(AppRepository);
   appRepository.setCloseFn((graceMs) =>
     closeGracefully({
       stopJobs: (grace) => jobRepository.stopWorkers(grace),
-      close: () => app.close(),
+      close: async () => {
+        await metrics?.close();
+        await app.close();
+      },
       graceMs,
       debug: (message) => logger.debug(message),
     }),
@@ -57,6 +62,9 @@ export async function bootstrap() {
     throw error;
   }
 
+  await metrics?.listen().catch((error: NodeJS.ErrnoException) => {
+    logger.error(`Unable to start the local job metrics listener: ${error.code ?? error.name}`);
+  });
   logger.log(`Frameleaf Microservices is running [v${serverVersion}] [${environment}] - ready`);
 }
 

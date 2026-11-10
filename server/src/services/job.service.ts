@@ -15,6 +15,7 @@ import {
 } from 'src/enum.js';
 import { afterJobCommit, queueExecution } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
+import { workerMetrics } from 'src/repositories/metrics.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { deferForLockedKey } from 'src/utils/locked-read.js';
@@ -180,6 +181,7 @@ export class JobService extends BaseService {
       deferForLockedKey(error);
       // A dependency refusal defers the job rather than failing it; the queue warns about it once.
       if (!queueExecution.getStore()?.dependencyReason) {
+        workerMetrics?.observeJob(job.name, 'failed');
         await this.reportJobError(job, error);
       }
       throw error;
@@ -203,7 +205,10 @@ export class JobService extends BaseService {
 
   private async onSuccess(job: JobItem, response: JobStatus | undefined) {
     try {
-      await afterJobCommit(() => this.eventRepository.emit('JobSuccess', { job, response }));
+      await afterJobCommit(async () => {
+        if (response === JobStatus.Success || response === undefined) workerMetrics?.observeJob(job.name, 'completed');
+        await this.eventRepository.emit('JobSuccess', { job, response });
+      });
     } catch {
       this.logger.error(`Unable to notify success of ${job.name}`);
     }

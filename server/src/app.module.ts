@@ -74,9 +74,12 @@ const apiMiddleware = [
 ];
 
 const configRepository = new ConfigRepository();
-const { cls, database } = configRepository.getEnv();
+const { cls, database, metrics } = configRepository.getEnv();
 
-const commonImports = [ClsModule.forRoot(cls.config), KyselyModule.forRoot(getKyselyConfig(database.config))];
+const commonImports = [
+  ClsModule.forRoot(cls.config),
+  KyselyModule.forRoot(getKyselyConfig(database.config, metrics?.enabled)),
+];
 
 // eslint-disable-next-line unicorn/no-top-level-side-effects
 configureUserAgent();
