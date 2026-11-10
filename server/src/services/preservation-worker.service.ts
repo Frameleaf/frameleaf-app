@@ -1745,7 +1745,12 @@ export class PreservationWorkerService {
       await this.repository.updateRestoreItem(item.id, { assetId, match: created ? 'new' : 'existing' });
       // A Locked-rule match has a private entry but no explicit lock in its sidecar. Preserve that
       // boundary even when the destination already has the bytes and does not have the source rule.
-      locked ||= await retained();
+      // The work page's computed flag includes current source rules. Matching that same live
+      // source must leave its rule reversible; only independently retained archive privacy locks it.
+      locked =
+        entry.locked ||
+        !!sidecar?.lock ||
+        (await this.repository.retainedRestoreItemIds(context.restore.id, [item.id], assetId)).length > 0;
       if (locked && !sidecar?.lock && !(await this.repository.getLock(assetId))) {
         await this.lock(context, assetId, 'marked');
       }

@@ -1026,6 +1026,7 @@ describe(PreservationWorkerService.name, () => {
           { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
         ]);
         const item = restoreItemOf({ locked: true });
+        repository.retainedRestoreItemIds.mockResolvedValue([item.id]);
         item.entry = { ...item.entry, locked: entryLocked };
         item.sidecar = sidecarOf(item.sourceAssetId, { description: null, lock: null }) as unknown as Record<
           string,
@@ -1046,6 +1047,37 @@ describe(PreservationWorkerService.name, () => {
           existing,
           expect.objectContaining({ visibility: expect.anything() }),
         );
+        expect(repository.setLockReason).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['live', false],
+      ['live', true],
+      ['duplicate', false],
+      ['duplicate', true],
+    ] as const)(
+      'keeps a %s source rule reversible unless archive privacy was retained (%s)',
+      async (match, retained) => {
+        const item = restoreItemOf({ locked: true });
+        const existing = item.sourceAssetId;
+        repository.retainedRestoreItemIds.mockImplementation((_restoreId, _ids, matchedAssetId) =>
+          Promise.resolve(matchedAssetId && !retained ? [] : [item.id]),
+        );
+        if (match === 'live') {
+          repository.findByChecksum.mockResolvedValue([
+            { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
+          ]);
+        } else {
+          assetMedia.uploadAsset.mockResolvedValue({ id: existing, status: AssetMediaStatus.DUPLICATE });
+        }
+
+        expect(await worker().restoreItem(contextOf(), item)).toBe('matched');
+
+        expect(repository.retainedRestoreItemIds).toHaveBeenCalledWith(expect.any(String), [item.id], existing);
+        const lockCall = [expect.anything(), existing, { visibility: AssetVisibility.Locked }];
+        if (retained) expect(assets.update).toHaveBeenCalledWith(...lockCall);
+        else expect(assets.update).not.toHaveBeenCalledWith(...lockCall);
         expect(repository.setLockReason).not.toHaveBeenCalled();
       },
     );

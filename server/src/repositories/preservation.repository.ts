@@ -83,15 +83,21 @@ const lockedPackageItem = sql<boolean>`(preservation_item.locked or exists (
   select 1 from asset where asset.id = preservation_item."assetId" and ${lockedPreservationAsset()}
 ))`;
 /** Privacy carried by the archive and retained source, which a restored copy must preserve. */
-const retainedRestoreItem = sql<boolean>`(preservation_restore_item.locked or exists (
+const retainedRestoreItem = (matchedAssetId?: string) => sql<boolean>`(preservation_restore_item.locked or exists (
   select 1 from preservation_item
   join preservation_restore on preservation_restore."packageId" = preservation_item."packageId"
   where preservation_restore.id = preservation_restore_item."restoreId"
     and preservation_item."sourceAssetId" = preservation_restore_item."sourceAssetId"
-    and ${lockedPackageItem}
+    and ${
+      matchedAssetId
+        ? sql<boolean>`(preservation_item.locked or (
+            preservation_item."assetId" != ${matchedAssetId}::uuid and ${lockedPackageItem}
+          ))`
+        : lockedPackageItem
+    }
 ))`;
 /** Destination rules hide conflicts too, but must not become permanent locks on public restores. */
-const lockedRestoreItem = sql<boolean>`(${retainedRestoreItem} or exists (
+const lockedRestoreItem = sql<boolean>`(${retainedRestoreItem()} or exists (
   select 1 from asset where asset.id = preservation_restore_item."assetId" and ${lockedPreservationAsset()}
 ))`;
 const lockedBookmark = sql<boolean>`(bookmark."isLocked" or exists (
@@ -1405,7 +1411,7 @@ export class PreservationRepository {
     return this.db
       .selectFrom('preservation_restore_item')
       .selectAll()
-      .select(retainedRestoreItem.as('locked'))
+      .select(retainedRestoreItem().as('locked'))
       .where('restoreId', '=', restoreId)
       .where('state', '=', 'pending')
       .$if(!!afterId, (qb) => qb.where('id', '>', afterId!))
@@ -1423,7 +1429,7 @@ export class PreservationRepository {
     return this.db
       .selectFrom('preservation_restore_item')
       .selectAll()
-      .select(retainedRestoreItem.as('locked'))
+      .select(retainedRestoreItem().as('locked'))
       .where('restoreId', '=', restoreId)
       .where('appliedAt', 'is', null)
       .where((eb) =>
@@ -1652,15 +1658,15 @@ export class PreservationRepository {
       .execute();
     return rows.map((row) => row.id);
   }
-  /** Privacy to apply to restored media, independent of a matched destination's current rules. */
-  async retainedRestoreItemIds(restoreId: string, ids: string[]): Promise<string[]> {
+  /** Archive privacy survives matching; a live source's own current rules remain reversible rules. */
+  async retainedRestoreItemIds(restoreId: string, ids: string[], matchedAssetId?: string): Promise<string[]> {
     if (ids.length === 0) return [];
     const rows = await this.db
       .selectFrom('preservation_restore_item')
       .select('id')
       .where('restoreId', '=', restoreId)
       .where('id', '=', anyUuid(ids))
-      .where(retainedRestoreItem)
+      .where(retainedRestoreItem(matchedAssetId))
       .execute();
     return rows.map((row) => row.id);
   }

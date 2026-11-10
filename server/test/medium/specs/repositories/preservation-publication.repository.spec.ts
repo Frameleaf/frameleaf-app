@@ -127,6 +127,27 @@ describe('restoration publishes media and retained privacy together (FL-1344)', 
     expect(await readItem(itemId)).toMatchObject({ assetId, match: 'new', locked: true });
   });
 
+  it.each(['none', 'package', 'restore'] as const)(
+    'excludes a matched live source’s current rule while preserving %s retained flags',
+    async (retained) => {
+      const { sut, owner, source, tag, packageId, restoreId, itemId } = await restoration();
+      await setTagRules(owner.id, [tag.id]);
+      if (retained === 'package') {
+        await db.updateTable('preservation_item').set({ locked: true }).where('packageId', '=', packageId).execute();
+      } else if (retained === 'restore') {
+        await db.updateTable('preservation_restore_item').set({ locked: true }).where('id', '=', itemId).execute();
+      }
+      const [work] = await sut.restoreWork(restoreId, null, 10, 3);
+      expect(work.locked).toBe(true);
+      expect(await sut.retainedRestoreItemIds(restoreId, [itemId])).toEqual([itemId]);
+      expect(await sut.retainedRestoreItemIds(restoreId, [itemId], newUuid())).toEqual([itemId]);
+      expect(await sut.retainedRestoreItemIds(restoreId, [itemId], source.id)).toEqual(
+        retained === 'none' ? [] : [itemId],
+      );
+      expect(await visibleAsset(source.id)).toEqual({ id: source.id, lockedAssetId: null });
+    },
+  );
+
   it('refreshes retained privacy after waiting for another transaction to release the restore item', async () => {
     const { assets, sut, owner, packageId, restoreId, itemId } = await restoration();
     const { assetId, create } = publisher(assets, owner.id);
