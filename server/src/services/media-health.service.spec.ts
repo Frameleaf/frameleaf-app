@@ -6578,17 +6578,28 @@ describe(MediaHealthService.name, () => {
         expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
       });
 
-      it('supersedes the fixes of the photo that wait, before queuing its own (FL-1337)', async () => {
+      it('queues its own fix, then supersedes the fixes of the photo that wait (FL-1337)', async () => {
         shows(needsYou());
 
         await sut.tryFileProblemAgain(owner, 'health-1');
 
         const order = (mock: { mock: { invocationCallOrder: number[] } }) => mock.mock.invocationCallOrder[0];
         expect(mocks.job.cancelWaitingFixes).toHaveBeenCalledWith('asset-1');
-        expect(order(vi.mocked(mediaHealthRepository.settleFinding))).toBeLessThan(
-          order(vi.mocked(mocks.job.cancelWaitingFixes)),
+        // queued first, so nothing is superseded before its replacement exists
+        expect(order(vi.mocked(mocks.job.queue))).toBeLessThan(order(vi.mocked(mocks.job.cancelWaitingFixes)));
+        expect(order(vi.mocked(mocks.job.cancelWaitingFixes))).toBeLessThan(
+          order(vi.mocked(mediaHealthRepository.settleFinding)),
         );
-        expect(order(vi.mocked(mocks.job.cancelWaitingFixes))).toBeLessThan(order(vi.mocked(mocks.job.queue)));
+      });
+
+      it('leaves the waiting fixes as they are when its own fix cannot be queued (FL-1337)', async () => {
+        shows(needsYou());
+        vi.mocked(mocks.job.queue).mockRejectedValueOnce(new Error('queue unavailable'));
+
+        await expect(sut.tryFileProblemAgain(owner, 'health-1')).rejects.toThrow('queue unavailable');
+
+        expect(mocks.job.cancelWaitingFixes).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
       });
 
       it('lets an administrator try another account’s file again, and nothing else', async () => {
