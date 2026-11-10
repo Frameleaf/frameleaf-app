@@ -41,3 +41,13 @@ so it scores zero for per-hit reasons. Set
 Live qualification requires the planner and Assistant API. Its per-hit claims
 must come from the actual Assistant response. Replay and baseline results
 cannot qualify the release.
+
+## Candidate planner benchmarking
+
+Run a candidate exposing the FL-847 `POST /assistant/plan` contract on a test
+worker. Set `FRAMELEAF_ASSISTANT_EVAL_MODE=live` and set
+`FRAMELEAF_ASSISTANT_PLANNER_URL` to its HTTP(S) origin before invoking the same
+command. Only synthetic questions and catalogue names are sent. Live planning
+reports the accepted plan rate and end-to-end fixture retrieval metrics.
+Its reason claims come from the evaluation harness. Release qualification
+still requires reasons returned by the actual Assistant API.

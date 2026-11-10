@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import z from 'zod';
 
-const filtersSchema = z.strictObject({
+export const filtersSchema = z.strictObject({
   people: z.array(z.string()).min(1).optional(),
   pets: z.array(z.string()).min(1).optional(),
   city: z.string().min(1).optional(),

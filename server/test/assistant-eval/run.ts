@@ -1,6 +1,7 @@
 import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { SearchFilter } from 'src/dtos/search.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -18,6 +19,7 @@ import { SearchService } from 'src/services/search.service.js';
 import { SPEECH_INDEX_VERSION, speechQuery, speechWindows } from 'src/utils/speech.js';
 import cases from 'test/assistant-eval/cases.json' with { type: 'json' };
 import library from 'test/assistant-eval/library.json' with { type: 'json' };
+import { requestPlan } from 'test/assistant-eval/planner.js';
 import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
 import { EvalAnswer, EvalFilters, Reason, readFixtures, score } from 'test/assistant-eval/score.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -30,7 +32,10 @@ const neutralEmbedding = `[1,${'0,'.repeat(766)}0]`;
 const fingerprint = 'assistant-eval-synthetic';
 const typeMap = { IMAGE: AssetType.Image, VIDEO: AssetType.Video };
 
-export async function run(database: Kysely<DB>, mode: 'replay' | 'baseline') {
+type Mode = { mode: 'replay' | 'baseline' } | { mode: 'live'; endpoint: URL };
+
+export async function run(database: Kysely<DB>, options: Mode) {
+  const { mode } = options;
   const { questions, assets, plans } = readFixtures(cases, library, replay);
   const { sut, ctx } = newMediumService(SearchService, {
     database,
@@ -161,6 +166,14 @@ export async function run(database: Kysely<DB>, mode: 'replay' | 'baseline') {
   const personNames = new Map([...people].map(([name, id]) => [id, name]));
   const petNames = new Map([...pets].map(([name, id]) => [id, name]));
   const speech = new SpeechRepository(database);
+  const catalog = {
+    people: people.keys().toArray(),
+    pets: pets.keys().toArray(),
+    places: [...new Set(assets.flatMap(({ city }) => city ?? []))],
+    albums: [],
+    tags: [],
+  };
+  let validPlans = 0;
   const answers: EvalAnswer[] = [];
   for (const { id, question } of questions) {
     const startedAt = performance.now();
@@ -181,42 +194,51 @@ export async function run(database: Kysely<DB>, mode: 'replay' | 'baseline') {
       };
       ids = results.assets.items.map(({ id }) => id);
     } else {
-      filters = plans[id];
+      const candidate = options.mode === 'live' ? await requestPlan(options.endpoint, question, catalog) : plans[id];
+      if (!candidate) {
+        answers.push({ id, filters: {}, hits: [], elapsedMs: performance.now() - startedAt });
+        continue;
+      }
+      validPlans++;
+      filters = candidate;
+      const filter: SearchFilter = {
+        city: filters.city ? { eq: filters.city } : undefined,
+        type: filters.type ? { eq: typeMap[filters.type] } : undefined,
+        isFavorite: filters.favorite === undefined ? undefined : { eq: filters.favorite },
+        personIds: filters.people ? { all: filters.people.map((name) => people.get(name)!) } : undefined,
+        petIds: filters.pets ? { all: filters.pets.map((name) => pets.get(name)!) } : undefined,
+        takenAt:
+          filters.takenAfter || filters.takenBefore
+            ? {
+                gte: filters.takenAfter ? new Date(filters.takenAfter) : undefined,
+                lte: filters.takenBefore ? new Date(filters.takenBefore) : undefined,
+              }
+            : undefined,
+        ocr: filters.ocr ? { matches: filters.ocr } : undefined,
+        description: filters.description ? { like: filters.description } : undefined,
+      };
       if (filters.spoken) {
-        const query = `"${filters.spoken}"`;
-        const { items } = await speech.search(
-          auth,
-          {
-            query,
-            size: PAGE_SIZE,
-            filter: filters.city ? { city: { eq: filters.city } } : undefined,
-          },
-          speechQuery(query),
-        );
+        const query = `"${filters.spoken.replaceAll('"', '')}"`;
+        const { items } = await speech.search(auth, { query, size: PAGE_SIZE, filter }, speechQuery(query));
         ids = items.map(({ asset }) => asset.id);
       } else {
-        const { assets } = await sut.searchMetadata(auth, {
-          size: PAGE_SIZE,
-          city: filters.city,
-          type: filters.type ? typeMap[filters.type] : undefined,
-          takenAfter: filters.takenAfter ? new Date(filters.takenAfter) : undefined,
-          takenBefore: filters.takenBefore ? new Date(filters.takenBefore) : undefined,
-          isFavorite: filters.favorite,
-          personIds: filters.people?.map((name) => people.get(name)!),
-          petIds: filters.pets?.map((name) => pets.get(name)!),
-          ocr: filters.ocr,
-          description: filters.description,
-        });
+        const { assets } = await sut.searchMetadata(auth, { size: PAGE_SIZE, filter });
         ids = assets.items.map(({ id }) => id);
       }
     }
     // Replay exercises structured claims from a recorded plan. The existing Ask Search API has
     // only a response-level explanation and provides no per-asset claims to score.
-    const reasons = mode === 'replay' ? filterReasons(filters) : [];
+    const reasons = mode === 'baseline' ? [] : filterReasons(filters);
     const hits = ids.map((id) => ({ key: keys.get(id) ?? id, reasons }));
     answers.push({ id, filters, hits, elapsedMs: performance.now() - startedAt });
   }
-  return { mode, cases: questions.length, assets: assets.length, ...score(questions, assets, answers) };
+  return {
+    mode,
+    cases: questions.length,
+    assets: assets.length,
+    ...(mode === 'live' && { validPlanRate: validPlans / questions.length }),
+    ...score(questions, assets, answers),
+  };
 }
 
 function filterReasons(filters: EvalFilters): Reason[] {
