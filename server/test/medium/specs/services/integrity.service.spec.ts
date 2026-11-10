@@ -263,6 +263,25 @@ describe(IntegrityService.name, () => {
         defaultDatabase,
       );
 
+    it('count proven damage that waits to go to the trash, though its repair could not run (FL-1372)', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(StorageRepository).stat.mockResolvedValue({} as never);
+      const {
+        result: { id: ownerId },
+      } = await ctx.newUser();
+      const { asset: queued } = await ctx.newAsset({ ownerId });
+      const { asset: unchecked } = await ctx.newAsset({ ownerId });
+      const before = (await sut.getIntegrityOverview()).damaged;
+      await health(queued.id, 'corrupt', 'trash_queued', { fixState: 'couldnt-check' });
+      // suspected only, and it could not be checked: not damage
+      await health(unchecked.id, 'corrupt', 'corrupt_suspect', { fixState: 'couldnt-check' });
+
+      await expect(sut.getIntegrityOverview()).resolves.toEqual(expect.objectContaining({ damaged: before + 1 }));
+      const { assetIds } = await sut.getFindingAssetIds({ kind: 'damaged' });
+      expect(assetIds).toContain(queued.id);
+      expect(assetIds).not.toContain(unchecked.id);
+    });
+
     it('leave the File checks lists and counts, the folder counts, Restore and Trash all, and the Utilities totals', async () => {
       const { sut, ctx } = setup();
       const {

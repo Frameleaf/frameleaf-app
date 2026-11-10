@@ -222,6 +222,48 @@ describe(MediaIntegrityService.name, () => {
       mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [] } as never);
       expect(await sut.validate(video())).toEqual({ status: 'unsupported', reason: 'decode_unsupported' });
     });
+    it('walks the main picture track, the one thumbnails are cut from, not track 0 (FL-1357)', async () => {
+      // probe lists the main track first: here a cover picture sits at index 0 and the film at index 2
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 10 },
+        videoStreams: [
+          { ...stream, index: 2 },
+          { ...stream, index: 0, duration: 0 },
+        ],
+      } as never);
+      expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
+      expect(mocks.media.probePackets).toHaveBeenCalledWith(input.path, 2, expect.any(Object));
+    });
+    it.each(['A001_C001.braw', 'A001.R3D', 'A001.crm', 'DSC_0001.nev', 'A001.arx'])(
+      'cinema RAW %s that ffmpeg cannot open is unsupported, never damaged (FL-1357)',
+      async (originalFileName) => {
+        mocks.media.probe.mockRejectedValue(
+          new Error(`ffprobe exited with code 1: ${input.path}: Invalid data found when processing input\n`),
+        );
+        expect(await sut.validate({ ...video(), originalFileName })).toEqual({
+          status: 'unsupported',
+          reason: 'decode_unsupported',
+        });
+        mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [stream] } as never);
+        mocks.media.probePackets.mockRejectedValue(new Error('ffprobe exited with code 1: moov atom not found'));
+        expect(await sut.validate({ ...video(), originalFileName })).toEqual({
+          status: 'unsupported',
+          reason: 'decode_unsupported',
+        });
+      },
+    );
+    it('cinema RAW still reports a decoder that is missing or a check that stalled as they are', async () => {
+      mocks.media.probe.mockRejectedValue(Object.assign(new Error('spawn ffprobe ENOENT'), { code: 'ENOENT' }));
+      expect(await sut.validate({ ...video(), originalFileName: 'A001.braw' })).toEqual({
+        status: 'transient',
+        reason: 'decoder_unavailable',
+      });
+      mocks.media.probe.mockRejectedValue(new Error('Media process stopped making progress'));
+      expect(await sut.validate({ ...video(), originalFileName: 'A001.braw' })).toEqual({
+        status: 'timeout',
+        reason: 'decode_timeout',
+      });
+    });
     it('a large file is given as long as it keeps making progress', async () => {
       vi.useFakeTimers();
       const crypto = new CryptoRepository();

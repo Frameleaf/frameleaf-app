@@ -523,6 +523,28 @@ const translationResultSchema = z.object({
   translations: z.array(z.string().max(8192)).max(2000),
 });
 
+/** FL-847: the worker has no Library Assistant planner (no route, model, runtime or memory for one). */
+export class AssistantPlannerUnavailableError extends Error {}
+
+/** A worker's `/assistant/plan` answer (machine-learning/frameleaf_ml/main.py). Arguments are checked by the caller. */
+const assistantPlanSchema = z.union([
+  z.strictObject({
+    tool: z.literal('search_library'),
+    arguments: z.record(z.string(), z.unknown()),
+    confidence: z.number().min(0).max(1),
+  }),
+  z.strictObject({ clarify: z.string().min(1).max(300) }),
+]);
+export type AssistantPlanAnswer = z.infer<typeof assistantPlanSchema>;
+export type AssistantPlanRequest = {
+  question: string;
+  language: string;
+  today: string;
+  catalog: { people: string[]; pets: string[]; albums: string[]; tags: string[]; places: string[] };
+  toolSchema: Record<string, unknown>;
+};
+const ASSISTANT_PLAN_BYTES = 64 * 1024;
+
 /** A translation answer above this is not caption text. */
 const TRANSLATION_TOTAL_BYTES = 16 * 1024 * 1024;
 
@@ -1190,6 +1212,60 @@ export class MachineLearningRepository implements RestorationInference {
     }
     record('success');
     return result;
+  }
+
+  /**
+   * Library Assistant (FL-847/FL-885): send one question and the names the person may see, as text only, to
+   * the admitted local or home-network worker and read back one `search_library` tool call or a clarifying
+   * question. No photo, path or id leaves this server.
+   */
+  async planAssistantSearch(
+    selection: MlSelection,
+    request: AssistantPlanRequest,
+    signal: AbortSignal,
+  ): Promise<AssistantPlanAnswer> {
+    if (selection.endpoint.cloud) {
+      throw new AssistantPlannerUnavailableError('The Library Assistant planner does not run in Frameleaf Cloud yet');
+    }
+    const started = Date.now();
+    const body = JSON.stringify(request);
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({
+        bytesSent: Buffer.byteLength(body),
+        bytesReceived,
+        durationMs: Date.now() - started,
+        outcome,
+      });
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('assistant/plan', selection.endpoint.url), {
+        method: 'POST',
+        headers: { ...this.authHeaders(selection.endpoint), 'Content-Type': 'application/json' },
+        body,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        // no such route (an older worker), no planner model, runtime or memory, or a plan it could not make
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new AssistantPlannerUnavailableError(`The worker cannot plan (${response.status})`);
+        }
+        throw new Error(`The planner worker answered ${response.status}`);
+      }
+      const text = await response.text();
+      bytesReceived = Buffer.byteLength(text);
+      if (bytesReceived > ASSISTANT_PLAN_BYTES) {
+        throw new Error('The plan is too large');
+      }
+      const answer = assistantPlanSchema.parse(JSON.parse(text));
+      record('success');
+      return answer;
+    } catch (error) {
+      record('failure');
+      throw error;
+    }
   }
 
   /** Clean up voice (FL-637): what is in the sound of `wavPath` (48 kHz mono 16-bit WAV). */

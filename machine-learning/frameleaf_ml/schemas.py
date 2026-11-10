@@ -39,6 +39,7 @@ class ModelTask(StrEnum):
     SUBJECT_MATTE = "subject-matte"
     VOICE_CLEANUP = "voice-cleanup"
     TRANSLATE = "translate"
+    ASSISTANT_PLAN = "assistant-plan"
 
 
 class ModelType(StrEnum):
@@ -313,6 +314,11 @@ class VoiceCleanupOptions(_OptionsBase):
     humHz: Literal[50, 60] | None = None
 
 
+class AssistantPlanOptions(_OptionsBase):
+    """The planner (FL-847) takes no per-request options: `/assistant/plan` names its model itself, and
+    `/predict` must never pass anything (such as a cache directory) into the planner's constructor."""
+
+
 class TranslateOptions(_OptionsBase):
     """Options for the translate task (Studio captions in other languages, FL-641).
 
@@ -341,6 +347,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SUBJECT_MATTE, ModelType.VISUAL): SubjectMatteOptions,
     (ModelTask.VOICE_CLEANUP, ModelType.AUDIO): VoiceCleanupOptions,
     (ModelTask.TRANSLATE, ModelType.TEXTUAL): TranslateOptions,
+    (ModelTask.ASSISTANT_PLAN, ModelType.TEXTUAL): AssistantPlanOptions,
 }
 
 
@@ -354,3 +361,26 @@ def validate_options(task: ModelTask, type_: ModelType, options: dict[str, Any])
 
 
 T = TypeVar("T")
+
+
+class AssistantPlanCatalog(BaseModel):
+    """The names the person may see (FL-847). Names only: never ids, photos or file paths."""
+
+    model_config = ConfigDict(extra="ignore")
+    people: list[str] = Field(default_factory=list, max_length=500)
+    pets: list[str] = Field(default_factory=list, max_length=500)
+    albums: list[str] = Field(default_factory=list, max_length=500)
+    tags: list[str] = Field(default_factory=list, max_length=500)
+    places: list[str] = Field(default_factory=list, max_length=500)
+
+
+class AssistantPlanRequest(BaseModel):
+    """`POST /assistant/plan` (FL-847): one Library Assistant question to plan as a `search_library` call."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+    question: str = Field(min_length=1, max_length=1000)
+    language: str = Field(default="en", min_length=1, max_length=16)
+    today: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    catalog: AssistantPlanCatalog = Field(default_factory=AssistantPlanCatalog)
+    tool_schema: dict[str, Any] = Field(alias="toolSchema")
+    model_name: str | None = Field(default=None, alias="modelName", max_length=128)

@@ -51,6 +51,10 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'nightlyTasks.reprocessUnfinished': { label: 'frameleaf_overnight_reprocess_unfinished' },
   // Intelligence › Faces (FL-927)
   'metadata.faces.write': { label: 'frameleaf_intel_faces_write' },
+  // Intelligence › Visual search › Library Assistant (FL-885)
+  'localFeatures.assistant.enabled': { label: 'frameleaf_intel_assistant_setting' },
+  'localFeatures.assistant.maxResults': { label: 'frameleaf_intel_assistant_most' },
+  'localFeatures.assistant.planner': { label: 'frameleaf_intel_assistant_planner' },
   // People & sharing
   'server.publicUsers': { label: 'frameleaf_sharing_find_label' },
   // Server & updates › Server name & welcome
@@ -87,6 +91,8 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'logging.enabled': { label: 'frameleaf_srvadv_trouble_keep' },
   'logging.level': { label: 'frameleaf_srvadv_trouble_amount', values: LEVELS },
   'analytics.enabled': { label: 'frameleaf_srvadv_trouble_analytics_keep' },
+  // FL-860: Sign-in › Connected apps
+  'connectedApps.allowRegistration': { label: 'frameleaf_apps_admin_allow_registration' },
   'analytics.historyDays': {
     label: 'frameleaf_srvadv_trouble_analytics_for',
     values: count('frameleaf_srvadv_trouble_analytics_days'),

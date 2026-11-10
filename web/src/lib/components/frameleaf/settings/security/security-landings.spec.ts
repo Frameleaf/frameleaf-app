@@ -12,6 +12,7 @@ const sdk = vi.hoisted(() => ({
   getApiKeys: vi.fn(),
   getLockedEncryption: vi.fn(),
   getFrameleafAccountLink: vi.fn(),
+  getOAuthAppGrants: vi.fn(),
 }));
 const cloud = vi.hoisted(() => ({ status: null as unknown }));
 const user = vi.hoisted(() => ({ isAdmin: true, email: 'taylor@example.test', name: 'Taylor' }));
@@ -34,6 +35,7 @@ const ICON = 'M0 0h1v1H0z';
 const sections = [
   { key: 'password', title: 'How you sign in', subtitle: 'Your email, password and linked accounts', icon: ICON },
   { key: 'authorized-devices', title: 'Signed-in devices', subtitle: 'Where you are signed in', icon: ICON },
+  { key: 'connected-apps', title: 'Connected apps', subtitle: 'AI assistants and other apps', icon: ICON },
   { key: 'api-keys', title: 'API keys', subtitle: 'For apps', icon: ICON },
   { key: 'user-pin-code-settings', title: 'Locked PIN', subtitle: 'Opens Locked photos', icon: ICON },
   { key: 'suppressed-content', title: 'Always Locked', subtitle: 'People, pets and tags', icon: ICON },
@@ -78,6 +80,7 @@ describe('Your sign-in & privacy (FL-367)', () => {
     sdk.getAuthStatus.mockResolvedValue({ password: true, pinCode: true, isElevated: false });
     sdk.getApiKeys.mockResolvedValue([]);
     sdk.getFrameleafAccountLink.mockResolvedValue({ available: true, linked: false });
+    sdk.getOAuthAppGrants.mockResolvedValue([]);
   });
 
   it('says the account is protected', async () => {
@@ -95,6 +98,14 @@ describe('Your sign-in & privacy (FL-367)', () => {
     render(YourSignInLanding, { sections });
     expect(await screen.findByText('Off · Optional, only you can turn it on')).toBeInTheDocument();
     expect(screen.getByText('Locked encryption')).toBeInTheDocument();
+  });
+
+  it('lists connected apps with how many can use the library (FL-860)', async () => {
+    sdk.getSessions.mockResolvedValue([session('a', 0, true)]);
+    sdk.getOAuthAppGrants.mockResolvedValue([{ id: 'g', lastUsedAt: new Date(now).toISOString() }]);
+    render(YourSignInLanding, { sections });
+    expect(screen.getByText('Connected apps')).toBeInTheDocument();
+    expect(await screen.findByText('1 app')).toBeInTheDocument();
   });
 
   it('raises a device not used for a while', async () => {

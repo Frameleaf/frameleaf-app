@@ -98,6 +98,35 @@ clip flv1.flv -c:v flv -pix_fmt yuv420p
 clip jpeg2000.mov -c:v jpeg2000 -pix_fmt yuv420p
 clip ffv1.mkv -c:v ffv1 -pix_fmt yuv420p
 clip theora.ogv -c:v libtheora -pix_fmt yuv420p
+# FL-1357: more containers and bare streams, each under the extension people have them as.
+clip mjpeg.mjpeg -c:v mjpeg -pix_fmt yuvj420p -f mjpeg
+clip mjpeg.mjpg -c:v mjpeg -pix_fmt yuvj420p -f mjpeg
+clip mpeg1.m1v -c:v mpeg1video -pix_fmt yuv420p -f mpeg1video
+clip mpeg2.m2v -c:v mpeg2video -pix_fmt yuv420p -f mpeg2video
+clip mpeg2.m2p -c:v mpeg2video -pix_fmt yuv420p -f vob
+clip h264.tp -c:v libx264 -pix_fmt yuv420p -f mpegts
+clip h264.trp -c:v libx264 -pix_fmt yuv420p -f mpegts
+clip theora.ogm -c:v libtheora -pix_fmt yuv420p -f ogg
+clip mpeg2.wtv -c:v mpeg2video -pix_fmt yuv420p -f wtv
+clip mpeg2.dvr-ms -c:v mpeg2video -pix_fmt yuv420p -f asf
+clip h264.nut -c:v libx264 -pix_fmt yuv420p -f nut
+clip mpeg2.gxf -vf scale=720:576 -c:v mpeg2video -pix_fmt yuv420p -f gxf
+clip jpeg2000.mj2 -c:v jpeg2000 -pix_fmt yuv420p -f mov
+clip vp9.ivf -c:v libvpx-vp9 -pix_fmt yuv420p -f ivf
+clip h264.h264 -c:v libx264 -pix_fmt yuv420p -f h264
+clip hevc.h265 -c:v libx265 -x265-params log-level=error -pix_fmt yuv420p -f hevc
+clip hevc.hevc -c:v libx265 -x265-params log-level=error -pix_fmt yuv420p -f hevc
+clip raw.y4m -pix_fmt yuv420p -f yuv4mpegpipe
+clip dv.dif -vf scale=720:576 -c:v dvvideo -pix_fmt yuv420p -f rawvideo
+clip h264.evo -c:v libx264 -pix_fmt yuv420p -f vob
+# Cinema RAW stand-ins (no real BRAW, CRM, N-RAW or ARRIRAW HDE sample may be redistributed, and nothing open
+# decodes them): a QuickTime file whose picture track names a codec ffmpeg does not have, and a file it
+# cannot open at all. They prove such files are kept and never called damaged, not that they play.
+for raw in braw:brhq crm:CRAW nev:nraw; do
+  clip "cinema-raw-standin.${raw%%:*}" -c:v libx264 -pix_fmt yuv420p -f mov
+  LC_ALL=C sed -i "s/avc1/${raw##*:}/g" "video/cinema-raw-standin.${raw%%:*}"
+done
+{ printf 'ARRI\022\064\126\170'; head -c 4088 /dev/zero; } >video/cinema-raw-standin.arx
 # The index (moov) sits at the end of a plain MP4, so cutting the tail leaves a file nothing can open.
 head -c $(($(wc -c <video/h264.mp4) * 6 / 10)) video/h264.mp4 >video/h264-no-index.mp4
 

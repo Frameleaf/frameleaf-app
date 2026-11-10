@@ -212,9 +212,11 @@ const notKept = sql<boolean>`((asset_health.evidence->>'fixState') IS DISTINCT F
   OR asset_health.status NOT IN (${sql.join(KEPT_STATUSES)}))`;
 /**
  * FL-1353: a file that could not be checked is not damage. Proven damage whose repair could not run
- * (the drive was away, the worker busy) carries the same state and still counts.
+ * (the drive was away, the worker busy) carries the same state and still counts, and keeps counting
+ * while it waits to go to the trash (FL-1372).
  */
-const notUnchecked = sql<boolean>`(asset_health.category <> 'corrupt' OR asset_health.status = 'corrupt_confirmed'
+const notUnchecked = sql<boolean>`(asset_health.category <> 'corrupt'
+  OR asset_health.status IN ('corrupt_confirmed', 'trash_queued')
   OR (asset_health.evidence->>'fixState') IS DISTINCT FROM 'couldnt-check')`;
 /** A search id as a claim names it: compared as a uuid, so the job's primary key is used. */
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
