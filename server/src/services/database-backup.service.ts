@@ -179,10 +179,14 @@ export class DatabaseBackupService {
 
         databaseUsername = decodeURIComponent(parsedUrl.username) || parsedUrl.searchParams.get('user');
         databasePassword = decodeURIComponent(parsedUrl.password);
+        // libpq prefers query parameters over the address itself, so an override drops the conflicting ones
         if (options.database) {
           parsedUrl.pathname = `/${encodeURIComponent(options.database)}`;
+          parsedUrl.searchParams.delete('dbname');
         }
         if (options.username) {
+          parsedUrl.searchParams.delete('user');
+          parsedUrl.searchParams.delete('password');
           parsedUrl.username = encodeURIComponent(options.username);
           parsedUrl.password = encodeURIComponent(options.password ?? '');
           databaseUsername = options.username;

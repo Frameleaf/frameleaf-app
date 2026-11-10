@@ -3622,7 +3622,15 @@ export class CloudBackupService {
         );
       }
     }
-    await this.finishDrill(operation, claimToken, outcome, { target, scheduled, startedAt });
+    try {
+      await this.finishDrill(operation, claimToken, outcome, { target, scheduled, startedAt });
+    } catch (error) {
+      // An unreadable identity key or a failed write must not leave the drill running and other backup work
+      // blocked: the unfinished report is dropped and the operation ends, so the next drill can run.
+      this.logger.warn(`Restore drill ${operation.id} could not be recorded: ${errorMessage(error)}`);
+      await this.drills.remove(operation.id).catch(() => undefined);
+      await this.completeTask(operation, claimToken);
+    }
   }
 
   /** Sign and keep the report, record a pass as the restore test, tell administrators of a failure. */
