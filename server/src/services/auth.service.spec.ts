@@ -274,6 +274,47 @@ describe(AuthService.name, () => {
       await expect(sut.changePassword(auth, dto)).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('does not set an initial local password through an API key', async () => {
+      const user = UserFactory.create({ isAdmin: true });
+      const auth = AuthFactory.from(user).apiKey().build();
+      mocks.user.getForChangePassword.mockResolvedValue({ id: user.id, password: null });
+      await expect(sut.changePassword(auth, { password: '', newPassword: 'new-password' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.crypto.hashBcrypt).not.toHaveBeenCalled();
+    });
+
+    it('sets the initial password once from a freshly verified linked-owner session', async () => {
+      const user = UserFactory.create({ isAdmin: true });
+      const auth = AuthFactory.from(user).session().build();
+      const owner = 'owner-subject';
+      mocks.user.getForChangePassword.mockResolvedValue({ id: user.id, password: null });
+      mocks.frameleafAccount.getSession.mockResolvedValue({
+        sessionId: auth.session!.id,
+        userId: user.id,
+        sub: owner,
+        createdAt: new Date(),
+        sid: null,
+        authTime: null,
+        handoffCodeHash: null,
+        handoffExpiresAt: null,
+      });
+      const cloudUrl = 'https://cloud.example.test';
+      const env = mocks.config.getEnv();
+      mocks.config.getEnv.mockReturnValue({ ...env, frameleafCloud: { ...env.frameleafCloud, url: cloudUrl } });
+      mocks.systemMetadata.get.mockResolvedValue({
+        status: 'linked',
+        cloudUrl,
+        instanceId: 'linked-server',
+        accountId: owner,
+      });
+      mocks.user.setInitialLocalPassword.mockResolvedValue(user);
+      await expect(sut.changePassword(auth, { password: '', newPassword: 'new-password' })).resolves.toMatchObject({
+        id: user.id,
+      });
+      expect(mocks.crypto.compareBcrypt).not.toHaveBeenCalled();
+    });
+
     it('should change the password and logout other sessions', async () => {
       const user = UserFactory.create();
       const auth = AuthFactory.create(user);

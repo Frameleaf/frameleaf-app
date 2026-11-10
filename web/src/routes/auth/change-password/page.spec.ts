@@ -1,4 +1,4 @@
-import { updateMyUser } from '@frameleaf/sdk';
+import { changePassword, updateMyUser } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,18 +8,23 @@ import { takeAuthNotice } from '../auth-notice';
 import Page from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<object>()), updateMyUser: vi.fn() }));
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<object>()),
+  changePassword: vi.fn(),
+  updateMyUser: vi.fn(),
+}));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { email: 'user@nas' } } }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
+  vi.mocked(changePassword).mockResolvedValue({} as never);
   vi.mocked(updateMyUser).mockResolvedValue({} as never);
 });
 
 describe('forced password change', () => {
   it('treats the strength meter as advisory and lets the server decide', async () => {
-    render(Page);
+    render(Page, { data: { local: false, destination: '/photos', meta: { title: 'Change password' } } });
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_new_password), {
       target: { value: 'new-password' },
     });
@@ -36,10 +41,28 @@ describe('forced password change', () => {
   });
 
   it('waits for a matching confirmation', async () => {
-    render(Page);
+    render(Page, { data: { local: false, destination: '/photos', meta: { title: 'Change password' } } });
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_new_password), { target: { value: 'abc' } });
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_confirm_new_password), { target: { value: 'abd' } });
     expect(screen.getByRole('button', { name: en.frameleaf_auth_save_and_sign_in })).toBeDisabled();
     expect(screen.getByText(en.frameleaf_auth_passwords_mismatch_hint)).toBeInTheDocument();
   });
+});
+
+it('sets the paired owner’s first password and continues in the authenticated session', async () => {
+  render(Page, { data: { local: true, destination: '/albums', meta: { title: 'Set a local password' } } });
+  await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_new_password), {
+    target: { value: 'new-password' },
+  });
+  await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_confirm_new_password), {
+    target: { value: 'new-password' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_auth_local_password_continue }));
+  await waitFor(() =>
+    expect(changePassword).toHaveBeenCalledWith({
+      changePasswordDto: { password: '', newPassword: 'new-password', invalidateSessions: true },
+    }),
+  );
+  expect(goto).toHaveBeenCalledWith('/albums', { invalidateAll: true });
+  expect(updateMyUser).not.toHaveBeenCalled();
 });

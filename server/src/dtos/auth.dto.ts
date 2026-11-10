@@ -157,7 +157,10 @@ const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true, twoFactor: t
 
 const ChangePasswordSchema = z
   .object({
-    password: z.string().describe('Current password').meta({ example: 'password' }),
+    password: z
+      .string()
+      .describe('Current password, or empty when setting the linked owner’s first local password')
+      .meta({ example: 'password' }),
     newPassword: chosenPassword('New password').meta({ example: 'password' }),
     invalidateSessions: z.boolean().default(false).optional().describe('Invalidate all other sessions'),
   })
@@ -251,6 +254,10 @@ const AuthStatusResponseSchema = z
   .object({
     pinCode: z.boolean().describe('Has PIN code set'),
     password: z.boolean().describe('Has password set'),
+    localPasswordRequired: z
+      .boolean()
+      .optional()
+      .describe('This freshly signed-in owner needs to set their first local password'),
     isElevated: z.boolean().describe('Is elevated session'),
     expiresAt: z.string().optional().describe('Session expiration date'),
     pinExpiresAt: z.string().optional().describe('PIN expiration date'),

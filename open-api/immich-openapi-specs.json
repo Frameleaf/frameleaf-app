@@ -80016,6 +80016,10 @@
             "description": "Is elevated session",
             "type": "boolean"
           },
+          "localPasswordRequired": {
+            "description": "This freshly signed-in owner needs to set their first local password",
+            "type": "boolean"
+          },
           "password": {
             "description": "Has password set",
             "type": "boolean"
@@ -83548,7 +83552,7 @@
             "type": "string"
           },
           "password": {
-            "description": "Current password",
+            "description": "Current password, or empty when setting the linked owner’s first local password",
             "example": "password",
             "type": "string"
           }
