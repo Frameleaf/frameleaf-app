@@ -102,6 +102,17 @@ describe('Overview (FL-363)', () => {
     expect(screen.getByText('Install the app to send photos here')).toBeInTheDocument();
   });
 
+  it('draws the status without waiting for the library report', async () => {
+    let arrive!: (report: ReturnType<typeof analyticsReportFixture>) => void;
+    sdk.getAnalyticsReport.mockReturnValue(new Promise((resolve) => (arrive = resolve)));
+    render(Overview);
+    expect(await screen.findByRole('heading', { name: 'Everything is working' })).toBeInTheDocument();
+    expect(screen.getByText('40 GB free')).toBeInTheDocument();
+    expect(screen.queryByText('Count now')).not.toBeInTheDocument();
+    arrive(analyticsReportFixture());
+    await waitFor(() => expect(screen.queryByRole('status', { busy: true })).not.toBeInTheDocument());
+  });
+
   it('says everything is working when nothing needs the person', async () => {
     render(Overview);
     expect(await screen.findByRole('heading', { name: 'Everything is working' })).toBeInTheDocument();
