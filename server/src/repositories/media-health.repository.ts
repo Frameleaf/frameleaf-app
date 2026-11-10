@@ -1532,8 +1532,9 @@ export class MediaHealthRepository {
 
   /**
    * The owner's open Missing findings a phone may be able to answer (FL-1337): the photo is in the
-   * library, not in the Trash, not external and not Locked, and its checksum is the SHA-1 of its
-   * contents, which is how phones match. Only the owner's own rows, whoever asks.
+   * library, not in the Trash, not external and not Locked, and its checksum is the SHA-1 or (FL-1347, every
+   * upload since FL-1108) SHA-256 of its contents, which is how phones match. Only the owner's own rows, whoever
+   * asks.
    */
   private lostOriginals(ownerId: string) {
     return this.db
@@ -1547,14 +1548,24 @@ export class MediaHealthRepository {
       .where('asset.deletedAt', 'is', null)
       .where('asset.libraryId', 'is', null)
       .where('asset.isExternal', '=', false)
-      .where('asset.checksumAlgorithm', '=', ChecksumAlgorithm.sha1File)
+      .where('asset.checksumAlgorithm', 'in', [ChecksumAlgorithm.sha1File, ChecksumAlgorithm.sha256File])
       .where(isNotLocked('asset'));
   }
 
-  /** A page of the owner's lost originals, in a stable order; one more than `take` says there is a next page. */
+  /**
+   * A page of the owner's lost originals, in a stable order; one more than `take` says there is a next page. Each
+   * carries its file size when one is on record (FL-1347), for a phone to narrow its search by exact size.
+   */
   listLostOriginals(ownerId: string, take: number, skip: number) {
     return this.lostOriginals(ownerId)
-      .select(['asset.id as assetId', 'asset.checksum', 'asset.originalFileName', 'asset.fileCreatedAt'])
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select([
+        'asset.id as assetId',
+        'asset.checksum',
+        'asset.originalFileName',
+        'asset.fileCreatedAt',
+        'asset_exif.fileSizeInByte as fileSize',
+      ])
       .orderBy('asset_health.id')
       .limit(take + 1)
       .offset(skip)
@@ -1573,7 +1584,7 @@ export class MediaHealthRepository {
     return !!row;
   }
 
-  /** The owner's lost originals among these SHA-1 checksums, with where each one stands. */
+  /** The owner's lost originals among these SHA-1 or SHA-256 checksums, with where each one stands. */
   findLostOriginals(ownerId: string, checksums: Buffer[]) {
     if (checksums.length === 0) {
       return Promise.resolve([]);

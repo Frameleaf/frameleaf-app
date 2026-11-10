@@ -107236,13 +107236,20 @@
             "type": "string"
           },
           "checksum": {
-            "description": "SHA-1 of the lost file, base64: what the phone matches its own file by",
+            "description": "SHA-1 (20 bytes) or SHA-256 (32 bytes) of the lost file's contents, base64: what the phone matches its own file by",
             "type": "string"
           },
           "fileCreatedAt": {
             "description": "When the file was created",
             "format": "date-time",
             "type": "string"
+          },
+          "fileSize": {
+            "description": "Size of the lost file in bytes, or null when unknown: a phone may look only at its files of exactly this size",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           },
           "originalFileName": {
             "description": "The name the file had",
@@ -107253,6 +107260,7 @@
           "assetId",
           "checksum",
           "fileCreatedAt",
+          "fileSize",
           "originalFileName"
         ],
         "type": "object"
@@ -107266,7 +107274,7 @@
             "type": "string"
           },
           "notHere": {
-            "description": "Checksums (base64) of lost originals this device does not have",
+            "description": "Checksums (base64, SHA-1 or SHA-256, as listed) of lost originals this device does not have",
             "items": {
               "maxLength": 64,
               "type": "string"
