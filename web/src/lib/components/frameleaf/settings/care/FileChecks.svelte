@@ -735,7 +735,7 @@
         <Item
           icon={mdiAutoFix}
           name={$t('frameleaf_care_fc_when_problem_repair_name')}
-          detail={care?.autoRepair
+          detail={(care?.autoRepair ?? true)
             ? $t('frameleaf_care_fc_when_problem_repair_on')
             : $t('frameleaf_care_fc_when_problem_repair_off')}
         >

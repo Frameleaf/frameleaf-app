@@ -334,14 +334,14 @@
         <Item
           icon={mdiAutoFix}
           name={$t('frameleaf_care_fc_when_problem_repair_name')}
-          detail={care.autoRepair
+          detail={(care.autoRepair ?? true)
             ? $t('frameleaf_care_fc_when_problem_repair_on')
             : $t('frameleaf_files_auto_repair_off')}
         >
           {#snippet measure()}
             <Switch
               label={$t('frameleaf_care_fc_when_problem_repair_name')}
-              checked={care.autoRepair}
+              checked={care.autoRepair ?? true}
               {held}
               onChange={setRepair}
             />
@@ -365,7 +365,7 @@
           {#snippet measure()}
             <Switch
               label={$t('frameleaf_files_auto_phones_name')}
-              checked={care.askPhones}
+              checked={care.askPhones ?? true}
               {held}
               onChange={setPhones}
             />
