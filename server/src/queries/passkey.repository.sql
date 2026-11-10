@@ -81,6 +81,12 @@ where
 returning
   "id"
 
+-- PasskeyRepository.deletePendingRegistrations
+delete from "auth_challenge"
+where
+  "userId" = $1
+  and "purpose" in ($2, $3)
+
 -- PasskeyRepository.isPasskeySession
 select
   "sessionId"

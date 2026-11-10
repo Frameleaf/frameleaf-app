@@ -1,11 +1,11 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { loginDto } from 'src/fixtures.js';
 import { baseUrl, utils } from 'src/utils.js';
 
 // FL-859: add, use and remove a passkey in the browser, with Chrome's virtual authenticator. The page is
 // opened on localhost: the one plain http address browsers (and the server) allow passkeys on.
 const local = `http://localhost:${new URL(baseUrl).port}`;
-const email = 'admin@immich.app';
-const password = 'admin';
+const { password } = loginDto.admin;
 
 const addVirtualAuthenticator = async (context: BrowserContext, page: Page) => {
   const cdp = await context.newCDPSession(page);
@@ -25,20 +25,18 @@ const addVirtualAuthenticator = async (context: BrowserContext, page: Page) => {
 test.describe('Passkeys', () => {
   test.skip(({ browserName }) => browserName !== 'chromium', 'The virtual authenticator is Chrome’s');
 
+  let accessToken: string;
+
   test.beforeAll(async () => {
     utils.initSdk();
     await utils.resetDatabase();
-    await utils.adminSetup();
+    ({ accessToken } = await utils.adminSetup());
   });
 
   test('adds a passkey, signs in with it and removes it', async ({ context, page }) => {
     await addVirtualAuthenticator(context, page);
-
-    await page.goto(`${local}/auth/login`);
-    await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password', { exact: true }).fill(password);
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await page.waitForURL(/\/photos/);
+    // signed in with the password on localhost (the cookies belong to the address the page is open on)
+    await utils.setAuthCookies(context, accessToken, 'localhost');
 
     await page.goto(`${local}/user-settings?area=privacy&section=passkeys`);
     await expect(page.getByRole('heading', { name: 'You don’t have a passkey yet' })).toBeVisible();
