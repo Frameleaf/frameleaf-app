@@ -96,7 +96,7 @@ export const boundPoolClose = <
   postgres.end = (options) => end({ timeout: DATABASE_CLOSE_TIMEOUT_SECONDS, ...options });
   return postgres;
 };
-export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyConfig => {
+export const getKyselyConfig = (connection: DatabaseConnectionParams, monitorPool = false): KyselyConfig => {
   return {
     dialect: new PostgresJSDialect({
       postgres: boundPoolClose(
@@ -110,6 +110,8 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
               }
             },
           }),
+          undefined,
+          monitorPool,
         ),
       ),
     }),

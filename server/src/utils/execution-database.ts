@@ -27,13 +27,22 @@ const requestDatabaseRestart = () => {
   else process.send?.(message);
 };
 
+let readPoolUsage = () => ({ reserved: 0, waiting: 0, capacity: DATABASE_POOL_SIZE });
+export const getDatabasePoolUsage = () => readPoolUsage();
+
 /**
  * A timed-out reservation never executes SQL. If the driver grants it later, it is immediately
  * returned. The waiter cap also bounds the underlying driver's queue during pool exhaustion.
  */
-export const boundExecutionReservations = (client: Client, onUnusable: () => void = requestDatabaseRestart): Client => {
+export const boundExecutionReservations = (
+  client: Client,
+  onUnusable: () => void = requestDatabaseRestart,
+  monitorPool = false,
+): Client => {
   const reserve = client.reserve.bind(client);
   let pending = 0;
+  let reserved = 0;
+  if (monitorPool) readPoolUsage = () => ({ reserved, waiting: pending, capacity: DATABASE_POOL_SIZE });
   let unusable: Promise<void> | undefined;
   const discardPool = () => {
     // PostgresJS cannot discard one reserved session. Close this worker's pool before any
@@ -71,8 +80,14 @@ export const boundExecutionReservations = (client: Client, onUnusable: () => voi
           settled = true;
           clearTimeout(timer);
           signal?.removeEventListener('abort', fail);
+          if (monitorPool) reserved++;
+          let released = false;
           const release = connection.release.bind(connection);
           connection.release = () => {
+            if (monitorPool && !released) {
+              released = true;
+              reserved--;
+            }
             if (!unusable) release();
           };
           const unsafe = connection.unsafe.bind(connection);

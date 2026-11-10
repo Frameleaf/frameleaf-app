@@ -382,6 +382,33 @@ export class UserRepository {
       .executeTakeFirstOrThrow();
   }
 
+  /** A retried setup must never replace a password already chosen, even from another valid session. */
+  setInitialLocalPassword(
+    userId: string,
+    password: string,
+    owner: { sessionId: string; subject: string; notBefore: Date },
+  ) {
+    return this.db
+      .updateTable('user')
+      .set({ password, shouldChangePassword: false, passwordLinkHash: null, passwordLinkExpiresAt: null })
+      .where('id', '=', userId)
+      .where('isAdmin', '=', true)
+      .where('deletedAt', 'is', null)
+      .where((eb) => eb.or([eb('password', 'is', null), eb('password', '=', '')]))
+      .where(
+        sql<boolean>`exists (
+        select 1 from public.frameleaf_session as tag
+        join public.session as session on session.id = tag."sessionId"
+        where tag."userId" = ${userId}::uuid and tag."sessionId" = ${owner.sessionId}::uuid
+          and tag.sub = ${owner.subject} and tag."createdAt" >= ${owner.notBefore}
+          and session."userId" = tag."userId" and (session."expiresAt" is null or session."expiresAt" > now())
+      )`,
+      )
+      .returning(columns.userAdmin)
+      .returning(withMetadata)
+      .executeTakeFirst();
+  }
+
   /** FL-793: the account's authenticator row (set up or on), if any. */
   @GenerateSql({ params: [DummyValue.UUID] })
   getTwoFactor(userId: string) {

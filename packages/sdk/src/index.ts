@@ -1,4 +1,7 @@
 import { mergeHeaders } from '@oazapfts/runtime/headers';
+import { explode, query } from '@oazapfts/runtime/query';
+import { joinUrl } from '@oazapfts/runtime/util';
+import type { streamServerLogs as generatedStreamServerLogs } from './fetch-client.js';
 import { defaults, uploadTakeoutArchiveChunk as generatedUploadTakeoutArchiveChunk } from './fetch-client.js';
 import { MalformedResponseError } from './fetch-errors.js';
 
@@ -6,6 +9,19 @@ export * from './fetch-client.js';
 export { mergePersonLegacy as mergePerson } from './fetch-client.js';
 export * from './fetch-errors.js';
 export * from './job-runs.js';
+
+export const streamServerLogs = (
+  { level, q, since, worker }: Parameters<typeof generatedStreamServerLogs>[0],
+  opts?: Parameters<typeof generatedStreamServerLogs>[1],
+): Promise<Response> => {
+  const { baseUrl, fetch: request = fetch, ...init } = { ...defaults, ...opts };
+  const headers = new Headers(mergeHeaders(defaults.headers, opts?.headers));
+  headers.set('Accept', 'text/event-stream');
+  return request(joinUrl(baseUrl, `/admin/logs/stream${query(explode({ level, q, since, worker }))}`), {
+    ...init,
+    headers,
+  });
+};
 
 // Raw Blob operations do not get a content type from oazapfts. Keep this default
 // outside generated code, with the usual global-then-per-request header precedence.

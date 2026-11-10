@@ -15,8 +15,7 @@
  *
  * Not listed, so accepted under their old names only: the inert telemetry and metrics variables
  * (`IMMICH_TELEMETRY_INCLUDE`, `IMMICH_TELEMETRY_EXCLUDE`, `IMMICH_API_METRICS_PORT`,
- * `IMMICH_MICROSERVICES_METRICS_PORT`). This fork collects and serves no metrics, so they do nothing and
- * get no new name.
+ * `IMMICH_MICROSERVICES_METRICS_PORT`). These aliases cannot configure the opt-in local metrics listener.
  */
 export type EnvAlias = { legacy: `IMMICH_${string}`; current: `FRAMELEAF_${string}`; reportOnly?: true };
 

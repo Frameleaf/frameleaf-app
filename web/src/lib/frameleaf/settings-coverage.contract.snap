@@ -904,6 +904,9 @@
   "metadata.faces.import": {
     "type": "boolean"
   },
+  "metrics.enabled": {
+    "type": "boolean"
+  },
   "newVersionCheck.channel": {
     "type": "string",
     "enum": [

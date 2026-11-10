@@ -8074,6 +8074,259 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/logs": {
+      "get": {
+        "operationId": "listServerLogs",
+        "parameters": [
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\|[0-9a-f-]{36}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "verbose",
+                "debug",
+                "log",
+                "warn",
+                "error",
+                "fatal"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "worker",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "api",
+                "microservices",
+                "maintenance",
+                "machine-learning"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateLogPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List recent local server logs",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/admin/logs/download": {
+      "get": {
+        "operationId": "downloadServerLogs",
+        "parameters": [
+          {
+            "name": "hours",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 168,
+              "default": 24,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download local server logs",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/admin/logs/stream": {
+      "get": {
+        "operationId": "streamServerLogs",
+        "parameters": [
+          {
+            "name": "level",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "verbose",
+                "debug",
+                "log",
+                "warn",
+                "error",
+                "fatal"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "worker",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "api",
+                "microservices",
+                "maintenance",
+                "machine-learning"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Follow local server logs",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
     "/admin/maintenance": {
       "post": {
         "description": "Put Frameleaf into or take it out of maintenance mode",
@@ -67358,6 +67611,9 @@
           "metadata": {
             "$ref": "#/components/schemas/AdminConfigMetadataDto"
           },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsStatusDto"
+          },
           "newVersionCheck": {
             "$ref": "#/components/schemas/AdminConfigNewVersionCheckDto"
           },
@@ -80488,6 +80744,10 @@
             "description": "Is elevated session",
             "type": "boolean"
           },
+          "localPasswordRequired": {
+            "description": "This freshly signed-in owner needs to set their first local password",
+            "type": "boolean"
+          },
           "password": {
             "description": "Has password set",
             "type": "boolean"
@@ -84020,7 +84280,7 @@
             "type": "string"
           },
           "password": {
-            "description": "Current password",
+            "description": "Current password, or empty when setting the linked owner’s first local password",
             "example": "password",
             "type": "string"
           }
@@ -111060,6 +111320,19 @@
         },
         "type": "object"
       },
+      "MetricsStatusDto": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the local metrics listener is configured to run",
+            "type": "boolean"
+          }
+        },
+        "readOnly": true,
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
       "MirrorAxis": {
         "description": "Axis to mirror along",
         "enum": [
@@ -132821,6 +133094,93 @@
             "$ref": "#/components/schemas/SuppressionUpdate"
           }
         },
+        "type": "object"
+      },
+      "PrivateLogPageDto": {
+        "properties": {
+          "entries": {
+            "items": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "at": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "context": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "jobId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "jobName": {
+                  "type": "string"
+                },
+                "level": {
+                  "enum": [
+                    "verbose",
+                    "debug",
+                    "log",
+                    "warn",
+                    "error",
+                    "fatal"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "requestId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "route": {
+                  "type": "string"
+                },
+                "worker": {
+                  "enum": [
+                    "api",
+                    "microservices",
+                    "maintenance",
+                    "machine-learning"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "worker",
+                "at",
+                "level",
+                "context",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\|[0-9a-f-]{36}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "nextCursor"
+        ],
         "type": "object"
       },
       "ProcessingFailureActionDto": {

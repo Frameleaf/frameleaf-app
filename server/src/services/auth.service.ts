@@ -1,4 +1,11 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { parseCookie as parse } from 'cookie';
 import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
@@ -43,6 +50,7 @@ import {
   AdminAuditAction,
   AuthCookie,
   AuthType,
+  DatabaseLock,
   JobName,
   Permission,
   RequestHeader,
@@ -713,17 +721,17 @@ export class AuthService extends BaseService {
   async changePassword(auth: AuthDto, dto: ChangePasswordDto): Promise<UserAdminResponseDto> {
     const { password, newPassword } = dto;
     const user = await this.userRepository.getForChangePassword(auth.user.id);
-    const isValid = await this.validateSecret(password, user.password);
-    if (!isValid) {
-      throw new BadRequestException('Wrong password');
-    }
-
-    const hashedPassword = await this.cryptoRepository.hashBcrypt(newPassword, SALT_ROUNDS);
-
-    const updatedUser = await this.userRepository.update(user.id, {
-      password: hashedPassword,
-      shouldChangePassword: false,
-    });
+    const initial = !user.password && password === '';
+    const updatedUser = initial
+      ? await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+          const owner = await this.initialPasswordOwner(auth);
+          if (!owner) throw new BadRequestException('Sign in again with the Frameleaf account that owns this library');
+          const hash = await this.cryptoRepository.hashBcrypt(newPassword, SALT_ROUNDS);
+          const updated = await this.userRepository.setInitialLocalPassword(user.id, hash, owner);
+          if (!updated) throw new ConflictException('The sign-in changed. Sign in again to continue');
+          return updated;
+        })
+      : await this.changeExistingPassword(user, password, newPassword);
 
     await this.eventRepository.emit('AuthChangePassword', {
       userId: user.id,
@@ -738,6 +746,31 @@ export class AuthService extends BaseService {
     });
 
     return mapUserAdmin(updatedUser);
+  }
+
+  private async changeExistingPassword(
+    user: { id: string; password: string | null },
+    password: string,
+    newPassword: string,
+  ) {
+    if (!(await this.validateSecret(password, user.password))) throw new BadRequestException('Wrong password');
+    return this.userRepository.update(user.id, {
+      password: await this.cryptoRepository.hashBcrypt(newPassword, SALT_ROUNDS),
+      shouldChangePassword: false,
+    });
+  }
+
+  /** Only a fresh session tagged to the current instance owner can choose this account’s first password. */
+  private async initialPasswordOwner(auth: AuthDto) {
+    if (!auth.user.isAdmin || !auth.session || auth.apiKey || auth.sharedLink) return;
+    const tag = await this.frameleafAccountRepository.getSession(auth.session.id);
+    const notBefore = new Date(Date.now() - 10 * 60_000);
+    if (!tag || tag.userId !== auth.user.id || tag.createdAt < notBefore) return;
+    const { link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    if (linked && link?.accountId === tag.sub) return { sessionId: auth.session.id, subject: tag.sub, notBefore };
   }
 
   /** FL-538: who an emailed "choose a password" link is for, while it can still be used. */
@@ -1628,6 +1661,7 @@ export class AuthService extends BaseService {
       recoveryCodesRemaining: twoFactorEnabled ? await this.userRepository.countRecoveryCodes(auth.user.id) : 0,
       pinCode: !!user.pinCode,
       password: !!user.password,
+      ...(!user.password && (await this.initialPasswordOwner(auth)) && { localPasswordRequired: true }),
       isElevated: !!auth.session?.hasElevatedPermission,
       expiresAt: session?.expiresAt?.toISOString(),
       pinExpiresAt: session?.pinExpiresAt?.toISOString(),

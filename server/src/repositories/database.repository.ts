@@ -109,6 +109,28 @@ export class DatabaseRepository {
     this.logger.setContext(DatabaseRepository.name);
   }
 
+  async getMetricsAssetCounts() {
+    const { rows } = await sql<{ type: string; count: number }>`
+      select type, count(*)::float8 as count from asset where "deletedAt" is null group by type
+    `.execute(this.db);
+    return rows;
+  }
+
+  async getMetricsQueueCounts() {
+    // Use the durable job table. Scheduled and held work is excluded from the waiting count.
+    const { rows } = await sql<{ queue: string; waiting: number; active: number; failed: number }>`
+      select q.name as queue,
+        count(j.id) filter (where j.state in ('pending', 'waiting') and j."availableAt" <= now()
+          and not q.paused and not coalesce(q."closedUntil" > now(), false))::float8 as waiting,
+        count(j.id) filter (where j.state = 'active')::float8 as active,
+        count(j.id) filter (where j.state in ('failed', 'needs_attention', 'blocked'))::float8 as failed
+      from job_queue q
+      left join job j on j.queue = q.name and j.state in ('pending','waiting','active','failed','needs_attention','blocked')
+      group by q.name
+    `.execute(this.db);
+    return rows.map(({ queue, ...counts }) => ({ queue, counts }));
+  }
+
   async shutdown() {
     await this.db.destroy();
   }

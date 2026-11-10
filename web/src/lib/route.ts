@@ -62,7 +62,7 @@ export const Route = {
   login: (params?: { continue?: string; autoLaunch?: 0 | 1 }) => '/auth/login' + asQueryString(params),
   logout: (params?: { continue?: string }) => '/auth/logout' + asQueryString(params),
   register: () => '/auth/register',
-  changePassword: () => '/auth/change-password',
+  changePassword: (params?: { local?: string; continue?: string }) => '/auth/change-password' + asQueryString(params),
   onboarding: (params?: { step?: string; continue?: string }) => '/auth/onboarding' + asQueryString(params),
   pinPrompt: (params?: { continue?: string }) => '/auth/pin-prompt' + asQueryString({ continue: params?.continue }),
 

@@ -141,6 +141,8 @@ import { PinnedCollectionService } from 'src/services/pinned-collection.service.
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
 import { PreservationService } from 'src/services/preservation.service.js';
+import { PrivateLogsService } from 'src/services/private-logs.service.js';
+import { PrivateMlLogsService } from 'src/services/private-ml-logs.service.js';
 import { PushService } from 'src/services/push.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { RawSupportService } from 'src/services/raw-support.service.js';
@@ -205,6 +207,8 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  PrivateLogsService,
+  PrivateMlLogsService,
   PhotoLocationsService,
   SpeechService,
   LibraryItemService,
