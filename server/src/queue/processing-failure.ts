@@ -23,7 +23,7 @@ export const processingFailureCause = (reason: string, lifecycle?: 'crashed' | '
   if (/^Sharp child closed \(|worker.*(?:crashed|exited|killed)/iu.test(reason)) return 'crashed';
   if (/timed? ?out|deadline/iu.test(reason)) return 'timed-out';
   if (/unsupported|unknown format/iu.test(reason)) return 'unsupported';
-  if (/too large|pixel limit|memory limit/iu.test(reason)) return 'too-large';
+  if (/too large|pixel limit|memory limit|resource[ _]limit/iu.test(reason)) return 'too-large';
   return 'unreadable';
 };
 

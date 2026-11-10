@@ -85,6 +85,7 @@
     mdiChevronRight,
     mdiCloudOutline,
     mdiFileCheckOutline,
+    mdiFileClockOutline,
     mdiFileQuestionOutline,
     mdiHarddisk,
     mdiImageSearchOutline,
@@ -246,6 +247,20 @@
         actions: [{ label: $t('frameleaf_overview_files_see'), href: filesPage(FileProblemTab.Needs) }],
       });
     }
+    // FL-862: photos and videos Frameleaf couldn't finish (FL-845); a field of its own, never a new kind.
+    const unprocessed = attention?.processingFailures?.count ?? 0;
+    if (unprocessed > 0) {
+      found.push({
+        id: 'processing',
+        icon: mdiFileClockOutline,
+        level: 'look',
+        title: $t('frameleaf_processing_failure_hero', { values: { count: unprocessed } }),
+        body: $t('frameleaf_overview_processing_body'),
+        actions: [
+          { label: $t('frameleaf_overview_processing_see'), href: commandCenterUrl('care', 'couldnt-process') },
+        ],
+      });
+    }
     if (aiState === 'unreachable') {
       found.push({
         id: 'ai',
@@ -361,6 +376,14 @@
       phrases.push({
         wrong: true,
         text: $t('frameleaf_overview_files_need_title', { values: { count: files.needsYou } }),
+      });
+    }
+    // FL-862: files Frameleaf couldn't process are said too.
+    const unprocessed = attention?.processingFailures?.count ?? 0;
+    if (unprocessed > 0) {
+      phrases.push({
+        wrong: true,
+        text: $t('frameleaf_processing_failure_hero', { values: { count: unprocessed } }),
       });
     }
     if (needs.some((need) => need.id === 'plan')) {

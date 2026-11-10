@@ -76,6 +76,19 @@ describe('SharpOperations.repairJpeg', () => {
   });
   afterEach(() => rm(directory, { recursive: true, force: true }));
 
+  it('tells a JPEG that only lacks its end marker from one that lost half its rows (FL-1353)', async () => {
+    const whole = await noise(256, 256);
+    const unterminated = join(directory, 'no-end-marker.jpg');
+    const halved = join(directory, 'half.jpg');
+    await writeFile(unterminated, whole.subarray(0, -2));
+    await writeFile(halved, whole.subarray(0, Math.floor(whole.length / 2)));
+
+    // a strict decode refuses both, which is why Library care called both damaged
+    await expect(sharp(unterminated, { failOn: 'error' }).raw().toBuffer()).rejects.toThrow();
+    await expect(sut.pictureSaved(unterminated)).resolves.toBe(100);
+    expect(await sut.pictureSaved(halved)).toBeLessThan(70);
+  });
+
   const repair = async (bytes: Buffer) => {
     const input = join(directory, 'broken.jpg');
     await writeFile(input, bytes);

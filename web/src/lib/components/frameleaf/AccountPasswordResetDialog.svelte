@@ -68,6 +68,8 @@
       </div>
     {:else}
       <p>{$t('frameleaf_users_password_reset_description', { values: { name: user.name } })}</p>
+      <!-- FL-859: the server removes their passkeys too, so only the new password gets in -->
+      <p>{$t('frameleaf_users_password_reset_passkeys')}</p>
       <p class="footnote">{$t('frameleaf_users_password_reset_footnote')}</p>
       <div class="actions">
         <Button disabled={working} onclick={() => (open = false)}>{$t('cancel')}</Button>

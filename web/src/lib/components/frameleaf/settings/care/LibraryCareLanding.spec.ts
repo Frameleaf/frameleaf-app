@@ -7,6 +7,7 @@ import {
   getQueue,
   getIntegrityCheckRuns,
   getIntegrityOverview,
+  getProcessingFailures,
   getLatestAlbumChangeRun,
   getLocationScanStatus,
   getServerStatistics,
@@ -34,6 +35,7 @@ const user = vi.hoisted(() => ({ id: 'owner', isAdmin: true }));
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   createJob: vi.fn(),
+  getProcessingFailures: vi.fn(),
   getAssetStatistics: vi.fn(),
   getIntegrityCheckRuns: vi.fn(),
   getIntegrityOverview: vi.fn(),
@@ -139,6 +141,7 @@ describe('Library care landing (FL-366)', () => {
     });
     vi.mocked(getLatestAlbumChangeRun).mockResolvedValue({ run: null });
     unusedFilesAccess.reset();
+    vi.mocked(getProcessingFailures).mockResolvedValue([]);
   });
 
   it('offers the album cleanup review with what the last scan found', async () => {
@@ -184,6 +187,31 @@ describe('Library care landing (FL-366)', () => {
     expect(screen.queryByRole('button', { name: 'Estimate' })).not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Open Identify photo locations' }));
     expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=location-scan'));
+  });
+
+  it("says when the only thing wrong is files Frameleaf couldn't process, and opens them (FL-862)", async () => {
+    vi.mocked(getSummary).mockResolvedValue(summary());
+    vi.mocked(getIntegrityOverview).mockResolvedValue(reports() as never);
+    vi.mocked(getIntegrityCheckRuns).mockResolvedValue(runs(new Date().toISOString()) as never);
+    vi.mocked(getProcessingFailures).mockResolvedValue([
+      {
+        assetId: '11111111-1111-4111-8111-111111111111',
+        step: 'AssetGenerateThumbnails',
+        cause: 'unreadable',
+        attempts: 3,
+        lastFailedAt: new Date().toISOString(),
+        quarantinedAt: new Date().toISOString(),
+        ownerId: 'u1',
+        ownerName: 'Taylor',
+        fileName: 'PANO_0042.JPG',
+      } as never,
+    ]);
+
+    render(LibraryCareLanding);
+
+    expect(await hero().findByText('1 file couldn’t be processed')).toBeInTheDocument();
+    await fireEvent.click(hero().getByRole('button', { name: en.frameleaf_carehome_review_it }));
+    expect(goto).toHaveBeenLastCalledWith(expect.stringContaining('section=couldnt-process'));
   });
 
   it('says the library is healthy, with how many files were checked', async () => {

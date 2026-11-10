@@ -76,6 +76,16 @@ const AttentionStorageSchema = z
   })
   .meta({ id: 'AttentionStorageDto' });
 
+const AttentionProcessingFailuresSchema = z
+  .object({
+    count: z.int().min(0).describe('Files with a step Frameleaf could not finish, not kept as they are'),
+    setAside: z
+      .int()
+      .min(0)
+      .describe('Of those, files set aside after repeated tries; they are not tried again by themselves'),
+  })
+  .meta({ id: 'AttentionProcessingFailuresDto' });
+
 const AttentionBackupSchema = z
   .object({
     place: AttentionBackupPlaceSchema.nullable().describe('The place the finding is about; null when there is none'),
@@ -149,6 +159,9 @@ const AttentionResponseSchema = z
       .describe('Overview items an administrator dismissed (FL-363); they stop counting as needing attention'),
     fileProblems: AttentionFileProblemsSchema.describe(
       'FL-1337: the Overview counts of damaged and missing files, for the files the reader may see. They add no item and change no check.',
+    ),
+    processingFailures: AttentionProcessingFailuresSchema.describe(
+      'FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check.',
     ),
   })
   .meta({ id: 'AttentionResponseDto' });

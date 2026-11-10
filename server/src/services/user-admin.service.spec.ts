@@ -30,6 +30,8 @@ describe(UserAdminService.name, () => {
     mocks.session.lockAll.mockResolvedValue();
     mocks.session.invalidateAll.mockResolvedValue([]);
     mocks.session.delete.mockResolvedValue();
+    mocks.passkey.countByUser.mockResolvedValue(0);
+    mocks.passkey.deleteAll.mockResolvedValue({ count: 0, sessionIds: [] });
   });
 
   it('admin user response includes lockedEncryption', async () => {
@@ -1034,6 +1036,7 @@ describe(UserAdminService.name, () => {
       await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toStrictEqual({
         pinCode: true,
         twoFactorEnabled: false,
+        passkeys: 0,
       });
       expect(mocks.user.hasPinCode).toHaveBeenCalledWith('user-1');
       expect(mocks.user.getForPinCode).not.toHaveBeenCalled();
@@ -1045,6 +1048,7 @@ describe(UserAdminService.name, () => {
       await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toStrictEqual({
         pinCode: false,
         twoFactorEnabled: false,
+        passkeys: 0,
       });
     });
 
@@ -1124,6 +1128,69 @@ describe(UserAdminService.name, () => {
         userId: 'user-1',
         invalidateSessions: true,
       });
+    });
+  });
+
+  describe('removePasskeys (FL-836)', () => {
+    it('removes every passkey, signs out their sessions and records it in both histories', async () => {
+      const user = UserFactory.create();
+      mocks.user.get.mockResolvedValue(user);
+      mocks.passkey.deleteAll.mockResolvedValue({ count: 2, sessionIds: ['session-1'] });
+
+      await sut.removePasskeys(authStub.admin, user.id);
+
+      expect(mocks.passkey.deleteAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'session-1' });
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({
+          userId: user.id,
+          action: AdminAuditAction.AccountUpdated,
+          detail: 'passkeys-removed',
+        }),
+      ]);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: user.id,
+          action: 'passkeys-removed-by-admin',
+          detail: '2',
+          deviceType: null,
+        }),
+      );
+    });
+
+    it('records nothing when there were none', async () => {
+      mocks.user.get.mockResolvedValue(UserFactory.create());
+      await sut.removePasskeys(authStub.admin, 'user-1');
+      expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+      expect(mocks.accountEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('also removes them when an administrator resets the password', async () => {
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      mocks.passkey.deleteAll.mockResolvedValue({ count: 1, sessionIds: [] });
+
+      await sut.update(authStub.admin, userStub.user1.id, { password: 'new-password' });
+
+      expect(mocks.passkey.deleteAll).toHaveBeenCalledWith(userStub.user1.id);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'passkeys-removed-by-admin', detail: '1' }),
+      );
+    });
+
+    it('keeps the old password when removing the passkeys fails, so a reset is never half done', async () => {
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      mocks.passkey.deleteAll.mockRejectedValue(new Error('database unavailable'));
+
+      await expect(sut.update(authStub.admin, userStub.user1.id, { password: 'new-password' })).rejects.toThrow(
+        'database unavailable',
+      );
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    it('says how many passkeys an account has', async () => {
+      mocks.user.hasPinCode.mockResolvedValue(false);
+      mocks.passkey.countByUser.mockResolvedValue(3);
+      await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toMatchObject({ passkeys: 3 });
     });
   });
 });
