@@ -187,7 +187,7 @@ export class AssetPaletteService {
     }
     const video = source.type === AssetType.Video;
     const hdr = source.exif?.imageEncoding?.dynamicRange === 'hdr';
-    const raw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
+    const raw = mimeTypes.isRaw(source.originalFileName);
     const complexEdits = source.edits.some(({ action }) => !['crop', 'rotate', 'mirror'].includes(action));
     if (video || hdr || raw || complexEdits) {
       return preview ? { path: preview.path, options } : undefined;

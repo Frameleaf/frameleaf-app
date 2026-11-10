@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs';
 import { AssetType } from 'src/enum.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -198,7 +199,10 @@ describe('mimeTypes', () => {
     });
 
     it('should contain only image mime types', () => {
-      const values = Object.values(mimeTypes.image).flat();
+      // Design files keep their own types (a PDF is "application/pdf"); every other image is "image/…".
+      const values = Object.entries(mimeTypes.image)
+        .filter(([extension]) => !mimeTypes.isDesign(`file${extension}`))
+        .flatMap(([, types]) => types);
       expect(values).toEqual(values.filter((mimeType) => mimeType.startsWith('image/')));
     });
 
@@ -406,6 +410,37 @@ describe('mimeTypes', () => {
     ])('does not accept %s', (filename) => {
       expect(mimeTypes.isAsset(filename)).toBe(false);
       expect(mimeTypes.assetType(filename)).toBe(AssetType.Other);
+    });
+  });
+
+  describe('design (FL-1358)', () => {
+    it.each(Object.keys(mimeTypes.design))('takes %s as an image that is not sensor data', (extension) => {
+      const name = `board${extension.toUpperCase()}`;
+      expect(mimeTypes.isDesign(name)).toBe(true);
+      expect(mimeTypes.isAsset(name)).toBe(true);
+      expect(mimeTypes.isImage(name)).toBe(true);
+      expect(mimeTypes.isRaw(name)).toBe(false);
+      expect(mimeTypes.isWebSupportedImage(name)).toBe(false);
+      expect(mimeTypes.assetType(name)).toBe(AssetType.Image);
+    });
+
+    it('lists an extension only with a fixture that proves it', () => {
+      const fixtures = new Set(
+        readdirSync('test/fixtures/formats/design').map((name) => name.slice(name.lastIndexOf('.'))),
+      );
+      expect(Object.keys(mimeTypes.design).filter((extension) => !fixtures.has(extension))).toEqual([]);
+    });
+
+    it('keeps Photoshop out of the RAW list', () => {
+      expect(Object.keys(mimeTypes.raw)).not.toContain('.psd');
+      expect(mimeTypes.lookup('layers.psd')).toBe('image/psd');
+    });
+
+    it('leaves design files out of the folders Frameleaf walks, except Photoshop as before', () => {
+      const walked = mimeTypes.getSupportedFileExtensions();
+      expect(walked).toContain('.psd');
+      expect(walked).toContain('.jpg');
+      expect(walked.filter((extension) => extension !== '.psd' && mimeTypes.isDesign(`file${extension}`))).toEqual([]);
     });
   });
 

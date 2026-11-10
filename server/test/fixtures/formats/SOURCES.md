@@ -74,12 +74,21 @@ Dolby Vision profile 5 and 7 clips. Owner-supplied camera files are the likely r
 
 ### Design files
 
+`generate-design.py` writes the design fixtures in `design/` byte by byte from one test pattern (FL-1358):
+layered PSD with and without its flat picture ("Maximize Compatibility" on and off), 16-bit, 32-bit and
+CMYK PSD, a PSB wider than a PSD may be, a PSD that only its embedded thumbnail can show, a two-page PDF,
+a PDF-compatible Illustrator file, EPS with and without a preview, GIMP XCF, a PNG with Fireworks' private
+chunks, and one ZIP-based document per container format with its preview at the documented path. They
+prove Frameleaf's side: which loader opens a format and where a container's preview is read from. They
+do not prove that every file a real application writes opens, so these are still wanted:
+
 | Why | Source |
 | --- | --- |
-| PSD saved with and without "Maximize Compatibility", 16-bit, CMYK, layered | Owner: save from Photoshop (own work) |
-| PSB over 30,000 px | Owner: save from Photoshop (own work) |
-| Fireworks PNG with pages and layers | Owner: one of the reported files, or save from Fireworks |
-| PDF and PDF-compatible AI | Owner: own work, or generate with a script once pdfium lands |
+| PSD and PSB as Photoshop writes them: both "Maximize Compatibility" settings, smart objects, adjustment layers, 16/32-bit with layers (`Lr16`/`Lr32`), a multi-gigabyte PSB | Owner: save from Photoshop (own work) |
+| Fireworks PNG with pages, states and layers | Owner: one of the reported files, or save from Fireworks |
+| AI saved with and without "Create PDF Compatible File"; EPS from Illustrator | Owner: save from Illustrator (own work) |
+| Sketch, XD, Figma (.fig), Procreate, Krita, OpenRaster and CorelDRAW documents from the applications | Owner or beta users: own work |
+| Affinity (.afdesign .afphoto .afpub) and InDesign (.indd) | Owner or beta users: own work. Not accepted yet: no fixture, so no extension |
 
 The FATE suite's `psd/` samples use the Lena photograph, which has no usable licence: do not add them.
 

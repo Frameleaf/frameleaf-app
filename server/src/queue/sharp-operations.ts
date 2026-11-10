@@ -759,6 +759,8 @@ export class SharpOperations {
       limitInputPixels: this.maxPixels,
       raw: options.raw,
       unlimited: true,
+      // FL-1358: a PDF or Illustrator page is drawn at twice screen resolution; its first page is the picture.
+      density: typeof input === 'string' && /\.(pdf|ai)$/i.test(input) ? 144 : undefined,
     })
       .pipelineColorspace(options.colorspace === 'srgb' ? 'srgb' : 'rgb16')
       .withIccProfile(options.colorspace);

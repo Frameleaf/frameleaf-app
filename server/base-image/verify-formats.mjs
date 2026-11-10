@@ -5,10 +5,14 @@
 //
 //   kind     decode entry point                                             rungs
 //   still    MediaRepository.decodeImage, strict then lenient               strict | lenient
-//   design   the same as still (ImageMagick behind libvips today)           strict | lenient
+//   design   MediaRepository.decodeImage, which runs the design ladder      rendered | container | embedded | placeholder
+//            (FL-1358); a rendering that comes out one flat colour is a failure
 //   raw      renderRawWithLibRaw, then a full 16-bit decode of its TIFF     libraw
 //   video    MediaRepository.probe, then ffmpeg decodes the first frame     ffmpeg
 //   font     libvips text with the font file (no server entry point yet)    specimen
+//
+// Two optional facts: `pages` (what libvips counts in a PDF or Illustrator file) and `fireworks` (whether a
+// PNG carries Fireworks' editable data).
 //
 // `integrity` is MediaIntegrityService.validate({ deep: true }) said in the product's words:
 //   healthy | cut-short (service: corrupt) | unsupported | couldnt-check (transient, timeout)
@@ -47,6 +51,7 @@ const { StorageRepository } = await load('repositories/storage.repository.js');
 const { CryptoRepository } = await load('repositories/crypto.repository.js');
 const { MediaIntegrityService } = await load('services/media-integrity.service.js');
 const { renderRawWithLibRaw } = await load('utils/raw-renderer.js');
+const { DesignPreviewUnavailableError, isFireworksPng } = await load('utils/design-preview.js');
 
 const logger = LoggingRepository.create();
 const media = new MediaRepository(logger);
@@ -111,7 +116,24 @@ const decoders = {
     return { rung: 'specimen' };
   },
 };
-decoders.design = decoders.still;
+decoders.design = async (file) => {
+  let decoded;
+  try {
+    decoded = await media.decodeImage(file, { colorspace: 'srgb', processInvalidImages: false });
+  } catch (error) {
+    if (error instanceof DesignPreviewUnavailableError) {
+      return { rung: 'placeholder' };
+    }
+    throw error;
+  }
+  const { data, info, designRung } = decoded;
+  // A document saved without its flat picture must still show its layers, not the white stand-in.
+  assert.ok(
+    data.some((value) => value !== data[0]),
+    'rendered as one flat colour',
+  );
+  return { rung: designRung, width: info.width, height: info.height };
+};
 
 const verdicts = {
   healthy: 'healthy',
@@ -150,6 +172,17 @@ for (const fixture of manifest.fixtures) {
     deep: true,
   });
   const actual = { decodes: !!decoded, ...decoded, integrity: verdicts[result.status] ?? result.status };
+  if ('pages' in expected) {
+    actual.pages =
+      (
+        await sharp(path)
+          .metadata()
+          .catch(() => ({}))
+      ).pages ?? 1;
+  }
+  if ('fireworks' in expected) {
+    actual.fireworks = await isFireworksPng(path);
+  }
 
   if (printActual) {
     console.log(

@@ -127,6 +127,7 @@ import {
   validateVideoMaster,
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.js';
+import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
@@ -634,6 +635,13 @@ export class MediaService extends BaseService {
         generated = await this.generateImageThumbnails(asset, config);
       } catch (error) {
         executionSignal()?.throwIfAborted();
+        if (error instanceof DesignPreviewUnavailableError) {
+          // FL-1358: a design file with no picture inside is kept as it is and shown by the plain tile. Nothing is
+          // wrong with it, so it is not sent to Library care.
+          // ponytail: looked at again whenever missing thumbnails are queued; record the answer if that ever costs.
+          this.logger.verbose(`No preview for design file ${id}: ${error.message}`);
+          return JobStatus.Skipped;
+        }
         if (handOffDamage && this.isDecodeError(error)) {
           // FL-1337: a photo that won't open goes to Library care, which names the cause and repairs what it can.
           // Thumbnails are queued again after a fix, and their follow-up work runs then.
@@ -707,8 +715,7 @@ export class MediaService extends BaseService {
     outputs?: Record<'thumbnail' | 'preview' | 'fullsize', ThumbnailOutput>,
     sdrBase?: string,
   ) {
-    // PSD is in the legacy RAW extension list, but is a layered image, not sensor data.
-    const isRaw = mimeTypes.isRaw(asset.originalFileName) && !asset.originalFileName.toLowerCase().endsWith('.psd');
+    const isRaw = mimeTypes.isRaw(asset.originalFileName);
     const generateFullsize =
       !!sdrBase ||
       (mimeTypes.isWebSupportedImage(asset.originalPath) && asset.exifInfo.imageEncoding?.dynamicRange !== 'sdr') ||

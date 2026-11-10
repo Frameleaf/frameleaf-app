@@ -1,3 +1,4 @@
+import { exiftool } from 'exiftool-vendored';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -6,10 +7,12 @@ import sharp from 'sharp';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { SharpOperations } from 'src/queue/sharp-operations.js';
-import { sharpProcessPool } from 'src/queue/sharp-pool.js';
+import { SharpOperationError, sharpProcessPool } from 'src/queue/sharp-pool.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { orientedToOriginal } from 'src/utils/develop-cleanup.js';
+import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
   audioReattachOffsetSeconds,
@@ -96,6 +99,90 @@ describe(MediaRepository.name, () => {
   beforeEach(() => {
     // eslint-disable-next-line no-sparse-arrays
     sut = new MediaRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
+  });
+
+  describe('design files (FL-1358)', () => {
+    const options = { colorspace: Colorspace.Srgb, processInvalidImages: false };
+    const decoded = { data: Buffer.alloc(3), info: { width: 1, height: 1, channels: 3 } };
+    const design = (name: string) => join('test/fixtures/formats/design', name);
+    let run: ReturnType<typeof vi.spyOn>;
+    let embedded: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      run = vi.spyOn(sharpProcessPool, 'run').mockResolvedValue(decoded);
+      embedded = vi.spyOn(exiftool, 'extractBinaryTagToBuffer').mockRejectedValue(new Error('no such tag'));
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it('renders a Photoshop document itself', async () => {
+      await expect(sut.decodeImage(design('layered-no-composite.psd'), options)).resolves.toMatchObject({
+        designRung: 'rendered',
+      });
+      expect(run).toHaveBeenCalledWith('decodeImage', [design('layered-no-composite.psd'), options]);
+      expect(embedded).not.toHaveBeenCalled();
+    });
+
+    it('shows the picture inside a container without asking the renderer to open the container', async () => {
+      await expect(sut.decodeImage(design('painting.kra'), options)).resolves.toMatchObject({
+        designRung: 'container',
+      });
+      expect(run).toHaveBeenCalledTimes(1);
+      const [, [source]] = run.mock.calls[0] as [string, [Buffer]];
+      expect(Buffer.isBuffer(source) && source.subarray(1, 4).toString()).toBe('PNG');
+    });
+
+    it('falls back to the preview a document carries when it cannot be rendered or is too large to', async () => {
+      for (const failure of [
+        new SharpOperationError('magickload: cache resources exhausted', true),
+        new SharpResourceLimitError('Input image exceeds pixel limit'),
+      ]) {
+        run.mockReset().mockRejectedValueOnce(failure).mockResolvedValue(decoded);
+        embedded
+          .mockReset()
+          .mockImplementation((tag: string) =>
+            tag === 'PhotoshopThumbnail' ? Promise.resolve(Buffer.from('jpeg')) : Promise.reject(new Error('none')),
+          );
+        const thumbnails = await sut.generateImageThumbnails(design('thumbnail-only.psd'), options, {
+          outputs: [],
+          edits: [],
+        });
+        expect(thumbnails).toMatchObject({ designRung: 'embedded' });
+        expect(run).toHaveBeenLastCalledWith('generateImageThumbnails', [
+          Buffer.from('jpeg'),
+          options,
+          { outputs: [], edits: [] },
+        ]);
+      }
+    });
+
+    it('has nothing to show for a file with no picture inside, which is not a decode failure', async () => {
+      for (const name of ['no-preview.eps', 'no-preview.sketch']) {
+        await expect(sut.decodeImage(design(name), options)).rejects.toBeInstanceOf(DesignPreviewUnavailableError);
+      }
+      run.mockRejectedValue(new SharpOperationError('magickload: improper image header', true));
+      await expect(sut.decodeImage(design('thumbnail-only.psd'), options)).rejects.toBeInstanceOf(
+        DesignPreviewUnavailableError,
+      );
+    });
+
+    it('does not take a stopped image worker, or a thumbnail it could not write, for a file that will not render', async () => {
+      const stopped = new Error('Sharp child closed');
+      run.mockRejectedValue(stopped);
+      await expect(sut.decodeImage(design('flat.psd'), options)).rejects.toBe(stopped);
+      const unwritable = new SharpOperationError('EACCES: permission denied, open /thumbs/a.webp');
+      run.mockRejectedValue(unwritable);
+      await expect(sut.generateImageThumbnails(design('flat.psd'), options, { outputs: [], edits: [] })).rejects.toBe(
+        unwritable,
+      );
+      expect(embedded).not.toHaveBeenCalled();
+    });
+
+    it('never sends a design file to the sensor decoder', async () => {
+      run.mockRejectedValue(new SharpOperationError('magickload: improper image header', true));
+      await expect(sut.decodeImage(design('flat.psd'), options)).rejects.toBeInstanceOf(DesignPreviewUnavailableError);
+      // one render attempt, and no second one from a LibRaw rendering
+      expect(run).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('HDR capability discovery', () => {

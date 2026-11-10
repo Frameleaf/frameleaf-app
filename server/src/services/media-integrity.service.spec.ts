@@ -305,14 +305,49 @@ describe(MediaIntegrityService.name, () => {
       message: 'Input buffer contains unsupported image format',
     });
   });
-  it('an unsupported-format message on a PSD with an embedded JPEG stays unsupported', async () => {
-    const psd = join(directory, 'original.psd');
-    await writeFile(psd, Buffer.concat([Buffer.alloc(128, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]));
-    mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
-    expect(await sut.validate({ ...input, path: psd, originalFileName: 'original.psd', deep: true })).toEqual({
-      status: 'unsupported',
-      reason: 'decode_unsupported',
-      message: 'Input buffer contains unsupported image format',
+  describe('design files (FL-1358)', () => {
+    const design = async (name: string, bytes: Buffer) => {
+      const path = join(directory, name);
+      await writeFile(path, bytes);
+      return sut.validate({ ...input, path, originalFileName: name, deep: true });
+    };
+
+    it('are proved by their checksum and signature, and never decoded', async () => {
+      mocks.media.decodeImage.mockRejectedValue(new Error('magickload: corrupt image, premature end of file'));
+      for (const [name, start] of [
+        ['layers.psd', '8BPS\0\u0001'],
+        ['poster.psb', '8BPS\0\u0002'],
+        ['brochure.pdf', '%PDF-1.7'],
+        ['logo.ai', '%PDF-1.5'],
+        ['logo.eps', '%!PS-Adobe-3.0 EPSF-3.0'],
+        ['screens.sketch', 'PK\u0003\u0004'],
+      ]) {
+        const result = await design(name, Buffer.concat([Buffer.from(start, 'latin1'), Buffer.alloc(64, 7)]));
+        expect(result, name).toMatchObject({ status: 'healthy' });
+      }
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+    });
+
+    it('with another format inside are not supported, never damaged', async () => {
+      // A JPEG thumbnail further in does not make a file a JPEG, and a wrong start is not proof of damage.
+      const bytes = Buffer.concat([Buffer.alloc(128, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]);
+      expect(await design('original.psd', bytes)).toEqual({ status: 'unsupported', reason: 'media_type_unsupported' });
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
+
+    it('still report bytes that changed since they were stored', async () => {
+      const path = join(directory, 'layers.psd');
+      await writeFile(path, Buffer.from('8BPS\0\u0001 changed'));
+      expect(
+        await sut.validate({
+          ...input,
+          path,
+          originalFileName: 'layers.psd',
+          deep: true,
+          expected: { sha1: Buffer.alloc(20, 1) },
+        }),
+      ).toEqual({ status: 'corrupt', reason: 'expected_mismatch' });
     });
   });
   it('an unsupported-format message on a JPEG it could not read back is busy, never unsupported', async () => {
@@ -377,14 +412,6 @@ describe(MediaIntegrityService.name, () => {
     expect(await result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
     expect(decoderSignal?.aborted).toBe(true);
     expect(mocks.media.decodeImage).not.toHaveBeenCalled();
-  });
-
-  it('preserves layered PSD decoding without treating it as camera sensor data', async () => {
-    expect(await sut.validate({ ...input, originalFileName: 'original.psd', deep: true })).toMatchObject({
-      status: 'healthy',
-    });
-    expect(renderRawWithLibRaw).not.toHaveBeenCalled();
-    expect(mocks.media.decodeImage).toHaveBeenCalledWith(input.path, expect.any(Object));
   });
 
   it('reports malformed image', async () => {

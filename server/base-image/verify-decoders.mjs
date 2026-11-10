@@ -38,6 +38,8 @@ for (const [name, key] of Object.entries({
   svg: 'svg',
   magick: 'magick',
   dcraw: 'dcraw',
+  // FL-1358: PDF and PDF-compatible Illustrator files, through pdfium
+  pdf: 'pdf',
 })) {
   check('libvips loader', name, sharp.format[key]?.input.file === true);
 }

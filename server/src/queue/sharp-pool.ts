@@ -66,10 +66,26 @@ type PoolOptions = ReturnType<typeof sharpConfiguration> & {
   createChild: () => ChildProcess;
 };
 
+/**
+ * FL-1358: ImageMagick (PSD, PSB, XCF and the older stills) reads these when the image worker starts. Without
+ * them one large layered document can take all the memory there is; past them ImageMagick gives up, and a design
+ * file falls back to the preview it carries. The worker's own deadline is the time limit. A value already in the
+ * environment wins.
+ */
+export const imageWorkerEnvironment = (env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => ({
+  MAGICK_MEMORY_LIMIT: '1GiB',
+  MAGICK_MAP_LIMIT: '2GiB',
+  MAGICK_DISK_LIMIT: '4GiB',
+  MAGICK_WIDTH_LIMIT: '300000',
+  MAGICK_HEIGHT_LIMIT: '300000',
+  ...env,
+});
+
 function createSharpChild() {
   const compiled = new URL('sharp-worker.js', import.meta.url);
   const source = new URL('sharp-worker.ts', import.meta.url);
   return fork(existsSync(compiled) ? compiled : source, [], {
+    env: imageWorkerEnvironment(),
     serialization: 'advanced',
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     execArgv: existsSync(compiled) ? [] : ['--import', 'tsx'],
