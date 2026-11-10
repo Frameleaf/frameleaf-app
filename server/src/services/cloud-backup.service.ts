@@ -3628,8 +3628,15 @@ export class CloudBackupService {
       // An unreadable identity key or a failed write must not leave the drill running and other backup work
       // blocked, nor hide it: a report not yet stored is kept as a failed, unsigned drill, so Backups shows it.
       this.logger.warn(`Restore drill ${operation.id} could not be recorded: ${errorMessage(error)}`);
-      const stored = await this.drills.get(operation.id).catch(() => undefined);
-      if (!stored?.finishedAt) {
+      // A report that can't be read is left alone: an unknown state never overwrites a signed report.
+      const stored = await this.drills.get(operation.id).then(
+        (row) => ({ row }),
+        (readError: unknown) => {
+          this.logger.warn(`Restore drill ${operation.id} report could not be read: ${errorMessage(readError)}`);
+          return null;
+        },
+      );
+      if (stored && !stored.row?.finishedAt) {
         await this.drills
           .finish(operation.id, {
             finishedAt: new Date().toISOString(),
@@ -3639,7 +3646,9 @@ export class CloudBackupService {
             keyFingerprint: null,
             signerKey: null,
           })
-          .catch(() => undefined);
+          .catch((writeError: unknown) =>
+            this.logger.error(`Restore drill ${operation.id} failure could not be stored: ${errorMessage(writeError)}`),
+          );
       }
       await this.completeTask(operation, claimToken);
     }
