@@ -1,10 +1,13 @@
 import { sql } from 'kysely';
+import { fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import sharp from 'sharp';
 import { AssetType, JobName, QueueName } from 'src/enum.js';
 import { recordProcessingFailure } from 'src/queue/processing-failure.js';
+import { SharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -196,6 +199,66 @@ it('retries an item even when a concurrent claim is about to block its pending j
   expect(await store.complete(replacement, [])).toBe(true);
   expect(await store.claim(queue, worker, 1)).toEqual([]);
 });
+
+it('sets aside an item after three Sharp child crashes and decodes another file', async () => {
+  const db = await getKyselyDB();
+  onTestFinished(() => db.destroy());
+  const directory = await mkdtemp(join(tmpdir(), 'frameleaf-sharp-crash-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const corrupt = join(directory, 'corrupt.jpg');
+  const original = Buffer.from('ffd8ffe000104a464946', 'hex');
+  await writeFile(corrupt, original);
+  const healthy = join(directory, 'healthy.jpg');
+  await sharp({ create: { width: 3, height: 2, channels: 3, background: '#abcdef' } })
+    .jpeg()
+    .toFile(healthy);
+  const pool = new SharpProcessPool({
+    workers: 1,
+    createChild: () => {
+      const child = fork(new URL('../../../../src/queue/sharp-worker.ts', import.meta.url), [], {
+        serialization: 'advanced',
+        stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+        execArgv: ['--import', 'tsx'],
+      });
+      const send = child.send.bind(child);
+      child.send = ((...args: Parameters<typeof child.send>) => {
+        const message = args[0] as { args: unknown[] };
+        // Inject an abrupt exit for this fixture without relying on a particular decoder vulnerability.
+        return message.args[0] === corrupt ? child.kill('SIGKILL') : (Reflect.apply(send, child, args) as boolean);
+      }) as typeof child.send;
+      return child;
+    },
+  });
+  onTestFinished(() => pool.close());
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: corrupt });
+  const store = new SqlQueueStore(db);
+  const queue = QueueName.ThumbnailGeneration;
+  const step = JobName.AssetGenerateThumbnails;
+  const worker = randomUUID();
+  await store.initialize([queue], worker);
+  const enqueue = () =>
+    store.enqueue([
+      { queue, name: step, data: { id: asset.id }, safeToRetry: true, sensitive: false, deadlineMs: 30_000 },
+    ]);
+  await enqueue();
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (attempt === 3) await enqueue();
+    const [claim] = await store.claim(queue, worker, 1);
+    const error: unknown = await pool.run('getImageMetadata', [corrupt]).catch((error_: unknown) => error_);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('Sharp child closed (SIGKILL)');
+    expect(await store.fail(claim, (error as Error).message)).toBe(true);
+    await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
+  }
+  expect(
+    await db.selectFrom('asset_processing_failure').selectAll().where('assetId', '=', asset.id).executeTakeFirst(),
+  ).toMatchObject({ attempts: 3, lastError: 'crashed', quarantinedAt: expect.any(Date) });
+  expect(await enqueue()).toBe(0);
+  await expect(pool.run('getImageMetadata', [healthy])).resolves.toMatchObject({ width: 3, height: 2 });
+  expect(await readFile(corrupt)).toEqual(original);
+}, 20_000);
 
 it('records real decoder failures and an expired worker claim without changing either original', async () => {
   const db = await getKyselyDB();

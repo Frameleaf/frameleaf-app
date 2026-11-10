@@ -1,4 +1,4 @@
-import { JobName } from '@frameleaf/sdk';
+import { JobName, SharedLinkType } from '@frameleaf/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -42,7 +42,11 @@ it('scopes processing failures to the owner and lets them retry a set-aside item
       expect(body).toEqual(expected);
     });
   await list(other.accessToken).query({ userId: owner.userId }).expect(200, []);
+  await utils.createPartner(owner.accessToken, other.userId);
+  await list(other.accessToken).expect(200, []);
   await retry(other.accessToken).expect(404);
+  const share = await utils.createSharedLink(owner.accessToken, { type: SharedLinkType.Individual, assetIds: [id] });
+  await request(app).get(path).query({ key: share.key }).expect(403);
   await retry(owner.accessToken).expect(204);
   await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
   await list(owner.accessToken).expect(200, []);
