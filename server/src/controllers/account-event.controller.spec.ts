@@ -9,7 +9,7 @@ describe('account activity route authority (FL-808)', () => {
   it('lets a member read only their own log, never through a shared link', () => {
     const options = getAuthenticatedOptions(reflector, AccountEventController.prototype.getMyActivity);
     expect(options).toMatchObject({ permission: Permission.UserRead, sharedLink: false });
-    expect(options.admin).toBeFalsy();
+    expect(options?.admin).toBeFalsy();
   });
 
   it('keeps everyone’s log for administrators', () => {

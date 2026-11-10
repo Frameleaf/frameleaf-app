@@ -60,7 +60,7 @@ describe(AccountEventService.name, () => {
     it('passes the filters and keeps admin rows tagged', async () => {
       const userId = newUuid();
       mocks.accountEvent.getAll.mockResolvedValue([
-        row({ source: 'admin', action: 'quota-changed', actorId: newUuid(), actorName: 'Admin' }),
+        { ...row(), source: 'admin' as const, action: 'quota-changed', actorId: newUuid(), actorName: 'Admin' },
       ]);
 
       const result = await sut.getAll(AuthFactory.create(), { userId, action: 'quota-changed' });
