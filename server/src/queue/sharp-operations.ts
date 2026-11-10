@@ -426,11 +426,19 @@ export class SharpOperations {
     }
   }
 
-  /** The JPEG that starts within the first mebibyte of a file whose first bytes are something else. */
+  /**
+   * The JPEG that starts within the first mebibyte of a file whose first bytes are something else. Only
+   * junk may come before it: when an Exif or JFIF-extension header does, the file's own start is damaged
+   * and the marker found is the small preview inside that header, which is not the picture.
+   */
   private async jpegBehindJunk(input: string): Promise<Buffer | null> {
     const bytes = await imageHdrInput(input, this.maxBytes);
     const start = bytes.subarray(0, 1024 * 1024).indexOf(JPEG_START);
-    return start > 0 ? bytes.subarray(start) : null;
+    if (start <= 0) {
+      return null;
+    }
+    const before = bytes.subarray(0, start);
+    return before.includes('Exif\0') || before.includes('JFXX\0') ? null : bytes.subarray(start);
   }
 
   async extractAssetPalette(input: string | Buffer, options: DecodeToBufferOptions) {
