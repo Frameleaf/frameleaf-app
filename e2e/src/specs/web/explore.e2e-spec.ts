@@ -112,12 +112,14 @@ test.describe('Explore', () => {
 
     const things = page.getByRole('region', { name: 'Things in your photos' });
     const beach = things.getByRole('link', { name: /beach/ });
-    // Clicking waits for the entrance animation and can scroll the link; sample the actual departure position.
-    await beach.click({ trial: true });
+    // Waits for the entrance animation, then scrolls the link into view.
+    await beach.scrollIntoViewIfNeeded();
     const scrolled = await scrollOffset(things);
     expect(scrolled).toBeGreaterThan(0);
 
-    await beach.click();
+    // FL-1380: a pointer click that retries re-scrolls the link (bottom-aligned first), so the page
+    // would leave from somewhere other than the sampled offset. A dispatched click never scrolls.
+    await beach.dispatchEvent('click');
     await page.waitForURL(/\/search\?query=.*tagIds/);
     await page.locator('[data-asset-id]').first().click();
     await expect(page.locator('#immich-asset-viewer')).toBeVisible();
