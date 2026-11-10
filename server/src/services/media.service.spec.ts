@@ -44,7 +44,7 @@ import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import * as physicalFiles from 'src/repositories/physical-file.repository.js';
-import { MediaService, RAW_DECODER_VERSION_KEY } from 'src/services/media.service.js';
+import { MediaService, RAW_DECODER_VERSION_KEY, isDriveFullError } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
@@ -2281,6 +2281,14 @@ describe(MediaService.name, () => {
           expect.anything(),
         );
         expect(mocks.assetJob.setRawRung).toHaveBeenCalledExactlyOnceWith(asset.id, 'embedded/decode_failed');
+      });
+
+      it.each(['ENOSPC', 'EDQUOT'])('leaves a full drive to the drive-full handling: %s', async (code) => {
+        const failure = new RawRenderError('resource_limit', code);
+        mocks.media.renderRaw.mockRejectedValue(failure);
+        await expect(start(raw())).rejects.toBe(failure);
+        expect(isDriveFullError(failure)).toBe(true);
+        expect(mocks.assetJob.setRawRung).not.toHaveBeenCalled();
       });
 
       it.each(['cancelled', 'io'] as const)('still fails the job so it retries: %s', async (reason) => {
