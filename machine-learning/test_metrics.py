@@ -1,8 +1,11 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
 from frameleaf_ml import main
 from frameleaf_ml.metrics import InferenceMetrics, metrics_enabled, private_scraper
+from frameleaf_ml.schemas import ModelFormat
 
 
 def test_metrics_are_opt_in_and_private():
@@ -69,3 +72,31 @@ async def test_stream_request_duration_waits_for_the_last_body_chunk():
         {"type": "http", "path": "/transcribe", "method": "POST"}, receive, send
     )
     assert metrics.registry.get_sample_value(count, {"task": "transcribe"}) == 1
+
+
+def test_predict_records_metrics_for_a_parsed_task_string(deployed_app, mocker):
+    metrics = InferenceMetrics()
+    model = SimpleNamespace(
+        depends=[],
+        identity="test-model",
+        model_name="private-model",
+        model_format=ModelFormat.ONNX,
+        predict=lambda _text: [1.0, 0.0],
+    )
+    mocker.patch.object(main, "inference_metrics", metrics)
+    mocker.patch.object(main.model_cache, "get", return_value=model)
+    mocker.patch.object(main, "load", return_value=model)
+
+    response = deployed_app.post(
+        "/predict",
+        data={"entries": '{"clip":{"textual":{"modelName":"ViT-B-32__openai"}}}', "text": "test"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"clip": [1.0, 0.0]}
+    assert metrics.registry.get_sample_value("frameleaf_ml_request_duration_seconds_count", {"task": "clip"}) == 1
+    assert (
+        metrics.registry.get_sample_value(
+            "frameleaf_ml_inference_duration_seconds_count", {"task": "clip", "model": "other", "provider": "onnx"}
+        )
+        == 1
+    )
