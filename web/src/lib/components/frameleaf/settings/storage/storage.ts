@@ -90,22 +90,33 @@ const SAMPLE: ReadonlyMap<string, string> = new Map([
   ]),
 ]);
 
-/** Names used in `{{name}}`, `{{#if name}}` and `{{#unless name}}`; helpers and `else` are not names. */
-const NAMES = /\{\{(?:#(?:if|unless)\s+)?\s*([\w-]+)\s*\}\}/g;
+/** Names used in `{{name}}`, `{{#if name}}` and `{{#unless name}}` (also with `~` trim marks); `else` is not a name. */
+const NAMES = /\{\{~?\s*(#(?:if|unless)\s+)?([\w-]+)\s*~?\}\}/g;
 
 /**
  * Where the sample photo would go under a template, as folder names and a file name, and the
  * placeholders Frameleaf does not know. Rendered with Handlebars like the server, so every
  * Immich-era template (album dates, `#if`/`#unless`/`else`) previews the way it will be filed.
  */
-export const placeSample = (template: string): { parts: string[]; unknown: string[] } => {
+export const placeSample = (
+  template: string,
+  { inAlbum = true }: { inAlbum?: boolean } = {},
+): { parts: string[]; unknown: string[] } => {
   const unknown: string[] = [];
   const values: Record<string, string> = Object.fromEntries(SAMPLE);
-  for (const [whole, name] of template.matchAll(NAMES)) {
+  if (!inAlbum) {
+    // the server fills album tags with nothing for a photo in no album
+    for (const name of SAMPLE.keys()) {
+      if (name.startsWith('album')) {
+        values[name] = '';
+      }
+    }
+  }
+  for (const [whole, condition, name] of template.matchAll(NAMES)) {
     if (name !== 'else' && !SAMPLE.has(name) && !unknown.includes(`{{${name}}}`)) {
       unknown.push(`{{${name}}}`);
       // shown as written, so the example points at the misspelling
-      values[name] = whole.startsWith('{{#') ? '' : whole;
+      values[name] = condition ? '' : whole;
     }
   }
   let filled: string;
@@ -123,3 +134,50 @@ export const placeSample = (template: string): { parts: string[]; unknown: strin
   }
   return { parts, unknown };
 };
+
+/** The tags the custom pattern can use, grouped as the page lists them, each with the sample photo's value. */
+export const TAG_GROUPS = [
+  {
+    id: 'date',
+    tags: [
+      'y',
+      'yy',
+      'M',
+      'MM',
+      'MMM',
+      'MMMM',
+      'W',
+      'WW',
+      'd',
+      'dd',
+      'H',
+      'HH',
+      'h',
+      'hh',
+      'm',
+      'mm',
+      's',
+      'ss',
+      'SSS',
+    ],
+  },
+  { id: 'album', tags: ['album', 'album-startDate-y', 'album-startDate-MM', 'album-endDate-y', 'album-endDate-dd'] },
+  { id: 'file', tags: ['filename', 'ext', 'filetype', 'filetypefull', 'assetId', 'assetIdShort'] },
+  { id: 'camera', tags: ['make', 'model', 'lensModel'] },
+] as const;
+
+/** The sample photo's value for a tag. */
+export const sampleValue = (tag: string) => SAMPLE.get(tag) ?? '';
+
+/** Worked patterns shown under the tag list; `album` ones are shown for a photo in an album and one in none. */
+export const EXAMPLE_PATTERNS: readonly { template: string; album?: true }[] = [
+  { template: '{{y}}/{{MM}}/{{filename}}' },
+  { template: '{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}' },
+  {
+    template: '{{#if album}}{{album-startDate-y}}/{{album}}{{else}}{{y}}/Other/{{MM}}{{/if}}/{{filename}}',
+    album: true,
+  },
+  { template: '{{#if album}}{{album}}{{else}}{{y}}/{{MMMM}}{{/if}}/{{filename}}', album: true },
+  { template: '{{make}}/{{model}}/{{y}}/{{filename}}' },
+  { template: '{{y}}/{{filetypefull}}/{{y}}{{MM}}{{dd}}_{{HH}}{{mm}}{{ss}}_{{assetIdShort}}' },
+];

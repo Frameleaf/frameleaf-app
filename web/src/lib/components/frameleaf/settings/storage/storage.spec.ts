@@ -193,6 +193,16 @@ describe('storage rules', () => {
     });
     expect(placeSample('{{#unless album}}Loose{{/unless}}{{y}}/{{filename}}').parts).toEqual(['2024', 'IMG_1234.jpg']);
     expect(placeSample('{{#if nope}}x{{/if}}{{y}}/{{filename}}').unknown).toEqual(['{{nope}}']);
+    // whitespace-trim marks
+    expect(placeSample('{{~y~}}/{{filename}}')).toEqual({ parts: ['2024', 'IMG_1234.jpg'], unknown: [] });
+    expect(placeSample('{{~#if nope}}x{{/if}}{{y}}/{{filename}}')).toEqual({
+      parts: ['2024', 'IMG_1234.jpg'],
+      unknown: ['{{nope}}'],
+    });
+    // a photo in no album takes the else branch, and loose album tags come out empty
+    const byAlbum = '{{#if album}}{{album-startDate-y}}/{{album}}{{else}}{{y}}/Other/{{MM}}{{/if}}/{{filename}}';
+    expect(placeSample(byAlbum, { inAlbum: false }).parts).toEqual(['2024', 'Other', '06', 'IMG_1234.jpg']);
+    expect(placeSample('{{y}}/{{album}}/{{filename}}', { inAlbum: false }).parts).toEqual(['2024', 'IMG_1234.jpg']);
     expect(layoutOf('{{y}}/{{MM}}/{{filename}}')).toBe('month');
     expect(layoutOf('{{y}}/{{album}}/{{filename}}')).toBe('custom');
   });
