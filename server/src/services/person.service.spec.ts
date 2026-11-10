@@ -49,6 +49,7 @@ describe(PersonService.name, () => {
     mocks.person.getAssetIdsForPeople.mockResolvedValue([]);
     mocks.person.getOrphanedFaceCorrections.mockResolvedValue([]);
     mocks.person.getFaceDecisionChecksums.mockResolvedValue(new Map());
+    mocks.person.moveDetectedFace.mockResolvedValue([]);
     // imported faces arrive without an embedding
     mocks.person.getUnembeddedFaceIds.mockImplementation((ids) => Promise.resolve(new Set(ids)));
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
@@ -2368,6 +2369,102 @@ describe(PersonService.name, () => {
       expect(mocks.person.reassignFace).not.toHaveBeenCalled();
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    describe('where a detected face is stored (FL-1387)', () => {
+      // found again 10 px to the right of the stored box (100..200 in a 400 x 500 preview)
+      const foundAgain = (face: ReturnType<typeof AssetFaceFactory.create>) => {
+        const asset = AssetFactory.from().face(face).file({ type: AssetFileType.Preview }).exif().build();
+        const detection = getAsDetectedFace({ ...face, boundingBoxX1: 110, boundingBoxX2: 210 });
+        mocks.machineLearning.detectFaces.mockResolvedValue(detection);
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+        return asset;
+      };
+      const moved = {
+        imageWidth: 400,
+        imageHeight: 500,
+        boundingBoxX1: 110,
+        boundingBoxY1: 100,
+        boundingBoxX2: 210,
+        boundingBoxY2: 200,
+        isVisible: true,
+      };
+
+      it('gives a face found again the box the detector finds now', async () => {
+        const face = AssetFaceFactory.create({ personGroupId: newUuid() });
+        const asset = foundAgain(face);
+
+        await sut.handleDetectFaces({ id: asset.id });
+
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+          [],
+          [],
+          [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }],
+        );
+        expect(mocks.person.moveDetectedFace).toHaveBeenCalledExactlyOnceWith(face.id, moved);
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      });
+
+      it("makes a person's main photo again when the face it is cut from moves", async () => {
+        const featured = { ownerId: newUuid(), personGroupId: newUuid() };
+        const face = AssetFaceFactory.create({ personGroupId: featured.personGroupId });
+        const asset = foundAgain(face);
+        mocks.person.moveDetectedFace.mockResolvedValue([featured]);
+
+        await sut.handleDetectFaces({ id: asset.id });
+
+        expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([
+          { name: JobName.PersonGenerateThumbnail, data: featured },
+        ]);
+      });
+
+      it.each([
+        ['a person decided about', { correctedAt: newDate() }, {}],
+        ['read from the file', { sourceType: SourceType.Exif }, {}],
+        ['whose import is being completed', {}, { preserveImportedFaces: true }],
+      ])('leaves the box of a face %s', async (_name, dto, job) => {
+        const asset = foundAgain(AssetFaceFactory.create(dto));
+
+        await sut.handleDetectFaces({ id: asset.id, ...job });
+
+        expect(mocks.person.refreshFaces).toHaveBeenCalled();
+        expect(mocks.person.moveDetectedFace).not.toHaveBeenCalled();
+      });
+
+      it('writes nothing for a face found exactly where it is stored', async () => {
+        const face = AssetFaceFactory.create();
+        const asset = AssetFactory.from().face(face).file({ type: AssetFileType.Preview }).exif().build();
+        mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+
+        await sut.handleDetectFaces({ id: asset.id });
+
+        expect(mocks.person.moveDetectedFace).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['shows a new face inside the crop', { x: 100, y: 100, width: 400, height: 400 }, true],
+        ['hides a new face the crop leaves out', { x: 400, y: 0, width: 400, height: 1000 }, false],
+      ])('%s', async (_name, parameters, isVisible) => {
+        // an 800 x 1000 photo with a 400 x 500 preview: the face at 100..200 is at 200..400 in the photo
+        const asset = AssetFactory.from()
+          .file({ type: AssetFileType.Preview })
+          .exif({ exifImageWidth: 800, exifImageHeight: 1000 })
+          .edit({ action: AssetEditAction.Crop, parameters })
+          .build();
+        const face = AssetFaceFactory.create({ assetId: asset.id });
+        mocks.crypto.randomUUID.mockReturnValue(face.id);
+        mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+
+        await sut.handleDetectFaces({ id: asset.id });
+
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+          [expect.objectContaining({ id: face.id, boundingBoxX1: 100, imageWidth: 400, isVisible })],
+          [],
+          [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }],
+        );
+      });
     });
 
     it('should add embedding to matching metadata face', async () => {

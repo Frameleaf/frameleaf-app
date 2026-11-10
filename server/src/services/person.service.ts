@@ -19,6 +19,7 @@ import type { PersonTable } from 'src/schema/tables/person.table.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { Chunked, OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetFaceBoxDto,
   AssetFaceCorrectionDto,
@@ -73,6 +74,7 @@ import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { CloudLibraryQueueWriter, cloudLibraryDestination } from 'src/utils/cloud-library-batch.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
+import { checkFaceVisibility } from 'src/utils/editor.js';
 import {
   FaceBoundingBoxRow,
   NormalizedBox,
@@ -121,6 +123,17 @@ const isDefinedId = (id: string | null): id is string => !!id;
 
 /** FL-1384: up to this many people, merge candidates are worked out when the People page asks. */
 const MERGE_LIVE_PEOPLE = 500;
+
+/** A face as detection found it: its box on the unedited preview, and whether a crop still shows it. */
+type DetectedFaceBox = FaceBoxPixels & { isVisible: boolean };
+const DETECTED_FACE_BOX_KEYS = [
+  'imageWidth',
+  'imageHeight',
+  'boundingBoxX1',
+  'boundingBoxY1',
+  'boundingBoxX2',
+  'boundingBoxY2',
+] as const;
 
 @Injectable()
 export class PersonService extends BaseService {
@@ -1091,7 +1104,7 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const previewFile = asset.files.find((file) => file.isEdited) ?? asset.files[0];
+    const previewFile = asset.files[0];
     if (!previewFile) {
       if (await this.jobRepository.previewMayArrive(id)) deferJobUntilDependency('source-unavailable');
       return JobStatus.Failed;
@@ -1161,19 +1174,39 @@ export class PersonService extends BaseService {
     await publishJobResult(async () => {
       await assertPublicationSource(id, checksum);
       const latest = await this.assetJobRepository.getForDetectFacesJob(id);
-      if (
-        !latest ||
-        !latest.checksum.equals(checksum) ||
-        (latest.files.find((file) => file.isEdited) ?? latest.files[0])?.path !== detection.previewPath
-      ) {
+      if (!latest || !latest.checksum.equals(checksum) || latest.files[0]?.path !== detection.previewPath) {
         throw new Error('Face source changed before publication');
       }
       // Recompute matches against current owner decisions under the accepted transaction.
       const currentAsset = latest;
       const facesToAdd: (Insertable<AssetFaceTable> & { id: string })[] = [];
+      const facesToMove: ({ id: string } & DetectedFaceBox)[] = [];
       const embeddings: FaceSearchTable[] = [];
       const mlFaceIds = new Set<string>();
       const decided = await this.getDecidedFaceIds(currentAsset);
+      // FL-1387: a box is stored on the unedited picture, so a crop can leave the face out of what is shown
+      const crop = currentAsset.edits.find((edit) => edit.action === AssetEditAction.Crop)?.parameters;
+      const original = getDimensions(currentAsset.exifInfo);
+      const detected = ({ x1, y1, x2, y2 }: BoundingBox): DetectedFaceBox => {
+        const box = {
+          imageWidth,
+          imageHeight,
+          boundingBoxX1: x1,
+          boundingBoxY1: y1,
+          boundingBoxX2: x2,
+          boundingBoxY2: y2,
+        };
+        const cropped =
+          crop && original.width > 0
+            ? checkFaceVisibility([{ ...box, isVisible: true }], original, {
+                x1: crop.x,
+                y1: crop.y,
+                x2: crop.x + crop.width,
+                y2: crop.y + crop.height,
+              }).hidden.length > 0
+            : false;
+        return { ...box, isVisible: !cropped };
+      };
 
       for (const face of currentAsset.faces) {
         if (face.sourceType === SourceType.MachineLearning) {
@@ -1209,18 +1242,22 @@ export class PersonService extends BaseService {
           // Imported ML faces can have no face_search row even though detection still matches them.
           mlFaceIds.delete(match.id);
           embeddings.push({ faceId: match.id, embedding });
+          // FL-1387: a face found again is where the detector finds it now, so its box and its embedding
+          // come from one detection. A box a person placed or decided about stays, as does an imported
+          // one while its import is being completed. This is also what repairs a box that an earlier
+          // detection stored on the edited picture.
+          const box = detected(boundingBox);
+          if (
+            !preserveImportedFaces &&
+            match.sourceType === SourceType.MachineLearning &&
+            !decided.has(match.id) &&
+            DETECTED_FACE_BOX_KEYS.some((key) => match[key] !== box[key])
+          ) {
+            facesToMove.push({ id: match.id, ...box });
+          }
         } else {
           const faceId = this.cryptoRepository.randomUUID();
-          facesToAdd.push({
-            id: faceId,
-            assetId: currentAsset.id,
-            imageHeight,
-            imageWidth,
-            boundingBoxX1: boundingBox.x1,
-            boundingBoxY1: boundingBox.y1,
-            boundingBoxX2: boundingBox.x2,
-            boundingBoxY2: boundingBox.y2,
-          });
+          facesToAdd.push({ id: faceId, assetId: currentAsset.id, ...detected(boundingBox) });
           embeddings.push({ faceId, embedding });
         }
       }
@@ -1237,6 +1274,15 @@ export class PersonService extends BaseService {
 
       if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
+      }
+      for (const { id: faceId, ...box } of facesToMove) {
+        // a person's main photo is cut from this box, so it is made again from the new one
+        const featured = await this.personRepository.moveDetectedFace(faceId, box);
+        if (featured.length > 0) {
+          await this.jobRepository.queueAll(
+            featured.map((data) => ({ name: JobName.PersonGenerateThumbnail, data }) as const),
+          );
+        }
       }
 
       const reapplied =

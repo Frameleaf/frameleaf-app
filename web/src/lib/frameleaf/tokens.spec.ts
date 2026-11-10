@@ -663,9 +663,13 @@ describe('Frameleaf theme contract', () => {
     }
   });
 
-  it('draws every people photo as a squircle mask, the same shape in every engine', () => {
+  it('draws every people photo with one mask, a rounded square, the same shape in every engine', () => {
     // Global (app.css), because people photos also render outside a .frameleaf scope.
     expect(appCss).toMatch(/:root\s*{\s*--fl-squircle: url\("data:image\/svg\+xml,[^"]+"\);\s*}/);
+    // FL-1395 (owner 2026-11-10): a rounded square with corners 18% of the side, not the squircle
+    expect(appCss).toContain(
+      "--fl-squircle: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18'/%3E%3C/svg%3E\");",
+    );
     const rule = blockAfter(appCss, '.fl-squircle {');
     expect(rule).toContain('mask: var(--fl-squircle) center / 100% 100% no-repeat;');
     expect(rule).toContain('-webkit-mask: var(--fl-squircle) center / 100% 100% no-repeat;');
