@@ -3,6 +3,7 @@ import type { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
+import { assistantSettings } from 'src/dtos/config.dto.js';
 import { RemoteConnectionsResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
 import {
   ImageCapabilitiesDto,
@@ -18,7 +19,6 @@ import {
   ServerStorageResponseDto,
   UsageByUserDto,
 } from 'src/dtos/server.dto.js';
-import { assistantSettings } from 'src/dtos/config.dto.js';
 import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { UserStatsQueryResponse } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
