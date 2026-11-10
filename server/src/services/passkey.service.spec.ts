@@ -340,6 +340,20 @@ describe(PasskeyService.name, () => {
       expect(passkeys).toHaveLength(0);
     });
 
+    it('refuses a passkey when the reset lands during the password check (FL-1368)', async () => {
+      const passkey = new SoftPasskey({ origin: ORIGIN });
+      // the administrator's reset moves the version on while the password is being checked
+      mocks.crypto.compareBcrypt.mockImplementationOnce((value) => {
+        versions.set(user.id, 1);
+        return Promise.resolve(value === 'password');
+      });
+      const { options } = await sut.getRegistrationOptions(auth, { password: 'password' }, headers(), details);
+      await expect(sut.register(auth, { credential: passkey.register(options!) }, details)).rejects.toThrow(
+        'reset while adding',
+      );
+      expect(passkeys).toHaveLength(0);
+    });
+
     it('refuses an answer made at another address or without verifying the person', async () => {
       const elsewhere = new SoftPasskey({ origin: 'https://photos.evil.test' });
       const first = await sut.getRegistrationOptions(auth, { password: 'password' }, headers(), details);

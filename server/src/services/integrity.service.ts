@@ -43,6 +43,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { advanceExecutionProgress, executionSignal } from 'src/utils/execution-signal.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
@@ -756,17 +757,22 @@ export class IntegrityService extends BaseService {
     let sha1: Buffer | undefined;
     let sha256: Buffer | undefined;
     try {
-      await pipeline([
-        this.storageRepository.createPlainReadStream(originalPath),
-        new Writable({
-          write(chunk, _encoding, callback) {
-            sha1Hash.update(chunk);
-            sha256Hash.update(chunk);
-            sizeInBytes += chunk.length;
-            callback();
-          },
-        }),
-      ]);
+      await pipeline(
+        [
+          this.storageRepository.createPlainReadStream(originalPath),
+          new Writable({
+            write(chunk, _encoding, callback) {
+              sha1Hash.update(chunk);
+              sha256Hash.update(chunk);
+              sizeInBytes += chunk.length;
+              // FL-1353: a 50 GB original is long, not stalled
+              advanceExecutionProgress(chunk.length);
+              callback();
+            },
+          }),
+        ],
+        { signal: executionSignal() },
+      );
       sha1 = sha1Hash.digest();
       sha256 = sha256Hash.digest();
       actualSha256 = sha256.toString('hex');
@@ -774,6 +780,7 @@ export class IntegrityService extends BaseService {
         ? 'passed'
         : 'mismatched';
     } catch (error) {
+      executionSignal()?.throwIfAborted();
       result = (error as { code?: string }).code === 'ENOENT' ? 'missing' : 'unreadable';
       if (result === 'unreadable') {
         this.logger.warn('Failed to process a file: ' + error);
@@ -822,6 +829,11 @@ export class IntegrityService extends BaseService {
       if (reportId) {
         await this.integrityRepository.deleteById(reportId);
       }
+      return result;
+    }
+    if (result === 'unreadable') {
+      // FL-1353: a read error (a busy or dropped network drive, a timeout) says nothing about the bytes,
+      // so it is never a checksum failure. It is recorded as unreadable and read again on the next run.
       return result;
     }
     await this.integrityRepository.create({ path: originalPath, type: IntegrityReport.ChecksumFail, assetId });

@@ -3072,6 +3072,30 @@ describe(MediaHealthService.name, () => {
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
       expect(mediaHealthRepository.markStatus).not.toHaveBeenCalled();
     });
+
+    it('a check that could not finish changes nothing: not trashed, and never recorded as suspected damage', async () => {
+      // FL-1353: a 50 GB video that timed out here used to be written back as "suspected damage"
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        { id: 'health-1', assetId: 'asset-1', status: MediaHealthStatus.TrashQueued },
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([
+        { id: 'asset-1', originalPath: '/library/film.mov', originalFileName: 'film.mov', type: AssetType.Video },
+      ] as never);
+      vi.spyOn(sut as any, 'validateAssetIntegrity').mockResolvedValue({
+        busy: true,
+        candidate: {
+          status: MediaHealthStatus.CorruptSuspect,
+          score: null,
+          evidence: { reason: 'validation_timeout', validationStatus: 'timeout' },
+          resolution: {},
+        },
+      });
+
+      await sut.handleDeleteCorrupt({ ids: ['health-1'], userId: authStub.admin.user.id });
+
+      expect(mediaHealthRepository.trashCorruptIfUnchanged).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleLocateMissing', () => {

@@ -38,6 +38,7 @@ import type {
   GenerateThumbnailOptions,
   ImageDimensions,
   RawImageInfo,
+  StillRung,
 } from 'src/types.js';
 import type { DevelopBitmap, DevelopLinearFill } from 'src/utils/develop-cleanup.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
@@ -73,6 +74,10 @@ const ORIENTATION_TO_SHARP_ROTATION: Record<number, { angle: number; flip?: bool
   7: { angle: 90, flip: true },
   8: { angle: 270 },
 };
+
+// FL-1356: names a JPEG goes by. Kept local: the child loads no application modules.
+const JPEG_NAME = /\.(?:jpe?g|jpe|jfif?|jif|pjpe?g|pjp|jps|mpo|insp)$/i;
+const JPEG_START = Buffer.from([0xff, 0xd8, 0xff]);
 
 /** Pure native image operations. Production callers execute these only in sharp-worker. */
 export class SharpOperations {
@@ -376,8 +381,52 @@ export class SharpOperations {
     }
   }
 
+  /**
+   * FL-1356: the libvips rungs of the still ladder. A strict decode first; when it complains, the same file
+   * read leniently (`FRAMELEAF_PROCESS_INVALID_IMAGES` only skips the strict try); then, for a JPEG that
+   * does not begin with its start marker, the picture behind the junk. `rung` says which one opened it.
+   * The other decoders, which run as their own programs, are tried by the media repository.
+   */
   async decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
-    return this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
+    const decode = (source: string | Buffer, processInvalidImages: boolean) =>
+      this.getImageDecodingPipeline(source, { ...options, processInvalidImages })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    const lenient = async () => ({ ...(await decode(input, true)), rung: 'lenient' as StillRung });
+    if (options.processInvalidImages) {
+      return lenient();
+    }
+    try {
+      return { ...(await decode(input, false)), rung: 'strict' as StillRung };
+    } catch (error) {
+      // Raw pixels have no second reading, and a picture over the pixel limit is not a decoder complaint.
+      if (
+        options.ladder === 'strict' ||
+        options.raw ||
+        (error instanceof Error && error.message.includes('Input image exceeds pixel limit'))
+      ) {
+        throw error;
+      }
+      try {
+        return await lenient();
+      } catch {
+        const picture =
+          typeof input === 'string' && JPEG_NAME.test(input)
+            ? await this.jpegBehindJunk(input).catch(() => null)
+            : null;
+        if (!picture) {
+          throw error;
+        }
+        return { ...(await decode(picture, true)), rung: 'lenient' as StillRung };
+      }
+    }
+  }
+
+  /** The JPEG that starts within the first mebibyte of a file whose first bytes are something else. */
+  private async jpegBehindJunk(input: string): Promise<Buffer | null> {
+    const bytes = await imageHdrInput(input, this.maxBytes);
+    const start = bytes.subarray(0, 1024 * 1024).indexOf(JPEG_START);
+    return start > 0 ? bytes.subarray(start) : null;
   }
 
   async extractAssetPalette(input: string | Buffer, options: DecodeToBufferOptions) {
@@ -434,7 +483,7 @@ export class SharpOperations {
       await this.generateThumbnail(data, { ...options, ...base }, path);
       this.progress();
     }
-    return { info: this.toRawInfo(info), thumbhash, isTransparent };
+    return { info: this.toRawInfo(info), thumbhash, isTransparent, rung: decoded.rung };
   }
 
   applyEdits(pipeline: Sharp, edits: AssetEditActionItem[]): Sharp {
@@ -601,7 +650,7 @@ export class SharpOperations {
    * after a cut with flat mid-grey, so the rows above that fill are the part saved. Read small, row by
    * row in the file's own order, so a cut is always at the bottom.
    */
-  private async pictureSaved(bytes: Buffer): Promise<number> {
+  async pictureSaved(bytes: string | Buffer): Promise<number> {
     const { data, info } = await sharp(bytes, { failOn: 'none', limitInputPixels: this.maxPixels })
       .resize(64, 400, { fit: 'fill', kernel: 'nearest' })
       .removeAlpha()

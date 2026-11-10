@@ -210,6 +210,12 @@ export const KEPT_STATUSES = [
 /** A finding that is not one a person kept as it is with Keep (FL-1337 W3, with the N1/N2 status guard). */
 const notKept = sql<boolean>`((asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
   OR asset_health.status NOT IN (${sql.join(KEPT_STATUSES)}))`;
+/**
+ * FL-1353: a file that could not be checked is not damage. Proven damage whose repair could not run
+ * (the drive was away, the worker busy) carries the same state and still counts.
+ */
+const notUnchecked = sql<boolean>`(asset_health.category <> 'corrupt' OR asset_health.status = 'corrupt_confirmed'
+  OR (asset_health.evidence->>'fixState') IS DISTINCT FROM 'couldnt-check')`;
 /** A search id as a claim names it: compared as a uuid, so the job's primary key is used. */
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 @Injectable()
@@ -366,6 +372,7 @@ export class MediaHealthRepository {
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .where('asset.deletedAt', 'is', null)
       .where(notKept)
+      .where(notUnchecked)
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
       .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
@@ -691,7 +698,10 @@ export class MediaHealthRepository {
             CASE WHEN asset_health."resolvedAt" IS NULL AND asset_health."dismissedAt" IS NULL
               AND excluded."resolvedAt" IS NULL AND excluded."dismissedAt" IS NULL
             THEN jsonb_strip_nulls(jsonb_build_object(
-              'fixState', asset_health.evidence->'fixState', 'partSaved', asset_health.evidence->'partSaved',
+              -- FL-1353: "couldn't be checked" does not outlive a check that proves damage
+              'fixState', CASE WHEN asset_health.evidence->>'fixState' = 'couldnt-check'
+                AND excluded.status = 'corrupt_confirmed' THEN NULL ELSE asset_health.evidence->'fixState' END,
+              'partSaved', asset_health.evidence->'partSaved',
               'searchPending', asset_health.evidence->'searchPending'))
             ELSE '{}'::jsonb END
             || jsonb_strip_nulls(jsonb_build_object('autoRepairDeclined', asset_health.evidence->'autoRepairDeclined'))
@@ -1827,12 +1837,14 @@ export class MediaHealthRepository {
   /**
    * The problem the viewer flags on one photo (FL-1337): the open one in Needs you, the missing one when both a
    * missing and a damaged record are open (Review Focus 5). Closed records, fixed ones and ones kept as they are
-   * never flag. Access to the photo is decided by the caller.
+   * never flag. Nor does a file that could not be checked (FL-1353): it stays in the list under its own name,
+   * but "Damaged file" on the photo would be a verdict nobody reached. Access is decided by the caller.
    */
   async getOpenFileProblem(assetId: string): Promise<{ id: string; category: MediaHealthCategory } | undefined> {
     return this.fileProblems({})
       .where('asset_health.assetId', '=', asUuid(assetId))
       .where(this.inFileProblemTab('needs'))
+      .where(notUnchecked)
       .select(['asset_health.id', 'asset_health.category'])
       .orderBy(sql`asset_health.category = 'missing'`, 'desc')
       .orderBy('asset_health.updatedAt', 'desc')

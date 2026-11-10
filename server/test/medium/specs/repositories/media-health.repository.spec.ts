@@ -838,7 +838,7 @@ describe(MediaHealthRepository.name, () => {
       const { result: other } = await ctx.newAsset({ ownerId: user.id });
       const fail = async (assetId: string, name: JobName, times: number) => {
         for (let attempt = 0; attempt < times; attempt++) {
-          await recordProcessingFailure(defaultDatabase, { name, assetId }, 'unsupported format');
+          await recordProcessingFailure(defaultDatabase, { name, assetId }, 'bad data');
         }
       };
       // three failed tries set its previews aside; its details failed once
@@ -1420,6 +1420,48 @@ describe(MediaHealthRepository.name, () => {
         .where('id', '=', damaged.id)
         .execute();
       await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeUndefined();
+    });
+
+    it('never flags a photo as damaged because it could not be checked (FL-1353)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      // a 50 GB video whose check timed out three times: still listed, but it is not damage
+      const unchecked = await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'couldnt-check' },
+      });
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeUndefined();
+      await expect(listed(sut, 'needs', user.id)).resolves.toContain(unchecked.id);
+    });
+
+    it('still flags proven damage whose repair could not run (FL-1353)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      // the file changed on the drive, and the repair found the Upload drive away
+      await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+        evidence: { fixState: 'couldnt-check' },
+      });
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeDefined();
+    });
+
+    it('flags it once a later check proves the damage (FL-1353)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'couldnt-check' },
+      });
+      // the next scan reads the whole file and finds it changed
+      await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+      });
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeDefined();
     });
 
     it('counts what was fixed in the last 7 days, from the earliest to the newest, and what needs the reader', async () => {
