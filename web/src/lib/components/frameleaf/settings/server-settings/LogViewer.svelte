@@ -697,7 +697,7 @@
   .actions {
     display: flex;
     gap: var(--fl-space-2);
-    margin-left: auto;
+    margin-inline-start: auto;
   }
   .status {
     display: flex;
@@ -708,7 +708,7 @@
     font-size: var(--fl-font-small);
   }
   .count {
-    margin-left: auto;
+    margin-inline-start: auto;
   }
   .frame {
     overflow: hidden;
@@ -755,7 +755,7 @@
     padding: var(--fl-space-3) var(--fl-space-4);
     color: var(--fl-text);
     font: inherit;
-    text-align: left;
+    text-align: start;
     background: transparent;
     border: 0;
     cursor: pointer;
@@ -821,7 +821,7 @@
   @container kit (max-width: 720px) {
     .actions,
     .count {
-      margin-left: 0;
+      margin-inline-start: 0;
     }
     .logs {
       padding: var(--fl-space-4);
