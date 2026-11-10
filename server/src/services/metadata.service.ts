@@ -1207,7 +1207,8 @@ export class MetadataService extends BaseService {
 
     // prefer duration from video tags
     // don't save duration if asset is definitely not an animated image (see e.g. CR3 with Duration: 1s)
-    if (videoResult || !mimeTypes.isPossiblyAnimatedImage(asset.originalPath)) {
+    // FL-1357: cinema RAW that ffmpeg could not open has no video tags, so what ExifTool read is all there is
+    if (videoResult || (!shouldProbe && !mimeTypes.isPossiblyAnimatedImage(asset.originalPath))) {
       delete mediaTags.Duration;
     }
 
