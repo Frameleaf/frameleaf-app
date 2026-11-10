@@ -149,6 +149,24 @@ export const RATE_LIMITS = Object.freeze({
     limit: 30,
     windowSeconds: 10 * MINUTE,
   },
+  /** FL-803: connected apps' authorization (the redirect, the Allow page's check and Allow/Deny). */
+  oauthAppAuthorize: {
+    bucket: 'oauth-app-authorize',
+    limit: 60,
+    windowSeconds: 10 * MINUTE,
+  },
+  /** FL-803: connected apps' token and revocation endpoints; apps refresh about once an hour. */
+  oauthAppToken: {
+    bucket: 'oauth-app-token',
+    limit: 120,
+    windowSeconds: 10 * MINUTE,
+  },
+  /** FL-803: apps registering themselves (RFC 7591), which also caps how many can pile up. */
+  oauthAppRegister: {
+    bucket: 'oauth-app-register',
+    limit: 10,
+    windowSeconds: 10 * MINUTE,
+  },
   /** `POST shared-links/login`. */
   sharedLinkLogin: {
     bucket: 'shared-link-login',

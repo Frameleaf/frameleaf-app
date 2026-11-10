@@ -1,14 +1,14 @@
 {
-  "sourceCommit": "eeec5ae67ec5ba0d7434782f2a742ae2b8ebef80",
+  "sourceCommit": "0c0ffec8fce05537a1fdca29435bd1ba64eba177",
   "sourceHashes": {
-    "src/enum.ts": "5dfcb63f6a6cc6e9989dc31d058dfe608abf4a214ee802bfc4c7a572be67a45c",
+    "src/enum.ts": "97b32c509ad18ee0e41681bbf9340291f176f00d72aa87681936cf7b300897ed",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
     "src/queue/schema.ts": "1b014aa94847a4279801107b584c86d80e465c03be233c578fa202d75d23281a",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "73ec605fc1a3a7ab270e6ad8183b0c76a56f5d1c28c1b637b30ee1d084887db5",
-    "src/schema/index.ts": "e03132167f1088d176221c42068af863c98d775ca8e71bd52fb460fa53e69ab1",
+    "src/schema/index.ts": "02c74b03768b3f89bc2b7cc7462be35c5b65fc5dbca34e833483f3749642f689",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -97,6 +97,7 @@
     "src/schema/tables/move.table.ts": "85b22f54d11e38e513e1ef55f179497a3130de07be3dd844bbd7b13274c26360",
     "src/schema/tables/natural-earth-countries.table.ts": "acc461f0604797521c9e84a6c39ec3b469a47e91a0e6b1a155610c531264046b",
     "src/schema/tables/notification.table.ts": "a7b350c012ee14e039fda9be648f4e5fdf8333ab3e99e810efc0c0961050de61",
+    "src/schema/tables/oauth-app.table.ts": "7b5a70a3279f8a1cf71a49973c2079143e01419bf7883dc110e251c3f34f49f7",
     "src/schema/tables/ocr-search.table.ts": "53bbb08a80b9491428dddaf62b65cc70d6a0b0554f2c61bcb22ca5b0ea05ca21",
     "src/schema/tables/operational-metric-sample.table.ts": "ad06896293efb98b58d7b01ac8affc9c24aca6e3f1912b192939db626c9c04ed",
     "src/schema/tables/partner-audit.table.ts": "0ca4f0fffe6b22c417a698e6f369bf79844a7754f42a48cdddbb39bb0ceda00c",
@@ -169,6 +170,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "18a2780dd5a670032c2a2cfb651ce926a769624d380276278e8ad9ee00e35edd",
-  "rawMetadataSha256": "5bea4c540df614fc6b041e8f18426b72ca61c987af1d7cff6c9b1373620b847c"
+  "dumpSha256": "fd73d3e9f150e7216d2144d88ecb9084de9685d6e4691b5ac4ced56b5bbef577",
+  "rawMetadataSha256": "9e9af077108b140796ef36747c6743fc1bc94402fd285a0dcf977693cfc1508d"
 }

@@ -238,6 +238,13 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST browser-extension/sign-in/start': RATE_LIMITS.extensionSignIn,
   'POST browser-extension/sign-in/authorize': RATE_LIMITS.extensionSignIn,
   'POST browser-extension/sign-in/exchange': RATE_LIMITS.extensionSignIn,
+  // FL-803: connected apps (OAuth 2.1)
+  'GET oauth/apps/authorize': RATE_LIMITS.oauthAppAuthorize,
+  'POST oauth/apps/authorize/start': RATE_LIMITS.oauthAppAuthorize,
+  'POST oauth/apps/authorize': RATE_LIMITS.oauthAppAuthorize,
+  'POST oauth/apps/token': RATE_LIMITS.oauthAppToken,
+  'POST oauth/apps/revoke': RATE_LIMITS.oauthAppToken,
+  'POST oauth/apps/register': RATE_LIMITS.oauthAppRegister,
   'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
   // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
   'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },
