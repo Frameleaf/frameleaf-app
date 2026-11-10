@@ -82,7 +82,7 @@
   let assistantReady = $state(false);
   const checkAssistant = async () => {
     try {
-      const response = await fetch(assistantAddress(''), { method: 'GET', headers: { Accept: 'application/json' } });
+      const response = await fetch(assistantAddress(''), { headers: { Accept: 'application/json' } });
       assistantReady = response.status !== 404;
     } catch {
       assistantReady = false;
