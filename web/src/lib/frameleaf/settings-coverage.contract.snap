@@ -942,6 +942,9 @@
   "nightlyTasks.quietHours": {
     "type": "boolean"
   },
+  "nightlyTasks.reprocessUnfinished": {
+    "type": "boolean"
+  },
   "nightlyTasks.startTime": {
     "type": "string"
   },

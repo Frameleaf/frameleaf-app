@@ -69,9 +69,9 @@ describe(QueueService.name, () => {
 
   describe('handleNightlyJobs', () => {
     beforeEach(() => {
-      mocks.job.queueSelection.mockImplementation(async (_name, selection) => {
+      mocks.job.queueSelection.mockImplementation((_name, selection) => {
         if (typeof selection === 'function') selection(null);
-        return { runId: factory.uuid(), inserted: 0 };
+        return Promise.resolve({ runId: factory.uuid(), inserted: 0 });
       });
       mocks.assetJob.selectionForUnfinished.mockReturnValue({} as never);
       mocks.job.getQueueName.mockReturnValue(QueueName.BackgroundTask);
@@ -79,9 +79,9 @@ describe(QueueService.name, () => {
     });
 
     it('reconciles missing outputs even on nights without the tidy-up', async () => {
-      mocks.job.queueSelection.mockImplementation(async (_name, selection) => {
+      mocks.job.queueSelection.mockImplementation((_name, selection) => {
         if (typeof selection === 'function') selection(null);
-        return { runId: factory.uuid(), inserted: 3 };
+        return Promise.resolve({ runId: factory.uuid(), inserted: 3 });
       });
       await sut.handleNightlyJobs({ cleanup: false });
 

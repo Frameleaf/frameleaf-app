@@ -15,6 +15,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueClaim } from 'src/queue/types.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -137,11 +138,10 @@ describe(AssetJobRepository.name, () => {
     for (const asset of [thumbnail, ml, video, playable]) {
       await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date(), facesRecognizedAt: null });
     }
-    await db
-      .updateTable('asset_job_status')
-      .set({ transcodeSkippedFor: `${playable.checksum.toString('hex')}:current-policy` })
-      .where('assetId', '=', playable.id)
-      .execute();
+    await ctx.get(AssetRepository).upsertJobStatus({
+      assetId: playable.id,
+      transcodeSkippedFor: `${playable.checksum.toString('hex')}:current-policy`,
+    });
     for (const type of [AssetFileType.Thumbnail, AssetFileType.Preview]) {
       await ctx.newAssetFile({ assetId: ml.id, type, path: `/test/${type}.jpg` });
     }
