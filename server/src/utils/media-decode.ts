@@ -115,6 +115,19 @@ export type DecodeQualification = {
    * which a render would *lose* something the source had.
    */
   minimumIntermediateBitDepth: number;
+  /**
+   * FL-1357: set when a Dolby Vision profile 5 source is played by reshaping it with libplacebo. The
+   * playback copy must then be made with {@link VideoStreamInfo.dolbyVisionReshape} set on its stream.
+   */
+  reshapeDolbyVision?: true;
+};
+
+/** FL-1357: what the playback-copy job may do that an edit or a Studio render, which must lose nothing, may not. */
+export type PlaybackDecode = {
+  /** Play the HDR10 base layer of a dual-layer (profile 7) source by itself, as every ordinary player does. */
+  baseLayerOnly?: boolean;
+  /** This ffmpeg really runs libplacebo (`MediaRepository.hasLibplacebo`), so profile 5 can be reshaped. */
+  libplacebo?: boolean;
 };
 
 /**
@@ -475,12 +488,17 @@ export const qualifySourceDecode = (
     'codecName' | 'pixelFormat' | 'colorTransfer' | 'dvProfile' | 'dvBlSignalCompatibilityId' | 'width' | 'height'
   >,
   config: Pick<ConfigFFmpegDto, 'tonemap'>,
+  playback: PlaybackDecode = {},
 ): DecodeQualification => {
   const codecName = videoStream.codecName ? videoStream.codecName.toLowerCase() : null;
   const layout = parseSourcePixelLayout(videoStream.pixelFormat);
   const dvProfile = videoStream.dvProfile ?? null;
-  const dolbyVision =
+  const described =
     dvProfile === null ? null : describeDolbyVisionInput(dvProfile, videoStream.dvBlSignalCompatibilityId ?? null);
+  const dolbyVision: DolbyVisionInput | null =
+    described?.refusal === DecodeRefusal.DolbyVisionEnhancementLayer && playback.baseLayerOnly
+      ? { ...described, baseLayer: SourceTransferKind.Hdr10, qualified: true, refusal: null }
+      : described;
 
   // The base layer, when there is a qualified one, is the authority on what the pixels are.
   // The probed transfer describes the same base layer and should agree; when it does not, the
@@ -488,6 +506,30 @@ export const qualifySourceDecode = (
   const probedTransfer = classifySourceTransfer(videoStream.colorTransfer);
   const transfer = dolbyVision?.qualified && dolbyVision.baseLayer ? dolbyVision.baseLayer : probedTransfer;
   const partial = { codecName, layout, transfer, dolbyVision };
+
+  // FL-1357: profile 5 has no base layer to fall back on, but libplacebo applies its reshaping and tone maps
+  // the result to SDR. Only where that filter really runs (it needs a Vulkan device), and only into SDR.
+  if (
+    dolbyVision?.refusal === DecodeRefusal.DolbyVisionProfile5 &&
+    playback.libplacebo &&
+    config.tonemap !== ToneMapping.Disabled &&
+    layout &&
+    layout.bitDepth <= MAX_DECODE_BIT_DEPTH &&
+    videoStream.width &&
+    videoStream.height
+  ) {
+    return {
+      ...partial,
+      support: DecodeSupport.ToneMapped,
+      refusal: null,
+      matrixEntry: null,
+      minimumIntermediateBitDepth: Math.max(layout.bitDepth, 10),
+      reshapeDolbyVision: true,
+      reason:
+        'Source is Dolby Vision profile 5 (IPT-PQ-C2, no base layer); libplacebo applies its reshaping and ' +
+        `tone maps it with '${config.tonemap}'. This combination is outside the advertised tested matrix.`,
+    };
+  }
 
   if (dolbyVision && !dolbyVision.qualified) {
     const reason =

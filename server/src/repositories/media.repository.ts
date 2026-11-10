@@ -3,7 +3,7 @@ import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
 import { camelCase, upperFirst } from 'lodash-es';
 import { Duration } from 'luxon';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -125,6 +125,31 @@ export class MediaRepository {
       if (!codec) probe.expires = Date.now() + 30_000;
     });
     return value;
+  }
+
+  private libplaceboProbe?: Promise<boolean>;
+
+  /**
+   * FL-1357: whether this ffmpeg can really run libplacebo, found by pushing one frame through it. The filter
+   * being compiled in says nothing: it needs a Vulkan device, which most containers do not have.
+   * ponytail: asked once per process; a graphics card added later is seen after a restart.
+   */
+  hasLibplacebo(): Promise<boolean> {
+    this.libplaceboProbe ??= new Promise((resolve) =>
+      execFile(
+        'ffmpeg',
+        ['-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'color=s=64x64:d=0.04', '-vf', 'libplacebo'].concat([
+          '-frames:v',
+          '1',
+          '-f',
+          'null',
+          '-',
+        ]),
+        { timeout: 15_000 },
+        (error) => resolve(!error),
+      ),
+    );
+    return this.libplaceboProbe;
   }
 
   inspectImageEncoding(input: string | Buffer) {

@@ -146,6 +146,11 @@ export interface VideoStreamInfo {
    * markers: the generated LUT that turns this Log stream into Rec.709. Never persisted.
    */
   logConversion?: LogConversion | null;
+  /**
+   * FL-1357: set only by the playback-copy job, for a Dolby Vision profile 5 stream on a server whose
+   * ffmpeg can run libplacebo: the copy is reshaped and tone mapped by that filter. Never persisted.
+   */
+  dolbyVisionReshape?: boolean;
 }
 
 /** FL-1285: how a Log stream is converted to Rec.709 in an ffmpeg filter chain. */

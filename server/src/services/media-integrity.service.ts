@@ -261,6 +261,10 @@ export class MediaIntegrityService {
         // killed from outside (out of memory, the host shutting down): nothing about the file
         return { status: 'transient', reason: 'decoder_resource_limit' };
       }
+      if (mimeTypes.isCinemaRaw(input.originalFileName)) {
+        // FL-1357: cinema RAW has no open decoder. What ffmpeg makes of one says nothing about the file.
+        return { status: 'unsupported', reason: 'decode_unsupported' };
+      }
       const message = text
         .replace(/^ffprobe exited with code \d+:/i, '')
         .replace(/^[\s:]+/, '')

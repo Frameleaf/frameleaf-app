@@ -124,22 +124,47 @@ const profile: Record<string, string[]> = Object.fromEntries(
   Object.entries(image).filter(([key]) => profileExtensions.has(key)),
 );
 
+/**
+ * FL-1357: cinema camera RAW. No open decoder exists for these (owner 2026-11-10: no closed SDKs), so they are
+ * kept safe as videos (stored, checksummed, searchable, downloadable) and are never promised to play.
+ * ARRIRAW `.ari` frames stay with the RAW photos above, where LibRaw opens them.
+ */
+const cinemaRaw = new Set(['.arx', '.braw', '.crm', '.nev', '.r3d']);
+
+// DJI `.lrf` and GoPro `.lrv` preview files are left out on purpose (FL-968): they duplicate the real recording.
 const video: Record<string, string[]> = {
   // FL-968: GoPro MAX 360° recordings (two cubemap tracks in an MP4 container)
   '.360': ['video/mp4'],
   '.3g2': ['video/3gpp2'],
   '.3gp': ['video/3gpp'],
   '.3gpp': ['video/3gpp'],
+  '.arx': ['video/x-arri-arx'],
   '.asf': ['video/x-ms-asf'],
   '.avi': ['video/avi', 'video/msvideo', 'video/vnd.avi', 'video/x-msvideo'],
+  '.braw': ['video/x-braw'],
+  '.crm': ['video/x-canon-crm'],
+  '.dif': ['video/x-dv', 'video/dv'],
   '.divx': ['video/divx'],
   '.dv': ['video/x-dv', 'video/dv'],
+  '.dvr-ms': ['video/x-ms-dvr'],
+  '.evo': ['video/mpeg'],
   '.f4v': ['video/x-f4v', 'video/mp4'],
   '.flv': ['video/x-flv'],
+  '.gxf': ['video/x-gxf'],
+  '.h264': ['video/h264'],
+  '.h265': ['video/h265'],
+  '.hevc': ['video/h265'],
   '.insv': ['video/mp4'],
+  '.ivf': ['video/x-ivf'],
+  '.m1v': ['video/mpeg'],
+  '.m2p': ['video/mp2p'],
   '.m2t': ['video/mp2t'],
   '.m2ts': ['video/mp2t'],
+  '.m2v': ['video/mpeg'],
   '.m4v': ['video/x-m4v'],
+  '.mj2': ['video/mj2'],
+  '.mjpeg': ['video/x-motion-jpeg'],
+  '.mjpg': ['video/x-motion-jpeg'],
   '.mk3d': ['video/x-matroska'],
   '.mkv': ['video/x-matroska'],
   '.mod': ['video/mpeg'],
@@ -150,18 +175,26 @@ const video: Record<string, string[]> = {
   '.mpg': ['video/mpeg'],
   '.mts': ['video/mp2t'],
   '.mxf': ['application/mxf'],
+  '.nev': ['video/x-nikon-nev'],
+  '.nut': ['video/x-nut'],
+  '.ogm': ['video/ogg'],
   '.ogv': ['video/ogg'],
   // FL-968: DJI Osmo 360 recordings (dual fisheye in an MP4 container)
   '.osv': ['video/mp4'],
   '.qt': ['video/quicktime'],
+  '.r3d': ['video/x-red-r3d'],
   '.rm': ['video/vnd.rn-realvideo'],
   '.rmvb': ['video/vnd.rn-realvideo'],
   '.tod': ['video/mp2t'],
+  '.tp': ['video/mp2t'],
+  '.trp': ['video/mp2t'],
   '.ts': ['video/mp2t'],
   '.vob': ['video/mpeg'],
   '.vro': ['video/mpeg'],
   '.webm': ['video/webm'],
   '.wmv': ['video/x-ms-wmv'],
+  '.wtv': ['video/x-ms-wtv'],
+  '.y4m': ['video/x-yuv4mpeg'],
 };
 
 const sidecar: Record<string, string[]> = {
@@ -199,6 +232,7 @@ export const mimeTypes = {
   canBeTransparent: (filename: string) =>
     transparentCapableExtensions.has(getFilenameExtension(filename).toLowerCase()),
   isRaw: (filename: string) => isType(filename, raw),
+  isCinemaRaw: (filename: string) => cinemaRaw.has(getFilenameExtension(filename).toLowerCase()),
   isHeic: (filename: string) => heicExtensions.has(getFilenameExtension(filename).toLowerCase()),
   lookup,
   assetType: (filename: string) => {

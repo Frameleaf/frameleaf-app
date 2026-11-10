@@ -51,6 +51,7 @@ import { boxIou, fractionBox, normalizedBox } from 'src/utils/face-anchor.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { detectMediaKinds } from 'src/utils/media-kinds.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
 import { photoGpsAccuracy } from 'src/utils/photo-locations.js';
@@ -1166,7 +1167,17 @@ export class MetadataService extends BaseService {
       this.metadataRepository.readTags(asset.originalPath),
       // FL-721: a sealed sidecar is read from a plain copy
       sidecarFile ? withPlainCopy(sidecarFile.path, (path) => this.metadataRepository.readTags(path)) : null,
-      shouldProbe ? this.getVideoTags(asset.originalPath) : null,
+      shouldProbe
+        ? this.getVideoTags(asset.originalPath).catch((error) => {
+            executionSignal()?.throwIfAborted();
+            if (!mimeTypes.isCinemaRaw(asset.originalPath)) {
+              throw error;
+            }
+            // FL-1357: cinema RAW that ffmpeg cannot open is kept with what ExifTool reads; it is not a failure
+            this.logger.debug(`No video details for cinema RAW ${asset.originalPath}: ${error}`);
+            return null;
+          })
+        : null,
     ]);
 
     // Resolve capture identity before merging sidecar tags or deleting any original fields.

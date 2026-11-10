@@ -970,7 +970,7 @@ describe(MediaService.name, () => {
       ]);
     });
 
-    it('should throw "Missing video metadata" when probe returns no video streams', async () => {
+    it('skips a file with sound only: there is no picture, and nothing is wrong with it (FL-1357)', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
@@ -980,10 +980,24 @@ describe(MediaService.name, () => {
       mocks.storage.checkFileExists.mockResolvedValue(true);
       mocks.media.probe.mockResolvedValue({ videoStreams: [], audioStreams: [], format: {} } as any);
 
-      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow(
-        `Missing video metadata for asset ${asset.id}`,
-      );
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('skips cinema RAW that ffmpeg cannot open, without failing or retrying (FL-1357)', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/A001_C001.braw' })
+        .exif()
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        videoStream: null,
+        format: null,
+      });
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      mocks.media.probe.mockRejectedValue(new Error('ffprobe exited with code 1: Invalid data found'));
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
     });
 
     it('should wrap probe failures with a descriptive error preserving the cause', async () => {
@@ -5536,6 +5550,68 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
       expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips cinema RAW it cannot encode: no playback copy, and no failure to retry (FL-1357)', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...asset,
+        ...probeStub.multipleVideoStreams,
+        originalPath: '/original/A001_C001.braw',
+      });
+      mocks.systemMetadata.get.mockResolvedValue({
+        ffmpeg: { transcode: TranscodePolicy.All, accel: TranscodeHardwareAcceleration.Disabled },
+      });
+      mocks.media.transcode.mockRejectedValue(new Error('Decoder (codec none) not found'));
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips a file with sound only: there is no picture to copy (FL-1357)', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...asset,
+        ...probeStub.multipleVideoStreams,
+        videoStream: null as never,
+      });
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('plays the HDR10 base layer of Dolby Vision profile 7 (FL-1357)', async () => {
+      const stub = probeStub.videoStreamHDR;
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...asset,
+        ...stub,
+        videoStream: { ...stub.videoStream!, dvProfile: 7, dvBlSignalCompatibilityId: 6 },
+      });
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.All } });
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.hasLibplacebo).not.toHaveBeenCalled();
+    });
+
+    it('reshapes Dolby Vision profile 5 with libplacebo where it runs, and leaves it alone where it does not (FL-1357)', async () => {
+      const stub = probeStub.videoStreamHDR;
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...asset,
+        ...stub,
+        videoStream: { ...stub.videoStream!, dvProfile: 5, dvBlSignalCompatibilityId: 0 },
+      });
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.All } });
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+
+      mocks.media.hasLibplacebo.mockResolvedValue(true);
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.transcode).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({
+          outputOptions: expect.arrayContaining([expect.stringContaining('libplacebo=apply_dolbyvision=true')]),
+        }),
+      );
     });
 
     it('records when the graphics card stopped helping, and clears it once a copy is made on it again (FL-537)', async () => {
