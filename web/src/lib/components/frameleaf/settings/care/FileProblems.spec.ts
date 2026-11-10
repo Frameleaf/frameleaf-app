@@ -265,7 +265,10 @@ describe('Damaged and missing files (FL-1338)', () => {
     render(FileProblems);
 
     expect(await screen.findByRole('heading', { name: 'What Frameleaf does by itself' })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Look for missing files' })).toBeDisabled();
+    // the promise style: it always looks, so it says "Always", not "On"
+    const look = screen.getByRole('switch', { name: 'Look for missing files' });
+    expect(look).toBeDisabled();
+    expect(look).toHaveTextContent('Always');
 
     await fireEvent.click(screen.getByRole('switch', { name: 'Repair damaged photos by themselves' }));
     expect(store.draft.libraryCare?.autoRepair).toBe(false);

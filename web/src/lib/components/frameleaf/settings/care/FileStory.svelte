@@ -21,7 +21,7 @@
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
-  import { offersRepair, problemKind, storyWords } from '$lib/frameleaf/file-steps';
+  import { offersLookIn, offersRepair, problemKind, storyWords } from '$lib/frameleaf/file-steps';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -75,7 +75,9 @@
   let repairing = $state(false);
 
   let looking = $state(false);
+  /** Undefined until they are read; a failed read leaves them so, and the next open reads them again. */
   let folders = $state<FileProblemFolderDto[]>();
+  let foldersFailed = $state(false);
   let folderId = $state('');
   let lookFailure = $state<string>();
   let managerUrl = $state<string | null>(null);
@@ -253,10 +255,11 @@
         .catch(() => {});
     }
     if (!folders) {
+      foldersFailed = false;
       try {
         folders = await getFileProblemFolders();
       } catch {
-        folders = [];
+        foldersFailed = true;
       }
     }
   };
@@ -308,13 +311,18 @@
       }
       case 'unrepairable': {
         // Repair… is FL-1273's reviewed repair, for damage automatic repair was off for or that was undone
-        return offersRepair(problem)
-          ? [
-              removeAction,
-              keepAction,
-              { id: 'repair', label: $t('frameleaf_files_repair'), primary: true, run: () => (repairing = true) },
-            ]
-          : [removeAction, keepAction, lookAction];
+        if (offersRepair(problem)) {
+          return [
+            removeAction,
+            keepAction,
+            { id: 'repair', label: $t('frameleaf_files_repair'), primary: true, run: () => (repairing = true) },
+          ];
+        }
+        // a copy is worth looking for only when the file changed after Frameleaf stored it: one that arrived
+        // damaged has the same damage in every exact copy, and the server refuses to look
+        return offersLookIn(problem)
+          ? [removeAction, keepAction, lookAction]
+          : [removeAction, { ...keepAction, primary: true }];
       }
       case 'unchecked': {
         // it couldn't be read after three tries: the person may ask for another
@@ -435,6 +443,8 @@
         />
       {:else if folders}
         <p class="quiet">{$t('frameleaf_files_look_none')}</p>
+      {:else if foldersFailed}
+        <Notice tone="warn">{$t('frameleaf_files_look_failed')}</Notice>
       {/if}
       <!-- Only folders the server can already see; another drive is added in Frameleaf Manager first. -->
       {#if isAdmin}

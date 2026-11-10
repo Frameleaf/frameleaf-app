@@ -404,6 +404,9 @@ describe('File checks (FL-366)', () => {
     expect(repair).toBeChecked();
     expect(screen.getByText(/A repaired copy takes the damaged one’s place/)).toBeInTheDocument();
 
+    // FL-1338: looking for missing files is a promise, as the mock says it
+    expect(screen.getByRole('switch', { name: 'Look for missing files' })).toHaveTextContent('Always');
+
     await fireEvent.click(repair);
 
     expect(store.draft.libraryCare?.autoRepair).toBe(false);

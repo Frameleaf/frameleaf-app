@@ -468,8 +468,28 @@ export const offersRepair = (
   if (undone !== -1 && repaired !== -1 && repaired < undone) {
     return true;
   }
-  const cause = problem.steps.findLast(
-    ({ step, facts }) => (step === 'wont-open' || step === 'checked') && text(facts?.cause),
-  )?.facts.cause;
-  return typeof cause === 'string' && REPAIRABLE_CAUSES.has(cause);
+  const cause = latestCause(problem.steps);
+  return cause !== undefined && REPAIRABLE_CAUSES.has(cause);
+};
+
+/** Why the file would not open, as the history last said it (a `wont-open` or `checked` step). */
+const latestCause = (steps: FileStepDto[]) =>
+  text(
+    steps.findLast(({ step, facts }) => (step === 'wont-open' || step === 'checked') && text(facts?.cause))?.facts
+      .cause,
+  );
+
+/**
+ * Whether the owner is offered Look in a folder (design §7): for a missing file, and for a damaged one
+ * only when it changed after Frameleaf stored it. A file that arrived damaged has the same damage in
+ * every exact copy, so the server refuses to look for one.
+ */
+export const offersLookIn = (
+  problem: Pick<FileProblemRowDto, 'fixState' | 'category'> & { steps: FileStepDto[] },
+): boolean => {
+  const kind = problemKind(problem);
+  if (kind === 'missing') {
+    return true;
+  }
+  return kind === 'unrepairable' && latestCause(problem.steps) === 'changed';
 };

@@ -354,7 +354,7 @@
         >
           {#snippet measure()}
             <!-- Always on: it only looks, and nothing is changed until a copy matches exactly. -->
-            <Switch label={$t('frameleaf_care_fc_when_problem_look_name')} checked held />
+            <Switch label={$t('frameleaf_care_fc_when_problem_look_name')} checked always />
           {/snippet}
         </Item>
         <Item

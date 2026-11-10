@@ -214,12 +214,42 @@ describe('What happened (FL-1338)', () => {
     const { sheet, onDone } = show(blank);
 
     expect(await sheet().findByText('Its preview from before')).toBeInTheDocument();
-    expect(buttons(screen.getByRole('dialog'))).toEqual(['Remove from library…', 'Keep as it is', 'Look in a folder…']);
+    // it arrived blank: every exact copy is blank too, so there is no folder worth looking in
+    expect(buttons(screen.getByRole('dialog'))).toEqual(['Remove from library…', 'Keep as it is']);
+    expect(sheet().getByRole('button', { name: 'Keep as it is' })).toHaveClass('primary');
     await fireEvent.click(sheet().getByRole('button', { name: 'Keep as it is' }));
 
     expect(sdkMock.keepFileProblem).toHaveBeenCalledWith({ id: 'scan-014' });
     await vi.waitFor(() =>
       expect(onDone).toHaveBeenCalledWith('Scan_014.png is kept as it is and moves to “Left as they are”.'),
     );
+  });
+
+  it('offers Look in a folder for a damaged file that changed after Frameleaf stored it', async () => {
+    const { sheet } = show({
+      ...blank,
+      steps: [{ at: at(19), step: 'checked', outcome: 'failed', facts: { cause: 'changed' } }],
+    });
+
+    expect(await sheet().findByText('Its preview from before')).toBeInTheDocument();
+    expect(buttons(screen.getByRole('dialog'))).toEqual(['Remove from library…', 'Keep as it is', 'Look in a folder…']);
+    expect(sheet().getByRole('button', { name: 'Look in a folder…' })).toHaveClass('primary');
+  });
+
+  it('says when the folders couldn’t be read, and reads them again next time', async () => {
+    sdkMock.getFileProblemFolders.mockRejectedValueOnce(new Error('offline'));
+    const { sheet } = show(missing);
+
+    await fireEvent.click(await sheet().findByRole('button', { name: 'Look in a folder…' }));
+    let look = within(await screen.findByRole('dialog', { name: 'Look in a folder' }));
+    expect(await look.findByText('Couldn’t read the folders just now. Try again in a moment.')).toBeInTheDocument();
+    expect(look.queryByText('There is no folder to look in yet.')).not.toBeInTheDocument();
+    await fireEvent.click(look.getByRole('button', { name: 'Cancel' }));
+
+    await fireEvent.click(sheet().getByRole('button', { name: 'Look in a folder…' }));
+    look = within(await screen.findByRole('dialog', { name: 'Look in a folder' }));
+    expect(await look.findByRole('radio', { name: 'USB drive' })).toBeInTheDocument();
+    expect(look.queryByText('Couldn’t read the folders just now. Try again in a moment.')).not.toBeInTheDocument();
+    expect(sdkMock.getFileProblemFolders).toHaveBeenCalledTimes(2);
   });
 });

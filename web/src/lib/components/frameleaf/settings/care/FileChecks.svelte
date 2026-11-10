@@ -758,7 +758,7 @@
           detail={$t('frameleaf_care_fc_when_problem_look_detail')}
         >
           {#snippet measure()}
-            <Switch label={$t('frameleaf_care_fc_when_problem_look_name')} checked held />
+            <Switch label={$t('frameleaf_care_fc_when_problem_look_name')} checked always />
           {/snippet}
         </Item>
       </ItemList>
