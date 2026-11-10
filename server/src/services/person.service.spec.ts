@@ -1529,7 +1529,11 @@ describe(PersonService.name, () => {
       });
 
       it('leaves the pairs alone on a night no face changed since the last run', async () => {
-        mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: lastRun, mergeCandidatesAt: lastRun });
+        mocks.systemMetadata.get.mockResolvedValue({
+          uprightPassAt: lastRun,
+          mergeCandidatesAt: lastRun,
+          mergeCandidatesDistance: 0.5,
+        });
         mocks.person.hasFaceChangesSince.mockResolvedValue(false);
 
         await sut.handlePersonCleanup();
@@ -1539,8 +1543,31 @@ describe(PersonService.name, () => {
         expect(mocks.person.refreshMergeCandidates).not.toHaveBeenCalled();
       });
 
+      it('works them out again when the recognition distance was widened, even with no face changed', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          uprightPassAt: lastRun,
+          mergeCandidatesAt: lastRun,
+          mergeCandidatesDistance: 0.4,
+        });
+        mocks.person.hasFaceChangesSince.mockResolvedValue(false);
+        mocks.person.getPersonOwnerIds.mockResolvedValue(['owner-1']);
+        mocks.person.refreshMergeCandidates.mockResolvedValue(0);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledWith('owner-1', 0.5);
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+          SystemMetadataKey.PeopleCareState,
+          expect.objectContaining({ mergeCandidatesDistance: 0.5 }),
+        );
+      });
+
       it('works them out again once a face changed since', async () => {
-        mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: lastRun, mergeCandidatesAt: lastRun });
+        mocks.systemMetadata.get.mockResolvedValue({
+          uprightPassAt: lastRun,
+          mergeCandidatesAt: lastRun,
+          mergeCandidatesDistance: 0.5,
+        });
         mocks.person.hasFaceChangesSince.mockResolvedValue(true);
         mocks.person.getPersonOwnerIds.mockResolvedValue(['owner-1']);
         mocks.person.refreshMergeCandidates.mockResolvedValue(0);
@@ -1607,7 +1634,9 @@ describe(PersonService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({
         uprightPassAt: lastRun,
         mergeCandidatesAt: lastRun,
+        mergeCandidatesDistance: 0.5,
         splitCandidatesAt: lastRun,
+        splitCandidatesDistance: 0.5,
       });
 
       await sut.handlePersonCleanup();
@@ -1618,6 +1647,72 @@ describe(PersonService.name, () => {
       mocks.person.getFaceEmbeddings.mockResolvedValue([]);
       await sut.handlePersonCleanup();
       expect(mocks.person.getPeopleForSplitCheck).toHaveBeenCalledWith(6, new Date('2026-11-09T23:55:00.000Z'));
+    });
+  });
+
+  describe('setSplitVerdict (FL-1385)', () => {
+    const setupSplit = () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ ownerId: auth.user.id, name: 'Jamie' });
+      const faceIds = ['face-1', 'face-2', 'face-3'];
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set(faceIds));
+      mocks.person.getSplitCandidate.mockResolvedValue({
+        ownerId: auth.user.id,
+        personId: person.personGroupId,
+        faceIds,
+        distance: 0.9,
+        dismissedUntil: null,
+      });
+      mocks.person.getSplitFaceCounts.mockResolvedValue({ total: 9, faceIds });
+      vi.spyOn(sut, 'create').mockResolvedValue({ id: 'new-person' } as never);
+      const merge = vi.spyOn(sut, 'mergePeople').mockResolvedValue([{ id: 'new-person', success: true }]);
+      const remove = vi.spyOn(sut, 'delete').mockResolvedValue();
+      return { auth, person, merge, remove };
+    };
+
+    it('puts the moved faces back when a split fails halfway, and keeps the suggestion', async () => {
+      const { auth, person, merge, remove } = setupSplit();
+      vi.spyOn(sut, 'reassignFacesById')
+        .mockResolvedValueOnce({} as never)
+        .mockRejectedValueOnce(new Error('the second face could not move'));
+
+      await expect(sut.setSplitVerdict(auth, { personId: person.personGroupId, verdict: 'split' })).rejects.toThrow(
+        'the second face could not move',
+      );
+
+      // merging the new person into the one the faces came from is the way back
+      expect(merge).toHaveBeenCalledWith(auth, { ids: [person.personGroupId, 'new-person'] });
+      expect(remove).not.toHaveBeenCalled();
+      expect(mocks.person.deleteSplitCandidate).not.toHaveBeenCalled();
+    });
+
+    it('removes the new person when not even the first face moved', async () => {
+      const { auth, person, merge, remove } = setupSplit();
+      vi.spyOn(sut, 'reassignFacesById').mockRejectedValue(new Error('no face could move'));
+
+      await expect(sut.setSplitVerdict(auth, { personId: person.personGroupId, verdict: 'split' })).rejects.toThrow(
+        'no face could move',
+      );
+
+      expect(remove).toHaveBeenCalledWith(auth, 'new-person');
+      expect(merge).not.toHaveBeenCalled();
+    });
+
+    it('moves every face and forgets the suggestion when all goes well', async () => {
+      const { auth, person, merge } = setupSplit();
+      const move = vi.spyOn(sut, 'reassignFacesById').mockResolvedValue({} as never);
+
+      await expect(sut.setSplitVerdict(auth, { personId: person.personGroupId, verdict: 'split' })).resolves.toEqual({
+        personId: person.personGroupId,
+        verdict: 'split',
+        newPersonId: 'new-person',
+        movedFaceCount: 3,
+      });
+
+      expect(move).toHaveBeenCalledTimes(3);
+      expect(merge).not.toHaveBeenCalled();
+      expect(mocks.person.deleteSplitCandidate).toHaveBeenCalledWith(auth.user.id, person.personGroupId);
     });
   });
 

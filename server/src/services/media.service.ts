@@ -85,7 +85,7 @@ import { isBusy } from 'src/utils/file-problem.js';
 import { FONT_PARSE_LIMIT, fontFactsFromName } from 'src/utils/font-file.js';
 import { FONT_SPECIMEN } from 'src/utils/font-specimen.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
-import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
+import { isLockedKeyUnavailable, isLockedPath, isPlainCopyPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { DJI_SRT_HEAD_BYTES, getDjiSrtCandidates, parseDjiSrtColorMode } from 'src/utils/log-video-srt.js';
 import {
   VENDORED_LUTS,
@@ -1104,7 +1104,11 @@ export class MediaService extends BaseService {
     }
     // FL-721 (spec §8.2): a sealed source is decoded from a plain copy
     const source = data.type === AssetType.Video ? previewPath! : data.originalPath;
+    let sealedSource = false;
     const { data: decodedImage, info } = await withPlainCopy(source, async (originalPath) => {
+      // a sealed source arrives as a plain copy in the Locked scratch folder (it was sealed after the
+      // eligibility check above: a Locked photo is never a person's thumbnail)
+      sealedSource = isPlainCopyPath(originalPath);
       let inputImage: string | Buffer;
       if (data.type === AssetType.Video) {
         inputImage = originalPath;
@@ -1135,10 +1139,13 @@ export class MediaService extends BaseService {
       progressive: false,
       processInvalidImages: false,
     };
-    // FL-1383: a face that is sideways in its photo (a scan, someone lying down) is turned upright
-    const turn = faceLooksSideways({ x1, y1, x2, y2 })
-      ? await this.getUprightTurn(decodedImage, baseOptions, this.getCrop(dims, { x1, y1, x2, y2 }, 2))
-      : 0;
+    // FL-1383: a face that is sideways in its photo (a scan, someone lying down) is turned upright.
+    // Never for a sealed source: the check writes crops to a scratch folder and shows them to the
+    // face detector, and nothing decrypted from a Locked file may reach a disk (FL-721).
+    const turn =
+      !sealedSource && faceLooksSideways({ x1, y1, x2, y2 })
+        ? await this.getUprightTurn(decodedImage, baseOptions, this.getCrop(dims, { x1, y1, x2, y2 }, 2))
+        : 0;
     const thumbnailOptions: GenerateThumbnailOptions = {
       ...baseOptions,
       size: FACE_THUMBNAIL_SIZE,

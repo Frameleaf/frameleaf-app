@@ -238,6 +238,18 @@ describe('People library mixed-person question', () => {
     expect(sdkMock.mergePeople).not.toHaveBeenCalled();
   });
 
+  it('reads the suggestions again when an answer fails, so a stale one does not block the rest', async () => {
+    sdkMock.setSplitVerdict.mockRejectedValue(new Error('Split suggestion not found'));
+    render(PeoplePage, { data: data([jamie], false) });
+    const button = await screen.findByText('frameleaf_people_split_suggestion_same');
+    sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [] });
+
+    await fireEvent.click(button);
+
+    await waitFor(() => expect(sdkMock.getSplitSuggestions).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText('frameleaf_people_split_suggestion_question')).toBeNull());
+  });
+
   it('waits behind a merge suggestion', async () => {
     const other = peopleListItemFactory.build({ id: 'other', name: 'Jay', isHidden: false });
     sdkMock.getMergeSuggestions.mockResolvedValue({

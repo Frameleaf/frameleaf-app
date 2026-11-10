@@ -277,6 +277,8 @@
       mergeSuggestions = mergeSuggestions.filter(
         (entry) => entry.person.id !== mergedId && entry.suggestion.id !== mergedId,
       );
+      // FL-1385: a person merged away has no "Is this all one person?" left to answer
+      splitSuggestions = splitSuggestions.filter((entry) => entry.person.id !== mergedId);
       // as the merge dialog does: open viewers, search chips and person pages follow the merge
       eventManager.emit('PersonFacesChange', { personIds: [survivorId, mergedId], removedPersonIds: [mergedId] });
       announceMerge(merged, survivor);
@@ -386,6 +388,9 @@
     } catch (error) {
       if (isCurrentSession()) {
         handleError(error, $t('frameleaf_people_verdict_error'));
+        // the suggestion may have gone stale (the person was merged away, the faces moved): read them
+        // again, so one that can no longer be answered does not hold the others back
+        await loadSplitSuggestions();
       }
       return;
     } finally {

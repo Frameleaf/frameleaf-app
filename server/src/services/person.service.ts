@@ -399,11 +399,40 @@ export class PersonService extends BaseService {
     const created = await this.create(auth, {});
     // ponytail: one face at a time, as "Fix incorrect match" moves them, so each has its history entry;
     // batch the moves if splitting thousands of faces proves slow.
-    for (const id of movable) {
-      await this.reassignFacesById(auth, created.id, { id });
+    let moved = 0;
+    try {
+      for (const id of movable) {
+        await this.reassignFacesById(auth, created.id, { id });
+        moved++;
+      }
+    } catch (error) {
+      // a split that fails halfway is put back, so the person is as they were and the answer can be given again
+      await this.undoPartialSplit(auth, personId, created.id, moved);
+      throw error;
     }
     await this.personRepository.deleteSplitCandidate(auth.user.id, personId);
     return { personId, verdict: 'split', newPersonId: created.id, movedFaceCount: movable.length };
+  }
+
+  /**
+   * FL-1385: takes back the part of a split that happened before it failed: the faces that moved return
+   * by merging the new person into the one they came from (as the web's Undo does), and a new person no
+   * face reached is removed. The candidate stays, so the owner is asked again.
+   */
+  private async undoPartialSplit(auth: AuthDto, personId: string, createdId: string, moved: number) {
+    try {
+      if (moved === 0) {
+        await this.delete(auth, createdId);
+        return;
+      }
+      const results = await this.mergePeople(auth, { ids: [personId, createdId] });
+      const mergedBack = results.find(({ id }) => id === createdId)?.success;
+      if (!mergedBack) {
+        throw new Error('the new person could not be merged back');
+      }
+    } catch (error) {
+      this.logger.error(`A split of ${personId} failed and ${moved} faces stayed with ${createdId}: ${error}`);
+    }
   }
 
   /** FL-1385: undoes a "same" or "later" answer, so the person can be suggested again. */
@@ -1110,23 +1139,28 @@ export class PersonService extends BaseService {
    */
   private async refreshMergeCandidates() {
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    const { maxDistance } = machineLearning.facialRecognition;
+    // the stored pairs were kept under the distance of that night: a wider one since can add pairs
     if (
       state?.mergeCandidatesAt &&
+      (state.mergeCandidatesDistance ?? 0) >= maxDistance &&
       !(await this.personRepository.hasFaceChangesSince(careSince(state.mergeCandidatesAt)))
     ) {
       return;
     }
     const mergeCandidatesAt = new Date().toISOString();
-    const { machineLearning } = await this.getConfig({ withCache: true });
     let pairs = 0;
     for (const ownerId of await this.personRepository.getPersonOwnerIds()) {
-      pairs +=
-        (await this.personRepository.refreshMergeCandidates(ownerId, machineLearning.facialRecognition.maxDistance)) ??
-        0;
+      pairs += (await this.personRepository.refreshMergeCandidates(ownerId, maxDistance)) ?? 0;
     }
     // read again: the main photo pass above may have set its own date meanwhile
     const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
-    await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, { ...latest, mergeCandidatesAt });
+    await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, {
+      ...latest,
+      mergeCandidatesAt,
+      mergeCandidatesDistance: maxDistance,
+    });
     this.logger.debug(`Found ${pairs} pairs of people that may be the same person`);
   }
 
@@ -1139,13 +1173,18 @@ export class PersonService extends BaseService {
    */
   private async refreshSplitCandidates() {
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
-    const since = state?.splitCandidatesAt ? careSince(state.splitCandidatesAt) : undefined;
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    const { maxDistance } = machineLearning.facialRecognition;
+    // a changed recognition distance moves the line between one person and two: everyone is checked again
+    const since =
+      state?.splitCandidatesAt && state.splitCandidatesDistance === maxDistance
+        ? careSince(state.splitCandidatesAt)
+        : undefined;
     if (since && !(await this.personRepository.hasFaceChangesSince(since))) {
       return;
     }
     const splitCandidatesAt = new Date().toISOString();
-    const { machineLearning } = await this.getConfig({ withCache: true });
-    const minDistance = machineLearning.facialRecognition.maxDistance + FACE_SPLIT_MARGIN;
+    const minDistance = maxDistance + FACE_SPLIT_MARGIN;
     const people = await this.personRepository.getPeopleForSplitCheck(FACE_SPLIT_MIN_FACES * 2, since);
     let found = 0;
     for (const { ownerId, personGroupId } of people) {
@@ -1174,7 +1213,11 @@ export class PersonService extends BaseService {
       }
     }
     const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
-    await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, { ...latest, splitCandidatesAt });
+    await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, {
+      ...latest,
+      splitCandidatesAt,
+      splitCandidatesDistance: maxDistance,
+    });
     this.logger.debug(`Checked ${people.length} people for two people held as one; ${found} may be`);
   }
 
