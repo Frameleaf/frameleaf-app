@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import AsyncLock from 'async-lock';
 import { load as loadYaml } from 'js-yaml';
-import { cloneDeep, get, isEmpty, isEqual, set } from 'lodash-es';
+import { cloneDeep, get, isEmpty, isEqual, set, unset } from 'lodash-es';
 import { createHash } from 'node:crypto';
 import type { Transaction } from 'kysely';
 import type { DB } from 'src/schema/index.js';
@@ -119,6 +119,12 @@ export const readConfig = async (repos: RepoDeps): Promise<SystemConfig> => {
 };
 
 const configDigest = (value: SystemConfig) => createHash('sha256').update(canonicalJson(value)).digest('hex');
+
+/**
+ * Settings sections added after configuration files could be approved (FL-885: the Library Assistant).
+ * A file approved before a section existed keeps its approval while it does not name the section.
+ */
+const ADDED_CONFIG_SECTIONS = ['localFeatures.assistant'] as const;
 const epochFor = (value: SystemConfig, sourceKind: Epoch['sourceKind'], epoch: number): Epoch => ({
   format: 1,
   epoch,
@@ -221,7 +227,12 @@ export const prepareFileConfig = async (repos: RepoDeps): Promise<SystemConfig> 
     const candidate = await buildConfig(repos, true);
     const result = AdminConfigDto.schema.safeParse(candidate);
     if (!result.success) throw new Error('invalid');
-    return cloneDeep(result.data) as SystemConfig;
+    const parsed = cloneDeep(result.data) as SystemConfig;
+    // validation fills defaults back in; a section the approved file predates stays absent (see buildConfig)
+    for (const path of ADDED_CONFIG_SECTIONS) {
+      if (get(candidate, path) === undefined) unset(parsed, path);
+    }
+    return parsed;
   } catch {
     throw new ConflictException('effective_config_candidate_invalid');
   }
@@ -531,6 +542,16 @@ const buildConfig = async (repos: RepoDeps, privateErrors = false) => {
       }
       // Only the exact previously approved file configuration may retain the old defaults.
       if (configDigest(legacy) === priorDigest) return legacy;
+      // Settings sections added since a file was approved: an approved file that names none of them
+      // still activates unchanged (its digest was taken before they existed), and they read as their
+      // defaults where they are read (`assistantSettings`). Any other edit to the file is still refused.
+      for (const base of [config, legacy]) {
+        const before = cloneDeep(base);
+        for (const path of ADDED_CONFIG_SECTIONS) {
+          if (get(partial, path) === undefined) unset(before, path);
+        }
+        if (configDigest(before) === priorDigest) return before;
+      }
     }
   }
 

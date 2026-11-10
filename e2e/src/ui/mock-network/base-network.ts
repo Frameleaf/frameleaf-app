@@ -129,6 +129,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
       json: {
         smartSearch: false,
         askSearch: false,
+        assistant: false,
         facialRecognition: false,
         duplicateDetection: false,
         map: true,
