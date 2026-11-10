@@ -682,6 +682,14 @@ export type CloudBackupUnlockDto = {
     /** The key file, the base64 key or the recovery code. Kept in memory only */
     key: string;
 };
+export type CloudBackupLicensedAccountDto = {
+    name: string;
+    userId: string;
+};
+export type CloudBackupLicenceCoverageResponseDto = {
+    accounts: CloudBackupLicensedAccountDto[];
+    scope: CloudBackupLicenceScope;
+};
 export type CloudBackupManifestDto = {
     assets: number;
     bytes: number;
@@ -6005,10 +6013,12 @@ export type AssetJobsDto = {
 export type LostOriginalDto = {
     /** The photo or video */
     assetId: string;
-    /** SHA-1 of the lost file, base64: what the phone matches its own file by */
+    /** SHA-1 (20 bytes) or SHA-256 (32 bytes) of the lost file's contents, base64: what the phone matches its own file by */
     checksum: string;
     /** When the file was created */
     fileCreatedAt: string;
+    /** Size of the lost file in bytes, or null when unknown: a phone may look only at its files of exactly this size */
+    fileSize: number | null;
     /** The name the file had */
     originalFileName: string;
 };
@@ -6021,7 +6031,7 @@ export type LostOriginalsResponseDto = {
 export type LostOriginalsCheckedDto = {
     /** The phone or tablet that looked */
     deviceId: string;
-    /** Checksums (base64) of lost originals this device does not have */
+    /** Checksums (base64, SHA-1 or SHA-256, as listed) of lost originals this device does not have */
     notHere: string[];
 };
 export type AssetMetadataBulkDeleteItemDto = {
@@ -22173,6 +22183,17 @@ export function unlockCloudBackupKey({ cloudBackupUnlockDto }: {
     })));
 }
 /**
+ * Get the accounts currently covered for Cloud Backup
+ */
+export function getCloudBackupLicenceCoverage(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupLicenceCoverageResponseDto;
+    }>("/admin/cloud/backup/licence-coverage", {
+        ...opts
+    }));
+}
+/**
  * List the kept backups
  */
 export function getCloudBackupManifests(opts?: Oazapfts.RequestOpts) {
@@ -38275,6 +38296,12 @@ export enum CloudBackupCoverageReportState {
     NotReported = "not-reported",
     Local = "local",
     Unknown = "unknown"
+}
+export enum CloudBackupLicenceScope {
+    Unknown = "unknown",
+    None = "none",
+    All = "all",
+    Users = "users"
 }
 export enum CloudBackupManifestStatus {
     Complete = "complete",

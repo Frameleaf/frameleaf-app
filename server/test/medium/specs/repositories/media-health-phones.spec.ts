@@ -45,6 +45,8 @@ it('lists and records only the caller’s own open lost originals a phone can ma
     const page = await sut.listLostOriginals(user.id, 10, 0);
     expect(page.map(({ assetId }) => assetId)).toEqual([mine.asset.id]);
     expect(page[0].checksum).toEqual(mine.checksum);
+    // FL-1347: no size on record (its metadata was never read) gives none
+    expect(page[0].fileSize).toBeNull();
     await expect(sut.listLostOriginals(other.id, 10, 0)).resolves.toHaveLength(1);
     await expect(sut.listLostOriginals(user.id, 10, 1)).resolves.toEqual([]);
 
@@ -200,11 +202,13 @@ it('asks phones only about a photo the lost-originals list shows them, by the sa
       return asset;
     };
     const imported = await lost(user.id, 'imported');
-    // every photo uploaded to Frameleaf is stored with a SHA-256 of its contents, which phones don't match
+    // FL-1347: every photo uploaded to Frameleaf is stored with a SHA-256 of its contents, which phones match too
     const uploaded = await lost(user.id, 'uploaded', {
       checksum: createHash('sha256').update('uploaded').digest(),
       checksumAlgorithm: ChecksumAlgorithm.sha256File,
     });
+    // a checksum of the path, not the contents, is nothing a phone can match
+    const byPath = await lost(user.id, 'by-path', { checksumAlgorithm: ChecksumAlgorithm.sha1Path });
     const external = await lost(user.id, 'external', { isExternal: true });
     const locked = await lost(user.id, 'locked');
     await sql`INSERT INTO asset_lock ("assetId", reason) VALUES (${locked.id}::uuid, 'manual')`.execute(db);
@@ -212,13 +216,71 @@ it('asks phones only about a photo the lost-originals list shows them, by the sa
     const sut = new MediaHealthRepository(db);
 
     const listed = (await sut.listLostOriginals(user.id, 10, 0)).map(({ assetId }) => assetId);
-    expect(listed).toEqual([imported.id]);
-    for (const asset of [imported, uploaded, external, locked]) {
+    expect(listed.toSorted()).toEqual([imported.id, uploaded.id].toSorted());
+    for (const asset of [imported, uploaded, byPath, external, locked]) {
       await expect(sut.isShownToPhones(user.id, asset.id)).resolves.toBe(listed.includes(asset.id));
     }
     // only the owner's own
     await expect(sut.isShownToPhones(user.id, theirs.id)).resolves.toBe(false);
     await expect(sut.isShownToPhones(other.id, theirs.id)).resolves.toBe(true);
+  } finally {
+    await db.destroy();
+  }
+});
+
+it('lists a lost photo stored with SHA-256, and a report by that checksum settles it (FL-1347)', async () => {
+  const db = await getKyselyDB('media_health_phones_sha256');
+  const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
+  try {
+    const { user } = await ctx.newUser();
+    const checksum = createHash('sha256').update('uploaded by the app').digest();
+    const { asset } = await ctx.newAsset({
+      ownerId: user.id,
+      originalPath: `/data/upload/${user.id}/aa/bb/IMG_2.heic`,
+      originalFileName: 'IMG_2.heic',
+      checksum,
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+    const {
+      rows: [{ id: healthId }],
+    } = await sql<{
+      id: string;
+    }>`INSERT INTO asset_health ("assetId", category, status, severity, "originalPath", "originalFileName", evidence, resolution, "checkedAt")
+      VALUES (${asset.id}::uuid, 'missing', 'missing', 'critical', ${asset.originalPath}, 'IMG_2.heic', '{"fixState":"waiting-phone"}', '{}', now())
+      RETURNING id`.execute(db);
+    await sql`INSERT INTO asset_health_step ("healthId", "assetId", step, outcome, facts)
+      VALUES (${healthId}::uuid, ${asset.id}::uuid, 'asked-phones', 'waiting', '{"phones":1}')`.execute(db);
+    // larger than 2 GiB, as a video can be: the size is a bigint on record
+    await ctx.newExif({ assetId: asset.id, fileSizeInByte: 3_221_225_472 });
+    const sut = new MediaHealthRepository(db);
+
+    // listed with the photo's own 32-byte checksum, which is what the phone matches its file by
+    const [listed, ...rest] = await sut.listLostOriginals(user.id, 10, 0);
+    expect(rest).toEqual([]);
+    expect(listed).toMatchObject({ assetId: asset.id, checksum, fileSize: 3_221_225_472 });
+    await expect(sut.isShownToPhones(user.id, asset.id)).resolves.toBe(true);
+
+    // the only phone reports it doesn't have it: the problem settles as missing
+    const found = await sut.findLostOriginals(user.id, [checksum]);
+    expect(found.map(({ assetId }) => assetId)).toEqual([asset.id]);
+    await sut.recordPhoneReport({
+      findings: found,
+      sessionId: 'a',
+      device: 'iPhone',
+      deviceId: 'device-a',
+      phones: ['a'],
+    });
+    expect((await sut.listSteps(healthId)).map(({ step, outcome }) => `${step}/${outcome}`)).toEqual([
+      'asked-phones/waiting',
+      'checked-on-phone/not-found',
+      'asked-phones/not-found',
+    ]);
+    const { evidence } = await db
+      .selectFrom('asset_health')
+      .select('evidence')
+      .where('id', '=', healthId)
+      .executeTakeFirstOrThrow();
+    expect(evidence).toMatchObject({ fixState: 'missing' });
   } finally {
     await db.destroy();
   }

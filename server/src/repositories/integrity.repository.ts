@@ -7,6 +7,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetFileType, AssetStatus, ChecksumAlgorithm, IntegrityReport } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
+import { KEPT_STATUSES } from 'src/repositories/media-health.repository.js';
 import { countPathReferences } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
@@ -18,6 +19,23 @@ export type ReportPaginationOptions = {
   cursor?: string;
   limit: number;
 };
+/**
+ * FL-1347: a file check report that is not about a photo its owner kept as it is with Keep (W3): an open, not
+ * dismissed Library care finding of the same kind (missing for a missing file, damaged for a changed one), left as
+ * it is, with the N1/N2 status guard, so an unreadable RAW the fix left as it is still counts. The same rule as
+ * `getFindingsOverview`'s `kept`.
+ */
+const reportNotKept = (report: 'r' | 'integrity_report') => sql<boolean>`NOT EXISTS (
+    SELECT 1 FROM public.asset_health kept
+    WHERE kept."assetId" = ${sql.ref(`${report}.assetId`)}
+      AND kept.category = CASE ${sql.ref(`${report}.type`)}
+        WHEN ${sql.lit(IntegrityReport.MissingFile)} THEN 'missing'
+        WHEN ${sql.lit(IntegrityReport.ChecksumFail)} THEN 'corrupt'
+      END
+      AND kept.evidence->>'fixState' = 'left-as-is' AND kept."resolvedAt" IS NULL AND kept."dismissedAt" IS NULL
+      AND kept.status IN (${sql.join(KEPT_STATUSES.map((status) => sql.lit(status)))})
+  )`;
+
 @Injectable()
 export class IntegrityRepository {
   constructor(
@@ -171,6 +189,7 @@ export class IntegrityRepository {
     const counts = await this.db
       .selectFrom('integrity_report')
       .select(['type', this.db.fn.countAll<number>().as('count')])
+      .where(reportNotKept('integrity_report'))
       .groupBy('type')
       .execute();
     const byType = new Map(counts.map(({ type, count }) => [type, count]));
@@ -230,7 +249,7 @@ export class IntegrityRepository {
     return rows[0];
   }
 
-  /** FL-520: missing-file findings under each folder (a folder path ending in `/`). */
+  /** FL-520: missing-file findings under each folder (a folder path ending in `/`), but for kept photos (FL-1347). */
   async countMissingUnder(folders: readonly string[]): Promise<number[]> {
     if (folders.length === 0) {
       return [];
@@ -239,7 +258,7 @@ export class IntegrityRepository {
       SELECT f.folder, count(r.id)::int AS count
       FROM unnest(${[...folders]}::text[]) AS f(folder)
       LEFT JOIN public.integrity_report r
-        ON r.type = ${IntegrityReport.MissingFile} AND starts_with(r.path, f.folder)
+        ON r.type = ${IntegrityReport.MissingFile} AND starts_with(r.path, f.folder) AND ${reportNotKept('r')}
       GROUP BY f.folder`.execute(this.db);
     const byFolder = new Map(rows.map((row) => [row.folder, row.count]));
     return folders.map((folder) => byFolder.get(folder) ?? 0);
@@ -247,7 +266,7 @@ export class IntegrityRepository {
 
   /**
    * FL-520: the photos behind the missing or damaged findings of both checkers, for "Restore from a
-   * backup". Only photos still in the library; at most `limit`.
+   * backup". Only photos still in the library; at most `limit`. A photo kept as it is is not one (FL-1347).
    */
   async getFindingAssetIds(kind: 'missing' | 'damaged', limit: number): Promise<string[]> {
     const type = kind === 'missing' ? IntegrityReport.MissingFile : IntegrityReport.ChecksumFail;
@@ -255,10 +274,11 @@ export class IntegrityRepository {
       kind === 'missing' ? ['missing', 'candidate', 'found'] : ['corrupt_confirmed', 'corrupt_suspect', 'trash_queued'];
     const { rows } = await sql<{ assetId: string }>`
       SELECT DISTINCT ids."assetId" FROM (
-        SELECT r."assetId" FROM public.integrity_report r WHERE r.type = ${type} AND r."assetId" IS NOT NULL
+        SELECT r."assetId" FROM public.integrity_report r
+        WHERE r.type = ${type} AND r."assetId" IS NOT NULL AND ${reportNotKept('r')}
         UNION
         SELECT h."assetId" FROM public.asset_health h WHERE h.category = ${kind === 'missing' ? 'missing' : 'corrupt'}
-          AND h.status = ANY (${statuses}::text[])
+          AND h.status = ANY (${statuses}::text[]) AND (h.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
       ) ids JOIN public.asset a ON a.id = ids."assetId"
       WHERE a."deletedAt" IS NULL
       ORDER BY ids."assetId"
@@ -282,6 +302,7 @@ export class IntegrityRepository {
         'asset.originalFileName',
       ])
       .where('integrity_report.type', '=', type)
+      .where(reportNotKept('integrity_report'))
       .$if(pagination.cursor !== undefined, (eb) => eb.where('integrity_report.id', '<=', pagination.cursor!))
       .orderBy('integrity_report.id', 'desc')
       .limit(pagination.limit + 1)
@@ -585,13 +606,17 @@ export class IntegrityRepository {
   }
   @GenerateSql({ params: [DummyValue.STRING], stream: true })
   streamIntegrityReportsByProperty(property?: 'assetId' | 'fileAssetId', filterType?: IntegrityReport) {
-    return this.db
-      .selectFrom('integrity_report')
-      .select(['id', 'path', 'assetId', 'fileAssetId'])
-      .$if(filterType !== undefined, (eb) => eb.where('type', '=', filterType!))
-      .$if(property === undefined, (eb) => eb.where('assetId', 'is', null).where('fileAssetId', 'is', null))
-      .$if(property !== undefined, (eb) => eb.where(property!, 'is not', null))
-      .stream();
+    return (
+      this.db
+        .selectFrom('integrity_report')
+        .select(['id', 'path', 'assetId', 'fileAssetId'])
+        .$if(filterType !== undefined, (eb) => eb.where('type', '=', filterType!))
+        // FL-1347: Trash all moves only the photos the list shows, never one kept as it is
+        .where(reportNotKept('integrity_report'))
+        .$if(property === undefined, (eb) => eb.where('assetId', 'is', null).where('fileAssetId', 'is', null))
+        .$if(property !== undefined, (eb) => eb.where(property!, 'is not', null))
+        .stream()
+    );
   }
   @GenerateSql({ params: [DummyValue.STRING] })
   deleteById(id: string) {
