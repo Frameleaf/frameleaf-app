@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -194,13 +194,15 @@ describe('renderRawWithLibRaw', () => {
     const original = Buffer.from('immutable original sensor data');
     const checksum = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
     await writeFile(source, original);
-    const scratch = async () => (await readdir(tmpdir())).filter((name) => name.startsWith('frameleaf-raw-')).sort();
-    const before = await scratch();
+    // a temp folder of the test's own: the system one is shared with every other test running now
+    const scratch = join(directory, 'tmp');
+    await mkdir(scratch);
+    vi.stubEnv('TMPDIR', scratch);
     await renderRawWithLibRaw(source);
     vi.stubEnv('FAKE_RAW', 'fail');
     await expect(renderRawWithLibRaw(source)).rejects.toMatchObject({ reason: 'decode_failed' });
-    expect(await scratch()).toEqual(before);
-    expect((await readdir(directory)).sort()).toEqual(['dcraw_emu', 'log', 'original.CR3']);
+    expect(await readdir(scratch)).toEqual([]);
+    expect((await readdir(directory)).sort()).toEqual(['dcraw_emu', 'log', 'original.CR3', 'tmp']);
     expect(checksum(await readFile(source))).toBe(checksum(original));
   });
 });
