@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -22,7 +23,7 @@ import {
   PhotographyWorkflowDto,
   PhotographyWorkflowListDto,
 } from 'src/dtos/photography-workflow.dto.js';
-import { JobStatus } from 'src/enum.js';
+import { JobName, JobStatus } from 'src/enum.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
@@ -463,6 +464,20 @@ describe('photography workflow integration boundaries', () => {
     const client = await s.invitation();
     await s.published();
     const round = await s.selected(client.session);
+    // FL-819: the owner's workflows hear of it; the message names no client, note or photograph
+    expect(s.jobs.queue).toHaveBeenCalledWith({
+      name: JobName.WorkflowEventDispatch,
+      data: {
+        event: {
+          trigger: WorkflowTrigger.ClientsGalleryApproved,
+          ownerId: s.ownerId,
+          deliveryId: `clients-gallery:${s.shootId}:${round.id}`,
+          occurredAt: round.createdAt,
+          subject: { kind: 'clients-gallery', id: s.shootId, name: expect.any(String) },
+          detail: { chosen: 1, round: 1 },
+        },
+      },
+    });
     await s.service.approval(s.auth, s.shootId, {
       expectedRevision: s.row().revision,
       captureId: s.captureId,

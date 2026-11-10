@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { RunSummary, aggregateRun, readSurroundings } from 'src/queue/run-query.js';
+import { RunSummary, aggregateRun, causeCounts, readSurroundings, summarizeRunFailures } from 'src/queue/run-query.js';
 
 /** The run `r`'s live work that keeps it open: pending tasks of a parked stage don't. */
 const liveWork = sql<boolean>`exists (select 1 from job j where j."runId" = r.id
@@ -37,6 +37,10 @@ export async function finishRuns(db: Kysely<any>, limit: number): Promise<number
         for no key update skip locked`.execute(tx);
       if (!run) return false;
       const aggregate = await aggregateRun(tx, { id, holds: run.holds }, around, true);
+      // FL-1349: the left-over photos by cause, kept so Recent work still says them once history is pruned
+      const failures = aggregate.stageTotals.failed + aggregate.stageTotals.needsAttention;
+      const failureCauses =
+        failures > 0 ? causeCounts(await summarizeRunFailures(tx, id, aggregate.countsPhotos)) : undefined;
       const summary: Omit<RunSummary, 'complete' | 'finishedAt'> = {
         counts: aggregate.counts,
         stageTotals: aggregate.stageTotals,
@@ -45,6 +49,7 @@ export async function finishRuns(db: Kysely<any>, limit: number): Promise<number
         lastStage: aggregate.lastStage,
         countsPhotos: aggregate.countsPhotos,
         failedQueues: aggregate.failedQueues,
+        ...(failureCauses && { failureCauses }),
       };
       const { numAffectedRows } = await sql`update job_run r set "finishedAt" = coalesce(r."finishedAt", now()),
           summary = ${JSON.stringify(summary)}::text::jsonb

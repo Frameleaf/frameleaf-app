@@ -2,6 +2,8 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { RunRead } from 'src/queue/run-query.js';
 import { QueueName, QueueNameSchema } from 'src/enum.js';
+import { RUN_FAILURE_CAUSES } from 'src/queue/run-failure-cause.js';
+import { stringToBool } from 'src/validation.js';
 
 export const JobRunOutcomeSchema = z.enum([
   'completed',
@@ -49,6 +51,12 @@ export const JobRunReasonSchema = z.enum([
   'source-unavailable',
   'local-capacity',
 ]);
+export const JobRunFailureCauseSchema = z
+  .enum(RUN_FAILURE_CAUSES)
+  .describe(
+    "Why a photo was left over: drive (its external library can't be reached), missing (the file is gone), damaged, unsupported (a format that can't be read), or other",
+  )
+  .meta({ id: 'JobRunFailureCause' });
 const counts = z.object({
   total: z.int().min(0),
   completed: z.int().min(0),
@@ -68,14 +76,22 @@ const progress = z.object({
   lastStage: z.string().nullable(),
   reasons: z.array(JobRunReasonSchema),
 });
+const page = z.object({
+  take: z.coerce.number().int().min(1).max(100).default(25),
+  skip: z.coerce.number().int().min(0).default(0),
+});
 export class JobRunSearchDto extends createZodDto(
-  z
-    .object({
-      take: z.coerce.number().int().min(1).max(100).default(25),
-      skip: z.coerce.number().int().min(0).default(0),
+  page
+    .extend({
+      foldNightly: stringToBool
+        .optional()
+        .describe(
+          'Show only the newest nightly run, with its earlier nights (Recent work); a nightly run with a newer one is left out',
+        ),
     })
     .meta({ id: 'JobRunSearchDto' }),
 ) {}
+export class JobRunItemSearchDto extends createZodDto(page.meta({ id: 'JobRunItemSearchDto' })) {}
 export class JobRunIdParamDto extends createZodDto(z.object({ id: z.uuid() })) {}
 export const JobRunResponseSchema = counts
   .extend({
@@ -105,6 +121,53 @@ export const JobRunResponseSchema = counts
       .array(QueueNameSchema)
       .optional()
       .describe('Queues with failed or needs-attention jobs in this run'),
+    nightly: z.boolean().optional().describe("The overnight schedule's work"),
+    pausedQueues: z
+      .array(QueueNameSchema)
+      .optional()
+      .describe('Paused queues that unstarted work of this run waits on; resuming them lets it carry on'),
+    unreachableLibraries: z
+      .array(z.string())
+      .max(3)
+      .optional()
+      .describe("Names of up to three external libraries whose files work of this run waits for (can't be reached)"),
+    failureCauses: z
+      .array(z.object({ cause: JobRunFailureCauseSchema, count: z.int().min(1) }))
+      .optional()
+      .describe(
+        'Photos left over (failed or needing attention) by cause, most telling first; stopped ones are left out. Absent when nothing failed',
+      ),
+    leftOver: z
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        "Photos that still need a look: the sum of failureCauses, present whenever it is. Cards use it rather than failed + needsAttention, which keep counting stopped photos and a live run's photos still being worked on",
+      ),
+    earlierRuns: z
+      .array(
+        z.object({
+          id: z.uuid(),
+          createdAt: z.iso.datetime(),
+          finishedAt: z.iso.datetime().nullable(),
+          total: z.int().min(0),
+          leftOver: z.int().min(0).describe('Photos it left over'),
+        }),
+      )
+      .max(6)
+      .optional()
+      .describe('With foldNightly, on the newest nightly run: the previous nights, newest first'),
+    leftOverStreak: z
+      .object({
+        photos: z.int().min(1).describe('Photos this run left over (stopped ones aside)'),
+        nights: z.int().min(1).describe('Nights in a row, this one included, that left all of them over'),
+        capped: z
+          .boolean()
+          .optional()
+          .describe('Every night it could count back through left them all: it may be longer ("N or more nights")'),
+      })
+      .optional()
+      .describe('With foldNightly, on the newest nightly run: how long the same photos have been left over'),
   })
   .extend(progress.shape)
   .meta({ id: 'JobRunResponseDto' });
@@ -126,6 +189,56 @@ export class JobRunItemPageDto extends createZodDto(
       hasNextPage: z.boolean(),
     })
     .meta({ id: 'JobRunItemPageDto' }),
+) {}
+
+const JobRunFailureSampleSchema = z
+  .object({
+    assetId: z.uuid().describe('The photo or video'),
+    fileName: z.string().describe('The name of its file'),
+    ownerName: z.string().describe('The name of the account whose library it is in'),
+    pictureAllowed: z.boolean().describe('The caller may see its picture: false on another account’s photo'),
+  })
+  .meta({ id: 'JobRunFailureSampleDto' });
+const JobRunFailureCauseGroupSchema = z
+  .object({
+    cause: JobRunFailureCauseSchema,
+    count: z.int().min(0).describe('Photos of this cause that still need a look'),
+    stopped: z.int().min(0).describe('Photos of this cause whose processing was stopped (Stop trying)'),
+    repaired: z.int().min(0).describe('Of the photos needing a look, damaged files Library care already repaired'),
+    libraries: z.array(z.string()).max(3).describe("For drive: up to three external libraries that can't be reached"),
+    queues: z.array(QueueNameSchema).describe('Queues whose failed jobs these photos have (the per-photo lists)'),
+    message: z
+      .string()
+      .nullable()
+      .describe('One raw error message, from a photo in the samples and a job that may show it; null when none may'),
+    samples: z
+      .array(JobRunFailureSampleSchema)
+      .max(6)
+      .describe('Up to six of the photos the caller may see: never another account’s Locked or hidden media'),
+  })
+  .meta({ id: 'JobRunFailureCauseDto' });
+export class JobRunFailuresDto extends createZodDto(
+  z
+    .object({
+      photos: z.int().min(0).describe('Photos left over, stopped ones included'),
+      countsPhotos: z.boolean().describe('The counts are photos; when false they are tasks'),
+      causes: z.array(JobRunFailureCauseGroupSchema).describe('One per cause with photos, most telling first'),
+    })
+    .meta({ id: 'JobRunFailuresResponseDto' }),
+) {}
+export const JobRunFailureActionSchema = z
+  .enum(['retry', 'stop'])
+  .describe('retry: try again now (drive or other); stop: stop trying (unsupported)')
+  .meta({ id: 'JobRunFailureAction' });
+export class JobRunFailureActionDto extends createZodDto(
+  z
+    .object({ cause: JobRunFailureCauseSchema, action: JobRunFailureActionSchema })
+    .meta({ id: 'JobRunFailureActionDto' }),
+) {}
+export class JobRunFailureActionResponseDto extends createZodDto(
+  z
+    .object({ count: z.int().min(0).describe('Photos tried again or stopped') })
+    .meta({ id: 'JobRunFailureActionResponseDto' }),
 ) {}
 
 /** The public summary of a run: counts and progress only, never a selection, payload or error text. */
@@ -156,4 +269,19 @@ export const mapJobRun = (row: RunRead): JobRunResponseDto => ({
   canRelease: row.canRelease,
   countsPhotos: row.countsPhotos,
   failedQueues: row.failedQueues as QueueName[],
+  nightly: row.nightly,
+  pausedQueues: row.pausedQueues as QueueName[],
+  ...(row.unreachableLibraries && { unreachableLibraries: row.unreachableLibraries }),
+  ...(row.failureCauses && { failureCauses: row.failureCauses }),
+  ...(row.leftOver !== undefined && { leftOver: row.leftOver }),
+  ...(row.earlierRuns && {
+    earlierRuns: row.earlierRuns.map((earlier) => ({
+      id: earlier.id,
+      createdAt: earlier.createdAt.toISOString(),
+      finishedAt: earlier.finishedAt?.toISOString() ?? null,
+      total: earlier.total,
+      leftOver: earlier.leftOver,
+    })),
+  }),
+  ...(row.leftOverStreak && { leftOverStreak: row.leftOverStreak }),
 });

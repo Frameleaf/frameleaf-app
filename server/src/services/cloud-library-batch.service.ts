@@ -751,7 +751,7 @@ export class CloudLibraryBatchService extends BaseService {
       return path ? { previewPath: path, checksum: '' } : { refused: 'no-preview' };
     }
     const faces = await this.assetJobRepository.getForDetectFacesJob(assetId);
-    const preview = faces?.files.find((file) => file.isEdited) ?? faces?.files[0];
+    const preview = faces?.files[0];
     return preview && faces
       ? { previewPath: preview.path, checksum: faces.checksum.toString('hex') }
       : { refused: 'no-preview' };

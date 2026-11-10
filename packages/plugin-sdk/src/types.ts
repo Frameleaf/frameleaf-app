@@ -13,12 +13,20 @@ type DeepPartial<T> = T extends Date
       ? DeepPartial<R>[]
       : T;
 
-export type WorkflowEventMap = {
-  [WorkflowType.AssetV1]: AssetV1;
-  // [WorkflowType.AssetPersonV1]: AssetPersonV1;
-} & { [K in WorkflowType]: unknown };
+/**
+ * FL-819: the event types a step can run on. `EventV1` (a Frameleaf event, such as a finished Studio
+ * export) is not in the published `WorkflowType` enum, whose closed list older native apps decode, so
+ * it is named here as a plain string.
+ */
+export type WorkflowEventType = `${WorkflowType}` | 'EventV1';
 
-export type WorkflowEventData<T extends WorkflowType> = WorkflowEventMap[T];
+export type WorkflowEventMap = {
+  AssetV1: AssetV1;
+  EventV1: EventV1;
+  // [WorkflowType.AssetPersonV1]: AssetPersonV1;
+} & { [K in WorkflowEventType]: unknown };
+
+export type WorkflowEventData<T extends WorkflowEventType> = WorkflowEventMap[T];
 
 export enum WorkflowTrigger {
   AssetCreate = 'AssetCreate',
@@ -27,10 +35,28 @@ export enum WorkflowTrigger {
   AssetMetadataExtraction = 'AssetMetadataExtraction',
   AssetTagged = 'AssetTagged',
   // PersonRecognized = 'PersonRecognized',
+  // FL-819: Frameleaf events. They run `EventV1` steps (only the webhook) and are listed by the
+  // automation discovery endpoint in `eventTriggers`, never in the published `WorkflowTrigger` enum.
+  StudioExportCompleted = 'StudioExportCompleted',
+  CloudBackupCompleted = 'CloudBackupCompleted',
+  CloudBackupFailed = 'CloudBackupFailed',
+  ClientsGalleryApproved = 'ClientsGalleryApproved',
+  CloudJobCompleted = 'CloudJobCompleted',
 }
 
+/** FL-819: the triggers that are Frameleaf events rather than something that happened to a photo. */
+export const FRAMELEAF_EVENT_TRIGGERS = [
+  WorkflowTrigger.StudioExportCompleted,
+  WorkflowTrigger.CloudBackupCompleted,
+  WorkflowTrigger.CloudBackupFailed,
+  WorkflowTrigger.ClientsGalleryApproved,
+  WorkflowTrigger.CloudJobCompleted,
+] as const;
+
+export type FrameleafEventTrigger = (typeof FRAMELEAF_EVENT_TRIGGERS)[number];
+
 export type WorkflowEventPayload<
-  T extends WorkflowType,
+  T extends WorkflowEventType,
   TConfig = WorkflowStepConfig,
 > = {
   trigger: WorkflowTrigger;
@@ -45,11 +71,11 @@ export type WorkflowEventPayload<
   };
 };
 
-export type WorkflowChanges<T extends WorkflowType> = DeepPartial<
+export type WorkflowChanges<T extends WorkflowEventType> = DeepPartial<
   WorkflowEventData<T>
 >;
 
-export type WorkflowResponse<T extends WorkflowType> = {
+export type WorkflowResponse<T extends WorkflowEventType> = {
   workflow?: {
     /** stop the workflow */
     continue?: boolean;
@@ -130,6 +156,20 @@ export type AssetV1 = {
       updatedAt: string | null;
     } | null;
   };
+};
+
+/**
+ * FL-819: what a Frameleaf event sends. Each event lists its own `detail` fields; none names a Locked
+ * or hidden photo, another account's data, a file path or a credential.
+ */
+export type EventV1 = {
+  /** The event name, for example `cloud.backup.failed`. */
+  event: string;
+  /** Stable for one occurrence: a receiver can ignore a second delivery with the same id. */
+  deliveryId: string;
+  occurredAt: string;
+  subject: { kind: string; id: string; name: string | null };
+  detail: Record<string, string | number | boolean | null>;
 };
 
 // export type AssetPersonV1 = AssetV1 & {
