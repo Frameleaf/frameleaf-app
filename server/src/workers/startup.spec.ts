@@ -63,7 +63,7 @@ const setup = () => {
           storage: {},
           logRetentionDays: 7,
           resourcePaths: { web: { root: '/unused-web-root' } },
-          network: { trustedProxies: [] },
+          network: { trustConfiguredProxies: false, trustedProxies: [] },
           frameleafCloud: { edge: { secret: '' } },
         }),
       },

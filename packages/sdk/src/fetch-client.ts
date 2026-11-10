@@ -3942,6 +3942,8 @@ export type EmailNotificationsResponse = {
     albumUpdate: boolean;
     /** Whether email notifications are enabled */
     enabled: boolean;
+    /** Whether to receive email when a new device signs in */
+    newSignIn?: boolean;
 };
 export type FoldersResponse = {
     /** Whether folders are enabled */
@@ -4093,6 +4095,8 @@ export type EmailNotificationsUpdate = {
     albumUpdate?: boolean;
     /** Whether email notifications are enabled */
     enabled?: boolean;
+    /** Whether to receive email when a new device signs in */
+    newSignIn?: boolean;
 };
 export type FoldersUpdate = {
     /** Whether folders are enabled */

@@ -85,12 +85,8 @@ export class NotificationRepository {
       .execute();
   }
 
-  create(notification: Insertable<NotificationTable>) {
-    return this.db
-      .insertInto('notification')
-      .values(notification)
-      .returning(columns.notification)
-      .executeTakeFirstOrThrow();
+  create(notification: Insertable<NotificationTable>, db = this.db) {
+    return db.insertInto('notification').values(notification).returning(columns.notification).executeTakeFirstOrThrow();
   }
 
   get(id: string) {

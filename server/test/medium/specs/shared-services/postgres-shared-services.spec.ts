@@ -1,3 +1,4 @@
+import { Kysely } from 'kysely';
 import { type ChildProcess, fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
@@ -5,11 +6,16 @@ import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { Server } from 'socket.io';
+import type { DB } from 'src/schema/index.js';
 import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { type RateLimitHit, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { type RateLimitHit, RateLimitRepository, type SignInAttempt } from 'src/repositories/rate-limit.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { getKyselyConfig } from 'src/utils/database.js';
 import { closeSharedServicePool, createSharedServicePool, trackPoolClients } from 'src/utils/shared-service-pool.js';
 
 /** Uses the canonical PG19 medium-test template. No test performs application startup DDL. */
@@ -104,6 +110,152 @@ describe('PostgreSQL shared services', () => {
     repositories.push(repository);
     return repository;
   };
+
+  it('grows the wait after confirmed failures, independently of other addresses, and resets on success', async () => {
+    const counters = admission();
+    const key = 'sign-in-backoff:address-a';
+    await Promise.all(Array.from({ length: 4 }, () => counters.recordSignInFailure(key)));
+    expect(await counters.getSignInWait(key)).toBe(0);
+    await counters.recordSignInFailure(key);
+    expect(await counters.getSignInWait(key)).toBeGreaterThanOrEqual(28);
+    expect(await counters.getSignInWait('sign-in-backoff:address-b')).toBe(0);
+
+    await database.query(
+      "update public.frameleaf_rate_limit set expires_at = expires_at - interval '31 seconds' where key = $1",
+      [key],
+    );
+    expect(await counters.getSignInWait(key)).toBe(0);
+    await counters.recordSignInFailure(key);
+    expect(await counters.getSignInWait(key)).toBeGreaterThanOrEqual(58);
+
+    await counters.clearSignInFailures(key);
+    expect(await counters.getSignInWait(key)).toBe(0);
+  });
+
+  it('holds one sign-in attempt per key across admission workers and exposes the recorded result', async () => {
+    const first = admission();
+    const second = admission();
+    const key = 'sign-in-backoff:concurrent-a';
+    const other = 'sign-in-backoff:concurrent-b';
+    for (let attempt = 0; attempt < 4; attempt++) await first.recordSignInFailure(key);
+
+    const owner = await first.acquireSignInAttempt(key);
+    expect(owner).toBeDefined();
+    try {
+      expect(await second.acquireSignInAttempt(key)).toBeUndefined();
+      const unrelated = await second.acquireSignInAttempt(other);
+      expect(unrelated).toBeDefined();
+      await unrelated?.release();
+      expect(await owner?.getWait()).toBe(0);
+      await owner?.recordFailure();
+    } finally {
+      await owner?.release();
+    }
+
+    const later = await second.acquireSignInAttempt(key);
+    try {
+      expect(await later?.getWait()).toBeGreaterThanOrEqual(28);
+    } finally {
+      await later?.release();
+    }
+  });
+
+  it('keeps distinct sign-in checks available while other checks hold connections', async () => {
+    const counters = admission();
+    const attempts: SignInAttempt[] = [];
+    try {
+      for (const address of ['a', 'b', 'c']) {
+        const attempt = await counters.acquireSignInAttempt(`sign-in-backoff:parallel-${address}`);
+        if (attempt) attempts.push(attempt);
+      }
+      expect(attempts).toHaveLength(3);
+    } finally {
+      await Promise.all(attempts.map((attempt) => attempt.release()));
+    }
+  });
+
+  it('counts a rolling hour of failures and stores at most twenty timestamps', async () => {
+    const counters = admission();
+    const key = 'sign-in-burst:account';
+    for (let count = 0; count < 19; count++) expect(await counters.recordSignInBurst(key)).toBe(false);
+    expect(await counters.recordSignInBurst(key)).toBe(true);
+    await database.query(
+      "update public.frameleaf_rate_limit set failure_times = array[clock_timestamp() - interval '61 minutes'] where key = $1",
+      [key],
+    );
+    expect(await counters.recordSignInBurst(key)).toBe(false);
+    const { rows } = await database.query(
+      'select cardinality(failure_times) as count from public.frameleaf_rate_limit where key = $1',
+      [key],
+    );
+    expect(rows[0].count).toBe(1);
+  });
+
+  it('observes the first device silently and admits a new device exactly once across workers', async () => {
+    const db = new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url }));
+    try {
+      const sessions = new SessionRepository(db);
+      const group = await db.insertInto('cluster_group').defaultValues().returning('id').executeTakeFirstOrThrow();
+      const user = await db
+        .insertInto('user')
+        .values({
+          email: 'known-device@example.test',
+          name: 'Known device',
+          clusterGroupId: group.id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const first = Buffer.alloc(32, 1);
+      const second = Buffer.alloc(32, 2);
+      const publish = vi.fn(() => Promise.resolve());
+      const prepare = vi.fn(() => Promise.resolve(publish));
+      expect(await sessions.observeKnownDevice(user.id, first, prepare)).toBe(false);
+      expect(await sessions.observeKnownDevice(user.id, first, prepare)).toBe(false);
+      expect(prepare).not.toHaveBeenCalled();
+      await expect(
+        sessions.observeKnownDevice(user.id, second, () =>
+          Promise.resolve(() => Promise.reject(new Error('queue unavailable'))),
+        ),
+      ).rejects.toThrow('queue unavailable');
+      const results = await Promise.all(
+        Array.from({ length: 3 }, () => sessions.observeKnownDevice(user.id, second, prepare)),
+      );
+      expect(results.filter(Boolean)).toHaveLength(1);
+      expect(publish).toHaveBeenCalledTimes(1);
+      expect(await db.selectFrom('user_known_device').selectAll().where('userId', '=', user.id).execute()).toHaveLength(
+        2,
+      );
+      await db.deleteFrom('user').where('id', '=', user.id).execute();
+      expect(await db.selectFrom('user_known_device').selectAll().where('userId', '=', user.id).execute()).toEqual([]);
+      await db.deleteFrom('cluster_group').where('id', '=', group.id).execute();
+    } finally {
+      await db.destroy();
+    }
+  });
+
+  it('retries failed sign-in notice channels without publishing completed channels twice', async () => {
+    const db = new Kysely<DB>(getKyselyConfig(config.getEnv().database.config));
+    const notices = new DatabaseRepository(db, LoggingRepository.create(), config);
+    const notification = vi.fn(() => Promise.resolve('notice'));
+    const email = vi.fn(() => Promise.resolve('email'));
+    const notificationKey = 'sign-in-notice:in-app:account';
+    const emailKey = 'sign-in-notice:email:account';
+    try {
+      await expect(notices.publishSignInNotice(notificationKey, notification)).resolves.toBe('notice');
+      await expect(
+        notices.publishSignInNotice(emailKey, () => Promise.reject(new Error('queue unavailable'))),
+      ).rejects.toThrow('queue unavailable');
+      expect(await notices.hasSignInNotice(notificationKey)).toBe(true);
+      expect(await notices.hasSignInNotice(emailKey)).toBe(false);
+      await expect(notices.publishSignInNotice(notificationKey, notification)).resolves.toBeUndefined();
+      const results = await Promise.all(Array.from({ length: 3 }, () => notices.publishSignInNotice(emailKey, email)));
+      expect(results.filter(Boolean)).toEqual(['email']);
+      expect(notification).toHaveBeenCalledTimes(1);
+      expect(email).toHaveBeenCalledTimes(1);
+    } finally {
+      await notices.shutdown();
+    }
+  });
 
   const socketServer = async () => {
     const http = createServer();

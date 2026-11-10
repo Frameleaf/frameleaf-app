@@ -1716,6 +1716,7 @@ export type UserPreferences = {
     enabled: boolean;
     albumInvite: boolean;
     albumUpdate: boolean;
+    newSignIn: boolean;
   };
   download: {
     archiveSize: number;

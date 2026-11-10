@@ -12,7 +12,7 @@ import { ApiBearerAuth, ApiCookieAuth, ApiExtension, ApiOkResponse, ApiQuery, Ap
 import { Request } from 'express';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ApiCustomExtension, MetadataKey, Permission, RequestQuery } from 'src/enum.js';
-import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { type FrameleafRequest, requestSecurityAddress, requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService, LoginDetails } from 'src/services/auth.service.js';
 import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
@@ -111,14 +111,14 @@ export const FileResponse = (...contentTypes: string[]) =>
 
 export const GetLoginDetails = createParamDecorator((data, context: ExecutionContext): LoginDetails => {
   const request = context.switchToHttp().getRequest<Request>();
-  const { deviceType, deviceOS, appVersion } = getUserAgentDetails(request.headers);
+  const device = getUserAgentDetails(request.headers);
 
   return {
-    clientIp: request.ip ?? '',
+    clientIp: (request as FrameleafRequest).frameleafForwarded?.for ?? request.ip ?? '',
+    // A request without a verified IP stays unknown for security counters and activity.
+    securityClientIp: requestSecurityAddress(request) ?? '',
     isSecure: request.secure,
-    deviceType,
-    deviceOS,
-    appVersion,
+    ...device,
     via: requestVia(request),
   };
 });

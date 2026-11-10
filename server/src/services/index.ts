@@ -156,6 +156,7 @@ import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
@@ -358,6 +359,7 @@ export const services = [
   SearchService,
   ServerService,
   SessionService,
+  SignInSecurityService,
   SharedLinkService,
   ItemShareService,
   AlbumSourceService,
