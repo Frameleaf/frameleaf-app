@@ -9,8 +9,6 @@ import en from '../../../../../i18n/en.json';
 import SelectionBar from './SelectionBar.svelte';
 
 vi.mock('$lib/services/shared-link.service', () => ({
-  asDirectImageUrl: (link: { directUrl?: string | null }) =>
-    link.directUrl ? `https://frameleaf.local${link.directUrl}` : '',
   asUrl: () => 'https://frameleaf.local/s/test',
   handleCreateSharedLink: vi.fn().mockResolvedValue(true),
   handleUpdateSharedLink: vi.fn(),

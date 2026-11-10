@@ -50801,70 +50801,6 @@
         "x-immich-state": "Stable"
       }
     },
-    "/shared-links/direct/{keyOrSlug}.jpg": {
-      "get": {
-        "description": "Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.",
-        "operationId": "getSharedLinkDirectImage",
-        "parameters": [
-          {
-            "name": "keyOrSlug",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "size",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "$ref": "#/components/schemas/SharedLinkDirectImageSize"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "format": "binary",
-                  "type": "string"
-                }
-              },
-              "image/jpeg": {
-                "schema": {
-                  "format": "binary",
-                  "type": "string"
-                }
-              },
-              "image/webp": {
-                "schema": {
-                  "format": "binary",
-                  "type": "string"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "summary": "View the image of a single-photo shared link",
-        "tags": [
-          "Shared links"
-        ],
-        "x-immich-history": [
-          {
-            "version": "v3.4.0",
-            "state": "Added"
-          },
-          {
-            "version": "v3.4.0",
-            "state": "Beta"
-          }
-        ],
-        "x-immich-state": "Beta"
-      }
-    },
     "/shared-links/login": {
       "post": {
         "description": "Login to a password protected shared link",
@@ -143956,22 +143892,6 @@
         ],
         "type": "object"
       },
-      "SharedLinkDirectImageDto": {
-        "properties": {
-          "size": {
-            "$ref": "#/components/schemas/SharedLinkDirectImageSize"
-          }
-        },
-        "type": "object"
-      },
-      "SharedLinkDirectImageSize": {
-        "description": "Image size: preview (default) or fullsize",
-        "enum": [
-          "preview",
-          "fullsize"
-        ],
-        "type": "string"
-      },
       "SharedLinkEditDto": {
         "properties": {
           "allowDownload": {
@@ -144085,17 +144005,6 @@
             "nullable": true,
             "type": "string"
           },
-          "directUrl": {
-            "description": "FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root (/api/shared-links/direct/...).",
-            "nullable": true,
-            "type": "string",
-            "x-immich-history": [
-              {
-                "version": "v3.4.0",
-                "state": "Added"
-              }
-            ]
-          },
           "expiresAt": {
             "description": "Expiration date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -144155,7 +144064,6 @@
           "coverAssetIds",
           "createdAt",
           "description",
-          "directUrl",
           "expiresAt",
           "id",
           "key",
