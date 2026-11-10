@@ -160,6 +160,38 @@ describe('PostgreSQL shared services', () => {
     }
   });
 
+  it('holds an address and an account key together on one connection, all or none (FL-850)', async () => {
+    const first = admission();
+    const second = admission();
+    const address = 'sign-in-backoff:together-address';
+    const account = 'sign-in-backoff:account:together';
+    for (let attempt = 0; attempt < 5; attempt++) await first.recordSignInFailure(account);
+
+    const both = await first.acquireSignInAttempt([address, account]);
+    expect(both).toBeDefined();
+    try {
+      // the account's wait applies to the pair, and another address for the same account waits its turn
+      expect(await both?.getWait()).toBeGreaterThanOrEqual(28);
+      expect(await second.acquireSignInAttempt(['sign-in-backoff:together-other', account])).toBeUndefined();
+      // a pair that could not be taken leaves its first key free
+      const other = await second.acquireSignInAttempt('sign-in-backoff:together-other');
+      expect(other).toBeDefined();
+      await other?.release();
+      await both?.recordFailure();
+    } finally {
+      await both?.release();
+      await both?.release();
+    }
+
+    const later = await second.acquireSignInAttempt([address, account]);
+    try {
+      expect(later).toBeDefined();
+      expect(await later?.getWait()).toBeGreaterThanOrEqual(58);
+    } finally {
+      await later?.release();
+    }
+  });
+
   it('keeps distinct sign-in checks available while other checks hold connections', async () => {
     const counters = admission();
     const attempts: SignInAttempt[] = [];

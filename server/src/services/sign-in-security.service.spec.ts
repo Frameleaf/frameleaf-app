@@ -9,23 +9,33 @@ const memoryCounters = () => {
   const held = new Set<string>();
   return {
     failures,
-    acquireSignInAttempt: (key: string): Promise<SignInAttempt | undefined> => {
-      if (held.has(key)) {
+    held,
+    acquireSignInAttempt: (key: string | string[]): Promise<SignInAttempt | undefined> => {
+      const keys = typeof key === 'string' ? [key] : key;
+      if (keys.some((name) => held.has(name))) {
         return Promise.resolve(undefined);
       }
-      held.add(key);
+      for (const name of keys) {
+        held.add(name);
+      }
       return Promise.resolve({
-        getWait: () => Promise.resolve((failures.get(key) ?? 0) >= 5 ? 30 : 0),
+        getWait: () => Promise.resolve(keys.some((name) => (failures.get(name) ?? 0) >= 5) ? 30 : 0),
         recordFailure: () => {
-          failures.set(key, (failures.get(key) ?? 0) + 1);
+          for (const name of keys) {
+            failures.set(name, (failures.get(name) ?? 0) + 1);
+          }
           return Promise.resolve();
         },
         clearFailures: () => {
-          failures.delete(key);
+          for (const name of keys) {
+            failures.delete(name);
+          }
           return Promise.resolve();
         },
         release: () => {
-          held.delete(key);
+          for (const name of keys) {
+            held.delete(name);
+          }
           return Promise.resolve();
         },
       });
@@ -95,22 +105,26 @@ describe(SignInSecurityService.name, () => {
     await expect(wrongPassword('password', 'owner@example.com', '203.0.113.2')).resolves.toBe('checked');
   });
 
-  it('lets go of the address counter even when the account counter’s connection already ended', async () => {
-    const acquire = counters.acquireSignInAttempt;
-    vi.spyOn(counters, 'acquireSignInAttempt').mockImplementation(async (key: string) => {
-      const attempt = await acquire(key);
-      return key.includes(':account:') && attempt
-        ? {
-            ...attempt,
-            release: () => Promise.reject(new Error('Release called on client which has already been released')),
-          }
-        : attempt;
-    });
+  it('takes the address and account counters together, in one request to the counters', async () => {
+    const acquire = vi.spyOn(counters, 'acquireSignInAttempt');
 
-    await expect(wrongPassword('password', 'owner@example.com', '203.0.113.1')).resolves.toBe('checked');
+    await wrongPassword('password', 'owner@example.com', '203.0.113.1');
 
-    // the address counter (the one key that is not the account's) is free again
-    const addressKey = counters.failures.keys().find((key) => !key.includes(':account:'))!;
-    await expect(acquire(addressKey)).resolves.toBeDefined();
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(acquire.mock.calls[0][0]).toEqual([expect.any(String), expect.stringContaining(':account:')]);
+    expect(counters.held.size).toBe(0);
+  });
+
+  it.each([
+    { name: 'at home', via: null },
+    { name: 'through remote access', via: 'relay' },
+  ])('refuses a password it cannot hold back $name, without checking it (fails closed)', async ({ via }) => {
+    vi.spyOn(counters, 'acquireSignInAttempt').mockRejectedValue(new Error('timeout exceeded when trying to connect'));
+    const verify = vi.fn();
+
+    await expect(
+      sut.attempt('password', 'owner@example.com', { ...from('192.168.1.20'), via } as LoginDetails, verify),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(verify).not.toHaveBeenCalled();
   });
 });

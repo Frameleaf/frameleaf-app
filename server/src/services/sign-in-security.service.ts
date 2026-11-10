@@ -19,21 +19,6 @@ const SIGN_IN_FAILURE_DESCRIPTION =
   'There were repeated unsuccessful sign-in attempts. If they weren’t yours, review your signed-in devices and change your password.';
 const NEW_SIGN_IN_TITLE = 'New sign-in to your Frameleaf Library';
 
-/** Both counters of a password sign-in act as one: the longer wait applies, and a failure counts on each. */
-const bothAttempts = (address: SignInAttempt, account: SignInAttempt): SignInAttempt => ({
-  getWait: async () => Math.max(await address.getWait(), await account.getWait()),
-  recordFailure: async () => {
-    await Promise.all([address.recordFailure(), account.recordFailure()]);
-  },
-  clearFailures: async () => {
-    await Promise.all([address.clearFailures(), account.clearFailures()]);
-  },
-  // Both locks are let go even when one connection already ended: a release never stops the other one.
-  release: async () => {
-    await Promise.allSettled([address.release(), account.release()]);
-  },
-});
-
 @Injectable()
 export class SignInSecurityService extends BaseService {
   @Inject(RateLimitRepository)
@@ -63,28 +48,23 @@ export class SignInSecurityService extends BaseService {
         'sign-in-backoff',
         JSON.stringify([kind, principal, rateLimitAddress(details.securityClientIp ?? details.clientIp)]),
       );
-      attempt = await this.counters.acquireSignInAttempt(`sign-in-backoff:${hash}`);
-      if (attempt && kind === 'password') {
+      const keys = [`sign-in-backoff:${hash}`];
+      if (kind === 'password') {
         // FL-850: a password guesser behind a trusted proxy can send a new forwarded address with every try, so
         // wrong passwords for one account also count from every address. This wait holds back only further
-        // passwords for that account: passkeys and Frameleaf sign-in are never behind it.
+        // passwords for that account: passkeys and Frameleaf sign-in are never behind it. Both locks are held on
+        // one connection, so a burst of sign-ins cannot use up the pool twice as fast.
         const account = await this.key('sign-in-backoff', JSON.stringify([kind, principal.trim().toLowerCase()]));
-        const accountAttempt = await this.counters.acquireSignInAttempt(`sign-in-backoff:account:${account}`);
-        if (accountAttempt) {
-          attempt = bothAttempts(attempt, accountAttempt);
-        } else {
-          // another password for this account is being checked right now: wait for it, as for one address
-          await attempt.release();
-          attempt = undefined;
-        }
+        keys.push(`sign-in-backoff:account:${account}`);
       }
+      // another check for the same key is running now: wait for it
+      attempt = await this.counters.acquireSignInAttempt(keys);
       wait = attempt ? await attempt.getWait() : 1;
     } catch {
       await attempt?.release();
+      // Fail closed: a credential is never checked without its backoff, at home or away.
       this.logger.warn('Sign-in backoff counters are unavailable');
-      if (isRemoteVia(details.via))
-        throw new ServiceUnavailableException('This server is busy. Try again in a moment.');
-      return;
+      throw new ServiceUnavailableException('This server is busy. Try again in a moment.');
     }
     if (wait > 0) {
       await attempt?.release();
