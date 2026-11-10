@@ -44,6 +44,7 @@ import {
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   DESIGN_PREVIEW_TAGS,
