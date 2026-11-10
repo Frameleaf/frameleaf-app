@@ -9,6 +9,7 @@ import { GalleryInviteEmail } from 'src/emails/gallery-invite.email.js';
 import { ItemShareEmail } from 'src/emails/item-share.email.js';
 import { NewSignInEmail } from 'src/emails/new-sign-in.email.js';
 import { PasswordLinkEmail } from 'src/emails/password-link.email.js';
+import { RestoreReportEmail } from 'src/emails/restore-report.email.js';
 import { SignInReminderEmail } from 'src/emails/sign-in-reminder.email.js';
 import { StudioInquiryEmail } from 'src/emails/studio-inquiry.email.js';
 import { TestEmail } from 'src/emails/test.email.js';
@@ -76,6 +77,9 @@ export enum EmailTemplate {
   PASSWORD_LINK = 'password-link',
   FRAMELEAF_SIGN_IN_REMINDER = 'frameleaf-sign-in-reminder',
   NEW_SIGN_IN = 'new-sign-in',
+
+  // BACKUP
+  RESTORE_REPORT = 'restore-report',
 
   // ALBUM
   ALBUM_INVITE = 'album-invite',
@@ -180,8 +184,24 @@ export interface AlbumUpdateEmailProps extends BaseEmailProps {
 export type NewSignInEmailProps = BaseEmailProps &
   ({ kind: 'attempts' } | { kind: 'new-device'; device: string; place: string; time: string });
 
+/** FL-900: the email after a scheduled restore drill. Times are already written out for the reader. */
+export type RestoreReportEmailProps = BaseEmailProps & {
+  result: 'passed' | 'failed';
+  source: string;
+  ranAt: string;
+  backupFrom: string | null;
+  sample: number;
+  matched: number;
+  duration: string;
+  failure: string | null;
+  stoppedAt: string | null;
+  /** The report page (passed) or the recovery key (failed), relative to the server's address. */
+  link: string;
+};
+
 export type EmailRenderRequest =
   | { template: EmailTemplate.NEW_SIGN_IN; data: NewSignInEmailProps; customTemplate?: string }
+  | { template: EmailTemplate.RESTORE_REPORT; data: RestoreReportEmailProps; customTemplate?: string }
   | {
       template: EmailTemplate.TEST_EMAIL;
       data: TestEmailProps;
@@ -370,6 +390,9 @@ export class EmailRepository {
 
       case EmailTemplate.NEW_SIGN_IN: {
         return createElement(NewSignInEmail, data);
+      }
+      case EmailTemplate.RESTORE_REPORT: {
+        return createElement(RestoreReportEmail, data);
       }
       case EmailTemplate.WELCOME: {
         return createElement(WelcomeEmail, { ...data, customTemplate });

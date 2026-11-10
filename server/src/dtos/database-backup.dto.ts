@@ -89,6 +89,10 @@ const BackupRestoreVerificationResponseSchema = z
       .nullable()
       .describe('When the next test is due; null when a part has never been proved'),
     intervalDays: z.int().describe('How often a restore test is due'),
+    drillReportId: z
+      .uuid()
+      .nullable()
+      .describe('FL-879: the restore drill that recorded the last test; null when an administrator recorded it'),
   })
   .meta({ id: 'BackupRestoreVerificationResponseDto' });
 

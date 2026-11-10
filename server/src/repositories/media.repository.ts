@@ -515,13 +515,17 @@ export class MediaRepository {
         const output = join(folder, `${rung}${extension}`);
         try {
           await convert(source, output, executionSignal());
+        } catch (error) {
+          executionSignal()?.throwIfAborted();
+          this.logger.debug(`Could not open ${input} with ${rung}: ${error}`);
+          continue;
+        }
+        try {
           return { ...(await decode(output, converted)), rung };
         } catch (error) {
           executionSignal()?.throwIfAborted();
-          if (error instanceof SharpResourceLimitError) {
-            throw error;
-          }
-          this.logger.debug(`Could not open ${input} with ${rung}: ${error}`);
+          this.rethrowUnlessDecodeFailure(error, isDecodeFailure);
+          this.logger.debug(`Could not read what ${rung} made of ${input}: ${error}`);
         }
       }
     } finally {
@@ -534,11 +538,19 @@ export class MediaRepository {
           return { ...(await decode(preview, converted)), rung: 'embedded' };
         } catch (error) {
           executionSignal()?.throwIfAborted();
+          this.rethrowUnlessDecodeFailure(error, isDecodeFailure);
           this.logger.debug(`Could not open the preview inside ${input}: ${error}`);
         }
       }
     }
     throw new SharpOperationError(`Unsupported image: no decoder could open it (${failure.message})`, true);
+  }
+
+  /** Over a limit, a full drive, a preview that could not be written: none of that is the photo's fault. */
+  private rethrowUnlessDecodeFailure(error: unknown, isDecodeFailure: (error: SharpOperationError) => boolean) {
+    if (!(error instanceof SharpOperationError) || !isDecodeFailure(error)) {
+      throw error;
+    }
   }
 
   private async readOrientation(input: string): Promise<ExifOrientation> {

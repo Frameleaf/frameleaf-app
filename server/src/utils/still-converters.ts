@@ -44,17 +44,36 @@ const MAGICK_CODERS: Record<string, string> = {
 
 const JPEG_XR = new Set(['.jxr', '.wdp', '.hdp']);
 
-const run = (command: string, args: string[], signal?: AbortSignal) =>
+// Lowers the file-size limit to "$0" blocks, never raises one already lower, then becomes the converter.
+export const CAPPED =
+  'current=$(ulimit -f); if [ "$current" = unlimited ] || [ "$current" -gt "$0" ]; then ulimit -f "$0" 2>/dev/null; fi; exec "$@"';
+
+// A decoded surface over a gibibyte is refused by the image worker anyway, so no copy needs to be larger.
+const MAX_OUTPUT_BYTES = 1024 ** 3;
+
+/**
+ * Runs one converter with a hard limit on the size of any file it writes (the shell's `ulimit -f`; shells
+ * count it in 512-byte or 1024-byte blocks, so the real limit is `maxBytes` or twice that), so a huge picture stops the converter instead of filling the temporary folder. The
+ * command and its arguments reach the shell as positional parameters, never as script text.
+ * Where the server already runs under a lower limit, soft or hard, that stricter limit is left as it is and
+ * the converter still runs.
+ */
+export const runConverter = (command: string, args: string[], signal?: AbortSignal, maxBytes = MAX_OUTPUT_BYTES) =>
   new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'ignore' });
+    const blocks = String(Math.ceil(maxBytes / 512));
+    const child = spawn('sh', ['-c', CAPPED, blocks, command, ...args], {
+      stdio: 'ignore',
+    });
     const lifetime = superviseMediaProcess(child, { signal });
     let failure: Error | undefined;
     child.once('error', (error) => {
       failure = error;
     });
-    child.once('close', (code) => {
+    child.once('close', (code, killedBy) => {
       const error =
-        lifetime.error() ?? failure ?? (code === 0 ? undefined : new Error(`${command} exited with ${code}`));
+        lifetime.error() ??
+        failure ??
+        (code === 0 ? undefined : new Error(`${command} exited with ${code ?? killedBy}`));
       if (error) {
         reject(error);
       } else {
@@ -62,6 +81,7 @@ const run = (command: string, args: string[], signal?: AbortSignal) =>
       }
     });
   });
+const run = runConverter;
 
 export const stillConverters = (filename: string): StillConverter[] => {
   const extension = extname(filename).toLowerCase();
