@@ -174,6 +174,8 @@ describe('AssetViewerNavBar component', () => {
         ownerId,
         isTrashed: false,
         type: AssetTypeEnum.Image,
+        // a fixed path: the factory's random one is sometimes a .gif or .svg, which offers no Edit
+        originalPath: '/data/library/2019/03/IMG_0877.jpg',
         originalFileName: 'IMG_0877.jpg',
         fileProblem,
       });
