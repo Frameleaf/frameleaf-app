@@ -81710,6 +81710,7 @@
           "language": {
             "description": "Language of the question",
             "maxLength": 16,
+            "minLength": 1,
             "type": "string"
           },
           "query": {
