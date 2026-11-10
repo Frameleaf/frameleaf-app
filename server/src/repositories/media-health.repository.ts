@@ -691,7 +691,10 @@ export class MediaHealthRepository {
             CASE WHEN asset_health."resolvedAt" IS NULL AND asset_health."dismissedAt" IS NULL
               AND excluded."resolvedAt" IS NULL AND excluded."dismissedAt" IS NULL
             THEN jsonb_strip_nulls(jsonb_build_object(
-              'fixState', asset_health.evidence->'fixState', 'partSaved', asset_health.evidence->'partSaved',
+              -- FL-1353: "couldn't be checked" does not outlive a check that proves damage
+              'fixState', CASE WHEN asset_health.evidence->>'fixState' = 'couldnt-check'
+                AND excluded.status = 'corrupt_confirmed' THEN NULL ELSE asset_health.evidence->'fixState' END,
+              'partSaved', asset_health.evidence->'partSaved',
               'searchPending', asset_health.evidence->'searchPending'))
             ELSE '{}'::jsonb END
             || jsonb_strip_nulls(jsonb_build_object('autoRepairDeclined', asset_health.evidence->'autoRepairDeclined'))

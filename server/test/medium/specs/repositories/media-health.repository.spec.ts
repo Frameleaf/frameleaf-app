@@ -1435,6 +1435,22 @@ describe(MediaHealthRepository.name, () => {
       await expect(listed(sut, 'needs', user.id)).resolves.toContain(unchecked.id);
     });
 
+    it('flags it once a later check proves the damage (FL-1353)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'couldnt-check' },
+      });
+      // the next scan reads the whole file and finds it changed
+      await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+      });
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeDefined();
+    });
+
     it('counts what was fixed in the last 7 days, from the earliest to the newest, and what needs the reader', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

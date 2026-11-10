@@ -7,6 +7,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
@@ -87,6 +88,10 @@ export type MediaIntegrityValidation = {
   cancel: () => void;
 };
 
+/** Over the pixel or memory limit, or the image worker died: nothing about the file. */
+const isDecoderLimit = (error: unknown) =>
+  error instanceof SharpResourceLimitError || (error instanceof Error && /^Sharp child closed \(/.test(error.message));
+
 @Injectable()
 export class MediaIntegrityService {
   // Hold a slot until native hashing/LibRaw settles, even after the caller's deadline expires.
@@ -121,7 +126,10 @@ export class MediaIntegrityService {
     const touch = () => {
       progressAt = Date.now();
     };
-    const work = this.validateFile(input, controller.signal, touch).finally(() => {
+    // a cancelled job stops a read that is still making progress, and frees its slot
+    const execution = executionSignal();
+    const signal = execution ? AbortSignal.any([controller.signal, execution]) : controller.signal;
+    const work = this.validateFile(input, signal, touch).finally(() => {
       this.activeValidations--;
     });
     let timer: ReturnType<typeof setTimeout>;
@@ -338,9 +346,9 @@ export class MediaIntegrityService {
       if ('code' in details && details.code === 'ENOENT') {
         return { status: 'transient', reason: 'decoder_unavailable' };
       }
-      const message = error instanceof Error ? error.message : '';
-      if (error instanceof SharpResourceLimitError || /^Sharp child closed \(/.test(message)) {
-        // over the pixel or memory limit, or the image worker died: nothing about the file
+      // the path is never part of the verdict: a folder may be called "corrupt"
+      const message = error instanceof Error ? error.message.replaceAll(input.path, '') : '';
+      if (isDecoderLimit(error)) {
         return { status: 'transient', reason: 'decoder_resource_limit' };
       }
       if (isRaw) {
@@ -353,7 +361,14 @@ export class MediaIntegrityService {
       let opens = true;
       try {
         await this.mediaRepository.decodeImage(input.path, lenient);
-      } catch {
+      } catch (lenientError) {
+        // the second read could not finish: that says nothing about the file
+        if (signal.aborted) {
+          return { status: 'timeout', reason: 'validation_timeout' };
+        }
+        if (isDecoderLimit(lenientError)) {
+          return { status: 'transient', reason: 'decoder_resource_limit' };
+        }
         opens = false;
       }
       if (opens) {
@@ -377,7 +392,7 @@ export class MediaIntegrityService {
         }
         return { status: 'unsupported', reason: 'decode_unsupported', ...said };
       }
-      if (classifyImageDecodeFailure(error, { isRaw: false }) === MediaHealthStatus.CorruptConfirmed) {
+      if (classifyImageDecodeFailure(message, { isRaw: false }) === MediaHealthStatus.CorruptConfirmed) {
         return { status: 'corrupt', reason: 'decode_failed', ...said };
       }
       return { status: 'transient', reason: 'decode_unverified', ...said };
