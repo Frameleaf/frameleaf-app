@@ -214,6 +214,11 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST auth/two-factor/recovery-codes': RATE_LIMITS.twoFactorChange,
   'POST auth/two-factor/move': RATE_LIMITS.twoFactorChange,
   'POST auth/two-factor/move/confirm': RATE_LIMITS.twoFactorChange,
+  // FL-836: a passkey sign-in counts like a password sign-in; adding one may take the password
+  'POST auth/passkeys/login': RATE_LIMITS.login,
+  'POST auth/passkeys/login/options': RATE_LIMITS.passkeyLoginOptions,
+  'POST auth/passkeys/register/options': RATE_LIMITS.passkeyChange,
+  'POST auth/passkeys/register': RATE_LIMITS.passkeyChange,
   // FL-538: a choose-a-password link is checked and used without signing in, bounded like a sign-in.
   'POST auth/password-link/check': RATE_LIMITS.login,
   'POST auth/password-link': RATE_LIMITS.login,

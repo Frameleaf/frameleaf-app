@@ -1,0 +1,268 @@
+import { Injectable } from '@nestjs/common';
+import { type Insertable, type Kysely } from 'kysely';
+import { InjectKysely } from 'nestjs-kysely';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { DB } from 'src/schema/index.js';
+import { AuthChallengeTable, UserPasskeyTable } from 'src/schema/tables/user-passkey.table.js';
+
+/** FL-836: what a passkey ceremony or a password check is for (`auth_challenge.purpose`). */
+export type AuthChallengePurpose = 'register' | 'login' | 'password-proof';
+
+const passkeyColumns = [
+  'id',
+  'userId',
+  'credentialId',
+  'publicKey',
+  'counter',
+  'transports',
+  'name',
+  'rpId',
+  'aaguid',
+  'backedUp',
+  'createdAt',
+  'lastUsedAt',
+] as const;
+
+/** A passkey removed, and the sessions it had started (now signed out). */
+export type RemovedPasskeys = { count: number; sessionIds: string[] };
+
+/**
+ * FL-836: passkeys of local accounts, their ceremony challenges and password checks, and the
+ * sessions they started. Challenges are taken (deleted) when used, so each answers once.
+ */
+@Injectable()
+export class PasskeyRepository {
+  constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getByUser(userId: string) {
+    return this.db
+      .selectFrom('user_passkey')
+      .select(passkeyColumns)
+      .where('userId', '=', userId)
+      .orderBy('createdAt', 'asc')
+      .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async countByUser(userId: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('user_passkey')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('userId', '=', userId)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
+  @GenerateSql({ params: [DummyValue.BUFFER] })
+  getByCredentialId(credentialId: Buffer) {
+    return this.db
+      .selectFrom('user_passkey')
+      .select(passkeyColumns)
+      .where('credentialId', '=', credentialId)
+      .executeTakeFirst();
+  }
+
+  /** The account's credential version, made (as 0) the first time it is asked for. */
+  async getCredentialVersion(userId: string): Promise<number> {
+    await this.db
+      .insertInto('user_credential_version')
+      .values({ userId })
+      .onConflict((oc) => oc.column('userId').doNothing())
+      .execute();
+    const row = await this.db
+      .selectFrom('user_credential_version')
+      .select('version')
+      .where('userId', '=', userId)
+      .executeTakeFirstOrThrow();
+    return row.version;
+  }
+
+  /**
+   * Saves a passkey, only while the account's credential version is still `version` (read under the
+   * version row's lock, so a reset waits for this insert or this insert sees the reset). `stale` when a
+   * reset happened since the registration began; undefined when this credential is already saved.
+   */
+  async create(passkey: Insertable<UserPasskeyTable>, version: number) {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .selectFrom('user_credential_version')
+        .select('version')
+        .where('userId', '=', passkey.userId)
+        .forUpdate()
+        .executeTakeFirst();
+      if ((row?.version ?? 0) !== version) {
+        return 'stale' as const;
+      }
+      return trx
+        .insertInto('user_passkey')
+        .values(passkey)
+        .onConflict((oc) => oc.column('credentialId').doNothing())
+        .returning(passkeyColumns)
+        .executeTakeFirst();
+    });
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, DummyValue.STRING] })
+  rename(userId: string, id: string, name: string) {
+    return this.db
+      .updateTable('user_passkey')
+      .set({ name })
+      .where('id', '=', id)
+      .where('userId', '=', userId)
+      .returning(passkeyColumns)
+      .executeTakeFirst();
+  }
+
+  /**
+   * A sign-in with the passkey: the new signature count (`counter` is a bigint, which the database
+   * driver reads back as a number), conditional on the one just checked, so two
+   * sign-ins racing with one assertion cannot both pass.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.NUMBER, DummyValue.NUMBER, DummyValue.BOOLEAN] })
+  async recordUse(id: string, counter: number, newCounter: number, backedUp: boolean): Promise<boolean> {
+    const row = await this.db
+      .updateTable('user_passkey')
+      .set({ counter: String(newCounter), backedUp, lastUsedAt: new Date() })
+      .where('id', '=', id)
+      .where('counter', '=', String(counter))
+      .returning('id')
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /**
+   * One passkey of the account, and the sessions it started other than `keepSessionId` (the one
+   * removing it); nothing when it isn't theirs.
+   */
+  async delete(
+    userId: string,
+    id: string,
+    keepSessionId?: string,
+  ): Promise<(RemovedPasskeys & { name: string }) | undefined> {
+    return this.db.transaction().execute(async (trx) => {
+      const owned = await trx
+        .selectFrom('user_passkey')
+        .select('id')
+        .where('id', '=', id)
+        .where('userId', '=', userId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!owned) {
+        return;
+      }
+      // before the passkey goes: its link to the sessions it started goes with it
+      const sessionIds = await deleteSessions(trx, userId, [id], keepSessionId);
+      const row = await trx.deleteFrom('user_passkey').where('id', '=', id).returning('name').executeTakeFirstOrThrow();
+      return { name: row.name, count: 1, sessionIds };
+    });
+  }
+
+  /** Every passkey of the account (an administrator's reset), and the sessions they started. */
+  async deleteAll(userId: string): Promise<RemovedPasskeys> {
+    return this.db.transaction().execute(async (trx) => {
+      // first, under the version row's lock: a registration in flight either finished (and its passkey
+      // is removed below) or will see the new version and be refused
+      await trx
+        .insertInto('user_credential_version')
+        .values({ userId, version: 1 })
+        .onConflict((oc) =>
+          oc.column('userId').doUpdateSet((eb) => ({ version: eb('user_credential_version.version', '+', 1) })),
+        )
+        .execute();
+      // nothing started on the old password (an open "Add a passkey", a recent password check) finishes after
+      await trx
+        .deleteFrom('auth_challenge')
+        .where('userId', '=', userId)
+        .where('purpose', 'in', ['register', 'password-proof'])
+        .execute();
+      const ids = (await trx.selectFrom('user_passkey').select('id').where('userId', '=', userId).execute()).map(
+        ({ id }) => id,
+      );
+      const sessionIds = await deleteSessions(trx, userId, ids);
+      await trx.deleteFrom('user_passkey').where('userId', '=', userId).execute();
+      return { count: ids.length, sessionIds };
+    });
+  }
+
+  /**
+   * Links a new session to the passkey that started it. False when the passkey was removed meanwhile
+   * (its foreign key waits for a removal in progress, then fails), so the caller signs the session out.
+   */
+  async linkSession(sessionId: string, passkeyId: string): Promise<boolean> {
+    try {
+      await this.db.insertInto('session_passkey').values({ sessionId, passkeyId }).execute();
+      return true;
+    } catch (error) {
+      if ((error as { code?: string }).code === '23503') {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async isPasskeySession(sessionId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('session_passkey')
+      .select('sessionId')
+      .where('sessionId', '=', sessionId)
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** Stores a challenge (or a password check), dropping every expired one first. */
+  async createChallenge(challenge: Insertable<AuthChallengeTable> & { purpose: AuthChallengePurpose }): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      await trx.deleteFrom('auth_challenge').where('expiresAt', '<', new Date()).execute();
+      await trx.insertInto('auth_challenge').values(challenge).execute();
+    });
+  }
+
+  /** Takes an unexpired challenge: it is deleted, so it answers only once. */
+  @GenerateSql({ params: ['login', DummyValue.STRING] })
+  takeChallenge(purpose: AuthChallengePurpose, challenge: string) {
+    return this.db
+      .deleteFrom('auth_challenge')
+      .where('purpose', '=', purpose)
+      .where('challenge', '=', challenge)
+      .where('expiresAt', '>', new Date())
+      .returning(['userId', 'sessionId', 'origin', 'rpId', 'credentialVersion'])
+      .executeTakeFirst();
+  }
+
+  /** Whether the session's password was checked recently enough (an unexpired `password-proof`). */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async hasPasswordProof(sessionId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('auth_challenge')
+      .select('id')
+      .where('purpose', '=', 'password-proof')
+      .where('sessionId', '=', sessionId)
+      .where('expiresAt', '>', new Date())
+      .executeTakeFirst();
+    return !!row;
+  }
+}
+
+/** Signs out the account's sessions that these passkeys started. */
+const deleteSessions = async (
+  trx: Kysely<DB>,
+  userId: string,
+  passkeyIds: string[],
+  keepSessionId?: string,
+): Promise<string[]> => {
+  if (passkeyIds.length === 0) {
+    return [];
+  }
+  const rows = await trx
+    .deleteFrom('session')
+    .where('userId', '=', userId)
+    .$if(!!keepSessionId, (qb) => qb.where('id', '!=', keepSessionId!))
+    .where('id', 'in', (eb) =>
+      eb.selectFrom('session_passkey').select('sessionId').where('passkeyId', 'in', passkeyIds),
+    )
+    .returning('id')
+    .execute();
+  return rows.map(({ id }) => id);
+};

@@ -78,9 +78,22 @@ type DecodeImageOptions = {
   edits?: AssetEditActionItem[];
 };
 
+/**
+ * FL-1356: which decoder opened a still. `strict` and `lenient` are libvips; `djpeg`, `jxrlib`, `magick` and
+ * `ffmpeg` are the other decoders tried when libvips cannot open the file; `embedded` is the small preview
+ * stored inside the file, shown when nothing can decode the picture itself.
+ */
+export type StillRung = 'strict' | 'lenient' | 'djpeg' | 'jxrlib' | 'magick' | 'ffmpeg' | 'embedded';
+
 export interface DecodeToBufferOptions extends DecodeImageOptions {
   size?: number;
   orientation?: ExifOrientation;
+  /**
+   * FL-1356: how far down the still ladder a decode may go. Left out, every rung is tried. `strict` stops
+   * after the strict decode (the file check wants to hear the complaint); `pixels` stops before the embedded
+   * preview, for callers that need the picture itself.
+   */
+  ladder?: 'strict' | 'pixels';
 }
 
 export type GenerateThumbnailOptions = Pick<ImageOptions, 'format' | 'quality' | 'progressive'> & DecodeToBufferOptions;

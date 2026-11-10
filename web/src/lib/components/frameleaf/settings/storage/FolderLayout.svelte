@@ -283,14 +283,14 @@
       {/each}
       <h3 class="group">{$t('frameleaf_layout_examples')}</h3>
       <ul class="examples">
-        {#each EXAMPLE_PATTERNS as example (example.template)}
+        {#each EXAMPLE_PATTERNS as pattern (pattern.template)}
           <li>
-            <code>{example.template}</code>
-            {#if example.album}
-              <span>{$t('frameleaf_layout_examples_in_album')} {slashed(example.template)}</span>
-              <span>{$t('frameleaf_layout_examples_no_album')} {slashed(example.template, false)}</span>
+            <code>{pattern.template}</code>
+            {#if pattern.album}
+              <span>{$t('frameleaf_layout_examples_in_album')} {slashed(pattern.template)}</span>
+              <span>{$t('frameleaf_layout_examples_no_album')} {slashed(pattern.template, false)}</span>
             {:else}
-              <span>{slashed(example.template)}</span>
+              <span>{slashed(pattern.template)}</span>
             {/if}
           </li>
         {/each}
