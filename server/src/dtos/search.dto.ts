@@ -600,7 +600,7 @@ const SearchAssetResponseSchema = z
   })
   .meta({ id: 'SearchAssetResponseDto' });
 
-const SearchResponseSchema = z
+export const SearchResponseSchema = z
   .object({
     albums: SearchAlbumResponseSchema,
     assets: SearchAssetResponseSchema,

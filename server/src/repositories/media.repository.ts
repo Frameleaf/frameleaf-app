@@ -7,11 +7,11 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import { parentPort } from 'node:worker_threads';
 import type { HdrCodecCapabilities } from 'src/queue/image-hdr.js';
-import type { SharpArguments } from 'src/queue/sharp-protocol.js';
+import type { SharpArguments, SharpResult } from 'src/queue/sharp-protocol.js';
 import type {
   DecodeToBufferOptions,
   GenerateThumbhashOptions,
@@ -19,6 +19,7 @@ import type {
   ImageDimensions,
   ProbeOptions,
   RawImageInfo,
+  StillRung,
   TranscodeCommand,
   VideoInfo,
   VideoPacketInfo,
@@ -33,6 +34,7 @@ import {
   ColorTransfer,
   DvProfile,
   DvSignalCompatibility,
+  ExifOrientation,
   H264Profile,
   HevcProfile,
   ImageFormat,
@@ -42,6 +44,7 @@ import {
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
@@ -50,6 +53,7 @@ import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { stillConverters } from 'src/utils/still-converters.js';
 
 const probe = (input: string, options: string[], signal = executionSignal()): Promise<FfprobeData> => {
   signal?.throwIfAborted();
@@ -267,23 +271,17 @@ export class MediaRepository {
     }
   }
 
-  async decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
-    try {
-      return await sharpProcessPool.run('decodeImage', [input, options]);
-    } catch (error) {
-      executionSignal()?.throwIfAborted();
-      if (
-        !(error instanceof SharpOperationError) ||
-        typeof input !== 'string' ||
-        options.raw ||
-        !mimeTypes.isRaw(input)
-      ) {
-        throw error;
-      }
-      const rendered = await renderRawWithLibRaw(input, executionSignal());
-      // LibRaw applies sensor orientation. Keep colour, size and edit semantics.
-      return sharpProcessPool.run('decodeImage', [rendered, { ...options, orientation: undefined }]);
-    }
+  // `rung` is always set here; it is optional in the type so a stand-in for this method need not name one.
+  async decodeImage(
+    input: string | Buffer,
+    options: DecodeToBufferOptions,
+  ): Promise<Omit<SharpResult<'decodeImage'>, 'rung'> & { rung?: StillRung }> {
+    return this.stillLadder(
+      input,
+      options,
+      (source, decode) => sharpProcessPool.run('decodeImage', [source, decode]),
+      () => true,
+    );
   }
 
   /** FL-1359: a font's specimen picture, capped at one minute. The child that drew it is not used again. */
@@ -296,24 +294,121 @@ export class MediaRepository {
     return sharpProcessPool.run('generateThumbnail', [input, options, output]);
   }
 
-  async generateImageThumbnails(...args: SharpArguments<'generateImageThumbnails'>) {
+  async generateImageThumbnails(
+    ...args: SharpArguments<'generateImageThumbnails'>
+  ): Promise<Omit<SharpResult<'generateImageThumbnails'>, 'rung'> & { rung?: StillRung }> {
     const [input, options, batch] = args;
+    return this.stillLadder(
+      input,
+      options,
+      (source, decode) => sharpProcessPool.run('generateImageThumbnails', [source, decode, batch]),
+      // Only the decode may step down the ladder: a preview that could not be written is not the photo's fault.
+      (error) => error.decodeFailure,
+    );
+  }
+
+  /**
+   * FL-1356: the one ladder every still goes down, so a known file type always opens somewhere.
+   * The image worker tries libvips strictly, then leniently (`decode`). When that fails for a file, the other
+   * decoders for its type each write a plain copy to a temporary folder, which is decoded in its place;
+   * last comes the small preview stored inside the file. Sensor data keeps its own renderer. If nothing
+   * opens it the error says "unsupported", which sets the file aside at once and never reports damage.
+   */
+  private async stillLadder<T extends { rung: StillRung }>(
+    input: string | Buffer,
+    options: DecodeToBufferOptions,
+    decode: (source: string | Buffer, options: DecodeToBufferOptions) => Promise<T>,
+    isDecodeFailure: (error: SharpOperationError) => boolean,
+  ): Promise<T> {
+    let failure: SharpOperationError;
     try {
-      return await sharpProcessPool.run('generateImageThumbnails', args);
+      return await decode(input, options);
     } catch (error) {
       executionSignal()?.throwIfAborted();
       if (
         !(error instanceof SharpOperationError) ||
-        !error.decodeFailure ||
+        !isDecodeFailure(error) ||
         typeof input !== 'string' ||
         options.raw ||
-        !mimeTypes.isRaw(input)
+        options.ladder === 'strict'
       ) {
         throw error;
       }
-      const rendered = await renderRawWithLibRaw(input, executionSignal());
-      return sharpProcessPool.run('generateImageThumbnails', [rendered, { ...options, orientation: undefined }, batch]);
+      failure = error;
     }
+    // A file that is not there, or may not be read, is not a file no decoder understands.
+    await fs.access(input, fs.constants.R_OK).catch(() => {
+      throw failure;
+    });
+    if (mimeTypes.isRaw(input)) {
+      const rendered = await renderRawWithLibRaw(input, executionSignal());
+      // LibRaw applies sensor orientation. Keep colour, size and edit semantics.
+      return decode(rendered, { ...options, orientation: undefined });
+    }
+
+    // The copies carry no dependable orientation tag, so the original's is read once and applied explicitly.
+    const converted = { ...options, processInvalidImages: true, orientation: await this.readOrientation(input) };
+    const folder = await fs.mkdtemp(join(tmpdir(), 'frameleaf-still-'));
+    try {
+      // A link with a plain name: decoders read "%d", "[0]" and "name:" in a path as instructions.
+      let source = join(
+        folder,
+        `source${extname(input)
+          .toLowerCase()
+          .replaceAll(/[^.a-z0-9]/g, '')}`,
+      );
+      await fs.symlink(input, source).catch(() => {
+        source = input;
+      });
+      for (const { rung, extension, convert } of stillConverters(input)) {
+        const output = join(folder, `${rung}${extension}`);
+        try {
+          await convert(source, output, executionSignal());
+          return { ...(await decode(output, converted)), rung };
+        } catch (error) {
+          executionSignal()?.throwIfAborted();
+          if (error instanceof SharpResourceLimitError) {
+            throw error;
+          }
+          this.logger.debug(`Could not open ${input} with ${rung}: ${error}`);
+        }
+      }
+    } finally {
+      await fs.rm(folder, { recursive: true, force: true });
+    }
+    if (options.ladder !== 'pixels') {
+      const preview = await this.extractEmbeddedPreview(input);
+      if (preview) {
+        try {
+          return { ...(await decode(preview, converted)), rung: 'embedded' };
+        } catch (error) {
+          executionSignal()?.throwIfAborted();
+          this.logger.debug(`Could not open the preview inside ${input}: ${error}`);
+        }
+      }
+    }
+    throw new SharpOperationError(`Unsupported image: no decoder could open it (${failure.message})`, true);
+  }
+
+  private async readOrientation(input: string): Promise<ExifOrientation> {
+    try {
+      const { Orientation } = await exiftool.readRaw(input, { readArgs: ['-Orientation', '-n'] });
+      const orientation = Number(Orientation);
+      return orientation >= 1 && orientation <= 8 ? (orientation as ExifOrientation) : ExifOrientation.Horizontal;
+    } catch {
+      return ExifOrientation.Horizontal;
+    }
+  }
+
+  private async extractEmbeddedPreview(input: string): Promise<Buffer | null> {
+    for (const tag of ['PreviewImage', 'ThumbnailImage']) {
+      try {
+        return await exiftool.extractBinaryTagToBuffer(tag, input);
+      } catch {
+        // no such preview in this file
+      }
+    }
+    return null;
   }
 
   async writeCloudUpload(input: string, output: string): Promise<void> {

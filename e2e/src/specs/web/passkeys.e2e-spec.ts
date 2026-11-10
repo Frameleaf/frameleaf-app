@@ -41,10 +41,10 @@ test.describe('Passkeys', () => {
     await page.goto(`${local}/user-settings?area=privacy&section=passkeys`);
     await expect(page.getByRole('heading', { name: 'You don’t have a passkey yet' })).toBeVisible();
     await page.getByRole('button', { name: 'Add a passkey…' }).first().click();
-    await page.getByLabel('Your password').fill(password);
+    await page.getByRole('dialog').getByLabel('Your password').fill(password);
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('heading', { name: 'Name your passkey' })).toBeVisible();
-    await page.getByLabel('Name').fill('Test laptop');
+    await page.getByRole('dialog').getByLabel('Name').fill('Test laptop');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('“Test laptop” is added.', { exact: false })).toBeVisible();
     await expect(page.getByText('Test laptop', { exact: true })).toBeVisible();

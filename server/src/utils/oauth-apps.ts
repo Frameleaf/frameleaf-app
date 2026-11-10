@@ -35,6 +35,8 @@ export const OAUTH_APP_SCOPES = Object.freeze({
   /** See photos, videos, albums, memories, tags and places, and search them. */
   'library:read': [
     Permission.AssetRead,
+    // FL-866: how many photos and videos there are (Home Assistant's sensors); counts only
+    Permission.AssetStatistics,
     Permission.AssetView,
     Permission.AlbumRead,
     Permission.TimelineRead,
