@@ -16,6 +16,7 @@ describe('BoardsGrid', () => {
     const items = [missing, fine].map(
       (asset) => ({ kind: LibraryAssetItemKind.Asset, asset: { id: asset.id } }) as unknown as LibraryItemDto,
     );
+    const onOpen = vi.fn();
     const { container } = render(BoardsGrid, {
       items,
       assets: [missing, fine],
@@ -23,7 +24,7 @@ describe('BoardsGrid', () => {
       layout: 'grid',
       tileSize: 180,
       showNames: true,
-      onOpen: vi.fn(),
+      onOpen,
     });
     const pictures = container.querySelectorAll<HTMLImageElement>(':scope .bg-open img');
     expect(pictures).toHaveLength(2);
@@ -34,5 +35,11 @@ describe('BoardsGrid', () => {
     expect(container.querySelectorAll(':scope .bg-open img')).toHaveLength(1);
     expect(container.querySelectorAll('[data-broken-asset]')).toHaveLength(1);
     expect(container.textContent).toContain('logo.eps');
+
+    // opening the item tries its thumbnail again
+    await fireEvent.click(container.querySelector(':scope .bg-open')!);
+    expect(onOpen).toHaveBeenCalledWith(missing.id);
+    expect(container.querySelectorAll(':scope .bg-open img')).toHaveLength(2);
+    expect(container.querySelector('[data-broken-asset]')).toBeNull();
   });
 });

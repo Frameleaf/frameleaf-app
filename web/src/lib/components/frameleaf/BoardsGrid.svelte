@@ -139,6 +139,10 @@
       return;
     }
     session.setScrollAnchor(tile.key);
+    if (tile.kind === 'asset') {
+      // Opening an item tries its thumbnail again: a load that failed for a moment is not left on the placeholder.
+      delete previewFailed[previewKey(tile.asset)];
+    }
     onOpen(tile.key);
   };
 
