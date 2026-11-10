@@ -2,7 +2,6 @@ import { Selectable, ShallowDehydrateObject } from 'kysely';
 import type { AudioStreamInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
-import { AssetFileType } from 'src/enum.js';
 import { FaceSearchResult } from 'src/repositories/search.repository.js';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
@@ -202,11 +201,9 @@ export const getForDetectedFaces = (asset: ReturnType<AssetFactory['build']>) =>
   checksum: asset.checksum,
   exifInfo: getDehydrated(asset.exifInfo),
   faces: asset.faces.map((face) => getDehydrated(face)),
-  files: asset.files.map((file) => getDehydrated(file)),
-  previewFile: asset.files
-    .filter((file) => file.type === AssetFileType.Preview)
-    .toSorted((a) => (a.isEdited ? -1 : 1))
-    .map((file) => getDehydrated(file))[0],
+  // FL-1387: as the query does, only the unedited previews
+  files: asset.files.filter((file) => !file.isEdited).map((file) => getDehydrated(file)),
+  edits: asset.edits,
 });
 
 export const getForSidecarWrite = (asset: ReturnType<AssetFactory['build']>) => ({

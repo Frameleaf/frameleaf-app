@@ -31,11 +31,16 @@ const scale = (box: BoundingBox, target: ImageDimensions, source?: ImageDimensio
   };
 };
 
-export const checkFaceVisibility = (
-  faces: AssetFace[],
+type FaceBox = Pick<
+  AssetFace,
+  'boundingBoxX1' | 'boundingBoxY1' | 'boundingBoxX2' | 'boundingBoxY2' | 'imageWidth' | 'imageHeight' | 'isVisible'
+>;
+
+export const checkFaceVisibility = <T extends FaceBox = AssetFace>(
+  faces: T[],
   originalAssetDimensions: ImageDimensions,
   crop?: BoundingBox,
-): { visible: AssetFace[]; hidden: AssetFace[] } => {
+): { visible: T[]; hidden: T[] } => {
   if (!crop) {
     return {
       visible: faces.filter((face) => !face.isVisible),
@@ -43,8 +48,8 @@ export const checkFaceVisibility = (
     };
   }
 
-  const visible: AssetFace[] = [];
-  const hidden: AssetFace[] = [];
+  const visible: T[] = [];
+  const hidden: T[] = [];
   // eslint-disable-next-line unicorn/no-for-each -- Match map/filter traversal of sparse arrays.
   faces.forEach((face) => {
     const scaledFace = scale(

@@ -636,7 +636,11 @@ export class AssetJobRepository {
         .select(['asset.id', 'asset.visibility', 'asset.checksum'])
         .$call(withExifInner)
         .select((eb) => withFaces(eb, true, true))
-        .select((eb) => withFiles(eb, AssetFileType.Preview))
+        // FL-1387: a stored face box is a box on the unedited picture (the viewer applies the edits and
+        // the person thumbnail crops the original), so faces are found in the unedited preview only.
+        // The edits tell which of them a crop leaves out.
+        .select((eb) => withFiles(eb, AssetFileType.Preview, false))
+        .select(withEdits)
         .where('asset.id', '=', id)
         .executeTakeFirst()
     );
