@@ -15,9 +15,10 @@ import { init } from 'svelte-i18n';
  * A plain function, not `vi.fn()`: a spec's `vi.resetAllMocks()` would otherwise strip the
  * implementation and every later animation (toasts, transitions) would get `undefined` back.
  */
+// A finish left over from a spec file whose environment has gone would dispatch an event no document accepts.
+const setupDocument = document;
 const animateAtOnce = Object.assign(
-  function animate(this: Element): Animation {
-    const element = this;
+  function animate(): Animation {
     let handler: ((event: AnimationPlaybackEvent) => void) | null = null;
     return {
       cancel: () => {},
@@ -35,12 +36,7 @@ const animateAtOnce = Object.assign(
         handler = next;
         if (next) {
           queueMicrotask(() => {
-            // A spec file's window can be torn down before this runs; finishing then would dispatch
-            // a CustomEvent from the new window on an element of the old one, which throws.
-            if (element.ownerDocument?.defaultView?.Event !== globalThis.Event) {
-              return;
-            }
-            if (handler === next) {
+            if (handler === next && document === setupDocument) {
               next({} as AnimationPlaybackEvent);
             }
           });
