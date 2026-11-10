@@ -168,9 +168,10 @@ export class PasskeyService extends BaseService {
     if (!place.available) {
       return unavailable(place);
     }
+    // FL-1368: the version first, so a reset that lands after the password check makes this challenge stale
+    const credentialVersion = await this.passkeyRepository.getCredentialVersion(auth.user.id);
     await this.requirePasswordProof(auth, session.id, dto.password, details);
 
-    const credentialVersion = await this.passkeyRepository.getCredentialVersion(auth.user.id);
     const existing = await this.passkeyRepository.getByUser(auth.user.id);
     const options = await generateRegistrationOptions({
       rpName: 'Frameleaf',
