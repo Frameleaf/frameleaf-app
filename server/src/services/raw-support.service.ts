@@ -38,7 +38,8 @@ const ENGINE_CACHE_MS = 5 * 60 * 1000;
 /**
  * A file's state. An open Library Care finding wins: it is what a deep check of the original said. Then
  * whether a preview exists, and where it comes from: with embedded previews on, a file without a
- * full-resolution render shows the camera's JPEG (media.service.ts `extractOriginalImage`).
+ * full-resolution render shows the camera's JPEG (media.service.ts `extractOriginalImage`), and so does a
+ * file whose sensor did not render (FL-1355, the recorded `rung`).
  */
 export const rawSupportStatus = (facts: RawSupportFacts, embeddedPreviews: boolean): RawSupportStatus => {
   if (facts.healthStatus === MediaHealthStatus.UnsupportedRaw) {
@@ -56,16 +57,28 @@ export const rawSupportStatus = (facts: RawSupportFacts, embeddedPreviews: boole
       : RawSupportStatus.Damaged;
   }
   if (!facts.hasPreview) {
-    return RawSupportStatus.Pending;
+    // FL-1355: every rung of the ladder failed; say why with the states that already exist.
+    const why = facts.rung?.startsWith('placeholder/') ? facts.rung.slice('placeholder/'.length) : undefined;
+    if (why === 'timeout' || why === 'resource_limit') {
+      return RawSupportStatus.Timeout;
+    }
+    if (why === 'dependency_missing') {
+      return RawSupportStatus.Dependency;
+    }
+    return why ? RawSupportStatus.Unsupported : RawSupportStatus.Pending;
   }
-  return embeddedPreviews && !facts.hasFullsize ? RawSupportStatus.Preview : RawSupportStatus.Ready;
+  return showsCameraPreview(facts, embeddedPreviews) ? RawSupportStatus.Preview : RawSupportStatus.Ready;
 };
+
+/** The camera's own picture is shown: by choice (fast previews on), or because the sensor did not render. */
+const showsCameraPreview = (facts: RawSupportFacts, embeddedPreviews: boolean) =>
+  !!facts.rung?.startsWith('embedded/') || (embeddedPreviews && !facts.hasFullsize);
 
 export const rawSupportSource = (facts: RawSupportFacts, embeddedPreviews: boolean): RawSupportSource => {
   if (!facts.hasPreview) {
     return RawSupportSource.None;
   }
-  return embeddedPreviews && !facts.hasFullsize ? RawSupportSource.Embedded : RawSupportSource.Sensor;
+  return showsCameraPreview(facts, embeddedPreviews) ? RawSupportSource.Embedded : RawSupportSource.Sensor;
 };
 
 type Engines = Pick<RawSupportResponseDto, 'decoder' | 'developer'>;
@@ -176,7 +189,9 @@ export class RawSupportService {
         this.logger.debug(`RAW development engine not usable: ${developer}`);
       }
     }
-    const libraw = versions?.libraw?.match(/LibRaw\s+[\w.-]+/)?.[0] ?? null;
+    // the build lock gives the bare version; an older build's command output named the library itself
+    const libraw =
+      versions?.libraw?.match(/LibRaw\s+[\w.-]+/)?.[0] ?? (versions?.libraw ? `LibRaw ${versions.libraw}` : null);
     return {
       decoder: { available: hasDecoder, version: hasDecoder ? libraw : null },
       developer: { available: developerAvailable, version: developer },

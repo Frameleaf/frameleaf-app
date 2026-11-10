@@ -17,7 +17,7 @@ import {
   MediaHealthCategory,
   QueueName,
 } from 'src/enum.js';
-import { processingFailureSteps } from 'src/queue/processing-failure.js';
+import { RAW_RUNG_STEP, processingFailureSteps } from 'src/queue/processing-failure.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -91,6 +91,16 @@ const originalNotMissing = sql<boolean>`not exists (
       and health."resolvedAt" is null and health."dismissedAt" is null
   )`;
 
+/**
+ * FL-1355: a RAW original whose sensor did not render already has its answer (the camera's preview, or no
+ * picture yet). The overnight check leaves it alone, or it would run the whole ladder again every night for a
+ * full-size rendition that cannot be made; a decoder update or the person's own retry tries it again.
+ */
+const rawSensorNotGivenUp = sql<boolean>`not exists (
+    select 1 from public.asset_processing_failure rung
+    where rung."assetId" = asset.id and rung.step = ${sql.lit(RAW_RUNG_STEP)}
+  )`;
+
 type ProcessingFailureStep = ProcessingFailureActionDto['items'][number]['step'];
 
 type ReconciledJob =
@@ -116,9 +126,9 @@ export class AssetJobRepository {
       [JobName.AssetExtractMetadata]: () =>
         this.selectionForMetadataExtraction(false, false, true).where(originalNotMissing),
       [JobName.AssetGenerateThumbnails]: () =>
-        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }).where(
-          notInLibraryCare,
-        ),
+        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled })
+          .where(notInLibraryCare)
+          .where(rawSensorNotGivenUp),
       [JobName.AssetEncodeVideo]: () =>
         this.selectionForVideoConversion(false)
           .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
@@ -144,6 +154,38 @@ export class AssetJobRepository {
           and ${subject} = asset.id::text ${liveRange}
         offset 0
       )`);
+  }
+
+  /**
+   * FL-1355: which rung of the RAW ladder a file's preview came from, when it was not the sensor:
+   * `embedded/<why>` (showing the camera's preview) or `placeholder/<why>` (no picture yet). It is kept as a
+   * row of its own step, so no job is set aside by it, the "Couldn't process" inbox never lists it, and it
+   * goes when the photo gets another file. `null` clears it: the sensor rendered.
+   */
+  async setRawRung(assetId: string, rung: string | null): Promise<void> {
+    await (rung
+      ? this.db
+          .insertInto('asset_processing_failure')
+          .values({ assetId, step: RAW_RUNG_STEP, attempts: 1, lastError: rung, lastFailedAt: new Date() })
+          .onConflict((oc) =>
+            oc.columns(['assetId', 'step']).doUpdateSet({ lastError: rung, lastFailedAt: new Date() }),
+          )
+          .execute()
+      : this.db
+          .deleteFrom('asset_processing_failure')
+          .where('assetId', '=', assetId)
+          .where('step', '=', RAW_RUNG_STEP)
+          .execute());
+  }
+
+  /** FL-1355: every RAW original whose sensor has not rendered, to try again with a newer decoder. */
+  async getRawRungAssetIds(): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('asset_processing_failure')
+      .select('assetId')
+      .where('step', '=', RAW_RUNG_STEP)
+      .execute();
+    return rows.map(({ assetId }) => assetId);
   }
 
   private visibleProcessingFailures(auth: AuthDto, db: Kysely<DB>, userId?: string) {

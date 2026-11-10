@@ -33,6 +33,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     extractAssetPalette: vitest.fn().mockResolvedValue({ swatches: [], hasTransparency: false }),
     decodeImage: vitest.fn().mockResolvedValue({ data: Buffer.from(''), info: {} }),
     extract: vitest.fn().mockResolvedValue(null),
+    renderRaw: vitest.fn(),
     probe: vitest.fn(),
     readContainerLogSignals: vitest
       .fn()

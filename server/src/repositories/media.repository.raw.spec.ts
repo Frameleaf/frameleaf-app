@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,9 +7,11 @@ import type { DecodeToBufferOptions } from 'src/types.js';
 import { Colorspace } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { renderDarktable } from 'src/utils/darktable-renderer.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { automock } from 'test/utils.js';
 
+vi.mock('src/utils/darktable-renderer.js', () => ({ renderDarktable: vi.fn() }));
 vi.mock('src/utils/raw-renderer.js', async (original) => ({
   ...(await original<typeof import('src/utils/raw-renderer.js')>()),
   renderRawWithLibRaw: vi.fn(),
@@ -82,4 +85,137 @@ describe.each(['decodeImage', 'generateImageThumbnails'] as const)('MediaReposit
       expect(renderRawWithLibRaw).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('MediaRepository.renderRaw (FL-1355 ladder)', () => {
+  let sut: MediaRepository;
+  const sensor = Buffer.from('sensor');
+  const developed = Buffer.from('developed');
+  const preview = { buffer: Buffer.from('preview'), format: 'jpeg' };
+  const unsupported = () => new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED');
+
+  beforeEach(() => {
+    vi.mocked(renderRawWithLibRaw).mockReset();
+    vi.mocked(renderDarktable).mockReset();
+    // eslint-disable-next-line no-sparse-arrays
+    sut = new MediaRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
+    vi.spyOn(sut, 'extract').mockResolvedValue(preview as never);
+  });
+
+  it('stops at LibRaw when it renders, passing the render options through', async () => {
+    vi.mocked(renderRawWithLibRaw).mockResolvedValue(sensor);
+    const signal = new AbortController().signal;
+    expect(await sut.renderRaw('a.cr3', { signal, halfSize: true, pixels: 45e6, threads: 2 })).toEqual({
+      rung: 'libraw',
+      buffer: sensor,
+    });
+    expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith('a.cr3', signal, {
+      halfSize: true,
+      pixels: 45e6,
+      threads: 2,
+    });
+    expect(renderDarktable).not.toHaveBeenCalled();
+    expect(sut.extract).not.toHaveBeenCalled();
+  });
+
+  it.each(['unsupported', 'damaged', 'decode_failed', 'dependency_missing'] as const)(
+    'steps down to the second decoder when LibRaw says %s',
+    async (reason) => {
+      const failure = new RawRenderError(reason, 'X');
+      vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+      vi.mocked(renderDarktable).mockResolvedValue(developed);
+      expect(await sut.renderRaw('a.nef')).toEqual({ rung: 'darktable', buffer: developed, failure });
+      expect(sut.extract).not.toHaveBeenCalled();
+    },
+  );
+
+  it('steps down to the camera preview when neither decoder can read the sensor', async () => {
+    const failure = unsupported();
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+    vi.mocked(renderDarktable).mockRejectedValue(new Error('unsupported camera'));
+    expect(await sut.renderRaw('a.nef')).toEqual({ rung: 'preview', buffer: preview.buffer, failure });
+  });
+
+  it.each(['timeout', 'resource_limit'] as const)(
+    'goes straight to the camera preview when LibRaw ran out: %s',
+    async (reason) => {
+      const failure = new RawRenderError(reason, 'X');
+      vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+      expect(await sut.renderRaw('a.arw')).toEqual({ rung: 'preview', buffer: preview.buffer, failure });
+      expect(renderDarktable).not.toHaveBeenCalled();
+    },
+  );
+
+  it('skips the second decoder when asked to', async () => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
+    expect(await sut.renderRaw('a.nef', { developer: false })).toMatchObject({ rung: 'preview' });
+    expect(renderDarktable).not.toHaveBeenCalled();
+  });
+
+  it('returns the first failure, marked exhausted, when no rung gives a picture', async () => {
+    const failure = unsupported();
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+    vi.mocked(renderDarktable).mockRejectedValue(new Error('no'));
+    vi.mocked(sut.extract).mockResolvedValue(null);
+    await expect(sut.renderRaw('a.nef')).rejects.toBe(failure);
+    expect(failure.ladderExhausted).toBe(true);
+  });
+
+  it.each(['cancelled', 'io'] as const)('does not work around %s', async (reason) => {
+    const failure = new RawRenderError(reason, 'X');
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+    await expect(sut.renderRaw('a.nef')).rejects.toBe(failure);
+    expect(failure.ladderExhausted).toBe(false);
+    expect(renderDarktable).not.toHaveBeenCalled();
+    expect(sut.extract).not.toHaveBeenCalled();
+  });
+
+  it('asks for another try, without a lower rung, while the second decoder is busy with someone else', async () => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
+    vi.mocked(renderDarktable).mockRejectedValue(new ServiceUnavailableException('Native development is busy'));
+    const result = sut.renderRaw('a.gpr');
+    await expect(result).rejects.toMatchObject({ reason: 'resource_limit', ladderExhausted: false });
+    expect(sut.extract).not.toHaveBeenCalled();
+  });
+
+  it("takes turns at the second decoder for the ladder's own calls", async () => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
+    let active = 0;
+    let most = 0;
+    vi.mocked(renderDarktable).mockImplementation(async () => {
+      most = Math.max(most, ++active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return developed;
+    });
+    await Promise.all([sut.renderRaw('a.gpr'), sut.renderRaw('b.gpr'), sut.renderRaw('c.gpr')]);
+    expect(most).toBe(1);
+  });
+
+  it.each(['ENOSPC', 'EDQUOT'])('does not settle for a lower rung because the drive is full: %s', async (code) => {
+    const failure = new RawRenderError('resource_limit', code);
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+    await expect(sut.renderRaw('a.nef')).rejects.toBe(failure);
+    expect(failure.ladderExhausted).toBe(false);
+    expect(sut.extract).not.toHaveBeenCalled();
+  });
+
+  it('does not settle for the camera preview because the drive filled up under the second decoder', async () => {
+    const full = Object.assign(new Error('ENOSPC: no space left on device, copyfile'), { code: 'ENOSPC' });
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
+    vi.mocked(renderDarktable).mockRejectedValue(full);
+    await expect(sut.renderRaw('a.gpr')).rejects.toBe(full);
+    expect(sut.extract).not.toHaveBeenCalled();
+  });
+
+  it('stops when cancelled during the second decoder', async () => {
+    const controller = new AbortController();
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
+    vi.mocked(renderDarktable).mockImplementation(() => {
+      controller.abort(new Error('stop'));
+      return Promise.reject(new Error('killed'));
+    });
+    await expect(sut.renderRaw('a.nef', { signal: controller.signal })).rejects.toThrow('stop');
+    expect(sut.extract).not.toHaveBeenCalled();
+  });
 });

@@ -107,6 +107,7 @@ const validImages = [
   '.erf',
   '.fff',
   '.gif',
+  '.gpr',
   '.heic',
   '.heif',
   '.iiq',

@@ -76,20 +76,24 @@ export class AttentionService {
   async getAttention(auth: AuthDto): Promise<AttentionResponseDto> {
     const now = new Date();
     const config = await this.readConfig();
-    const [backup, storage, work, version] = await Promise.all([
+    // The three counts never throw (each has its own fallback), so they are read alongside the checks.
+    const [backup, storage, work, version, dismissed, fileProblems, processingFailures] = await Promise.all([
       this.check('backup', () => this.backup(config, now)),
       this.check('storage', () => this.storage(config)),
       this.check('work', () => this.work(config)),
       this.check('version', () => this.version(config)),
+      this.dismissed(),
+      this.fileProblems(auth),
+      this.processingFailures(auth),
     ]);
     const results: Record<AttentionKind, SignalResult> = { backup, storage, work, version };
     return {
       checkedAt: now.toISOString(),
       items: sortAttention(ATTENTION_KINDS.flatMap((kind) => results[kind].items)),
       checks: ATTENTION_KINDS.map((kind) => ({ kind, state: results[kind].state })),
-      dismissed: await this.dismissed(),
-      fileProblems: await this.fileProblems(auth),
-      processingFailures: await this.processingFailures(auth),
+      dismissed,
+      fileProblems,
+      processingFailures,
     };
   }
 
