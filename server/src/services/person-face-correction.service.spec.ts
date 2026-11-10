@@ -9,7 +9,7 @@ import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
 import { getForAsset, getForAssetFace, getForFacialRecognitionJob } from 'test/mappers.js';
-import { newDate } from 'test/small.factory.js';
+import { newDate, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 /**
@@ -297,7 +297,7 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
       const target = PersonFactory.create({ faceAssetId: null });
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([target.personGroupId]));
       mocks.person.getByGroupId.mockResolvedValue(target);
-      mocks.person.getRandomFace.mockResolvedValue(face);
+      mocks.person.getBestFace.mockResolvedValue({ id: face.id, poor: false });
 
       await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, personId: target.personGroupId });
 
@@ -307,7 +307,7 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
         hidden: undefined,
       });
       // the target had no featured face yet
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(target.personGroupId, target.ownerId);
+      expect(mocks.person.getBestFace).toHaveBeenCalledWith(target.personGroupId, target.ownerId);
     });
 
     it('refuses reassignment to a person the caller cannot update', async () => {
@@ -416,14 +416,14 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
         data: { ownerId: person.ownerId, personGroupId: person.personGroupId },
       });
 
-      mocks.person.getRandomFace.mockResolvedValue(AssetFaceFactory.create());
+      mocks.person.getBestFace.mockResolvedValue({ id: newUuid(), poor: false });
       await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, hidden: true });
       expect(mocks.person.correctFace).toHaveBeenLastCalledWith(face.id, face.updateId, {
         personGroupId: undefined,
         box: undefined,
         hidden: true,
       });
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
+      expect(mocks.person.getBestFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
     });
 
     it('shows a hidden face again', async () => {

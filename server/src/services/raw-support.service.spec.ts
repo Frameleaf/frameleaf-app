@@ -16,6 +16,7 @@ const facts = (value: Partial<RawSupportFacts> = {}): RawSupportFacts => ({
   healthReason: null,
   hasPreview: true,
   hasFullsize: false,
+  rung: null,
   ...value,
 });
 
@@ -38,6 +39,37 @@ describe(RawSupportService.name, () => {
     serverInfo.getBuildVersions.mockResolvedValue({ libraw: 'dcraw_emu: LibRaw 0.21.3-Release' });
     repository.getSummary.mockResolvedValue({ groups: [], items: [] });
     sut = new RawSupportService(logger as never, repository as never, serverInfo as never, {} as never, {} as never);
+  });
+
+  describe('the recorded ladder rung (FL-1355)', () => {
+    it("says the camera's preview is showing when the sensor did not render, whatever the settings", () => {
+      for (const hasFullsize of [false, true]) {
+        const fallen = facts({ rung: 'embedded/unsupported', hasFullsize });
+        expect(rawSupportStatus(fallen, false)).toBe(RawSupportStatus.Preview);
+        expect(rawSupportSource(fallen, false)).toBe(RawSupportSource.Embedded);
+      }
+      expect(rawSupportStatus(facts({ rung: null }), false)).toBe(RawSupportStatus.Ready);
+    });
+
+    it.each([
+      ['placeholder/unsupported', RawSupportStatus.Unsupported],
+      ['placeholder/decode_failed', RawSupportStatus.Unsupported],
+      ['placeholder/timeout', RawSupportStatus.Timeout],
+      ['placeholder/resource_limit', RawSupportStatus.Timeout],
+      ['placeholder/dependency_missing', RawSupportStatus.Dependency],
+      [null, RawSupportStatus.Pending],
+    ])('explains a file without a picture: %s', (rung, status) => {
+      expect(rawSupportStatus(facts({ rung, hasPreview: false }), true)).toBe(status);
+      expect(rawSupportSource(facts({ rung, hasPreview: false }), true)).toBe(RawSupportSource.None);
+    });
+
+    it('never calls a file damaged because a decoder failed', () => {
+      for (const rung of ['embedded/damaged', 'placeholder/damaged']) {
+        for (const hasPreview of [false, true]) {
+          expect(rawSupportStatus(facts({ rung, hasPreview }), false)).not.toBe(RawSupportStatus.Damaged);
+        }
+      }
+    });
   });
 
   describe('rawSupportStatus', () => {

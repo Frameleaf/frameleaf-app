@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { availableParallelism, tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ThumbnailOutput } from 'src/queue/sharp-operations.js';
 import type { AssetEditRepository, VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
@@ -18,7 +19,7 @@ import type {
   VideoInterfaces,
   VideoStreamInfo,
 } from 'src/types.js';
-import { FACE_THUMBNAIL_SIZE } from 'src/constants.js';
+import { FACE_THUMBNAIL_SIZE, FACE_UPRIGHT_PROBE_SIZE, FACE_UPRIGHT_PROBE_TIMEOUT_MS } from 'src/constants.js';
 import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -43,6 +44,7 @@ import {
   ImageFormat,
   JobName,
   JobStatus,
+  MlWorkload,
   PhysicalFileType,
   QueueName,
   RawExtractedFormat,
@@ -77,7 +79,8 @@ import { straightenScale } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
-import { executionSignal } from 'src/utils/execution-signal.js';
+import { executionSignal, executionTimeout } from 'src/utils/execution-signal.js';
+import { faceLooksSideways } from 'src/utils/face-quality.js';
 import { isBusy } from 'src/utils/file-problem.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
 import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
@@ -131,9 +134,10 @@ import {
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { batched, clamp } from 'src/utils/misc.js';
+import { batched, clamp, isFacialRecognitionEnabled } from 'src/utils/misc.js';
+import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
-import { RawRenderError, type RawRenderFailure, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, type RawRenderFailure } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
 import {
@@ -157,6 +161,12 @@ const FILTER_DECIMAL_PLACES = 4;
 /** FL-1324: once the thumbnails drive was full, this much room lets thumbnails carry on. */
 const THUMBNAIL_ROOM_TO_RESUME_BYTES = 1_000_000_000;
 // A RAW the renderer could open the file for but not read. Missing tools, limits and I/O trouble retry instead.
+/**
+ * FL-1355: the RAW decoder the server last started with.
+ * ponytail: a plain key, not a SystemMetadataKey member, because src/enum.ts is pinned by the schema catalog;
+ * move it into the enum with the next catalog capture.
+ */
+export const RAW_DECODER_VERSION_KEY = 'raw-decoder-version' as SystemMetadataKey;
 const DECODE_RAW_REASONS: ReadonlySet<RawRenderFailure> = new Set(['unsupported', 'damaged', 'decode_failed']);
 const DRIVE_FULL_CODES = new Set(['ENOSPC', 'EDQUOT']);
 /** Sharp and ffmpeg run in child processes, so a full drive often reaches here only as their message. */
@@ -258,6 +268,30 @@ export class MediaService extends BaseService {
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
     this.videoInterfaces = await this.storageCore.getVideoInterfaces();
+    await this.retryRawAfterDecoderUpdate().catch((error) =>
+      this.logger.warn(`Could not check for a RAW decoder update: ${error}`),
+    );
+  }
+
+  /**
+   * FL-1355: files showing the camera's preview, or nothing, because the decoder could not render them get
+   * another try when the server starts with a different decoder. The first start only notes the version.
+   */
+  private async retryRawAfterDecoderUpdate() {
+    const version = (await this.serverInfoRepository.getBuildVersions()).libraw;
+    if (!version) {
+      return;
+    }
+    const last = (await this.systemMetadataRepository.get(RAW_DECODER_VERSION_KEY)) as { version?: string } | null;
+    if (last?.version === version) {
+      return;
+    }
+    if (last) {
+      const ids = await this.assetJobRepository.getRawRungAssetIds();
+      this.logger.log(`RAW decoder changed to ${version}: trying ${ids.length} files again`);
+      await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.AssetGenerateThumbnails, data: { id } })));
+    }
+    await this.systemMetadataRepository.set(RAW_DECODER_VERSION_KEY, { version } as never);
   }
 
   @OnJob({ name: JobName.AssetGenerateThumbnailsQueueAll, queue: QueueName.ThumbnailGeneration })
@@ -439,7 +473,16 @@ export class MediaService extends BaseService {
 
     let thumbhash: Buffer | undefined = generated?.thumbhash;
     if (!thumbhash) {
-      thumbhash = (await this.extractOriginalImage(asset, config.image)).thumbhash;
+      thumbhash = (
+        await this.extractOriginalImage(
+          asset,
+          config.image,
+          false,
+          undefined,
+          undefined,
+          config.job.thumbnailGeneration.concurrency,
+        )
+      ).thumbhash;
     }
 
     if (
@@ -682,6 +725,12 @@ export class MediaService extends BaseService {
           noteJobHandedToCare();
           return JobStatus.Skipped;
         }
+        if (error instanceof RawRenderError && error.ladderExhausted) {
+          // FL-1355: a RAW file is kept and listed under RAW support; out of time or memory is not a reason to
+          // set it aside. It is tried again when the decoder is updated.
+          this.logger.warn(`No picture yet for RAW asset ${id}: ${error.reason}`);
+          return JobStatus.Skipped;
+        }
 
         throw error;
       }
@@ -716,10 +765,31 @@ export class MediaService extends BaseService {
     return extracted;
   }
 
-  private async renderRawImage(originalPath: string) {
+  /**
+   * FL-1355: a RAW original through the ladder (`mediaRepository.renderRaw`). Without a full-size rendition to
+   * make, the sensor is rendered at half size when that still covers the preview. Edits are drawn on the sensor
+   * picture, so they never take the camera's preview.
+   */
+  private async renderRawImage(
+    asset: ThumbnailAsset,
+    image: SystemConfig['image'],
+    { fullsize, useEdits, concurrency }: { fullsize: boolean; useEdits: boolean; concurrency: number },
+  ) {
     const signal = executionSignal();
     signal?.throwIfAborted();
-    return { buffer: await renderRawWithLibRaw(originalPath, signal), format: RawExtractedFormat.Tiff };
+    const { exifImageWidth: width, exifImageHeight: height } = asset.exifInfo;
+    const rendered = await this.mediaRepository.renderRaw(asset.originalPath, {
+      signal,
+      pixels: width && height ? width * height : undefined,
+      // the preview size is measured on the short edge (`shouldUseExtractedImage`)
+      halfSize: !fullsize && !!width && !!height && Math.min(width, height) / 2 >= image.preview.size,
+      // The processors are shared between the thumbnail jobs running at once.
+      threads: Math.max(1, Math.floor(availableParallelism() / Math.max(1, concurrency))),
+    });
+    if (rendered.rung === 'preview' && useEdits && rendered.failure) {
+      throw rendered.failure;
+    }
+    return rendered;
   }
 
   /**
@@ -743,6 +813,7 @@ export class MediaService extends BaseService {
     useEdits = false,
     outputs?: Record<'thumbnail' | 'preview' | 'fullsize', ThumbnailOutput>,
     sdrBase?: string,
+    concurrency = 1,
   ) {
     const isRaw = mimeTypes.isRaw(asset.originalFileName);
     const generateFullsize =
@@ -763,10 +834,14 @@ export class MediaService extends BaseService {
           })
         : null;
     let sensorRendered = false;
-    if (isRaw && !extracted) {
-      extracted = await this.renderRawImage(asset.originalPath);
-      sensorRendered = true;
-    }
+    // Set once the ladder has run: the decoder's failure when it ended on the camera's preview.
+    let ladder: { failure?: RawRenderError } | undefined;
+    const climbLadder = async () => {
+      const rendered = await this.renderRawImage(asset, image, { fullsize: generateFullsize, useEdits, concurrency });
+      extracted = { buffer: rendered.buffer, format: RawExtractedFormat.Tiff };
+      sensorRendered = rendered.rung !== 'preview';
+      ladder = { failure: sensorRendered ? undefined : rendered.failure };
+    };
 
     const colorspace = this.isSRGB(asset.exifInfo) ? Colorspace.Srgb : image.colorspace;
     const decodeSource = () => {
@@ -787,24 +862,75 @@ export class MediaService extends BaseService {
         })
         .then((decoded) => ({ ...decoded, convertFullsize }));
     };
+    const decodeLadder = async () => {
+      await climbLadder();
+      try {
+        return await decodeSource();
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        if (!(error instanceof SharpOperationError) || !error.decodeFailure) {
+          throw error;
+        }
+        let failure = ladder?.failure;
+        if (!failure && !useEdits) {
+          // A sensor render the image worker cannot open is a failed rung too: the camera's picture is next.
+          failure = new RawRenderError('decode_failed', 'ERR_RAW_DECODE', error);
+          const embedded = await this.mediaRepository.extract(asset.originalPath);
+          if (embedded) {
+            extracted = embedded;
+            sensorRendered = false;
+            ladder = { failure };
+            return await decodeSource().catch((error: unknown) => {
+              if (!(error instanceof SharpOperationError) || !error.decodeFailure) {
+                throw error;
+              }
+              failure!.ladderExhausted = true;
+              throw failure;
+            });
+          }
+        }
+        if (!failure) {
+          throw error;
+        }
+        // The ladder's last rung, the camera's preview, does not open either.
+        failure.ladderExhausted = true;
+        throw failure;
+      }
+    };
     let decoded: Awaited<ReturnType<typeof decodeSource>>;
     try {
-      decoded = await decodeSource();
-    } catch (error) {
-      executionSignal()?.throwIfAborted();
-      if (!(error instanceof SharpOperationError) || !error.decodeFailure || !isRaw || sensorRendered) {
-        throw error;
+      try {
+        decoded = await (isRaw && !extracted ? decodeLadder() : decodeSource());
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        if (!(error instanceof SharpOperationError) || !error.decodeFailure || !isRaw || ladder) {
+          throw error;
+        }
+        // An unreadable embedded preview gets one trip down the ladder, never a repeated repository/CLI fallback.
+        decoded = await decodeLadder();
       }
-      // An unreadable embedded preview gets one sensor attempt, never a repeated repository/CLI fallback.
-      extracted = await this.renderRawImage(asset.originalPath);
-      sensorRendered = true;
-      decoded = await decodeSource();
+    } catch (error) {
+      if (error instanceof RawRenderError && error.ladderExhausted && !useEdits) {
+        // with the job's own result, so a run that is not accepted leaves the record as it was
+        const rung = `placeholder/${error.reason}`;
+        await publishJobResult(() => this.assetJobRepository.setRawRung(asset.id, rung));
+      }
+      throw error;
+    }
+    if (ladder && !useEdits) {
+      const { failure } = ladder as { failure?: RawRenderError };
+      const rung = failure ? `embedded/${failure.reason}` : null;
+      await publishJobResult(() => this.assetJobRepository.setRawRung(asset.id, rung));
     }
 
     return decoded;
   }
 
-  private async generateImageThumbnails(asset: ThumbnailAsset, { image }: SystemConfig, useEdits: boolean = false) {
+  private async generateImageThumbnails(
+    asset: ThumbnailAsset,
+    { image, job }: SystemConfig,
+    useEdits: boolean = false,
+  ) {
     const previewFile = this.getImageFile(asset, {
       fileType: AssetFileType.Preview,
       format: image.preview.format,
@@ -913,6 +1039,7 @@ export class MediaService extends BaseService {
         },
       },
       hdrMaster,
+      job.thumbnailGeneration.concurrency,
     );
     const files = convertFullsize ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile];
     files.push(...hdrFiles);
@@ -995,22 +1122,25 @@ export class MediaService extends BaseService {
     const thumbnailPath = attemptOutputPath(StorageCore.getPersonThumbnailPath({ ownerId, personGroupId }));
     this.storageCore.ensureFolders(thumbnailPath);
 
-    const thumbnailOptions: GenerateThumbnailOptions = {
+    const dims = { old: { width: oldWidth, height: oldHeight }, new: { width: info.width, height: info.height } };
+    const baseOptions = {
       colorspace: image.colorspace,
       format: ImageFormat.Jpeg,
       raw: info,
       quality: image.thumbnail.quality,
       progressive: false,
       processInvalidImages: false,
+    };
+    // FL-1383: a face that is sideways in its photo (a scan, someone lying down) is turned upright
+    const turn = faceLooksSideways({ x1, y1, x2, y2 })
+      ? await this.getUprightTurn(decodedImage, baseOptions, this.getCrop(dims, { x1, y1, x2, y2 }, 2))
+      : 0;
+    const thumbnailOptions: GenerateThumbnailOptions = {
+      ...baseOptions,
       size: FACE_THUMBNAIL_SIZE,
       edits: [
-        {
-          action: AssetEditAction.Crop,
-          parameters: this.getCrop(
-            { old: { width: oldWidth, height: oldHeight }, new: { width: info.width, height: info.height } },
-            { x1, y1, x2, y2 },
-          ),
-        },
+        { action: AssetEditAction.Crop, parameters: this.getCrop(dims, { x1, y1, x2, y2 }) },
+        ...(turn ? [{ action: AssetEditAction.Rotate as const, parameters: { angle: turn } }] : []),
       ],
     };
 
@@ -1039,7 +1169,12 @@ export class MediaService extends BaseService {
         }
         await tx
           .updateTable('person')
-          .set({ thumbnailPath, ...(sourceFaceId && { faceAssetId: sourceFaceId }) })
+          .set({
+            thumbnailPath,
+            ...(sourceFaceId && { faceAssetId: sourceFaceId }),
+            // FL-1383: a face this job chose for a person left without one is not the owner's pick
+            ...(sourceFaceId && !person?.faceAssetId && { isFeaturedFaceManual: false }),
+          })
           .where('ownerId', '=', ownerId)
           .where('personGroupId', '=', personGroupId)
           .execute();
@@ -1055,9 +1190,86 @@ export class MediaService extends BaseService {
     return JobStatus.Success;
   }
 
+  /**
+   * FL-1383: the quarter turn that stands a sideways face upright, or 0 to leave it. The face detector
+   * on this network reads the face turned each way, with room around it (it does not find a face that
+   * fills the frame): turned the right way the face is upright and scores highest. Measured with
+   * buffalo_l: upright 0.85, a quarter turn off 0.68 to 0.72 with a box 1.7 times wider than tall.
+   * Without a detector (faces turned off, or processed away from home) the thumbnail stays as it is.
+   */
+  private async getUprightTurn(
+    decodedImage: Buffer,
+    options: Omit<GenerateThumbnailOptions, 'size' | 'edits'>,
+    crop: CropParameters,
+  ): Promise<0 | 90 | 270> {
+    let folder: string | undefined;
+    try {
+      const { machineLearning } = await this.getConfig({ withCache: true });
+      if (!isFacialRecognitionEnabled(machineLearning)) {
+        return 0;
+      }
+      const destinationId = await homeMlDestinationId(this.mlDestinationRepository, MlWorkload.Face);
+      const selection = await selectMlDestination(
+        {
+          mlDestinationRepository: this.mlDestinationRepository,
+          machineLearningRepository: this.machineLearningRepository,
+        },
+        {
+          workload: MlWorkload.Face,
+          destinationId,
+          jobId: null,
+          jobName: JobName.PersonGenerateThumbnail,
+          homeOnly: true,
+        },
+      );
+      const { modelName, minScore } = machineLearning.facialRecognition;
+      folder = await fs.mkdtemp(path.join(tmpdir(), 'frameleaf-person-'));
+      let best: { turn: 0 | 90 | 270; score: number } = { turn: 0, score: 0 };
+      for (const turn of [90, 270] as const) {
+        const probePath = path.join(folder, `${turn}.jpeg`);
+        await this.mediaRepository.generateThumbnail(
+          decodedImage,
+          {
+            ...options,
+            size: FACE_UPRIGHT_PROBE_SIZE,
+            edits: [
+              { action: AssetEditAction.Crop, parameters: crop },
+              { action: AssetEditAction.Rotate, parameters: { angle: turn } },
+            ],
+          },
+          probePath,
+        );
+        // a detector that does not answer must not hold the thumbnail for the job's whole deadline
+        const { faces } = await this.machineLearningRepository.detectFaces(
+          selection,
+          probePath,
+          { modelName, minScore },
+          executionTimeout(FACE_UPRIGHT_PROBE_TIMEOUT_MS),
+        );
+        for (const { boundingBox, score } of faces) {
+          if (!faceLooksSideways(boundingBox) && score > best.score) {
+            best = { turn, score };
+          }
+        }
+      }
+      return best.turn;
+    } catch (error) {
+      // a cancelled job stops here; a detector that failed or timed out only costs the turn
+      executionSignal()?.throwIfAborted();
+      this.logger.debug(`Person thumbnail left as it is, no upright check: ${(error as Error)?.message ?? error}`);
+      return 0;
+    } finally {
+      if (folder) {
+        await fs.rm(folder, { recursive: true, force: true });
+      }
+    }
+  }
+
+  /** The square around a face: 10% wider than the face for the thumbnail, `zoom` 2 leaves room around it. */
   private getCrop(
     dims: { old: ImageDimensions; new: ImageDimensions },
     { x1, y1, x2, y2 }: BoundingBox,
+    zoom = 1.1,
   ): CropParameters {
     // face bounding boxes can spill outside the image dimensions
     const clampedX1 = clamp(x1, 0, dims.old.width);
@@ -1074,8 +1286,7 @@ export class MediaService extends BaseService {
     const middleX = Math.round(widthScale * clampedX1 + halfWidth);
     const middleY = Math.round(heightScale * clampedY1 + halfHeight);
 
-    // zoom out 10%
-    const targetHalfSize = Math.floor(Math.max(halfWidth, halfHeight) * 1.1);
+    const targetHalfSize = Math.floor(Math.max(halfWidth, halfHeight) * zoom);
 
     // get the longest distance from the center of the image without overflowing
     const newHalfSize = Math.min(

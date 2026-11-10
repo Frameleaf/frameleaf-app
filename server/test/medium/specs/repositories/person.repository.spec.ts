@@ -463,10 +463,114 @@ describe(PersonRepository.name, () => {
       const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
       const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
 
-      await expect(sut.getRandomFace(person.personGroupId, user.id)).resolves.toBeUndefined();
+      await expect(sut.getBestFace(person.personGroupId, user.id)).resolves.toBeUndefined();
 
       await includeArchived(ctx.database, user.id, true);
-      await expect(sut.getRandomFace(person.personGroupId, user.id)).resolves.toMatchObject({ id: assetFace.id });
+      await expect(sut.getBestFace(person.personGroupId, user.id)).resolves.toMatchObject({ id: assetFace.id });
+    });
+
+    describe('the best face for a main photo (FL-1383)', () => {
+      // a 1000 x 1000 frame; `good` is upright, whole and large
+      const frame = { imageWidth: 1000, imageHeight: 1000 };
+      const good = { ...frame, boundingBoxX1: 400, boundingBoxY1: 300, boundingBoxX2: 550, boundingBoxY2: 500 };
+      const sideways = { ...frame, boundingBoxX1: 300, boundingBoxY1: 400, boundingBoxX2: 640, boundingBoxY2: 600 };
+      const cutOff = { ...frame, boundingBoxX1: 0, boundingBoxY1: 300, boundingBoxX2: 150, boundingBoxY2: 500 };
+      const tiny = { ...frame, boundingBoxX1: 400, boundingBoxY1: 300, boundingBoxX2: 430, boundingBoxY2: 340 };
+      const unit = (index: number, mix = 0) => {
+        const vector = Array.from({ length: 512 }, () => 0);
+        vector[index] = 1;
+        vector[index + 1] = mix;
+        return `[${vector}]`;
+      };
+      const seed = async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const { person } = await ctx.newPerson({ ownerId: user.id });
+        const face = async (box: object, embedding?: string) => {
+          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { assetFace } = await ctx.newAssetFace({
+            assetId: asset.id,
+            personGroupId: person.personGroupId,
+            ...box,
+          });
+          if (embedding) {
+            await ctx.database.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+          }
+          return assetFace;
+        };
+        return { ctx, sut, user, person, face };
+      };
+
+      it('prefers an upright, whole, large face over a sideways, cut off or tiny one', async () => {
+        const { sut, user, person, face } = await seed();
+        await face(sideways);
+        await face(cutOff);
+        await face(tiny);
+        const best = await face(good);
+
+        await expect(sut.getBestFace(person.personGroupId, user.id)).resolves.toEqual({ id: best.id, poor: false });
+      });
+
+      it('says so when the best face there is still fails the checks', async () => {
+        const { sut, user, person, face } = await seed();
+        const only = await face(sideways);
+
+        await expect(sut.getBestFace(person.personGroupId, user.id)).resolves.toEqual({ id: only.id, poor: true });
+      });
+
+      it("picks the face closest to the person's typical look among the good ones", async () => {
+        const { sut, user, person, face } = await seed();
+        // four faces look alike; one (larger) looks like someone else
+        const stranger = await face({ ...good, boundingBoxX2: 700, boundingBoxY2: 700 }, unit(100));
+        await face(good, unit(0, 0.3));
+        await face(good, unit(0, -0.3));
+        await face(good, unit(0, 0.2));
+        const typical = await face(good, unit(0));
+
+        const best = await sut.getBestFace(person.personGroupId, user.id);
+        expect(best?.id).toBe(typical.id);
+        expect(best?.id).not.toBe(stranger.id);
+      });
+
+      it('lists the people whose main photo fails the checks, and whether the owner picked it', async () => {
+        const { ctx, sut, user, person, face } = await seed();
+        const featured = await face(sideways);
+        await ctx.get(PersonRepository).update({
+          ownerId: user.id,
+          personGroupId: person.personGroupId,
+          faceAssetId: featured.id,
+          isFeaturedFaceManual: true,
+        });
+        const { person: fine } = await ctx.newPerson({ ownerId: user.id });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        const { assetFace: fineFace } = await ctx.newAssetFace({
+          assetId: asset.id,
+          personGroupId: fine.personGroupId,
+          ...good,
+        });
+        await ctx.get(PersonRepository).update({
+          ownerId: user.id,
+          personGroupId: fine.personGroupId,
+          faceAssetId: fineFace.id,
+        });
+
+        // a better face replaces an automatic main photo only while it is still the one that was read
+        await expect(sut.replaceAutomaticFeaturedFace(fine, newUuid(), featured.id)).resolves.toBe(false);
+        await expect(sut.replaceAutomaticFeaturedFace(person, featured.id, fineFace.id)).resolves.toBe(false);
+        await expect(sut.replaceAutomaticFeaturedFace(fine, fineFace.id, featured.id)).resolves.toBe(true);
+        await sut.update({ ownerId: user.id, personGroupId: fine.personGroupId, faceAssetId: fineFace.id });
+
+        const poor = await sut.getPeopleWithPoorMainPhoto();
+        expect(poor.filter(({ ownerId }) => ownerId === user.id)).toEqual([
+          {
+            ownerId: user.id,
+            personGroupId: person.personGroupId,
+            faceId: featured.id,
+            manual: true,
+            sideways: true,
+          },
+        ]);
+      });
     });
 
     it('keeps a cleared person without a thumbnail when only archived faces are left, unless archived are included', async () => {
@@ -848,6 +952,67 @@ describe(PersonRepository.name, () => {
   });
 
   describe('getMergeSuggestions', () => {
+    // FL-1384: suggestions are read from stored pairs. These tests seed each person's featured face
+    // only, so it joins its person first, then the pairs are worked out, then the read.
+    const suggest = async (
+      ctx: ReturnType<typeof setup>['ctx'],
+      sut: PersonRepository,
+      ownerId: string,
+      options: { maxDistance: number; limit?: number },
+    ) => {
+      await sql`
+        update asset_face set "personGroupId" = person."personGroupId"
+        from person
+        where person."faceAssetId" = asset_face.id and person."ownerId" = ${ownerId}::uuid
+      `.execute(ctx.database);
+      await sut.refreshMergeCandidates(ownerId, options.maxDistance);
+      return sut.getMergeSuggestions(ownerId, options);
+    };
+
+    it('stands each person by the centre of their faces, not one face (FL-1384)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const unit = (weights: Record<number, number>) => {
+        const vector = Array.from({ length: 512 }, () => 0);
+        for (const [index, weight] of Object.entries(weights)) {
+          vector[Number(index)] = weight;
+        }
+        return `[${vector}]`;
+      };
+      const newPerson = async (embeddings: string[]) => {
+        const { person } = await ctx.newPerson({ ownerId: user.id });
+        const faceIds: string[] = [];
+        for (const embedding of embeddings) {
+          const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+          await ctx.database.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+          faceIds.push(assetFace.id);
+        }
+        // the main photo is the first face, which looks least like the other group's
+        await sut.update({ ownerId: user.id, personGroupId: person.personGroupId, faceAssetId: faceIds[0] });
+        return person.personGroupId!;
+      };
+      // two groups of one person: their main photos are far apart (distance 1), their centres close
+      const first = await newPerson([unit({ 0: 1 }), unit({ 0: 1, 1: 1 }), unit({ 1: 1 })]);
+      const second = await newPerson([unit({ 2: 1 }), unit({ 0: 1, 1: 1 }), unit({ 0: 1, 1: 1 })]);
+      const stranger = await newPerson([unit({ 9: 1 }), unit({ 9: 1, 10: 1 })]);
+      const [a, b] = [first, second].toSorted();
+
+      await expect(sut.refreshMergeCandidates(user.id, 0.5)).resolves.toBe(1);
+      const suggestions = await sut.getMergeSuggestions(user.id, { maxDistance: 0.5 });
+      expect(suggestions).toEqual([{ personId: a, suggestionId: b, distance: expect.any(Number) }]);
+      expect(suggestions[0].distance).toBeLessThan(0.3);
+      expect(suggestions.some((row) => [row.personId, row.suggestionId].includes(stranger))).toBe(false);
+
+      // a second run replaces the pairs, and a stricter distance setting applies at once to the read
+      await expect(sut.refreshMergeCandidates(user.id, 0.5)).resolves.toBe(1);
+      await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.01 })).resolves.toEqual([]);
+
+      // an owner with more people than the People page works out as it is read keeps the stored pairs
+      await expect(sut.refreshMergeCandidates(user.id, 0.01, 2)).resolves.toBeUndefined();
+      await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.5 })).resolves.toHaveLength(1);
+    });
+
     it('should not suggest a hidden person', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
@@ -863,7 +1028,7 @@ describe(PersonRepository.name, () => {
       const hidden = await newPersonWithFace(true);
       const [a, b] = [await newPersonWithFace(false), await newPersonWithFace(false)].toSorted();
 
-      const suggestions = await sut.getMergeSuggestions(user.id, { maxDistance: 0.5, limit: 20 });
+      const suggestions = await suggest(ctx, sut, user.id, { maxDistance: 0.5, limit: 20 });
       expect(suggestions.map(({ personId, suggestionId }) => `${personId}:${suggestionId}`)).toEqual([`${a}:${b}`]);
       expect(suggestions.some((row) => row.personId === hidden || row.suggestionId === hidden)).toBe(false);
     });
@@ -881,7 +1046,7 @@ describe(PersonRepository.name, () => {
       };
       const [a, b, c] = [await newPersonWithFace(), await newPersonWithFace(), await newPersonWithFace()].toSorted();
       const pairsOf = async () =>
-        (await sut.getMergeSuggestions(user.id, { maxDistance: 0.5, limit: 20 }))
+        (await suggest(ctx, sut, user.id, { maxDistance: 0.5, limit: 20 }))
           .map(({ personId, suggestionId }) => `${personId}:${suggestionId}`)
           .toSorted();
 
@@ -1006,9 +1171,9 @@ describe(PersonRepository.name, () => {
       );
 
       await sut.setMergeVerdict(user.id, c, c, 'ignore');
-      await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.5 })).resolves.toEqual([]);
+      await expect(suggest(ctx, sut, user.id, { maxDistance: 0.5 })).resolves.toEqual([]);
       await expect(sut.deleteMergeVerdict(user.id, c, c)).resolves.toBe(true);
-      await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.5 })).resolves.toHaveLength(2);
+      await expect(suggest(ctx, sut, user.id, { maxDistance: 0.5 })).resolves.toHaveLength(2);
 
       await expect(
         sql`INSERT INTO public.person_merge_verdict ("ownerId", "personId", "suggestionId", verdict)
@@ -1032,7 +1197,7 @@ describe(PersonRepository.name, () => {
       const [a, b] = ids.toSorted();
 
       await sut.setMergeVerdict(other.id, a, b, 'different');
-      await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.5 })).resolves.toHaveLength(1);
+      await expect(suggest(ctx, sut, user.id, { maxDistance: 0.5 })).resolves.toHaveLength(1);
     });
   });
 });

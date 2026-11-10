@@ -214,6 +214,8 @@ describe(PersonService.name, () => {
         ],
       });
       expect(mocks.person.getMergeSuggestions).toHaveBeenCalledWith(auth.user.id, { maxDistance: 0.5, limit: 20 });
+      // FL-1384: a library of up to 500 people is worked out again as it is read
+      expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledWith(auth.user.id, 0.5, 500);
     });
 
     it('should return no suggestions when nothing is close enough', async () => {
@@ -899,10 +901,12 @@ describe(PersonService.name, () => {
         expect.objectContaining({ id: person.personGroupId }),
       );
 
+      // FL-1383: a featured photo the owner picked is marked, so a better-looking face never replaces it
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
         faceAssetId: face.id,
+        isFeaturedFaceManual: true,
       });
       expect(mocks.person.getForFeatureFaceUpdate).toHaveBeenCalledWith({
         assetId: face.assetId,
@@ -1028,7 +1032,7 @@ describe(PersonService.name, () => {
       mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([face.id]));
       mocks.person.getFacesByIds.mockResolvedValue([getForAssetFace(face)]);
       mocks.person.reassignFace.mockResolvedValue(1);
-      mocks.person.getRandomFace.mockResolvedValue(AssetFaceFactory.create());
+      mocks.person.getBestFace.mockResolvedValue({ id: newUuid(), poor: false });
       mocks.person.refreshFaces.mockResolvedValue();
       mocks.person.reassignFace.mockResolvedValue(5);
       mocks.person.update.mockResolvedValue(person);
@@ -1171,7 +1175,7 @@ describe(PersonService.name, () => {
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.person.getByGroupId.mockResolvedValue(person);
-      mocks.person.getRandomFace.mockResolvedValue(featureFace);
+      mocks.person.getBestFace.mockResolvedValue({ id: featureFace.id, poor: false });
       mocks.person.update.mockResolvedValue({ ...person, faceAssetId: featureFace.id });
       mocks.person.getFaceForCorrection.mockResolvedValue(getForAssetFace(featureFace));
       mocks.asset.getForFaces.mockResolvedValue({
@@ -1207,11 +1211,12 @@ describe(PersonService.name, () => {
         boundingBoxY2: 130,
         sourceType: SourceType.Manual,
       });
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
+      expect(mocks.person.getBestFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
         faceAssetId: featureFace.id,
+        isFeaturedFaceManual: false,
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         {
@@ -1254,7 +1259,7 @@ describe(PersonService.name, () => {
       ).resolves.toEqual(expect.objectContaining({ sourceType: SourceType.Manual }));
 
       expect(mocks.person.createAssetFace).toHaveBeenCalledOnce();
-      expect(mocks.person.getRandomFace).not.toHaveBeenCalled();
+      expect(mocks.person.getBestFace).not.toHaveBeenCalled();
       expect(mocks.person.update).not.toHaveBeenCalled();
       // FL-927: only the face sidecar refresh is queued, no feature photo job
       expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([
@@ -1291,7 +1296,7 @@ describe(PersonService.name, () => {
     it('should change person feature photo', async () => {
       const person = PersonFactory.create();
 
-      mocks.person.getRandomFace.mockResolvedValue(AssetFaceFactory.create());
+      mocks.person.getBestFace.mockResolvedValue({ id: newUuid(), poor: false });
       await sut.createNewFeaturePhoto([person]);
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         {
@@ -1303,11 +1308,11 @@ describe(PersonService.name, () => {
 
     it('clears the featured face when no other face qualifies, e.g. only archived ones are left (FL-795)', async () => {
       const person = PersonFactory.create();
-      mocks.person.getRandomFace.mockResolvedValue(undefined);
+      mocks.person.getBestFace.mockResolvedValue(undefined);
 
       await sut.createNewFeaturePhoto([person]);
 
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
+      expect(mocks.person.getBestFace).toHaveBeenCalledWith(person.personGroupId, person.ownerId);
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
@@ -1386,6 +1391,8 @@ describe(PersonService.name, () => {
 
       mocks.person.getAllWithoutFaces.mockResolvedValue([person]);
       mocks.person.delete.mockResolvedValue([person]);
+      mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([]);
+      mocks.person.getPersonOwnerIds.mockResolvedValue([]);
 
       await sut.handlePersonCleanup();
 
@@ -1393,6 +1400,150 @@ describe(PersonService.name, () => {
       expect(mocks.person.deleteEmptyGroups).toHaveBeenCalledWith();
       expect(mocks.storage.unlink).toHaveBeenCalledWith(person.thumbnailPath);
       expect(mocks.person.reanchorMergeVerdicts).toHaveBeenCalledWith(undefined);
+    });
+
+    describe('poor main photos (FL-1383)', () => {
+      const poor = (overrides: { manual?: boolean; sideways?: boolean } = {}) => ({
+        ownerId: newUuid(),
+        personGroupId: newUuid(),
+        faceId: newUuid(),
+        manual: false,
+        sideways: false,
+        ...overrides,
+      });
+      const thumbnailJob = ({ ownerId, personGroupId }: { ownerId: string; personGroupId: string }) => ({
+        name: JobName.PersonGenerateThumbnail,
+        data: { ownerId, personGroupId },
+      });
+
+      beforeEach(() => {
+        mocks.person.getAllWithoutFaces.mockResolvedValue([]);
+        mocks.person.getPersonOwnerIds.mockResolvedValue([]);
+        // the one-time upright pass has already run, unless a test says otherwise
+        mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: '2026-11-10T00:00:00.000Z' });
+      });
+
+      it('replaces a poor automatic main photo with the best face when that one is good', async () => {
+        const person = poor();
+        const best = { id: newUuid(), poor: false };
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([person]);
+        mocks.person.getBestFace.mockResolvedValue(best);
+        mocks.person.replaceAutomaticFeaturedFace.mockResolvedValue(true);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.replaceAutomaticFeaturedFace).toHaveBeenCalledWith(
+          { ownerId: person.ownerId, personGroupId: person.personGroupId },
+          person.faceId,
+          best.id,
+        );
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([thumbnailJob(person)]);
+      });
+
+      it('leaves a main photo the owner picked while the pass was running', async () => {
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([poor()]);
+        mocks.person.getBestFace.mockResolvedValue({ id: newUuid(), poor: false });
+        mocks.person.replaceAutomaticFeaturedFace.mockResolvedValue(false);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
+      });
+
+      it('keeps the main photo when the best face is poor too', async () => {
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([poor({ sideways: true })]);
+        mocks.person.getBestFace.mockResolvedValue({ id: newUuid(), poor: true });
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.replaceAutomaticFeaturedFace).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
+      });
+
+      it('never replaces a main photo the owner picked', async () => {
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([poor({ manual: true })]);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.getBestFace).not.toHaveBeenCalled();
+        expect(mocks.person.replaceAutomaticFeaturedFace).not.toHaveBeenCalled();
+      });
+
+      it('makes sideways thumbnails again once, so they can be turned upright', async () => {
+        const picked = poor({ manual: true, sideways: true });
+        const onlySideways = poor({ sideways: true });
+        const cutOff = poor();
+        mocks.systemMetadata.get.mockResolvedValue(null);
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([picked, onlySideways, cutOff]);
+        mocks.person.getBestFace.mockResolvedValue(undefined);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.replaceAutomaticFeaturedFace).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([thumbnailJob(picked), thumbnailJob(onlySideways)]);
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.PeopleCareState, {
+          uprightPassAt: expect.any(String),
+        });
+      });
+
+      it('keeps the one pass for later while faces are turned off, since nothing could turn a thumbnail', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { enabled: false } });
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([poor({ sideways: true })]);
+        mocks.person.getBestFace.mockResolvedValue(undefined);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
+        expect(mocks.systemMetadata.set).not.toHaveBeenCalledWith(
+          SystemMetadataKey.PeopleCareState,
+          expect.objectContaining({ uprightPassAt: expect.any(String) }),
+        );
+      });
+    });
+
+    describe('merge candidates (FL-1384)', () => {
+      const lastRun = '2026-11-10T00:00:00.000Z';
+
+      beforeEach(() => {
+        mocks.person.getAllWithoutFaces.mockResolvedValue([]);
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([]);
+      });
+
+      it("works out every account's pairs with the recognition distance, the first night", async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { maxDistance: 0.4 } } });
+        mocks.person.getPersonOwnerIds.mockResolvedValue(['owner-1', 'owner-2']);
+        mocks.person.refreshMergeCandidates.mockResolvedValue(3);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledWith('owner-1', 0.4);
+        expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledWith('owner-2', 0.4);
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+          SystemMetadataKey.PeopleCareState,
+          expect.objectContaining({ mergeCandidatesAt: expect.any(String) }),
+        );
+      });
+
+      it('leaves the pairs alone on a night no face changed since the last run', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: lastRun, mergeCandidatesAt: lastRun });
+        mocks.person.hasFaceChangesSince.mockResolvedValue(false);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.hasFaceChangesSince).toHaveBeenCalledWith(new Date(lastRun));
+        expect(mocks.person.refreshMergeCandidates).not.toHaveBeenCalled();
+      });
+
+      it('works them out again once a face changed since', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: lastRun, mergeCandidatesAt: lastRun });
+        mocks.person.hasFaceChangesSince.mockResolvedValue(true);
+        mocks.person.getPersonOwnerIds.mockResolvedValue(['owner-1']);
+        mocks.person.refreshMergeCandidates.mockResolvedValue(0);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledTimes(1);
+      });
     });
   });
 
@@ -2526,7 +2677,7 @@ describe(PersonService.name, () => {
       ]);
       mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(lockedFace, asset));
       mocks.person.create.mockResolvedValue(PersonFactory.create({ ownerId: asset.ownerId, personGroupId }));
-      mocks.person.getRandomFace.mockResolvedValue(nextFace);
+      mocks.person.getBestFace.mockResolvedValue({ id: nextFace.id, poor: false });
 
       await sut.handleRecognizeFaces({ id: lockedFace.id, deferred: true });
 
@@ -2539,11 +2690,12 @@ describe(PersonService.name, () => {
         newPersonGroupId: personGroupId,
         onlyUndecided: true,
       });
-      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(personGroupId, asset.ownerId);
+      expect(mocks.person.getBestFace).toHaveBeenCalledWith(personGroupId, asset.ownerId);
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: asset.ownerId,
         personGroupId,
         faceAssetId: nextFace.id,
+        isFeaturedFaceManual: false,
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.PersonGenerateThumbnail, data: { ownerId: asset.ownerId, personGroupId } },

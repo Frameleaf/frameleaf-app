@@ -104,6 +104,19 @@ describe('Overview (FL-363)', () => {
     expect(screen.getByText('Install the app to send photos here')).toBeInTheDocument();
   });
 
+  it('draws the status without waiting for the library report', async () => {
+    let arrive!: (report: ReturnType<typeof analyticsReportFixture>) => void;
+    sdk.getAnalyticsReport.mockReturnValue(new Promise((resolve) => (arrive = resolve)));
+    render(Overview);
+    expect(await screen.findByRole('heading', { name: 'Everything is working' })).toBeInTheDocument();
+    expect(screen.getByText('40 GB free')).toBeInTheDocument();
+    expect(screen.queryByText('Count now')).not.toBeInTheDocument();
+    expect(screen.queryByText(/so far\./)).not.toBeInTheDocument();
+    arrive(analyticsReportFixture());
+    expect(await screen.findByText(/so far\./)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('status', { busy: true })).not.toBeInTheDocument());
+  });
+
   it('reads the restore drill first: a failed drill needs the person now (FL-900)', async () => {
     sdk.getCloudBackupStatus.mockResolvedValue({
       drillNeedsAttention: true,
