@@ -1108,8 +1108,8 @@ export class PersonRepository {
    */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   getBestFace(personGroupId: string, ownerId: string) {
-    // ponytail: the centre is read from 500 of the person's faces and the ranking from their 200 best
-    // boxes, so a person with 50,000 faces costs the same as one with 500; widen both if picks look off.
+    // ponytail: the centre is read from 500 of the person's faces (the same ones on every run) and the
+    // ranking from their 200 best boxes, so a person with 50,000 faces costs the same as one with 500; widen both if picks look off.
     const centre = sql`(
       select avg(sample.embedding) from (
         select face_search.embedding
@@ -1118,6 +1118,7 @@ export class PersonRepository {
         where member."personGroupId" = ${personGroupId}
           and member."deletedAt" is null
           and member."isVisible" is true
+        order by member.id
         limit 500
       ) as sample
     )`;
@@ -1404,6 +1405,7 @@ export class PersonRepository {
               where asset_face."personGroupId" = person."personGroupId"
                 and asset_face."deletedAt" is null
                 and asset_face."isVisible" is true
+              order by asset_face.id
               limit ${sql.lit(MERGE_CENTRE_FACES)}
             ) as member
           ) as sample
@@ -1471,15 +1473,19 @@ export class PersonRepository {
   /** FL-1385: up to `limit` of a person's visible faces with their embeddings (`[0.1,0.2,…]` text). */
   @GenerateSql({ params: [DummyValue.UUID, 200] })
   getFaceEmbeddings(personGroupId: string, limit: number) {
-    return this.db
-      .selectFrom('asset_face')
-      .innerJoin('face_search', 'face_search.faceId', 'asset_face.id')
-      .select(['asset_face.id', 'face_search.embedding'])
-      .where('asset_face.personGroupId', '=', personGroupId)
-      .where('asset_face.deletedAt', 'is', null)
-      .where('asset_face.isVisible', 'is', true)
-      .limit(limit)
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset_face')
+        .innerJoin('face_search', 'face_search.faceId', 'asset_face.id')
+        .select(['asset_face.id', 'face_search.embedding'])
+        .where('asset_face.personGroupId', '=', personGroupId)
+        .where('asset_face.deletedAt', 'is', null)
+        .where('asset_face.isVisible', 'is', true)
+        // a stable order, so the same faces are read on every run
+        .orderBy('asset_face.id')
+        .limit(limit)
+        .execute()
+    );
   }
   /**
    * FL-1385: the person's visible faces that look more like `nearer` than like `than` (two embeddings,
