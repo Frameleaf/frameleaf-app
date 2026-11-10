@@ -428,12 +428,17 @@ describe(MediaHealthOperationService.name, () => {
 
     it('records what a Look in a folder found once its search is complete (FL-1337)', async () => {
       const lookIn = { ...locateSnapshot, findingIds: ['health-1'], lookIn: { folder: 'Holiday drive' } };
-      mediaHealth.locateStep.mockResolvedValue({ checkedAssets: 1, foundAssets: 1 });
+      const continuation = { cursor: [{ path: '/data/upload/user-1', after: 'b' }], matches: {} };
+      mediaHealth.locateStep
+        .mockResolvedValueOnce({ checkedAssets: 1, foundAssets: 0, continuation, checkedIds: ['health-1'] })
+        .mockResolvedValueOnce({ checkedAssets: 1, foundAssets: 1, checkedIds: ['health-1'] });
 
       await sut.run(operationOf(lookIn), 'token');
 
       expect(operations.complete).toHaveBeenCalled();
-      expect(mediaHealth.finishLookIn).toHaveBeenCalledWith(lookIn);
+      // it speaks for what the walk's last step checked
+      expect(mediaHealth.finishLookIn).toHaveBeenCalledTimes(1);
+      expect(mediaHealth.finishLookIn).toHaveBeenCalledWith(lookIn, ['health-1']);
     });
 
     it('records nothing for a search nobody asked to look in a folder, or one that was cancelled', async () => {

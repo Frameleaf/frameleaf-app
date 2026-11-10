@@ -100,6 +100,7 @@ import {
   MediaHealthRun,
   ReplaceRepairedOriginal,
   UndoFileFix,
+  UndoFileFixResult,
   UpsertMediaHealthFinding,
 } from 'src/repositories/media-health.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -238,6 +239,8 @@ const NEEDS_FILE_STATES: ReadonlySet<string> = new Set<FixState>([
 const UNDO_CHANGED = "This photo changed since Frameleaf fixed it, so it can't be undone.";
 const NOTHING_TO_UNDO = 'There is nothing to undo for this photo.';
 const OWNER_ONLY = "Only the photo's owner can do that.";
+/** Review Focus 5: a photo's open problem is the one the list and Undo go by. */
+const OTHER_PROBLEM_OPEN = "This photo has another problem open, so this fix can't be undone yet.";
 /** Facts kept for the server's own bookkeeping, never sent: which session reported, and the app's device id. */
 const UNSHOWN_FACTS: ReadonlySet<string> = new Set(['session', 'deviceId']);
 const shownFacts = (facts: Record<string, unknown> | null | undefined) =>
@@ -274,6 +277,8 @@ export type MediaHealthLocateStep = {
   checkedAssets: number;
   foundAssets: number;
   continuation?: ManagedSearchProgress;
+  /** FL-1337: the findings this step checked, so a Look in a folder speaks only for what it searched. */
+  checkedIds?: string[];
 };
 
 /** One page of an owner's durable scan (FL-69). */
@@ -1207,34 +1212,77 @@ export class MediaHealthService {
    */
   async repair(auth: AuthDto, dto: MediaHealthRepairDto): Promise<MediaHealthRepairResponseDto> {
     const { finding, asset } = await this.repairTarget(auth, dto.findingId);
-    const method = await this.withRepair(asset, async ({ output, method }) => {
+    const { method, after } = await this.withRepair(asset, async (repaired) => {
+      const { output, method } = repaired;
       const digests = await this.cryptoRepository.hashFileDigests(output);
       if (digests.sha1.toString('hex') !== dto.checksum) {
         throw new ConflictException('The repair changed since it was reviewed; preview it again');
       }
-      let committed: boolean;
+      let published: { committed: boolean; destination: string };
       try {
-        ({ committed } = await this.publishRepair(
+        // FL-1337: the reviewed repair records the same history and state as the automatic one
+        published = await this.publishRepair(
           asset,
           finding,
           { output, digests },
-          { provenance: { recoveredBy: auth.user.id, repairMethod: method, recoveredAt: new Date().toISOString() } },
-        ));
+          {
+            provenance: { recoveredBy: auth.user.id, repairMethod: method, recoveredAt: new Date().toISOString() },
+            ...this.repairRecord(repaired, auth.user.name),
+          },
+        );
       } catch (error) {
         if (isAssetChecksumConstraint(error)) {
           throw new ConflictException('This library already has a photo identical to the repaired one');
         }
         throw error;
       }
-      if (!committed) {
+      if (!published.committed) {
         // left unreferenced in the hidden folder; the same repair reuses it
         throw new ConflictException('The photo changed while it was being repaired');
       }
-      return method;
+      return { method, after: { originalPath: published.destination, checksum: digests.sha256.toString('hex') } };
     });
-    await this.retainDamagedOriginal(finding.id);
+    await this.retainDamagedOriginal(finding.id, this.keptDamaged(after));
     await this.queueRelinkJobs(asset.id);
     return { findingId: finding.id, assetId: asset.id, method };
+  }
+
+  /**
+   * How a repair leaves its finding and the history it adds (FL-1337), the same for the reviewed repair
+   * (with who did it) and the automatic one: `repaired` with how much was saved, and `fixState` `repaired`
+   * or `part-saved`. A person's `autoRepairDeclined` is left as it is.
+   */
+  private repairRecord(
+    { method, percentSaved, metadataKept }: Pick<RepairOutcome, 'method' | 'percentSaved' | 'metadataKept'>,
+    by?: string,
+  ): { fixState: 'repaired' | 'part-saved'; evidence: Record<string, unknown>; steps: FindingStep[] } {
+    const result = repairResult({ method, percentSaved });
+    const fixState = result.partSaved ? 'part-saved' : 'repaired';
+    return {
+      fixState,
+      evidence: { fixState, partSaved: result.partSaved },
+      steps: [
+        {
+          step: 'repaired',
+          outcome: 'ok',
+          facts: {
+            method,
+            ...(result.percentSaved !== undefined && { percentSaved: result.percentSaved }),
+            metadataLost: !metadataKept,
+            ...(by && { by }),
+          },
+        },
+      ],
+    };
+  }
+
+  /** The step for a repair's damaged file once it is in its kept place, with what Undo needs (FL-1337). */
+  private keptDamaged(after: { originalPath: string; checksum: string }) {
+    return (retainedPath: string): FindingStep => ({
+      step: 'kept-damaged',
+      outcome: 'info',
+      undo: { kind: 'repair', previousPath: retainedPath, ...after },
+    });
   }
 
   /**
@@ -1792,7 +1840,7 @@ export class MediaHealthService {
    */
   private async copiesFound(
     finding: MediaHealthFinding,
-  ): Promise<{ copies: number; verified: MediaHealthCandidate[] }> {
+  ): Promise<{ copies: number; usable: MediaHealthCandidate[]; verified: MediaHealthCandidate[] }> {
     // An exact copy; a replacement for damage must decode too. An inexact match is never used.
     const copies = (await this.mediaHealthRepository.getCandidatesByHealthIds([finding.id])).filter(
       ({ status, evidence }) =>
@@ -1806,7 +1854,7 @@ export class MediaHealthService {
         (candidate.resolution as Record<string, unknown> | null)?.autoRelinkable === true &&
         this.candidateRootKind(candidate) !== 'recovery',
     );
-    return { copies: copies.length, verified };
+    return { copies: copies.length, usable: copies, verified };
   }
 
   /** Put the one verified copy back as the asset's original, with the steps that say so. */
@@ -1885,38 +1933,27 @@ export class MediaHealthService {
     }
     let repaired: { destination: string; checksum: string; fixState: 'repaired' | 'part-saved' } | undefined;
     try {
-      repaired = await this.withRepair(asset, async ({ output, method, metadataKept, percentSaved }) => {
-        const digests = await this.cryptoRepository.hashFileDigests(output);
-        const result = repairResult({ method, percentSaved });
+      repaired = await this.withRepair(asset, async (outcome) => {
+        const digests = await this.cryptoRepository.hashFileDigests(outcome.output);
+        const record = this.repairRecord(outcome);
         const { committed, destination } = await this.publishRepair(
           asset,
           finding,
-          { output, digests },
+          { output: outcome.output, digests },
           {
             provenance: {
               recoveredBy: asset.ownerId,
               automatic: true,
-              repairMethod: method,
+              repairMethod: outcome.method,
               recoveredAt: new Date().toISOString(),
             },
-            evidence: { fixState: result.fixState, partSaved: result.partSaved },
-            steps: [
-              ...steps,
-              {
-                step: 'repaired',
-                outcome: 'ok',
-                facts: {
-                  method,
-                  ...(result.percentSaved !== undefined && { percentSaved: result.percentSaved }),
-                  metadataLost: !metadataKept,
-                },
-              },
-            ],
+            evidence: record.evidence,
+            steps: [...steps, ...record.steps],
           },
         );
         // not committed: left unreferenced in the hidden folder, where the same repair reuses it
         return committed
-          ? { destination, checksum: digests.sha256.toString('hex'), fixState: result.fixState }
+          ? { destination, checksum: digests.sha256.toString('hex'), fixState: record.fixState }
           : undefined;
       });
     } catch (error) {
@@ -1932,12 +1969,10 @@ export class MediaHealthService {
     if (!repaired) {
       return 'busy';
     }
-    const after = { originalPath: repaired.destination, checksum: repaired.checksum };
-    await this.retainDamagedOriginal(finding.id, (retainedPath) => ({
-      step: 'kept-damaged',
-      outcome: 'info',
-      undo: { kind: 'repair', previousPath: retainedPath, ...after },
-    }));
+    await this.retainDamagedOriginal(
+      finding.id,
+      this.keptDamaged({ originalPath: repaired.destination, checksum: repaired.checksum }),
+    );
     await this.queueRelinkJobs(asset.id);
     return repaired.fixState;
   }
@@ -2224,6 +2259,10 @@ export class MediaHealthService {
     if (!fix) {
       throw new BadRequestException(NOTHING_TO_UNDO);
     }
+    const others = await this.mediaHealthRepository.getFindingsForAsset(record.assetId);
+    if (others.some((other) => other.id !== record.id && isOpenFinding(other))) {
+      throw new ConflictException(OTHER_PROBLEM_OPEN);
+    }
     const [asset] = await this.mediaHealthRepository.getAssets([record.assetId]);
     // a repair that stopped before it recorded what Undo needs: its repaired file says what it left
     const expectedChecksum = fix.checksum
@@ -2257,9 +2296,14 @@ export class MediaHealthService {
       fix.kind === 'restore'
         ? await this.undoRestore(record, asset, fix, base)
         : await this.undoRelink(record, fix, base);
+    if (result === 'open') {
+      throw new ConflictException(OTHER_PROBLEM_OPEN);
+    }
     if (result === 'changed') {
       throw new ConflictException(UNDO_CHANGED);
     }
+    // the photo's file changed: its details and previews are read again, as after a relink
+    await this.queueRelinkJobs(asset.id);
     return this.getFileProblem(auth, id);
   }
 
@@ -2268,7 +2312,7 @@ export class MediaHealthService {
     record: FileProblemRecord,
     fix: FixToUndo,
     base: Omit<UndoFileFix, 'evidence'>,
-  ): Promise<'undone' | 'changed'> {
+  ): Promise<UndoFileFixResult> {
     let relinkTo: NonNullable<UndoFileFix['relinkTo']> = { path: fix.previousPath, takeChecksum: false };
     let evidence: Record<string, unknown>;
     if (fix.kind === 'repair') {
@@ -2310,7 +2354,7 @@ export class MediaHealthService {
     asset: MediaHealthAsset,
     fix: FixToUndo,
     base: Omit<UndoFileFix, 'evidence'>,
-  ): Promise<'undone' | 'changed'> {
+  ): Promise<UndoFileFixResult> {
     const extension = path.extname(asset.originalPath).toLowerCase();
     const aside = path.join(
       path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
@@ -2417,21 +2461,35 @@ export class MediaHealthService {
     if (!folder) {
       throw new ForbiddenException("That folder isn't one you can search.");
     }
+    // only a folder the search walks for this photo: library storage and recovery folders for a stored
+    // photo, its own library for an external one; any other would say it looked where it did not
+    const [asset] = await this.mediaHealthRepository.getAssets([record.assetId]);
+    const searchable = asset?.isExternal
+      ? !!asset.libraryId && folder.id === libraryRootId(asset.libraryId)
+      : folder.id === MANAGED_ROOT_ID || rootKindOf(folder.id) === 'recovery';
+    if (!asset || !searchable) {
+      throw new BadRequestException("Frameleaf can't look for this photo in that folder.");
+    }
     await this.locateMissing(auth, { ids: [record.id], rootIds: [folder.id] }, { folder: folder.name });
     return this.getFileProblem(auth, id);
   }
 
   /**
-   * A Look in a folder search is complete: each problem still open gets `searched-copy` with the folder's
-   * name, and the one exact copy Frameleaf may use by itself is put back (`put-back`, with its Undo), never
-   * for a Locked photo or from a recovery folder.
+   * A Look in a folder search is complete. Each problem it checked and that is still open gets
+   * `searched-copy` with the folder's name and the copies found there, and the one exact copy there that
+   * Frameleaf may use by itself is put back (`put-back`, with its Undo), as a fix does: never for a Locked
+   * photo or from a recovery folder. A problem the search did not check gets nothing.
    */
-  async finishLookIn(snapshot: MediaHealthLocateSnapshot): Promise<void> {
-    if (!snapshot.lookIn) {
+  async finishLookIn(snapshot: MediaHealthLocateSnapshot, checkedIds: string[]): Promise<void> {
+    const checked = new Set(checkedIds);
+    const ids = snapshot.findingIds.filter((id) => checked.has(id));
+    if (!snapshot.lookIn || ids.length === 0) {
       return;
     }
+    const folders = new Set(snapshot.rootIds);
+    const inFolder = (candidate: MediaHealthCandidate) => folders.has(this.candidateRootId(candidate) ?? '');
     const facts = { folder: snapshot.lookIn.folder };
-    for (const finding of await this.mediaHealthRepository.getByIds(snapshot.findingIds, snapshot.userId)) {
+    for (const finding of await this.mediaHealthRepository.getByIds(ids, snapshot.userId)) {
       if (!isOpenFinding(finding)) {
         continue;
       }
@@ -2440,14 +2498,22 @@ export class MediaHealthService {
         continue;
       }
       const search = await this.copiesFound(finding);
-      if (search.copies === 0) {
+      const copies = search.usable.filter((candidate) => inFolder(candidate));
+      if (copies.length === 0) {
         await this.mediaHealthRepository.appendSteps(
           this.stepsOf(finding, [{ step: 'searched-copy', outcome: 'not-found', facts }]),
         );
         continue;
       }
-      const found: FindingStep = { step: 'searched-copy', outcome: 'ok', facts: { ...facts, copies: search.copies } };
-      if (!(await this.putBackCopy(asset, finding, search.verified, [found]))) {
+      const found: FindingStep = { step: 'searched-copy', outcome: 'ok', facts: { ...facts, copies: copies.length } };
+      if (
+        !(await this.putBackCopy(
+          asset,
+          finding,
+          search.verified.filter((candidate) => inFolder(candidate)),
+          [found],
+        ))
+      ) {
         await this.mediaHealthRepository.appendSteps(this.stepsOf(finding, [found]));
       }
     }
@@ -3411,6 +3477,8 @@ export class MediaHealthService {
       ownerId: snapshot.anyOwner ? undefined : snapshot.userId,
       rootIds: snapshot.rootIds,
       managedSearch: managedSearch ?? undefined,
+      // FL-1337: Look in a folder adds what it finds there to what other searches found elsewhere
+      keepOtherCandidates: !!snapshot.lookIn,
     });
   }
 
@@ -3516,6 +3584,11 @@ export class MediaHealthService {
     ownerId?: string;
     rootIds: string[] | null;
     managedSearch?: ManagedSearchProgress;
+    /**
+     * FL-1337: keep the candidates earlier searches found outside the locations this one walks, instead of
+     * replacing the whole list (Look in a folder searches one folder).
+     */
+    keepOtherCandidates?: boolean;
   }): Promise<MediaHealthLocateStep> {
     const findings = await this.mediaHealthRepository.getByIds(input.findingIds, input.ownerId);
     const assets = await this.mediaHealthRepository.getAssets(
@@ -3543,6 +3616,13 @@ export class MediaHealthService {
     const truncated = !!continuation;
     let checkedAssets = 0;
     let foundAssets = 0;
+    const checkedIds: string[] = [];
+    // what this search walks: earlier candidates anywhere else are kept when asked to
+    const walked = [
+      ...managedPaths,
+      ...recoveryPaths,
+      ...roots.filter((root) => root.kind === 'library' && !!selected?.has(root.id)).flatMap((root) => root.paths),
+    ];
 
     const externalCandidates = continuation
       ? new Map<string, CandidateValidation[]>()
@@ -3563,6 +3643,7 @@ export class MediaHealthService {
         continue;
       }
       checkedAssets++;
+      checkedIds.push(finding.id);
 
       const found = asset.isExternal
         ? (externalCandidates.get(asset.id) ?? [])
@@ -3574,25 +3655,40 @@ export class MediaHealthService {
         foundAssets++;
       }
 
-      await this.mediaHealthRepository.replaceCandidates(
-        finding.id,
-        candidates.map((candidate) => ({
-          healthId: finding.id,
-          candidatePath: candidate.evidence.path as string,
-          status: candidate.status,
-          visualMatchScore: candidate.score,
-          evidence: candidate.evidence,
-          resolution: candidate.resolution,
-          checkedAt: new Date(),
-        })),
-      );
+      const fresh = candidates.map((candidate) => ({
+        healthId: finding.id,
+        candidatePath: candidate.evidence.path as string,
+        status: candidate.status,
+        visualMatchScore: candidate.score,
+        evidence: candidate.evidence,
+        resolution: candidate.resolution,
+        checkedAt: new Date(),
+      }));
+      const freshPaths = new Set(fresh.map(({ candidatePath }) => candidatePath));
+      const kept = input.keepOtherCandidates
+        ? (await this.mediaHealthRepository.getCandidatesByHealthIds([finding.id]))
+            .filter(
+              ({ candidatePath }) =>
+                !freshPaths.has(candidatePath) && walked.every((folder) => !isPathWithin(folder, candidatePath)),
+            )
+            .map(({ healthId, candidatePath, status, visualMatchScore, evidence, resolution, checkedAt }) => ({
+              healthId,
+              candidatePath,
+              status,
+              visualMatchScore,
+              evidence,
+              resolution,
+              checkedAt,
+            }))
+        : [];
+      await this.mediaHealthRepository.replaceCandidates(finding.id, [...kept, ...fresh]);
 
-      const validCandidates = candidates.filter(({ status }) => status === MediaHealthStatus.Found);
+      const validCandidates = [...kept, ...fresh].filter(({ status }) => status === MediaHealthStatus.Found);
       // A new candidate list has new ids: a choice made from the old list no longer applies.
       const { chosenCandidateId: _stale, ...resolution } = (finding.resolution ?? {}) as Record<string, unknown>;
       const evidence = {
         ...(finding.evidence as Record<string, unknown>),
-        candidateCount: candidates.length,
+        candidateCount: kept.length + fresh.length,
         validatedCandidateCount: validCandidates.length,
         searchTruncated: !asset.isExternal && truncated,
         ...(input.rootIds && { searchedRootIds: input.rootIds }),
@@ -3613,7 +3709,7 @@ export class MediaHealthService {
       const findingStatus =
         validCandidates.length > 0
           ? MediaHealthStatus.Found
-          : candidates.length > 0
+          : kept.length + fresh.length > 0
             ? MediaHealthStatus.Candidate
             : MediaHealthStatus.Missing;
 
@@ -3636,7 +3732,7 @@ export class MediaHealthService {
       });
     }
 
-    return { checkedAssets, foundAssets, continuation };
+    return { checkedAssets, foundAssets, continuation, checkedIds };
   }
 
   /**

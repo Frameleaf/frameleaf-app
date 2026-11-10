@@ -183,6 +183,11 @@ export type UndoFileFix = {
   evidence: Record<string, unknown>;
   steps: FindingStep[];
 };
+/**
+ * What `undoFix` did: `undone`; `changed`, when the photo is no longer as the fix left it; `open`, when the
+ * same photo has another problem open (Review Focus 5). Nothing is written or moved unless `undone`.
+ */
+export type UndoFileFixResult = 'undone' | 'changed' | 'open';
 /** The fix states of each tab of Damaged and missing files (FL-1337 ruling 1). */
 const NEEDS_FIX_STATES = ['missing', 'waiting-phone', 'cant-repair', 'couldnt-check'];
 const FIXED_FIX_STATES = ['repaired', 'part-saved', 'found-again', 'restored'];
@@ -1582,11 +1587,17 @@ export class MediaHealthRepository {
   /**
    * Which problems a tab holds (FL-1337 ruling 1). Needs you: open, and no fix settled it any other way
    * (a problem no fix has looked at yet counts). Fixed for you: fixed in the last 30 days. Left as they are:
-   * kept as they are, open or settled. A dismissed problem, or one whose photo is in the Trash, is in none.
+   * kept as they are, open or settled. A dismissed problem, or one whose photo is in the Trash, is in none,
+   * and while a photo has a problem open, the list goes by that one: its settled ones are in no tab, their
+   * history still readable (Review Focus 5).
    */
   private inFileProblemTab(tab: FileProblemTab) {
     const fixState = sql`(asset_health.evidence->>'fixState')`;
-    const shown = sql`asset_health."dismissedAt" IS NULL AND asset."deletedAt" IS NULL`;
+    const shown = sql`asset_health."dismissedAt" IS NULL AND asset."deletedAt" IS NULL
+      AND (asset_health."resolvedAt" IS NULL OR NOT EXISTS (
+        SELECT 1 FROM public.asset_health other
+        WHERE other."assetId" = asset_health."assetId" AND other.id <> asset_health.id
+          AND other."resolvedAt" IS NULL AND other."dismissedAt" IS NULL))`;
     switch (tab) {
       case 'needs': {
         return sql<boolean>`${shown} AND asset_health."resolvedAt" IS NULL
@@ -1686,10 +1697,11 @@ export class MediaHealthRepository {
    * Undo one fix (FL-1337, design §5) in one transaction, holding the owner, both paths, the asset and the
    * problem in the order a relink holds them. `changed`, with nothing written or moved, when the photo is no
    * longer as the fix left it (Review Focus 3): another file or checksum, in the Trash, an edit saved or removed
-   * since the fix, or a later fix or Undo. Then a repair or relink points the photo back at the file it used
-   * before, a restore moves its files, and the problem is reopened with the `undone` step.
+   * since the fix, or a later fix or Undo; `open` while the photo has another problem open (Review Focus 5).
+   * Then a repair or relink points the photo back at the file it used before, a restore moves its files, and
+   * the problem is reopened with the `undone` step.
    */
-  async undoFix(input: UndoFileFix): Promise<'undone' | 'changed'> {
+  async undoFix(input: UndoFileFix): Promise<UndoFileFixResult> {
     const target = input.relinkTo && path.normalize(input.relinkTo.path);
     return this.db.transaction().execute(async (trx) => {
       await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(trx);
@@ -1735,8 +1747,11 @@ export class MediaHealthRepository {
         return 'changed';
       }
       // compared in SQL, where the step's time keeps its microseconds
-      const { rows } = await sql<{ known: boolean; replaced: boolean; edited: boolean }>`
+      const { rows } = await sql<{ known: boolean; replaced: boolean; edited: boolean; open: boolean }>`
         SELECT
+          EXISTS (SELECT 1 FROM public.asset_health other
+            WHERE other."assetId" = ${asset.id}::uuid AND other.id <> ${health.id}::uuid
+              AND other."resolvedAt" IS NULL AND other."dismissedAt" IS NULL) AS open,
           EXISTS (SELECT 1 FROM public.asset_health_step fix
             WHERE fix.id = ${input.stepId}::uuid AND fix."healthId" = ${health.id}::uuid) AS known,
           EXISTS (SELECT 1 FROM public.asset_health_step fix
@@ -1750,6 +1765,9 @@ export class MediaHealthRepository {
             WHERE fix.id = ${input.stepId}::uuid AND removed."deletedAt" > fix.at) AS edited`.execute(trx);
       if (!rows[0]?.known || rows[0].replaced || rows[0].edited) {
         return 'changed';
+      }
+      if (rows[0].open) {
+        return 'open';
       }
 
       if (target && input.relinkTo) {

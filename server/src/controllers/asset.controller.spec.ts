@@ -4,18 +4,21 @@ import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
 import { AssetMetadataKey, Permission } from 'src/enum.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { MediaHealthService } from 'src/services/media-health.service.js';
 import { factory } from 'test/small.factory.js';
-import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
+import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
 
 describe(AssetController.name, () => {
   let ctx: ControllerContext;
   const service = mockBaseService(AssetService);
   const imageEnrichmentService = mockBaseService(ImageEnrichmentService);
+  const mediaHealthService = automock(MediaHealthService, { args: [{ setContext: () => {} }], strict: false });
 
   beforeAll(async () => {
     ctx = await controllerSetup(AssetController, [
       { provide: AssetService, useValue: service },
       { provide: ImageEnrichmentService, useValue: imageEnrichmentService },
+      { provide: MediaHealthService, useValue: mediaHealthService },
     ]);
     return () => ctx.close();
   });
@@ -24,6 +27,42 @@ describe(AssetController.name, () => {
     ctx.reset();
     service.resetAllMocks();
     imageEnrichmentService.resetAllMocks();
+    mediaHealthService.resetAllMocks();
+  });
+
+  describe('GET /assets/lost-originals (FL-1337)', () => {
+    it('should be an authenticated route that pages the caller’s lost originals', async () => {
+      await request(ctx.getHttpServer()).get('/assets/lost-originals');
+      expect(ctx.authenticate).toHaveBeenCalled();
+      expect(mediaHealthService.listLostOriginals).toHaveBeenCalledWith(undefined, { take: 500, skip: 0 });
+    });
+
+    it('should reject a page size out of range', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/assets/lost-originals').query({ take: '1001' });
+      expect(status).toBe(400);
+      expect(mediaHealthService.listLostOriginals).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /assets/lost-originals/checked (FL-1337)', () => {
+    it('should pass on what a phone does not have', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/assets/lost-originals/checked')
+        .send({ deviceId: 'device-1', notHere: ['AAAA'] });
+      expect(status).toBe(204);
+      expect(mediaHealthService.recordPhoneChecked).toHaveBeenCalledWith(undefined, {
+        deviceId: 'device-1',
+        notHere: ['AAAA'],
+      });
+    });
+
+    it('should require the device that looked', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/assets/lost-originals/checked')
+        .send({ notHere: [] });
+      expect(status).toBe(400);
+      expect(mediaHealthService.recordPhoneChecked).not.toHaveBeenCalled();
+    });
   });
 
   describe('PUT /assets', () => {

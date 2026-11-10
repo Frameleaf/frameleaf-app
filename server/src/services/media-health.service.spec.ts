@@ -3786,6 +3786,59 @@ describe(MediaHealthService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalled();
     });
 
+    it('records the reviewed repair as the automatic one does, so it is fixed and can be undone (FL-1337)', async () => {
+      const { checksum } = await sut.previewRepair(owner, { findingId: 'health-1' });
+      // after the commit the finding points at the repaired file and records the damaged one as `retainedPath`
+      vi.mocked(mediaHealthRepository.getByIds).mockImplementation(() => {
+        const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0]?.[0];
+        return Promise.resolve([
+          {
+            id: 'health-1',
+            assetId: 'asset-1',
+            category: MediaHealthCategory.Corrupt,
+            status: input ? MediaHealthStatus.Resolved : MediaHealthStatus.CorruptSuspect,
+            originalPath: input?.originalPath ?? damaged,
+            evidence: input ? { retainedPath: damaged, autoRepairDeclined: true } : {},
+          },
+        ] as never);
+      });
+
+      await expect(sut.repair(owner, { findingId: 'health-1', checksum })).resolves.toEqual({
+        findingId: 'health-1',
+        assetId: 'asset-1',
+        method: 'lossless',
+      });
+
+      const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0][0];
+      // a lossless repair saves the whole picture; who reviewed it is in the history
+      expect(input.evidence).toEqual({ fixState: 'repaired', partSaved: false });
+      expect(input.steps).toEqual([
+        {
+          step: 'repaired',
+          outcome: 'ok',
+          facts: { method: 'lossless', percentSaved: 100, metadataLost: false, by: 'User 1' },
+        },
+      ]);
+      expect(input.provenance).toMatchObject({ recoveredBy: 'user-id', repairMethod: 'lossless' });
+      // the damaged file is kept beside it, with what Undo needs, in the write that records its place
+      const [healthId, keptPath, steps] = vi.mocked(mediaHealthRepository.setRetainedPath).mock.calls[0];
+      expect(healthId).toBe('health-1');
+      expect(keptPath).toContain('.library-care');
+      expect(steps).toEqual([
+        {
+          step: 'kept-damaged',
+          outcome: 'info',
+          undo: {
+            kind: 'repair',
+            previousPath: keptPath,
+            originalPath: input.originalPath,
+            checksum: input.sha256.toString('hex'),
+          },
+        },
+      ]);
+      await expect(stat(keptPath)).resolves.toBeDefined();
+    });
+
     it('copies the photo’s details back when the repair lost them', async () => {
       vi.mocked(mocks.media.repairJpeg).mockImplementation(async (input, output, preview) => {
         await operations.repairJpeg(input, output, preview, join(root, 'unused.jpg'));
@@ -5150,6 +5203,11 @@ describe(MediaHealthService.name, () => {
         await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
         expect(result).toMatchObject({ fixState: 'cant-repair', canAct: true });
         expect(mocks.job.queue).not.toHaveBeenCalled();
+        // its details and previews are read again from the file it uses now, as after a relink
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([
+          { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } },
+          { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
+        ]);
       });
 
       it('undoes a repair whose kept-damaged step was never written, from the kept file', async () => {
@@ -5372,6 +5430,7 @@ describe(MediaHealthService.name, () => {
 
         await expect(readFile(repaired, 'utf8')).resolves.toBe('the repaired file');
         await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
       });
 
       it('moves nothing for a restore the repository refuses', async () => {
@@ -5431,6 +5490,46 @@ describe(MediaHealthService.name, () => {
         );
         await expect(readFile(original, 'utf8')).resolves.toBe('the original, from Cloud Backup');
         expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
+      it('waits for the photo’s other open problem before it undoes a fix', async () => {
+        const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+        const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+        await writeFile(repaired, 'the repaired file');
+        await writeFile(damaged, 'the damaged file');
+        photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+        shows(problem({ originalPath: repaired }));
+        history(
+          step('step-1', 'repaired', 'ok'),
+          step('step-2', 'kept-damaged', 'info', {
+            undo: {
+              kind: 'repair',
+              previousPath: damaged,
+              originalPath: repaired,
+              checksum: sha256('the repaired file').toString('hex'),
+            },
+          }),
+        );
+        const otherOpen = "This photo has another problem open, so this fix can't be undone yet.";
+        // the same photo went missing since: that open problem is the one that counts
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          problem(),
+          problem({ id: 'health-2', category: MediaHealthCategory.Missing, resolvedAt: null }),
+        ] as never);
+        await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toMatchObject({
+          message: otherOpen,
+          status: 409,
+        });
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+
+        // one opened meanwhile: the repository finds it under its lock
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([problem()] as never);
+        vi.mocked(mediaHealthRepository.undoFix).mockResolvedValue('open');
+        await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toMatchObject({
+          message: otherOpen,
+          status: 409,
+        });
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
       });
 
       it('has nothing to undo on a problem that is not fixed', async () => {
@@ -5528,7 +5627,7 @@ describe(MediaHealthService.name, () => {
         }
         expect(mediaOperationRepository.create).not.toHaveBeenCalled();
 
-        await sut.lookInFolderForFileProblem(owner, 'health-1', { folderId: libraryRootId('library-1') });
+        await sut.lookInFolderForFileProblem(owner, 'health-1', { folderId: MANAGED_ROOT_ID });
 
         // a one-off search of that folder, as a search Activity shows, which records what it found
         expect(mediaOperationRepository.create).toHaveBeenCalledWith(
@@ -5539,12 +5638,121 @@ describe(MediaHealthService.name, () => {
               mode: 'locate',
               userId: owner.user.id,
               findingIds: ['health-1'],
-              rootIds: [libraryRootId('library-1')],
+              rootIds: [MANAGED_ROOT_ID],
               anyOwner: false,
+              lookIn: { folder: 'Library storage' },
+            }),
+          }),
+        );
+      });
+
+      it('looks only in a folder the search walks for this photo', async () => {
+        const refusedHere = "Frameleaf can't look for this photo in that folder.";
+        vi.mocked(mocks.library.getAll).mockResolvedValue([
+          { id: 'library-1', ownerId: owner.user.id, name: 'Holiday drive', importPaths: ['/mnt/holiday'] },
+          { id: 'library-3', ownerId: owner.user.id, name: 'Camera card', importPaths: ['/mnt/card'] },
+        ] as never);
+        shows(needsYou());
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
+        vi.mocked(mediaHealthRepository.createRun).mockResolvedValue({ id: 'run-1' } as never);
+
+        // a stored photo is never searched for in an external library
+        photo({ originalPath: '/data/upload/user-id/IMG_3310.jpg', checksum: sha1('the photo') });
+        await expect(
+          sut.lookInFolderForFileProblem(owner, 'health-1', { folderId: libraryRootId('library-1') }),
+        ).rejects.toThrow(refusedHere);
+
+        // an external photo only in its own library
+        photo({
+          originalPath: '/mnt/holiday/IMG_3310.jpg',
+          isExternal: true,
+          libraryId: 'library-1',
+          checksum: sha1('x'),
+        });
+        for (const folderId of [MANAGED_ROOT_ID, libraryRootId('library-3')]) {
+          const error = await sut.lookInFolderForFileProblem(owner, 'health-1', { folderId }).catch((error_) => error_);
+          expect(error).toMatchObject({ message: refusedHere, status: 400 });
+        }
+        expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+
+        await sut.lookInFolderForFileProblem(owner, 'health-1', { folderId: libraryRootId('library-1') });
+        expect(mediaOperationRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            snapshot: expect.objectContaining({
+              rootIds: [libraryRootId('library-1')],
               lookIn: { folder: 'Holiday drive' },
             }),
           }),
         );
+      });
+
+      it('keeps what earlier searches found in other folders when it looks in one', async () => {
+        recoveryRoots.push({ label: 'Old NAS', path: '/mnt/old-nas' });
+        vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-id', storageLabel: null }] as never);
+        const managed = StorageCore.getFolderLocation(StorageFolder.Upload, 'user-id');
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
+        photo({ originalPath: join(managed, 'IMG_3310.jpg'), checksum: sha1('the photo') });
+        // earlier: a copy in a recovery folder, and one in library storage that is gone now
+        const earlier = (candidatePath: string, rootId: string) => ({
+          id: `candidate-${rootId}`,
+          healthId: 'health-1',
+          candidatePath,
+          status: MediaHealthStatus.Found,
+          visualMatchScore: 1,
+          evidence: { path: candidatePath, rootId },
+          resolution: { autoRelinkable: true },
+          checkedAt: at('2026-11-01T00:00:00Z'),
+        });
+        const elsewhere = earlier('/mnt/old-nas/IMG_3310.jpg', recoveryRootId('/mnt/old-nas'));
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          elsewhere,
+          earlier(join(managed, 'gone.jpg'), MANAGED_ROOT_ID),
+        ] as never);
+        const fresh = join(managed, 'IMG_3310+1.jpg');
+        vi.spyOn(sut as any, 'locateManagedCandidates').mockResolvedValue({
+          candidates: new Map([
+            [
+              'asset-1',
+              [
+                {
+                  status: MediaHealthStatus.Found,
+                  score: 1,
+                  evidence: { path: fresh },
+                  resolution: { autoRelinkable: true },
+                },
+              ],
+            ],
+          ]),
+          continuation: undefined,
+        });
+        const snapshot = {
+          mode: 'locate' as const,
+          userId: owner.user.id,
+          runId: 'run-1',
+          findingIds: ['health-1'],
+          rootIds: [MANAGED_ROOT_ID],
+          anyOwner: false,
+        };
+
+        const step = await sut.locateStep({ ...snapshot, lookIn: { folder: 'Library storage' } }, null);
+
+        expect(step.checkedIds).toEqual(['health-1']);
+        const [, written] = vi.mocked(mediaHealthRepository.replaceCandidates).mock.calls[0];
+        expect(written.map(({ candidatePath }) => candidatePath)).toEqual(['/mnt/old-nas/IMG_3310.jpg', fresh]);
+        expect(written[0]).toMatchObject({ status: MediaHealthStatus.Found, evidence: elsewhere.evidence });
+        // two copies now: the person chooses, nothing is relinked by itself
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: MediaHealthStatus.Found,
+            resolution: expect.objectContaining({ autoRelinkable: false }),
+            evidence: expect.objectContaining({ candidateCount: 2, validatedCandidateCount: 2 }),
+          }),
+        );
+
+        // any other search replaces the whole list, as before
+        vi.mocked(mediaHealthRepository.replaceCandidates).mockClear();
+        await sut.locateStep(snapshot, null);
+        expect(vi.mocked(mediaHealthRepository.replaceCandidates).mock.calls[0][1]).toHaveLength(1);
       });
 
       it('looks only for a photo that is still missing or changed', async () => {
@@ -5580,15 +5788,18 @@ describe(MediaHealthService.name, () => {
         ] as never);
         vi.mocked(mediaHealthRepository.relinkManagedAsset).mockResolvedValue(true);
 
-        await sut.finishLookIn({
-          mode: 'locate',
-          userId: owner.user.id,
-          runId: 'run-1',
-          findingIds: ['health-1'],
-          rootIds: [MANAGED_ROOT_ID],
-          anyOwner: false,
-          lookIn: { folder: 'Library storage' },
-        });
+        await sut.finishLookIn(
+          {
+            mode: 'locate',
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [MANAGED_ROOT_ID],
+            anyOwner: false,
+            lookIn: { folder: 'Library storage' },
+          },
+          ['health-1'],
+        );
 
         expect(mediaHealthRepository.getByIds).toHaveBeenCalledWith(['health-1'], owner.user.id);
         expect(vi.mocked(mediaHealthRepository.relinkManagedAsset).mock.calls[0][0]).toMatchObject({
@@ -5606,15 +5817,18 @@ describe(MediaHealthService.name, () => {
         vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
         vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([]);
 
-        await sut.finishLookIn({
-          mode: 'locate',
-          userId: owner.user.id,
-          runId: 'run-1',
-          findingIds: ['health-1'],
-          rootIds: [libraryRootId('library-1')],
-          anyOwner: false,
-          lookIn: { folder: 'Holiday drive' },
-        });
+        await sut.finishLookIn(
+          {
+            mode: 'locate',
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [libraryRootId('library-1')],
+            anyOwner: false,
+            lookIn: { folder: 'Holiday drive' },
+          },
+          ['health-1'],
+        );
 
         expect(mediaHealthRepository.appendSteps).toHaveBeenCalledWith([
           {
@@ -5624,6 +5838,66 @@ describe(MediaHealthService.name, () => {
             outcome: 'not-found',
             facts: { folder: 'Holiday drive' },
           },
+        ]);
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      });
+
+      it('says nothing for a problem its search did not check', async () => {
+        photo({ originalPath: '/data/upload/user-id/IMG_3310.jpg', checksum: sha1('the photo') });
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([needsYou()] as never);
+
+        await sut.finishLookIn(
+          {
+            mode: 'locate',
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [MANAGED_ROOT_ID],
+            anyOwner: false,
+            lookIn: { folder: 'Library storage' },
+          },
+          [],
+        );
+
+        expect(mediaHealthRepository.appendSteps).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      });
+
+      it('counts and puts back only the copies in the folder it looked in', async () => {
+        const copy = join(root, 'library', 'IMG_3310+1.jpg');
+        await mkdir(join(root, 'library'), { recursive: true });
+        await writeFile(copy, 'the photo');
+        photo({ originalPath: join(root, 'library', 'IMG_3310.jpg'), checksum: sha1('the photo') });
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+          needsYou({ status: MediaHealthStatus.Found }),
+        ] as never);
+        // the one copy Frameleaf could use by itself is in library storage, found by an earlier search
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          {
+            id: 'candidate-1',
+            healthId: 'health-1',
+            candidatePath: copy,
+            status: MediaHealthStatus.Found,
+            evidence: { rootId: MANAGED_ROOT_ID, decodeValid: true },
+            resolution: { autoRelinkable: true },
+          },
+        ] as never);
+
+        await sut.finishLookIn(
+          {
+            mode: 'locate',
+            userId: owner.user.id,
+            runId: 'run-1',
+            findingIds: ['health-1'],
+            rootIds: [libraryRootId('library-1')],
+            anyOwner: false,
+            lookIn: { folder: 'Holiday drive' },
+          },
+          ['health-1'],
+        );
+
+        expect(mediaHealthRepository.appendSteps).toHaveBeenCalledWith([
+          expect.objectContaining({ step: 'searched-copy', outcome: 'not-found', facts: { folder: 'Holiday drive' } }),
         ]);
         expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
       });

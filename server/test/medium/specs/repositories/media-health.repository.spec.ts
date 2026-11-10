@@ -1541,6 +1541,33 @@ describe(MediaHealthRepository.name, () => {
       await expect(listed(sut, 'needs', user.id)).resolves.toEqual([finding.id]);
     });
 
+    it('goes by a photo’s open problem: its fixed one is in no tab, its history still readable, and kept as it is', async () => {
+      const { sut, asset, finding, undo } = await arrangeRepaired();
+      await expect(listed(sut, 'fixed', undo.ownerId)).resolves.toEqual([finding.id]);
+
+      // the same photo goes missing afterwards
+      const missing = await sut.upsertFinding(
+        findingDto(asset.id, (await sut.getByIds([finding.id]))[0].originalPath, null),
+      );
+      assert.isDefined(missing);
+
+      await expect(listed(sut, 'fixed', undo.ownerId)).resolves.toEqual([]);
+      await expect(listed(sut, 'needs', undo.ownerId)).resolves.toEqual([missing.id]);
+      await expect(sut.getFileProblem(finding.id, undo.ownerId, {})).resolves.toMatchObject({
+        id: finding.id,
+        line: { step: 'repaired' },
+      });
+      await expect(sut.undoFix(undo)).resolves.toBe('open');
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({ status: MediaHealthStatus.Resolved, resolvedAt: expect.any(Date) }),
+      ]);
+
+      // once that one is settled, the fix is back in Fixed for you and can be undone
+      await sut.markDismissed([missing.id]);
+      await expect(listed(sut, 'fixed', undo.ownerId)).resolves.toEqual([finding.id]);
+      await expect(sut.undoFix(undo)).resolves.toBe('undone');
+    });
+
     it('records that a photo with an open problem was removed', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
