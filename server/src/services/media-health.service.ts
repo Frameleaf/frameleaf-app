@@ -12,6 +12,7 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { LostOriginalRestore } from 'src/services/cloud-backup-lost-original.js';
 import type { JobOf } from 'src/types.js';
 import type { FindingStep, FixState, NewFileStep } from 'src/utils/file-steps.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -91,6 +92,7 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { BulkMediaHealthEntry, BulkOperationItem, bulkErrorMessage } from 'src/utils/bulk-operation.js';
@@ -127,6 +129,7 @@ import {
 } from 'src/utils/media-health-operation.js';
 import {
   FileDigests,
+  LIBRARY_CARE_FOLDER,
   MANAGED_ROOT_ID,
   MediaHealthRoot,
   isPathWithin,
@@ -151,7 +154,7 @@ const MANAGED_LOOKUP_MAX_BYTES = 10 * 1024 ** 3;
  * Library Care's own folder for published recovery copies (FL-69). Hidden, so the untracked-file
  * crawler never adopts a copy that is not committed yet.
  */
-const RECOVERY_FOLDER = '.library-care';
+const RECOVERY_FOLDER = LIBRARY_CARE_FOLDER;
 /** A repair as the reviewer sees it: whether every detail the original carried is in the result. */
 type RepairOutcome = Omit<JpegRepairResult, 'metadataLost'> & { metadataKept: boolean };
 /** The cron that starts every account's scheduled incremental health scan (Library care settings). */
@@ -197,8 +200,8 @@ type FixWrite = {
   steps: FindingStep[];
   kept?: (retainedPath: string, after: { originalPath: string; checksum: string }) => FindingStep;
 };
-/** Cloud Backup's answer to "put this original back" (FL-1337; Task 7 makes it real). */
-type LostOriginalRestore = 'restored' | 'not-in-backup' | 'busy' | 'not-set-up';
+/** What a history step says about the backup it asked: Cloud Backup, kept since its oldest backup began. */
+const backupFacts = ({ since }: LostOriginalRestore) => ({ backup: 'cloud', ...(since && { since }) });
 
 const isOpenFinding = (finding: Pick<MediaHealthFinding, 'resolvedAt' | 'dismissedAt'>) =>
   !finding.resolvedAt && !finding.dismissedAt;
@@ -327,6 +330,7 @@ export class MediaHealthService {
     private cronRepository: CronRepository,
     private databaseRepository: DatabaseRepository,
     private systemMetadataRepository: SystemMetadataRepository,
+    private cloudBackupService: CloudBackupService,
   ) {
     this.logger.setContext(MediaHealthService.name);
   }
@@ -1673,9 +1677,10 @@ export class MediaHealthService {
       });
     }
 
-    switch (await this.restoreLostOriginal(asset.id)) {
+    const restore = await this.restoreLostOriginal(asset.id);
+    switch (restore.outcome) {
       case 'restored': {
-        await this.settleRestored(asset, finding);
+        await this.settleRestored(asset, finding, restore);
         return 'done';
       }
       case 'busy': {
@@ -1685,12 +1690,12 @@ export class MediaHealthService {
       }
       case 'not-in-backup': {
         await this.mediaHealthRepository.appendSteps(
-          this.stepsOf(finding, [{ step: 'checked-backups', outcome: 'not-found' }]),
+          this.stepsOf(finding, [{ step: 'checked-backups', outcome: 'not-found', facts: backupFacts(restore) }]),
         );
         return 'none';
       }
       default: {
-        // no Cloud Backup is set up: there is no backup to name
+        // no Cloud Backup is set up, or this photo is never restored from it: there is no backup to name
         return 'none';
       }
     }
@@ -1875,8 +1880,15 @@ export class MediaHealthService {
     return repaired.fixState;
   }
 
-  /** The original came back from Cloud Backup (Task 7 restores it): record it, with what Undo needs. */
-  private async settleRestored(asset: MediaHealthAsset, finding: MediaHealthFinding): Promise<void> {
+  /**
+   * The original came back from Cloud Backup: record it, with what Undo needs. `retainedPath` is where a
+   * changed file that was at its path was moved aside, for Undo to put back.
+   */
+  private async settleRestored(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    restore: LostOriginalRestore,
+  ): Promise<void> {
     const [after = asset] = await this.mediaHealthRepository.getAssets([asset.id]);
     await this.mediaHealthRepository.settleFinding({
       healthId: finding.id,
@@ -1884,15 +1896,17 @@ export class MediaHealthService {
       status:
         finding.category === MediaHealthCategory.Missing ? MediaHealthStatus.Relinked : MediaHealthStatus.Resolved,
       steps: [
-        { step: 'checked-backups', outcome: 'ok' },
+        { step: 'checked-backups', outcome: 'ok', facts: backupFacts(restore) },
         {
           step: 'restored',
           outcome: 'ok',
+          facts: { backup: 'cloud' },
           undo: {
             kind: 'restore',
             previousPath: asset.originalPath,
             originalPath: after.originalPath,
             checksum: after.checksum.toString('hex'),
+            ...(restore.retainedPath && { retainedPath: restore.retainedPath }),
           },
         },
       ],
@@ -2015,12 +2029,11 @@ export class MediaHealthService {
   }
 
   /**
-   * FL-1337 stub until Task 7: put a lost or changed original back from Cloud Backup, verified against
-   * the photo's own checksum and never replacing anything. `busy` while a backup or restore runs.
+   * FL-1337: put a lost or changed original back from Cloud Backup, verified against the photo's own
+   * checksum and never replacing anything. `busy` while a backup or restore runs.
    */
   private restoreLostOriginal(assetId: string): Promise<LostOriginalRestore> {
-    this.logger.verbose(`Cloud Backup restore of ${assetId} is not available yet`);
-    return Promise.resolve('not-in-backup');
+    return this.cloudBackupService.restoreLostOriginal(assetId);
   }
 
   /** FL-1337 stub until Task 8: the owner's phones and tablets that may still hold a lost photo. */

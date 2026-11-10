@@ -54,6 +54,7 @@ describe(MediaHealthService.name, () => {
   let mediaHealthRepository: MediaHealthRepository;
   let mediaOperationRepository: MediaOperationRepository;
   let mediaOperationService: MediaOperationService;
+  let cloudBackupService: { restoreLostOriginal: ReturnType<typeof vi.fn> };
   let recoveryRoots: Array<{ label: string; path: string }>;
 
   beforeEach(() => {
@@ -112,6 +113,8 @@ describe(MediaHealthService.name, () => {
     mediaOperationService = {
       createBulk: vi.fn().mockResolvedValue({ id: '0195e2a0-0000-7000-8000-0000000000b1' }),
     } as unknown as MediaOperationService;
+    // Cloud Backup holds no copy unless a spec says so
+    cloudBackupService = { restoreLostOriginal: vi.fn().mockResolvedValue({ outcome: 'not-in-backup' }) };
 
     sut = new MediaHealthService(
       mocks.logger as never,
@@ -133,6 +136,7 @@ describe(MediaHealthService.name, () => {
       mocks.cron as never,
       mocks.database as never,
       mocks.systemMetadata as never,
+      cloudBackupService as never,
     );
     clearConfigCache();
     vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([]);
@@ -4126,14 +4130,29 @@ describe(MediaHealthService.name, () => {
       vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
       recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { searchPending: true }));
       decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
-      const restore = vi.spyOn(sut as any, 'restoreLostOriginal').mockResolvedValue('restored');
+      // Cloud Backup put the photo back, moving the changed file aside
+      const retainedPath = join(root, 'upload', 'user-id', 'as', 'se', '.library-care', 'asset-1-0badc0de.damaged.jpg');
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({
+        outcome: 'restored',
+        since: '2026-10-01T03:00:00.000Z',
+        retainedPath,
+      });
 
       // the owner's shared search is complete and found no copy
       await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
 
-      expect(restore).toHaveBeenCalledWith('asset-1');
+      expect(cloudBackupService.restoreLostOriginal).toHaveBeenCalledWith('asset-1');
       expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/ok', 'restored/ok']);
-      expect(stepNamed('restored')?.undo).toMatchObject({ kind: 'restore', previousPath: asset.originalPath });
+      expect(stepNamed('checked-backups')?.facts).toEqual({ backup: 'cloud', since: '2026-10-01T03:00:00.000Z' });
+      expect(stepNamed('restored')?.facts).toEqual({ backup: 'cloud' });
+      // Undo knows where the changed file went, to put it back
+      expect(stepNamed('restored')?.undo).toEqual({
+        kind: 'restore',
+        previousPath: asset.originalPath,
+        originalPath: asset.originalPath,
+        checksum: asset.checksum.toString('hex'),
+        retainedPath,
+      });
       expect(fixState()).toMatchObject({ fixState: 'restored' });
       expect(mediaHealthRepository.settleFinding).toHaveBeenLastCalledWith(
         expect.objectContaining({ healthId: 'health-1', status: MediaHealthStatus.Resolved }),
@@ -4172,14 +4191,77 @@ describe(MediaHealthService.name, () => {
       expect(fixState()).toMatchObject({ fixState: 'found-again' });
     });
 
+    it('puts back a missing file from Cloud Backup, with nothing moved aside', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({
+        outcome: 'restored',
+        since: '2026-10-01T03:00:00.000Z',
+      });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/ok', 'restored/ok']);
+      expect(stepNamed('restored')?.undo).not.toHaveProperty('retainedPath');
+      expect(mediaHealthRepository.settleFinding).toHaveBeenLastCalledWith(
+        expect.objectContaining({ healthId: 'health-1', status: MediaHealthStatus.Relinked }),
+      );
+      // the asset is unchanged: its previews are made again from the file that is back
+      expect(mocks.job.queueAll).toHaveBeenCalledWith(
+        expect.arrayContaining([{ name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } }]),
+      );
+    });
+
+    it('asks Cloud Backup again later while a backup runs, without searching again', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({ outcome: 'busy' });
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found']);
+      expect(mocks.job.queue).toHaveBeenLastCalledWith({
+        name: JobName.MediaHealthFixAsset,
+        data: expect.objectContaining({ id: 'asset-1', stage: 'backups', delay: minutes(30) }),
+      });
+
+      // half an hour later it asks Cloud Backup only
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({ outcome: 'not-in-backup' });
+      await sut.handleFixAsset(vi.mocked(mocks.job.queue).mock.calls.at(-1)![0].data as never);
+      expect(stepsWritten()).toEqual([
+        'searched-copy/not-found',
+        'checked-backups/not-found',
+        'asked-phones/not-found',
+      ]);
+    });
+
+    it.each(['not-set-up', 'skipped'])('names no backup when Cloud Backup answers %s', async (outcome) => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({ outcome });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'asked-phones/not-found']);
+      expect(fixState()).toMatchObject({ fixState: 'missing' });
+    });
+
     it('waits for a phone when a missing file is nowhere else', async () => {
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
       recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
       vi.spyOn(sut as any, 'phonesToAsk').mockResolvedValue([{ id: 'session-1', name: 'iPhone' }]);
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({
+        outcome: 'not-in-backup',
+        since: '2026-10-01T03:00:00.000Z',
+      });
 
       await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
 
       expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/not-found', 'asked-phones/waiting']);
+      // "Cloud Backup began on {date}, after this file was already lost"
+      expect(stepNamed('checked-backups')?.facts).toEqual({ backup: 'cloud', since: '2026-10-01T03:00:00.000Z' });
       // it no longer waits for the search
       expect(fixState()).toEqual({ fixState: 'waiting-phone', searchPending: false });
       expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();

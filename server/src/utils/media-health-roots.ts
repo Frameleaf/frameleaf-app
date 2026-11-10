@@ -33,6 +33,12 @@ export type MediaHealthRoot = {
 
 export const MANAGED_ROOT_ID = 'managed';
 
+/**
+ * The hidden folder beside an account's uploads where Library care keeps what a fix put aside: a repaired
+ * copy, a damaged original it replaced, a changed file a restore moved out of the way.
+ */
+export const LIBRARY_CARE_FOLDER = '.library-care';
+
 export const libraryRootId = (libraryId: string) => `library:${libraryId}`;
 
 /** A location's path without a trailing separator, so `/mnt/backup/` and `/mnt/backup` are one location. */

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { CronTime } from 'cron';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -128,6 +128,16 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { CloudBackupChoices } from 'src/services/cloud-backup-choices.js';
 import { CloudBackupCoverage, type RunReportOutcome } from 'src/services/cloud-backup-coverage.js';
 import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
+import {
+  type LostOriginalRestore,
+  type LostOriginalTarget,
+  backupLacksFile,
+  bucketUnavailable,
+  holdsOwnBytes,
+  isRestorableOriginal,
+  lostOriginalCandidates,
+  placeLostOriginal,
+} from 'src/services/cloud-backup-lost-original.js';
 import {
   CloudBackupBucket,
   CloudBackupMaintenance,
@@ -276,6 +286,7 @@ import {
 import { handlePromiseError } from 'src/utils/misc.js';
 import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
+import { isFileRootReachable } from 'src/utils/storage-reach.js';
 
 const KIND = MediaOperationKind.CloudBackup;
 /** FL-406: the notice template of each failed maintenance task, by its English name. */
@@ -4806,6 +4817,203 @@ export class CloudBackupService {
       },
     );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* FL-1337: Library care puts one lost original back                   */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * FL-1337: put one lost or changed original back for Library care's fix job, from the newest kept Cloud
+   * Backup that holds the photo's own bytes. The copy is fetched into a private file beside the original's
+   * path (the store checks it against the backup's SHA-256 as it arrives), proven against the asset's own
+   * checksum, and published without replacing anything: a changed file at that path is moved aside into the
+   * owner's Library care folder first (`retainedPath`). The asset row is not changed. Nothing waits for the
+   * bucket: `busy` while a backup operation or restore holds it.
+   *
+   * Not a restore operation: `startRestore` and `startOwnerRestore` can replace current files and bring back
+   * deleted items, so they need an administrator or an unlocked owner. This can only put back a file whose
+   * bytes are proven to be that photo's own. Buddy Backup is not asked (its restore needs an unlocked owner).
+   */
+  // ponytail: system-run single-file restore; never replaces, verified against the asset's own checksum
+  async restoreLostOriginal(assetId: string): Promise<LostOriginalRestore> {
+    const row = await this.index.getRestoreTarget(assetId);
+    const target: LostOriginalTarget | undefined = row && { assetId, ...row };
+    if (!target || !isRestorableOriginal(target)) {
+      return { outcome: 'skipped' };
+    }
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (!metadata) {
+      return { outcome: 'not-set-up' };
+    }
+    const oldest = (await this.index.listKeptManifests(metadata.bucketRef)).at(-1);
+    const since = oldest ? { since: oldest.createdAt.toISOString() } : {};
+    const candidates = lostOriginalCandidates(
+      await this.index.getKeptOriginals(metadata.bucketRef, assetId),
+      target.checksum,
+    );
+    if (candidates.length === 0) {
+      return { outcome: 'not-in-backup', ...since };
+    }
+    if (await holdsOwnBytes(this.cryptoRepository, target)) {
+      // back already (its drive came back, or a copy was put there): nothing to fetch, nothing moved
+      return { outcome: 'restored', ...since };
+    }
+    const bucket = await this.openForLostOriginal(metadata);
+    if (typeof bucket === 'string') {
+      return { outcome: bucket };
+    }
+    const manifests = new Map<string, CloudBackupManifest>();
+    try {
+      for (const candidate of candidates) {
+        const placed = await this.restoreLostOriginalFrom(bucket, target, candidate, manifests);
+        if (placed === 'busy') {
+          return { outcome: 'busy' };
+        }
+        if (placed) {
+          this.logger.log(`Library care put the original of ${assetId} back from cloud backup ${candidate.key}`);
+          return { outcome: 'restored', ...since, ...placed };
+        }
+      }
+    } catch (error) {
+      if (!bucketUnavailable(error)) {
+        throw error;
+      }
+      this.logger.warn(`Cloud backup could not be read to put back ${assetId} just now: ${errorMessage(error)}`);
+      return { outcome: 'busy' };
+    }
+    return { outcome: 'not-in-backup', ...since };
+  }
+
+  /**
+   * One kept backup's copy of a lost original, put in place. Undefined when this backup does not hold the
+   * photo's own bytes after all (its manifest or object is gone or damaged, or other bytes came back); `busy`
+   * when the drive the original belongs on cannot be reached now. The fetched file is always removed.
+   */
+  private async restoreLostOriginalFrom(
+    bucket: { connection: CloudBackupConnection; bucketKey: Buffer },
+    target: LostOriginalTarget,
+    candidate: { key: string; sha256: string },
+    manifests: Map<string, CloudBackupManifest>,
+  ): Promise<'busy' | { retainedPath?: string } | undefined> {
+    const lacks = (error: unknown) => {
+      if (!backupLacksFile(error)) {
+        throw error;
+      }
+      this.logger.warn(`Cloud backup ${candidate.key} lacks ${target.assetId}'s original: ${errorMessage(error)}`);
+    };
+    let manifest = manifests.get(candidate.key);
+    if (!manifest) {
+      try {
+        manifest = readManifest(await this.store.get(bucket.connection, candidate.key, bucket.bucketKey));
+      } catch (error) {
+        lacks(error);
+        return;
+      }
+      manifests.set(candidate.key, manifest);
+    }
+    const file = manifest.assets[target.assetId]?.files.find(
+      ({ role, sha256 }) => role === 'original' && sha256 === candidate.sha256,
+    );
+    if (!file) {
+      return;
+    }
+    // Review Focus 1: nothing is written under an unplugged drive, whose empty mount point would take the file
+    if (!(await isFileRootReachable(this.storageRepository, target.originalPath, []))) {
+      return 'busy';
+    }
+    const folder = dirname(target.originalPath);
+    await mkdir(folder, { recursive: true });
+    const staged = join(folder, `.cloud-restore-${randomUUID()}.tmp`);
+    try {
+      try {
+        await this.store.download(
+          bucket.connection,
+          manifestFileObjectKey(file),
+          bucket.bucketKey,
+          staged,
+          file.sha256,
+        );
+      } catch (error) {
+        lacks(error);
+        return;
+      }
+      if (!(await this.cryptoRepository.hashFileMatching(staged, target.checksum)).equals(target.checksum)) {
+        this.logger.warn(`Cloud backup ${candidate.key} holds other bytes than ${target.assetId}'s original`);
+        return;
+      }
+      return await placeLostOriginal({ crypto: this.cryptoRepository, logger: this.logger }, target, staged);
+    } finally {
+      await rm(staged, { force: true });
+    }
+  }
+
+  /**
+   * FL-1337: the claimed bucket for one system read, or why not. `busy` while a backup operation or restore
+   * holds it, never waited for (a run can hold it for hours), and while managed storage asks to wait.
+   * `not-set-up` when this server cannot read it: no key here, settings that no longer name the claimed
+   * bucket, or managed storage that refuses it.
+   */
+  private async openForLostOriginal(
+    metadata: FrameleafCloudBackup,
+  ): Promise<'busy' | 'not-set-up' | { connection: CloudBackupConnection; bucketKey: Buffer }> {
+    const bucketKey = await this.loadKeyOrAsk(metadata);
+    if (!bucketKey) {
+      return 'not-set-up';
+    }
+    let connection: CloudBackupConnection;
+    if (metadata.target === 'managed') {
+      // A new key revokes the one a running operation holds, so each one is asked for while nothing holds the
+      // bucket, renewals included: a key that expires or is revoked meanwhile stops this read as busy.
+      const rotate = () =>
+        this.whileBucketIsFree(async () => this.cloudBackup.rotate(await this.managedApi(), 'restore'));
+      let grant: BackupGrantResponse | 'busy';
+      try {
+        grant = await rotate();
+      } catch (error) {
+        const refusal = this.refusalOf(error);
+        this.logger.log(`Cloud backup cannot be read for Library care now: ${refusal.message}`);
+        return refusal.retryAfterMs === null ? 'not-set-up' : 'busy';
+      }
+      if (grant === 'busy') {
+        return 'busy';
+      }
+      connection = {
+        ...this.managedConnection(grant, metadata),
+        managedCredentials: managedBackupSession(grant, 'restore', async () => {
+          const next = await rotate();
+          if (next === 'busy') {
+            throw new ManagedBackupAuthorizationError('A cloud backup operation holds the bucket.');
+          }
+          return next;
+        }),
+      };
+    } else {
+      if ((await this.whileBucketIsFree(() => Promise.resolve(true))) === 'busy') {
+        return 'busy';
+      }
+      try {
+        connection = this.ownBucketConnection(metadata, (await this.readSettings()).frameleafCloud.cloudBackup);
+      } catch (error) {
+        this.logger.log(`Cloud backup cannot be read for Library care now: ${errorMessage(error)}`);
+        return 'not-set-up';
+      }
+    }
+    await this.attachClientHistory(connection, metadata);
+    return { connection, bucketKey };
+  }
+
+  /** `work`, while no backup operation or restore holds the bucket; `busy`, without waiting, while one does. */
+  private async whileBucketIsFree<T>(work: () => Promise<T>): Promise<T | 'busy'> {
+    const held = await this.databaseRepository.holdLock(DatabaseLock.FrameleafCloudBackup);
+    if (!held) {
+      return 'busy';
+    }
+    try {
+      return (await this.activeBucketOperation()) ? 'busy' : await work();
+    } finally {
+      await held.release();
+    }
   }
 
   /** A backup operation or restore that is unfinished, of either kind. */
