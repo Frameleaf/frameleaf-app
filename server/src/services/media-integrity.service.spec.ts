@@ -19,6 +19,18 @@ vi.mock('node:child_process', async (original) => ({
     callback: (error: Error | undefined, stdout: string, stderr: string) => void,
   ) => callback(exec.error, '', ''),
 }));
+// a file that cannot be opened for reading now, though it was hashed a moment before (FL-1337)
+const unreadable = vi.hoisted(() => ({ path: undefined as string | undefined }));
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    open: (path: string, ...rest: unknown[]) =>
+      path === unreadable.path
+        ? Promise.reject(Object.assign(new Error('EIO: i/o error'), { code: 'EIO' }))
+        : (actual.open as (...args: unknown[]) => ReturnType<typeof actual.open>)(path, ...rest),
+  };
+});
 vi.mock('src/utils/raw-renderer.js', async (original) => ({
   ...(await original<typeof import('src/utils/raw-renderer.js')>()),
   renderRawWithLibRaw: vi.fn(),
@@ -172,6 +184,18 @@ describe(MediaIntegrityService.name, () => {
       reason: 'decode_unsupported',
       message: 'Input buffer contains unsupported image format',
     });
+  });
+  it('an unsupported-format message on a JPEG it could not read back is busy, never unsupported', async () => {
+    mocks.media.decodeImage.mockImplementation(() => {
+      unreadable.path = input.path;
+      return Promise.reject(new Error('Input buffer contains unsupported image format'));
+    });
+    try {
+      // "left as it is" would file a damaged JPEG away for good on one failed read
+      expect(await sut.validate({ ...input, deep: true })).toEqual({ status: 'transient', reason: 'io_failed' });
+    } finally {
+      unreadable.path = undefined;
+    }
   });
   it('an unsupported-format message on a file with no JPEG marker stays unsupported', async () => {
     mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));

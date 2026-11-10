@@ -124,6 +124,17 @@ describe(AttentionService.name, () => {
     expect(mediaHealth.fileProblemCounts).toHaveBeenCalledWith(expect.objectContaining({ days: 7 }));
   });
 
+  it('still answers when the damaged and missing files cannot be counted, with no counts and a warning', async () => {
+    const { sut, mocks, mediaHealth } = setup();
+    mediaHealth.fileProblemCounts.mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+
+    const response = await sut.getAttention(admin);
+
+    expect(response.fileProblems).toEqual({ fixed: 0, needsYou: 0, since: null });
+    expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
+    expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('damaged and missing files'));
+  });
+
   it("counts every account's problems for the administrator who asks, minus other accounts' Locked photos", async () => {
     const { sut, mediaHealth } = setup();
 
