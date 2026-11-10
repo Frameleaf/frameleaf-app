@@ -155,6 +155,12 @@ const FILTER_DECIMAL_PLACES = 4;
 /** FL-1324: once the thumbnails drive was full, this much room lets thumbnails carry on. */
 const THUMBNAIL_ROOM_TO_RESUME_BYTES = 1_000_000_000;
 // A RAW the renderer could open the file for but not read. Missing tools, limits and I/O trouble retry instead.
+/**
+ * FL-1355: the RAW decoder the server last started with.
+ * ponytail: a plain key, not a SystemMetadataKey member, because src/enum.ts is pinned by the schema catalog;
+ * move it into the enum with the next catalog capture.
+ */
+export const RAW_DECODER_VERSION_KEY = 'raw-decoder-version' as SystemMetadataKey;
 const DECODE_RAW_REASONS: ReadonlySet<RawRenderFailure> = new Set(['unsupported', 'damaged', 'decode_failed']);
 const DRIVE_FULL_CODES = new Set(['ENOSPC', 'EDQUOT']);
 /** Sharp and ffmpeg run in child processes, so a full drive often reaches here only as their message. */
@@ -270,7 +276,7 @@ export class MediaService extends BaseService {
     if (!version) {
       return;
     }
-    const last = await this.systemMetadataRepository.get(SystemMetadataKey.RawDecoderVersion);
+    const last = (await this.systemMetadataRepository.get(RAW_DECODER_VERSION_KEY)) as { version?: string } | null;
     if (last?.version === version) {
       return;
     }
@@ -279,7 +285,7 @@ export class MediaService extends BaseService {
       this.logger.log(`RAW decoder changed to ${version}: trying ${ids.length} files again`);
       await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.AssetGenerateThumbnails, data: { id } })));
     }
-    await this.systemMetadataRepository.set(SystemMetadataKey.RawDecoderVersion, { version });
+    await this.systemMetadataRepository.set(RAW_DECODER_VERSION_KEY, { version } as never);
   }
 
   @OnJob({ name: JobName.AssetGenerateThumbnailsQueueAll, queue: QueueName.ThumbnailGeneration })

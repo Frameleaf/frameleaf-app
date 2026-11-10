@@ -44,7 +44,7 @@ import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import * as physicalFiles from 'src/repositories/physical-file.repository.js';
-import { MediaService } from 'src/services/media.service.js';
+import { MediaService, RAW_DECODER_VERSION_KEY } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
@@ -180,7 +180,7 @@ describe(MediaService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue(null);
       await sut.onBootstrap();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
-      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.RawDecoderVersion, {
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(RAW_DECODER_VERSION_KEY, {
         version: 'LibRaw 0.22.3-Release',
       });
     });
@@ -199,7 +199,7 @@ describe(MediaService.name, () => {
         { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } },
         { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-2' } },
       ]);
-      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.RawDecoderVersion, {
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(RAW_DECODER_VERSION_KEY, {
         version: 'LibRaw 0.22.3-Release',
       });
     });

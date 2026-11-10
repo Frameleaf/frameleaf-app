@@ -655,8 +655,6 @@ export enum SystemMetadataKey {
    * processor instead), and the last "Test it" of the card, for Video playback copies.
    */
   VideoCardState = 'video-card-state',
-  /** FL-1355: the RAW decoder the server last started with; a newer one retries files it could not render. */
-  RawDecoderVersion = 'raw-decoder-version',
   /** FL-520: the most recent file checks, newest first: when each ran, how it ended and what it found. */
   IntegrityCheckHistory = 'integrity-check-history',
   /** FL-520: when an administrator last pressed Stop on the file checks; a check started before it stops. */
