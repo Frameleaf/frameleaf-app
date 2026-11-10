@@ -9,9 +9,8 @@ import type { PageLoad } from './$types';
 export const load = (async ({ url }) => {
   await authenticate(url);
   const local = url.searchParams.get('local') === '1';
-  const requested = url.searchParams.get('continue');
-  const destination =
-    requested && /^\/(?![/\\])/.test(requested) ? Route.setupContinue(requested, url) : Route.photos();
+  const requested = Route.continue(url.searchParams.get('continue'), Route.photos());
+  const destination = Route.setupContinue(requested, url);
   const status = local ? await getAuthStatus().catch(() => undefined) : undefined;
   if (local ? status && !status.localPasswordRequired : !authManager.user.shouldChangePassword) {
     redirect(307, local ? destination : Route.photos());
