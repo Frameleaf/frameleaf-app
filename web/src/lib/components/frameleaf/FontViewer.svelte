@@ -134,12 +134,28 @@
     }
   };
 
+  /** An Escape a Details field did not use for itself (no suggestions to close) leaves the field. */
+  const onUnusedKey = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      event.key === 'Escape' &&
+      !event.defaultPrevented &&
+      target?.matches?.('input, textarea, select') &&
+      target.closest('[data-font-details]')
+    ) {
+      event.preventDefault();
+      target.blur();
+    }
+  };
+
   onMount(() => {
     const opener = document.activeElement as HTMLElement | null;
     addEventListener('keydown', onKey, { capture: true });
+    addEventListener('keydown', onUnusedKey);
     closeButton?.focus();
     return () => {
       removeEventListener('keydown', onKey, { capture: true });
+      removeEventListener('keydown', onUnusedKey);
       opener?.focus?.();
     };
   });

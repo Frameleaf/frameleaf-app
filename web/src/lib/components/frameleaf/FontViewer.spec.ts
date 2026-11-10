@@ -113,13 +113,25 @@ describe('FontViewer (FL-1359)', () => {
     await screen.findByRole('textbox', { name: 'frameleaf_boards_font_sample_label' });
 
     const field = document.createElement('input');
-    const onFieldKey = vi.fn();
+    // like the tag field: it uses Escape itself while its suggestions are open
+    let suggestionsOpen = true;
+    const onFieldKey = vi.fn((event: KeyboardEvent) => {
+      if (suggestionsOpen) {
+        event.preventDefault();
+        suggestionsOpen = false;
+      }
+    });
     field.addEventListener('keydown', onFieldKey);
     screen.getByTestId('frameleaf-work-inspector').append(field);
-    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-    field.dispatchEvent(escape);
+    field.focus();
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     expect(onFieldKey).toHaveBeenCalledOnce();
-    expect(escape.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(field);
+
+    // an Escape the field has no use for leaves the field, and the viewer stays open
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(onFieldKey).toHaveBeenCalledTimes(2);
+    expect(document.activeElement).not.toBe(field);
     expect(onClose).not.toHaveBeenCalled();
 
     // a picker opened on top of the viewer keeps its keys too, Escape included
