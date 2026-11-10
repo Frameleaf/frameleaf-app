@@ -5,6 +5,7 @@ import {
   checkInCloud,
   getCloudLink,
   getCloudStatus,
+  getCloudBackupLicenceCoverage,
   getLicenseProducts,
   getLicenseStatus,
   installLicenseCertificate,
@@ -23,9 +24,11 @@ import {
   type CloudPermissionsUpdateDto,
   type CloudRemoteAccessUpdateDto,
   type CloudStatusResponseDto,
+  type CloudBackupLicenceCoverageResponseDto,
   type LicenseProductsResponseDto,
   type LicenseStatusResponseDto,
 } from '@frameleaf/sdk';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /** The longest wait between checks of a pending code after failures. */
@@ -41,6 +44,9 @@ export class CloudManager {
   #status = $state<CloudStatusResponseDto | null>(null);
   #license = $state<LicenseStatusResponseDto | null>(null);
   #products = $state<LicenseProductsResponseDto | null>(null);
+  #backupCoverage = $state<CloudBackupLicenceCoverageResponseDto | null>(null);
+  #coverageCurrent: () => boolean = () => false;
+  #coverageGeneration = 0;
   #error = $state<unknown>(null);
   #loading = $state(false);
   #listeners = 0;
@@ -62,6 +68,11 @@ export class CloudManager {
   /** FL-157: bundled prices and the deployment's store. */
   get products() {
     return this.#products;
+  }
+
+  get backupCoverage() {
+    const coverage = this.#backupCoverage;
+    return this.#coverageCurrent() ? coverage : null;
   }
 
   get error() {
@@ -107,11 +118,15 @@ export class CloudManager {
   async refresh() {
     this.#loading = true;
     const generation = ++this.#generation;
+    const coverageGeneration = ++this.#coverageGeneration;
+    const isCurrent = authManager.captureSession();
     // each loads on its own, so a licence or price failure never hides a status that loaded
-    const [status, license, products] = await Promise.allSettled([
+    this.#backupCoverage = null;
+    const [status, license, products, backupCoverage] = await Promise.allSettled([
       getCloudStatus(),
       getLicenseStatus(),
       getLicenseProducts(),
+      getCloudBackupLicenceCoverage(),
     ]);
     if (generation !== this.#generation) {
       // a Cancel, Unlink or other change started meanwhile; its answer is the current one
@@ -123,6 +138,10 @@ export class CloudManager {
     }
     if (products.status === 'fulfilled') {
       this.#products = products.value;
+    }
+    if (coverageGeneration === this.#coverageGeneration) {
+      this.#coverageCurrent = isCurrent;
+      this.#backupCoverage = isCurrent() && backupCoverage.status === 'fulfilled' ? backupCoverage.value : null;
     }
     if (status.status === 'fulfilled') {
       this.#apply(status.value);
@@ -165,9 +184,29 @@ export class CloudManager {
   refreshLicense = () => this.#runLicense(() => refreshLicense());
 
   async #runLicense(call: () => Promise<LicenseStatusResponseDto>) {
+    const generation = ++this.#coverageGeneration;
+    this.#backupCoverage = null;
     const license = await call();
-    this.#license = license;
+    if (generation === this.#coverageGeneration) {
+      this.#license = license;
+      await this.#refreshBackupCoverage(generation);
+    }
     return license;
+  }
+
+  async #refreshBackupCoverage(generation: number) {
+    const isCurrent = authManager.captureSession();
+    try {
+      const coverage = await getCloudBackupLicenceCoverage();
+      if (generation === this.#coverageGeneration && isCurrent()) {
+        this.#coverageCurrent = isCurrent;
+        this.#backupCoverage = coverage;
+      }
+    } catch {
+      if (generation === this.#coverageGeneration) {
+        this.#backupCoverage = null;
+      }
+    }
   }
 
   async #runAccountLink(call: () => Promise<CloudAccountLinkResponseDto>) {
@@ -181,12 +220,17 @@ export class CloudManager {
 
   async #run(call: () => Promise<CloudStatusResponseDto>) {
     const generation = ++this.#generation;
+    const coverageGeneration = ++this.#coverageGeneration;
+    this.#backupCoverage = null;
     this.#stopPolling();
     let applied = false;
     try {
       const status = await call();
       if (generation === this.#generation) {
         this.#apply(status);
+        if (status.state === 'linked') {
+          void this.#refreshBackupCoverage(coverageGeneration);
+        }
         applied = true;
       }
       return status;
@@ -201,6 +245,9 @@ export class CloudManager {
   }
 
   #apply(status: CloudStatusResponseDto) {
+    if (status.state !== 'linked') {
+      this.#backupCoverage = null;
+    }
     this.#status = status;
     this.#error = null;
     this.#pollError = null;

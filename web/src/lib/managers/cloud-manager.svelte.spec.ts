@@ -1,6 +1,8 @@
 import { CloudHeartbeatField, CloudLinkState, type CloudStatusResponseDto } from '@frameleaf/sdk';
+import { flushSync } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { CloudManager } from '$lib/managers/cloud-manager.svelte';
 
 const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusResponseDto => ({
@@ -82,6 +84,74 @@ describe('CloudManager (FL-155)', () => {
     expect(sdkMock.getCloudLink).toHaveBeenCalledTimes(2);
     expect(manager.status?.state).toBe('linked');
     expect(manager.pollError).toBeNull();
+    stop();
+  });
+
+  it('clears account coverage on an offline refresh instead of keeping a stale licence claim', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(status({ state: CloudLinkState.Linked }));
+    sdkMock.getCloudBackupLicenceCoverage.mockResolvedValueOnce({ scope: 'all', accounts: [] } as never);
+    const manager = new CloudManager();
+    await manager.refresh();
+    expect(manager.backupCoverage?.scope).toBe('all');
+    sdkMock.getCloudBackupLicenceCoverage.mockRejectedValueOnce(new Error('offline'));
+    await manager.refresh();
+    expect(manager.backupCoverage).toBeNull();
+  });
+
+  it('reactively loads coverage from its initial unknown state and clears it on account change', async () => {
+    authManager.setUser({ id: 'admin-1' } as never);
+    sdkMock.getCloudStatus.mockResolvedValue(status({ state: CloudLinkState.Linked }));
+    sdkMock.getCloudBackupLicenceCoverage.mockResolvedValueOnce({ scope: 'all', accounts: [] } as never);
+    const manager = new CloudManager();
+    let rendered: string | undefined;
+    const cleanup = $effect.root(() => {
+      const scope = $derived(manager.backupCoverage?.scope);
+      $effect(() => {
+        rendered = scope;
+      });
+    });
+    try {
+      flushSync();
+      expect(rendered).toBeUndefined();
+      await manager.refresh();
+      flushSync();
+      expect(rendered).toBe('all');
+      authManager.setUser({ id: 'admin-2' } as never);
+      flushSync();
+      expect(rendered).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('does not expose covered account names to the next signed-in session', async () => {
+    authManager.setUser({ id: 'admin-1' } as never);
+    sdkMock.getCloudStatus.mockResolvedValue(status({ state: CloudLinkState.Linked }));
+    sdkMock.getCloudBackupLicenceCoverage.mockResolvedValueOnce({
+      scope: 'users',
+      accounts: [{ userId: 'member', name: 'Private member name' }],
+    } as never);
+    const manager = new CloudManager();
+    await manager.refresh();
+    expect(manager.backupCoverage?.accounts).toHaveLength(1);
+    authManager.setUser({ id: 'admin-2' } as never);
+    expect(manager.backupCoverage).toBeNull();
+  });
+
+  it('keeps a pending link polling when the licence refreshes during a slow poll', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(pending());
+    sdkMock.refreshLicense.mockResolvedValue({} as never);
+    sdkMock.getCloudBackupLicenceCoverage.mockResolvedValue({ scope: 'unknown', accounts: [] } as never);
+    const manager = new CloudManager();
+    const stop = manager.listen();
+    await vi.waitFor(() => expect(manager.status?.state).toBe('pending'));
+    let answer: (value: CloudStatusResponseDto) => void = () => {};
+    sdkMock.getCloudLink.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)) as never);
+    await vi.advanceTimersByTimeAsync(5000);
+    await manager.refreshLicense();
+    answer(pending());
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sdkMock.getCloudLink).toHaveBeenCalledTimes(2);
     stop();
   });
 

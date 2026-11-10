@@ -25,7 +25,7 @@ class AuthManager {
 
   #user = $state<UserAdminResponseDto>();
   #preferences = $state<UserPreferencesResponseDto>();
-  #sessionGeneration = 0;
+  #sessionGeneration = $state(0);
 
   captureSession() {
     const generation = this.#sessionGeneration;

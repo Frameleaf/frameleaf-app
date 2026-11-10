@@ -7,8 +7,8 @@
    * changes. A server with no internet connection (offline file, server ID, Check now) is under a
    * closed Advanced.
    *
-   * ponytail: who is covered is read from the licence kind here (Server: everyone; Individual: the
-   * administrator's own account). The cover Frameleaf Cloud reports per account waits on FC-147/FC-148.
+   * FL-542: Cloud Backup cover comes from the current Cloud grant. The locally held key still
+   * describes the badge, purchase discount and key-management actions, not who Cloud covers.
    */
   import './cloud-account.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -27,6 +27,7 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { discountOffer, type ProductKeyCheck } from '$lib/frameleaf/cloud';
+  import { backupLicenceCoverage } from '$lib/frameleaf/backup-licence-coverage';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
@@ -61,6 +62,8 @@
   const me = $derived(authManager.user.name);
   const offered = $derived(cloudManager.products?.licensedDiscount ?? 0);
   const offer = $derived(discountOffer(cloudManager.products));
+  const backupCover = $derived(backupLicenceCoverage(cloudManager.backupCoverage, $locale));
+  const backupCoverLabel = $derived($t(backupCover.key, { values: backupCover.values }));
 
   let keyValue = $state('');
   let keyCheck = $state<ProductKeyCheck | null>(null);
@@ -106,6 +109,7 @@
     const updated = await getMyUser();
     if (isCurrent()) {
       authManager.setUser(updated);
+      await cloudManager.refresh();
     }
   };
 
@@ -148,32 +152,19 @@
             ? $t('frameleaf_license_state_invalid')
             : $t('frameleaf_license_state_none');
 
-  const hero = $derived(
-    serverCover
-      ? {
-          tone: 'good' as const,
-          title: $t('frameleaf_lic_hero_everyone'),
-          body: $t('frameleaf_lic_hero_everyone_body'),
-        }
-      : oneCover
-        ? {
-            tone: 'warn' as const,
-            title: $t('frameleaf_lic_hero_one', { values: { name: me } }),
-            body: $t('frameleaf_lic_hero_one_body'),
-          }
-        : { tone: 'warn' as const, title: $t('frameleaf_lic_hero_none'), body: $t('frameleaf_lic_hero_none_body') },
-  );
+  const hero = $derived({
+    tone: backupCover.tone,
+    title: $t('frameleaf_lic_hero_accounts', { values: { accounts: backupCoverLabel } }),
+    body: $t(backupCover.known ? 'frameleaf_lic_cover_confirmed_body' : 'frameleaf_lic_cover_unknown_body'),
+  });
 
   const coverage = $derived<CoverageRow[]>([
     {
       icon: mdiCloudOutline,
       name: $t('frameleaf_lic_cloud_backup'),
       detail: $t('frameleaf_lic_cloud_backup_detail'),
-      ...(serverCover
-        ? { tone: 'good' as const, value: $t('frameleaf_lic_everyone') }
-        : oneCover
-          ? { tone: 'warn' as const, value: $t('frameleaf_lic_only', { values: { name: me } }) }
-          : { tone: 'off' as const, value: $t('frameleaf_lic_not_included') }),
+      tone: backupCover.tone,
+      value: backupCoverLabel,
     },
     {
       icon: mdiHandshakeOutline,
@@ -251,9 +242,9 @@
             icon={mdiBackupRestore}
             name={$t('frameleaf_lic_gives_backups')}
             detail={$t('frameleaf_lic_gives_backups_detail')}
-            tone={whoTone}
-            status={whoStatus}
-            off={!licensed}
+            tone={backupCover.tone}
+            status={backupCoverLabel}
+            off={backupCover.tone === 'off'}
           />
           {#if offered > 0}
             <Item

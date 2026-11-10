@@ -6,8 +6,7 @@
    * each one's state and what it costs, the extras they add, and what each feature needs. The states
    * are the ones the Frameleaf Cloud pages already read (`cloudManager`).
    *
-   * Not here yet (Cloud-blocked, FC-147/FC-148): which accounts a licence covers for backups away
-   * from home. The Cloud Backup row points to Backup, which says who is covered.
+   * FL-542: current Cloud Backup account cover comes from Cloud's grant, not the local key kind.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -19,6 +18,7 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { cloudNeeds, type NeedState } from '$lib/components/frameleaf/settings/cloud/cloud-landing';
   import { cloudGlance } from '$lib/frameleaf/overview-readiness';
+  import { backupLicenceCoverage } from '$lib/frameleaf/backup-licence-coverage';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -52,6 +52,7 @@
   const hasPlan = $derived(plan === 'active' || plan === 'grace');
   const planNeedsAttention = $derived(['grace', 'expired', 'invalid'].includes(plan));
   const licenceKind = $derived(license?.key?.kind ?? null);
+  const backupCover = $derived(backupLicenceCoverage(cloudManager.backupCoverage, $locale));
   const date = (iso: string | null | undefined) =>
     iso ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(iso)) : '';
 
@@ -191,8 +192,9 @@
       icon: mdiShieldCheckOutline,
       name: $t('frameleaf_cloud_landing_backups'),
       detail: $t('frameleaf_cloud_landing_backups_detail'),
-      tone: 'off',
-      status: $t('frameleaf_cloud_landing_backups_status'),
+      tone: backupCover.tone,
+      status: $t(backupCover.key, { values: backupCover.values }),
+      note: $t(backupCover.known ? 'frameleaf_lic_cover_confirmed_body' : 'frameleaf_lic_cover_unknown_body'),
       href: commandCenterUrl('backups'),
       action: $t('frameleaf_cloud_landing_open'),
     },
@@ -207,8 +209,22 @@
     },
   ]);
 
-  const needs = $derived(cloudNeeds({ off, linked, hasPlan, licence: licenceKind }));
-  const NEED_TONE: Record<NeedState, KitTone> = { have: 'good', not: 'off', always: 'good', partly: 'warn' };
+  const needs = $derived(
+    cloudNeeds({
+      off,
+      linked,
+      hasPlan,
+      licence: licenceKind,
+      backupScope: backupCover.known ? cloudManager.backupCoverage?.scope : 'unknown',
+    }),
+  );
+  const NEED_TONE: Record<NeedState, KitTone> = {
+    have: 'good',
+    not: 'off',
+    always: 'good',
+    partly: 'warn',
+    unknown: 'quiet',
+  };
 </script>
 
 {#snippet rows(list: Row[])}
@@ -283,7 +299,11 @@
               <td>{$t(`frameleaf_cloud_need_${need.id}_needs` as Translations)}</td>
               <td>
                 <span class="state" data-tone={NEED_TONE[need.state]}
-                  >{$t(`frameleaf_cloud_need_state_${need.state}` as Translations)}</span
+                  >{$t(
+                    need.state === 'partly'
+                      ? 'frameleaf_cloud_need_state_accounts'
+                      : (`frameleaf_cloud_need_state_${need.state}` as Translations),
+                  )}</span
                 >
               </td>
             </tr>

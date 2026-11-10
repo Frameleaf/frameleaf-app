@@ -36,6 +36,7 @@ import {
   CloudBackupCoverageResponseDto,
   CloudBackupExclusionsDto,
   CloudBackupExclusionsResponseDto,
+  CloudBackupLicenceCoverageResponseDto,
   CloudBackupSelectionResponseDto,
   CloudBackupSelectionUpdateDto,
   OwnerBackupExclusionsDto,
@@ -4025,6 +4026,45 @@ export class CloudBackupService {
   async getCoverage(): Promise<CloudBackupCoverageResponseDto> {
     const identity = await loadInstanceIdentity(this.gatewayDeps());
     return this.choices.coverage(identity.instanceId);
+  }
+
+  /** FL-542: read Cloud's current grant scope, never infer it from the administrator's licence. */
+  async getLicenceCoverage(): Promise<CloudBackupLicenceCoverageResponseDto> {
+    const unknown: CloudBackupLicenceCoverageResponseDto = { scope: 'unknown', accounts: [] };
+    try {
+      const binding = await readCloudLink(this.gatewayDeps());
+      const { link, cloudUrl, linked } = binding;
+      if (!linked || !link?.instanceId || link.heartbeat?.cloneSuspected) return unknown;
+      const { instanceId, accountId, linkedAt } = link;
+      const stillCurrent = async () => {
+        const current = await readCloudLink(this.gatewayDeps());
+        return (
+          current.linked &&
+          !current.link?.heartbeat?.cloneSuspected &&
+          current.cloudUrl === cloudUrl &&
+          current.link?.instanceId === instanceId &&
+          current.link.accountId === accountId &&
+          current.link.linkedAt === linkedAt
+        );
+      };
+      const grant = await this.cloudBackup.metadata(await this.managedApi());
+      if (!grant) return unknown;
+      // The instance identity survives relinking: bind the answer to the Cloud account and link too.
+      if (!(await stillCurrent())) return unknown;
+      if (grant.coverage.scope !== 'users') return { scope: grant.coverage.scope, accounts: [] };
+      const fingerprints = new Set(grant.coverage.userFingerprints);
+      const accounts = await this.selection.listAccounts();
+      if (!(await stillCurrent())) return unknown;
+      return {
+        scope: 'users',
+        accounts: accounts
+          .filter((account) => !account.deletedAt && fingerprints.has(backupUserFingerprint(instanceId, account.id)))
+          .map((account) => ({ userId: account.id, name: account.name })),
+      };
+    } catch {
+      // Offline, revoked, unsupported and malformed responses must not look like all/none coverage.
+      return unknown;
+    }
   }
 
   /** Why the items this database holds have no original in a kept backup, counted per account. */

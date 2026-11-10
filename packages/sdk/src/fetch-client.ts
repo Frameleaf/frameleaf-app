@@ -619,6 +619,14 @@ export type CloudBackupUnlockDto = {
     /** The key file, the base64 key or the recovery code. Kept in memory only */
     key: string;
 };
+export type CloudBackupLicensedAccountDto = {
+    name: string;
+    userId: string;
+};
+export type CloudBackupLicenceCoverageResponseDto = {
+    accounts: CloudBackupLicensedAccountDto[];
+    scope: CloudBackupLicenceScope;
+};
 export type CloudBackupManifestDto = {
     assets: number;
     bytes: number;
@@ -21806,6 +21814,17 @@ export function unlockCloudBackupKey({ cloudBackupUnlockDto }: {
     })));
 }
 /**
+ * Get the accounts currently covered for Cloud Backup
+ */
+export function getCloudBackupLicenceCoverage(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupLicenceCoverageResponseDto;
+    }>("/admin/cloud/backup/licence-coverage", {
+        ...opts
+    }));
+}
+/**
  * List the kept backups
  */
 export function getCloudBackupManifests(opts?: Oazapfts.RequestOpts) {
@@ -37634,6 +37653,12 @@ export enum CloudBackupCoverageReportState {
     NotReported = "not-reported",
     Local = "local",
     Unknown = "unknown"
+}
+export enum CloudBackupLicenceScope {
+    Unknown = "unknown",
+    None = "none",
+    All = "all",
+    Users = "users"
 }
 export enum CloudBackupManifestStatus {
     Complete = "complete",
