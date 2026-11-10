@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
    * The results toolbar: the result count, the one Filter control, Slideshow, the information-panel
-   * toggle, Sort, Grid/List and "More library actions". The layout switch lives in the collection
-   * header, as in the prototype (`LibraryLayoutSwitch`).
+   * toggle, Sort, Grid/List and "More library actions". Where the photo area is wide enough the host
+   * draws the layout switch and the timeline grouping at its start (`start`, FL-1391 B1).
    *
    * Ported from the results toolbar in `design/frameleaf/template/src/App.jsx` (`.results-toolbar`,
    * `.active-filter-bar`). The September 22, 2026 revision replaced the in-page search filter row
@@ -104,6 +104,11 @@
      * (the Locked view's reasons, LIB-P2).
      */
     leading?: import('svelte').Snippet;
+    /**
+     * The layout tabs and the timeline grouping, at the start of the row (FL-1391 B1, App.jsx
+     * `has-layout-tabs`). The count is then for screen readers only: the floating bar shows it.
+     */
+    start?: import('svelte').Snippet;
   };
 
   let {
@@ -127,6 +132,7 @@
     onMoreActions,
     children,
     leading,
+    start,
   }: Props = $props();
 
   /** The prototype's "Choose a filter" menu, in its order (`App.jsx`); Pets live under All filters. */
@@ -425,9 +431,12 @@
     </div>
   {/if}
 
-  <div class="fl-toolbar-row" class:fl-has-more={!!onMoreActions}>
+  <div class="fl-toolbar-row" class:fl-has-more={!!onMoreActions} class:fl-has-start={!!start}>
+    {#if start}
+      <div class="fl-toolbar-start">{@render start()}</div>
+    {/if}
     {#if count !== null}
-      <span class="fl-result-count" aria-live="polite" data-testid="frameleaf-result-count">
+      <span class="fl-result-count" class:fl-sr={!!start} aria-live="polite" data-testid="frameleaf-result-count">
         {$t('items_count', { values: { count } })}
       </span>
     {/if}
@@ -632,6 +641,20 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  /*
+   * FL-1391 B1 (review-1110.css `.has-layout-tabs`): the layout tabs, then the timeline grouping. The
+   * first tab's text starts on the photos' edge, so its 15px of padding hangs into the gutter.
+   */
+  .fl-toolbar-start {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-5);
+    margin-inline-start: -15px;
+  }
+  /* With the count out of the row, Filter pushes the controls to its end. */
+  .fl-has-start .fl-filter {
+    margin-inline-start: auto;
+  }
   /* Prototype `.filter-control`: the Filter button and its chevron read as one split control. */
   .fl-filter {
     position: relative;
@@ -743,6 +766,10 @@
     border-radius: var(--fl-radius);
     background: var(--fl-raised);
     color: var(--fl-muted);
+  }
+  /* FL-1391 S2: on the light theme the grey fill read as pressed beside the outlined buttons. */
+  :global(:root:not(.dark)) .fl-sort {
+    background: transparent;
   }
   .fl-sort select {
     align-self: stretch;

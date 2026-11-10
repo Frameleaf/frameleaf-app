@@ -113,8 +113,13 @@
      * Browse). Work's cell grid reserves its own caption row.
      */
     timelineCaptions?: boolean;
-    /** Rendered above the timeline; the results toolbar and any page header go here. */
-    header?: Snippet;
+    /**
+     * Rendered above the timeline; the results toolbar and any page header go here. With
+     * `groupingInHeader` it is handed the grouping control to draw in its toolbar (FL-1391 B1).
+     */
+    header?: Snippet<[Snippet | undefined]>;
+    /** The header has room for the Years / Months / Days / All control, so its own row is not drawn. */
+    groupingInHeader?: boolean;
     empty?: Snippet;
     /**
      * The page gutter in pixels, kept inside the scroll area on both sides (LIB-P4). The scroll area
@@ -147,6 +152,7 @@
     quickActions,
     timelineCaptions = false,
     header,
+    groupingInHeader = false,
     empty,
     gutter = 0,
   }: Props = $props();
@@ -523,6 +529,10 @@
     timelineManager.grouping = effectiveGrouping;
   });
 
+  const groupable = $derived(!!onGroupingChange && showDayHeaders);
+  const groupingHint = $derived(
+    $t(isMacPlatform() ? 'frameleaf_library_grouping_hint_mac' : 'frameleaf_library_grouping_hint'),
+  );
   const changeGrouping = (value: TimelineGrouping) => {
     if (!onGroupingChange || value === grouping) {
       return;
@@ -1402,25 +1412,32 @@
   };
 </script>
 
+{#snippet groupingModes()}
+  <!-- In the header's toolbar the hint line is the control's tooltip (FL-1391 B1). -->
+  <div
+    class="fl-grouping-modes"
+    role="group"
+    aria-label={$t('frameleaf_library_grouping')}
+    title={groupingInHeader ? groupingHint : undefined}
+    use:slidingPlate={grouping}
+  >
+    {#each CONTROL_ORDER as value (value)}
+      <button type="button" aria-pressed={grouping === value} onclick={() => changeGrouping(value)}>
+        {$t(MODE_LABELS[value])}
+      </button>
+    {/each}
+  </div>
+{/snippet}
+
 {#snippet top()}
-  {@render header?.()}
-  {#if onGroupingChange && showDayHeaders}
-    <div class="fl-grouping" class:is-flow={!curated}>
-      <span class="fl-grouping-hint">
-        {$t(isMacPlatform() ? 'frameleaf_library_grouping_hint_mac' : 'frameleaf_library_grouping_hint')}
-      </span>
-      <div
-        class="fl-grouping-modes"
-        role="group"
-        aria-label={$t('frameleaf_library_grouping')}
-        use:slidingPlate={grouping}
-      >
-        {#each CONTROL_ORDER as value (value)}
-          <button type="button" aria-pressed={grouping === value} onclick={() => changeGrouping(value)}>
-            {$t(MODE_LABELS[value])}
-          </button>
-        {/each}
-      </div>
+  {@render header?.(groupable && groupingInHeader ? groupingModes : undefined)}
+  {#if groupable}
+    <!-- Kept, empty, when the control is in the header: it marks where the header block ends. -->
+    <div class="fl-grouping" class:is-flow={!curated} class:is-in-header={groupingInHeader}>
+      {#if !groupingInHeader}
+        <span class="fl-grouping-hint">{groupingHint}</span>
+        {@render groupingModes()}
+      {/if}
     </div>
   {/if}
 {/snippet}
@@ -1431,7 +1448,7 @@
 -->
 <div
   class="fl-timeline"
-  class:is-groupable={onGroupingChange && showDayHeaders}
+  class:is-groupable={groupable}
   class:is-zoomable={tileLayout !== 'timeline' && tileLayout !== 'list' && !!onThumbnailSizeChange}
   class:has-header-menu={headerMenuOpen}
   data-testid="frameleaf-timeline"
@@ -1768,6 +1785,13 @@
   }
   /* Over photos the first group header's own lead is the room under the control. */
   .fl-grouping.is-flow {
+    margin-block-end: 0;
+  }
+  /* The control is in the header's toolbar (FL-1391 B1): only the room under the toolbar is left. */
+  .fl-grouping.is-in-header {
+    margin-block: 0 var(--fl-space-3);
+  }
+  .fl-grouping.is-in-header.is-flow {
     margin-block-end: 0;
   }
   .fl-grouping-hint {

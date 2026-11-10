@@ -1,5 +1,6 @@
 import { ImageEnrichmentFilter } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
@@ -141,5 +142,32 @@ describe('ResultsToolbar partner photos', () => {
     expect(toggle).toBeChecked();
     await fireEvent.click(toggle);
     expect(onTogglePartnerPhotos).toHaveBeenCalledOnce();
+  });
+});
+
+/** FL-1391 B1: a wide photo area has the layout tabs at the start of the row, and the count is read, not shown. */
+describe('ResultsToolbar start', () => {
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+  });
+
+  const tabs = createRawSnippet(() => ({ render: () => '<span data-testid="tabs">Timeline</span>' }));
+  const session = () => new LibrarySessionStore({ storage: null });
+
+  it("draws the host's tabs first and keeps the count for screen readers only", () => {
+    render(ResultsToolbar, { session: session(), count: 86, start: tabs });
+    const row = screen.getByTestId('frameleaf-results-toolbar').querySelector('.fl-toolbar-row')!;
+    expect(row.firstElementChild).toContainElement(screen.getByTestId('tabs'));
+    const count = screen.getByTestId('frameleaf-result-count');
+    expect(count).toHaveTextContent('86 items');
+    expect(count).toHaveAttribute('aria-live', 'polite');
+    expect(count).toHaveClass('fl-sr');
+  });
+
+  it('shows the count where the tabs have a row of their own', () => {
+    render(ResultsToolbar, { session: session(), count: 86 });
+    expect(screen.getByTestId('frameleaf-result-count')).not.toHaveClass('fl-sr');
   });
 });

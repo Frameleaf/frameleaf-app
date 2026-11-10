@@ -100,7 +100,7 @@ describe('one toolbar while selecting (September 24)', () => {
     onClear: vi.fn(),
   });
 
-  it('puts the labelled page actions ahead of icon-only bulk actions named in tooltips', () => {
+  it('puts the everyday bulk actions ahead of the page actions, none of them filled', () => {
     addMessages('dev', en);
     const compare = vi.fn();
     const { container } = render(SelectionBar, {
@@ -108,7 +108,7 @@ describe('one toolbar while selecting (September 24)', () => {
         ...baseProps(),
         leading: [
           { id: 'compare', label: 'Compare', icon: 'M0 0', onClick: compare },
-          { id: 'studio', label: 'Open in Studio', icon: 'M0 0', onClick: vi.fn(), primary: true },
+          { id: 'studio', label: 'Open in Studio', icon: 'M0 0', onClick: vi.fn() },
         ],
       },
     });
@@ -116,12 +116,26 @@ describe('one toolbar while selecting (September 24)', () => {
     const actions = [
       ...container.querySelectorAll<HTMLButtonElement>(':scope .actions > button, :scope .actions .more > button'),
     ];
-    expect(actions.slice(0, 2).map((button) => button.textContent?.trim())).toEqual(['Compare', 'Open in Studio']);
-    expect(container.querySelector(':scope .actions > .divider')).not.toBeNull();
+    // FL-1391 B2: Favorite, Add to album, Share link, Download, Delete, then the page's tools, then More.
+    expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual([
+      en.frameleaf_bulk_favorite,
+      en.frameleaf_bulk_add_to_album,
+      en.frameleaf_bulk_create_shared_link,
+      en.frameleaf_bulk_download,
+      en.frameleaf_bulk_delete,
+      'Compare',
+      'Open in Studio',
+      en.frameleaf_selection_more_actions,
+    ]);
+    expect(
+      container.querySelector(':scope .actions > .divider + [data-testid="selection-leading-compare"]'),
+    ).not.toBeNull();
     const favorite = screen.getByRole('button', { name: en.frameleaf_bulk_favorite });
     expect(favorite).toHaveClass('icon-only');
+    expect(favorite).not.toHaveClass('is-labelled');
     expect(favorite).toHaveAttribute('title', en.frameleaf_bulk_favorite);
-    expect(screen.getByRole('button', { name: 'Open in Studio' })).toHaveClass('is-primary');
+    expect(screen.getByRole('button', { name: en.frameleaf_bulk_add_to_album })).toHaveClass('is-labelled');
+    expect(screen.getByRole('button', { name: en.frameleaf_bulk_create_shared_link })).toHaveClass('is-labelled');
   });
 
   it('runs a page action and keeps a disabled one inert', async () => {
