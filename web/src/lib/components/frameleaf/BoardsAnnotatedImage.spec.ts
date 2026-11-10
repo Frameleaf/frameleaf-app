@@ -56,14 +56,19 @@ describe('BoardsAnnotatedImage', () => {
     });
 
     it('keeps the standard font when the font cannot be loaded', async () => {
+      const load = vi.fn(() => Promise.reject(new Error('gone')));
       vi.stubGlobal(
         'FontFace',
         class {
-          load = () => Promise.reject(new Error('gone'));
+          load = load;
         },
       );
       const view = draw({ fontAssetId: 'font-gone' });
       await new Promise((resolve) => setTimeout(resolve, 0));
+      // editing the annotations does not ask for the missing font again
+      await view.rerender({ items: text({ fontAssetId: 'font-gone', size: 1.4 }) });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(load).toHaveBeenCalledOnce();
       expect(drawn(view).style.fontFamily).toBe('');
       expect(drawn(view).textContent).toBe('Hello');
     });

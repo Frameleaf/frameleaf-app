@@ -110,13 +110,18 @@
   const step = (axis: { min: number; max: number }) => (axis.max - axis.min > 20 ? 1 : 0.01);
 
   const onKey = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null;
+    // A field in Details (tags, note) handles its own keys: Enter picks a tag, Escape closes its
+    // suggestions. Workspace shortcuts already ignore keys typed in a field.
+    if (target?.matches?.('input, textarea, select') && target.closest('[data-font-details]')) {
+      return;
+    }
     // Modal: the workspace behind never acts on a key. Escape leaves a field first, then closes.
     event.stopPropagation();
     if (event.key !== 'Escape') {
       return;
     }
     event.preventDefault();
-    const target = event.target as HTMLElement | null;
     if (target?.closest?.('input, textarea, select')) {
       target.blur();
     } else {
@@ -318,7 +323,7 @@
     </div>
   </div>
 
-  <aside class="side">
+  <aside class="side" data-font-details>
     <LibraryWorkInspector {asset} boards {font} onOpen={() => {}} {onClose} {onTrash} {onChooseColor} />
   </aside>
 </div>
@@ -513,7 +518,6 @@
   }
   .feature small {
     color: var(--fl-muted);
-    font-family: ui-monospace, monospace;
     font-size: var(--fl-font-micro);
   }
   .feature input {

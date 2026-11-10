@@ -51,7 +51,7 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiArrowExpand, mdiClose, mdiDownload, mdiMapMarker, mdiPlay, mdiTrashCanOutline } from '@mdi/js';
   import { downloadAssetFile } from '$lib/utils/asset-utils';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   type Props = {
     /** The selected item, when it is in the view. */
@@ -273,7 +273,7 @@
         {/if}
         {#if font.glyphCount > 0}
           <dt>{$t('frameleaf_boards_font_glyphs')}</dt>
-          <dd>{font.glyphCount.toLocaleString()}</dd>
+          <dd>{font.glyphCount.toLocaleString($locale ?? undefined)}</dd>
         {/if}
         {#if font.scripts.length > 0}
           <dt>{$t('frameleaf_boards_font_scripts')}</dt>

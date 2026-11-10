@@ -105,4 +105,24 @@ describe('FontViewer (FL-1359)', () => {
     render(FontViewer, { asset: timelineAssetFactory.build({ originalFileName: 'Gone.otf' }), onClose: vi.fn() });
     expect(await screen.findByText('frameleaf_boards_font_picture_only')).toBeInTheDocument();
   });
+
+  it('leaves keys typed in a Details field to that field, and still closes on Escape elsewhere', async () => {
+    sdkMock.getAssetFont.mockResolvedValue(facts());
+    const onClose = vi.fn();
+    render(FontViewer, { asset, onClose });
+    await screen.findByRole('textbox', { name: 'frameleaf_boards_font_sample_label' });
+
+    const field = document.createElement('input');
+    const onFieldKey = vi.fn();
+    field.addEventListener('keydown', onFieldKey);
+    screen.getByTestId('frameleaf-work-inspector').append(field);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    field.dispatchEvent(escape);
+    expect(onFieldKey).toHaveBeenCalledOnce();
+    expect(escape.defaultPrevented).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+
+    await fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });

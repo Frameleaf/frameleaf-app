@@ -77,7 +77,7 @@ const SCRIPT_GLYPHS: Record<string, string> = {
 export const sampleGlyphs = (scripts: string[]) => {
   const text = scripts.map((script) => SCRIPT_GLYPHS[script] ?? '').join('');
   const segmenter =
-    typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+    typeof Intl.Segmenter === 'function' ? new Intl.Segmenter('und', { granularity: 'grapheme' }) : null;
   return segmenter ? Array.from(segmenter.segment(text), ({ segment }) => segment) : [...text];
 };
 /** The words the tester starts with, in the font's most distinctive script. */

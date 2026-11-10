@@ -144,9 +144,12 @@
 
   /** CSS family names of the Boards fonts loaded so far, by font item. */
   let families = $state<Record<string, string>>({});
+  /** Each font is asked for once: one that cannot be loaded is not asked for again on every edit. */
+  const asked = new Set<string>();
   $effect(() => {
     for (const id of new Set(items.flatMap((item) => item.style?.fontAssetId ?? []))) {
-      if (!untrack(() => families[id])) {
+      if (!asked.has(id)) {
+        asked.add(id);
         void loadBoardsFont(id)
           .then((family) => (families[id] = family))
           .catch(() => {});
