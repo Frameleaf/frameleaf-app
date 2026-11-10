@@ -131,6 +131,11 @@ const AttentionFileProblemsSchema = z
       .meta({ format: 'date-time' })
       .nullable()
       .describe('When the earliest of those fixes was made, or null when there are none'),
+    latest: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When the newest of those fixes was made, or null when there are none'),
   })
   .meta({ id: 'AttentionFileProblemsDto' });
 

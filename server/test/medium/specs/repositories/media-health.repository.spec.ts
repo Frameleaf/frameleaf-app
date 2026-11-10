@@ -1372,7 +1372,7 @@ describe(MediaHealthRepository.name, () => {
       await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeUndefined();
     });
 
-    it('counts what was fixed in the last 7 days, since the earliest, and what needs the reader', async () => {
+    it('counts what was fixed in the last 7 days, from the earliest to the newest, and what needs the reader', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const { user: other } = await ctx.newUser();
@@ -1380,7 +1380,8 @@ describe(MediaHealthRepository.name, () => {
       // the database is shared with the other specs: an unscoped count is read as a change
       const before = await sut.fileProblemCounts({ privacy: {}, days: 7 });
       const earliest = days(5);
-      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'repaired' }, resolvedAt: days(1) });
+      const newest = days(1);
+      await arrangeProblem(sut, await photo(), { evidence: { fixState: 'repaired' }, resolvedAt: newest });
       await arrangeProblem(sut, await photo(), { evidence: { fixState: 'part-saved' }, resolvedAt: earliest });
       await arrangeProblem(sut, await photo(), { evidence: { fixState: 'found-again' }, resolvedAt: days(20) });
       await arrangeProblem(sut, await photo(), { evidence: { fixState: 'cant-repair' } });
@@ -1390,12 +1391,15 @@ describe(MediaHealthRepository.name, () => {
       const mine = await sut.fileProblemCounts({ ownerId: user.id, privacy: {}, days: 7 });
       expect(mine).toMatchObject({ fixed: 2, needsYou: 1 });
       expect(Math.abs((mine.since?.getTime() ?? 0) - earliest.getTime())).toBeLessThan(5000);
+      // the newest fix in the window, never the one 20 days ago or a problem still open
+      expect(Math.abs((mine.latest?.getTime() ?? 0) - newest.getTime())).toBeLessThan(5000);
       const all = await sut.fileProblemCounts({ privacy: {}, days: 7 });
       expect([all.fixed - before.fixed, all.needsYou - before.needsYou]).toEqual([2, 2]);
       await expect(sut.fileProblemCounts({ ownerId: other.id, privacy: {}, days: 7 })).resolves.toEqual({
         fixed: 0,
         needsYou: 1,
         since: null,
+        latest: null,
       });
     });
 

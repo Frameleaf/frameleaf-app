@@ -1759,26 +1759,27 @@ export class MediaHealthRepository {
   }
 
   /**
-   * The Overview's counts (FL-1337): what Frameleaf fixed in the last `days` days, the earliest of those fixes, and
-   * what needs the reader. Read with the list's own tab rules, scope and privacy.
+   * The Overview's counts (FL-1337): what Frameleaf fixed in the last `days` days, the earliest and the newest of
+   * those fixes (Task 11b), and what needs the reader. Read with the list's own tab rules, scope and privacy.
    */
   async fileProblemCounts(options: {
     ownerId?: string;
     privacy: MediaHealthPrivacy;
     days: number;
-  }): Promise<{ fixed: number; needsYou: number; since: Date | null }> {
+  }): Promise<{ fixed: number; needsYou: number; since: Date | null; latest: Date | null }> {
     const [fixed, needsYou] = await Promise.all([
       this.fileProblems(options)
         .where(this.inFileProblemTab('fixed', options.days))
-        .select((eb) => [eb.fn.countAll<number>().as('count'), eb.fn.min('asset_health.resolvedAt').as('since')])
+        .select((eb) => [
+          eb.fn.countAll<number>().as('count'),
+          eb.fn.min('asset_health.resolvedAt').as('since'),
+          eb.fn.max('asset_health.resolvedAt').as('latest'),
+        ])
         .executeTakeFirst(),
       this.countFileProblems({ ...options, tab: 'needs' }),
     ]);
-    return {
-      fixed: Number(fixed?.count ?? 0),
-      needsYou,
-      since: fixed?.since ? new Date(fixed.since as unknown as string | Date) : null,
-    };
+    const time = (value: unknown) => (value ? new Date(value as string | Date) : null);
+    return { fixed: Number(fixed?.count ?? 0), needsYou, since: time(fixed?.since), latest: time(fixed?.latest) };
   }
 
   /**
