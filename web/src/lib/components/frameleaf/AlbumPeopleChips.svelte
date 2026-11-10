@@ -4,7 +4,8 @@
    * `.album-people`, approved in frameleaf-prototype PR 32). Choosing chips narrows the album to the
    * items that show everyone chosen: the library session's `personIds.all`, the condition the Filters
    * panel writes, so the time buckets, the count and Slideshow all follow it. "Clear people" puts the
-   * whole album back. An album where nobody is named shows no row at all.
+   * whole album back. An album where nobody is named shows no row at all, unless people are still
+   * chosen, when the row stays for Clear people.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
@@ -66,7 +67,9 @@
   });
 </script>
 
-{#if people.length > 0}
+<!-- A choice still narrowing the album keeps the row, so it can always be cleared, even once the
+     people it names are gone from the album or the list could not be read. -->
+{#if people.length > 0 || selected.length > 0}
   <section class="fl-album-people" aria-label={$t('frameleaf_album_people_title')}>
     <h2>{$t('frameleaf_album_people_title')}</h2>
     <div class="fl-album-people-chips">

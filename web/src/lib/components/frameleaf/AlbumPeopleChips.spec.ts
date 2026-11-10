@@ -1,11 +1,16 @@
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
 import AlbumPeopleChips from './AlbumPeopleChips.svelte';
 
 const albumId = '11111111-1111-4111-8111-111111111111';
-const jamie = { id: '22222222-2222-4222-8222-222222222222', name: 'Jamie', count: 4, updatedAt: '2026-11-01T00:00:00Z' };
+const jamie = {
+  id: '22222222-2222-4222-8222-222222222222',
+  name: 'Jamie',
+  count: 4,
+  updatedAt: '2026-11-01T00:00:00Z',
+};
 const emma = { id: '33333333-3333-4333-8333-333333333333', name: 'Emma', count: 2, updatedAt: '2026-11-01T00:00:00Z' };
 
 /** FL-809 (prototype `App.jsx` `.album-people`): the people in an album, as chips that narrow it. */
@@ -43,6 +48,17 @@ describe('AlbumPeopleChips', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Clear people' }));
     expect(session.query.filter.personIds).toBeUndefined();
     expect(emmaChip).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('keeps Clear people while a choice still narrows the album, even when nobody is listed', async () => {
+    sdkMock.getAlbumPeople.mockRejectedValue(new Error('Forbidden'));
+    const session = new LibrarySessionStore({ storage: null });
+    session.setQuery({ ...session.query, filter: { ...session.query.filter, personIds: { all: [jamie.id] } } });
+    render(AlbumPeopleChips, { albumId, session });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Clear people' }));
+    expect(session.query.filter.personIds).toBeUndefined();
+    expect(screen.queryByRole('region', { name: 'People in this album' })).not.toBeInTheDocument();
   });
 
   it('shows no row when nobody in the album is named', async () => {
