@@ -410,7 +410,10 @@ export class SharpOperations {
       try {
         return await lenient();
       } catch {
-        const picture = typeof input === 'string' && JPEG_NAME.test(input) ? await this.jpegBehindJunk(input) : null;
+        const picture =
+          typeof input === 'string' && JPEG_NAME.test(input)
+            ? await this.jpegBehindJunk(input).catch(() => null)
+            : null;
         if (!picture) {
           throw error;
         }

@@ -330,6 +330,10 @@ export class MediaRepository {
       }
       failure = error;
     }
+    // A file that is not there, or may not be read, is not a file no decoder understands.
+    await fs.access(input, fs.constants.R_OK).catch(() => {
+      throw failure;
+    });
     if (mimeTypes.isRaw(input)) {
       const rendered = await renderRawWithLibRaw(input, executionSignal());
       // LibRaw applies sensor orientation. Keep colour, size and edit semantics.

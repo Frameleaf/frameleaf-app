@@ -85,6 +85,12 @@ describe.each(['decodeImage', 'generateImageThumbnails'] as const)('MediaReposit
     expect(failure).toMatchObject({ decodeFailure: true, message: expect.stringMatching(/^Unsupported image/) });
   });
 
+  it('does not call a file that is not there unsupported', async () => {
+    converters({ rung: 'ffmpeg', convert: fails });
+    await expect(decode(join(directory, 'gone.jpg'))).rejects.toThrow('Input file is missing');
+    expect(stillConverters).not.toHaveBeenCalled();
+  });
+
   it('stays on the strict rung when asked to', async () => {
     converters({ rung: 'ffmpeg', convert: fails });
     await expect(decode(input, { ...options, ladder: 'strict' })).rejects.toThrow('unsupported image format');
