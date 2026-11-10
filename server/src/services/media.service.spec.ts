@@ -6192,8 +6192,12 @@ describe(MediaService.name, () => {
           targetResolution: '1080p',
         },
       });
-      await sut.handleVideoConversion({ id: 'video-id' });
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledExactlyOnceWith({
+        assetId: 'video-id',
+        transcodeSkippedFor: expect.stringMatching(new RegExp(`^${asset.checksum.toString('hex')}:[a-f0-9]{64}$`)),
+      });
     });
 
     describe('should skip transcoding for accepted audio codecs with optimal policy if video is fine', () => {

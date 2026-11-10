@@ -267,6 +267,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     databaseCleanup: true,
     clusterNewFaces: true,
     missingThumbnails: true,
+    reprocessUnfinished: true,
     generateMemories: true,
     syncQuotaUsage: true,
     stopTime: '06:00',

@@ -39,6 +39,8 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { videoProcessingPolicy } from 'src/utils/video-processing-policy.js';
+import { publishJobResult } from 'src/queue/context.js';
 import { BaseService } from 'src/services/base.service.js';
 
 /** The tasks that can run on one photo or video, and the job each queues for it. */
@@ -56,6 +58,8 @@ const RUN_ONE_JOBS: Partial<Record<QueueName, JobName>> = {
 };
 import {
   handlePromiseError,
+  isFacialRecognitionEnabled,
+  isOcrEnabled,
   isImageDescriptionEnabled,
   isNsfwDetectionEnabled,
   isSmartSearchEnabled,
@@ -246,7 +250,10 @@ export class QueueService extends BaseService {
 
   async getAllLegacy(auth: AuthDto): Promise<QueuesResponseLegacyDto> {
     const responses = await this.getAll(auth);
-    return mapQueuesLegacy(responses);
+    const queues = mapQueuesLegacy(responses);
+    const summary = await this.systemMetadataRepository.get(SystemMetadataKey.ProcessingReconcileLastRun);
+    if (summary) queues[QueueName.BackgroundTask].processingReconcileLastRun = summary;
+    return queues;
   }
 
   get(auth: AuthDto, name: QueueName): Promise<QueueResponseDto> {
@@ -639,5 +646,39 @@ export class QueueService extends BaseService {
     jobs.push({ name: JobName.PushBackupStaleCheck });
 
     await this.jobRepository.queueAll(jobs);
+    if (config.nightlyTasks.reprocessUnfinished) {
+      await this.reconcileUnfinished(config);
+    }
+  }
+
+  /** Let the existing processing queues apply their usual privacy and overnight holds. */
+  private async reconcileUnfinished({ machineLearning, image, ffmpeg }: SystemConfig) {
+    const selections = {
+      metadata: [JobName.AssetExtractMetadata, true],
+      thumbnails: [JobName.AssetGenerateThumbnails, true],
+      video: [JobName.AssetEncodeVideo, true],
+      search: [JobName.SmartSearch, isSmartSearchEnabled(machineLearning)],
+      faces: [JobName.AssetDetectFaces, isFacialRecognitionEnabled(machineLearning)],
+      text: [JobName.Ocr, isOcrEnabled(machineLearning)],
+    } as const;
+    const options = { fullsizeEnabled: image.fullsize.enabled, videoPolicy: videoProcessingPolicy(ffmpeg) };
+    const counts = { metadata: 0, thumbnails: 0, video: 0, search: 0, faces: 0, text: 0 };
+    for (const step of Object.keys(selections) as Array<keyof typeof selections>) {
+      const [name, enabled] = selections[step];
+      if (enabled) {
+        const selection = this.assetJobRepository.selectionForUnfinished(name, {
+          ...options,
+          queue: this.jobRepository.getQueueName(name),
+        });
+        const { inserted } = await this.jobRepository.queueSelection(name, selection, {}, 1000);
+        counts[step] = inserted;
+      }
+    }
+    await publishJobResult(() =>
+      this.systemMetadataRepository.set(SystemMetadataKey.ProcessingReconcileLastRun, {
+        ...counts,
+        completedAt: new Date().toISOString(),
+      }),
+    );
   }
 }

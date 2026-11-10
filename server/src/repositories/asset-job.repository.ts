@@ -4,7 +4,16 @@ import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetMetadataKey,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  JobName,
+  LibraryScope,
+  QueueName,
+} from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -49,10 +58,45 @@ const keepsOwnCopyThumbnails = sql<boolean>`EXISTS (
     AND copy_file.path <> source_file.path
 )`;
 
+type ReconciledJob =
+  | JobName.AssetExtractMetadata
+  | JobName.AssetGenerateThumbnails
+  | JobName.AssetEncodeVideo
+  | JobName.SmartSearch
+  | JobName.AssetDetectFaces
+  | JobName.Ocr;
+
 @Injectable()
 export class AssetJobRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
     this.db = publicationDatabase(this.db);
+  }
+
+  /** Select only inputs each normal processor can use, with no other live job for the same step. */
+  selectionForUnfinished(
+    name: ReconciledJob,
+    options: { queue: QueueName; fullsizeEnabled: boolean; videoPolicy: string },
+  ) {
+    const selection = {
+      [JobName.AssetExtractMetadata]: () => this.selectionForMetadataExtraction(false),
+      [JobName.AssetGenerateThumbnails]: () =>
+        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }),
+      [JobName.AssetEncodeVideo]: () =>
+        this.selectionForVideoConversion(false)
+          .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+          .where('asset_job_status.metadataExtractedAt', 'is not', null)
+          .where(sql<boolean>`"asset_job_status"."transcodeSkippedFor" is distinct from
+            (encode(asset.checksum, 'hex') || ':' || ${options.videoPolicy})`),
+      [JobName.SmartSearch]: () => this.selectionForEncodeClip(false),
+      [JobName.AssetDetectFaces]: () => this.selectionForDetectFacesJob(false).clearOrderBy(),
+      [JobName.Ocr]: () => this.assetsWithPreviews().select('asset.id').where('job_status.ocrAt', 'is', null),
+    }[name]();
+
+    return selection.where(sql<boolean>`asset.status = 'active' and not asset."isOffline" and not exists (
+        select 1 from job
+        where job.queue = ${options.queue} and job.name = ${name} and job.state in ('pending', 'waiting', 'active')
+          and job.data->>'id' = asset.id::text
+      )`);
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

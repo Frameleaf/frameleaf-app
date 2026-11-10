@@ -960,6 +960,7 @@ export class JobRepository {
     name: JobName,
     selection: SelectQueryBuilder<any, any, { id: string }>,
     data: Record<string, unknown> = {},
+    pageSize = SELECTION_PAGE,
   ): Promise<{ runId: string; inserted: number }> {
     if (runAdmission.getStore()) throw new Error('Run admission supports queue/queueAll, not queueSelection');
     const context = queueExecution.getStore();
@@ -976,7 +977,7 @@ export class JobRepository {
             values (${runId}::uuid, ${name}, '{}'::jsonb, true)`.execute(tx);
         }
         for (let after: string | null = null; ;) {
-          const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, SELECTION_PAGE, tx);
+          const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, pageSize, tx);
           inserted += page.inserted;
           after = page.last;
           if (after === null) return { runId, inserted };
@@ -985,14 +986,17 @@ export class JobRepository {
     }
     const runId = producerRun!;
     const cursors = context.claim.data._selectionCursor as
-      Record<string, { after: string | null; done: boolean }> | undefined;
-    if (cursors?.[name]?.done) return { runId, inserted };
-    let after = cursors?.[name]?.after ?? null;
+      Record<string, { after: string | null; done: boolean; inserted?: number }> | undefined;
+    const checkpoint = cursors?.[name];
+    inserted = checkpoint?.inserted ?? 0;
+    if (checkpoint?.done) return { runId, inserted };
+    let after = checkpoint?.after ?? null;
     do {
       const page = await this.fenced(context, async (tx) => {
-        const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, SELECTION_PAGE, tx);
+        const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, pageSize, tx);
         await sql`update job set data = jsonb_set(data, '{_selectionCursor}', coalesce(data->'_selectionCursor', '{}'::jsonb)
-          || jsonb_build_object(${name}::text, jsonb_build_object('after', ${page.last}::text, 'done', ${page.last === null})))
+          || jsonb_build_object(${name}::text, jsonb_build_object('after', ${page.last}::text, 'done', ${page.last === null},
+            'inserted', ${inserted + page.inserted}::int)))
           where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(tx);
         return page;
       });

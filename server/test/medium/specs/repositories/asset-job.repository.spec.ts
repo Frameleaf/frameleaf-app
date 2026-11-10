@@ -2,7 +2,15 @@ import { Kysely, sql } from 'kysely';
 import { ChildProcess, fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { AssetFileType, AssetType, AssetVisibility, JobName, PhysicalFileType, QueueName } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  JobName,
+  PhysicalFileType,
+  QueueName,
+} from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueClaim } from 'src/queue/types.js';
@@ -110,6 +118,70 @@ describe(AssetJobRepository.name, () => {
     await expect(sut.countMediaCopies()).resolves.toEqual(
       expect.objectContaining({ withCopy: 1, copyBytes: 5000, unsizedCopies: 0 }),
     );
+  });
+
+  it('finds missing outputs while skipping live jobs, offline and trashed originals, and deliberate playback skips', async () => {
+    const db = await isolatedDatabase();
+    const { ctx, sut } = setup(db);
+    const { user } = await ctx.newUser();
+    const make = async (options: Parameters<typeof ctx.newAsset>[0] = {}) =>
+      (await ctx.newAsset({ ownerId: user.id, ...options })).asset;
+    const metadata = await make();
+    const pending = await make();
+    const offline = await make({ isOffline: true });
+    const trashed = await make({ status: AssetStatus.Trashed });
+    const thumbnail = await make();
+    const ml = await make({ thumbhash: Buffer.from('test') });
+    const video = await make({ type: AssetType.Video });
+    const playable = await make({ type: AssetType.Video });
+    for (const asset of [thumbnail, ml, video, playable]) {
+      await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date(), facesRecognizedAt: null });
+    }
+    await db
+      .updateTable('asset_job_status')
+      .set({ transcodeSkippedFor: `${playable.checksum.toString('hex')}:current-policy` })
+      .where('assetId', '=', playable.id)
+      .execute();
+    for (const type of [AssetFileType.Thumbnail, AssetFileType.Preview]) {
+      await ctx.newAssetFile({ assetId: ml.id, type, path: `/test/${type}.jpg` });
+    }
+
+    const store = new SqlQueueStore(db);
+    await store.enqueue([
+      {
+        queue: QueueName.MetadataExtraction,
+        name: JobName.AssetExtractMetadata,
+        data: { id: pending.id },
+        safeToRetry: true,
+        sensitive: false,
+        deadlineMs: 30_000,
+      },
+    ]);
+    const queues = {
+      [JobName.AssetExtractMetadata]: QueueName.MetadataExtraction,
+      [JobName.AssetGenerateThumbnails]: QueueName.ThumbnailGeneration,
+      [JobName.AssetEncodeVideo]: QueueName.VideoConversion,
+      [JobName.SmartSearch]: QueueName.SmartSearch,
+      [JobName.AssetDetectFaces]: QueueName.FaceDetection,
+      [JobName.Ocr]: QueueName.Ocr,
+    } as const;
+    const ids = async (name: keyof typeof queues, videoPolicy = 'current-policy') => {
+      const rows = await sut
+        .selectionForUnfinished(name, { queue: queues[name], fullsizeEnabled: false, videoPolicy })
+        .execute();
+      return rows.map(({ id }) => id).sort();
+    };
+
+    await expect(ids(JobName.AssetExtractMetadata)).resolves.toEqual([metadata.id]);
+    await expect(ids(JobName.AssetGenerateThumbnails)).resolves.toEqual([thumbnail.id, video.id, playable.id].sort());
+    for (const name of [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr] as const) {
+      await expect(ids(name)).resolves.toEqual([ml.id]);
+    }
+    await expect(ids(JobName.AssetEncodeVideo)).resolves.toEqual([video.id]);
+    await expect(ids(JobName.AssetEncodeVideo, 'changed-policy')).resolves.toEqual([video.id, playable.id].sort());
+    // This status is independent of the legacy trash timestamp.
+    expect(trashed.status).toBe(AssetStatus.Trashed);
+    expect(offline.isOffline).toBe(true);
   });
 
   it('backfills only uninspected non-RAW images through the existing metadata selection', async () => {

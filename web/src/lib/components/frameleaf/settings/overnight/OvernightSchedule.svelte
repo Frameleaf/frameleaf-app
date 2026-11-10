@@ -516,6 +516,17 @@
             onChange={(on) => nightly && (nightly.quietHours = on)}
           />
         </Row>
+        <Row
+          label={$t('frameleaf_overnight_reprocess_unfinished')}
+          help={$t('frameleaf_overnight_reprocess_unfinished_help')}
+        >
+          <Switch
+            label={$t('frameleaf_overnight_reprocess_unfinished')}
+            checked={nightly?.reprocessUnfinished ?? true}
+            held={disabled}
+            onChange={(on) => nightly && (nightly.reprocessUnfinished = on)}
+          />
+        </Row>
         <Advanced summary={$t('frameleaf_overnight_timing')}>
           {#each present as id (id)}
             <Row label={stepName(id)}>

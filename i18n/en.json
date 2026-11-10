@@ -11639,6 +11639,8 @@
   "frameleaf_overnight_recent_description": "What each night did.",
   "frameleaf_overnight_recent_empty": "Nothing yet. The first night is still to come.",
   "frameleaf_overnight_recent_title": "Recent nights",
+  "frameleaf_overnight_reprocess_unfinished": "Finish anything that didn't process",
+  "frameleaf_overnight_reprocess_unfinished_help": "Check for photos and videos that still need previews, details, search, faces, text or a playback copy.",
   "frameleaf_overnight_run": "Run",
   "frameleaf_overnight_run_label": "How often the night’s work runs",
   "frameleaf_overnight_run_now": "Run now",
