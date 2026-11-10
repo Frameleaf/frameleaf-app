@@ -1840,8 +1840,17 @@ export type AdminConfigAskSearchDto = {
     /** Maximum number of Ask Search results */
     maxResults: number;
 };
+export type AdminConfigAssistantDto = {
+    /** Enable the Library Assistant in search */
+    enabled: boolean;
+    /** Maximum number of Library Assistant results */
+    maxResults: number;
+    /** Plan questions with an installed planner model before the rules */
+    planner: boolean;
+};
 export type AdminConfigLocalFeaturesDto = {
     askSearch: AdminConfigAskSearchDto;
+    assistant?: AdminConfigAssistantDto;
 };
 export type AdminConfigLoggingDto = {
     /** Enabled */
@@ -7032,6 +7041,110 @@ export type AssetWaveformResponseDto = {
     hasAudio: boolean;
     /** Changes whenever the video changes */
     version: string;
+};
+export type AssistantAskDto = {
+    /** Language of the question */
+    language?: string;
+    /** The question, as the person typed it */
+    query: string;
+    /** Most results to return */
+    size?: number;
+};
+export type AssistantPlanFiltersDto = {
+    /** Albums holding the item, by name */
+    albums?: string[];
+    /** City the item was taken in */
+    city?: string;
+    /** A phrase in the description */
+    description?: string;
+    /** Favorites only */
+    favorite?: boolean;
+    /** Text visible in the photo */
+    ocr?: string;
+    /** People in the photo, by name */
+    people?: string[];
+    /** Pets in the photo, by name */
+    pets?: string[];
+    /** Words spoken in the video */
+    spoken?: string;
+    /** Tags on the item, by name */
+    tags?: string[];
+    /** Taken at or after this time */
+    takenAfter?: string;
+    /** Taken at or before this time */
+    takenBefore?: string;
+    /** Photos or videos only */
+    "type"?: AssistantMediaType;
+    /** What the photo looks like, for visual search */
+    visual?: string;
+};
+export type AssistantReasonItemDto = {
+    /** What the reason rests on: person, pet, place, date, favorite, type, album, tag, text, speech, description or visual. Plain string; new kinds may appear */
+    kind: string;
+    /** The reason as a short sentence, from the stored data of this item */
+    text: string;
+    /** The stored value the reason names (a name, place, date or quoted text) */
+    value?: string;
+};
+export type AssistantReasonDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Why this item matched, most specific first */
+    items: AssistantReasonItemDto[];
+};
+export type SearchFacetCountResponseDto = {
+    /** Number of assets with this facet value */
+    count: number;
+    /** The newest matching asset with this value (by capture time), when `facetCovers` was asked for */
+    coverAssetId?: string | null;
+    /** Display name when the value is an id (a person or a tag); the viewer's own name for it */
+    label?: string | null;
+    /** Facet value */
+    value: string;
+};
+export type SearchFacetResponseDto = {
+    counts: SearchFacetCountResponseDto[];
+    /** Facet field name */
+    fieldName: string;
+};
+export type SearchAlbumResponseDto = {
+    /** Number of albums in this page */
+    count: number;
+    facets: SearchFacetResponseDto[];
+    items: AlbumResponseDto[];
+    /** Total number of matching albums */
+    total: number;
+};
+export type SearchAssetResponseDto = {
+    /** Number of assets in this page */
+    count: number;
+    facets: SearchFacetResponseDto[];
+    items: AssetResponseDto[];
+    /** Cursor for the next page of results */
+    nextCursor: string | null;
+    /** Next page token */
+    nextPage: string | null;
+    /** Total number of matching assets */
+    total: number;
+};
+export type SearchResponseDto = {
+    albums: SearchAlbumResponseDto;
+    assets: SearchAssetResponseDto;
+};
+export type AssistantAskResponseDto = {
+    /** What planned the search: `planner` (a planner model) or `rules`. Plain string; new values may appear */
+    answeredBy: string;
+    /** The search that was run */
+    plan: AssistantPlanFiltersDto;
+    /** The question as asked */
+    query: string;
+    /** Why each result matched, one entry per result */
+    reasons: AssistantReasonDto[];
+    results: SearchResponseDto;
+    /** One line describing what was searched */
+    summary: string;
+    /** Parts of the question that could not be used */
+    warnings: string[];
 };
 export type SignUpDto = {
     /** User email */
@@ -15632,45 +15745,6 @@ export type AskSearchPlanDto = {
     /** Normalized query text */
     normalizedQuery: string;
 };
-export type SearchFacetCountResponseDto = {
-    /** Number of assets with this facet value */
-    count: number;
-    /** The newest matching asset with this value (by capture time), when `facetCovers` was asked for */
-    coverAssetId?: string | null;
-    /** Display name when the value is an id (a person or a tag); the viewer's own name for it */
-    label?: string | null;
-    /** Facet value */
-    value: string;
-};
-export type SearchFacetResponseDto = {
-    counts: SearchFacetCountResponseDto[];
-    /** Facet field name */
-    fieldName: string;
-};
-export type SearchAlbumResponseDto = {
-    /** Number of albums in this page */
-    count: number;
-    facets: SearchFacetResponseDto[];
-    items: AlbumResponseDto[];
-    /** Total number of matching albums */
-    total: number;
-};
-export type SearchAssetResponseDto = {
-    /** Number of assets in this page */
-    count: number;
-    facets: SearchFacetResponseDto[];
-    items: AssetResponseDto[];
-    /** Cursor for the next page of results */
-    nextCursor: string | null;
-    /** Next page token */
-    nextPage: string | null;
-    /** Total number of matching assets */
-    total: number;
-};
-export type SearchResponseDto = {
-    albums: SearchAlbumResponseDto;
-    assets: SearchAssetResponseDto;
-};
 export type AskSearchResponseDto = {
     /** Short explanation of how the query was interpreted */
     explanation: string;
@@ -16367,6 +16441,8 @@ export type ServerJobCapacityDto = {
 export type ServerFeaturesDto = {
     /** Whether Ask Search (natural-language questions about the library) is enabled and can answer */
     askSearch: boolean;
+    /** Whether the Library Assistant answers search questions (POST /assistant/ask) */
+    assistant: boolean;
     /** Whether the Frameleaf Cloud plan includes cloud backup (FL-156) */
     cloudBackup: boolean;
     /** Whether the Frameleaf Cloud plan includes cloud processing (FL-156) */
@@ -27022,6 +27098,21 @@ export function getAssetWaveform({ buckets, channels, id, key, slug }: {
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Ask the Library Assistant
+ */
+export function askAssistant({ assistantAskDto }: {
+    assistantAskDto: AssistantAskDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssistantAskResponseDto;
+    }>("/assistant/ask", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantAskDto
+    })));
 }
 /**
  * Register admin
@@ -40648,6 +40739,10 @@ export enum AssetMediaSize {
 export enum AssetWaveformChannelMode {
     Mono = "mono",
     All = "all"
+}
+export enum AssistantMediaType {
+    Image = "IMAGE",
+    Video = "VIDEO"
 }
 export enum BrowserExtensionClient {
     Chrome = "chrome",

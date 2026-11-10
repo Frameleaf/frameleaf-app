@@ -14,7 +14,7 @@ it(
     try {
       const report = await run(database, evaluationOptions());
       process.stdout.write(`${JSON.stringify(report)}\n`);
-      if (mode === 'replay') {
+      if (mode === 'replay' || mode === 'assistant') {
         expect(report.filterAccuracy).toBeGreaterThanOrEqual(thresholds.filterAccuracy);
         expect(report.recallAt24).toBeGreaterThanOrEqual(thresholds.recallAt24);
         expect(report.faithfulness).toBeGreaterThanOrEqual(thresholds.faithfulness);
@@ -27,12 +27,16 @@ it(
   mode === 'live' ? 30 * 60_000 : 120_000,
 );
 
+const OFFLINE_MODES = ['replay', 'baseline', 'assistant'] as const;
+const isOffline = (value: string): value is (typeof OFFLINE_MODES)[number] =>
+  (OFFLINE_MODES as readonly string[]).includes(value);
+
 function evaluationOptions(): Parameters<typeof run>[1] {
-  if (mode === 'replay' || mode === 'baseline') {
+  if (isOffline(mode)) {
     return { mode };
   }
   if (mode !== 'live') {
-    throw new Error('Expected assistant eval mode replay, baseline, or live');
+    throw new Error('Expected assistant eval mode replay, baseline, assistant, or live');
   }
   const configured = process.env.FRAMELEAF_ASSISTANT_PLANNER_URL;
   if (!configured) {

@@ -1300,6 +1300,34 @@ jobs:
       - name: Run ci-unit
         run: mise run ci-unit
     timeout-minutes: 60
+  home-assistant-tests:
+    name: Test Home Assistant integration
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ./machine-learning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # FL-866: the integration's own tests, with uv from the ML service's tools
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
+        with:
+          persist_github_token: true
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.10.8
+      - name: Lint
+        run: |
+          mise exec -- uv --directory ../integrations/home-assistant run --locked --python 3.13 ruff check .
+          mise exec -- uv --directory ../integrations/home-assistant run --locked --python 3.13 ruff format --check .
+      - name: Run tests
+        run: mise exec -- uv --directory ../integrations/home-assistant run --locked --python 3.13 pytest -q
+    timeout-minutes: 20
   github-files-formatting:
     name: .github Files Formatting
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
