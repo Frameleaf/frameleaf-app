@@ -8,7 +8,9 @@ const rawUnsupportedMessages = [
   'no decode delegate',
 ];
 
-const corruptMessages = ['corrupt', 'invalid', 'premature end', 'truncated', 'damaged'];
+// FL-1353: not "invalid". Decoders say it about odd but readable files ("Invalid SOS parameters"), and
+// it is in the standard words for an unknown format. It is a suspicion, never confirmed damage.
+const corruptMessages = ['corrupt', 'premature end', 'truncated', 'damaged'];
 
 export const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
