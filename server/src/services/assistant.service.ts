@@ -10,6 +10,7 @@ import {
   AssistantReasonItem,
   assistantPlanFiltersShape,
 } from 'src/dtos/assistant.dto.js';
+import { assistantSettings } from 'src/dtos/config.dto.js';
 import { SearchFilter, SearchResponseDto, SearchSuggestionType } from 'src/dtos/search.dto.js';
 import { AssetType, AssetVisibility, MlWorkload, Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -90,7 +91,7 @@ export class AssistantService {
       throw new ForbiddenException('The Library Assistant is not available from a shared link');
     }
     const { localFeatures, machineLearning } = await this.search.getConfig({ withCache: false });
-    const settings = localFeatures.assistant;
+    const settings = assistantSettings({ localFeatures });
     if (!settings.enabled) {
       throw new BadRequestException('The Library Assistant is turned off');
     }

@@ -18,6 +18,7 @@ import {
   ServerStorageResponseDto,
   UsageByUserDto,
 } from 'src/dtos/server.dto.js';
+import { assistantSettings } from 'src/dtos/config.dto.js';
 import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { UserStatsQueryResponse } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -261,7 +262,7 @@ export class ServerService extends BaseService {
       // FL-31: Ask Search answers through smart search, so it needs both the setting and smart search
       askSearch: localFeatures.askSearch.enabled && isSmartSearchEnabled(machineLearning),
       // FL-885: the assistant's rule planner answers without smart search, so only its own setting counts
-      assistant: localFeatures.assistant.enabled,
+      assistant: assistantSettings({ localFeatures }).enabled,
       facialRecognition: isFacialRecognitionEnabled(machineLearning),
       duplicateDetection: isDuplicateDetectionEnabled(machineLearning),
       map: map.enabled,
