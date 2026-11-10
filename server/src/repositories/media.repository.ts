@@ -275,7 +275,7 @@ export class MediaRepository {
           throw new RawRenderError('resource_limit', 'ERR_RAW_DEVELOPER_BUSY', error);
         }
         const { code, message } = error as NodeJS.ErrnoException;
-        if (code === 'ENOSPC' || code === 'EDQUOT' || /no space left/i.test(String(message))) {
+        if (code === 'ENOSPC' || code === 'EDQUOT' || /no space left/i.test(message ?? '')) {
           throw error; // a full drive is retried, as above
         }
         this.logger.debug(`RAW development engine could not render either: ${error}`);
