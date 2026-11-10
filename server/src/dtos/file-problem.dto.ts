@@ -39,11 +39,13 @@ const FileProblemLineSchema = z
   })
   .meta({ id: 'FileProblemLineDto' });
 
+// A problem is made here (`uuid_generate_v4()`). A photo or an account can come from an import, which keeps the
+// ids it is given, so those are any UUID, as on the processing failures list (FL-845).
 const FileProblemRowSchema = z
   .object({
     id: z.uuidv4().describe('The problem'),
-    assetId: z.uuidv4().describe('The photo or video'),
-    ownerId: z.uuidv4().describe('Whose library it is in'),
+    assetId: z.uuid().describe('The photo or video'),
+    ownerId: z.uuid().describe('Whose library it is in'),
     ownerName: z.string().describe('The name of the account whose library it is in'),
     originalFileName: z.string().describe('The name of its file'),
     category: MediaHealthCategorySchema,

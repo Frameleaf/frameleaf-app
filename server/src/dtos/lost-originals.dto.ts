@@ -11,7 +11,8 @@ const LostOriginalsQuerySchema = z
 
 const LostOriginalSchema = z
   .object({
-    assetId: z.uuidv4().describe('The photo or video'),
+    // any UUID: a photo from an import keeps the id it is given (FL-845's processing failures list does the same)
+    assetId: z.uuid().describe('The photo or video'),
     checksum: z.string().describe('SHA-1 of the lost file, base64: what the phone matches its own file by'),
     originalFileName: z.string().describe('The name the file had'),
     fileCreatedAt: z.string().meta({ format: 'date-time' }).describe('When the file was created'),

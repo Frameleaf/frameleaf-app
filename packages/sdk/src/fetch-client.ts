@@ -1792,9 +1792,9 @@ export type AdminConfigLibraryDto = {
 };
 export type AdminConfigLibraryCareDto = {
     /** Ask phones for missing photos */
-    askPhones: boolean;
+    askPhones?: boolean;
     /** Repair damaged photos by themselves */
-    autoRepair: boolean;
+    autoRepair?: boolean;
     /** Health scans verify each original against its recorded checksum */
     checksumScan: boolean;
     /** Group near-duplicates for review; deletion stays explicit */

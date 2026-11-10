@@ -862,8 +862,10 @@ const AdminConfigLibraryCareSchema = z
       'A full description rerun reprocesses only results that are missing, failed or out of date',
     ),
     manualMetadata: configBool.describe('A description rerun replaces only generated text and keeps manual text'),
-    autoRepair: configBool.describe('Repair damaged photos by themselves'),
-    askPhones: configBool.describe('Ask phones for missing photos'),
+    // FL-1337: defaulted, so a stored configuration, a config file or an older client that does not name them
+    // keeps the shipped behaviour (both on).
+    autoRepair: configBool.default(true).describe('Repair damaged photos by themselves'),
+    askPhones: configBool.default(true).describe('Ask phones for missing photos'),
   })
   .meta({ id: 'AdminConfigLibraryCareDto' });
 
