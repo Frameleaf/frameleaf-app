@@ -2466,6 +2466,10 @@ export class MediaHealthService {
       // Task 11b: a Locked photo's file is never changed by an Undo, whoever unlocked it; nothing is moved
       throw new ConflictException(UNDO_LOCKED);
     }
+    if (await this.keptFileSealed(fix.previousPath, fix.retainedPath)) {
+      // FL-1364: a kept file still sealed for Locked is never made the photo's file or put back as ciphertext
+      throw new ConflictException(UNDO_LOCKED);
+    }
     // a repair that stopped before it recorded what Undo needs: its repaired file says what it left, where the fix
     // left it or, once Folder layout moved it, where the photo is now
     const expectedChecksum = fix.checksum
@@ -2634,6 +2638,10 @@ export class MediaHealthService {
         : undefined;
     if (!kept) {
       throw new NotFoundException(NO_KEPT_FILE);
+    }
+    if (await this.keptFileSealed(kept)) {
+      // FL-1364: still sealed for Locked; never handed out as ciphertext
+      throw new ConflictException(KEPT_FILE_LOCKED);
     }
     // named so it is never taken for the repaired photo; the route keeps it out of every cache (private, no-store)
     const extension = path.extname(record.originalFileName);
@@ -4523,6 +4531,20 @@ export class MediaHealthService {
    */
   private isEncryptedOriginal(asset: Pick<MediaHealthAsset, 'originalPath'>): Promise<boolean> {
     return isLockedPath(asset.originalPath);
+  }
+
+  /**
+   * FL-1364: a file Library care kept of the photo is sealed with it while it is Locked and encrypted, and
+   * opened again when it leaves (the Locked file registry lists it). One that is still sealed (it was on a
+   * drive that was away while the photo left Locked) is ciphertext: never downloaded or put back by Undo.
+   */
+  private async keptFileSealed(...paths: Array<string | undefined>): Promise<boolean> {
+    for (const kept of paths) {
+      if (kept && (await isLockedPath(kept))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** A damage finding on an encrypted original leaves the trash queue: kept, and why. */

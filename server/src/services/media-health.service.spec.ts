@@ -6511,6 +6511,20 @@ describe(MediaHealthService.name, () => {
         });
       });
 
+      it('is refused, and Undo too, while the kept file is still sealed for Locked (FL-1364)', async () => {
+        // the photo left Locked while the kept file's drive was away, so it was never opened again
+        await writeFile(damaged, Buffer.concat([Buffer.from('FLLK', 'latin1'), Buffer.alloc(64, 1)]));
+        await expect(sut.getFileProblemKeptFile(owner, 'health-1')).rejects.toMatchObject({
+          status: 409,
+          message: "This photo is locked, so the damaged file Frameleaf kept can't be downloaded.",
+        });
+        await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toMatchObject({
+          status: 409,
+          message: "This photo is locked, so this fix can't be undone.",
+        });
+        expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
       it.each([
         [
           'the latest fix is not a repair',
