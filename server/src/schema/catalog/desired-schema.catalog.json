@@ -25929,168 +25929,6 @@
       "synchronize": true
     },
     {
-      "name": "backup_device",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "backup_device",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "backup_device",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "deviceKey",
-          "tableName": "backup_device",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "displayName",
-          "tableName": "backup_device",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "model",
-          "tableName": "backup_device",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "platform",
-          "tableName": "backup_device",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "appVersion",
-          "tableName": "backup_device",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "reportedAt",
-          "tableName": "backup_device",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastSuccessfulBackupAt",
-          "tableName": "backup_device",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "pendingCount",
-          "tableName": "backup_device",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "backup_device",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "backup_device_ownerId_idx",
-          "definition": "CREATE INDEX \"backup_device_ownerId_idx\" ON public.backup_device USING btree (\"ownerId\")",
-          "tableName": "backup_device",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "unique",
-          "name": "backup_device_ownerId_deviceKey_uq",
-          "definition": "UNIQUE (\"ownerId\", \"deviceKey\")",
-          "tableName": "backup_device",
-          "columnNames": [
-            "ownerId",
-            "deviceKey"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "backup_device_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "backup_device",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "backup_device_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "backup_device",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "backup_reconciliation",
       "columns": [
         {
@@ -48287,23 +48125,23 @@
       "synchronize": true
     },
     {
-      "name": "asset_health_step",
+      "name": "backup_device",
       "columns": [
         {
           "type": "uuid",
           "primary": false,
           "name": "id",
-          "tableName": "asset_health_step",
+          "tableName": "backup_device",
           "nullable": false,
           "isArray": false,
-          "default": "immich_uuid_v7()",
+          "default": "uuid_generate_v4()",
           "synchronize": true
         },
         {
           "type": "uuid",
           "primary": false,
-          "name": "healthId",
-          "tableName": "asset_health_step",
+          "name": "ownerId",
+          "tableName": "backup_device",
           "nullable": false,
           "isArray": false,
           "synchronize": true
@@ -48311,8 +48149,44 @@
         {
           "type": "uuid",
           "primary": false,
-          "name": "assetId",
-          "tableName": "asset_health_step",
+          "name": "deviceKey",
+          "tableName": "backup_device",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "displayName",
+          "tableName": "backup_device",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "model",
+          "tableName": "backup_device",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "platform",
+          "tableName": "backup_device",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "appVersion",
+          "tableName": "backup_device",
           "nullable": false,
           "isArray": false,
           "synchronize": true
@@ -48320,71 +48194,71 @@
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "at",
-          "tableName": "asset_health_step",
+          "name": "reportedAt",
+          "tableName": "backup_device",
           "nullable": false,
           "isArray": false,
           "default": "clock_timestamp()",
           "synchronize": true
         },
         {
-          "type": "text",
+          "type": "timestamp with time zone",
           "primary": false,
-          "name": "step",
-          "tableName": "asset_health_step",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "outcome",
-          "tableName": "asset_health_step",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "facts",
-          "tableName": "asset_health_step",
-          "nullable": false,
-          "isArray": false,
-          "default": "'{}'::jsonb",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "undo",
-          "tableName": "asset_health_step",
+          "name": "lastSuccessfulBackupAt",
+          "tableName": "backup_device",
           "nullable": true,
           "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "pendingCount",
+          "tableName": "backup_device",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "backup_device",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "phoneItemCount",
+          "tableName": "backup_device",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "pendingReasons",
+          "tableName": "backup_device",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
           "synchronize": true
         }
       ],
       "indexes": [
         {
-          "name": "asset_health_step_healthId_at_id_idx",
-          "definition": "CREATE INDEX \"asset_health_step_healthId_at_id_idx\" ON public.asset_health_step USING btree (\"healthId\", at, id)",
-          "tableName": "asset_health_step",
+          "name": "backup_device_ownerId_idx",
+          "definition": "CREATE INDEX \"backup_device_ownerId_idx\" ON public.backup_device USING btree (\"ownerId\")",
+          "tableName": "backup_device",
           "columnNames": [
-            "healthId",
-            "at",
-            "id"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_health_step_assetId_idx",
-          "definition": "CREATE INDEX \"asset_health_step_assetId_idx\" ON public.asset_health_step USING btree (\"assetId\")",
-          "tableName": "asset_health_step",
-          "columnNames": [
-            "assetId"
+            "ownerId"
           ],
           "using": "btree",
           "unique": false,
@@ -48394,10 +48268,21 @@
       "triggers": [],
       "constraints": [
         {
+          "type": "unique",
+          "name": "backup_device_ownerId_deviceKey_uq",
+          "definition": "UNIQUE (\"ownerId\", \"deviceKey\")",
+          "tableName": "backup_device",
+          "columnNames": [
+            "ownerId",
+            "deviceKey"
+          ],
+          "synchronize": true
+        },
+        {
           "type": "primary-key",
-          "name": "asset_health_step_pkey",
+          "name": "backup_device_pkey",
           "definition": "PRIMARY KEY (id)",
-          "tableName": "asset_health_step",
+          "tableName": "backup_device",
           "columnNames": [
             "id"
           ],
@@ -48405,29 +48290,13 @@
         },
         {
           "type": "foreign-key",
-          "name": "asset_health_step_healthId_fkey",
-          "definition": "FOREIGN KEY (\"healthId\") REFERENCES asset_health(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset_health_step",
+          "name": "backup_device_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "backup_device",
           "columnNames": [
-            "healthId"
+            "ownerId"
           ],
-          "referenceTableName": "asset_health",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_health_step_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset_health_step",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
+          "referenceTableName": "user",
           "referenceColumnNames": [
             "id"
           ],

@@ -14,7 +14,7 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 const a = '01' + 'a'.repeat(62),
   b = '01' + 'b'.repeat(62);
-const report = (deviceKey = randomUUID()) => ({
+const report = (deviceKey: string = randomUUID()) => ({
   deviceKey,
   displayName: 'Personal phone',
   model: 'Phone',
@@ -199,6 +199,65 @@ describe('backup device registry and measured inventory reconciliation', () => {
     expect(await sut.submit(auth, device.id, run.id, { bucket: 1, hashes: [a] })).toMatchObject({
       itemsChecked: 1,
       itemsMissing: 1,
+    });
+  });
+
+  describe('backup receipt (FL-771)', () => {
+    it('keeps stored receipt fields when an older app omits them, and stores unknown codes verbatim', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
+      const fresh = await sut.register(auth, report());
+      expect(fresh).toMatchObject({ phoneItemCount: null, pendingReasons: [], lastCheck: null });
+      const reasons = [
+        { code: 'wifi', count: 1 },
+        { code: 'some-future-reason', count: 1 },
+      ];
+      await sut.register(auth, { ...report(fresh.deviceKey), phoneItemCount: 40, pendingReasons: reasons });
+      const old = await sut.register(auth, report(fresh.deviceKey));
+      expect(old).toMatchObject({ id: fresh.id, phoneItemCount: 40, pendingReasons: reasons });
+      const cleared = await sut.register(auth, { ...report(fresh.deviceKey), pendingReasons: [] });
+      expect(cleared).toMatchObject({ phoneItemCount: 40, pendingReasons: [] });
+    });
+    it('shows the latest completed check and ignores a newer unfinished run', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
+      await ctx.newAsset({
+        ownerId: user.id,
+        checksum: Buffer.from(a, 'hex'),
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+      });
+      const device = await sut.register(auth, { ...report(), phoneItemCount: 3 });
+      expect(await sut.receipt(auth, device.id)).toMatchObject({ lastCheck: null, serverVerifiedCount: null });
+      const done = await sut.start(auth, device.id, { buckets: bucketInventory([a]) });
+      const unfinished = await sut.start(auth, device.id, { buckets: bucketInventory([a, b]) });
+      expect(unfinished.completedAt).toBeNull();
+      const receipt = await sut.receipt(auth, device.id);
+      expect(receipt).toMatchObject({
+        phoneItemCount: 3,
+        pendingCount: 2,
+        lastCheck: { id: done.id, itemsChecked: 1, itemsMissing: 0, completedAt: done.completedAt },
+        serverVerifiedCount: 1,
+      });
+      const { devices } = await sut.list(auth, page);
+      expect(devices[0].lastCheck?.id).toBe(done.id);
+    });
+    it("returns 404 for another owner's device and keeps admin metadata free of hashes", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
+      const otherAuth = factory.auth({ user: other, session: { hasElevatedPermission: true } });
+      const device = await sut.register(auth, report());
+      await sut.start(auth, device.id, { buckets: bucketInventory([]) });
+      await expect(sut.receipt(otherAuth, device.id)).rejects.toThrow('not found');
+      const admin = factory.auth({ user: { ...other, isAdmin: true } });
+      const listed = (await sut.list(admin, { limit: 200, offset: 0 }, true)).devices.find(
+        ({ id }) => id === device.id,
+      );
+      expect(listed?.lastCheck).toEqual(expect.objectContaining({ itemsChecked: 0, itemsMissing: 0 }));
+      expect(JSON.stringify(listed)).not.toMatch(/[a-f\d]{64}/);
     });
   });
 });

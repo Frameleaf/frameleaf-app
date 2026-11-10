@@ -6,6 +6,7 @@ import {
   BackupDeviceDto,
   BackupDeviceListDto,
   BackupDevicePageDto,
+  BackupDeviceReceiptDto,
   BackupDeviceWriteDto,
   ReconciliationBucketDto,
   ReconciliationHistoryDto,
@@ -17,7 +18,21 @@ import { BackupDeviceRepository } from 'src/repositories/backup-device.repositor
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { requireReconciliationScope } from 'src/utils/backup-reconciliation.js';
 
-const mapDevice = (row: Selectable<BackupDeviceTable>): BackupDeviceDto => ({
+type LastCheck = Pick<
+  Selectable<BackupReconciliationTable>,
+  'id' | 'checkedAt' | 'completedAt' | 'itemsChecked' | 'itemsMissing'
+>;
+const mapLastCheck = (run?: LastCheck): BackupDeviceDto['lastCheck'] =>
+  run?.completedAt
+    ? {
+        id: run.id,
+        checkedAt: run.checkedAt.toISOString(),
+        completedAt: run.completedAt.toISOString(),
+        itemsChecked: run.itemsChecked,
+        itemsMissing: run.itemsMissing,
+      }
+    : null;
+const mapDevice = (row: Selectable<BackupDeviceTable>, lastCheck?: LastCheck): BackupDeviceDto => ({
   id: row.id,
   ownerId: row.ownerId,
   deviceKey: row.deviceKey,
@@ -31,6 +46,9 @@ const mapDevice = (row: Selectable<BackupDeviceTable>): BackupDeviceDto => ({
   quietForDays: row.lastSuccessfulBackupAt
     ? Math.max(0, Math.floor((Date.now() - row.lastSuccessfulBackupAt.getTime()) / 86_400_000))
     : null,
+  phoneItemCount: row.phoneItemCount,
+  pendingReasons: row.pendingReasons,
+  lastCheck: mapLastCheck(lastCheck),
 });
 const mapRun = (row: Selectable<BackupReconciliationTable>, missingHashes: string[] = []): ReconciliationResultDto => ({
   id: row.id,
@@ -59,15 +77,32 @@ export class BackupDeviceService {
     this.owner(auth);
     if (dto.lastSuccessfulBackupAt && new Date(dto.lastSuccessfulBackupAt).getTime() > Date.now())
       throw new BadRequestException('Backup success cannot be in the future');
-    return mapDevice(await this.repository.register(auth.user.id, dto));
+    const row = await this.repository.register(auth.user.id, dto);
+    const [lastCheck] = await this.repository.lastChecks([row.id]);
+    return mapDevice(row, lastCheck);
   }
   async list(auth: AuthDto, page: BackupDevicePageDto, admin = false): Promise<BackupDeviceListDto> {
     this.owner(auth);
     if (admin && !auth.user.isAdmin) throw new ForbiddenException('Admin access required');
     const rows = await this.repository.list(admin ? undefined : auth.user.id, page);
+    const devices = rows.slice(0, page.limit);
+    const checks = new Map(
+      (await this.repository.lastChecks(devices.map(({ id }) => id))).map((run) => [run.deviceId, run]),
+    );
     return {
-      devices: rows.slice(0, page.limit).map((row) => mapDevice(row)),
+      devices: devices.map((row) => mapDevice(row, checks.get(row.id))),
       nextOffset: rows.length > page.limit ? page.offset + page.limit : null,
+    };
+  }
+  /** FL-771: one receipt per device, under the same elevated-session rule as reconciliation history. */
+  async receipt(auth: AuthDto, id: string): Promise<BackupDeviceReceiptDto> {
+    requireReconciliationScope(auth);
+    const row = await this.repository.get(auth.user.id, id);
+    const [lastCheck] = await this.repository.lastChecks([row.id]);
+    const device = mapDevice(row, lastCheck);
+    return {
+      ...device,
+      serverVerifiedCount: device.lastCheck ? device.lastCheck.itemsChecked - device.lastCheck.itemsMissing : null,
     };
   }
   async remove(auth: AuthDto, id: string): Promise<void> {

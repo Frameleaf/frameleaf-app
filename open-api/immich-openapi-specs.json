@@ -62989,6 +62989,58 @@
         "x-immich-permission": "user.update"
       }
     },
+    "/users/me/backup-devices/{id}/receipt": {
+      "get": {
+        "description": "Requires elevated unfiltered session. Phone count, pending count and reasons are device-reported; serverVerifiedCount is itemsChecked minus itemsMissing of the latest completed server check, null before any. Incomplete runs are ignored. Another owner device returns 404.",
+        "operationId": "getBackupDeviceReceipt",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupDeviceReceiptDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the backup receipt for an own device",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/users/me/backup-devices/{id}/reconciliations": {
       "get": {
         "description": "Requires elevated unfiltered session; checkedAt identifies actual inventory snapshot. Includes incomplete runs explicitly; admin metadata access never grants foreign hash access.",
@@ -80697,6 +80749,15 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "lastCheck": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BackupDeviceLastCheckDto"
+              }
+            ],
+            "description": "Latest completed server check; incomplete runs are ignored, null before any completes",
+            "nullable": true
+          },
           "lastSuccessfulBackupAt": {
             "format": "date-time",
             "nullable": true,
@@ -80713,6 +80774,19 @@
           "pendingCount": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pendingReasons": {
+            "items": {
+              "$ref": "#/components/schemas/BackupPendingReasonDto"
+            },
+            "type": "array"
+          },
+          "phoneItemCount": {
+            "description": "Device-reported item count; null until reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
             "type": "integer"
           },
           "platform": {
@@ -80735,13 +80809,51 @@
           "deviceKey",
           "displayName",
           "id",
+          "lastCheck",
           "lastSuccessfulBackupAt",
           "model",
           "ownerId",
           "pendingCount",
+          "pendingReasons",
+          "phoneItemCount",
           "platform",
           "quietForDays",
           "reportedAt"
+        ],
+        "type": "object"
+      },
+      "BackupDeviceLastCheckDto": {
+        "properties": {
+          "checkedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "itemsChecked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "itemsMissing": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "completedAt",
+          "id",
+          "itemsChecked",
+          "itemsMissing"
         ],
         "type": "object"
       },
@@ -80783,6 +80895,105 @@
         },
         "type": "object"
       },
+      "BackupDeviceReceiptDto": {
+        "properties": {
+          "appVersion": {
+            "type": "string"
+          },
+          "deviceKey": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "lastCheck": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BackupDeviceLastCheckDto"
+              }
+            ],
+            "description": "Latest completed server check; incomplete runs are ignored, null before any completes",
+            "nullable": true
+          },
+          "lastSuccessfulBackupAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "pendingCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pendingReasons": {
+            "items": {
+              "$ref": "#/components/schemas/BackupPendingReasonDto"
+            },
+            "type": "array"
+          },
+          "phoneItemCount": {
+            "description": "Device-reported item count; null until reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "quietForDays": {
+            "description": "Elapsed whole days since reported success; null if never reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "reportedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "serverVerifiedCount": {
+            "description": "Items the latest completed check found on the server (checked minus missing); null before any",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appVersion",
+          "deviceKey",
+          "displayName",
+          "id",
+          "lastCheck",
+          "lastSuccessfulBackupAt",
+          "model",
+          "ownerId",
+          "pendingCount",
+          "pendingReasons",
+          "phoneItemCount",
+          "platform",
+          "quietForDays",
+          "reportedAt",
+          "serverVerifiedCount"
+        ],
+        "type": "object"
+      },
       "BackupDeviceWriteDto": {
         "properties": {
           "appVersion": {
@@ -80818,6 +81029,20 @@
             "minimum": 0,
             "type": "integer"
           },
+          "pendingReasons": {
+            "description": "Why items wait, by reason code; omitted keeps the stored value",
+            "items": {
+              "$ref": "#/components/schemas/BackupPendingReasonDto"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "phoneItemCount": {
+            "description": "Items the device holds for backup; omitted keeps the stored value",
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
           "platform": {
             "maxLength": 50,
             "minLength": 1,
@@ -80832,6 +81057,26 @@
           "model",
           "pendingCount",
           "platform"
+        ],
+        "type": "object"
+      },
+      "BackupPendingReasonDto": {
+        "properties": {
+          "code": {
+            "description": "Free-form reason code, e.g. wifi, charging, low-power, too-large; stored verbatim",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "count"
         ],
         "type": "object"
       },
