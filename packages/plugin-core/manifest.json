@@ -571,7 +571,7 @@
           "secret": {
             "type": "string",
             "title": "Signing secret",
-            "description": "Signs each message with this shared secret (X-Frameleaf-Signature: sha256=HMAC of \"<X-Frameleaf-Timestamp>.<body>\"), so the receiver can check it came from this server"
+            "description": "Signs each message with this shared secret (X-Frameleaf-Signature: sha256=HMAC of \"<X-Frameleaf-Timestamp>.<X-Frameleaf-Delivery>.<body>\"), so the receiver can check it came from this server"
           },
           "method": {
             "type": "string",
