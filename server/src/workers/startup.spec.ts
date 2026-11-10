@@ -56,7 +56,7 @@ const setup = () => {
           port: 0,
           helmet: {},
           resourcePaths: { web: { root: '/unused-web-root' } },
-          network: { trustedProxies: [] },
+          network: { trustConfiguredProxies: false, trustedProxies: [] },
           frameleafCloud: { edge: { secret: '' } },
         }),
       },

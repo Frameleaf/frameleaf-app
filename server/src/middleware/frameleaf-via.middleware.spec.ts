@@ -4,6 +4,7 @@ import {
   type FrameleafRequest,
   frameleafViaMiddleware,
   readFrameleafArrival,
+  requestSecurityAddress,
   requestVia,
   stripFrameleafHeaders,
 } from 'src/middleware/frameleaf-via.middleware.js';
@@ -66,6 +67,21 @@ describe('frameleafViaMiddleware (FL-161)', () => {
     });
 
     expect(request.frameleafForwarded?.for).toBe('198.51.100.20');
+    expect(requestSecurityAddress(request)).toBe('198.51.100.20');
+  });
+
+  it.each([
+    { configured: false, expected: '192.168.1.20' },
+    { configured: true, expected: '203.0.113.7' },
+  ])('uses the correct security address with configured proxy trust $configured', ({ configured, expected }) => {
+    const request = {
+      headers: { 'x-forwarded-for': '203.0.113.7' },
+      ip: '203.0.113.7',
+      socket: { remoteAddress: '192.168.1.20' },
+    } as unknown as FrameleafRequest;
+    frameleafViaMiddleware(secret, configured)(request, {} as Response, vi.fn());
+
+    expect(requestSecurityAddress(request)).toBe(expected);
   });
 
   it('leaves a request that claims nothing unmarked', () => {

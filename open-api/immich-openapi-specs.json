@@ -93814,6 +93814,10 @@
           "enabled": {
             "description": "Whether email notifications are enabled",
             "type": "boolean"
+          },
+          "newSignIn": {
+            "description": "Whether to receive email when a new device signs in",
+            "type": "boolean"
           }
         },
         "required": [
@@ -93835,6 +93839,10 @@
           },
           "enabled": {
             "description": "Whether email notifications are enabled",
+            "type": "boolean"
+          },
+          "newSignIn": {
+            "description": "Whether to receive email when a new device signs in",
             "type": "boolean"
           }
         },
