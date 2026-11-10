@@ -14,7 +14,6 @@ from custom_components.frameleaf.events import signature_ok
 
 from .conftest import API, api_key_entry, mock_server
 
-
 DISCOVERY = {
     "triggers": [{"trigger": "AssetCreate", "types": ["AssetV1"]}],
     "templates": [],
@@ -46,11 +45,8 @@ async def setup_with_events(hass: HomeAssistant, aioclient_mock):
     mock_server(aioclient_mock)
     aioclient_mock.get(
         f"{API}/workflows/automation/discovery",
-        json={
-            "triggers": [],
-            "templates": [],
-            "eventTriggers": [{"trigger": "CloudBackupFailed", "event": "cloud.backup.failed"}],
-        },
+        # the shape of WorkflowDiscoveryResponseDto (open-api spec, FL-819): eventTriggers is a list of {trigger, event}
+        json=DISCOVERY,
     )
     aioclient_mock.post(f"{API}/workflows", json={"id": "workflow-1"})
     entry = api_key_entry(events=True)
