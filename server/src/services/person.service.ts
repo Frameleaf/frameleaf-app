@@ -119,6 +119,9 @@ const correctionConflict = (reason: CorrectionConflictReason, message: string) =
 
 const isDefinedId = (id: string | null): id is string => !!id;
 
+/** FL-1384: up to this many people, merge candidates are worked out when the People page asks. */
+const MERGE_LIVE_PEOPLE = 500;
+
 @Injectable()
 export class PersonService extends BaseService {
   /** FL-455: photos whose face detection is routed to Frameleaf Cloud wait here for a batch. */
@@ -192,10 +195,11 @@ export class PersonService extends BaseService {
     // answers about people recognition has since rebuilt follow them first (see `reanchorMergeVerdicts`)
     await this.reanchorMergeVerdicts(auth.user.id);
     const { machineLearning } = await this.getConfig({ withCache: true });
-    const candidates = await this.personRepository.getMergeSuggestions(auth.user.id, {
-      maxDistance: machineLearning.facialRecognition.maxDistance,
-      limit: 20,
-    });
+    const { maxDistance } = machineLearning.facialRecognition;
+    // FL-1384: the pairs are stored. A library of up to 500 people is worked out again as it is read
+    // (about 125,000 comparisons); a larger one is worked out overnight (`refreshMergeCandidates`).
+    await this.personRepository.refreshMergeCandidates(auth.user.id, maxDistance, MERGE_LIVE_PEOPLE);
+    const candidates = await this.personRepository.getMergeSuggestions(auth.user.id, { maxDistance, limit: 20 });
     if (candidates.length === 0) {
       return { suggestions: [] };
     }
@@ -969,8 +973,36 @@ export class PersonService extends BaseService {
     this.logger.debug(`Deleted ${personGroups} empty person groups and ${clusterGroups} orphaned cluster groups`);
 
     await this.refreshPoorMainPhotos();
+    await this.refreshMergeCandidates();
 
     return JobStatus.Success;
+  }
+
+  /**
+   * FL-1384: works out each account's merge candidates again, on nights when a face was added, moved or
+   * changed since the last time (and the first night). Answers the owner already gave keep applying
+   * when the suggestions are read.
+   */
+  private async refreshMergeCandidates() {
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
+    if (
+      state?.mergeCandidatesAt &&
+      !(await this.personRepository.hasFaceChangesSince(new Date(state.mergeCandidatesAt)))
+    ) {
+      return;
+    }
+    const mergeCandidatesAt = new Date().toISOString();
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    let pairs = 0;
+    for (const ownerId of await this.personRepository.getPersonOwnerIds()) {
+      pairs +=
+        (await this.personRepository.refreshMergeCandidates(ownerId, machineLearning.facialRecognition.maxDistance)) ??
+        0;
+    }
+    // read again: the main photo pass above may have set its own date meanwhile
+    const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
+    await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, { ...latest, mergeCandidatesAt });
+    this.logger.debug(`Found ${pairs} pairs of people that may be the same person`);
   }
 
   /**
@@ -980,7 +1012,7 @@ export class PersonService extends BaseService {
    * thumbnail job can turn it upright (thumbnails made from now on are turned as they are made).
    */
   private async refreshPoorMainPhotos() {
-    const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleMainPhotoState);
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
     const firstPass = !state?.uprightPassAt;
     const people = await this.personRepository.getPeopleWithPoorMainPhoto();
     const jobs: JobItem[] = [];
@@ -997,7 +1029,8 @@ export class PersonService extends BaseService {
     }
     await this.jobRepository.queueAll(jobs);
     if (firstPass) {
-      await this.systemMetadataRepository.set(SystemMetadataKey.PeopleMainPhotoState, {
+      await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, {
+        ...state,
         uprightPassAt: new Date().toISOString(),
       });
     }

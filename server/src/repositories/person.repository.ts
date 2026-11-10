@@ -37,6 +37,8 @@ const faceBoxHeight = sql<number>`(asset_face."boundingBoxY2" - asset_face."boun
 const faceLooksSidewaysSql = sql<boolean>`(${faceBoxWidth} > ${sql.lit(FACE_SIDEWAYS_RATIO)} * ${faceBoxHeight})`;
 /** The face's longer side as a share of the frame's longer side. */
 const faceFrameShare = sql<number>`(greatest(${faceBoxWidth}, ${faceBoxHeight})::float8 / greatest(asset_face."imageWidth", asset_face."imageHeight", 1))`;
+/** FL-1384: how many of a person's faces their centre is read from when people are compared. */
+const MERGE_CENTRE_FACES = 10;
 /** Sideways, cut off by the frame, or tiny. */
 const faceIsPoorMainPhoto = sql<boolean>`(
   ${faceLooksSidewaysSql}
@@ -1288,15 +1290,10 @@ export class PersonRepository {
       .execute();
   }
   /**
-   * FL-57: guided merge-suggestion candidates. Reuses the same face-embedding distance
-   * metric (`<=>`, cosine distance) the facial-recognition job already uses to cluster
-   * faces into people (see `searchFaces` in search.repository.ts and
-   * `handleRecognizeFaces` in person.service.ts) instead of inventing a second notion of
-   * "similar". Every visible person with a feature face is paired against every other
-   * once (`p2.personGroupId > p1.personGroupId` keeps each unordered pair a single row),
-   * and only pairs under `maxDistance` survive. The comparison happens inside a CTE so
-   * the computed `distance` can be filtered/ordered on the outer query — Postgres does
-   * not allow referencing a SELECT alias directly in the same query's WHERE clause.
+   * FL-57: guided merge-suggestion candidates, closest first. The pairs are worked out overnight
+   * (`refreshMergeCandidates`, FL-1384) with the same cosine distance the facial-recognition job
+   * clusters faces with; this read keeps the ones still under `maxDistance` whose people are both
+   * visible and that the owner has not answered.
    */
   @GenerateSql({ params: [DummyValue.UUID, { maxDistance: 0.5, limit: 20 }] })
   getMergeSuggestions(
@@ -1324,30 +1321,90 @@ export class PersonRepository {
         and verdict."personId" in ("candidates"."personId", "candidates"."suggestionId")
     )`;
     return this.db
-      .with('candidates', (qb) =>
-        qb
-          .selectFrom('person as p1')
-          .innerJoin('face_search as fs1', 'fs1.faceId', 'p1.faceAssetId')
-          .innerJoin('person as p2', (join) =>
-            join.onRef('p2.ownerId', '=', 'p1.ownerId').onRef('p2.personGroupId', '>', 'p1.personGroupId'),
-          )
-          .innerJoin('face_search as fs2', 'fs2.faceId', 'p2.faceAssetId')
-          .select([
-            'p1.personGroupId as personId',
-            'p2.personGroupId as suggestionId',
-            sql<number>`fs1.embedding <=> fs2.embedding`.as('distance'),
-          ])
-          .where('p1.ownerId', '=', ownerId)
-          .where('p1.isHidden', '=', false)
-          .where('p2.isHidden', '=', false),
+      .selectFrom('person_merge_candidate as candidates')
+      .innerJoin('person as p1', (join) =>
+        join.onRef('p1.ownerId', '=', 'candidates.ownerId').onRef('p1.personGroupId', '=', 'candidates.personId'),
       )
-      .selectFrom('candidates')
-      .selectAll()
+      .innerJoin('person as p2', (join) =>
+        join.onRef('p2.ownerId', '=', 'candidates.ownerId').onRef('p2.personGroupId', '=', 'candidates.suggestionId'),
+      )
+      .select(['candidates.personId', 'candidates.suggestionId', 'candidates.distance'])
+      .where('candidates.ownerId', '=', ownerId)
+      .where('p1.isHidden', '=', false)
+      .where('p2.isHidden', '=', false)
       .where('candidates.distance', '<', maxDistance)
       .where(unanswered)
       .orderBy('candidates.distance', 'asc')
       .limit(limit)
       .execute();
+  }
+  /**
+   * FL-1384: works out an owner's merge candidates again. Each person is stood for by the centre of a
+   * few of their faces, not by one face, so two groups of one person pair up even when their main photos
+   * differ (age, glasses, angle). Measured with buffalo_l: different people's centres sit 0.6 or more
+   * apart, two halves of one person 0.1 to 0.35, so the recognition distance (0.5) divides them.
+   * With `maxPeople`, an owner with more people than that is left as they are (nothing is returned).
+   */
+  @GenerateSql({ params: [DummyValue.UUID, 0.5] })
+  refreshMergeCandidates(ownerId: string, maxDistance: number, maxPeople?: number): Promise<number | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      if (maxPeople !== undefined) {
+        // a library too large to work out as it is read keeps the pairs from the last night
+        const { people } = await tx
+          .selectFrom('person')
+          .select((eb) => eb.fn.countAll<number>().as('people'))
+          .where('person.ownerId', '=', ownerId)
+          .executeTakeFirstOrThrow();
+        if (Number(people) > maxPeople) {
+          return;
+        }
+      }
+      await tx.deleteFrom('person_merge_candidate').where('ownerId', '=', ownerId).execute();
+      // ponytail: every pair of the owner's people is compared (12.5 million pairs at 5,000 people, a few
+      // seconds, once a night); give the centres a vector index if libraries pass about 20,000 people.
+      const { numAffectedRows } = await sql`
+        with centre as materialized (
+          select person."personGroupId" as id, sample.embedding
+          from person
+          cross join lateral (
+            select avg(member.embedding) as embedding
+            from (
+              select face_search.embedding
+              from asset_face
+              inner join face_search on face_search."faceId" = asset_face.id
+              where asset_face."personGroupId" = person."personGroupId"
+                and asset_face."deletedAt" is null
+                and asset_face."isVisible" is true
+              limit ${sql.lit(MERGE_CENTRE_FACES)}
+            ) as member
+          ) as sample
+          where person."ownerId" = ${ownerId} and sample.embedding is not null
+        )
+        insert into person_merge_candidate ("ownerId", "personId", "suggestionId", distance)
+        select ${ownerId}, a.id, b.id, a.embedding <=> b.embedding
+        from centre as a
+        inner join centre as b on b.id > a.id
+        where a.embedding <=> b.embedding < ${maxDistance}
+        on conflict do nothing
+      `.execute(tx);
+      return Number(numAffectedRows ?? 0);
+    });
+  }
+  /** FL-1384: the accounts that have people, and whether any face was added, moved or changed since `since`. */
+  @GenerateSql()
+  async getPersonOwnerIds(): Promise<string[]> {
+    const rows = await this.db.selectFrom('person').select('person.ownerId').distinct().execute();
+    return rows.map(({ ownerId }) => ownerId);
+  }
+  @GenerateSql({ params: [DummyValue.DATE] })
+  async hasFaceChangesSince(since: Date): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('asset_face')
+      .select('asset_face.id')
+      .where('asset_face.updatedAt', '>', since)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
   }
   /**
    * FL-57: the face that stands for each person in a merge suggestion, with its complete photo. Only

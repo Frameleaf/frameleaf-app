@@ -214,6 +214,8 @@ describe(PersonService.name, () => {
         ],
       });
       expect(mocks.person.getMergeSuggestions).toHaveBeenCalledWith(auth.user.id, { maxDistance: 0.5, limit: 20 });
+      // FL-1384: a library of up to 500 people is worked out again as it is read
+      expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledWith(auth.user.id, 0.5, 500);
     });
 
     it('should return no suggestions when nothing is close enough', async () => {
@@ -1390,6 +1392,7 @@ describe(PersonService.name, () => {
       mocks.person.getAllWithoutFaces.mockResolvedValue([person]);
       mocks.person.delete.mockResolvedValue([person]);
       mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([]);
+      mocks.person.getPersonOwnerIds.mockResolvedValue([]);
 
       await sut.handlePersonCleanup();
 
@@ -1415,6 +1418,7 @@ describe(PersonService.name, () => {
 
       beforeEach(() => {
         mocks.person.getAllWithoutFaces.mockResolvedValue([]);
+        mocks.person.getPersonOwnerIds.mockResolvedValue([]);
         // the one-time upright pass has already run, unless a test says otherwise
         mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: '2026-11-10T00:00:00.000Z' });
       });
@@ -1466,9 +1470,54 @@ describe(PersonService.name, () => {
 
         expect(mocks.person.update).not.toHaveBeenCalled();
         expect(mocks.job.queueAll).toHaveBeenCalledWith([thumbnailJob(picked), thumbnailJob(onlySideways)]);
-        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.PeopleMainPhotoState, {
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.PeopleCareState, {
           uprightPassAt: expect.any(String),
         });
+      });
+    });
+
+    describe('merge candidates (FL-1384)', () => {
+      const lastRun = '2026-11-10T00:00:00.000Z';
+
+      beforeEach(() => {
+        mocks.person.getAllWithoutFaces.mockResolvedValue([]);
+        mocks.person.getPeopleWithPoorMainPhoto.mockResolvedValue([]);
+      });
+
+      it("works out every account's pairs with the recognition distance, the first night", async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { maxDistance: 0.4 } } });
+        mocks.person.getPersonOwnerIds.mockResolvedValue(['owner-1', 'owner-2']);
+        mocks.person.refreshMergeCandidates.mockResolvedValue(3);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledWith('owner-1', 0.4);
+        expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledWith('owner-2', 0.4);
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+          SystemMetadataKey.PeopleCareState,
+          expect.objectContaining({ mergeCandidatesAt: expect.any(String) }),
+        );
+      });
+
+      it('leaves the pairs alone on a night no face changed since the last run', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: lastRun, mergeCandidatesAt: lastRun });
+        mocks.person.hasFaceChangesSince.mockResolvedValue(false);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.hasFaceChangesSince).toHaveBeenCalledWith(new Date(lastRun));
+        expect(mocks.person.refreshMergeCandidates).not.toHaveBeenCalled();
+      });
+
+      it('works them out again once a face changed since', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ uprightPassAt: lastRun, mergeCandidatesAt: lastRun });
+        mocks.person.hasFaceChangesSince.mockResolvedValue(true);
+        mocks.person.getPersonOwnerIds.mockResolvedValue(['owner-1']);
+        mocks.person.refreshMergeCandidates.mockResolvedValue(0);
+
+        await sut.handlePersonCleanup();
+
+        expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledTimes(1);
       });
     });
   });

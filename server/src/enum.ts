@@ -542,8 +542,8 @@ export enum SystemMetadataKey {
   MediaLocation = 'MediaLocation',
   ReverseGeocodingState = 'reverse-geocoding-state',
   FacialRecognitionState = 'facial-recognition-state',
-  /** FL-1383: the one pass that turns the people thumbnails that were sideways before it upright. */
-  PeopleMainPhotoState = 'people-main-photo-state',
+  /** FL-1383, FL-1384: when the nightly people care last did its one-time and catch-up work. */
+  PeopleCareState = 'people-care-state',
   MemoriesState = 'memories-state',
   AdminOnboarding = 'admin-onboarding',
   MaintenanceMode = 'maintenance-mode',
