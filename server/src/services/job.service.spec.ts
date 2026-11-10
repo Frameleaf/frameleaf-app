@@ -442,6 +442,28 @@ describe(JobService.name, () => {
       expect(takeHandedToCare(id)).toBe(false);
     });
 
+    it('recognises a hand-off for a job queued with an upper-case id', async () => {
+      const id = newUuid();
+      // the media service notes the id the database returns, in lower case
+      noteHandedToCare(id);
+      mocks.job.run.mockResolvedValue(JobStatus.Skipped);
+      const execution = { signal: new AbortController().signal, adoptions: [] } as unknown as QueueExecution;
+      await queueExecution.run(execution, () =>
+        sut.onJobRun(QueueName.ThumbnailGeneration, {
+          name: JobName.AssetGenerateThumbnails,
+          data: { id: id.toUpperCase(), reconcileUnfinished: true },
+        }),
+      );
+      for (const adopt of execution.adoptions) {
+        await adopt({} as never);
+      }
+
+      expect(mocks.assetJob.selectionForUnfinished).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      // taken, so it never holds back a later skipped job of this photo
+      expect(takeHandedToCare(id)).toBe(false);
+    });
+
     it.each(['a hidden asset', 'a partner copy sharing its source files'])('for %s keeps its follow-ups', async () => {
       const { data } = await run();
 
