@@ -1068,6 +1068,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'faces.import',
   },
   {
+    pattern: 'metadata.faces.write',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/Faces.svelte',
+    evidence: 'faces.write',
+  },
+  {
     pattern: 'metrics.enabled',
     kind: 'server-managed',
     file: 'src/lib/frameleaf/system-config-draft.ts',

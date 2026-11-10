@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Next,
   Param,
   Patch,
   Post,
@@ -14,7 +15,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -22,22 +23,32 @@ import { AssetIdsResponseDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetIdsDto } from 'src/dtos/asset.dto.js';
 import {
   SharedLinkCreateDto,
+  SharedLinkDirectImageDto,
   SharedLinkEditDto,
   SharedLinkLoginDto,
   SharedLinkResponseDto,
   SharedLinkSearchDto,
 } from 'src/dtos/shared-link.dto.js';
 import { ApiTag, AuthCookie, Permission } from 'src/enum.js';
-import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { SharedLinkService } from 'src/services/shared-link.service.js';
+import { type DirectImageAddress, SharedLinkService } from 'src/services/shared-link.service.js';
+import { sendFile } from 'src/utils/file.js';
 import { respondWithCookie } from 'src/utils/response.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 const getAuthTokens = (cookies: Record<string, string> | undefined) => {
   return cookies?.[AuthCookie.SharedLinkToken]?.split(',') || [];
 };
+
+/**
+ * FL-788: a direct image may sit in other sites' pages and in shared caches, but for an hour at most, so
+ * a link that is removed, gets a password or stops allowing downloads stops serving it within that hour.
+ * Cross-origin embedding is allowed even where the server sends the security headers that would block it.
+ */
+const DIRECT_IMAGE_CACHE_CONTROL = 'public, max-age=3600';
 
 const merge = (cookies: Record<string, string> | undefined, token: string) => {
   const authTokens = getAuthTokens(cookies);
@@ -99,6 +110,64 @@ export class SharedLinkController {
   })
   getMySharedLink(@Auth() auth: AuthDto, @Req() req: Request): Promise<SharedLinkResponseDto> {
     return this.service.getMine(auth, getAuthTokens(req.cookies));
+  }
+
+  @Get('direct/s/:slug.jpg')
+  @Authenticated({ public: true })
+  @FileResponse('image/jpeg', 'image/webp')
+  @Endpoint({
+    summary: 'View the image of a single-photo shared link, by its slug',
+    description:
+      'Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  getSharedLinkDirectImageBySlug(
+    @Param('slug') slug: string,
+    @Query() dto: SharedLinkDirectImageDto,
+    @Req() req: Request,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    return this.sendDirectImage({ slug }, dto, req, res, next);
+  }
+
+  @Get('direct/key/:key.jpg')
+  @Authenticated({ public: true })
+  @FileResponse('image/jpeg', 'image/webp')
+  @Endpoint({
+    summary: 'View the image of a single-photo shared link, by its key',
+    description:
+      'Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  getSharedLinkDirectImageByKey(
+    @Param('key') key: string,
+    @Query() dto: SharedLinkDirectImageDto,
+    @Req() req: Request,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    return this.sendDirectImage({ key }, dto, req, res, next);
+  }
+
+  private async sendDirectImage(
+    address: DirectImageAddress,
+    dto: SharedLinkDirectImageDto,
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    await sendFile(
+      res,
+      next,
+      async () => {
+        const file = await this.service.getDirectImage(address, dto, requestVia(req));
+        res.header('Cache-Control', DIRECT_IMAGE_CACHE_CONTROL);
+        res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+        return file;
+      },
+      this.logger,
+    );
   }
 
   @Get(':id')

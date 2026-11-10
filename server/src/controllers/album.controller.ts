@@ -8,6 +8,7 @@ import {
   AlbumHierarchyResponseDto,
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
+  AlbumPersonResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
@@ -171,6 +172,18 @@ export class AlbumController {
     @Query() dto: AlbumMapMarkerDto,
   ): Promise<MapMarkerResponseDto[]> {
     return this.service.getMapMarkers(auth, id, dto);
+  }
+
+  @Authenticated({ permission: Permission.AlbumRead, sharedLink: true })
+  @Get(':id/people')
+  @Endpoint({
+    summary: 'Retrieve the people in an album',
+    description:
+      'The named people who appear in an album, most often first, with how many of its items show each (at most 50). Hidden people, unnamed faces, and items that are Locked or in the trash are left out. A shared link gets them only when it shows metadata.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumPeople(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AlbumPersonResponseDto[]> {
+    return this.service.getPeople(auth, id);
   }
 
   @Authenticated({ permission: Permission.AlbumRead })

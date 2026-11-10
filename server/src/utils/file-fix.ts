@@ -12,6 +12,8 @@ import type { JpegRepairMethod } from 'src/utils/jpeg-repair.js';
 export const BUSY_RETRY_DELAYS_MS: readonly number[] = [5, 30, 120].map((minutes) => minutes * 60_000);
 /** How long a fix waits for an unplugged drive, or for Cloud Backup to finish, before it looks again. */
 export const FIX_WAIT_MS = 30 * 60_000;
+/** How long a fix waits while another fix of the same photo runs (one runs per photo at a time). */
+export const FIX_RUNNING_WAIT_MS = 60_000;
 /** A day of waits for an unplugged drive. Then it stops until the next file check or Try again. */
 export const MAX_DRIVE_WAITS = 48;
 /** A day of waits for Cloud Backup to be free. Then the fix carries on without it, naming no backup. */
