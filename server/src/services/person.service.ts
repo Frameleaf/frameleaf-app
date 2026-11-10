@@ -129,6 +129,12 @@ const isDefinedId = (id: string | null): id is string => !!id;
 
 /** FL-1384: up to this many people, merge candidates are worked out when the People page asks. */
 const MERGE_LIVE_PEOPLE = 500;
+/**
+ * FL-1384, FL-1385: the time the nightly people care last ran, as it is compared with when faces changed.
+ * The run's time is this server's clock and a face's is the database's, so the comparison reaches back
+ * five minutes: a face changed just before the last run is looked at twice, never missed.
+ */
+const careSince = (lastRun: string) => new Date(new Date(lastRun).getTime() - 5 * 60 * 1000);
 /** FL-1385: "later" skips a split suggestion for this long, as it does a merge suggestion. */
 const SPLIT_LATER_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -1106,7 +1112,7 @@ export class PersonService extends BaseService {
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
     if (
       state?.mergeCandidatesAt &&
-      !(await this.personRepository.hasFaceChangesSince(new Date(state.mergeCandidatesAt)))
+      !(await this.personRepository.hasFaceChangesSince(careSince(state.mergeCandidatesAt)))
     ) {
       return;
     }
@@ -1133,7 +1139,7 @@ export class PersonService extends BaseService {
    */
   private async refreshSplitCandidates() {
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
-    const since = state?.splitCandidatesAt ? new Date(state.splitCandidatesAt) : undefined;
+    const since = state?.splitCandidatesAt ? careSince(state.splitCandidatesAt) : undefined;
     if (since && !(await this.personRepository.hasFaceChangesSince(since))) {
       return;
     }

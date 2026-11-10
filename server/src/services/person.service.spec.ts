@@ -1534,7 +1534,8 @@ describe(PersonService.name, () => {
 
         await sut.handlePersonCleanup();
 
-        expect(mocks.person.hasFaceChangesSince).toHaveBeenCalledWith(new Date(lastRun));
+        // five minutes back, to cover the gap between this server's clock and the database's
+        expect(mocks.person.hasFaceChangesSince).toHaveBeenCalledWith(new Date('2026-11-09T23:55:00.000Z'));
         expect(mocks.person.refreshMergeCandidates).not.toHaveBeenCalled();
       });
 
@@ -1616,7 +1617,7 @@ describe(PersonService.name, () => {
       mocks.person.getPersonOwnerIds.mockResolvedValue([]);
       mocks.person.getFaceEmbeddings.mockResolvedValue([]);
       await sut.handlePersonCleanup();
-      expect(mocks.person.getPeopleForSplitCheck).toHaveBeenCalledWith(6, new Date(lastRun));
+      expect(mocks.person.getPeopleForSplitCheck).toHaveBeenCalledWith(6, new Date('2026-11-09T23:55:00.000Z'));
     });
   });
 

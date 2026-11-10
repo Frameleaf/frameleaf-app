@@ -1060,6 +1060,8 @@ order by
           member."personGroupId" = $6
           and member."deletedAt" is null
           and member."isVisible" is true
+        order by
+          member.id
         limit
           500
       ) as sample
@@ -1308,6 +1310,8 @@ with
               asset_face."personGroupId" = person."personGroupId"
               and asset_face."deletedAt" is null
               and asset_face."isVisible" is true
+            order by
+              asset_face.id
             limit
               10
           ) as member
@@ -1391,6 +1395,8 @@ where
   "asset_face"."personGroupId" = $1
   and "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
+order by
+  "asset_face"."id"
 limit
   $2
 

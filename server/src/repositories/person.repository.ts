@@ -1109,7 +1109,8 @@ export class PersonRepository {
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   getBestFace(personGroupId: string, ownerId: string) {
     // ponytail: the centre is read from 500 of the person's faces (the same ones on every run) and the
-    // ranking from their 200 best boxes, so a person with 50,000 faces costs the same as one with 500; widen both if picks look off.
+    // ranking from their 200 best boxes, so a person with 50,000 faces costs the same as one with 500;
+    // widen both if picks look off.
     const centre = sql`(
       select avg(sample.embedding) from (
         select face_search.embedding
