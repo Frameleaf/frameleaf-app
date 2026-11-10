@@ -84,3 +84,20 @@ describe('sendWebhook', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('cloud metadata inside private ranges', () => {
+  it.each(['100.100.100.200', 'fd00:ec2::254', '::ffff:100.100.100.200'])('never allows %s', (address) => {
+    expect(isWebhookAddressAllowed(address, true)).toBe(false);
+  });
+});
+
+describe('cloud metadata names', () => {
+  it.each(['http://metadata.google.internal/computeMetadata/v1/', 'http://metadata/', 'http://instance-data/latest'])(
+    'refuses %s even with the home network allowed',
+    async (address) => {
+      await expect(
+        sendWebhook(address, { headers: new Headers(), body: '{}' }, { allowHomeNetwork: true }),
+      ).rejects.toBeInstanceOf(PublicFetchError);
+    },
+  );
+});

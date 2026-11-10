@@ -365,7 +365,7 @@ export class WorkflowRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
-  search(dto: Omit<WorkflowSearchDto, 'trigger'> & { userId?: string; trigger?: WorkflowTrigger }) {
+  search(dto: Omit<WorkflowSearchDto, 'trigger'> & { userId?: string; trigger?: WorkflowTrigger | string }) {
     return this.queryBuilder()
       .$if(!!dto.id, (qb) => qb.where('workflow.id', '=', dto.id!))
       .$if(!!dto.userId, (qb) => qb.where('workflow.ownerId', '=', dto.userId!))

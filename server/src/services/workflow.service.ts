@@ -403,7 +403,7 @@ export class WorkflowService extends BaseService {
       this.pluginRepository.getForValidation(),
       this.workflowRepository.getLatestRunAttempt(id, runId),
     ]);
-    if (!run?.triggerDataId) {
+    if (!run?.triggerDataId || isFrameleafEventTrigger(this.definitionOf(workflow).trigger)) {
       throw new BadRequestException('This run cannot be retried');
     }
     if (!workflow.enabled) {

@@ -1342,6 +1342,14 @@ describe('Frameleaf events (FL-819)', () => {
       );
     });
 
+    it('never runs a photo run for a workflow that now starts on an event', async () => {
+      mocks.workflow.getForWorkflowRun.mockResolvedValue(workflow as never);
+      await expect(
+        sut.handleAssetTrigger({ workflowId, assetId: newUuid(), runId: newUuid(), executionId: newUuid() }),
+      ).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+    });
+
     it("never runs another account's workflow", async () => {
       mocks.workflow.getForWorkflowRun.mockResolvedValue({ ...workflow, ownerId: newUuid() } as never);
       await expect(sut.handleEventTrigger(job)).resolves.toBe(JobStatus.Skipped);

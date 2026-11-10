@@ -189,13 +189,21 @@ const unmapped = (address: string): string => {
   return address;
 };
 
+/** Cloud metadata services that sit inside private ranges (Alibaba, AWS over IPv6): never reachable. */
+const metadataAddresses = new BlockList();
+metadataAddresses.addAddress('100.100.100.200', 'ipv4');
+metadataAddresses.addAddress('fd00:ec2::254', 'ipv6');
+
 /** Whether an automation may send to `address`: anywhere public, a home address only when allowed. */
 export const isWebhookAddressAllowed = (address: string, allowHomeNetwork: boolean): boolean => {
+  const plain = unmapped(address);
+  const family = isIP(plain);
+  if (family !== 0 && metadataAddresses.check(plain, family === 4 ? 'ipv4' : 'ipv6')) {
+    return false;
+  }
   if (isPublicAddress(address)) {
     return true;
   }
-  const plain = unmapped(address);
-  const family = isIP(plain);
   return allowHomeNetwork && family !== 0 && homeNetwork.check(plain, family === 4 ? 'ipv4' : 'ipv6');
 };
 
@@ -227,6 +235,15 @@ const webhookAgents = {
   home: new Agent({ connect: { lookup: webhookLookup(true) as never }, headersTimeout: 10_000, bodyTimeout: 10_000 }),
 };
 
+/** Names cloud providers give their metadata services; refused before any lookup. */
+const METADATA_HOSTS = new Set([
+  'metadata',
+  'metadata.google.internal',
+  'metadata.goog',
+  'instance-data',
+  'instance-data.ec2.internal',
+]);
+
 const WEBHOOK_REQUEST_BYTES = 256_000;
 const WEBHOOK_RESPONSE_BYTES = 64_000;
 
@@ -245,7 +262,11 @@ const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
   if (isIP(host) && !isWebhookAddressAllowed(host, allowHomeNetwork)) {
     throw new PublicFetchError(`${host} is not an address automations can reach`);
   }
-  if (host === 'localhost' || host.endsWith('.localhost')) {
+  if (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    METADATA_HOSTS.has(host.toLowerCase().replace(/\.$/, ''))
+  ) {
     throw new PublicFetchError(`${host} is not an address automations can reach`);
   }
   if (!allowHomeNetwork && !isIP(host) && (!host.includes('.') || /\.(local|internal|lan|home\.arpa)$/i.test(host))) {

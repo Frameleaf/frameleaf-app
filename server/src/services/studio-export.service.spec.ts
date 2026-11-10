@@ -2336,6 +2336,20 @@ describe(StudioExportService.name, () => {
       );
     });
 
+    it('announces no export of Locked or sensitive media to workflows (FL-819)', async () => {
+      const tx = { isTransaction: true };
+      repository.publish.mockImplementation((_input, _metadata, notification) =>
+        tryPromise(() =>
+          notification!(tx as never, { ...published().version, privacy: { lockReason: 'source' } }, 'Lake trip'),
+        ).then(() => published()),
+      );
+      await sut.run(job());
+      expect(jobs.queueInTransaction).not.toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ name: JobName.WorkflowEventDispatch }),
+      );
+    });
+
     it('tells the owner by push that the render failed (FL-228)', async () => {
       crypto.hashFile.mockResolvedValue(Buffer.from('cd'.repeat(32), 'hex'));
       operations.fail.mockResolvedValue('failed');

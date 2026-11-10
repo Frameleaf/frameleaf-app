@@ -39,7 +39,13 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { inheritWorkflowCausation, workflowCausation, workflowOwnership } from 'src/utils/workflow-context.js';
 import { definitionFromSteps, redactRunError, workflowIssues } from 'src/utils/workflow-definition.js';
 import { sendWebhook } from 'src/utils/public-fetch.js';
-import { type FrameleafEventOccurrence, eventRunIds, signEventBody, toEventPayload } from 'src/utils/workflow-event.js';
+import {
+  type FrameleafEventOccurrence,
+  eventRunIds,
+  isFrameleafEventTrigger,
+  signEventBody,
+  toEventPayload,
+} from 'src/utils/workflow-event.js';
 import { nextWorkflowOccurrence, resolveWorkflowSource, workflowDefinitionHash } from 'src/utils/workflow-source.js';
 
 const dummy = () => {
@@ -1026,6 +1032,11 @@ export class WorkflowExecutionService extends BaseService {
       return;
     }
     known.logging = workflow.logging;
+    // FL-819: a workflow now on a Frameleaf event never runs for a photo (an old retry, or one queued
+    // before the edit): its webhook would get photo data without the event's delivery rules
+    if (isFrameleafEventTrigger(workflow.trigger) || isFrameleafEventTrigger(definitionOf(workflow).trigger)) {
+      return JobStatus.Skipped;
+    }
     const chainId = job.causation?.find((entry) => entry.startsWith('chain:'))?.slice(6);
     if (chainId && !(await this.workflowRepository.claimCausation(chainId, workflowId, assetId, job.runId)))
       return JobStatus.Skipped;
