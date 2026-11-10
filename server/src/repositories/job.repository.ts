@@ -1228,6 +1228,33 @@ export class JobRepository {
     return this.store.cancelQueued(this.getQueueName(name), jobID);
   }
 
+  /**
+   * FL-1337: a person's Try again supersedes the fix of a photo that put itself back to wait (`fix-<id>/rN`) and
+   * the shared search's feed for it (`fix-<id>/searched`): they are cancelled while they wait. A person's own
+   * fix waiting its turn (`fix-<id>/pN`) is kept: it may be the fix this Try again just queued. A running one is
+   * left to settle; the per-photo guard (`isOtherFixRunning`) holds Try again back until it has.
+   */
+  async cancelWaitingFixes(assetId: string): Promise<void> {
+    const queue = this.getQueueName(JobName.MediaHealthFixAsset);
+    await this.store.cancelQueuedWithPrefix(queue, `fix-${assetId}/r`);
+    await this.store.cancelQueuedWithPrefix(queue, `fix-${assetId}/searched`);
+  }
+
+  /**
+   * FL-1337: whether a fix of this photo other than the calling job's is running, and started first (by start time,
+   * then id, so of two that start together exactly one waits). One fix runs per photo at a time.
+   */
+  async isOtherFixRunning(assetId: string): Promise<boolean> {
+    const own = queueExecution.getStore()?.claim.id ?? null;
+    const { rows } = await sql`select 1 from job j
+      where j.queue = ${this.getQueueName(JobName.MediaHealthFixAsset)} and j.name = ${JobName.MediaHealthFixAsset}
+        and j.state = 'active' and j.data->>'id' = ${assetId}
+        and (${own}::uuid is null or (j."startedAt", j.id) < (
+          select coalesce(o."startedAt", now()), o.id from job o where o.id = ${own}::uuid))
+      limit 1`.execute(this.store.db);
+    return rows.length > 0;
+  }
+
   async dispatchImportedWork(config?: ImportConfig): Promise<string> {
     const runId = await transferImportedWork(
       this.store.db,
@@ -1304,11 +1331,21 @@ export class JobRepository {
         // running. A fix that puts itself back carries its own key: the store drops a job whose key
         // matches a live row, and the live row is the fix that is queuing it.
         // The shared search's feed has its own key too, so a fix queued meanwhile cannot swallow it.
+        // A person's fix that puts itself back has a key of its own too (`/p<its Try again>-N`): a later Try
+        // again's cancellation of the waiting fixes never matches it, and it never collides with the put-back of
+        // an earlier Try again's fix that is still running.
         const jobId = item.data.requeue
-          ? `fix-${item.data.id}/r${item.data.requeue}`
+          ? item.data.from === 'person'
+            ? `fix-${item.data.id}/p${item.data.retry ?? ''}-${item.data.requeue}`
+            : `fix-${item.data.id}/r${item.data.requeue}`
           : item.data.searched
             ? `fix-${item.data.id}/searched`
             : `fix-${item.data.id}`;
+        if (item.data.from === 'person' && !item.data.requeue && !item.data.searched) {
+          // A person's Try again is never dropped for a feed already queued: it takes that waiting job's place,
+          // or runs once the one that is running settles.
+          return { jobId, deduplication: { id: jobId, keepLastIfActive: true } };
+        }
         return item.data.delay ? { jobId, delay: item.data.delay } : { jobId };
       }
       case JobName.MediaHealthLocateMissing: {
