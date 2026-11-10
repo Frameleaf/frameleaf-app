@@ -1,9 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
 import { camelCase, upperFirst } from 'lodash-es';
 import { Duration } from 'luxon';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -46,13 +46,21 @@ import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { renderDarktable } from 'src/utils/darktable-renderer.js';
+import {
+  DESIGN_PREVIEW_TAGS,
+  DesignPreviewUnavailableError,
+  DesignRung,
+  extractContainerPreview,
+  isRenderedDesign,
+} from 'src/utils/design-preview.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { ContainerLogSignals, readContainerLogSignals } from 'src/utils/log-video-container.js';
 import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, type RawRenderOptions, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { stillConverters } from 'src/utils/still-converters.js';
 
 const probe = (input: string, options: string[], signal = executionSignal()): Promise<FfprobeData> => {
@@ -131,6 +139,32 @@ export class MediaRepository {
     return value;
   }
 
+  private libplaceboProbe?: Promise<boolean>;
+
+  /**
+   * FL-1357: whether this ffmpeg can really run libplacebo, found by pushing one frame through it. The filter
+   * being compiled in says nothing: it needs a Vulkan device, which most containers do not have.
+   * ponytail: an answer is kept for the life of the process; a graphics card added later is seen after a restart.
+   */
+  hasLibplacebo(): Promise<boolean> {
+    this.libplaceboProbe ??= new Promise((resolve) =>
+      execFile(
+        'ffmpeg',
+        // one 64x64 frame through the filter, thrown away
+        '-nostdin -v error -f lavfi -i color=s=64x64:d=0.04 -vf libplacebo -frames:v 1 -f null -'.split(' '),
+        { timeout: 15_000 },
+        (error) => {
+          // Only ffmpeg's own answer is kept: a probe that timed out or could not start is asked again next time.
+          if (error && (error.killed || typeof error.code !== 'number')) {
+            this.libplaceboProbe = undefined;
+          }
+          resolve(!error);
+        },
+      ),
+    );
+    return this.libplaceboProbe;
+  }
+
   inspectImageEncoding(input: string | Buffer) {
     return sharpProcessPool.run('inspectImageEncoding', [input]);
   }
@@ -189,6 +223,9 @@ export class MediaRepository {
       { tag: 'JpgFromRaw', format: RawExtractedFormat.Jpeg },
       { tag: 'PreviewJXL', format: RawExtractedFormat.Jxl },
       { tag: 'PreviewImage', format: RawExtractedFormat.Jpeg },
+      // FL-1355: small, but a picture; callers that need a size check it.
+      { tag: 'OtherImage', format: RawExtractedFormat.Jpeg },
+      { tag: 'ThumbnailImage', format: RawExtractedFormat.Jpeg },
     ]) {
       try {
         const buffer = await exiftool.extractBinaryTagToBuffer(tag, input);
@@ -199,6 +236,116 @@ export class MediaRepository {
       }
     }
     return null;
+  }
+
+  private developerTurn: Promise<void> = Promise.resolve();
+
+  /**
+   * FL-1355: the RAW ladder, the one place a RAW original becomes a picture. LibRaw renders the sensor; a
+   * camera or compression it cannot read goes to darktable's decoder; failing that, the picture the camera
+   * stored inside the file is used. Only when no rung gives a picture does the first failure come back,
+   * marked `ladderExhausted`. Cancellation and an unreadable file are not the decoder's to work around.
+   */
+  async renderRaw(
+    input: string,
+    { signal, developer = true, ...options }: RawRenderOptions & { signal?: AbortSignal; developer?: boolean } = {},
+  ): Promise<{ rung: 'libraw' | 'darktable' | 'preview'; buffer: Buffer; failure?: RawRenderError }> {
+    let failure: RawRenderError;
+    try {
+      return { rung: 'libraw', buffer: await renderRawWithLibRaw(input, signal, options) };
+    } catch (error) {
+      // A full drive is the server's to sort out and try again, not a reason to settle for a lower rung.
+      if (
+        !(error instanceof RawRenderError) ||
+        error.reason === 'cancelled' ||
+        error.reason === 'io' ||
+        error.code === 'ENOSPC' ||
+        error.code === 'EDQUOT'
+      ) {
+        throw error;
+      }
+      failure = error;
+    }
+    // Out of time or memory in LibRaw would be the same, slower, in a full-resolution development.
+    if (developer && failure.reason !== 'timeout' && failure.reason !== 'resource_limit') {
+      // The engine renders one file at a time in a process, so the ladder's own calls take turns.
+      const turn = this.developerTurn.then(() =>
+        renderDarktable(input, { version: 2, renderer: 'darktable/5.6.1' }, signal),
+      );
+      this.developerTurn = turn.then(() => {}).catch(() => {});
+      try {
+        return { rung: 'darktable', buffer: await turn, failure };
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (error instanceof ServiceUnavailableException) {
+          // Someone is developing a photo right now. That says nothing about this file: try again later,
+          // without settling for a lower rung or calling the file unsupported.
+          throw new RawRenderError('resource_limit', 'ERR_RAW_DEVELOPER_BUSY', error);
+        }
+        const { code, message } = error as NodeJS.ErrnoException;
+        if (code === 'ENOSPC' || code === 'EDQUOT' || /no space left/i.test(message ?? '')) {
+          throw error; // a full drive is retried, as above
+        }
+        this.logger.debug(`RAW development engine could not render either: ${error}`);
+      }
+    }
+    const embedded = await this.extract(input);
+    signal?.throwIfAborted();
+    if (embedded) {
+      return { rung: 'preview', buffer: embedded.buffer, failure };
+    }
+    failure.ladderExhausted = true;
+    throw failure;
+  }
+
+  /** FL-1358: the picture a design file carries: its container's preview, else one ExifTool finds inside. */
+  private async extractDesignPreview(input: string): Promise<{ buffer: Buffer; rung: DesignRung } | null> {
+    const container = await extractContainerPreview(input);
+    if (container) {
+      return { buffer: container, rung: 'container' };
+    }
+    for (const tag of DESIGN_PREVIEW_TAGS) {
+      try {
+        return { buffer: await exiftool.extractBinaryTagToBuffer(tag, input), rung: 'embedded' };
+      } catch (error: any) {
+        this.logger.debug(`Could not extract ${tag} from design file: ${error}`);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * FL-1358: the one ladder a design file is shown by. A format libvips opens is rendered; when that fails, or
+   * for any other format, the picture the file carries is used; with neither there is nothing to show, which is
+   * `DesignPreviewUnavailableError` and never damage.
+   */
+  private async onDesignLadder<T extends object>(
+    input: string,
+    run: (source: string | Buffer) => Promise<T>,
+    /** Whether the operation only decodes, so that any failure of its own is the file not opening. */
+    decodeOnly: boolean,
+  ): Promise<T & { designRung: DesignRung }> {
+    if (isRenderedDesign(input)) {
+      try {
+        return { ...(await run(input)), designRung: 'rendered' };
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        // Only a file the renderer could not open, or one too large for it, steps down. A worker that stopped,
+        // or a thumbnail that could not be written, is not the file's doing and is retried as it is.
+        const stepsDown =
+          error instanceof SharpResourceLimitError ||
+          (error instanceof SharpOperationError && (decodeOnly || error.decodeFailure));
+        if (!stepsDown) {
+          throw error;
+        }
+        this.logger.debug(`Design file was not rendered, looking for its own preview: ${error.message}`);
+      }
+    }
+    const preview = await this.extractDesignPreview(input);
+    if (!preview) {
+      throw new DesignPreviewUnavailableError(input);
+    }
+    return { ...(await run(preview.buffer)), designRung: preview.rung };
   }
 
   async writeExif(tags: Partial<Exif>, output: string): Promise<boolean> {
@@ -275,7 +422,10 @@ export class MediaRepository {
   async decodeImage(
     input: string | Buffer,
     options: DecodeToBufferOptions,
-  ): Promise<Omit<SharpResult<'decodeImage'>, 'rung'> & { rung?: StillRung }> {
+  ): Promise<Omit<SharpResult<'decodeImage'>, 'rung'> & { rung?: StillRung; designRung?: DesignRung }> {
+    if (typeof input === 'string' && !options.raw && mimeTypes.isDesign(input)) {
+      return this.onDesignLadder(input, (source) => sharpProcessPool.run('decodeImage', [source, options]), true);
+    }
     return this.stillLadder(
       input,
       options,
@@ -290,8 +440,15 @@ export class MediaRepository {
 
   async generateImageThumbnails(
     ...args: SharpArguments<'generateImageThumbnails'>
-  ): Promise<Omit<SharpResult<'generateImageThumbnails'>, 'rung'> & { rung?: StillRung }> {
+  ): Promise<Omit<SharpResult<'generateImageThumbnails'>, 'rung'> & { rung?: StillRung; designRung?: DesignRung }> {
     const [input, options, batch] = args;
+    if (typeof input === 'string' && !options.raw && mimeTypes.isDesign(input)) {
+      return this.onDesignLadder(
+        input,
+        (source) => sharpProcessPool.run('generateImageThumbnails', [source, options, batch]),
+        false,
+      );
+    }
     return this.stillLadder(
       input,
       options,
@@ -358,13 +515,17 @@ export class MediaRepository {
         const output = join(folder, `${rung}${extension}`);
         try {
           await convert(source, output, executionSignal());
+        } catch (error) {
+          executionSignal()?.throwIfAborted();
+          this.logger.debug(`Could not open ${input} with ${rung}: ${error}`);
+          continue;
+        }
+        try {
           return { ...(await decode(output, converted)), rung };
         } catch (error) {
           executionSignal()?.throwIfAborted();
-          if (error instanceof SharpResourceLimitError) {
-            throw error;
-          }
-          this.logger.debug(`Could not open ${input} with ${rung}: ${error}`);
+          this.rethrowUnlessDecodeFailure(error, isDecodeFailure);
+          this.logger.debug(`Could not read what ${rung} made of ${input}: ${error}`);
         }
       }
     } finally {
@@ -377,11 +538,19 @@ export class MediaRepository {
           return { ...(await decode(preview, converted)), rung: 'embedded' };
         } catch (error) {
           executionSignal()?.throwIfAborted();
+          this.rethrowUnlessDecodeFailure(error, isDecodeFailure);
           this.logger.debug(`Could not open the preview inside ${input}: ${error}`);
         }
       }
     }
     throw new SharpOperationError(`Unsupported image: no decoder could open it (${failure.message})`, true);
+  }
+
+  /** Over a limit, a full drive, a preview that could not be written: none of that is the photo's fault. */
+  private rethrowUnlessDecodeFailure(error: unknown, isDecodeFailure: (error: SharpOperationError) => boolean) {
+    if (!(error instanceof SharpOperationError) || !isDecodeFailure(error)) {
+      throw error;
+    }
   }
 
   private async readOrientation(input: string): Promise<ExifOrientation> {

@@ -159,6 +159,11 @@ export interface VideoStreamInfo {
    * markers: the generated LUT that turns this Log stream into Rec.709. Never persisted.
    */
   logConversion?: LogConversion | null;
+  /**
+   * FL-1357: set only by the playback-copy job, for a Dolby Vision profile 5 stream on a server whose
+   * ffmpeg can run libplacebo: the copy is reshaped and tone mapped by that filter. Never persisted.
+   */
+  dolbyVisionReshape?: boolean;
 }
 
 /** FL-1285: how a Log stream is converted to Rec.709 in an ffmpeg filter chain. */
@@ -872,6 +877,26 @@ export type JobItem =
         manual?: boolean;
       };
     }
+  /** FL-819: a Frameleaf event, handed to each of its owner's workflows that start on it */
+  | {
+      name: JobName.WorkflowEventDispatch;
+      data: { event: import('src/utils/workflow-event.js').FrameleafEventOccurrence };
+    }
+  /** FL-819: one workflow run for one Frameleaf event; the same event and workflow always share its ids */
+  | {
+      name: JobName.WorkflowEventTrigger;
+      data: {
+        workflowId: string;
+        event: import('src/utils/workflow-event.js').FrameleafEventOccurrence;
+        runId: string;
+        executionId: string;
+        attempt?: number;
+        /** The automatic retry starts at the step that failed. */
+        fromStepId?: string;
+        /** The complete definition when the run was queued; a changed workflow does not run it. */
+        definitionSha256?: string;
+      };
+    }
 
   // Integrity
   | { name: JobName.IntegrityUntrackedFilesQueueAll; data?: IIntegrityJob }
@@ -1231,6 +1256,8 @@ export type FrameleafCloudBackup = {
   lastRestore?: FrameleafCloudBackupRestore;
   /** FL-164: a scheduled run found the bucket busy; it starts when the operation holding it ends. */
   scheduledRunDueAt?: string;
+  /** FL-879: a scheduled restore drill found the bucket busy; it starts once the operation holding it ends. */
+  drillDueAt?: string;
 };
 
 /** FL-164: one restore from a manifest. Counts are files; `databaseFile` is the dump's name in `<media>/backups`. */
@@ -1713,6 +1740,8 @@ export type BackupRestoreVerification = {
   metadataVerifiedAt?: string | null;
   originalsVerifiedAt?: string | null;
   verifiedBy?: string | null;
+  /** FL-879: the passing restore drill that recorded this, rather than an administrator by hand. */
+  drillReportId?: string | null;
 };
 
 /**

@@ -1,6 +1,7 @@
+import { setUserOnboarding } from '@frameleaf/sdk';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { loginDto } from 'src/fixtures.js';
-import { baseUrl, utils } from 'src/utils.js';
+import { asBearerAuth, baseUrl, utils } from 'src/utils.js';
 
 // FL-859: add, use and remove a passkey in the browser, with Chrome's virtual authenticator. The page is
 // opened on localhost: the one plain http address browsers (and the server) allow passkeys on.
@@ -31,6 +32,8 @@ test.describe('Passkeys', () => {
     utils.initSdk();
     await utils.resetDatabase();
     ({ accessToken } = await utils.adminSetup());
+    // account setup done, so a sign-in lands on the Library
+    await setUserOnboarding({ onboardingDto: { isOnboarded: true } }, { headers: asBearerAuth(accessToken) });
   });
 
   test('adds a passkey, signs in with it and removes it', async ({ context, page }) => {
@@ -49,10 +52,26 @@ test.describe('Passkeys', () => {
     await expect(page.getByText('“Test laptop” is added.', { exact: false })).toBeVisible();
     await expect(page.getByText('Test laptop', { exact: true })).toBeVisible();
 
-    // signed out, the passkey signs in straight away (no password, no two-step code)
+    // signed out, the passkey signs in straight away (no password, no two-step code). The virtual
+    // authenticator answers the sign-in page's passkey autofill at once, so the page can sign in before
+    // the button is pressed: press it only while the page is still asking.
     await context.clearCookies();
+    // FL-1377: the virtual authenticator answers the email field's saved-passkey offer by itself (a real
+    // browser waits for a pick from its suggestions), signing in before the button can be clicked. The
+    // offer is off here, so the button is what signs in.
+    await page.addInitScript(() => {
+      PublicKeyCredential.isConditionalMediationAvailable = () => Promise.resolve(false);
+    });
     await page.goto(`${local}/auth/login`);
-    await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
+    const button = page.getByRole('button', { name: 'Sign in with a passkey' });
+    const pressWhileAsking = async () => {
+      try {
+        await button.click();
+      } catch {
+        // the page signed in and moved on before the button could be pressed
+      }
+    };
+    await Promise.race([page.waitForURL(/\/photos/), pressWhileAsking()]);
     await page.waitForURL(/\/photos/);
 
     await page.goto(`${local}/user-settings?area=privacy&section=passkeys`);

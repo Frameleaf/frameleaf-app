@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import {
   BadRequestException,
   ConflictException,
@@ -1933,12 +1934,30 @@ export class StudioExportService {
     });
   }
 
-  private schedulePublishedNotification(
+  private async schedulePublishedNotification(
     tx: Transaction<DB>,
     version: StudioExportVersion,
     label: string,
   ): Promise<void> {
-    return this.jobs.queueInTransaction(tx, {
+    // FL-819: workflows that start on a finished export; queued with the publication, so once. An
+    // export of Locked or sensitive media is never announced, whatever scope it was saved to.
+    const privacy = (version.privacy ?? {}) as { lockReason?: string | null; sensitive?: boolean };
+    if (!privacy.lockReason && privacy.sensitive !== true)
+      await this.jobs.queueInTransaction(tx, {
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: {
+            trigger: WorkflowTrigger.StudioExportCompleted,
+            ownerId: version.ownerId,
+            deliveryId: `studio-export:${version.id}`,
+            occurredAt: new Date().toISOString(),
+            subject: { kind: 'studio-export', id: version.id, name: label.trim() || null },
+            detail: { projectId: version.projectId, format: version.outputContentType },
+            privacyAssetIds: version.resultAssetId ? [version.resultAssetId] : [],
+          },
+        },
+      });
+    await this.jobs.queueInTransaction(tx, {
       name: JobName.PushDeliver,
       data: {
         notice: {

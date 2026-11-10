@@ -252,6 +252,7 @@
       initial={editing.draft}
       methods={pluginManager.methods}
       triggers={pluginManager.triggers}
+      eventTriggers={pluginManager.eventTriggers}
       templates={pluginManager.templates}
       {onSaved}
       {onDeleted}

@@ -7,10 +7,14 @@
 //   kind     decode entry point                                             rungs
 //   still    MediaRepository.decodeImage: the still ladder (FL-1356)        strict | lenient | djpeg | jxrlib |
 //                                                                           magick | ffmpeg | embedded
-//   design   the same as still (ImageMagick behind libvips today)           as still
-//   raw      renderRawWithLibRaw, then a full 16-bit decode of its TIFF     libraw
+//   design   MediaRepository.decodeImage, which runs the design ladder      rendered | container | embedded | placeholder
+//            (FL-1358); a rendering that comes out one flat colour is a failure
+//   raw      MediaRepository.renderRaw, the RAW ladder (FL-1355)            libraw | darktable | preview
 //   video    MediaRepository.probe, then ffmpeg decodes the first frame     ffmpeg
 //   font     libvips text with the font file (no server entry point yet)    specimen
+//
+// Two optional facts: `pages` (what libvips counts in a PDF or Illustrator file) and `fireworks` (whether a
+// PNG carries Fireworks' editable data).
 //
 // `integrity` is MediaIntegrityService.validate({ deep: true }) said in the product's words:
 //   healthy | cut-short (service: corrupt) | unsupported | couldnt-check (transient, timeout)
@@ -27,6 +31,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { availableParallelism } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -53,7 +58,7 @@ const { MediaRepository } = await load('repositories/media.repository.js');
 const { StorageRepository } = await load('repositories/storage.repository.js');
 const { CryptoRepository } = await load('repositories/crypto.repository.js');
 const { MediaIntegrityService } = await load('services/media-integrity.service.js');
-const { renderRawWithLibRaw } = await load('utils/raw-renderer.js');
+const { DesignPreviewUnavailableError, isFireworksPng } = await load('utils/design-preview.js');
 
 const logger = LoggingRepository.create();
 const media = new MediaRepository(logger);
@@ -64,8 +69,15 @@ const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest(
 const decoders = {
   async still(file, { matches } = {}) {
     const decode = (path) => media.decodeImage(path, { colorspace: 'srgb', processInvalidImages: false });
-    const { data, info, rung } = await decode(file);
-    const decoded = { rung, width: info.width, height: info.height };
+    const { data, info, rung, designRung } = await decode(file);
+    if (designRung) {
+      // A document saved without its flat picture must still show its layers, not the white stand-in.
+      assert.ok(
+        data.some((value) => value !== data[0]),
+        'rendered as one flat colour',
+      );
+    }
+    const decoded = { rung: designRung ?? rung, width: info.width, height: info.height };
     if (matches) {
       const small = (pixels) =>
         sharp(pixels.data, {
@@ -83,23 +95,29 @@ const decoders = {
     return decoded;
   },
   async raw(file) {
-    // The checks verify-raw.mjs makes: LibRaw from /usr/local, real 16-bit TIFF bytes with a profile,
-    // every pixel decoded, and the original left untouched.
+    // The server's own RAW ladder (MediaRepository.renderRaw). On the libraw rung, the checks
+    // verify-raw.mjs makes: LibRaw from /usr/local, real 16-bit TIFF bytes with a profile, every pixel
+    // decoded. On the darktable and preview rungs, the picture must decode. The original is never touched.
     const linkage = (await run('ldd', ['/usr/local/bin/dcraw_emu'])).stdout;
     assert.match(linkage, /libraw(?:_r)?\.so.*=> \/usr\/local\/lib\//);
     assert.doesNotMatch(linkage, /not found/);
     const before = sha256(file);
-    const tiff = await renderRawWithLibRaw(file);
-    assert.ok(['49492a00', '4d4d002a'].includes(tiff.subarray(0, 4).toString('hex')), 'not TIFF bytes');
-    const metadata = await sharp(tiff).metadata();
-    assert.equal(metadata.depth, 'ushort', 'sensor rendering must retain 16-bit channels');
-    assert.ok(metadata.icc?.length, 'sensor rendering must embed its output profile');
-    const { info } = await sharp(tiff)
-      .toColourspace('rgb16')
-      .raw({ depth: 'ushort' })
-      .toBuffer({ resolveWithObject: true });
-    assert.equal(sha256(file), before, 'sensor rendering must preserve the original');
-    return { rung: 'libraw', width: info.width, height: info.height };
+    const { rung, buffer } = await media.renderRaw(file, { threads: availableParallelism() });
+    let info;
+    if (rung === 'libraw') {
+      assert.ok(['49492a00', '4d4d002a'].includes(buffer.subarray(0, 4).toString('hex')), 'not TIFF bytes');
+      const metadata = await sharp(buffer).metadata();
+      assert.equal(metadata.depth, 'ushort', 'sensor rendering must retain 16-bit channels');
+      assert.ok(metadata.icc?.length, 'sensor rendering must embed its output profile');
+      ({ info } = await sharp(buffer)
+        .toColourspace('rgb16')
+        .raw({ depth: 'ushort' })
+        .toBuffer({ resolveWithObject: true }));
+    } else {
+      ({ info } = await media.decodeImage(buffer, { colorspace: 'srgb', processInvalidImages: false }));
+    }
+    assert.equal(sha256(file), before, 'rendering must preserve the original');
+    return { rung, width: info.width, height: info.height };
   },
   async video(file) {
     const [stream] = (await media.probe(file)).videoStreams;
@@ -129,7 +147,15 @@ const decoders = {
     return { rung: 'specimen' };
   },
 };
-decoders.design = decoders.still;
+// FL-1358: a design file goes down its own ladder inside decodeImage; one with no picture inside is kept
+// and shown by the plain tile, which is a result, not a failure.
+decoders.design = (file, options) =>
+  decoders.still(file, options).catch((error) => {
+    if (error instanceof DesignPreviewUnavailableError) {
+      return { rung: 'placeholder' };
+    }
+    throw error;
+  });
 
 const verdicts = {
   healthy: 'healthy',
@@ -172,6 +198,17 @@ for (const fixture of manifest.fixtures) {
     deep: true,
   });
   const actual = { decodes: !!decoded, ...decoded, integrity: verdicts[result.status] ?? result.status };
+  if ('pages' in expected) {
+    actual.pages =
+      (
+        await sharp(path)
+          .metadata()
+          .catch(() => ({}))
+      ).pages ?? 1;
+  }
+  if ('fireworks' in expected) {
+    actual.fireworks = await isFireworksPng(path);
+  }
 
   if (printActual) {
     console.log(

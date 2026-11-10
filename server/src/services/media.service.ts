@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import type { ThumbnailOutput } from 'src/queue/sharp-operations.js';
 import type { AssetEditRepository, VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
@@ -38,6 +39,7 @@ import {
   ChecksumAlgorithm,
   ColorMatrix,
   Colorspace,
+  DvProfile,
   FrameleafWorker,
   ImageFormat,
   JobName,
@@ -71,6 +73,7 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
+import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { straightenScale } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
@@ -94,6 +97,7 @@ import {
   type DecodeQualification,
   DecodeSupport,
   assertDecodeQualified,
+  isUndecodableError,
   qualifySourceDecode,
   selectDecodeAcceleration,
 } from 'src/utils/media-decode.js';
@@ -130,7 +134,7 @@ import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.j
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
-import { RawRenderError, type RawRenderFailure, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, type RawRenderFailure } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
 import {
@@ -154,6 +158,12 @@ const FILTER_DECIMAL_PLACES = 4;
 /** FL-1324: once the thumbnails drive was full, this much room lets thumbnails carry on. */
 const THUMBNAIL_ROOM_TO_RESUME_BYTES = 1_000_000_000;
 // A RAW the renderer could open the file for but not read. Missing tools, limits and I/O trouble retry instead.
+/**
+ * FL-1355: the RAW decoder the server last started with.
+ * ponytail: a plain key, not a SystemMetadataKey member, because src/enum.ts is pinned by the schema catalog;
+ * move it into the enum with the next catalog capture.
+ */
+export const RAW_DECODER_VERSION_KEY = 'raw-decoder-version' as SystemMetadataKey;
 const DECODE_RAW_REASONS: ReadonlySet<RawRenderFailure> = new Set(['unsupported', 'damaged', 'decode_failed']);
 const DRIVE_FULL_CODES = new Set(['ENOSPC', 'EDQUOT']);
 /** Sharp and ffmpeg run in child processes, so a full drive often reaches here only as their message. */
@@ -255,6 +265,30 @@ export class MediaService extends BaseService {
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
     this.videoInterfaces = await this.storageCore.getVideoInterfaces();
+    await this.retryRawAfterDecoderUpdate().catch((error) =>
+      this.logger.warn(`Could not check for a RAW decoder update: ${error}`),
+    );
+  }
+
+  /**
+   * FL-1355: files showing the camera's preview, or nothing, because the decoder could not render them get
+   * another try when the server starts with a different decoder. The first start only notes the version.
+   */
+  private async retryRawAfterDecoderUpdate() {
+    const version = (await this.serverInfoRepository.getBuildVersions()).libraw;
+    if (!version) {
+      return;
+    }
+    const last = (await this.systemMetadataRepository.get(RAW_DECODER_VERSION_KEY)) as { version?: string } | null;
+    if (last?.version === version) {
+      return;
+    }
+    if (last) {
+      const ids = await this.assetJobRepository.getRawRungAssetIds();
+      this.logger.log(`RAW decoder changed to ${version}: trying ${ids.length} files again`);
+      await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.AssetGenerateThumbnails, data: { id } })));
+    }
+    await this.systemMetadataRepository.set(RAW_DECODER_VERSION_KEY, { version } as never);
   }
 
   @OnJob({ name: JobName.AssetGenerateThumbnailsQueueAll, queue: QueueName.ThumbnailGeneration })
@@ -436,7 +470,16 @@ export class MediaService extends BaseService {
 
     let thumbhash: Buffer | undefined = generated?.thumbhash;
     if (!thumbhash) {
-      thumbhash = (await this.extractOriginalImage(asset, config.image)).thumbhash;
+      thumbhash = (
+        await this.extractOriginalImage(
+          asset,
+          config.image,
+          false,
+          undefined,
+          undefined,
+          config.job.thumbnailGeneration.concurrency,
+        )
+      ).thumbhash;
     }
 
     if (
@@ -581,6 +624,8 @@ export class MediaService extends BaseService {
       this.logger.verbose(`Thumbnail generation for video ${id} ${asset.originalPath}`);
       let videoStream: VideoStreamInfo | null = asset.videoStream;
       let format = fromStoredFormat(asset.format);
+      // FL-1357: cinema RAW has no open decoder. It is tried once; what fails is "can't play here yet", not an error.
+      const cinemaRaw = mimeTypes.isCinemaRaw(asset.originalPath);
       if (!videoStream || !format) {
         this.logger.warn(`Missing persisted video metadata for asset ${asset.id}; probing ${asset.originalPath}`);
         const exists = await this.storageRepository.checkFileExists(asset.originalPath);
@@ -593,15 +638,29 @@ export class MediaService extends BaseService {
         try {
           videoInfo = await this.mediaRepository.probe(asset.originalPath);
         } catch (error) {
+          executionSignal()?.throwIfAborted();
+          if (cinemaRaw && isUndecodableError(error)) {
+            this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
+            return JobStatus.Skipped;
+          }
           throw new Error(`Failed to probe video metadata for asset ${asset.id}: ${(error as Error).message}`, {
             cause: error,
           });
+        }
+        if (videoInfo.videoStreams.length === 0) {
+          // FL-1357: sound only (a voice memo saved as .mp4, say). Nothing to picture, and nothing wrong with it.
+          this.logger.log(`No thumbnail for ${asset.id}: the file has no picture track`);
+          return JobStatus.Skipped;
         }
         videoStream = videoInfo?.videoStreams[0] ?? null;
         format = videoInfo?.format ?? null;
       }
 
       if (!videoStream || !format || !videoStream.timeBase) {
+        if (cinemaRaw) {
+          this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
+          return JobStatus.Skipped;
+        }
         throw new Error(`Missing video metadata for asset ${asset.id}`);
       }
       // FL-968: a raw 360° original is thumbnailed from its stitched, equirectangular picture
@@ -611,29 +670,47 @@ export class MediaService extends BaseService {
         make: asset.exifInfo.make,
         model: asset.exifInfo.model,
       });
-      generated = await this.generateVideoThumbnails(
-        {
-          id: asset.id,
-          ownerId: asset.ownerId,
-          originalPath: asset.originalPath,
-          checksum: asset.checksum,
-          videoStream,
-          format,
-        },
-        config,
-        // FL-59: a cover the owner chose from the video's moments is where its thumbnail is cut.
-        {
-          coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined,
-          stitch,
-          sidecarOriginal: storedOriginalPath,
-        },
-      );
+      try {
+        generated = await this.generateVideoThumbnails(
+          {
+            id: asset.id,
+            ownerId: asset.ownerId,
+            originalPath: asset.originalPath,
+            checksum: asset.checksum,
+            videoStream,
+            format,
+          },
+          config,
+          // FL-59: a cover the owner chose from the video's moments is where its thumbnail is cut.
+          {
+            coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined,
+            stitch,
+            sidecarOriginal: storedOriginalPath,
+          },
+        );
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        if (!cinemaRaw || isLockedKeyUnavailable(error) || !isUndecodableError(error)) {
+          throw error;
+        }
+        // ponytail: the nightly missing-thumbnails pass tries it again (one quick ffmpeg run); record a
+        // "skipped for this checksum" marker like transcodeSkippedFor if that ever costs anything.
+        this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
+        return JobStatus.Skipped;
+      }
     } else if (asset.type === AssetType.Image) {
       this.logger.verbose(`Thumbnail generation for image ${id} ${asset.originalPath}`);
       try {
         generated = await this.generateImageThumbnails(asset, config);
       } catch (error) {
         executionSignal()?.throwIfAborted();
+        if (error instanceof DesignPreviewUnavailableError) {
+          // FL-1358: a design file with no picture inside is kept as it is and shown by the plain tile. Nothing is
+          // wrong with it, so it is not sent to Library care.
+          // ponytail: looked at again whenever missing thumbnails are queued; record the answer if that ever costs.
+          this.logger.verbose(`No preview for design file ${id}: ${error.message}`);
+          return JobStatus.Skipped;
+        }
         if (handOffDamage && this.isDecodeError(error)) {
           // FL-1337: a photo that won't open goes to Library care, which names the cause and repairs what it can.
           // Thumbnails are queued again after a fix, and their follow-up work runs then.
@@ -643,6 +720,12 @@ export class MediaService extends BaseService {
             data: { id: asset.id, from: 'preview', message: error.message },
           });
           noteJobHandedToCare();
+          return JobStatus.Skipped;
+        }
+        if (error instanceof RawRenderError && error.ladderExhausted) {
+          // FL-1355: a RAW file is kept and listed under RAW support; out of time or memory is not a reason to
+          // set it aside. It is tried again when the decoder is updated.
+          this.logger.warn(`No picture yet for RAW asset ${id}: ${error.reason}`);
           return JobStatus.Skipped;
         }
 
@@ -679,10 +762,31 @@ export class MediaService extends BaseService {
     return extracted;
   }
 
-  private async renderRawImage(originalPath: string) {
+  /**
+   * FL-1355: a RAW original through the ladder (`mediaRepository.renderRaw`). Without a full-size rendition to
+   * make, the sensor is rendered at half size when that still covers the preview. Edits are drawn on the sensor
+   * picture, so they never take the camera's preview.
+   */
+  private async renderRawImage(
+    asset: ThumbnailAsset,
+    image: SystemConfig['image'],
+    { fullsize, useEdits, concurrency }: { fullsize: boolean; useEdits: boolean; concurrency: number },
+  ) {
     const signal = executionSignal();
     signal?.throwIfAborted();
-    return { buffer: await renderRawWithLibRaw(originalPath, signal), format: RawExtractedFormat.Tiff };
+    const { exifImageWidth: width, exifImageHeight: height } = asset.exifInfo;
+    const rendered = await this.mediaRepository.renderRaw(asset.originalPath, {
+      signal,
+      pixels: width && height ? width * height : undefined,
+      // the preview size is measured on the short edge (`shouldUseExtractedImage`)
+      halfSize: !fullsize && !!width && !!height && Math.min(width, height) / 2 >= image.preview.size,
+      // The processors are shared between the thumbnail jobs running at once.
+      threads: Math.max(1, Math.floor(availableParallelism() / Math.max(1, concurrency))),
+    });
+    if (rendered.rung === 'preview' && useEdits && rendered.failure) {
+      throw rendered.failure;
+    }
+    return rendered;
   }
 
   /**
@@ -706,9 +810,9 @@ export class MediaService extends BaseService {
     useEdits = false,
     outputs?: Record<'thumbnail' | 'preview' | 'fullsize', ThumbnailOutput>,
     sdrBase?: string,
+    concurrency = 1,
   ) {
-    // PSD is in the legacy RAW extension list, but is a layered image, not sensor data.
-    const isRaw = mimeTypes.isRaw(asset.originalFileName) && !asset.originalFileName.toLowerCase().endsWith('.psd');
+    const isRaw = mimeTypes.isRaw(asset.originalFileName);
     const generateFullsize =
       !!sdrBase ||
       (mimeTypes.isWebSupportedImage(asset.originalPath) && asset.exifInfo.imageEncoding?.dynamicRange !== 'sdr') ||
@@ -727,10 +831,14 @@ export class MediaService extends BaseService {
           })
         : null;
     let sensorRendered = false;
-    if (isRaw && !extracted) {
-      extracted = await this.renderRawImage(asset.originalPath);
-      sensorRendered = true;
-    }
+    // Set once the ladder has run: the decoder's failure when it ended on the camera's preview.
+    let ladder: { failure?: RawRenderError } | undefined;
+    const climbLadder = async () => {
+      const rendered = await this.renderRawImage(asset, image, { fullsize: generateFullsize, useEdits, concurrency });
+      extracted = { buffer: rendered.buffer, format: RawExtractedFormat.Tiff };
+      sensorRendered = rendered.rung !== 'preview';
+      ladder = { failure: sensorRendered ? undefined : rendered.failure };
+    };
 
     const colorspace = this.isSRGB(asset.exifInfo) ? Colorspace.Srgb : image.colorspace;
     const decodeSource = () => {
@@ -751,24 +859,75 @@ export class MediaService extends BaseService {
         })
         .then((decoded) => ({ ...decoded, convertFullsize }));
     };
+    const decodeLadder = async () => {
+      await climbLadder();
+      try {
+        return await decodeSource();
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        if (!(error instanceof SharpOperationError) || !error.decodeFailure) {
+          throw error;
+        }
+        let failure = ladder?.failure;
+        if (!failure && !useEdits) {
+          // A sensor render the image worker cannot open is a failed rung too: the camera's picture is next.
+          failure = new RawRenderError('decode_failed', 'ERR_RAW_DECODE', error);
+          const embedded = await this.mediaRepository.extract(asset.originalPath);
+          if (embedded) {
+            extracted = embedded;
+            sensorRendered = false;
+            ladder = { failure };
+            return await decodeSource().catch((error: unknown) => {
+              if (!(error instanceof SharpOperationError) || !error.decodeFailure) {
+                throw error;
+              }
+              failure!.ladderExhausted = true;
+              throw failure;
+            });
+          }
+        }
+        if (!failure) {
+          throw error;
+        }
+        // The ladder's last rung, the camera's preview, does not open either.
+        failure.ladderExhausted = true;
+        throw failure;
+      }
+    };
     let decoded: Awaited<ReturnType<typeof decodeSource>>;
     try {
-      decoded = await decodeSource();
-    } catch (error) {
-      executionSignal()?.throwIfAborted();
-      if (!(error instanceof SharpOperationError) || !error.decodeFailure || !isRaw || sensorRendered) {
-        throw error;
+      try {
+        decoded = await (isRaw && !extracted ? decodeLadder() : decodeSource());
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        if (!(error instanceof SharpOperationError) || !error.decodeFailure || !isRaw || ladder) {
+          throw error;
+        }
+        // An unreadable embedded preview gets one trip down the ladder, never a repeated repository/CLI fallback.
+        decoded = await decodeLadder();
       }
-      // An unreadable embedded preview gets one sensor attempt, never a repeated repository/CLI fallback.
-      extracted = await this.renderRawImage(asset.originalPath);
-      sensorRendered = true;
-      decoded = await decodeSource();
+    } catch (error) {
+      if (error instanceof RawRenderError && error.ladderExhausted && !useEdits) {
+        // with the job's own result, so a run that is not accepted leaves the record as it was
+        const rung = `placeholder/${error.reason}`;
+        await publishJobResult(() => this.assetJobRepository.setRawRung(asset.id, rung));
+      }
+      throw error;
+    }
+    if (ladder && !useEdits) {
+      const { failure } = ladder as { failure?: RawRenderError };
+      const rung = failure ? `embedded/${failure.reason}` : null;
+      await publishJobResult(() => this.assetJobRepository.setRawRung(asset.id, rung));
     }
 
     return decoded;
   }
 
-  private async generateImageThumbnails(asset: ThumbnailAsset, { image }: SystemConfig, useEdits: boolean = false) {
+  private async generateImageThumbnails(
+    asset: ThumbnailAsset,
+    { image, job }: SystemConfig,
+    useEdits: boolean = false,
+  ) {
     const previewFile = this.getImageFile(asset, {
       fileType: AssetFileType.Preview,
       format: image.preview.format,
@@ -877,6 +1036,7 @@ export class MediaService extends BaseService {
         },
       },
       hdrMaster,
+      job.thumbnailGeneration.concurrency,
     );
     const files = convertFullsize ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile];
     files.push(...hdrFiles);
@@ -1448,6 +1608,17 @@ export class MediaService extends BaseService {
     const { videoStream } = asset;
     const format = fromStoredFormat(asset.format);
     const audioStream = asset.audioStream ?? undefined;
+    // FL-1357: cinema RAW has no open decoder, and a file with sound only has no picture to copy. Neither is
+    // an error: there is no playback copy, the original stays as it is, and nothing is retried or set aside.
+    const cinemaRaw = mimeTypes.isCinemaRaw(asset.originalPath);
+    if (cinemaRaw && (!videoStream || !format || !videoStream.height || !videoStream.width)) {
+      this.logger.log(`No playback copy for cinema RAW ${asset.id}: this server has no decoder for it`);
+      return JobStatus.Skipped;
+    }
+    if (format && !videoStream) {
+      this.logger.log(`No playback copy for asset ${asset.id}: the file has no picture track`);
+      return JobStatus.Skipped;
+    }
     if (!videoStream || !format) {
       this.logger.warn(`Skipped transcoding for asset ${asset.id}: missing metadata; re-run extraction first`);
       return JobStatus.Failed;
@@ -1462,7 +1633,12 @@ export class MediaService extends BaseService {
 
     // FL-101: classify the source before the output directory exists, so a refusal leaves any
     // existing proxy untouched and the original is never the thing that changes.
-    const qualification = qualifySourceDecode(videoStream, ffmpeg);
+    // FL-1357: a playback copy may show the HDR10 base layer of profile 7 by itself. Profile 5 is the one
+    // source that needs libplacebo, so only it asks whether that runs here.
+    const qualification = qualifySourceDecode(videoStream, ffmpeg, {
+      baseLayerOnly: true,
+      libplacebo: videoStream.dvProfile === DvProfile.Dvhe05 && (await this.mediaRepository.hasLibplacebo()),
+    });
     if (qualification.support === DecodeSupport.Refused) {
       this.logger.warn(`Skipped transcoding for asset ${asset.id}: ${qualification.reason}`);
       return JobStatus.Skipped;
@@ -1493,6 +1669,9 @@ export class MediaService extends BaseService {
     const lockedOriginal = await isLockedPath(asset.originalPath);
     let stream =
       checkLog && !lockedOriginal ? await this.attachLogConversion(asset.originalPath, videoStream) : videoStream;
+    if (qualification.reshapeDolbyVision) {
+      stream = { ...stream, dolbyVisionReshape: true };
+    }
     if (stream.logConversion) {
       ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
     }
@@ -1556,6 +1735,10 @@ export class MediaService extends BaseService {
       } catch (error: any) {
         this.logger.error(`Error occurred during transcoding: ${error.message}`);
         if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
+          if (cinemaRaw && !isUndecodableError(error)) {
+            // a full drive or a read error is not a missing decoder: fail, so the copy is tried again
+            throw error;
+          }
           return false;
         }
 
@@ -1582,8 +1765,18 @@ export class MediaService extends BaseService {
         }
       }
       return true;
+    }).catch((error) => {
+      executionSignal()?.throwIfAborted();
+      if (!cinemaRaw || isLockedKeyUnavailable(error) || !isUndecodableError(error)) {
+        throw error;
+      }
+      return false;
     });
     if (!encoded) {
+      if (cinemaRaw) {
+        this.logger.log(`No playback copy for cinema RAW ${asset.id}: this server has no decoder for it`);
+        return JobStatus.Skipped;
+      }
       return JobStatus.Failed;
     }
 
@@ -3338,7 +3531,11 @@ export class MediaService extends BaseService {
     const isTargetVideoCodec = ffmpegConfig.acceptedVideoCodecs.includes(stream.codecName as VideoCodec);
     // FL-1285: Log footage played as it is looks flat and grey, so its playback copy is always made
     // (unless playback copies are switched off altogether).
-    const isRequired = !isTargetVideoCodec || !stream.pixelFormat.endsWith('420p') || !!stream.logConversion;
+    const isRequired =
+      !isTargetVideoCodec ||
+      !stream.pixelFormat.endsWith('420p') ||
+      !!stream.logConversion ||
+      !!stream.dolbyVisionReshape;
 
     switch (ffmpegConfig.transcode) {
       case TranscodePolicy.Disabled: {

@@ -422,11 +422,19 @@ export class SharpOperations {
     }
   }
 
-  /** The JPEG that starts within the first mebibyte of a file whose first bytes are something else. */
+  /**
+   * The JPEG that starts within the first mebibyte of a file whose first bytes are something else. Only
+   * junk may come before it: when an Exif or JFIF-extension header does, the file's own start is damaged
+   * and the marker found is the small preview inside that header, which is not the picture.
+   */
   private async jpegBehindJunk(input: string): Promise<Buffer | null> {
     const bytes = await imageHdrInput(input, this.maxBytes);
     const start = bytes.subarray(0, 1024 * 1024).indexOf(JPEG_START);
-    return start > 0 ? bytes.subarray(start) : null;
+    if (start <= 0) {
+      return null;
+    }
+    const before = bytes.subarray(0, start);
+    return before.includes('Exif\0') || before.includes('JFXX\0') ? null : bytes.subarray(start);
   }
 
   async extractAssetPalette(input: string | Buffer, options: DecodeToBufferOptions) {
@@ -808,6 +816,8 @@ export class SharpOperations {
       limitInputPixels: this.maxPixels,
       raw: options.raw,
       unlimited: true,
+      // FL-1358: a PDF or Illustrator page is drawn at twice screen resolution; its first page is the picture.
+      density: typeof input === 'string' && /\.(pdf|ai)$/i.test(input) ? 144 : undefined,
     })
       .pipelineColorspace(options.colorspace === 'srgb' ? 'srgb' : 'rgb16')
       .withIccProfile(options.colorspace);

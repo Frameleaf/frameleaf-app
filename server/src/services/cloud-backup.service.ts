@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import {
   BadRequestException,
   ConflictException,
@@ -45,6 +46,7 @@ import {
 import {
   CloudBackupCheckDto,
   CloudBackupCheckResponseDto,
+  CloudBackupDrillDto,
   CloudBackupEscrowDto,
   CloudBackupGeneratedKeyDto,
   CloudBackupManifestAlbum,
@@ -85,6 +87,10 @@ import {
 } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import {
+  type BackupRestoreReport,
+  BackupRestoreReportRepository,
+} from 'src/repositories/backup-restore-report.repository.js';
 import {
   CloudBackupAsset,
   CloudBackupEntry,
@@ -129,6 +135,15 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { CloudBackupChoices } from 'src/services/cloud-backup-choices.js';
 import { CloudBackupCoverage, type RunReportOutcome } from 'src/services/cloud-backup-coverage.js';
 import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
+import {
+  DRILL_FAILED_BACKOFF_MS,
+  DRILL_FAILURE_WORDS,
+  DRILL_INTERVAL_DAYS,
+  type DrillOutcome,
+  type DrillStep,
+  drillOutcomeOf,
+  runRestoreDrill,
+} from 'src/services/cloud-backup-drill.js';
 import {
   type LostOriginalRestore,
   type LostOriginalTarget,
@@ -287,6 +302,12 @@ import {
 } from 'src/utils/managed-backup-session.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
+import {
+  DRILL_REPORT_SIGNING_PREFIX,
+  type SignedDrillReport,
+  drillReportOf,
+  signDrillReport,
+} from 'src/utils/restore-drill-report.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
 import { isFileRootReachable } from 'src/utils/storage-reach.js';
 
@@ -343,17 +364,18 @@ export type CloudBackupBareMetalRestore = {
 } & ({ managed: true; s3?: never } | { managed?: false; s3: CloudBackupS3 });
 
 /** FL-164: what a `cloud_backup` operation does; a row from before FL-164 has no task and is a backup run. */
-type BackupTask = 'backup' | 'verify' | 'prune';
+type BackupTask = 'backup' | 'verify' | 'prune' | 'drill';
 
 const taskOf = (operation: Pick<MediaOperation, 'snapshot'>): BackupTask => {
   const task = (operation.snapshot as { task?: unknown } | null)?.task;
-  return task === 'verify' || task === 'prune' ? task : 'backup';
+  return (['verify', 'prune', 'drill'] as unknown[]).includes(task) ? (task as BackupTask) : 'backup';
 };
 
 const TASK_LABEL: Record<BackupTask, string> = {
   backup: 'Cloud backup',
   verify: 'Cloud backup check',
   prune: 'Cloud backup clean-up',
+  drill: 'Restore drill',
 };
 
 /**
@@ -508,6 +530,7 @@ export class CloudBackupService {
     private details: CloudBackupDetailsService,
     private selection: CloudBackupSelectionRepository,
     private lockedEncryptionRepository: LockedEncryptionRepository,
+    private drills: BackupRestoreReportRepository,
   ) {
     this.logger.setContext(CloudBackupService.name);
     this.keyChannel = new CloudBackupKeyChannel(this.workerId, () =>
@@ -570,6 +593,7 @@ export class CloudBackupService {
       lastRestore: metadata?.lastRestore ? this.mapLastRestore(metadata.lastRestore) : null,
       lastVerify: metadata?.lastVerify ? { ...metadata.lastVerify, error: metadata.lastVerify.error ?? null } : null,
       lastPrune: metadata?.lastPrune ?? null,
+      ...(await this.drillStatus(configured)),
       managed: metadata?.managed
         ? {
             storageId: metadata.managed.storageId ?? null,
@@ -1232,6 +1256,49 @@ export class CloudBackupService {
   }
 
   /**
+   * FL-879: run a restore drill now: a sample taken back from the newest backup into a scratch copy and
+   * checked against the library. It changes nothing; the report is kept and signed.
+   */
+  async startDrill(auth: AuthDto): Promise<CloudBackupStatusResponseDto> {
+    const metadata = await this.requireClaim();
+    await this.requireKeyForRequest(metadata);
+    const created = await this.createOperation(auth.user.id, metadata, 'drill', {});
+    if (!created.created) {
+      throw new ConflictException('Another cloud backup operation is running. Run the drill when it has finished.');
+    }
+    return this.getStatus();
+  }
+
+  /** FL-879: the restore drills, newest first. */
+  async listDrills(): Promise<CloudBackupDrillDto[]> {
+    return (await this.drills.list(50)).map((row) => mapDrill(row));
+  }
+
+  async getDrill(id: string): Promise<CloudBackupDrillDto> {
+    const row = await this.drills.get(id);
+    if (!row) throw new NotFoundException('No such restore drill');
+    return mapDrill(row);
+  }
+
+  /** FL-879: the signed report a finished drill wrote, as a file anyone can check. */
+  async getDrillReport(id: string): Promise<SignedDrillReport> {
+    const row = await this.drills.get(id);
+    if (!row || !row.report || !row.signature || !row.keyFingerprint || !row.signerKey) {
+      throw new NotFoundException('This restore drill has no report yet');
+    }
+    return {
+      report: row.report as SignedDrillReport['report'],
+      signature: {
+        algorithm: 'Ed25519',
+        prefix: DRILL_REPORT_SIGNING_PREFIX,
+        keyFingerprint: row.keyFingerprint,
+        publicKey: row.signerKey,
+        value: row.signature,
+      },
+    };
+  }
+
+  /**
    * FL-164: clean up runs past retention by hand. The first request must be a dry run, which counts what
    * would go; the clean-up itself is accepted only after a dry run from the last day with no backup since,
    * and plans again from the bucket as it is then.
@@ -1484,7 +1551,9 @@ export class CloudBackupService {
         ? emptyRunResult()
         : task === 'verify'
           ? emptyVerifyResult(options.depth ?? 'sample', new Date())
-          : emptyPruneResult(!!options.dryRun);
+          : task === 'drill'
+            ? { task: 'drill', checked: 0 }
+            : emptyPruneResult(!!options.dryRun);
     const outcome = await this.operations.createExclusive(
       {
         ownerId,
@@ -1706,8 +1775,16 @@ export class CloudBackupService {
           await this.runPrune(operation, claimToken);
           break;
         }
+        case 'drill': {
+          await this.runDrill(operation, claimToken);
+          break;
+        }
         case 'backup': {
           await this.runBackup(operation, claimToken);
+          // FL-879: a scheduled backup that finished starts the monthly restore drill when one is due
+          await this.startDueDrill(operation).catch((error: unknown) =>
+            this.logger.warn(`Could not start the restore drill: ${errorMessage(error)}`),
+          );
           break;
         }
       }
@@ -1717,6 +1794,10 @@ export class CloudBackupService {
         this.logger.warn(`Could not start the scheduled cloud backup: ${errorMessage(error)}`),
       );
     }
+    // FL-879: a scheduled backup run takes precedence; a held drill starts after whatever ended here
+    await this.startHeldDrill().catch((error: unknown) =>
+      this.logger.warn(`Could not start the restore drill: ${errorMessage(error)}`),
+    );
   }
 
   private async runBackup(operation: MediaOperation, claimToken: string): Promise<void> {
@@ -2048,6 +2129,7 @@ export class CloudBackupService {
     const task = taskOf(operation);
     return operation.kind === RESTORE_KIND ||
       task === 'verify' ||
+      task === 'drill' ||
       (task === 'prune' && (operation.snapshot as { dryRun?: boolean }).dryRun !== false)
       ? 'restore'
       : task === 'prune'
@@ -3159,6 +3241,44 @@ export class CloudBackupService {
     if (announce) {
       await this.announceActivation();
     }
+    if (changed && (status === 'completed' || status === 'failed')) {
+      await this.queueBackupEvent(operation, result, status);
+    }
+  }
+
+  /**
+   * FL-819: workflows that start when a backup finishes or fails. Counts only: never a photo, an
+   * account or the error text, which can name files. The delivery id is the run's, so a run recorded
+   * twice is announced once. Never fails the backup.
+   */
+  private async queueBackupEvent(
+    operation: MediaOperation,
+    result: CloudBackupRunResult,
+    status: 'completed' | 'failed',
+  ) {
+    try {
+      await this.jobRepository.queue({
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: {
+            trigger: status === 'completed' ? WorkflowTrigger.CloudBackupCompleted : WorkflowTrigger.CloudBackupFailed,
+            ownerId: operation.ownerId,
+            deliveryId: `cloud-backup:${operation.id}:${status}`,
+            occurredAt: new Date().toISOString(),
+            subject: { kind: 'cloud-backup', id: operation.id, name: 'Cloud Backup' },
+            detail: {
+              uploaded: result.uploaded,
+              alreadyBackedUp: result.skipped,
+              missing: result.missing,
+              bytesUploaded: result.bytesUploaded,
+              startedAt: asIso(operation.createdAt) ?? null,
+            },
+          },
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Could not start the workflows for cloud backup run ${operation.id}: ${errorMessage(error)}`);
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -3390,6 +3510,258 @@ export class CloudBackupService {
         }));
       }
     }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* FL-879: the restore drill                                            */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * FL-879: after a scheduled backup run finished, the monthly restore drill starts when one is due:
+   * none finished in the last 30 days, and none failed in the last day. It runs straight after the
+   * backup, inside the backup schedule (FL-362), and holds the bucket like any other operation.
+   */
+  private async startDueDrill(backup: MediaOperation) {
+    if (!(backup.snapshot as { scheduled?: boolean } | null)?.scheduled) return;
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (!metadata || metadata.lastRun?.operationId !== backup.id || metadata.lastRun.status !== 'completed') return;
+    if (!this.drillDue(await this.drills.latestFinished(), new Date())) return;
+    const created = await this.createOperation(backup.ownerId, metadata, 'drill', { scheduled: true });
+    if (!created.created && created.activeTask !== 'drill') {
+      // another operation took the bucket first: the drill waits for it, as a scheduled run does
+      await this.updateMetadata((current) => ({ ...current, drillDueAt: new Date().toISOString() }));
+    }
+  }
+
+  /** FL-879: a drill that found the bucket busy starts once the operation holding it has ended. */
+  private async startHeldDrill() {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (!metadata?.drillDueAt) return;
+    const { frameleafCloud } = await this.readSettings();
+    const owner = await this.userRepository.getAdmin();
+    if (!owner || !frameleafCloud.cloudBackup.enabled || frameleafCloud.cloudBackup.target === 'off') {
+      await this.updateMetadata(({ drillDueAt: _due, ...current }) => current);
+      return;
+    }
+    const created = await this.createOperation(owner.id, metadata, 'drill', { scheduled: true });
+    if (created.created || created.activeTask === 'drill') {
+      await this.updateMetadata(({ drillDueAt: _due, ...current }) => current);
+    }
+  }
+
+  private drillDue(latest: BackupRestoreReport | null | undefined, now: Date) {
+    if (!latest) return true;
+    const at = new Date(latest.startedAt as unknown as string).getTime();
+    if (latest.result === 'failed') return now.getTime() - at >= DRILL_FAILED_BACKOFF_MS;
+    return now.getTime() - at >= DRILL_INTERVAL_DAYS * 24 * 60 * 60_000;
+  }
+
+  /** FL-879: the newest drill and the next one, for the status (the attention fields administrators see). */
+  private async drillStatus(configured: boolean) {
+    const latest = configured ? await this.drills.latestFinished().catch(() => null) : null;
+    const due = this.drillDue(latest, new Date());
+    const nextDrillAt =
+      !configured || due
+        ? null
+        : new Date(
+            new Date(latest!.startedAt as unknown as string).getTime() +
+              (latest!.result === 'failed' ? DRILL_FAILED_BACKOFF_MS : DRILL_INTERVAL_DAYS * 24 * 60 * 60_000),
+          ).toISOString();
+    return {
+      lastDrill: latest ? mapDrill(latest) : null,
+      drillDue: configured && due,
+      nextDrillAt,
+      drillNeedsAttention: latest?.result === 'failed',
+    };
+  }
+
+  private async runDrill(operation: MediaOperation, claimToken: string): Promise<void> {
+    const scheduled = !!(operation.snapshot as { scheduled?: boolean } | null)?.scheduled;
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    const target = metadata?.target ?? 'byo-s3';
+    const startedAt = new Date();
+    await this.drills.start({
+      id: operation.id,
+      target,
+      trigger: scheduled ? 'scheduled' : 'manual',
+      startedAt: startedAt.toISOString(),
+    });
+    const scratch = join(StorageCore.getBaseFolder(StorageFolder.Backups), `.restore-drill-${operation.id}`);
+    let stop: TaskCheckpoint = 'continue';
+    let outcome: DrillOutcome | null;
+    try {
+      const opened = await this.openBucket(operation, claimToken, () => Promise.resolve());
+      if (!opened) return;
+      if (!(await this.startTask(operation, claimToken))) {
+        await this.drills.remove(operation.id);
+        return;
+      }
+      const eligible = (ownerId: string | null) =>
+        !!ownerId && isLicenceEligible(opened.licence, backupUserFingerprint(opened.metadata.instanceId, ownerId));
+      outcome = await runRestoreDrill(opened, scratch, {
+        store: this.store,
+        eligible,
+        makeDirectory: async (path) => {
+          await mkdir(path, { recursive: true, mode: 0o700 });
+        },
+        removeDirectory: (path) => rm(path, { recursive: true, force: true }),
+        rehearse: (dumpPath, assetIds) =>
+          this.databaseBackup.rehearseRestore(dumpPath, {
+            name: `frameleaf_drill_${operation.id.replaceAll('-', '')}`,
+            assetIds,
+          }),
+        addedAt: (ids) => this.drills.assetsAddedAt(ids),
+        progress: async (progress, checked) => {
+          stop = await this.checkpointTask(
+            operation,
+            claimToken,
+            { task: 'drill', checked },
+            { processed: checked, total: 0, progress },
+          );
+          return stop === 'continue';
+        },
+      });
+      if (!outcome) {
+        if ((stop as TaskCheckpoint) === 'cancelled') await this.drills.remove(operation.id);
+        return;
+      }
+    } catch (error) {
+      outcome = drillOutcomeOf(error);
+      if (!outcome) {
+        if (await this.settleBackupStop(operation, claimToken, error)) {
+          await this.drills.remove(operation.id);
+          return;
+        }
+        if (await this.waitForManagedRenewal(operation, claimToken, error)) return;
+        // the bucket could not be opened: the drill failed at its first step (or at the key, when it is missing)
+        const step: DrillStep = /\bkey\b/i.test(errorMessage(error)) ? 'unlock' : 'fetch';
+        this.logger.warn(
+          `Restore drill ${operation.id} could not open the backup: ${maskMediaPath(errorMessage(error))}`,
+        );
+        outcome = {
+          result: 'failed',
+          failedStep: step,
+          manifestKey: null,
+          backupFrom: null,
+          library: { items: 0, photos: 0, videos: 0, albums: 0 },
+          restored: null,
+          sampleSize: 0,
+          checked: 0,
+          matched: 0,
+          mismatches: [],
+        };
+        if (!(await this.startTask(operation, claimToken))) {
+          await this.drills.remove(operation.id);
+          return;
+        }
+      } else {
+        const cause = (error as Error).cause;
+        this.logger.warn(
+          `Restore drill ${operation.id} failed at ${outcome.failedStep}: ${(error as Error).message}${cause ? ` (${maskMediaPath(errorMessage(cause))})` : ''}`,
+        );
+      }
+    }
+    try {
+      await this.finishDrill(operation, claimToken, outcome, { target, scheduled, startedAt });
+    } catch (error) {
+      // An unreadable identity key or a failed write must not leave the drill running and other backup work
+      // blocked, nor hide it: a report not yet stored is kept as a failed, unsigned drill, so Backups shows it.
+      this.logger.warn(`Restore drill ${operation.id} could not be recorded: ${errorMessage(error)}`);
+      // A report that can't be read is left alone: an unknown state never overwrites a signed report.
+      const stored = await this.drills
+        .get(operation.id)
+        .then((row) => ({ row }))
+        .catch((readError: unknown) => {
+          this.logger.warn(`Restore drill ${operation.id} report could not be read: ${errorMessage(readError)}`);
+          return null;
+        });
+      if (stored && !stored.row?.finishedAt) {
+        await this.drills
+          .finish(operation.id, {
+            finishedAt: new Date().toISOString(),
+            result: 'failed',
+            failedStep: outcome.failedStep,
+            signature: null,
+            keyFingerprint: null,
+            signerKey: null,
+          })
+          .catch((writeError: unknown) =>
+            this.logger.error(`Restore drill ${operation.id} failure could not be stored: ${errorMessage(writeError)}`),
+          );
+      }
+      await this.completeTask(operation, claimToken);
+    }
+  }
+
+  /** Sign and keep the report, record a pass as the restore test, tell administrators of a failure. */
+  private async finishDrill(
+    operation: MediaOperation,
+    claimToken: string,
+    outcome: DrillOutcome,
+    { target, scheduled, startedAt }: { target: string; scheduled: boolean; startedAt: Date },
+  ) {
+    const finishedAt = new Date();
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    await loadInstanceIdentity(this.gatewayDeps());
+    const report = drillReportOf(outcome, {
+      id: operation.id,
+      server: metadata?.instanceId ?? '',
+      target,
+      trigger: scheduled ? 'scheduled' : 'manual',
+      startedAt,
+      finishedAt,
+    });
+    const signed = signDrillReport(report, this.instanceIdentityRepository.currentSigner());
+    await this.drills.finish(operation.id, {
+      finishedAt: finishedAt.toISOString(),
+      result: outcome.result,
+      failedStep: outcome.failedStep,
+      counts: {
+        library: outcome.library,
+        restored: outcome.restored,
+        checked: outcome.checked,
+        matched: outcome.matched,
+      },
+      sampleSize: outcome.sampleSize,
+      mismatches: outcome.mismatches,
+      report: report as unknown as Record<string, unknown>,
+      signature: signed.signature.value,
+      keyFingerprint: signed.signature.keyFingerprint,
+      signerKey: signed.signature.publicKey,
+    });
+    if (outcome.result === 'passed') {
+      await this.databaseBackup.recordDrillVerification(operation.id, operation.ownerId, finishedAt);
+    } else {
+      const words = DRILL_FAILURE_WORDS[outcome.failedStep ?? 'fetch'];
+      this.notify({
+        level: NotificationLevel.Error,
+        title: 'Your backup didn’t restore',
+        description: `${words} Your backups are still running; until this is fixed, Frameleaf can’t prove they would restore.`,
+        systemTemplate: { version: 1, key: 'cloud-backup-drill-failed', args: { failure: words } },
+        dedupeKey: `cloud-backup:drill:${operation.id}`,
+        dedupeDays: 1,
+      });
+    }
+    if (scheduled) {
+      this.eventRepository
+        .emit('RestoreDrillFinished', {
+          reportId: operation.id,
+          result: outcome.result,
+          target,
+          startedAt: report.startedAt,
+          backupFrom: outcome.backupFrom,
+          sample: outcome.sampleSize,
+          matched: outcome.matched,
+          durationSeconds: report.durationSeconds,
+          failure: report.failure,
+          failedStep: outcome.failedStep,
+        })
+        .catch((error: unknown) => this.logger.warn(`Could not send the restore drill email: ${errorMessage(error)}`));
+    }
+    await this.completeTask(operation, claimToken);
+    this.logger.log(
+      `Restore drill ${operation.id}: ${outcome.result}${outcome.failedStep ? ` at ${outcome.failedStep}` : ''}, ${outcome.matched} of ${outcome.sampleSize} matched`,
+    );
   }
 
   private async runPrune(operation: MediaOperation, claimToken: string): Promise<void> {
@@ -5574,14 +5946,16 @@ export class CloudBackupService {
     const checked = (operation.result as { checked?: unknown } | null)?.checked;
     return {
       operationId: operation.id,
-      task,
+      // FL-879: a drill reads the backup like a check; `drill` says which (the task values stay as they were)
+      task: task === 'drill' ? 'verify' : task,
+      drill: task === 'drill',
       state: runState(operation.status as MediaOperationStatus, !!operation.pauseRequestedAt),
       phase: result.phase,
       progress: Number(operation.progress ?? 0),
       uploaded: task === 'backup' ? result.uploaded : 0,
       skipped: task === 'backup' ? result.skipped : 0,
       bytesUploaded: task === 'backup' ? result.bytesUploaded : 0,
-      checked: task === 'verify' && typeof checked === 'number' ? checked : 0,
+      checked: (task === 'verify' || task === 'drill') && typeof checked === 'number' ? checked : 0,
     };
   }
 
@@ -5763,4 +6137,35 @@ type Run = {
   eligibleOwners: Set<string> | null;
   /** FL-362: the run holds an inventory; its walk is the inventory's kept originals. */
   decided: boolean;
+};
+
+/** FL-879: a restore drill as the API shows it. */
+const mapDrill = (row: BackupRestoreReport): CloudBackupDrillDto => {
+  const counts = row.counts as {
+    library?: DrillOutcome['library'];
+    restored?: DrillOutcome['restored'];
+    checked?: number;
+    matched?: number;
+  };
+  const report = row.report as { durationSeconds?: number; backup?: { createdAt?: string | null } } | null;
+  const iso = (value: unknown) => (value ? new Date(value as string).toISOString() : null);
+  return {
+    id: row.id,
+    target: row.target,
+    trigger: row.trigger === 'scheduled' ? 'scheduled' : 'manual',
+    startedAt: iso(row.startedAt)!,
+    finishedAt: iso(row.finishedAt),
+    result: row.result === 'passed' || row.result === 'failed' ? row.result : 'running',
+    failedStep: (row.failedStep as DrillStep | null) ?? null,
+    backupFrom: report?.backup?.createdAt ?? null,
+    library: counts.library ?? null,
+    restored: counts.restored ?? null,
+    sampleSize: row.sampleSize,
+    checked: counts.checked ?? 0,
+    matched: counts.matched ?? 0,
+    mismatches: (row.mismatches as DrillOutcome['mismatches']) ?? [],
+    durationSeconds: report?.durationSeconds ?? null,
+    keyFingerprint: row.keyFingerprint,
+    signed: !!row.signature,
+  };
 };

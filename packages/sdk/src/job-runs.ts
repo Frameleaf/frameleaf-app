@@ -41,10 +41,12 @@ export type DurableRunningJobs = Omit<
   durableRuns?: DurableJobRun[];
 };
 
+/** `foldNightly` (Recent work): only the newest nightly run, carrying its earlier nights and left-over streak. */
 export const listDurableJobRuns = (
-  { take = 25, skip = 0 }: Parameters<typeof getJobRuns>[0] = {},
+  { take = 25, skip = 0, foldNightly }: Parameters<typeof getJobRuns>[0] = {},
   opts?: RequestOpts,
-): Promise<DurableJobPage<DurableJobRun>> => getJobRuns({ take, skip }, opts);
+): Promise<DurableJobPage<DurableJobRun>> =>
+  getJobRuns({ take, skip, ...(foldNightly === undefined ? {} : { foldNightly }) }, opts);
 
 export const listDurableJobRunItems = (
   { id, take = 25, skip = 0 }: Parameters<typeof getJobRunItems>[0],

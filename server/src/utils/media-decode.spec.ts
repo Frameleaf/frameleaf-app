@@ -19,6 +19,7 @@ import {
   assertDecodeQualified,
   classifySourceTransfer,
   describeDolbyVisionInput,
+  isUndecodableError,
   parseSourcePixelLayout,
   qualifySourceDecode,
   selectDecodeAcceleration,
@@ -281,10 +282,36 @@ describe('qualifySourceDecode', () => {
     expect(result.reason).toContain('IPT-PQ-C2');
   });
 
-  it('refuses Dolby Vision profile 7 and the unqualified profiles', () => {
-    expect(qualifySourceDecode(stream({ codecName: 'hevc', dvProfile: DvProfile.Dvhe07 }), noToneMapping).refusal).toBe(
-      DecodeRefusal.DolbyVisionEnhancementLayer,
+  it('plays the HDR10 base layer of Dolby Vision profile 7, but never edits from it (FL-1357)', () => {
+    const profile7 = stream({ codecName: 'hevc', pixelFormat: 'yuv420p10le', dvProfile: DvProfile.Dvhe07 });
+    // an edit or a Studio render must lose nothing, so it still refuses the dual-layer source
+    expect(qualifySourceDecode(profile7, noToneMapping).refusal).toBe(DecodeRefusal.DolbyVisionEnhancementLayer);
+    const carried = qualifySourceDecode(profile7, noToneMapping, { baseLayerOnly: true });
+    expect(carried).toMatchObject({
+      support: DecodeSupport.Supported,
+      refusal: null,
+      transfer: SourceTransferKind.Hdr10,
+    });
+    expect(carried.reason).toContain('profile 7 base layer');
+    expect(qualifySourceDecode(profile7, toneMapping, { baseLayerOnly: true }).support).toBe(DecodeSupport.ToneMapped);
+  });
+
+  it('plays Dolby Vision profile 5 only where libplacebo can reshape it (FL-1357)', () => {
+    const profile5 = stream({ codecName: 'hevc', pixelFormat: 'yuv420p10le', dvProfile: DvProfile.Dvhe05 });
+    expect(qualifySourceDecode(profile5, toneMapping).refusal).toBe(DecodeRefusal.DolbyVisionProfile5);
+    expect(qualifySourceDecode(profile5, toneMapping, { libplacebo: false }).refusal).toBe(
+      DecodeRefusal.DolbyVisionProfile5,
     );
+    // reshaping always lands in SDR, so with tone mapping off there is still nothing honest to make
+    expect(qualifySourceDecode(profile5, noToneMapping, { libplacebo: true }).refusal).toBe(
+      DecodeRefusal.DolbyVisionProfile5,
+    );
+    const reshaped = qualifySourceDecode(profile5, toneMapping, { libplacebo: true });
+    expect(reshaped).toMatchObject({ support: DecodeSupport.ToneMapped, refusal: null, reshapeDolbyVision: true });
+    expect(reshaped.reason).toContain('libplacebo');
+  });
+
+  it('refuses the unqualified profiles', () => {
     expect(qualifySourceDecode(stream({ codecName: 'hevc', dvProfile: DvProfile.Dvav09 }), noToneMapping).refusal).toBe(
       DecodeRefusal.DolbyVisionProfileUnqualified,
     );
@@ -412,5 +439,26 @@ describe('advertised matrix consistency', () => {
     // A guard against the probe mapping drifting: these are the values media.repository writes.
     expect(ColorPrimaries.Bt2020).toBeDefined();
     expect(ColorMatrix.Bt2020Nc).toBeDefined();
+  });
+});
+
+describe('isUndecodableError (FL-1357)', () => {
+  it.each([
+    'ffprobe exited with code 1: Invalid data found when processing input',
+    'ffmpeg exited with code 1: Decoder (codec none) not found for input stream #0:0',
+    'moov atom not found',
+  ])('"%s" is about the format', (message) => {
+    expect(isUndecodableError(new Error(message))).toBe(true);
+  });
+
+  it.each([
+    new Error('ffprobe exited with code 1: /library/A001.braw: Input/output error'),
+    new Error('ffprobe exited with code null: '),
+    new Error('Media process stopped making progress'),
+    new Error('av_interleaved_write_frame(): No space left on device'),
+    Object.assign(new Error('spawn ffprobe ENOENT'), { code: 'ENOENT' }),
+    new Error('Failed to probe', { cause: Object.assign(new Error('read'), { code: 'EIO' }) }),
+  ])('%s is the machine or the drive, and is retried', (error) => {
+    expect(isUndecodableError(error)).toBe(false);
   });
 });

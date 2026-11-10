@@ -46,10 +46,13 @@ import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { captureDetails } from 'src/utils/capture-details.js';
 import { mergeTimeZone } from 'src/utils/date.js';
+import { isFireworksPng } from 'src/utils/design-preview.js';
 import { DJI_SRT_READ_BYTES, getDjiSrtCandidates, parseDjiSrtLocation } from 'src/utils/dji-srt.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { boxIou, fractionBox, normalizedBox } from 'src/utils/face-anchor.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
+import { isUndecodableError } from 'src/utils/media-decode.js';
 import { detectMediaKinds } from 'src/utils/media-kinds.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
@@ -465,7 +468,13 @@ export class MetadataService extends BaseService {
     });
 
     let imageEncoding;
-    if (asset.type === AssetType.Image && !mimeTypes.isRaw(asset.originalFileName)) {
+    if (mimeTypes.isDesign(asset.originalFileName)) {
+      // FL-1358: a design file has no encoding to inspect; a paged one says how many pages it holds.
+      const pages = Number(exifTags.PageCount);
+      if (Number.isSafeInteger(pages) && pages > 0) {
+        imageEncoding = { ...unknownImageEncoding(), pages };
+      }
+    } else if (asset.type === AssetType.Image && !mimeTypes.isRaw(asset.originalFileName)) {
       try {
         imageEncoding = ImageEncodingSchema.parse({
           ...(await this.mediaRepository.inspectImageEncoding(plainOriginal)),
@@ -482,6 +491,13 @@ export class MetadataService extends BaseService {
               : 'inspection-unavailable';
         imageEncoding = { ...unknownImageEncoding(), inspectionStatus: 'failed' as const, fallbackReason: code };
         this.logger.warn(`Image encoding inspection unavailable: ${code}`);
+      }
+      // FL-1358: a Fireworks PNG shows as its flat picture; Details names it so its owner knows it holds more.
+      if (
+        asset.originalFileName.toLowerCase().endsWith('.png') &&
+        (await isFireworksPng(plainOriginal).catch(() => false))
+      ) {
+        imageEncoding = { ...imageEncoding, variant: 'fireworks-png' };
       }
     }
 
@@ -1166,7 +1182,17 @@ export class MetadataService extends BaseService {
       this.metadataRepository.readTags(asset.originalPath),
       // FL-721: a sealed sidecar is read from a plain copy
       sidecarFile ? withPlainCopy(sidecarFile.path, (path) => this.metadataRepository.readTags(path)) : null,
-      shouldProbe ? this.getVideoTags(asset.originalPath) : null,
+      shouldProbe
+        ? this.getVideoTags(asset.originalPath).catch((error) => {
+            executionSignal()?.throwIfAborted();
+            if (!mimeTypes.isCinemaRaw(asset.originalPath) || !isUndecodableError(error)) {
+              throw error;
+            }
+            // FL-1357: cinema RAW that ffmpeg cannot open is kept with what ExifTool reads; it is not a failure
+            this.logger.debug(`No video details for cinema RAW ${asset.originalPath}: ${error}`);
+            return null;
+          })
+        : null,
     ]);
 
     // Resolve capture identity before merging sidecar tags or deleting any original fields.
@@ -1195,7 +1221,8 @@ export class MetadataService extends BaseService {
 
     // prefer duration from video tags
     // don't save duration if asset is definitely not an animated image (see e.g. CR3 with Duration: 1s)
-    if (videoResult || !mimeTypes.isPossiblyAnimatedImage(asset.originalPath)) {
+    // FL-1357: cinema RAW that ffmpeg could not open has no video tags, so what ExifTool read is all there is
+    if (videoResult || (!shouldProbe && !mimeTypes.isPossiblyAnimatedImage(asset.originalPath))) {
       delete mediaTags.Duration;
     }
 

@@ -14,6 +14,7 @@ import {
   MediaHealthCategory,
   MediaHealthStatus,
 } from 'src/enum.js';
+import { RAW_RUNG_STEP } from 'src/queue/processing-failure.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { revealedLockScope } from 'src/utils/locked.js';
@@ -24,10 +25,8 @@ const execFile = promisify(execFileCallback);
 /** The sensor decoder `renderRawWithLibRaw` runs (utils/raw-renderer.ts). */
 export const RAW_DECODER_PATH = '/usr/local/bin/dcraw_emu';
 
-/** RAW extensions, without the dot. PSD sits in the legacy list but is a layered image, not sensor data. */
-export const RAW_EXTENSIONS = Object.keys(mimeTypes.raw)
-  .map((extension) => extension.slice(1))
-  .filter((extension) => extension !== 'psd');
+/** RAW extensions, without the dot. */
+export const RAW_EXTENSIONS = Object.keys(mimeTypes.raw).map((extension) => extension.slice(1));
 
 const RAW_NAME_PATTERN = String.raw`\.(${RAW_EXTENSIONS.join('|')})$`;
 
@@ -46,6 +45,8 @@ export type RawSupportFacts = {
   healthReason: string | null;
   hasPreview: boolean;
   hasFullsize: boolean;
+  /** FL-1355: `embedded/<why>` or `placeholder/<why>` when the sensor did not render; null when it did. */
+  rung: string | null;
 };
 
 export type RawSupportGroup = RawSupportFacts & { extension: string; count: number };
@@ -68,13 +69,16 @@ export class RawSupportRepository {
   /**
    * The caller's RAW originals: one aggregate row per combination of extension and state facts (to
    * count every file cheaply), and the first `limit` files, those with a decode finding or without a
-   * preview first, then the newest. The same privacy as Library Care: the owner's own media, Locked
+   * preview first, then those showing the camera's preview because the sensor did not render, then the newest. The same privacy as Library Care: the owner's own media, Locked
    * only when revealed in this session, and the viewer's hidden-content settings.
    */
   async getSummary(options: RawSupportQueryOptions): Promise<{ groups: RawSupportGroup[]; items: RawSupportRow[] }> {
     const fileExists = (type: AssetFileType) =>
       sql<boolean>`exists (select 1 from asset_file where asset_file."assetId" = asset.id and asset_file.type = ${sql.lit(type)} and asset_file."isEdited" = false)`;
     const extension = sql<string>`lower(substring(asset."originalFileName" from '\.([^.]+)$'))`;
+    const rung = sql<
+      string | null
+    >`(select failure."lastError" from asset_processing_failure as failure where failure."assetId" = asset.id and failure.step = ${sql.lit(RAW_RUNG_STEP)})`;
     const base = this.db
       .selectFrom('asset')
       .leftJoin('asset_health', (join) =>
@@ -104,13 +108,14 @@ export class RawSupportRepository {
       sql<string | null>`asset_health.evidence->>'reason'`.as('healthReason'),
       fileExists(AssetFileType.Preview).as('hasPreview'),
       fileExists(AssetFileType.FullSize).as('hasFullsize'),
+      rung.as('rung'),
     ]);
     const [groups, items] = await Promise.all([
       this.db
         .selectFrom(facts.as('facts'))
-        .select(['extension', 'healthStatus', 'healthReason', 'hasPreview', 'hasFullsize'])
+        .select(['extension', 'healthStatus', 'healthReason', 'hasPreview', 'hasFullsize', 'rung'])
         .select((eb) => eb.fn.countAll<string>().as('count'))
-        .groupBy(['extension', 'healthStatus', 'healthReason', 'hasPreview', 'hasFullsize'])
+        .groupBy(['extension', 'healthStatus', 'healthReason', 'hasPreview', 'hasFullsize', 'rung'])
         .execute(),
       base
         .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
@@ -125,6 +130,7 @@ export class RawSupportRepository {
           sql<string | null>`asset_health.evidence->>'reason'`.as('healthReason'),
           fileExists(AssetFileType.Preview).as('hasPreview'),
           fileExists(AssetFileType.FullSize).as('hasFullsize'),
+          rung.as('rung'),
           sql<Date | null>`(select asset_file."updatedAt" from asset_file where asset_file."assetId" = asset.id and asset_file.type = ${sql.lit(AssetFileType.Preview)} and asset_file."isEdited" = false)`.as(
             'renderedAt',
           ),
@@ -135,7 +141,7 @@ export class RawSupportRepository {
           ),
         ])
         .orderBy(
-          sql`case when asset_health.id is not null then 0 when not ${fileExists(AssetFileType.Preview)} then 1 else 2 end`,
+          sql`case when asset_health.id is not null then 0 when not ${fileExists(AssetFileType.Preview)} then 1 when ${rung} is not null then 2 else 3 end`,
         )
         .orderBy('asset.fileCreatedAt', 'desc')
         .orderBy('asset.id')

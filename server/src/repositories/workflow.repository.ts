@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Updateable, sql } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
@@ -364,11 +365,11 @@ export class WorkflowRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
-  search(dto: WorkflowSearchDto & { userId?: string }) {
+  search(dto: Omit<WorkflowSearchDto, 'trigger'> & { userId?: string; trigger?: WorkflowTrigger | string }) {
     return this.queryBuilder()
       .$if(!!dto.id, (qb) => qb.where('workflow.id', '=', dto.id!))
       .$if(!!dto.userId, (qb) => qb.where('workflow.ownerId', '=', dto.userId!))
-      .$if(!!dto.trigger, (qb) => qb.where('workflow.trigger', '=', dto.trigger!))
+      .$if(!!dto.trigger, (qb) => qb.where('workflow.trigger', '=', dto.trigger as WorkflowTrigger))
       .$if(dto.enabled !== undefined, (qb) => qb.where('workflow.enabled', '=', dto.enabled!))
       .orderBy('workflow.createdAt', 'desc')
       .execute();

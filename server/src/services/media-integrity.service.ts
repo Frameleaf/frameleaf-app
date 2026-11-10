@@ -3,14 +3,17 @@ import { open } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import type { StillRung } from 'src/types.js';
 import { AssetType, Colorspace, MediaHealthStatus } from 'src/enum.js';
+import { sharpConfiguration } from 'src/queue/sharp-configuration.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { designFileHasSignature } from 'src/utils/design-preview.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
+import { isUndecodableError } from 'src/utils/media-decode.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -283,6 +286,10 @@ export class MediaIntegrityService {
         // killed from outside (out of memory, the host shutting down): nothing about the file
         return { status: 'transient', reason: 'decoder_resource_limit' };
       }
+      if (mimeTypes.isCinemaRaw(input.originalFileName) && isUndecodableError(error)) {
+        // FL-1357: cinema RAW has no open decoder. What ffmpeg makes of one says nothing about the file.
+        return { status: 'unsupported', reason: 'decode_unsupported' };
+      }
       const message = text
         .replace(/^ffprobe exited with code \d+:/i, '')
         .replace(/^[\s:]+/, '')
@@ -296,6 +303,43 @@ export class MediaIntegrityService {
     }
   }
 
+  /**
+   * What a RAW original is checked by: its sensor data as LibRaw reads it, or, for a camera or compression
+   * LibRaw does not read, whatever the rest of the RAW ladder can show of it. The checksum has already shown the bytes are
+   * the ones stored; a decoder that cannot read them is not a fault in the file.
+   */
+  private async rawCheckSource(path: string, signal: AbortSignal): Promise<Buffer> {
+    try {
+      return await renderRawWithLibRaw(path, signal, { halfSize: true });
+    } catch (error) {
+      // No decoder here reads this sensor. The rest of the RAW ladder (the second decoder, then the camera's
+      // own picture) says whether the file still gives a picture. What it returns is held in memory and the
+      // camera's picture cannot be larger than the file that holds it, so a file over the image worker's byte
+      // limit is not asked. A file that has gone meanwhile is the outer check's to name.
+      const size =
+        error instanceof RawRenderError && error.reason === 'unsupported'
+          ? await this.storageRepository
+              .stat(path)
+              .then((file) => file.size)
+              .catch(() => null)
+          : null;
+      const picture =
+        size !== null && size <= sharpConfiguration().maxBytes
+          ? await this.mediaRepository.renderRaw(path, { signal, halfSize: true }).catch((error_: unknown) => {
+              // a rung that could not run (the second decoder was busy) leaves the check undecided
+              if (error_ instanceof RawRenderError && error_.reason !== 'unsupported') {
+                throw error_;
+              }
+              return null;
+            })
+          : null;
+      if (!picture) {
+        throw error;
+      }
+      return picture.buffer;
+    }
+  }
+
   private async decode(
     input: MediaIntegrityInput,
     signal: AbortSignal,
@@ -304,11 +348,18 @@ export class MediaIntegrityService {
     if (input.type === AssetType.Video) {
       return this.checkVideo(input, signal, touch);
     }
-    const isRaw = mimeTypes.isRaw(input.originalFileName) && !input.originalFileName.toLowerCase().endsWith('.psd');
+    if (input.type === AssetType.Image && mimeTypes.isDesign(input.originalFileName)) {
+      // FL-1358: a design file is proved by its checksum and by starting the way its format does. Whether a
+      // renderer can draw it says nothing about the file, so it is never decoded here and never called damaged.
+      return (await designFileHasSignature(input.path, input.originalFileName))
+        ? undefined
+        : { status: 'unsupported', reason: 'media_type_unsupported' };
+    }
+    const isRaw = mimeTypes.isRaw(input.originalFileName);
     try {
       if (input.type === AssetType.Image) {
-        // RAW previews do not prove the original sensor data can be decoded.
-        const source = isRaw ? await renderRawWithLibRaw(input.path, signal) : input.path;
+        // FL-1355: a half-size sensor render reads every byte of the sensor data at a quarter of the cost.
+        const source = isRaw ? await this.rawCheckSource(input.path, signal) : input.path;
         if (signal.aborted) {
           return { status: 'timeout', reason: 'validation_timeout' };
         }

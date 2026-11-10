@@ -75,7 +75,7 @@ describe(WorkflowService.name, () => {
           ],
         },
       ] as never);
-      const discovery = await sut.discovery();
+      const discovery = await sut.discovery(auth);
       expect(discovery.triggers.map(({ trigger }) => trigger)).toEqual(
         expect.arrayContaining([WorkflowTrigger.AssetChanged, WorkflowTrigger.Schedule, WorkflowTrigger.AssetCreate]),
       );
@@ -83,6 +83,23 @@ describe(WorkflowService.name, () => {
         expect.objectContaining({ key: 'sample#scheduled', trigger: WorkflowTrigger.Schedule }),
       ]);
       expect(mocks.plugin.search).toHaveBeenCalledWith({ enabled: true });
+    });
+
+    it('lists Frameleaf events apart from the published triggers, to administrators only (FL-819)', async () => {
+      mocks.plugin.search.mockResolvedValue([]);
+      const member = await sut.discovery(factory.auth({ user: { isAdmin: false } }));
+      const admin = await sut.discovery(factory.auth({ user: { isAdmin: true } }));
+      for (const discovery of [member, admin]) {
+        expect(discovery.triggers.map(({ trigger }) => trigger)).not.toContain(WorkflowTrigger.CloudBackupFailed);
+      }
+      expect(member.eventTriggers).toEqual([]);
+      expect(admin.eventTriggers).toEqual(
+        expect.arrayContaining([
+          { trigger: WorkflowTrigger.CloudBackupFailed, event: 'cloud.backup.failed' },
+          { trigger: WorkflowTrigger.StudioExportCompleted, event: 'studio.export.completed' },
+        ]),
+      );
+      expect(admin.eventTriggers).toHaveLength(5);
     });
 
     it('keeps legacy trigger discovery within the original closed enum', () => {
@@ -683,5 +700,79 @@ describe('preview with filter steps (FL-729)', () => {
       steps: [{ method: 'immich-plugin-core#assetAddTags', result: 'skipped', remaining: null }],
     });
     expect(mocks.workflow.previewAssets).not.toHaveBeenCalled();
+  });
+});
+
+describe('Frameleaf event workflows (FL-819)', () => {
+  const eventMethods = [{ ...methods[1], types: [WorkflowType.AssetV1, WorkflowType.EventV1] }, methods[0]];
+  const setup = () => {
+    const { sut, mocks } = newTestService(WorkflowService);
+    mocks.plugin.getForValidation.mockResolvedValue(eventMethods as never);
+    mocks.workflow.create.mockImplementation((dto, definition) =>
+      Promise.resolve({
+        id: newUuid(),
+        name: null,
+        description: null,
+        createdAt: new Date('2026-11-10T00:00:00Z'),
+        updatedAt: new Date('2026-11-10T00:00:00Z'),
+        steps: [],
+        enabled: false,
+        logging: true,
+        ...dto,
+        definition,
+      } as never),
+    );
+    return { sut, mocks };
+  };
+  const backupAlert = {
+    trigger: WorkflowTrigger.CloudBackupFailed,
+    enabled: true,
+    steps: [{ method: 'immich-plugin-core#webhook', config: { url: 'https://example.com/hook', secret: 'shh' } }],
+  };
+
+  it('lets an administrator send an event to a web address, keeping the signing secret', async () => {
+    const { sut, mocks } = setup();
+    const response = await sut.create(factory.auth({ user: { isAdmin: true } }), backupAlert as never);
+    expect(response.issues).toEqual([]);
+    expect(response.trigger).toBe(WorkflowTrigger.CloudBackupFailed);
+    expect(mocks.workflow.create).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: WorkflowTrigger.CloudBackupFailed }),
+      expect.anything(),
+      [expect.objectContaining({ pluginMethodId: eventMethods[0].id })],
+    );
+    expect(JSON.stringify(response)).not.toContain('shh');
+  });
+
+  it('refuses an event workflow to an account that is not an administrator', async () => {
+    const { sut, mocks } = setup();
+    await expect(sut.create(factory.auth(), backupAlert as never)).rejects.toBeInstanceOf(BadRequestException);
+    expect(mocks.workflow.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a step that cannot run on an event', async () => {
+    const { sut } = setup();
+    await expect(
+      sut.create(factory.auth({ user: { isAdmin: true } }), {
+        ...backupAlert,
+        steps: [{ method: 'immich-plugin-core#assetTypeFilter', config: {} }],
+      } as never),
+    ).rejects.toThrow('this method cannot run for this trigger');
+  });
+
+  it('does not run an event workflow over the library', async () => {
+    const { sut, mocks } = setup();
+    const id = newUuid();
+    mocks.access.workflow.checkOwnerAccess.mockResolvedValue(new Set([id]));
+    mocks.workflow.get.mockResolvedValue({
+      id,
+      enabled: true,
+      trigger: WorkflowTrigger.CloudBackupFailed,
+      steps: [],
+      definition: { version: 1, trigger: WorkflowTrigger.CloudBackupFailed, steps: [], extra: {} },
+    } as never);
+    await expect(sut.runBatch(factory.auth({ user: { isAdmin: true } }), id)).rejects.toThrow(
+      'This workflow runs each time its event happens in Frameleaf',
+    );
+    expect(mocks.workflow.createBatch).not.toHaveBeenCalled();
   });
 });

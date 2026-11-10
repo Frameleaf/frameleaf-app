@@ -13,6 +13,8 @@ const raw = {
   '.dng': ['image/dng', 'image/x-adobe-dng'],
   '.erf': ['image/erf', 'image/x-epson-erf'],
   '.fff': ['image/fff', 'image/x-hasselblad-fff'],
+  // FL-1355: GoPro. LibRaw does not read it without the Adobe DNG SDK; the second decoder (darktable) does.
+  '.gpr': ['image/gpr', 'image/x-gopro-gpr'],
   '.iiq': ['image/iiq', 'image/x-phaseone-iiq'],
   '.k25': ['image/k25', 'image/x-kodak-k25'],
   '.kdc': ['image/kdc', 'image/x-kodak-kdc'],
@@ -24,7 +26,6 @@ const raw = {
   '.orf': ['image/orf', 'image/x-olympus-orf'],
   '.ori': ['image/ori', 'image/x-olympus-ori'],
   '.pef': ['image/pef', 'image/x-pentax-pef'],
-  '.psd': ['image/psd', 'image/vnd.adobe.photoshop'],
   '.raf': ['image/raf', 'image/x-fuji-raf'],
   '.raw': ['image/raw', 'image/x-panasonic-raw'],
   '.rw2': ['image/rw2', 'image/x-panasonic-rw2'],
@@ -33,6 +34,26 @@ const raw = {
   '.srf': ['image/srf', 'image/x-sony-srf'],
   '.srw': ['image/srw', 'image/x-samsung-srw'],
   '.x3f': ['image/x3f', 'image/x-sigma-x3f'],
+};
+
+/**
+ * Design files (FL-1358): kept whole, shown by a rendering or by the preview the file carries, and never
+ * decoded as sensor data. An extension is listed only with a fixture in `test/fixtures/formats/design`.
+ */
+const design: Record<string, string[]> = {
+  '.ai': ['application/illustrator', 'application/postscript', 'application/pdf'],
+  '.cdr': ['application/vnd.corel-draw', 'application/x-cdr'],
+  '.eps': ['application/postscript', 'application/eps', 'image/x-eps'],
+  '.fig': ['application/x-figma'],
+  '.kra': ['application/x-krita'],
+  '.ora': ['image/openraster'],
+  '.pdf': ['application/pdf'],
+  '.procreate': ['application/x-procreate'],
+  '.psb': ['image/vnd.adobe.photoshop', 'application/x-photoshop'],
+  '.psd': ['image/psd', 'image/vnd.adobe.photoshop'],
+  '.sketch': ['application/x-sketch', 'application/zip'],
+  '.xcf': ['image/x-xcf'],
+  '.xd': ['application/vnd.adobe.xd', 'application/zip'],
 };
 
 /**
@@ -63,6 +84,7 @@ const webSupportedImage = {
 // decodes in the built image. Add one only together with its fixture.
 const webUnsupportedImage = {
   ...raw,
+  ...design,
   '.btf': ['image/tiff'],
   // Kodak Cineon film scans. Not sensor data: FL-1356 moved it out of the RAW list.
   '.cin': ['image/cin', 'image/cineon'],
@@ -107,7 +129,6 @@ const webUnsupportedImage = {
   '.tif': ['image/tiff'],
   '.tiff': ['image/tiff'],
   '.wdp': ['image/vnd.ms-photo'],
-  '.xcf': ['image/x-xcf'],
 };
 
 const image: Record<string, string[]> = {
@@ -135,14 +156,19 @@ const transparentCapableExtensions = new Set([
   '.avif',
   '.avifs',
   '.bmp',
+  '.cur',
   '.gif',
   '.heic',
   '.heics',
   '.heif',
   '.hif',
+  '.ico',
   '.jxl',
   '.png',
+  '.qoi',
   '.svg',
+  '.svgz',
+  '.tga',
   '.tif',
   '.tiff',
   '.webp',
@@ -155,24 +181,52 @@ const profile: Record<string, string[]> = Object.fromEntries(
   Object.entries(image).filter(([key]) => profileExtensions.has(key)),
 );
 
+/**
+ * FL-1357: cinema camera RAW. No open decoder exists for these (owner 2026-11-10: no closed SDKs), so they are
+ * kept safe as videos (stored, checksummed, searchable, downloadable) and are never promised to play.
+ * ARRIRAW `.ari` frames stay with the RAW photos above, where LibRaw opens them.
+ */
+const cinemaRaw = new Set(['.arx', '.braw', '.crm', '.nev', '.r3d']);
+
+// DJI `.lrf` and GoPro `.lrv` preview files are left out on purpose (FL-968): they duplicate the real recording.
 const video: Record<string, string[]> = {
   // FL-968: GoPro MAX 360° recordings (two cubemap tracks in an MP4 container)
   '.360': ['video/mp4'],
   '.3g2': ['video/3gpp2'],
   '.3gp': ['video/3gpp'],
   '.3gpp': ['video/3gpp'],
+  '.apv': ['video/x-apv'],
+  '.arx': ['video/x-arri-arx'],
   '.asf': ['video/x-ms-asf'],
   '.avi': ['video/avi', 'video/msvideo', 'video/vnd.avi', 'video/x-msvideo'],
+  '.braw': ['video/x-braw'],
+  '.cine': ['video/x-phantom-cine'],
+  '.crm': ['video/x-canon-crm'],
+  '.dif': ['video/x-dv', 'video/dv'],
   '.divx': ['video/divx'],
   '.dv': ['video/x-dv', 'video/dv'],
+  '.dvr-ms': ['video/x-ms-dvr'],
+  '.evo': ['video/mpeg'],
   '.f4v': ['video/x-f4v', 'video/mp4'],
   '.flv': ['video/x-flv'],
+  '.gxf': ['video/x-gxf'],
+  '.h264': ['video/h264'],
+  '.h265': ['video/h265'],
+  '.hevc': ['video/h265'],
   '.insv': ['video/mp4'],
+  '.ivf': ['video/x-ivf'],
+  '.m1v': ['video/mpeg'],
+  '.m2p': ['video/mp2p'],
   '.m2t': ['video/mp2t'],
   '.m2ts': ['video/mp2t'],
+  '.m2v': ['video/mpeg'],
   '.m4v': ['video/x-m4v'],
+  '.mj2': ['video/mj2'],
+  '.mjpeg': ['video/x-motion-jpeg'],
+  '.mjpg': ['video/x-motion-jpeg'],
   '.mk3d': ['video/x-matroska'],
   '.mkv': ['video/x-matroska'],
+  '.mlv': ['video/x-magic-lantern'],
   '.mod': ['video/mpeg'],
   '.mov': ['video/quicktime'],
   '.mp4': ['video/mp4'],
@@ -181,18 +235,27 @@ const video: Record<string, string[]> = {
   '.mpg': ['video/mpeg'],
   '.mts': ['video/mp2t'],
   '.mxf': ['application/mxf'],
+  '.nev': ['video/x-nikon-nev'],
+  '.nut': ['video/x-nut'],
+  '.ogm': ['video/ogg'],
   '.ogv': ['video/ogg'],
   // FL-968: DJI Osmo 360 recordings (dual fisheye in an MP4 container)
   '.osv': ['video/mp4'],
   '.qt': ['video/quicktime'],
+  '.r3d': ['video/x-red-r3d'],
   '.rm': ['video/vnd.rn-realvideo'],
   '.rmvb': ['video/vnd.rn-realvideo'],
   '.tod': ['video/mp2t'],
+  '.tp': ['video/mp2t'],
+  '.trp': ['video/mp2t'],
   '.ts': ['video/mp2t'],
+  '.vc1': ['video/vc1'],
   '.vob': ['video/mpeg'],
   '.vro': ['video/mpeg'],
   '.webm': ['video/webm'],
   '.wmv': ['video/x-ms-wmv'],
+  '.wtv': ['video/x-ms-wtv'],
+  '.y4m': ['video/x-yuv4mpeg'],
 };
 
 const sidecar: Record<string, string[]> = {
@@ -213,6 +276,7 @@ export const mimeTypes = {
   sidecar,
   video,
   raw,
+  design,
   webUnsupportedImage,
 
   isAsset: (filename: string) => {
@@ -230,11 +294,14 @@ export const mimeTypes = {
   canBeTransparent: (filename: string) =>
     transparentCapableExtensions.has(getFilenameExtension(filename).toLowerCase()),
   isRaw: (filename: string) => isType(filename, raw),
+  isDesign: (filename: string) => isType(filename, design),
+  isCinemaRaw: (filename: string) => cinemaRaw.has(getFilenameExtension(filename).toLowerCase()),
   isHeic: (filename: string) => heicExtensions.has(getFilenameExtension(filename).toLowerCase()),
   lookup,
   assetType: (filename: string) => {
     const contentType = lookup(filename);
-    if (contentType.startsWith('image/')) {
+    // A design file is an image whatever its own type says (a PDF is "application/pdf").
+    if (contentType.startsWith('image/') || isType(filename, design)) {
       return AssetType.Image;
     }
 
@@ -244,5 +311,10 @@ export const mimeTypes = {
 
     return AssetType.Other;
   },
-  getSupportedFileExtensions: () => [...Object.keys(image), ...Object.keys(video)],
+  // ponytail: folders Frameleaf watches or walks keep to photos and videos (and .psd, as before), so an
+  // upgrade does not pull every PDF beside the photos into the library. Design files arrive by upload or import.
+  getSupportedFileExtensions: () => [
+    ...Object.keys(image).filter((extension) => extension === '.psd' || !Object.hasOwn(design, extension)),
+    ...Object.keys(video),
+  ],
 };

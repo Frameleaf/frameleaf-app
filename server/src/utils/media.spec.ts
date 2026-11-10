@@ -99,6 +99,19 @@ describe('Log video commands (FL-1285)', () => {
     expect(vf).not.toContain('lut3d');
   });
 
+  it('reshapes Dolby Vision profile 5 with libplacebo only when the job asks for it (FL-1357)', () => {
+    const config = BaseConfig.create(defaults.ffmpeg, interfaces);
+    const profile5 = { ...hdr, colorTransfer: ColorTransfer.Unknown };
+    expect(filters(config.getCommand(TranscodeTarget.Video, profile5).outputOptions)).not.toContain('libplacebo');
+    const vf = filters(
+      config.getCommand(TranscodeTarget.Video, { ...profile5, dolbyVisionReshape: true }).outputOptions,
+    );
+    expect(vf).toContain(
+      'libplacebo=apply_dolbyvision=true:tonemapping=hable:colorspace=bt709:color_primaries=bt709:color_trc=bt709',
+    );
+    expect(vf).not.toContain('tonemapx');
+  });
+
   it('never applies a Log LUT to a PQ or HLG stream', () => {
     const config = BaseConfig.create(defaults.ffmpeg, interfaces);
     const mislabelled = { ...hdr, logConversion: log.logConversion };

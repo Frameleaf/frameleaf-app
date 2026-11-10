@@ -2,6 +2,7 @@ import { Kysely, type QueryExecutorProvider, type RawBuilder, type SelectQueryBu
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { validate as isUuid } from 'uuid';
+import type { RunFailureCause } from 'src/queue/run-failure-cause.js';
 import type { DB } from 'src/schema/index.js';
 import { JobName, MediaOperationKind, QueueName } from 'src/enum.js';
 import { costReusedRead } from 'src/queue/coalesced-task.js';
@@ -9,11 +10,21 @@ import { QUEUE_CHANNEL } from 'src/queue/notifications.js';
 import {
   clearProcessingFailure,
   isProcessingFailureStep,
+  processingFailureSteps,
   processingIsSetAside,
   queuedProcessingIsSetAside,
   recordProcessingFailure,
 } from 'src/queue/processing-failure.js';
-import { getRun, listRunItems, listRuns, observeQueueRun, reportedQueueJobs } from 'src/queue/run-query.js';
+import {
+  getRun,
+  listRunItems,
+  listRuns,
+  observeQueueRun,
+  reportedQueueJobs,
+  rewriteFailureCauses,
+  runCountsPhotos,
+  runFailureRoots,
+} from 'src/queue/run-query.js';
 import {
   JobDependencyReason,
   QUEUE_BATCH,
@@ -954,12 +965,13 @@ export class SqlQueueStore {
   }
 
   /** Activity and the running-jobs summary poll this; a costly recount is shared and not repeated at once. */
-  private readonly runReads = costReusedRead(({ take, skip }: { take: number; skip: number }) =>
-    listRuns(this.db, take, skip),
+  private readonly runReads = costReusedRead(
+    ({ take, skip, foldNightly }: { take: number; skip: number; foldNightly: boolean }) =>
+      listRuns(this.db, take, skip, foldNightly),
   );
 
-  listRuns(take: number, skip: number) {
-    return this.runReads({ take, skip });
+  listRuns(take: number, skip: number, foldNightly = false) {
+    return this.runReads({ take, skip, foldNightly });
   }
 
   /** A run's page polls this; an unfinished run is recounted from its jobs, so it is shared like `listRuns`. */
@@ -1167,11 +1179,23 @@ export class SqlQueueStore {
    * parent can run again. Never replays cancelled, operation-owned or unsafe work. The run's holds still apply.
    */
   async retryRun(runId: string, db: Executor): Promise<number> {
+    return (await this.putBackRunWork(runId, db)).jobs;
+  }
+
+  /**
+   * `retryRun`, of only the photos (roots) `only.roots`, or the jobs `only.jobIds`, when given; returns how many jobs
+   * and photos went back.
+   */
+  private async putBackRunWork(runId: string, db: Executor, only: { roots?: string[]; jobIds?: string[] } = {}) {
+    const { roots, jobIds } = only;
     let total = 0;
+    const photos = new Set<string>();
     for (;;) {
-      const { rows } = await sql<{ id: string }>`WITH RECURSIVE eligible AS (
+      const { rows } = await sql<{ id: string; root: string | null }>`WITH RECURSIVE eligible AS (
         SELECT j.id,j."parentId",j.state FROM job j
         WHERE j."runId"=${runId}::uuid AND j."safeToRetry" AND j.data->>'operationId' IS NULL
+          ${roots ? sql`AND j."rootItemKey" = any(${roots}::text[])` : sql``}
+          ${jobIds ? sql`AND j.id = any(${jobIds}::uuid[])` : sql``}
           AND j.state IN ('failed','blocked') AND NOT (${queuedProcessingIsSetAside})
           AND (j."dedupKey" IS NULL OR NOT EXISTS (
             SELECT 1 FROM job d WHERE d.queue=j.queue AND d."dedupKey"=j."dedupKey" AND d.id<>j.id
@@ -1183,15 +1207,86 @@ export class SqlQueueStore {
         UNION SELECT e.id FROM eligible e JOIN recoverable p ON p.id=e."parentId"
       ) UPDATE job j SET state='pending',"availableAt"=${availability(sql`j."runId"`, sql`j.name`)},"finishedAt"=NULL,error=NULL,
         "retryBaseAttempt"=attempt,"cancelRequestedAt"=NULL,"cancelReason"=NULL
-        WHERE id IN (SELECT id FROM recoverable LIMIT 1000) RETURNING id`.execute(db);
+        WHERE id IN (SELECT id FROM recoverable LIMIT 1000) RETURNING id, "rootItemKey" root`.execute(db);
       total += rows.length;
+      for (const { root } of rows) if (root) photos.add(root);
       if (rows.length < 1000) break;
     }
     if (total > 0) {
       await sql`UPDATE job_run SET "finishedAt"=NULL WHERE id=${runId}::uuid`.execute(db);
       this.wake();
     }
-    return total;
+    return { jobs: total, photos: photos.size };
+  }
+
+  /**
+   * FL-1349 Try again now: one cause's left-over photos (stopped ones aside) go back, their processing failures
+   * re-armed first (set aside work is never put back otherwise). Returns how many photos went back (tasks, in a run
+   * that counts tasks), or undefined for an unknown run.
+   */
+  async retryRunFailures(runId: string, cause: RunFailureCause): Promise<number | undefined> {
+    const photos = await this.db.transaction().execute(async (tx) => {
+      const {
+        rows: [run],
+      } = await sql`select id from job_run where id = ${runId}::uuid for no key update`.execute(tx);
+      if (!run) return;
+      // a run that counts tasks has no photos: each failed task is its own item, named by its job id
+      const countsPhotos = (await runCountsPhotos(tx, runId)) ?? true;
+      const items = await runFailureRoots(tx, runId, cause, countsPhotos);
+      if (items.length === 0) return 0;
+      await sql`update asset_processing_failure f set "quarantinedAt" = null, attempts = 0 from job j
+        where j."runId" = ${runId}::uuid and j.state = 'failed'
+          and ${countsPhotos ? sql`j."rootItemKey" = any(${items}::text[])` : sql`j.id = any(${items}::uuid[])`}
+          and f."assetId" = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end
+          and f.step = j.name and f."dismissedAt" is null`.execute(tx);
+      const { jobs, photos } = await this.putBackRunWork(
+        runId,
+        tx,
+        countsPhotos ? { roots: items } : { jobIds: items },
+      );
+      await rewriteFailureCauses(tx, runId);
+      return countsPhotos ? photos : jobs;
+    });
+    if (photos !== undefined) this.forgetRunReads();
+    return photos;
+  }
+
+  /**
+   * FL-1349 Stop trying: the processing steps (`processingFailureSteps`) that failed on one cause's left-over photos
+   * are dismissed, so nightly reprocessing selects them no more. Their jobs stay failed: history and the per-photo
+   * list are kept. Returns how many photos were stopped, or undefined for an unknown run.
+   */
+  async stopRunFailures(runId: string, cause: RunFailureCause): Promise<number | undefined> {
+    const photos = await this.db.transaction().execute(async (tx) => {
+      const {
+        rows: [run],
+      } = await sql`select id from job_run where id = ${runId}::uuid for no key update`.execute(tx);
+      if (!run) return;
+      const roots = await runFailureRoots(tx, runId, cause);
+      if (roots.length === 0) return 0;
+      // a fixed cause, never exception text (`recordProcessingFailure`)
+      const lastError = cause === 'unsupported' ? 'unsupported' : 'unreadable';
+      // keyed by what each task works on (`data.id`), as the set-aside checks are; counted by photo (root)
+      const {
+        rows: [stopped],
+      } = await sql<{ photos: number }>`with picked as (
+          select distinct j."rootItemKey" root, a.id "assetId", j.name step from job j join asset a
+            on a.id = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end
+          where j."runId" = ${runId}::uuid and j."rootItemKey" = any(${roots}::text[])
+            and j.state in ('failed','needs_attention') and j.name = any(${[...processingFailureSteps]}::text[])
+        ), written as (
+          insert into asset_processing_failure as f ("assetId", step, attempts, "lastError", "lastFailedAt", "dismissedAt")
+          select distinct "assetId", step, 1, ${lastError}::text, clock_timestamp(), clock_timestamp() from picked
+          on conflict ("assetId", step) do update set "dismissedAt" = coalesce(f."dismissedAt", excluded."dismissedAt")
+          returning 1
+        ) select (select count(distinct root) from picked)::int photos, (select count(*) from written) "written"`.execute(
+        tx,
+      );
+      await rewriteFailureCauses(tx, runId);
+      return stopped.photos;
+    });
+    if (photos !== undefined) this.forgetRunReads();
+    return photos;
   }
 
   /**

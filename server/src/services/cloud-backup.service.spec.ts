@@ -3,6 +3,7 @@ import {
   generateKeyPair as generateLockedKeyPair,
   isLockedFile,
 } from '@frameleaf/locked-crypto';
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import AsyncLock from 'async-lock';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
@@ -27,6 +28,7 @@ import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
   DatabaseLock,
+  JobName,
   JobStatus,
   MediaOperationKind,
   MediaOperationStatus,
@@ -318,6 +320,7 @@ describe(CloudBackupService.name, () => {
   let cloudBackup: Record<string, Mock>;
   let details: Record<string, Mock>;
   let selection: Record<string, Mock>;
+  let drills: Record<string, Mock>;
   /** What each streamed upload sent (the gzipped manifests). */
   let streamed: Buffer[];
   /** A real folder: a completed client manifest appends its signed snapshot to the history kept there. */
@@ -348,6 +351,7 @@ describe(CloudBackupService.name, () => {
       details as never,
       selection as never,
       mocks.lockedEncryption as never,
+      drills as never,
     );
 
   const configWrites = () =>
@@ -499,6 +503,15 @@ describe(CloudBackupService.name, () => {
       getAlbumRecords: vi.fn().mockResolvedValue(new Map()),
       getPersonRecords: vi.fn().mockResolvedValue(new Map()),
       getAlbumMembers: vi.fn().mockResolvedValue(new Map()),
+    };
+    drills = {
+      start: vi.fn().mockResolvedValue(undefined),
+      finish: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue(undefined),
+      list: vi.fn().mockResolvedValue([]),
+      latestFinished: vi.fn().mockResolvedValue(undefined),
+      assetsAddedAt: vi.fn().mockResolvedValue(new Map()),
     };
     selection = {
       getDecisionRun: vi.fn().mockResolvedValue(undefined),
@@ -1886,6 +1899,17 @@ describe(CloudBackupService.name, () => {
         lastManifestKey: MANIFEST_KEY,
         lastRun: { status: 'completed', uploaded: 3, skipped: 1 },
       });
+      // FL-819: the owner's workflows that start when a backup finishes
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: expect.objectContaining({
+            trigger: WorkflowTrigger.CloudBackupCompleted,
+            deliveryId: 'cloud-backup:run-1:completed',
+            detail: expect.objectContaining({ uploaded: 3, alreadyBackedUp: 1 }),
+          }),
+        },
+      });
     });
 
     it('uploads no file on a second run when nothing changed', async () => {
@@ -2344,6 +2368,23 @@ describe(CloudBackupService.name, () => {
       );
       expect(index.finishManifest).toHaveBeenCalledWith(MANIFEST_ID, { status: 'failed' });
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRun: { status: 'failed' } });
+      // FL-819: workflows hear of the failure once, with counts only (never the error, which can name files)
+      const events = mocks.job.queue.mock.calls.filter(([item]) => item.name === JobName.WorkflowEventDispatch);
+      expect(events).toEqual([
+        [
+          {
+            name: JobName.WorkflowEventDispatch,
+            data: {
+              event: expect.objectContaining({
+                trigger: WorkflowTrigger.CloudBackupFailed,
+                deliveryId: 'cloud-backup:run-1:failed',
+                subject: { kind: 'cloud-backup', id: 'run-1', name: 'Cloud Backup' },
+              }),
+            },
+          },
+        ],
+      ]);
+      expect(JSON.stringify(events)).not.toContain('403');
       // The checkpointed dump remains reachable for a retry; a fresh run can remove abandoned dumps.
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
@@ -5780,6 +5821,137 @@ describe(CloudBackupService.name, () => {
       for (const secret of [s3.bucket, s3.endpoint, 'eu-central-2', INSTANCE_ID, fingerprint, 'IMG_1.jpg', 'run-1']) {
         expect(text).not.toContain(secret);
       }
+    });
+  });
+  describe('restore drill (FL-879)', () => {
+    const report = (overrides: Record<string, unknown> = {}) => ({
+      id: '00000000-0000-7000-8000-000000000001',
+      target: 'byo-s3',
+      trigger: 'scheduled',
+      startedAt: new Date('2026-11-08T03:40:00.000Z'),
+      finishedAt: new Date('2026-11-08T03:46:12.000Z'),
+      result: 'passed',
+      failedStep: null,
+      counts: { library: { items: 3, photos: 2, videos: 1, albums: 1 }, restored: null, checked: 3, matched: 3 },
+      sampleSize: 3,
+      mismatches: [],
+      report: { durationSeconds: 372, backup: { createdAt: '2026-11-08T02:00:00.000Z' } },
+      signature: 'sig',
+      keyFingerprint: 'kid',
+      signerKey: { kty: 'OKP' },
+      ...overrides,
+    });
+
+    it('asks for read-only authority, so a read-only managed grant still allows it', () => {
+      expect(sut['backupOperation'](operationOf({ snapshot: { task: 'drill' } }))).toBe('restore');
+    });
+
+    it('shows a running drill as a check, flagged as a drill (no new task value)', () => {
+      expect(
+        sut['mapActiveRun'](operationOf({ snapshot: { task: 'drill' }, result: { task: 'drill', checked: 7 } })),
+      ).toMatchObject({
+        task: 'verify',
+        drill: true,
+        checked: 7,
+      });
+    });
+
+    it('is due with no drill, 30 days after a pass, and a day after a failure', () => {
+      const now = new Date('2026-12-10T00:00:00.000Z');
+      expect(sut['drillDue'](undefined, now)).toBe(true);
+      expect(sut['drillDue'](report({ startedAt: new Date('2026-11-08T03:40:00.000Z') }) as never, now)).toBe(true);
+      expect(sut['drillDue'](report({ startedAt: new Date('2026-11-20T00:00:00.000Z') }) as never, now)).toBe(false);
+      expect(
+        sut['drillDue'](report({ result: 'failed', startedAt: new Date('2026-12-09T12:00:00.000Z') }) as never, now),
+      ).toBe(false);
+      expect(
+        sut['drillDue'](report({ result: 'failed', startedAt: new Date('2026-12-08T12:00:00.000Z') }) as never, now),
+      ).toBe(true);
+    });
+
+    it('reports the last drill, the next one, and a failure that needs attention', async () => {
+      drills.latestFinished.mockResolvedValue(report({ result: 'failed', failedStep: 'unlock' }));
+      const status = await sut['drillStatus'](true);
+      expect(status).toMatchObject({
+        lastDrill: {
+          result: 'failed',
+          failedStep: 'unlock',
+          durationSeconds: 372,
+          keyFingerprint: 'kid',
+          signed: true,
+        },
+        drillNeedsAttention: true,
+      });
+      drills.latestFinished.mockResolvedValue(undefined);
+      await expect(sut['drillStatus'](false)).resolves.toEqual({
+        lastDrill: null,
+        drillDue: false,
+        nextDrillAt: null,
+        drillNeedsAttention: false,
+      });
+    });
+
+    it('starts after a scheduled backup that completed, only when due', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = {
+        ...claim(),
+        lastRun: { operationId: 'run-1', status: 'completed' },
+      } as never;
+      drills.latestFinished.mockResolvedValue(undefined);
+      await sut['startDueDrill'](operationOf({ snapshot: { task: 'backup', scheduled: true } }));
+      expect(operations.createExclusive).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          label: 'Restore drill',
+          snapshot: expect.objectContaining({ task: 'drill', scheduled: true }),
+        }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+
+      operations.createExclusive.mockClear();
+      await sut['startDueDrill'](operationOf({ snapshot: { task: 'backup', scheduled: false } }));
+      drills.latestFinished.mockResolvedValue(report({ startedAt: new Date() }));
+      await sut['startDueDrill'](operationOf({ snapshot: { task: 'backup', scheduled: true } }));
+      expect(operations.createExclusive).not.toHaveBeenCalled();
+    });
+
+    it('waits for the operation holding the bucket, then starts, instead of being lost', async () => {
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = {
+        ...claim(),
+        lastRun: { operationId: 'run-1', status: 'completed' },
+      } as never;
+      mocks.user.getAdmin.mockResolvedValue({ id: 'admin-1' } as never);
+      drills.latestFinished.mockResolvedValue(undefined);
+      operations.createExclusive.mockResolvedValueOnce({
+        active: { id: 'check-1', ownerId: 'admin-1', fingerprint: null },
+      });
+      operations.getOfKind.mockResolvedValueOnce(operationOf({ id: 'check-1', snapshot: { task: 'verify' } }));
+      await sut['startDueDrill'](operationOf({ snapshot: { task: 'backup', scheduled: true } }));
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ drillDueAt: expect.any(String) });
+
+      // the check ends: the held drill starts and is no longer due
+      operations.createExclusive.mockResolvedValueOnce({ created: operationOf() });
+      await sut['startHeldDrill']();
+      expect(operations.createExclusive).toHaveBeenLastCalledWith(
+        expect.objectContaining({ snapshot: expect.objectContaining({ task: 'drill', scheduled: true }) }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).not.toHaveProperty('drillDueAt');
+    });
+
+    it('serves a finished report with the key that signed it, and nothing for an unfinished one', async () => {
+      drills.get.mockResolvedValue(report());
+      await expect(sut.getDrillReport('id')).resolves.toMatchObject({
+        signature: {
+          algorithm: 'Ed25519',
+          keyFingerprint: 'kid',
+          value: 'sig',
+          prefix: 'frameleaf-restore-drill-v1\n',
+        },
+      });
+      drills.get.mockResolvedValue(report({ signature: null, result: 'running' }));
+      await expect(sut.getDrillReport('id')).rejects.toThrow('no report');
     });
   });
 });

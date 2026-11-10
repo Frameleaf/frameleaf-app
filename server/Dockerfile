@@ -166,7 +166,7 @@ RUN ./imagemagick.sh
 
 FROM base-server-imagemagick AS base-server-libvips
 
-COPY server/base-image/sources/libvips.json server/base-image/sources/libvips.sh ./
+COPY server/base-image/sources/libvips.json server/base-image/sources/pdfium.json server/base-image/sources/libvips.sh ./
 COPY server/base-image/sources/libvips-patches/ ./libvips-patches/
 RUN ./libvips.sh
 

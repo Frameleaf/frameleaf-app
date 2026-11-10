@@ -7,7 +7,7 @@ import {
   ShallowDehydrateObject,
 } from 'kysely';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { OutputInfo } from 'sharp';
 import type { QueueExecution } from 'src/queue/types.js';
@@ -44,8 +44,9 @@ import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import * as physicalFiles from 'src/repositories/physical-file.repository.js';
-import { MediaService } from 'src/services/media.service.js';
+import { MediaService, RAW_DECODER_VERSION_KEY, isDriveFullError } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
 import { LockedKeyUnavailableError, withPlainCopy } from 'src/utils/locked-read.js';
@@ -166,6 +167,47 @@ describe(MediaService.name, () => {
       await sut.handleQueueGenerateThumbnails({ force: true });
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.ProfileImageRepair, data: {} });
       expect(mocks.person.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onBootstrap: RAW decoder update (FL-1355)', () => {
+    beforeEach(() => {
+      vi.spyOn(sut['storageCore'], 'getVideoInterfaces').mockResolvedValue({ dri: [], mali: false });
+      mocks.assetJob.getRawRungAssetIds.mockResolvedValue(['asset-1', 'asset-2']);
+      mocks.serverInfo.getBuildVersions.mockResolvedValue({ libraw: 'LibRaw 0.22.3-Release' } as never);
+    });
+
+    it('only notes the decoder on the first start', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+      await sut.onBootstrap();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(RAW_DECODER_VERSION_KEY, {
+        version: 'LibRaw 0.22.3-Release',
+      });
+    });
+
+    it('does nothing while the decoder is the same', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ version: 'LibRaw 0.22.3-Release' });
+      await sut.onBootstrap();
+      expect(mocks.assetJob.getRawRungAssetIds).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('tries every file the old decoder could not render again', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ version: 'LibRaw 0.22.0-Release' });
+      await sut.onBootstrap();
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } },
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-2' } },
+      ]);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(RAW_DECODER_VERSION_KEY, {
+        version: 'LibRaw 0.22.3-Release',
+      });
+    });
+
+    it('starts all the same when the decoder cannot be asked', async () => {
+      mocks.serverInfo.getBuildVersions.mockRejectedValue(new Error('no decoder'));
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
     });
   });
 
@@ -298,6 +340,19 @@ describe(MediaService.name, () => {
       mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
       vi.mocked(renderRawWithLibRaw).mockReset();
       vi.mocked(renderRawWithLibRaw).mockResolvedValue(renderedRawBuffer);
+      mocks.assetJob.setRawRung.mockResolvedValue();
+      // The ladder's first rung alone, as these tests knew it; the FL-1355 tests replace it.
+      mocks.media.renderRaw.mockImplementation(async (input, options) => {
+        const signal = options?.signal;
+        try {
+          return { rung: 'libraw', buffer: await renderRawWithLibRaw(input, signal) };
+        } catch (error) {
+          if (error instanceof RawRenderError && !['cancelled', 'io'].includes(error.reason)) {
+            error.ladderExhausted = true;
+          }
+          throw error;
+        }
+      });
     });
 
     it.each([AssetFileType.HdrPreview, AssetFileType.Preview, AssetFileType.Thumbnail])(
@@ -970,7 +1025,7 @@ describe(MediaService.name, () => {
       ]);
     });
 
-    it('should throw "Missing video metadata" when probe returns no video streams', async () => {
+    it('skips a file with sound only: there is no picture, and nothing is wrong with it (FL-1357)', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
@@ -980,10 +1035,24 @@ describe(MediaService.name, () => {
       mocks.storage.checkFileExists.mockResolvedValue(true);
       mocks.media.probe.mockResolvedValue({ videoStreams: [], audioStreams: [], format: {} } as any);
 
-      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow(
-        `Missing video metadata for asset ${asset.id}`,
-      );
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('skips cinema RAW that ffmpeg cannot open, without failing or retrying (FL-1357)', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/A001_C001.braw' })
+        .exif()
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        videoStream: null,
+        format: null,
+      });
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      mocks.media.probe.mockRejectedValue(new Error('ffprobe exited with code 1: Invalid data found'));
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
     });
 
     it('should wrap probe failures with a descriptive error preserving the cause', async () => {
@@ -1973,6 +2042,25 @@ describe(MediaService.name, () => {
       expect(execution.handedToCare).toBe(true);
     });
 
+    it('a design file with no picture inside is skipped and never sent to Library care (FL-1358)', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'logo.eps', originalPath: '/data/library/logo.eps' })
+        .exif()
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const unavailable = new DesignPreviewUnavailableError(asset.originalPath);
+      mocks.media.decodeImage.mockRejectedValue(unavailable);
+      mocks.media.generateImageThumbnails.mockRejectedValue(unavailable);
+      const execution = thumbnailAttempt();
+
+      await expect(queueExecution.run(execution, () => sut.handleGenerateThumbnails({ id: asset.id }))).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(execution.handedToCare).toBeFalsy();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
     it('two attempts at the same photo at once: one failing after its own hand-off leaves the other hand-off in place', async () => {
       const asset = AssetFactory.from().exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
@@ -2039,6 +2127,176 @@ describe(MediaService.name, () => {
 
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
       expect(execution.handedToCare).toBeUndefined();
+    });
+
+    describe('RAW ladder (FL-1355)', () => {
+      const raw = (exif: Record<string, unknown> = {}) =>
+        AssetFactory.from({ originalFileName: 'file.nef' })
+          .exif({ exifImageWidth: 8256, exifImageHeight: 5504, orientation: '6', ...exif })
+          .build();
+      const start = (asset: ReturnType<typeof raw>, image: Record<string, unknown> = {}) => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          image: { extractEmbedded: false, ...image },
+          job: { thumbnailGeneration: { concurrency: 1 } },
+        });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        return sut.handleGenerateThumbnails({ id: asset.id });
+      };
+
+      it('renders half size on every processor when no full-size rendition is made', async () => {
+        const asset = raw();
+        mocks.media.renderRaw.mockResolvedValue({ rung: 'libraw', buffer: renderedRawBuffer });
+
+        await expect(start(asset)).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.renderRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, {
+          signal: undefined,
+          pixels: 8256 * 5504,
+          halfSize: true,
+          threads: availableParallelism(),
+        });
+        expect(mocks.assetJob.setRawRung).toHaveBeenCalledExactlyOnceWith(asset.id, null);
+      });
+
+      it('renders full size for a full-size rendition, a small sensor, or unknown dimensions', async () => {
+        mocks.media.renderRaw.mockResolvedValue({ rung: 'libraw', buffer: renderedRawBuffer });
+        await start(raw(), { fullsize: { enabled: true } });
+        await start(raw({ exifImageWidth: 2000, exifImageHeight: 1500 }));
+        await start(raw({ exifImageWidth: null, exifImageHeight: null }));
+        // half of the short edge (1296) would be under the 1440 preview
+        await start(raw({ exifImageWidth: 3872, exifImageHeight: 2592 }));
+        expect(mocks.media.renderRaw.mock.calls.map(([, options]) => options?.halfSize)).toEqual([
+          false,
+          false,
+          false,
+          false,
+        ]);
+      });
+
+      it('shares the processors between concurrent thumbnail jobs', async () => {
+        const asset = raw();
+        mocks.media.renderRaw.mockResolvedValue({ rung: 'libraw', buffer: renderedRawBuffer });
+        mocks.systemMetadata.get.mockResolvedValue({
+          image: { extractEmbedded: false },
+          job: { thumbnailGeneration: { concurrency: 4096 } },
+        });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        await sut.handleGenerateThumbnails({ id: asset.id });
+        expect(mocks.media.renderRaw).toHaveBeenCalledWith(asset.originalPath, expect.objectContaining({ threads: 1 }));
+      });
+
+      it.each(['unsupported', 'timeout', 'resource_limit', 'decode_failed'] as const)(
+        "shows the camera's preview and records why when the sensor render ends with %s",
+        async (reason) => {
+          const asset = raw();
+          mocks.media.renderRaw.mockResolvedValue({
+            rung: 'preview',
+            buffer: extractedBuffer,
+            failure: new RawRenderError(reason, 'X'),
+          });
+
+          await expect(start(asset, { fullsize: { enabled: true } })).resolves.toBe(JobStatus.Success);
+
+          // the camera's picture takes the photo's orientation, and no full-size rendition is made from it
+          expect(mocks.media.generateImageThumbnails).toHaveBeenCalledExactlyOnceWith(
+            extractedBuffer,
+            expect.objectContaining({ orientation: 6, size: 1440 }),
+            expect.objectContaining({ outputs: [expect.anything(), expect.anything()] }),
+          );
+          expect(mocks.assetJob.setRawRung).toHaveBeenCalledExactlyOnceWith(asset.id, `embedded/${reason}`);
+          expect(mocks.job.queue).not.toHaveBeenCalledWith(
+            expect.objectContaining({ name: JobName.MediaHealthFixAsset }),
+          );
+        },
+      );
+
+      it('does not record a rung when the fast camera preview is the configured choice', async () => {
+        const asset = raw();
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
+
+        await expect(start(asset, { extractEmbedded: true })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.renderRaw).not.toHaveBeenCalled();
+        expect(mocks.assetJob.setRawRung).not.toHaveBeenCalled();
+      });
+
+      it.each(['timeout', 'resource_limit', 'dependency_missing'] as const)(
+        'keeps the file without a picture, and without failing the job, when every rung fails: %s',
+        async (reason) => {
+          const asset = raw();
+          const failure = Object.assign(new RawRenderError(reason, 'X'), { ladderExhausted: true });
+          mocks.media.renderRaw.mockRejectedValue(failure);
+
+          await expect(start(asset)).resolves.toBe(JobStatus.Skipped);
+
+          expect(mocks.assetJob.setRawRung).toHaveBeenCalledExactlyOnceWith(asset.id, `placeholder/${reason}`);
+          expect(mocks.job.queue).not.toHaveBeenCalledWith(
+            expect.objectContaining({ name: JobName.MediaHealthFixAsset }),
+          );
+        },
+      );
+
+      it('hands a file no rung can read to Library care, which names the cause', async () => {
+        const asset = raw();
+        const failure = Object.assign(new RawRenderError('unsupported', 'X'), { ladderExhausted: true });
+        mocks.media.renderRaw.mockRejectedValue(failure);
+
+        await expect(start(asset)).resolves.toBe(JobStatus.Skipped);
+
+        expect(mocks.assetJob.setRawRung).toHaveBeenCalledExactlyOnceWith(asset.id, 'placeholder/unsupported');
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.MediaHealthFixAsset,
+          data: { id: asset.id, from: 'preview', message: failure.message },
+        });
+      });
+
+      it("counts a camera preview that won't open as no picture", async () => {
+        const asset = raw();
+        const failure = new RawRenderError('timeout', 'ETIMEDOUT');
+        mocks.media.renderRaw.mockResolvedValue({ rung: 'preview', buffer: extractedBuffer, failure });
+        mocks.media.generateImageThumbnails.mockRejectedValue(
+          Object.assign(new SharpOperationError('VipsJpeg: premature end of JPEG image'), { decodeFailure: true }),
+        );
+
+        await expect(start(asset)).resolves.toBe(JobStatus.Skipped);
+
+        expect(mocks.media.renderRaw).toHaveBeenCalledOnce();
+        expect(mocks.assetJob.setRawRung).toHaveBeenCalledExactlyOnceWith(asset.id, 'placeholder/timeout');
+      });
+
+      it("takes the camera's picture when the sensor render itself will not open", async () => {
+        const asset = raw();
+        mocks.media.renderRaw.mockResolvedValue({ rung: 'libraw', buffer: renderedRawBuffer });
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        mocks.media.generateImageThumbnails.mockRejectedValueOnce(
+          Object.assign(new SharpOperationError('tiff2vips: not a TIFF'), { decodeFailure: true }),
+        );
+
+        await expect(start(asset)).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.generateImageThumbnails).toHaveBeenLastCalledWith(
+          extractedBuffer,
+          expect.objectContaining({ orientation: 6 }),
+          expect.anything(),
+        );
+        expect(mocks.assetJob.setRawRung).toHaveBeenCalledExactlyOnceWith(asset.id, 'embedded/decode_failed');
+      });
+
+      it.each(['ENOSPC', 'EDQUOT'])('leaves a full drive to the drive-full handling: %s', async (code) => {
+        const failure = new RawRenderError('resource_limit', code);
+        mocks.media.renderRaw.mockRejectedValue(failure);
+        await expect(start(raw())).rejects.toBe(failure);
+        expect(isDriveFullError(failure)).toBe(true);
+        expect(mocks.assetJob.setRawRung).not.toHaveBeenCalled();
+      });
+
+      it.each(['cancelled', 'io'] as const)('still fails the job so it retries: %s', async (reason) => {
+        const failure = new RawRenderError(reason, 'X');
+        mocks.media.renderRaw.mockRejectedValue(failure);
+        await expect(start(raw())).rejects.toBe(failure);
+        expect(mocks.assetJob.setRawRung).not.toHaveBeenCalled();
+      });
     });
 
     it('an unsupported RAW is sent too', async () => {
@@ -5536,6 +5794,72 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
       expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips cinema RAW it cannot encode: no playback copy, and no failure to retry (FL-1357)', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...asset,
+        ...probeStub.multipleVideoStreams,
+        originalPath: '/original/A001_C001.braw',
+      });
+      mocks.systemMetadata.get.mockResolvedValue({
+        ffmpeg: { transcode: TranscodePolicy.All, accel: TranscodeHardwareAcceleration.Disabled },
+      });
+      mocks.media.transcode.mockRejectedValue(new Error('Decoder (codec none) not found'));
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+
+      // a full drive is not a missing decoder: that one fails, so it is tried again when there is room
+      mocks.media.transcode.mockRejectedValue(new Error('av_interleaved_write_frame(): No space left on device'));
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).rejects.toThrow('No space left on device');
+    });
+
+    it('skips a file with sound only: there is no picture to copy (FL-1357)', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...asset,
+        ...probeStub.multipleVideoStreams,
+        videoStream: null as never,
+      });
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('plays the HDR10 base layer of Dolby Vision profile 7 (FL-1357)', async () => {
+      const stub = probeStub.videoStreamHDR;
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...asset,
+        ...stub,
+        videoStream: { ...stub.videoStream!, dvProfile: 7, dvBlSignalCompatibilityId: 6 },
+      });
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.All } });
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.hasLibplacebo).not.toHaveBeenCalled();
+    });
+
+    it('reshapes Dolby Vision profile 5 with libplacebo where it runs, and leaves it alone where it does not (FL-1357)', async () => {
+      const stub = probeStub.videoStreamHDR;
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...asset,
+        ...stub,
+        videoStream: { ...stub.videoStream!, dvProfile: 5, dvBlSignalCompatibilityId: 0 },
+      });
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.All } });
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+
+      mocks.media.hasLibplacebo.mockResolvedValue(true);
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.transcode).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({
+          outputOptions: expect.arrayContaining([expect.stringContaining('libplacebo=apply_dolbyvision=true')]),
+        }),
+      );
     });
 
     it('records when the graphics card stopped helping, and clears it once a copy is made on it again (FL-537)', async () => {

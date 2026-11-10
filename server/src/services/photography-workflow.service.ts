@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import {
   BadRequestException,
   ConflictException,
@@ -47,6 +48,7 @@ import { CacheControl, FrameleafWorker, JobName, JobStatus, QueueName, StorageFo
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyWorkflowRepository, type WorkflowRow } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -95,6 +97,9 @@ type Recipient = {
   /** Where the invitation was emailed, when it was. */
   email?: string;
 };
+/** FL-819: the gallery events are best effort; a failure to queue one is only logged. */
+const logger = LoggingRepository.create('PhotographyWorkflowService');
+
 type Round = {
   id: string;
   recipientId: string;
@@ -1350,22 +1355,54 @@ export class PhotographyWorkflowService {
   }
   async submit(id: string, token: string | undefined, input: PhotographyWorkflowMutationDto) {
     const dto = PhotographyWorkflowMutationDto.schema.parse(input);
-    return this.guestMutation(id, token, dto.expectedRevision, async (value, recipient, row) => {
+    let submitted: { ownerId: string; title: string; round: Round } | undefined;
+    const view = await this.guestMutation(id, token, dto.expectedRevision, async (value, recipient, row) => {
       if (recipient.choices.length === 0) throw new BadRequestException('Choose photographs first');
       this.withinLimit(row, recipient.choices);
       if (value.rounds.length >= 2000) throw new ConflictException('Selection round limit reached');
       await this.selection(row, recipient, recipient.choices);
-      value.rounds.push({
+      const round = {
         id: randomUUID(),
         recipientId: recipient.id,
         number: value.rounds.filter((r) => r.recipientId === recipient.id).length + 1,
         captureIds: [...recipient.choices],
         notes: structuredClone(recipient.notes),
         createdAt: iso(),
-      });
+      };
+      value.rounds.push(round);
+      submitted = { ownerId: row.ownerId, title: value.config.title, round };
       for (const capture of value.captures)
         if (recipient.choices.includes(capture.id) && capture.state === 'imported') capture.state = 'selected';
     });
+    if (submitted) await this.queueGalleryApproved(id, submitted);
+    return view;
+  }
+  /**
+   * FL-819: workflows that start when a client approves their choices in a Clients gallery. The
+   * message names the gallery and how many photographs were chosen; never the client, their notes or
+   * the photographs. Never fails the client's submission.
+   */
+  private async queueGalleryApproved(
+    id: string,
+    { ownerId, title, round }: { ownerId: string; title: string; round: Round },
+  ) {
+    try {
+      await this.jobs.queue({
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: {
+            trigger: WorkflowTrigger.ClientsGalleryApproved,
+            ownerId,
+            deliveryId: `clients-gallery:${id}:${round.id}`,
+            occurredAt: round.createdAt,
+            subject: { kind: 'clients-gallery', id, name: title || null },
+            detail: { chosen: round.captureIds.length, round: round.number },
+          },
+        },
+      });
+    } catch (error) {
+      logger.warn(`Could not start the workflows for Clients gallery ${id}: ${error}`);
+    }
   }
   async order(auth: AuthDto, id: string, input: PhotographyOrderCreateDto) {
     const dto = PhotographyOrderCreateDto.schema.parse(input);

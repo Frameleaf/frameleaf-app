@@ -27,6 +27,9 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
       return 'test-run';
     }),
     listRunItems: vitest.fn().mockResolvedValue([]),
+    reviewRunFailures: vitest.fn(),
+    retryRunFailures: vitest.fn(),
+    stopRunFailures: vitest.fn(),
     listRuns: vitest.fn().mockResolvedValue([]),
     dispatchImportedWork: vitest.fn().mockResolvedValue('test-import-run'),
     prepareImportedLibraryWork: vitest.fn().mockResolvedValue('test-import-run'),

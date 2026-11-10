@@ -1301,6 +1301,9 @@
   "reverseGeocoding.enabled": {
     "type": "boolean"
   },
+  "server.automationsLocalNetwork": {
+    "type": "boolean"
+  },
   "server.externalDomain": {
     "type": "string"
   },

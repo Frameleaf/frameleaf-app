@@ -25,6 +25,12 @@ export const ImageEncodingSchema = z
     inspectionStatus: z.enum(['identified', 'failed']).optional(),
     width: z.int().positive().optional(),
     height: z.int().positive().optional(),
+    pages: z.int().positive().optional().describe('Pages in a PDF or Illustrator document; the first is shown'),
+    variant: z
+      .string()
+      .max(40)
+      .optional()
+      .describe('A named flavour of the container, such as "fireworks-png"; unknown values are ignored'),
   })
   .meta({ id: 'ImageEncodingInfo' });
 

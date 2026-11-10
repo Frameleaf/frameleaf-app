@@ -42,7 +42,8 @@ where
 
 -- LockedEncryptionRepository.getUnlockedFilePaths
 select
-  a."originalPath" as path
+  a."originalPath" as path,
+  false as kept
 from
   public.asset a
 where
@@ -66,7 +67,8 @@ where
   )
 union
 select
-  f.path
+  f.path,
+  false
 from
   public.asset_file f
   join public.asset a on a.id = f."assetId"
@@ -89,6 +91,86 @@ where
     where
       o."assetId" = a.id
   )
+union
+select
+  kept.path,
+  true
+from
+  public.asset_health h
+  join public.asset a on a.id = h."assetId"
+  cross join lateral (
+    select
+      h.evidence ->> 'retainedPath'
+    union all
+    select
+      p.path
+    from
+      public.asset_health_step s
+      cross join lateral (
+        values
+          (s.undo ->> 'previousPath'),
+          (s.undo ->> 'retainedPath'),
+          (s.undo ->> 'originalPath')
+      ) as p (path)
+    where
+      s."healthId" = h.id
+      and jsonb_typeof(s.undo) = 'object'
+  ) as kept (path)
+where
+  a."ownerId" = $3::uuid
+  and a."libraryId" is null
+  and kept.path like '/%'
+  and not exists (
+    select
+      1
+    from
+      public.asset_lock l
+    where
+      l."assetId" = a.id
+  )
+  and not exists (
+    select
+      1
+    from
+      public.asset_origin o
+    where
+      o."assetId" = a.id
+  )
+
+-- LockedEncryptionRepository.getUnlockedCareAssetIds
+select
+  a.id
+from
+  public.asset a
+where
+  a."ownerId" = $1::uuid
+  and a."libraryId" is null
+  and exists (
+    select
+      1
+    from
+      public.asset_health h
+    where
+      h."assetId" = a.id
+  )
+  and not exists (
+    select
+      1
+    from
+      public.asset_lock l
+    where
+      l."assetId" = a.id
+  )
+  and not exists (
+    select
+      1
+    from
+      public.asset_origin o
+    where
+      o."assetId" = a.id
+  )
+order by
+  a.id
 
 -- LockedEncryptionRepository.getLockedAssets
 select

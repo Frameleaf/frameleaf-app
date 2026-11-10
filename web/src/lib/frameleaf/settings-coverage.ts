@@ -1419,6 +1419,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'reverseGeocoding.enabled',
   },
   {
+    pattern: 'server.automationsLocalNetwork',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
+    evidence: 'draft.server.automationsLocalNetwork = ',
+  },
+  {
     // OPS-14: the Public server URL is on Server & updates for every server (Remote access keeps a copy).
     pattern: 'server.externalDomain',
     kind: 'control',

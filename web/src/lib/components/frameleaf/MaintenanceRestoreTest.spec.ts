@@ -14,6 +14,7 @@ const never = {
   metadataVerifiedAt: null,
   originalsVerifiedAt: null,
   verifiedBy: null,
+  drillReportId: null,
   overdue: true,
   dueAt: null,
   intervalDays: 90,

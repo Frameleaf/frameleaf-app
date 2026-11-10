@@ -16,6 +16,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LOCKED_TEMP_NAME } from 'src/utils/locked-backup.js';
+import { LIBRARY_CARE_FOLDER } from 'src/utils/media-health-roots.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -81,6 +82,66 @@ describe(LockedFileRepository.name, () => {
       expect(files.find(({ path }) => path === sidecar)).toMatchObject({ kind: 'sidecar', table: 'asset_file' });
       expect(files.find(({ path }) => path === master)).toMatchObject({ table: 'asset_develop_revision' });
       expect(files.find(({ path }) => path === extra)).toMatchObject({ table: 'video_edit_version' });
+    });
+
+    it('reads the kept paths Library care records of the photo, and which of them something else names (FL-1364)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const care = `/media/${randomUUID()}/.library-care`;
+      const original = `${care}/${randomUUID()}.jpg`;
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: original });
+      const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+      const damaged = `${care}/${asset.id}-1.damaged.jpg`;
+      const changed = `${care}/${asset.id}-2.changed.jpg`;
+      const orphan = `${care}/${asset.id}-repaired.jpg`;
+      const theirs = `${care}/${asset.id}-theirs.jpg`;
+      const theirThumbnail = `${care}/${asset.id}-thumb.webp`;
+      await ctx.newAssetFile({ assetId: other.id, type: AssetFileType.Thumbnail, path: theirThumbnail });
+      await sql`UPDATE public.asset SET "originalPath" = ${theirs} WHERE id = ${other.id}::uuid`.execute(db);
+      const finding = async (
+        assetId: string,
+        category: string,
+        retainedPath: string | null,
+        undos: Record<string, unknown>[],
+      ) => {
+        const { rows } = await sql<{ id: string }>`
+          INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName",
+            evidence, resolution, "checkedAt")
+          VALUES (${assetId}::uuid, ${category}, 'resolved', 'info', ${original}, 'IMG_0001.jpg',
+            ${JSON.stringify(retainedPath ? { retainedPath } : {})}::text::jsonb, '{}'::jsonb, now())
+          RETURNING id`.execute(db);
+        for (const undo of undos) {
+          await sql`INSERT INTO public.asset_health_step ("healthId", "assetId", step, outcome, undo)
+            VALUES (${rows[0].id}::uuid, ${assetId}::uuid, 'fix', 'ok', ${JSON.stringify(undo)}::text::jsonb)`.execute(
+            db,
+          );
+        }
+      };
+      await finding(asset.id, 'corrupt', damaged, [
+        { kind: 'repair', previousPath: damaged, originalPath: orphan },
+        // a path outside Library care that the photo used right after a fix is not a kept file
+        { kind: 'relink', previousPath: theirs, originalPath: `/media/${randomUUID()}/elsewhere.jpg` },
+        { kind: 'restore', previousPath: original, originalPath: original, retainedPath: changed },
+        { kind: 'relink', previousPath: 'relative.jpg', originalPath: original, retainedPath: theirThumbnail },
+      ]);
+      // another photo's findings are its own
+      const otherDamaged = `${care}/${other.id}.damaged.jpg`;
+      await finding(other.id, 'corrupt', otherDamaged, []);
+      const trashed = `${care}/${asset.id}-trashed.jpg`;
+      await sql`INSERT INTO public.physical_file_trash (checksum, "originalFileName", path, "sizeInBytes")
+        VALUES (${Buffer.alloc(32, 2)}, 'IMG_0001.jpg', ${trashed}, 1)`.execute(db);
+
+      // what the records name, unchecked (an `originalPath` only inside Library care)
+      expect((await sut.recordedKeptPaths(asset.id)).toSorted()).toEqual(
+        [damaged, orphan, theirs, original, changed, 'relative.jpg', theirThumbnail].toSorted(),
+      );
+      // of those, what something else names: never the photo's to seal
+      const taken = await db
+        .transaction()
+        .execute((trx) =>
+          sut.keptPathsTaken(asset.id, [damaged, changed, orphan, theirs, theirThumbnail, otherDamaged, trashed], trx),
+        );
+      expect([...taken].toSorted()).toEqual([theirs, theirThumbnail, otherDamaged, trashed].toSorted());
     });
 
     it('is empty for an asset that does not exist', async () => {
@@ -465,6 +526,37 @@ describe(LockedFileRepository.name, () => {
       expect(paths).not.toContain(locked.originalPath);
       expect(paths).not.toContain(external.originalPath);
       expect(paths).not.toContain(theirs.originalPath);
+    });
+
+    it('adds the paths Library care records only inside the owner’s own folders, in normal form (FL-1364)', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const upload = join(media, 'upload', user.id);
+      // gone from disk: still cleaned beside
+      const kept = join(upload, 'ab', 'cd', LIBRARY_CARE_FOLDER, `${asset.id}-1.damaged.jpg`);
+      const outside = `/srv/elsewhere/${randomUUID()}.jpg`;
+      const crooked = `${upload}/x/../${randomUUID()}.jpg`;
+      const { rows } = await sql<{ id: string }>`
+        INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName",
+          evidence, resolution, "checkedAt")
+        VALUES (${asset.id}::uuid, 'corrupt', 'resolved', 'info', ${asset.originalPath}, 'x.jpg',
+          ${JSON.stringify({ retainedPath: kept })}::text::jsonb, '{}'::jsonb, now())
+        RETURNING id`.execute(db);
+      for (const previousPath of [outside, crooked]) {
+        await sql`INSERT INTO public.asset_health_step ("healthId", "assetId", step, outcome, undo)
+          VALUES (${rows[0].id}::uuid, ${asset.id}::uuid, 'put-back', 'ok',
+            ${JSON.stringify({ kind: 'relink', previousPath, originalPath: asset.originalPath })}::text::jsonb)`.execute(
+          db,
+        );
+      }
+
+      const paths = await new LockedEncryptionRepository(db).getUnlockedFilePaths(user.id);
+
+      expect(paths).toContain(kept);
+      expect(paths).toContain(asset.originalPath);
+      expect(paths).not.toContain(outside);
+      expect(paths).not.toContain(crooked);
     });
   });
 

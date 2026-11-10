@@ -222,6 +222,48 @@ describe(MediaIntegrityService.name, () => {
       mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [] } as never);
       expect(await sut.validate(video())).toEqual({ status: 'unsupported', reason: 'decode_unsupported' });
     });
+    it('walks the main picture track, the one thumbnails are cut from, not track 0 (FL-1357)', async () => {
+      // probe lists the main track first: here a cover picture sits at index 0 and the film at index 2
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 10 },
+        videoStreams: [
+          { ...stream, index: 2 },
+          { ...stream, index: 0, duration: 0 },
+        ],
+      } as never);
+      expect(await sut.validate(video())).toMatchObject({ status: 'healthy' });
+      expect(mocks.media.probePackets).toHaveBeenCalledWith(input.path, 2, expect.any(Object));
+    });
+    it.each(['A001_C001.braw', 'A001.R3D', 'A001.crm', 'DSC_0001.nev', 'A001.arx'])(
+      'cinema RAW %s that ffmpeg cannot open is unsupported, never damaged (FL-1357)',
+      async (originalFileName) => {
+        mocks.media.probe.mockRejectedValue(
+          new Error(`ffprobe exited with code 1: ${input.path}: Invalid data found when processing input\n`),
+        );
+        expect(await sut.validate({ ...video(), originalFileName })).toEqual({
+          status: 'unsupported',
+          reason: 'decode_unsupported',
+        });
+        mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [stream] } as never);
+        mocks.media.probePackets.mockRejectedValue(new Error('ffprobe exited with code 1: moov atom not found'));
+        expect(await sut.validate({ ...video(), originalFileName })).toEqual({
+          status: 'unsupported',
+          reason: 'decode_unsupported',
+        });
+      },
+    );
+    it('cinema RAW still reports a decoder that is missing or a check that stalled as they are', async () => {
+      mocks.media.probe.mockRejectedValue(Object.assign(new Error('spawn ffprobe ENOENT'), { code: 'ENOENT' }));
+      expect(await sut.validate({ ...video(), originalFileName: 'A001.braw' })).toEqual({
+        status: 'transient',
+        reason: 'decoder_unavailable',
+      });
+      mocks.media.probe.mockRejectedValue(new Error('Media process stopped making progress'));
+      expect(await sut.validate({ ...video(), originalFileName: 'A001.braw' })).toEqual({
+        status: 'timeout',
+        reason: 'decode_timeout',
+      });
+    });
     it('a large file is given as long as it keeps making progress', async () => {
       vi.useFakeTimers();
       const crypto = new CryptoRepository();
@@ -361,14 +403,49 @@ describe(MediaIntegrityService.name, () => {
       message: 'Input buffer contains unsupported image format',
     });
   });
-  it('an unsupported-format message on a PSD with an embedded JPEG stays unsupported', async () => {
-    const psd = join(directory, 'original.psd');
-    await writeFile(psd, Buffer.concat([Buffer.alloc(128, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]));
-    mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
-    expect(await sut.validate({ ...input, path: psd, originalFileName: 'original.psd', deep: true })).toEqual({
-      status: 'unsupported',
-      reason: 'decode_unsupported',
-      message: 'Input buffer contains unsupported image format',
+  describe('design files (FL-1358)', () => {
+    const design = async (name: string, bytes: Buffer) => {
+      const path = join(directory, name);
+      await writeFile(path, bytes);
+      return sut.validate({ ...input, path, originalFileName: name, deep: true });
+    };
+
+    it('are proved by their checksum and signature, and never decoded', async () => {
+      mocks.media.decodeImage.mockRejectedValue(new Error('magickload: corrupt image, premature end of file'));
+      for (const [name, start] of [
+        ['layers.psd', '8BPS\0\u{1}'],
+        ['poster.psb', '8BPS\0\u{2}'],
+        ['brochure.pdf', '%PDF-1.7'],
+        ['logo.ai', '%PDF-1.5'],
+        ['logo.eps', '%!PS-Adobe-3.0 EPSF-3.0'],
+        ['screens.sketch', 'PK\u{3}\u{4}'],
+      ]) {
+        const result = await design(name, Buffer.concat([Buffer.from(start, 'latin1'), Buffer.alloc(64, 7)]));
+        expect(result, name).toMatchObject({ status: 'healthy' });
+      }
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+    });
+
+    it('with another format inside are not supported, never damaged', async () => {
+      // A JPEG thumbnail further in does not make a file a JPEG, and a wrong start is not proof of damage.
+      const bytes = Buffer.concat([Buffer.alloc(128, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]);
+      expect(await design('original.psd', bytes)).toEqual({ status: 'unsupported', reason: 'media_type_unsupported' });
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
+
+    it('still report bytes that changed since they were stored', async () => {
+      const path = join(directory, 'layers.psd');
+      await writeFile(path, Buffer.from('8BPS\0\u{1} changed'));
+      expect(
+        await sut.validate({
+          ...input,
+          path,
+          originalFileName: 'layers.psd',
+          deep: true,
+          expected: { sha1: Buffer.alloc(20, 1) },
+        }),
+      ).toEqual({ status: 'corrupt', reason: 'expected_mismatch' });
     });
   });
   it('an unsupported-format message on a JPEG it could not read back is busy, never unsupported', async () => {
@@ -391,10 +468,50 @@ describe(MediaIntegrityService.name, () => {
       message: 'Input buffer contains unsupported image format',
     });
   });
-  it('decodes the full rendered RAW without thumbnail resizing', async () => {
+  it("checks the camera's own picture when no decoder reads the sensor (FL-1355)", async () => {
+    const preview = Buffer.from('camera preview');
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED'));
+    mocks.media.renderRaw.mockResolvedValueOnce({ rung: 'preview', buffer: preview });
+    expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toMatchObject({
+      status: 'healthy',
+    });
+    expect(mocks.media.decodeImage).toHaveBeenCalledWith(preview, expect.objectContaining({ ladder: 'strict' }));
+  });
+  it("does not read the camera's picture out of a file over the image worker's byte limit (FL-1355)", async () => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED'));
+    mocks.media.renderRaw.mockClear();
+    const storage = new StorageRepository(mocks.logger as never);
+    const stat = storage.stat.bind(storage);
+    let calls = 0;
+    // the check's own two looks at the file see it as it is; the look before extraction sees 2 GiB
+    vi.spyOn(storage, 'stat').mockImplementation(async (path) => {
+      const real = await stat(path);
+      return ++calls === 2
+        ? Object.assign(Object.create(Object.getPrototypeOf(real)), real, { size: 2 * 1024 ** 3 })
+        : real;
+    });
+    sut = new MediaIntegrityService(storage, new CryptoRepository(), mocks.media as never);
+    expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toEqual({
+      status: 'unsupported',
+      reason: 'raw_decode_unsupported',
+    });
+    expect(mocks.media.renderRaw).not.toHaveBeenCalled();
+  });
+  it('leaves the check undecided while the second decoder is busy (FL-1355)', async () => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED'));
+    mocks.media.renderRaw.mockRejectedValueOnce(new RawRenderError('resource_limit', 'ERR_RAW_DEVELOPER_BUSY'));
+    expect(await sut.validate({ ...input, originalFileName: 'original.gpr', deep: true })).toEqual({
+      status: 'transient',
+      reason: 'decoder_resource_limit',
+    });
+  });
+  it('decodes a half-size sensor render of a RAW (FL-1355)', async () => {
     vi.mocked(renderRawWithLibRaw).mockResolvedValue(bytes);
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toMatchObject({
       status: 'healthy',
+    });
+    expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(input.path, expect.any(AbortSignal), {
+      halfSize: true,
     });
     expect(mocks.media.decodeImage).toHaveBeenCalledWith(bytes, {
       colorspace: 'srgb',
@@ -415,8 +532,10 @@ describe(MediaIntegrityService.name, () => {
     ['decode_failed', 'ERR_RAW_DECODE', 'transient', 'decode_unverified'],
   ] as const)('maps typed RAW %s without confirming corruption', async (failure, code, status, reason) => {
     vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError(failure, code));
+    mocks.media.renderRaw.mockReset().mockRejectedValue(new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED'));
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toEqual({ status, reason });
-    expect(mocks.media.extract).not.toHaveBeenCalled();
+    // only "no decoder reads this" goes down the ladder; running out of time or memory proves nothing
+    expect(mocks.media.renderRaw).toHaveBeenCalledTimes(failure === 'unsupported' ? 1 : 0);
     expect(mocks.media.decodeImage).not.toHaveBeenCalled();
   });
 
@@ -437,14 +556,6 @@ describe(MediaIntegrityService.name, () => {
     expect(await result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
     expect(decoderSignal?.aborted).toBe(true);
     expect(mocks.media.decodeImage).not.toHaveBeenCalled();
-  });
-
-  it('preserves layered PSD decoding without treating it as camera sensor data', async () => {
-    expect(await sut.validate({ ...input, originalFileName: 'original.psd', deep: true })).toMatchObject({
-      status: 'healthy',
-    });
-    expect(renderRawWithLibRaw).not.toHaveBeenCalled();
-    expect(mocks.media.decodeImage).toHaveBeenCalledWith(input.path, expect.any(Object));
   });
 
   it('reports malformed image', async () => {
