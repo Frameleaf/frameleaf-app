@@ -24,6 +24,7 @@ const app = (name: string, activeUsers: number, verified = false) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sdkMock.isHttpError.mockImplementation((error) => typeof error === 'object' && !!error && 'status' in error);
   addMessages('dev', en);
 });
 
@@ -48,7 +49,6 @@ describe('RegisteredApps (FL-860)', () => {
   it('reports a removal that failed', async () => {
     sdkMock.getOAuthAppClients.mockResolvedValue([app('Photo Helper', 1)]);
     sdkMock.deleteOAuthAppClient.mockRejectedValueOnce({ status: 500 });
-    sdkMock.isHttpError.mockImplementation((error) => typeof error === 'object' && !!error && 'status' in error);
     render(RegisteredApps);
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Remove Photo Helper?' }));
@@ -57,6 +57,20 @@ describe('RegisteredApps (FL-860)', () => {
     );
 
     await waitFor(() => expect(handleError).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not report a removal when the app is already gone (404)', async () => {
+    sdkMock.getOAuthAppClients.mockResolvedValue([app('Photo Helper', 1)]);
+    sdkMock.deleteOAuthAppClient.mockRejectedValueOnce({ status: 404 });
+    render(RegisteredApps);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Remove Photo Helper?' }));
+    await fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: en.frameleaf_apps_admin_remove }),
+    );
+
+    await waitFor(() => expect(sdkMock.getOAuthAppClients).toHaveBeenCalledTimes(2));
+    expect(handleError).not.toHaveBeenCalled();
   });
 
   it('Remove asks first, removes the app and reloads the list', async () => {

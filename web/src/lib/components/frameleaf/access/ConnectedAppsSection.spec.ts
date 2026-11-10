@@ -38,6 +38,7 @@ const plan = (remoteAccess: boolean, publicUrl: string | null = 'https://taylor-
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sdkMock.isHttpError.mockImplementation((error) => typeof error === 'object' && !!error && 'status' in error);
   addMessages('dev', en);
   plan(true);
 });
@@ -98,7 +99,6 @@ describe('ConnectedAppsSection (FL-860)', () => {
   it('reports a removal that failed, but not one already gone (404)', async () => {
     sdkMock.getOAuthAppGrants.mockResolvedValue([grant()]);
     sdkMock.revokeOAuthAppGrant.mockRejectedValueOnce({ status: 500 });
-    sdkMock.isHttpError.mockImplementation((error) => typeof error === 'object' && !!error && 'status' in error);
     render(ConnectedAppsSection);
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Remove Claude’s access' }));
