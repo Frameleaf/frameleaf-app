@@ -1323,10 +1323,10 @@ jobs:
           version: 2026.10.8
       - name: Lint
         run: |
-          uv --directory ../integrations/home-assistant run --locked --python 3.13 ruff check .
-          uv --directory ../integrations/home-assistant run --locked --python 3.13 ruff format --check .
+          mise exec -- uv --directory ../integrations/home-assistant run --locked --python 3.13 ruff check .
+          mise exec -- uv --directory ../integrations/home-assistant run --locked --python 3.13 ruff format --check .
       - name: Run tests
-        run: uv --directory ../integrations/home-assistant run --locked --python 3.13 pytest -q
+        run: mise exec -- uv --directory ../integrations/home-assistant run --locked --python 3.13 pytest -q
     timeout-minutes: 20
   github-files-formatting:
     name: .github Files Formatting
