@@ -329,25 +329,29 @@ describe('FL-1364: Library care kept files under Locked encryption', () => {
     expect((await fs.readdir(care)).length).toBe(7);
   });
 
-  it('an unreadable kept file never stops the photo’s other files, and is tried again', async () => {
-    const { sut, job, user, asset, original, keep, unrecorded, decrypted } = await setup({ status: 'encrypting' });
-    const { kept } = await keep();
-    const later = await unrecorded(`${asset.id}-${randomUUID()}.restored.jpg`);
-    await fs.chmod(kept, 0o000);
-    try {
-      await expect(sut.handleSeal({ id: asset.id })).resolves.toBe(JobStatus.Success);
-      expect(await header(original)).toBe('FLLK');
-      expect((await decrypted(later.path)).equals(later.bytes)).toBe(true);
+  // root reads a mode-000 file anyway
+  it.skipIf(process.getuid?.() === 0)(
+    'an unreadable kept file never stops the photo’s other files, and is tried again',
+    async () => {
+      const { sut, job, user, asset, original, keep, unrecorded, decrypted } = await setup({ status: 'encrypting' });
+      const { kept } = await keep();
+      const later = await unrecorded(`${asset.id}-${randomUUID()}.restored.jpg`);
+      await fs.chmod(kept, 0o000);
+      try {
+        await expect(sut.handleSeal({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        expect(await header(original)).toBe('FLLK');
+        expect((await decrypted(later.path)).equals(later.bytes)).toBe(true);
 
-      // the sweep reads it as unreadable, never throws, and queues the seal again
-      await expect(sut.handleSweep({ userId: user.id })).resolves.toBe(JobStatus.Success);
-      expect(job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
-    } finally {
-      await fs.chmod(kept, 0o600);
-    }
-    await expect(sut.handleSeal({ id: asset.id })).resolves.toBe(JobStatus.Success);
-    expect(await header(kept)).toBe('FLLK');
-  });
+        // the sweep reads it as unreadable, never throws, and queues the seal again
+        await expect(sut.handleSweep({ userId: user.id })).resolves.toBe(JobStatus.Success);
+        expect(job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+      } finally {
+        await fs.chmod(kept, 0o600);
+      }
+      await expect(sut.handleSeal({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(await header(kept)).toBe('FLLK');
+    },
+  );
 
   it('never touches a recorded kept path that is not the photo’s own file', async () => {
     const { ctx, sut, user, asset, care, keep, lockedFile } = await setup();

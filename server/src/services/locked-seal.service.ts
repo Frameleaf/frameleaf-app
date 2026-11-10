@@ -107,10 +107,18 @@ type FileState =
   | { ref: LockedFileRef; state: 'missing' | 'plain' | 'damaged' | 'unreadable' }
   | { ref: LockedFileRef; state: 'sealed'; keyIds: Buffer[] };
 
-/** Whether these files stop turning off or an unlock from finishing: one is sealed, damaged or missing. */
-const blocksFinish = (files: FileState[]) =>
+/**
+ * Whether these files stop turning off or an unlock from finishing: one is sealed, damaged or missing.
+ * `turningOff` (FL-1364): a kept file that couldn't be read may be sealed, so turning off (which can delete
+ * the key that opens it) waits for it too; an unlock alone doesn't.
+ */
+const blocksFinish = (files: FileState[], turningOff = false) =>
   files.some(
-    (file) => file.state === 'sealed' || file.state === 'damaged' || (file.state === 'missing' && !file.ref.optional),
+    (file) =>
+      file.state === 'sealed' ||
+      file.state === 'damaged' ||
+      (file.state === 'missing' && !file.ref.optional) ||
+      (turningOff && file.state === 'unreadable'),
   );
 
 const syncFile = async (path: string) => {
@@ -842,7 +850,7 @@ export class LockedSealService {
       const sealedFiles = files.filter((file) => file.state === 'sealed' || file.state === 'damaged');
       const anyPlain = files.some((file) => file.state === 'plain');
       if (turningOff || asset.pendingUnlockAt) {
-        if (blocksFinish(files)) {
+        if (blocksFinish(files, turningOff)) {
           // sealed, or missing and so perhaps sealed (C2): turning off and the unlock wait
           sealedLeft++;
           if (keyLoaded && sealedFiles.length > 0) {
@@ -877,7 +885,7 @@ export class LockedSealService {
     const unlockedCare =
       keyLoaded || turningOff ? await this.lockedEncryptionRepository.getUnlockedCareAssetIds(userId) : [];
     for (const id of unlockedCare) {
-      if (await this.hasSealedKeptFile(id)) {
+      if (await this.hasSealedKeptFile(id, turningOff)) {
         if (turningOff) {
           sealedLeft++;
         }
@@ -929,7 +937,7 @@ export class LockedSealService {
         }
         if (
           asset.pendingUnlockAt ||
-          blocksFinish(await this.fileStates(await this.lockedFileRepository.filesOf(asset.id)))
+          blocksFinish(await this.fileStates(await this.lockedFileRepository.filesOf(asset.id)), true)
         ) {
           this.logger.log(`Turning off Locked encryption for user ${userId} waits: item ${asset.id} isn't plain yet`);
           return false;
@@ -937,9 +945,9 @@ export class LockedSealService {
       }
       // FL-1364: nor while a file Library care kept of an item already out of Locked is still sealed
       for (const id of await this.lockedEncryptionRepository.getUnlockedCareAssetIds(userId)) {
-        if (await this.hasSealedKeptFile(id)) {
+        if (await this.hasSealedKeptFile(id, true)) {
           this.logger.log(
-            `Turning off Locked encryption for user ${userId} waits: a file kept of item ${id} is sealed`,
+            `Turning off Locked encryption for user ${userId} waits: a file kept of item ${id} is sealed or unreadable`,
           );
           return false;
         }
@@ -1059,11 +1067,14 @@ export class LockedSealService {
 
   /**
    * FL-1364: whether a file Library care kept of the item is sealed. A damaged header is left alone here:
-   * an item out of Locked never waits on a kept file nobody can open.
+   * an item out of Locked never waits on a kept file nobody can open. With `orUnreadable` (turning off), a
+   * kept file that couldn't be read counts too: it may be sealed, and the key may be about to go.
    */
-  private async hasSealedKeptFile(assetId: string): Promise<boolean> {
+  private async hasSealedKeptFile(assetId: string, orUnreadable = false): Promise<boolean> {
     const kept = (await this.lockedFileRepository.filesOf(assetId)).filter((ref) => isKeptFile(ref));
-    return (await this.fileStates(kept)).some((file) => file.state === 'sealed');
+    return (await this.fileStates(kept)).some(
+      (file) => file.state === 'sealed' || (orUnreadable && file.state === 'unreadable'),
+    );
   }
 
   private async fileStates(refs: LockedFileRef[]): Promise<FileState[]> {

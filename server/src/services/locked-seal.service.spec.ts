@@ -729,6 +729,34 @@ describe(LockedSealService.name, () => {
         expect(row).toBeUndefined();
       });
 
+      it('waits while a kept Library care file can’t be read, Locked or not, so the key that may open it stays (FL-1364)', async () => {
+        keyFile.mode = 'advanced';
+        keyFile.wraps = keyFile.wraps.map((wrap) => (wrap.kind === 'pin' ? { ...wrap, kind: 'passphrase' } : wrap));
+        await write('original.jpg', 'original', 'asset');
+        // a path that can't be read as a file (EISDIR, unreadable even to root)
+        const kept = join(dir, 'asset-1-health-1.damaged.jpg');
+        await fs.mkdir(kept);
+        files.push({ path: kept, kind: 'other', table: 'asset_health', optional: true });
+
+        await sut.handleSweep({ userId: OWNER });
+        expect(mocks.lockedKey.delete).not.toHaveBeenCalled();
+        expect(row).toBeDefined();
+
+        // the same file of an item already out of Locked
+        mocks.lockedEncryption.getLockedAssets.mockResolvedValue([]);
+        mocks.lockedEncryption.getUnlockedCareAssetIds.mockResolvedValue([ASSET]);
+        await sut.handleSweep({ userId: OWNER });
+        expect(mocks.lockedKey.delete).not.toHaveBeenCalled();
+        expect(row).toBeDefined();
+
+        // readable (and plain) again: turning off finishes
+        await fs.rmdir(kept);
+        await fs.writeFile(kept, 'the damaged file');
+        await sut.handleSweep({ userId: OWNER });
+        expect(mocks.lockedKey.delete).toHaveBeenCalledWith(OWNER);
+        expect(row).toBeUndefined();
+      });
+
       it('a deleted key file queues a sweep of the owners who share with this person (Ruling 11, Task 8)', async () => {
         const SHARER = '00000000-0000-4000-8000-000000000003';
         keyFile.mode = 'advanced';
