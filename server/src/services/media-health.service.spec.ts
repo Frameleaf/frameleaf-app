@@ -63,6 +63,7 @@ describe(MediaHealthService.name, () => {
     mocks = getMocks();
     recoveryRoots = [];
     mediaHealthRepository = {
+      clearProcessingFailures: vi.fn().mockResolvedValue(undefined),
       createRun: vi.fn(),
       finishRun: vi.fn(),
       getByIds: vi.fn(),
@@ -1312,6 +1313,11 @@ describe(MediaHealthService.name, () => {
       expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
         { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
       ]);
+      // FL-845: what failed on the old file is cleared first, so a step set aside after it never blocks the new one
+      expect(mediaHealthRepository.clearProcessingFailures).toHaveBeenCalledWith('asset-1');
+      const cleared = vi.mocked(mediaHealthRepository.clearProcessingFailures).mock.invocationCallOrder[0];
+      expect(cleared).toBeLessThan(vi.mocked(mocks.job.queueAll).mock.invocationCallOrder[0]);
+      expect(cleared).toBeLessThan(vi.mocked(mocks.job.queueOutsideRun).mock.invocationCallOrder[0]);
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
     });
 

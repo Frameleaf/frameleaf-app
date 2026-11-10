@@ -5136,8 +5136,12 @@ export class MediaHealthService {
    * - Its previews outside any run (Task 11b): a run the fix is a job of (an import, an administrator's Generate
    *   thumbnails) already holds this photo's finished thumbnail job, made from the old file, and would drop the
    *   request as done.
+   * - FL-845: first, what failed on the file it had, or was set aside after failing three times, is cleared. It says
+   *   nothing about the file it uses now, and a set-aside step would leave the fixed photo without its details or
+   *   previews for good.
    */
   private async queueRelinkJobs(assetId: string): Promise<void> {
+    await this.mediaHealthRepository.clearProcessingFailures(assetId);
     await this.jobRepository.queueAll([{ name: JobName.SidecarCheck, data: { id: assetId, source: 'upload' } }]);
     await this.jobRepository.queueOutsideRun([
       { name: JobName.AssetGenerateThumbnails, data: { id: assetId, source: 'upload' } },

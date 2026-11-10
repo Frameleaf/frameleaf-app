@@ -5,10 +5,13 @@ import {
   AssetStatus,
   AssetVisibility,
   ChecksumAlgorithm,
+  JobName,
   MediaHealthCategory,
   MediaHealthSeverity,
   MediaHealthStatus,
 } from 'src/enum.js';
+import { recordProcessingFailure } from 'src/queue/processing-failure.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -828,6 +831,50 @@ describe(MediaHealthRepository.name, () => {
   });
 
   describe('fix writes (FL-1337)', () => {
+    it("clears a photo's processing failures, and the steps they set aside, once it has another file (FL-845)", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: fixed } = await ctx.newAsset({ ownerId: user.id });
+      const { result: other } = await ctx.newAsset({ ownerId: user.id });
+      const fail = async (assetId: string, name: JobName, times: number) => {
+        for (let attempt = 0; attempt < times; attempt++) {
+          await recordProcessingFailure(defaultDatabase, { name, assetId }, 'unsupported format');
+        }
+      };
+      // three failed tries set its previews aside; its details failed once
+      await fail(fixed.id, JobName.AssetGenerateThumbnails, 3);
+      await fail(fixed.id, JobName.AssetExtractMetadata, 1);
+      await fail(other.id, JobName.AssetGenerateThumbnails, 3);
+      const store = new SqlQueueStore(defaultDatabase);
+      const queue = `library-care-${randomUUID()}`;
+      await store.initialize([queue], randomUUID());
+      const thumbnails = (id: string) =>
+        store.enqueue([
+          {
+            queue,
+            name: JobName.AssetGenerateThumbnails,
+            data: { id },
+            safeToRetry: true,
+            sensitive: false,
+            deadlineMs: 30_000,
+          },
+        ]);
+      expect(await thumbnails(fixed.id)).toBe(0);
+
+      await sut.clearProcessingFailures(fixed.id);
+
+      await expect(
+        defaultDatabase
+          .selectFrom('asset_processing_failure')
+          .select(['assetId', 'step'])
+          .where('assetId', 'in', [fixed.id, other.id])
+          .execute(),
+      ).resolves.toEqual([{ assetId: other.id, step: JobName.AssetGenerateThumbnails }]);
+      // the fixed photo's previews are made again; another photo's set-aside stays as it was
+      expect(await thumbnails(fixed.id)).toBe(1);
+      expect(await thumbnails(other.id)).toBe(0);
+    });
+
     it("claims an owner's waiting findings for one search, which a retry and a stopped search's successor claim again", async () => {
       const { ctx, sut } = setup();
       const [{ user }, { user: other }] = await Promise.all([ctx.newUser(), ctx.newUser()]);

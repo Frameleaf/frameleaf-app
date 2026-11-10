@@ -98,6 +98,7 @@ describe('Library care inside a run', () => {
       thumbnailPath: join(root, 'thumbnail.webp'),
     };
     const repository = {
+      clearProcessingFailures: vi.fn().mockResolvedValue(undefined),
       getAssets: vi.fn().mockResolvedValue([asset]),
       getAssetChecksums: vi.fn().mockResolvedValue([]),
       getFindingsForAsset: vi.fn().mockResolvedValue([]),

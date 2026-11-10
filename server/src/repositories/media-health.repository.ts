@@ -828,6 +828,16 @@ export class MediaHealthRepository {
       return true;
     });
   }
+
+  /**
+   * FL-845 with FL-1337: Library care gave the photo another file (a repair, a put-back, a restore, a relink or an
+   * Undo). Its processing failures, and the steps set aside after them, were about the file it had, so they are
+   * cleared, as a successful try clears them, and its details and previews are made again from the new file.
+   */
+  async clearProcessingFailures(assetId: string): Promise<void> {
+    await this.db.deleteFrom('asset_processing_failure').where('assetId', '=', asUuid(assetId)).execute();
+  }
+
   /** True when any asset, in any state (a trashed one can still be restored), has this original. */
   async isOriginalPathInUse(originalPath: string): Promise<boolean> {
     const row = await this.db
