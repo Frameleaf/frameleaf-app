@@ -194,21 +194,32 @@ export class CryptoRepository {
     return hash.digest();
   }
 
-  hashFileDigests(filepath: string | Buffer): Promise<{ sha1: Buffer; sha256: Buffer; sizeInBytes: number }> {
-    return new Promise((resolve, reject) => {
-      const sha1 = createHash('sha1');
-      const sha256 = createHash('sha256');
-      let sizeInBytes = 0;
-      const stream = createReadStream(filepath);
-      stream.on('error', reject);
-      stream.on('data', (chunk) => {
-        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        sizeInBytes += bytes.length;
-        sha1.update(bytes);
-        sha256.update(bytes);
-      });
-      stream.on('end', () => resolve({ sha1: sha1.digest(), sha256: sha256.digest(), sizeInBytes }));
-    });
+  /**
+   * FL-1353: bytes read count as progress for the running job and for the caller (`onProgress`), so
+   * hashing a 50 GB file is long but never looks stalled; `signal` stops the read itself.
+   */
+  async hashFileDigests(
+    filepath: string | Buffer,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  ): Promise<{ sha1: Buffer; sha256: Buffer; sizeInBytes: number }> {
+    const sha1 = createHash('sha1');
+    const sha256 = createHash('sha256');
+    let sizeInBytes = 0;
+    await pipeline(
+      createReadStream(filepath),
+      new Writable({
+        write(chunk: Buffer, _encoding, done) {
+          sizeInBytes += chunk.length;
+          sha1.update(chunk);
+          sha256.update(chunk);
+          advanceExecutionProgress(chunk.length);
+          options.onProgress?.(chunk.length);
+          done();
+        },
+      }),
+      { signal: options.signal ?? executionSignal() },
+    );
+    return { sha1: sha1.digest(), sha256: sha256.digest(), sizeInBytes };
   }
 
   /**

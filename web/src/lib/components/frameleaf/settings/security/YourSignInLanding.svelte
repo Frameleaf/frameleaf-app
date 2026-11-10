@@ -3,8 +3,8 @@
    * Personal › Your sign-in & privacy (FL-367, the approved prototype's `settings-v2/cloud/Personal.jsx`):
    * what belongs to the person signed in. It opens on "is my account safe" (protected, or the one
    * thing to look at: a device not used for a while, or no Locked PIN yet), then two short groups,
-   * each row with its state: Signing in (how you sign in, signed-in devices, and API keys under
-   * Advanced) and Locked photos (Locked PIN, Always Locked, and FL-721 Locked encryption). An administrator also sees where the
+   * each row with its state: Signing in (how you sign in, signed-in devices, FL-860 connected apps,
+   * and API keys under Advanced) and Locked photos (Locked PIN, Always Locked, and FL-721 Locked encryption). An administrator also sees where the
    * rules for everyone are set.
    */
   import { goto } from '$app/navigation';
@@ -21,17 +21,20 @@
   import { commandCenterUrl, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { lockedEncryptionView } from '$lib/frameleaf/locked-encryption';
+  import { staleMonths } from '$lib/frameleaf/connected-apps';
   import {
     getApiKeys,
     getAuthStatus,
     getFrameleafAccountLink,
     getLockedEncryption,
+    getOAuthAppGrants,
     getSessions,
     LockedEncryptionMode,
     type ApiKeyResponseDto,
     type AuthStatusResponseDto,
     type FrameleafAccountLinkResponseDto,
     type LockedEncryptionStatusResponseDto,
+    type OAuthAppGrantDto,
     type SessionResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -46,6 +49,7 @@
   let keys = $state<ApiKeyResponseDto[] | null>(null);
   let frameleaf = $state<FrameleafAccountLinkResponseDto | null>(null);
   let encryption = $state<LockedEncryptionStatusResponseDto | null>(null);
+  let apps = $state<OAuthAppGrantDto[] | null>(null);
   onMount(() => {
     void (async () => {
       try {
@@ -65,6 +69,10 @@
       .catch(() => {});
     void getFrameleafAccountLink()
       .then((value) => (frameleaf = value))
+      .catch(() => {});
+    // FL-860: the connected apps row says how many apps can use the library
+    void getOAuthAppGrants()
+      .then((value) => (apps = value))
       .catch(() => {});
   });
 
@@ -90,7 +98,8 @@
             tone: 'good' as const,
             icon: mdiShieldCheckOutline,
             title: $t('frameleaf_privacy_hero_ok'),
-            body: $t('frameleaf_privacy_hero_ok_body'),
+            // FL-859: the "is my account safe" hero counts a passkey as protection
+            body: $t(auth?.hasPasskeys ? 'frameleaf_privacy_hero_ok_passkey_body' : 'frameleaf_privacy_hero_ok_body'),
           },
   );
 
@@ -103,6 +112,17 @@
           return fallback;
         }
         const password = auth.password;
+        // FL-859: a passkey is a way in too (FL-767 prototype: "Passkey, password and Frameleaf account")
+        if (auth.hasPasskeys && !password) {
+          return $t(frameleaf?.linked ? 'frameleaf_privacy_ways_passkey_frameleaf' : 'frameleaf_privacy_ways_passkey');
+        }
+        if (auth.hasPasskeys) {
+          return $t(
+            frameleaf?.linked
+              ? 'frameleaf_privacy_ways_passkey_password_frameleaf'
+              : 'frameleaf_privacy_ways_passkey_password',
+          );
+        }
         return frameleaf?.linked
           ? $t(password ? 'frameleaf_privacy_ways_password_frameleaf' : 'frameleaf_privacy_ways_frameleaf')
           : $t(password ? 'frameleaf_privacy_ways_password' : 'frameleaf_privacy_password_none', {
@@ -118,6 +138,9 @@
       }
       case 'api-keys': {
         return keys ? $t('frameleaf_privacy_keys_count', { values: { count: keys.length } }) : fallback;
+      }
+      case 'connected-apps': {
+        return apps ? $t('frameleaf_privacy_apps_count', { values: { count: apps.length } }) : fallback;
       }
       case 'user-pin-code-settings': {
         return auth ? $t(auth.pinCode ? 'frameleaf_privacy_pin_set' : 'frameleaf_privacy_pin_none') : fallback;
@@ -157,13 +180,19 @@
         if (!auth) {
           return 'off';
         }
-        return auth.password || frameleaf?.linked ? 'good' : 'warn';
+        return auth.password || auth.hasPasskeys || frameleaf?.linked ? 'good' : 'warn';
       }
       case 'authorized-devices': {
         return sessions ? (idle.length > 0 ? 'warn' : 'good') : 'off';
       }
       case 'api-keys': {
         return keys && keys.length > 0 ? 'good' : 'off';
+      }
+      case 'connected-apps': {
+        if (!apps || apps.length === 0) {
+          return 'off';
+        }
+        return apps.some((app) => staleMonths(app.lastUsedAt) !== null) ? 'warn' : 'good';
       }
       case 'user-pin-code-settings': {
         return auth?.pinCode ? 'good' : 'off';
@@ -222,7 +251,7 @@
 
   <Section title={$t('frameleaf_privacy_signing_in')}>
     <!-- The sign-in provider is a row of "How you sign in" (Personal.jsx MySignIn), not a page of its own. -->
-    {@render items([...row('password'), ...row('authorized-devices')])}
+    {@render items([...row('password'), ...row('authorized-devices'), ...row('connected-apps')])}
     <Advanced>
       {@render items(row('api-keys'))}
     </Advanced>

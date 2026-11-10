@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Frameleaf owns this frozen fixture input; no branch, tag, submodule or tracking update is followed.
 set -euo pipefail
-fixture_commit=6742055402de1aa48f93d12ded7d18f4057f9d1f
+fixture_commit=63a12e4f97e7a1ce54bb72ebd9fa5c2c812480bf
 fixture_source=https://github.com/Frameleaf/frameleaf-test-assets.git
 fixture_root="$(git rev-parse --show-toplevel)/e2e/test-assets"
 if [[ -d "$fixture_root/.git" ]]; then

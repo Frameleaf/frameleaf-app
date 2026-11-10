@@ -950,6 +950,21 @@ describe(SearchService.name, () => {
       ]);
     });
 
+    it('FL-885: the assistant rules resolve no pet for an API key without person read, as its catalogue', async () => {
+      const auth = AuthFactory.from(authStub.user1.user)
+        .apiKey({ permissions: [Permission.AssetRead] })
+        .build();
+      mocks.search.searchPetsByName.mockResolvedValue([{ id: newUuid(), name: 'Fido' }]);
+
+      const plan = await sut.planAskSearch(auth, 'photos with Fido', 24);
+
+      expect(plan.filters).toEqual(expect.not.objectContaining({ petIds: expect.anything() }));
+      expect(mocks.search.searchPetsByName).not.toHaveBeenCalled();
+      // Ask Search itself keeps its own rule: pets need no person permission there
+      await sut.askSearch(auth, { query: 'photos with Fido' });
+      expect(mocks.search.searchPetsByName).toHaveBeenCalled();
+    });
+
     it('should resolve a pet name into the caller’s own pet filter', async () => {
       const petId = newUuid();
       mocks.search.searchPetsByName.mockResolvedValue([{ id: petId, name: 'Biscuit' }]);

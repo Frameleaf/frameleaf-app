@@ -1355,7 +1355,7 @@ export class MediaHealthService {
     if (await this.isEncryptedOriginal(asset)) {
       throw new BadRequestException('The original is encrypted in Locked');
     }
-    const result = await this.validateAssetIntegrity(asset, { keepBusy: true });
+    const result = await this.validateAssetIntegrity(asset);
     if (result && 'busy' in result) {
       throw new BadRequestException("Frameleaf couldn't check this photo just now. Try again in a few minutes.");
     }
@@ -1655,9 +1655,14 @@ export class MediaHealthService {
     if (action === 'find-original') {
       if (finding.status !== MediaHealthStatus.CorruptConfirmed) {
         // it is proven changed: the search for a verified replacement only looks for confirmed damage
+        const evidence = { ...(finding.evidence as Record<string, unknown> | null) };
+        if (evidence.fixState === 'couldnt-check') {
+          delete evidence.fixState; // it has been checked now
+        }
         finding =
           (await this.mediaHealthRepository.upsertFinding({
             ...finding,
+            evidence,
             expectedUpdateId: asset.updateId,
             status: MediaHealthStatus.CorruptConfirmed,
             severity: MediaHealthSeverity.Critical,
@@ -2951,7 +2956,7 @@ export class MediaHealthService {
         resultStatusById.set(finding.id, await this.releaseEncrypted(finding, asset));
         continue;
       }
-      const result = await this.validateAssetIntegrity(asset, { keepBusy: true });
+      const result = await this.validateAssetIntegrity(asset);
       if (result && 'busy' in result) {
         // Not a verdict: the finding stays exactly as it is
         continue;
@@ -3252,6 +3257,10 @@ export class MediaHealthService {
     }
 
     const result = await this.validateAssetIntegrity(asset);
+    if (result && 'busy' in result) {
+      // FL-1353: no verdict (busy, timed out), so nothing changes; a suspect was written here before
+      return transient(id, 'The original could not be checked just now');
+    }
     if (result?.status === MediaHealthStatus.CorruptConfirmed) {
       if (!(await this.mediaHealthRepository.trashCorruptIfUnchanged({ healthId: finding.id, asset }))) {
         return changed(id, 'Asset or finding changed before it was moved to the trash');
@@ -4197,6 +4206,10 @@ export class MediaHealthService {
       }
 
       const result = await this.validateAssetIntegrity(asset);
+      if (result && 'busy' in result) {
+        // FL-1353: no verdict (busy, timed out): the finding stays exactly as it is
+        continue;
+      }
       if (result?.status === MediaHealthStatus.CorruptConfirmed) {
         if (await this.mediaHealthRepository.trashCorruptIfUnchanged({ healthId: finding.id, asset })) {
           assetIdsToTrash.push(finding.assetId);
@@ -4501,19 +4514,9 @@ export class MediaHealthService {
     }
   }
 
-  private async validateAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | null>;
-  private async validateAssetIntegrity(
-    asset: MediaHealthAsset,
-    options: { keepBusy: true },
-  ): Promise<CandidateValidation | BusyValidation | null>;
-  private async validateAssetIntegrity(
-    asset: MediaHealthAsset,
-    options?: { keepBusy?: boolean },
-  ): Promise<CandidateValidation | BusyValidation | null> {
-    const result = await this.validateReadableAssetIntegrity(asset);
-    // The trash paths keep treating "could not check" as a suspect, as before. A caller that must
-    // leave things as they are on a busy check asks for the busy outcome itself.
-    return result && 'busy' in result && !options?.keepBusy ? result.candidate : result;
+  /** FL-1353: "could not check" is never a suspect; every caller leaves things as they are on a busy check. */
+  private validateAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | BusyValidation | null> {
+    return this.validateReadableAssetIntegrity(asset);
   }
 
   /**

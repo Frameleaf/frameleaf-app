@@ -1,0 +1,24 @@
+[project]
+name = "frameleaf-home-assistant"
+version = "0.1.0"
+description = "Frameleaf for Home Assistant (custom integration, installed through HACS)"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+test = ["pytest-homeassistant-custom-component", "ruff"]
+
+[tool.uv]
+default-groups = ["test"]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]

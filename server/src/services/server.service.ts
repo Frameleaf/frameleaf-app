@@ -3,6 +3,7 @@ import type { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
+import { assistantSettings } from 'src/dtos/config.dto.js';
 import { RemoteConnectionsResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
 import {
   ImageCapabilitiesDto,
@@ -261,7 +262,7 @@ export class ServerService extends BaseService {
       // FL-31: Ask Search answers through smart search, so it needs both the setting and smart search
       askSearch: localFeatures.askSearch.enabled && isSmartSearchEnabled(machineLearning),
       // FL-885: the assistant's rule planner answers without smart search, so only its own setting counts
-      assistant: localFeatures.assistant.enabled,
+      assistant: assistantSettings({ localFeatures }).enabled,
       facialRecognition: isFacialRecognitionEnabled(machineLearning),
       duplicateDetection: isDuplicateDetectionEnabled(machineLearning),
       map: map.enabled,

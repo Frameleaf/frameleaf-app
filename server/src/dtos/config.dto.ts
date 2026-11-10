@@ -2012,3 +2012,12 @@ export const defaults = Object.freeze<SystemConfig>({
   help: helpDefaults,
   icloud: icloudDefaults,
 });
+
+/**
+ * FL-885: the Library Assistant settings. A configuration file approved before they existed keeps its
+ * approval and has no `localFeatures.assistant`; it reads as the defaults.
+ */
+export const assistantSettings = (
+  config: Pick<SystemConfig, 'localFeatures'>,
+): SystemConfig['localFeatures']['assistant'] =>
+  (config.localFeatures as Partial<SystemConfig['localFeatures']>).assistant ?? defaults.localFeatures.assistant;
