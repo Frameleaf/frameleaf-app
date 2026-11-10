@@ -84,6 +84,9 @@ describe('Library care fix queue', () => {
       data: { id: other, from: 'check', requeue: 1, delay: 60_000 },
     });
 
+    // the fix of a Try again that already waited for the running one (it started before the cancel)
+    await fix({ from: 'person', attempt: 0, requeue: 1, delay: 60_000 });
+
     await jobs.cancelWaitingFixes(asset);
 
     const states = Object.fromEntries((await rows()).map((job) => [job.externalId, job.state]));
@@ -92,6 +95,8 @@ describe('Library care fix queue', () => {
       [`fix-${asset}/searched`]: 'cancelled',
       // a running fix settles by itself; the per-photo guard holds Try again back meanwhile
       [`fix-${asset}/r1`]: 'active',
+      // the Try again's own fix waiting its turn stays
+      [`fix-${asset}/p1`]: 'pending',
       [`fix-${other}/r1`]: 'pending',
     });
   });

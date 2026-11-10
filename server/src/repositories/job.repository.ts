@@ -1230,11 +1230,14 @@ export class JobRepository {
 
   /**
    * FL-1337: a person's Try again supersedes the fix of a photo that put itself back to wait (`fix-<id>/rN`) and
-   * the shared search's feed for it (`fix-<id>/searched`): they are cancelled while they wait. A running one is
+   * the shared search's feed for it (`fix-<id>/searched`): they are cancelled while they wait. A person's own
+   * fix waiting its turn (`fix-<id>/pN`) is kept: it may be the fix this Try again just queued. A running one is
    * left to settle; the per-photo guard (`isOtherFixRunning`) holds Try again back until it has.
    */
-  cancelWaitingFixes(assetId: string): Promise<void> {
-    return this.store.cancelQueuedWithPrefix(this.getQueueName(JobName.MediaHealthFixAsset), `fix-${assetId}/`);
+  async cancelWaitingFixes(assetId: string): Promise<void> {
+    const queue = this.getQueueName(JobName.MediaHealthFixAsset);
+    await this.store.cancelQueuedWithPrefix(queue, `fix-${assetId}/r`);
+    await this.store.cancelQueuedWithPrefix(queue, `fix-${assetId}/searched`);
   }
 
   /**
@@ -1328,8 +1331,10 @@ export class JobRepository {
         // running. A fix that puts itself back carries its own key: the store drops a job whose key
         // matches a live row, and the live row is the fix that is queuing it.
         // The shared search's feed has its own key too, so a fix queued meanwhile cannot swallow it.
+        // A person's fix that puts itself back has a key of its own too (`/pN`), which a later Try again's
+        // cancellation of the waiting fixes never matches: it is that Try again's own fix.
         const jobId = item.data.requeue
-          ? `fix-${item.data.id}/r${item.data.requeue}`
+          ? `fix-${item.data.id}/${item.data.from === 'person' ? 'p' : 'r'}${item.data.requeue}`
           : item.data.searched
             ? `fix-${item.data.id}/searched`
             : `fix-${item.data.id}`;

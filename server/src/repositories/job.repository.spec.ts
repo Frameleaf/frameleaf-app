@@ -77,8 +77,8 @@ describe(JobRepository.name, () => {
       { jobId: 'fix-asset/r2', delay: 1_800_000 },
       // a person's Try again takes a queued feed's place, or runs after the one running, never dropped
       { jobId: 'fix-asset', deduplication: { id: 'fix-asset', keepLastIfActive: true } },
-      // and once it waits for another fix it puts itself back like any fix
-      { jobId: 'fix-asset/r1', delay: 60_000 },
+      // and once it waits for another fix it puts itself back under a person's key, which Try again never cancels
+      { jobId: 'fix-asset/p1', delay: 60_000 },
     ]);
   });
 
