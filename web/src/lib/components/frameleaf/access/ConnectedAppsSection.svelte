@@ -31,6 +31,7 @@
     staleMonths,
     type AssistantClient,
   } from '$lib/frameleaf/connected-apps';
+  import { motionScrollBehavior } from '$lib/frameleaf/motion';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
@@ -185,7 +186,8 @@
   };
 
   const HA_GUIDE = 'https://frameleaf.app/docs/home-assistant';
-  const toSetup = () => document.querySelector('#connected-apps-setup')?.scrollIntoView({ behavior: 'smooth' });
+  const toSetup = () =>
+    document.querySelector('#connected-apps-setup')?.scrollIntoView({ behavior: motionScrollBehavior() });
 </script>
 
 {#snippet connectAction()}

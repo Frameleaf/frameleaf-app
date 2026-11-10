@@ -359,7 +359,7 @@
   }
   .never {
     align-self: center;
-    margin-left: calc(-1 * var(--fl-space-2));
+    margin-inline-start: calc(-1 * var(--fl-space-2));
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
