@@ -36,13 +36,20 @@
     }),
   );
 
+  /** The album the list belongs to: a refresh keeps it on screen until the new one arrives. */
+  let peopleFor: string | undefined;
+
   $effect(() => {
     const id = albumId;
     void refreshKey;
     void facesRevision;
     const current = authManager.captureSession();
+    // A superseded read is aborted, so only the latest answer for this album lands.
     const controller = new AbortController();
-    people = [];
+    if (peopleFor !== id) {
+      peopleFor = id;
+      people = [];
+    }
     getAlbumPeople({ id }, { signal: controller.signal })
       .then((result) => {
         if (!controller.signal.aborted && current() && albumId === id) {

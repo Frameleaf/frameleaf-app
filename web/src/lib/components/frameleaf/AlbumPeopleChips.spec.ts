@@ -79,8 +79,14 @@ describe('AlbumPeopleChips', () => {
     render(AlbumPeopleChips, { albumId, session: new LibrarySessionStore({ storage: null }) });
     await screen.findByRole('button', { name: 'Jamie · 4' });
 
-    sdkMock.getAlbumPeople.mockResolvedValue([{ ...jamie, count: 5 }]);
+    let answer: (people: (typeof jamie)[]) => void = () => {};
+    sdkMock.getAlbumPeople.mockReturnValue(new Promise((resolve) => (answer = resolve)) as never);
     eventManager.emit('PersonFacesChange', { personIds: [jamie.id] });
+    // The chips stay while the new list is read, so a click is never lost to a flicker.
+    await waitFor(() => expect(sdkMock.getAlbumPeople).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Jamie · 4' })).toBeInTheDocument();
+
+    answer([{ ...jamie, count: 5 }]);
     expect(await screen.findByRole('button', { name: 'Jamie · 5' })).toBeInTheDocument();
   });
 
