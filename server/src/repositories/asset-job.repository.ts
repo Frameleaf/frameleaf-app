@@ -91,6 +91,16 @@ const originalNotMissing = sql<boolean>`not exists (
       and health."resolvedAt" is null and health."dismissedAt" is null
   )`;
 
+/**
+ * FL-1355: a RAW original whose sensor did not render already has its answer (the camera's preview, or no
+ * picture yet). The overnight check leaves it alone, or it would run the whole ladder again every night for a
+ * full-size rendition that cannot be made; a decoder update or the person's own retry tries it again.
+ */
+const rawSensorNotGivenUp = sql<boolean>`not exists (
+    select 1 from public.asset_processing_failure rung
+    where rung."assetId" = asset.id and rung.step = ${sql.lit(RAW_RUNG_STEP)}
+  )`;
+
 type ProcessingFailureStep = ProcessingFailureActionDto['items'][number]['step'];
 
 type ReconciledJob =
@@ -116,9 +126,9 @@ export class AssetJobRepository {
       [JobName.AssetExtractMetadata]: () =>
         this.selectionForMetadataExtraction(false, false, true).where(originalNotMissing),
       [JobName.AssetGenerateThumbnails]: () =>
-        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }).where(
-          notInLibraryCare,
-        ),
+        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled })
+          .where(notInLibraryCare)
+          .where(rawSensorNotGivenUp),
       [JobName.AssetEncodeVideo]: () =>
         this.selectionForVideoConversion(false)
           .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')

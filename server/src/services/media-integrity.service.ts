@@ -307,13 +307,17 @@ export class MediaIntegrityService {
       return await renderRawWithLibRaw(path, signal, { halfSize: true });
     } catch (error) {
       // The camera's picture is read into memory and cannot be larger than the file that holds it, so a
-      // file over the image worker's byte limit is not asked for one.
-      const preview =
-        error instanceof RawRenderError &&
-        error.reason === 'unsupported' &&
-        (await this.storageRepository.stat(path)).size <= sharpConfiguration().maxBytes
-          ? await this.mediaRepository.extract(path)
+      // file over the image worker's byte limit is not asked for one. A file that has gone meanwhile is the
+      // outer check's to name, with the decoder's answer kept.
+      const size =
+        error instanceof RawRenderError && error.reason === 'unsupported'
+          ? await this.storageRepository
+              .stat(path)
+              .then((file) => file.size)
+              .catch(() => null)
           : null;
+      const preview =
+        size !== null && size <= sharpConfiguration().maxBytes ? await this.mediaRepository.extract(path) : null;
       if (!preview) {
         throw error;
       }

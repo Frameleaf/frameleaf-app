@@ -2231,6 +2231,24 @@ describe(MediaService.name, () => {
         expect(mocks.assetJob.setRawRung).toHaveBeenCalledExactlyOnceWith(asset.id, 'placeholder/timeout');
       });
 
+      it("takes the camera's picture when the sensor render itself will not open", async () => {
+        const asset = raw();
+        mocks.media.renderRaw.mockResolvedValue({ rung: 'libraw', buffer: renderedRawBuffer });
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        mocks.media.generateImageThumbnails.mockRejectedValueOnce(
+          Object.assign(new SharpOperationError('tiff2vips: not a TIFF'), { decodeFailure: true }),
+        );
+
+        await expect(start(asset)).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.generateImageThumbnails).toHaveBeenLastCalledWith(
+          extractedBuffer,
+          expect.objectContaining({ orientation: 6 }),
+          expect.anything(),
+        );
+        expect(mocks.assetJob.setRawRung).toHaveBeenCalledExactlyOnceWith(asset.id, 'embedded/decode_failed');
+      });
+
       it.each(['cancelled', 'io'] as const)('still fails the job so it retries: %s', async (reason) => {
         const failure = new RawRenderError(reason, 'X');
         mocks.media.renderRaw.mockRejectedValue(failure);

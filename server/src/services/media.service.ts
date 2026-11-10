@@ -828,8 +828,29 @@ export class MediaService extends BaseService {
       try {
         return await decodeSource();
       } catch (error) {
-        const failure = ladder?.failure;
-        if (!failure || !(error instanceof SharpOperationError) || !error.decodeFailure) {
+        executionSignal()?.throwIfAborted();
+        if (!(error instanceof SharpOperationError) || !error.decodeFailure) {
+          throw error;
+        }
+        let failure = ladder?.failure;
+        if (!failure && !useEdits) {
+          // A sensor render the image worker cannot open is a failed rung too: the camera's picture is next.
+          failure = new RawRenderError('decode_failed', 'ERR_RAW_DECODE', error);
+          const embedded = await this.mediaRepository.extract(asset.originalPath);
+          if (embedded) {
+            extracted = embedded;
+            sensorRendered = false;
+            ladder = { failure };
+            return await decodeSource().catch((error: unknown) => {
+              if (!(error instanceof SharpOperationError) || !error.decodeFailure) {
+                throw error;
+              }
+              failure!.ladderExhausted = true;
+              throw failure;
+            });
+          }
+        }
+        if (!failure) {
           throw error;
         }
         // The ladder's last rung, the camera's preview, does not open either.
