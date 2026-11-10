@@ -11,6 +11,20 @@ describe(PrivateLogStore.name, () => {
   });
   afterEach(() => rm(root, { recursive: true, force: true }));
 
+  it('follows records appended after connection even if another worker already emitted a newer timestamp', async () => {
+    const store = new PrivateLogStore(root);
+    const at = '2026-11-09T12:00:00.000Z';
+    const now = new Date('2026-11-09T12:00:05.000Z');
+    await store.append('api', [{ level: 'log', context: 'Test', message: 'existing', at }], now);
+    const tail = await store.follow({});
+    await store.append('api', [{ level: 'log', context: 'Test', message: 'newer' }], now);
+    const messages = async () => (await Array.fromAsync(tail())).flat().map((entry) => entry.message);
+    expect(await messages()).toEqual(['newer']);
+    await store.append('machine-learning', [{ level: 'log', context: 'Test', message: 'late', at }], now);
+    expect(await messages()).toEqual(['late']);
+    expect(await messages()).toEqual([]);
+  });
+
   it('caps worker files, prunes expired days, and pages newest first with private content removed', async () => {
     const store = new PrivateLogStore(root, 7, 1024, 256);
     const now = new Date('2026-11-09T12:00:00Z');

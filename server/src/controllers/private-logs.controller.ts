@@ -46,26 +46,28 @@ export class PrivateLogsController {
   ): Promise<void> {
     const via = requestVia(req);
     await this.logs.authorize(auth, via);
+    const tail = await this.logs.store().follow(query);
     const controller = new AbortController();
     const { signal } = controller;
     res.once('close', () => controller.abort());
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
     res.flushHeaders();
-    const store = this.logs.store();
-    let after = `${new Date().toISOString()}|`;
     const write = async (value: string) => {
       if (!res.write(value)) await once(res, 'drain', { signal });
     };
     try {
       while (!signal.aborted) {
         await this.logs.authorizeLive(auth, via);
-        const { entries } = await store.list({ ...query, after, limit: 100 });
-        for (const entry of entries) {
-          after = `${entry.at}|${entry.id}`;
-          await write(`id: ${after}\ndata: ${JSON.stringify(entry)}\n\n`);
+        let delivered = false;
+        for await (const entries of tail()) {
+          for (const entry of entries) {
+            if (signal.aborted) return;
+            await write(`id: ${entry.at}|${entry.id}\ndata: ${JSON.stringify(entry)}\n\n`);
+            delivered = true;
+          }
         }
-        if (entries.length === 0) await write(': heartbeat\n\n');
-        await delay(entries.length === 100 ? 100 : 2000, undefined, { signal });
+        if (!delivered) await write(': heartbeat\n\n');
+        await delay(2000, undefined, { signal });
       }
     } catch {
       // Closed connection, expired authority or unreadable store. No private details go on the wire.

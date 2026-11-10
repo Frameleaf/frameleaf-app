@@ -19,6 +19,7 @@ export type PrivateLogInput = {
   jobId?: string;
   assetId?: string;
   at?: string;
+  sourceId?: string;
 };
 type PrivateLog = PrivateLogInput & { at: string; id: string; worker: PrivateLogWorker };
 export type PrivateLogQuery = {
@@ -27,7 +28,6 @@ export type PrivateLogQuery = {
   q?: string;
   since?: string;
   before?: string;
-  after?: string;
   limit: number;
 };
 
@@ -60,7 +60,7 @@ export class PrivateLogStore {
       const at = !Number.isNaN(parsed.getTime()) && parsed <= now ? parsed.toISOString() : now.toISOString();
       return (
         JSON.stringify({
-          id: randomUUID(),
+          id: sanitize(entry.sourceId, safeId) ?? randomUUID(),
           worker,
           at,
           level: entry.level,
@@ -123,60 +123,83 @@ export class PrivateLogStore {
 
   async list(query: PrivateLogQuery, now = new Date()): Promise<{ entries: PrivateLog[]; nextCursor: string | null }> {
     const entries: PrivateLog[] = [];
-    for await (const batch of this.read(query, now)) {
+    const oldest = () => (entries.length > query.limit ? dayKey(new Date(entries.at(-1)!.at)) : '');
+    for await (const batch of this.read(query, now, oldest)) {
       entries.push(...batch);
-      entries.sort((left, right) =>
-        query.after ? cursor(left).localeCompare(cursor(right)) : cursor(right).localeCompare(cursor(left)),
-      );
+      entries.sort((left, right) => cursor(right).localeCompare(cursor(left)));
       entries.length = Math.min(entries.length, query.limit + 1);
     }
     const nextCursor = entries.length > query.limit ? cursor(entries[query.limit - 1]) : null;
     return { entries: entries.slice(0, query.limit), nextCursor };
   }
 
-  async *read(query: Omit<PrivateLogQuery, 'limit'>, now = new Date()) {
+  async *read(query: Omit<PrivateLogQuery, 'limit'>, now = new Date(), oldest?: () => string) {
     const retained = new Date(now.getTime() - (this.days - 1) * DAY_MS);
     retained.setUTCHours(0, 0, 0, 0);
-    const since = query.since ? new Date(Math.max(retained.getTime(), Date.parse(query.since))) : retained;
-    const search = query.q?.toLowerCase();
-    const afterAt = query.after ? Date.parse(query.after.split('|', 1)[0]) : 0;
+    const since = query.since && query.since > retained.toISOString() ? query.since : retained.toISOString();
+    const sinceDay = dayKey(new Date(since));
     for (const item of await this.files(query.worker)) {
-      if (item.day < dayKey(since)) break;
-      if (item.modified < afterAt) continue;
-      const file = await open(join(this.root, item.name), constants.O_RDONLY | constants.O_NOFOLLOW).catch(
-        (error: unknown) => {
-          if (!notFound(error)) throw error;
-        },
-      );
-      if (!file) continue;
-      let content: string;
-      try {
-        const bytes = Buffer.alloc(Math.min(item.bytes, this.segmentBytes + 16_384));
-        const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
-        content = bytes.subarray(0, bytesRead).toString('utf8');
-      } finally {
-        await file.close();
-      }
-      const entries: PrivateLog[] = [];
-      // A worker can be killed midway through the last append. Other complete rows stay readable.
-      for (const line of content.split('\n').slice(0, -1)) {
-        try {
-          const entry = JSON.parse(line) as PrivateLog;
-          if (
-            entry.at < since.toISOString() ||
-            (query.level && entry.level !== query.level) ||
-            (query.before && cursor(entry) >= query.before) ||
-            (query.after && cursor(entry) <= query.after) ||
-            (search && !`${entry.context} ${entry.message}`.toLowerCase().includes(search))
-          )
-            continue;
-          entries.push(entry);
-        } catch {
-          // A damaged line does not prevent access to adjacent entries.
-        }
-      }
+      // Entries are clamped to the segment's write day.
+      if (item.day < sinceDay || (oldest && item.day < oldest())) break;
+      const { entries } = await this.segment(item.name, 0, item.bytes, { ...query, since });
       if (entries.length > 0) yield entries;
     }
+  }
+
+  async follow(query: Omit<PrivateLogQuery, 'limit' | 'before'>) {
+    const positions = new Map((await this.files(query.worker)).map(({ name, bytes }) => [name, bytes]));
+    return () => this.readAppends(query, positions);
+  }
+
+  private async *readAppends(query: Omit<PrivateLogQuery, 'limit' | 'before'>, positions: Map<string, number>) {
+    const files = await this.files(query.worker);
+    const current = new Set(files.map(({ name }) => name));
+    for (const name of positions.keys()) if (!current.has(name)) positions.delete(name);
+    // Follow each file's append position. A worker can flush events older than another worker's last event.
+    for (const item of files.toReversed()) {
+      const start = positions.get(item.name) ?? 0;
+      if (item.bytes <= start) continue;
+      const { entries, consumed } = await this.segment(item.name, start, item.bytes - start, query);
+      positions.set(item.name, start + consumed);
+      if (entries.length > 0) yield entries;
+    }
+  }
+
+  private async segment(name: string, start: number, length: number, query: Omit<PrivateLogQuery, 'limit'>) {
+    const file = await open(join(this.root, name), constants.O_RDONLY | constants.O_NOFOLLOW).catch(
+      (error: unknown) => {
+        if (!notFound(error)) throw error;
+      },
+    );
+    if (!file) return { entries: [], consumed: 0 };
+    const bytes = Buffer.alloc(Math.min(length, this.segmentBytes + 16_384));
+    let bytesRead: number;
+    try {
+      ({ bytesRead } = await file.read(bytes, 0, bytes.length, start));
+    } finally {
+      await file.close();
+    }
+    // A worker can stop during an append. Consume only complete lines and try the remainder on the next tail.
+    const end = bytes.subarray(0, bytesRead).lastIndexOf(10);
+    if (end === -1) return { entries: [], consumed: 0 };
+    const search = query.q?.toLowerCase();
+    const entries: PrivateLog[] = [];
+    for (const line of bytes.subarray(0, end).toString('utf8').split('\n')) {
+      try {
+        const entry = JSON.parse(line) as PrivateLog;
+        if (
+          (query.since && entry.at < query.since) ||
+          (query.level && entry.level !== query.level) ||
+          (query.before && cursor(entry) >= query.before) ||
+          (search && !`${entry.context} ${entry.message}`.toLowerCase().includes(search))
+        )
+          continue;
+        entries.push(entry);
+      } catch {
+        // A damaged line does not prevent access to adjacent entries.
+      }
+    }
+    return { entries, consumed: end + 1 };
   }
 
   private async files(worker?: PrivateLogWorker) {
@@ -197,7 +220,6 @@ export class PrivateLogStore {
           worker: match[1] as PrivateLogWorker,
           day: match[2],
           bytes: info.size,
-          modified: info.mtimeMs,
         });
     }
     return files.sort((left, right) => right.day.localeCompare(left.day) || right.name.localeCompare(left.name));
