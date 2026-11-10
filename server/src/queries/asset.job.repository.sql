@@ -719,8 +719,23 @@ select
         where
           "asset_file"."assetId" = "asset"."id"
           and "asset_file"."type" = $1
+          and "asset_file"."isEdited" = false
       ) as agg
-  ) as "files"
+  ) as "files",
+  (
+    select
+      coalesce(json_agg(agg), '[]')
+    from
+      (
+        select
+          "asset_edit"."action",
+          "asset_edit"."parameters"
+        from
+          "asset_edit"
+        where
+          "asset_edit"."assetId" = "asset"."id"
+      ) as agg
+  ) as "edits"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
