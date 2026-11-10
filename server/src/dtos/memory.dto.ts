@@ -8,7 +8,6 @@ import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
 import { StudioExportResolutionSchema } from 'src/dtos/studio-export.dto.js';
 import {
   AssetOrderWithRandomSchema,
-  AssetVisibility,
   MediaOperationDestination,
   MemoryExportFormat,
   MemoryExportFormatSchema,
@@ -404,14 +403,15 @@ export class MemoryResponseDto extends createZodDto(MemoryResponseSchema) {}
 
 /**
  * FL-1394: where an "on this day" memory was taken, so a client can title it "One year ago in Jasper".
- * Read from the items this session is given, never stored, so a place only shows while a photo
- * taken there does; Locked items never name one.
+ * Read from the items this session is given, never stored, so a place only shows while a photo taken
+ * there does. That is also the whole Locked rule: a locked session is given no Locked item, so none
+ * names a place; unlocked, the owner's Locked items count like any other (FL-195, `REVEALED_LOCK_REASONS`).
  */
-export const memoryPlaces = (assets: { visibility: unknown; city?: string | null }[]): string[] => {
+export const memoryPlaces = (assets: { city?: string | null }[]): string[] => {
   const counts = new Map<string, number>();
-  for (const { visibility, city } of assets) {
+  for (const { city } of assets) {
     const place = city?.trim();
-    if (place && visibility !== AssetVisibility.Locked) {
+    if (place) {
       counts.set(place, (counts.get(place) ?? 0) + 1);
     }
   }

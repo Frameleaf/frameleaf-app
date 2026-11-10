@@ -7,7 +7,6 @@ import { PassThrough } from 'node:stream';
 import type { QueueExecution } from 'src/queue/types.js';
 import type { OnThisDayData } from 'src/types.js';
 import {
-  AssetVisibility,
   JobName,
   JobStatus,
   MemoryExportFormat,
@@ -129,21 +128,16 @@ describe(MemoryService.name, () => {
     });
 
     // FL-1394: a client titles the memory "One year ago in Jasper" from these
-    it('names the cities of an on this day memory, most items first and never from a Locked item', async () => {
+    // The places come from the items the repository returns for this session and from nowhere else, so
+    // an item the session is not given (a Locked one, while locked) cannot name a place.
+    it('names the cities of the items an on this day memory is given, most items first', async () => {
       const [userId] = newUuids();
-      const taken = (city: string | null, visibility = AssetVisibility.Timeline) => ({
-        ...getForMemory(MemoryFactory.from({ ownerId: userId }).asset(AssetFactory.create({ visibility })).build())
-          .assets[0],
+      const taken = (city: string | null) => ({
+        ...getForMemory(MemoryFactory.from({ ownerId: userId }).asset(AssetFactory.create()).build()).assets[0],
         city,
       });
       const memory = getForMemory(MemoryFactory.create({ ownerId: userId }));
-      const assets = [
-        taken('Banff'),
-        taken('Jasper'),
-        taken('Jasper'),
-        taken('Calgary', AssetVisibility.Locked),
-        taken(null),
-      ];
+      const assets = [taken('Banff'), taken('Jasper'), taken(' Jasper '), taken(''), taken(null)];
       mocks.memory.search.mockResolvedValue([
         { ...memory, assets },
         { ...memory, id: newUuid(), assets: [taken(null)] },
