@@ -3,7 +3,8 @@ import { Kysely, sql } from 'kysely';
 /**
  * FL-836: passkeys for local accounts. `user_passkey` holds each passkey's public key and sign-in
  * count, `auth_challenge` the short-lived ceremony challenges and password checks, and
- * `session_passkey` the sessions a passkey started.
+ * `session_passkey` the sessions a passkey started, and `user_credential_version` the version an
+ * administrator's reset moves on.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE TABLE public.user_passkey (
@@ -33,6 +34,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     "sessionId" uuid,
     origin text,
     "rpId" text,
+    "credentialVersion" integer,
     "expiresAt" timestamp with time zone NOT NULL,
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT auth_challenge_pkey PRIMARY KEY (id),
@@ -42,6 +44,13 @@ export async function up(db: Kysely<any>): Promise<void> {
   )`.execute(db);
   await sql`CREATE INDEX "auth_challenge_sessionId_idx" ON public.auth_challenge USING btree ("sessionId")`.execute(db);
   await sql`CREATE INDEX "auth_challenge_expiresAt_idx" ON public.auth_challenge USING btree ("expiresAt")`.execute(db);
+
+  await sql`CREATE TABLE public.user_credential_version (
+    "userId" uuid NOT NULL,
+    version integer DEFAULT 0 NOT NULL,
+    CONSTRAINT user_credential_version_pkey PRIMARY KEY ("userId"),
+    CONSTRAINT "user_credential_version_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE
+  )`.execute(db);
 
   await sql`CREATE TABLE public.session_passkey (
     "sessionId" uuid NOT NULL,
@@ -55,6 +64,7 @@ export async function up(db: Kysely<any>): Promise<void> {
 
 export async function down(db: Kysely<any>): Promise<void> {
   await sql`DROP TABLE IF EXISTS public.session_passkey`.execute(db);
+  await sql`DROP TABLE IF EXISTS public.user_credential_version`.execute(db);
   await sql`DROP TABLE IF EXISTS public.auth_challenge`.execute(db);
   await sql`DROP TABLE IF EXISTS public.user_passkey`.execute(db);
 }

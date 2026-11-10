@@ -1172,8 +1172,6 @@ describe(UserAdminService.name, () => {
       await sut.update(authStub.admin, userStub.user1.id, { password: 'new-password' });
 
       expect(mocks.passkey.deleteAll).toHaveBeenCalledWith(userStub.user1.id);
-      // a registration started (or a password checked) on the old password can't finish afterwards
-      expect(mocks.passkey.deletePendingRegistrations).toHaveBeenCalledWith(userStub.user1.id);
       expect(mocks.accountEvent.create).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'passkeys-removed-by-admin', detail: '1' }),
       );

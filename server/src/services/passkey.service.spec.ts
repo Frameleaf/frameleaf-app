@@ -31,6 +31,7 @@ type Challenge = {
   sessionId?: string | null;
   origin?: string | null;
   rpId?: string | null;
+  credentialVersion?: number | null;
   expiresAt: Date;
 };
 type Row = {
@@ -54,6 +55,7 @@ describe(PasskeyService.name, () => {
   let challenges: Challenge[];
   let passkeys: Row[];
   let sessionLinks: Array<{ sessionId: string; passkeyId: string }>;
+  let versions: Map<string, number>;
   const user = UserFactory.create({ password: PASSWORD_HASH });
   const other = UserFactory.create({ password: PASSWORD_HASH });
   let auth: AuthDto;
@@ -78,6 +80,7 @@ describe(PasskeyService.name, () => {
               sessionId: found.sessionId ?? null,
               origin: found.origin ?? null,
               rpId: found.rpId ?? null,
+              credentialVersion: found.credentialVersion ?? null,
             }
           : undefined,
       );
@@ -96,7 +99,11 @@ describe(PasskeyService.name, () => {
     repo.getByCredentialId.mockImplementation((id) =>
       Promise.resolve(passkeys.find((row) => row.credentialId.equals(id))),
     );
-    repo.create.mockImplementation((value) => {
+    repo.getCredentialVersion.mockImplementation((userId) => Promise.resolve(versions.get(userId) ?? 0));
+    repo.create.mockImplementation((value, version) => {
+      if ((versions.get(value.userId) ?? 0) !== version) {
+        return Promise.resolve('stale' as const);
+      }
       if (passkeys.some((row) => row.credentialId.equals(value.credentialId as Buffer))) {
         return Promise.resolve(undefined);
       }
@@ -146,6 +153,7 @@ describe(PasskeyService.name, () => {
     challenges = [];
     passkeys = [];
     sessionLinks = [];
+    versions = new Map();
     auth = AuthFactory.from(user).session().build();
     clearConfigCache();
     mocks.systemMetadata.get.mockImplementation((key) =>
@@ -318,6 +326,17 @@ describe(PasskeyService.name, () => {
       await expect(sut.register(otherSession, { credential }, details)).rejects.toBeInstanceOf(BadRequestException);
       // the challenge was taken by that try: it answers only once
       await expect(sut.register(auth, { credential }, details)).rejects.toBeInstanceOf(BadRequestException);
+      expect(passkeys).toHaveLength(0);
+    });
+
+    it('refuses a passkey started before an administrator reset of the account', async () => {
+      const passkey = new SoftPasskey({ origin: ORIGIN });
+      const { options } = await sut.getRegistrationOptions(auth, { password: 'password' }, headers(), details);
+      // the reset moves the account's credential version on (PasskeyRepository.deleteAll)
+      versions.set(user.id, 1);
+      await expect(sut.register(auth, { credential: passkey.register(options!) }, details)).rejects.toThrow(
+        'reset while adding',
+      );
       expect(passkeys).toHaveLength(0);
     });
 

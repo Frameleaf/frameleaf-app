@@ -5,7 +5,7 @@ import { SessionTable } from 'src/schema/tables/session.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
- * FL-836: a passkey of a local account. Mirrors migration 1794260000000-UserPasskey.
+ * FL-836: a passkey of a local account. Mirrors migration 1794340000000-UserPasskey.
  *
  * Only the public key is kept; the private key never leaves the authenticator. `counter` is the
  * authenticator's signature count (0 for passkeys that don't count), checked on every sign-in so a
@@ -81,11 +81,29 @@ export class AuthChallengeTable {
   @Column({ type: 'text', nullable: true })
   rpId!: string | null;
 
+  /** For `register`: the account's credential version when the challenge was issued. */
+  @Column({ type: 'integer', nullable: true })
+  credentialVersion!: number | null;
+
   @Column({ type: 'timestamp with time zone', index: true })
   expiresAt!: Timestamp;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
+}
+
+/**
+ * FL-836: an account's credential version, moved on (in the same transaction) by every administrator
+ * reset that removes passkeys. A registration finishes only if the version is the one its challenge
+ * was issued under, checked under this row's lock, so a reset can't be outrun by a passkey in flight.
+ */
+@Table({ name: 'user_credential_version' })
+export class UserCredentialVersionTable {
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', primary: true })
+  userId!: string;
+
+  @Column({ type: 'integer', default: 0 })
+  version!: Generated<number>;
 }
 
 /**

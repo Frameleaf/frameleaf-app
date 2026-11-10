@@ -31,12 +31,21 @@ const passkey = (userId: string, name = 'Chrome on Mac') => ({
 
 const inMinutes = (minutes: number) => new Date(Date.now() + minutes * 60_000);
 
+/** Saves a passkey under the account's current credential version. */
+const save = async (sut: PasskeyRepository, row: ReturnType<typeof passkey>) => {
+  const saved = await sut.create(row, await sut.getCredentialVersion(row.userId));
+  if (!saved || saved === 'stale') {
+    throw new Error('not saved');
+  }
+  return saved;
+};
+
 it('saves a credential once, for one account only', async () => {
   const { ctx, sut, userId } = await setup();
   const { user: other } = await ctx.newUser();
   const row = passkey(userId);
 
-  const saved = await sut.create(row);
+  const saved = await save(sut, row);
   expect(saved).toMatchObject({
     userId,
     name: 'Chrome on Mac',
@@ -44,7 +53,7 @@ it('saves a credential once, for one account only', async () => {
     transports: ['internal'],
     backedUp: false,
   });
-  await expect(sut.create({ ...row, userId: other.id })).resolves.toBeUndefined();
+  await expect(sut.create({ ...row, userId: other.id }, 0)).resolves.toBeUndefined();
   await expect(sut.getByCredentialId(row.credentialId)).resolves.toMatchObject({ id: saved!.id, userId });
   await expect(sut.countByUser(userId)).resolves.toBe(1);
   await expect(sut.countByUser(other.id)).resolves.toBe(0);
@@ -52,7 +61,7 @@ it('saves a credential once, for one account only', async () => {
 
 it('moves the counter on only from the value just checked', async () => {
   const { sut, userId } = await setup();
-  const saved = (await sut.create(passkey(userId)))!;
+  const saved = await save(sut, passkey(userId));
 
   const results = await Promise.all([sut.recordUse(saved.id, 0, 1, true), sut.recordUse(saved.id, 0, 1, true)]);
   expect(results.filter(Boolean)).toHaveLength(1);
@@ -65,7 +74,7 @@ it('moves the counter on only from the value just checked', async () => {
 it('renames and removes only the account’s own passkeys, signing out the sessions they started', async () => {
   const { ctx, sut, userId, sessionId } = await setup();
   const { user: other } = await ctx.newUser();
-  const saved = (await sut.create(passkey(userId)))!;
+  const saved = await save(sut, passkey(userId));
   const { session: started } = await ctx.newSession({ userId });
   await sut.linkSession(started.id, saved.id);
   await expect(sut.isPasskeySession(started.id)).resolves.toBe(true);
@@ -96,8 +105,8 @@ it('renames and removes only the account’s own passkeys, signing out the sessi
 
 it('removes every passkey of an account and the sessions they started', async () => {
   const { ctx, sut, userId } = await setup();
-  const first = (await sut.create(passkey(userId, 'One')))!;
-  await sut.create(passkey(userId, 'Two'));
+  const first = await save(sut, passkey(userId, 'One'));
+  await save(sut, passkey(userId, 'Two'));
   const { session } = await ctx.newSession({ userId });
   await sut.linkSession(session.id, first.id);
 
@@ -125,12 +134,31 @@ it('answers a challenge once, and never after it expired', async () => {
     sessionId,
     origin: 'https://photos.example.com',
     rpId: 'photos.example.com',
+    credentialVersion: null,
   });
   await expect(sut.takeChallenge('register', 'challenge-1')).resolves.toBeUndefined();
   await expect(sut.takeChallenge('login', 'challenge-2')).resolves.toBeUndefined();
 });
 
-it('forgets pending registrations and password checks, but not sign-in challenges', async () => {
+it('refuses a passkey started before an administrator reset, in either order', async () => {
+  const { sut, userId } = await setup();
+  // reset between the options and the finish: the version moved on
+  const before = await sut.getCredentialVersion(userId);
+  await sut.deleteAll(userId);
+  await expect(sut.create(passkey(userId), before)).resolves.toBe('stale');
+
+  // a finish holding the version row's lock makes a concurrent reset wait, then remove what it saved
+  const current = await sut.getCredentialVersion(userId);
+  const [saved, removed] = await Promise.all([sut.create(passkey(userId), current), sut.deleteAll(userId)]);
+  if (saved === 'stale') {
+    expect(removed.count).toBe(0);
+  } else {
+    expect(removed.count).toBe(1);
+  }
+  await expect(sut.countByUser(userId)).resolves.toBe(0);
+});
+
+it('forgets pending registrations and password checks on a reset, but not sign-in challenges', async () => {
   const { sut, userId, sessionId } = await setup();
   await sut.createChallenge({ purpose: 'register', challenge: 'reg-1', userId, sessionId, expiresAt: inMinutes(5) });
   await sut.createChallenge({
@@ -142,7 +170,7 @@ it('forgets pending registrations and password checks, but not sign-in challenge
   });
   await sut.createChallenge({ purpose: 'login', challenge: 'login-1', expiresAt: inMinutes(5) });
 
-  await sut.deletePendingRegistrations(userId);
+  await sut.deleteAll(userId);
   await expect(sut.takeChallenge('register', 'reg-1')).resolves.toBeUndefined();
   await expect(sut.hasPasswordProof(sessionId)).resolves.toBe(false);
   await expect(sut.takeChallenge('login', 'login-1')).resolves.toMatchObject({ userId: null });

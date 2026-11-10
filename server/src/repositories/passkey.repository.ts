@@ -63,14 +63,44 @@ export class PasskeyRepository {
       .executeTakeFirst();
   }
 
-  /** Undefined when this credential is already saved (for any account). */
-  async create(passkey: Insertable<UserPasskeyTable>) {
-    return this.db
-      .insertInto('user_passkey')
-      .values(passkey)
-      .onConflict((oc) => oc.column('credentialId').doNothing())
-      .returning(passkeyColumns)
-      .executeTakeFirst();
+  /** The account's credential version, made (as 0) the first time it is asked for. */
+  async getCredentialVersion(userId: string): Promise<number> {
+    await this.db
+      .insertInto('user_credential_version')
+      .values({ userId })
+      .onConflict((oc) => oc.column('userId').doNothing())
+      .execute();
+    const row = await this.db
+      .selectFrom('user_credential_version')
+      .select('version')
+      .where('userId', '=', userId)
+      .executeTakeFirstOrThrow();
+    return row.version;
+  }
+
+  /**
+   * Saves a passkey, only while the account's credential version is still `version` (read under the
+   * version row's lock, so a reset waits for this insert or this insert sees the reset). `stale` when a
+   * reset happened since the registration began; undefined when this credential is already saved.
+   */
+  async create(passkey: Insertable<UserPasskeyTable>, version: number) {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .selectFrom('user_credential_version')
+        .select('version')
+        .where('userId', '=', passkey.userId)
+        .forUpdate()
+        .executeTakeFirst();
+      if ((row?.version ?? 0) !== version) {
+        return 'stale' as const;
+      }
+      return trx
+        .insertInto('user_passkey')
+        .values(passkey)
+        .onConflict((oc) => oc.column('credentialId').doNothing())
+        .returning(passkeyColumns)
+        .executeTakeFirst();
+    });
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, DummyValue.STRING] })
@@ -131,6 +161,21 @@ export class PasskeyRepository {
   /** Every passkey of the account (an administrator's reset), and the sessions they started. */
   async deleteAll(userId: string): Promise<RemovedPasskeys> {
     return this.db.transaction().execute(async (trx) => {
+      // first, under the version row's lock: a registration in flight either finished (and its passkey
+      // is removed below) or will see the new version and be refused
+      await trx
+        .insertInto('user_credential_version')
+        .values({ userId, version: 1 })
+        .onConflict((oc) =>
+          oc.column('userId').doUpdateSet((eb) => ({ version: eb('user_credential_version.version', '+', 1) })),
+        )
+        .execute();
+      // nothing started on the old password (an open "Add a passkey", a recent password check) finishes after
+      await trx
+        .deleteFrom('auth_challenge')
+        .where('userId', '=', userId)
+        .where('purpose', 'in', ['register', 'password-proof'])
+        .execute();
       const ids = (await trx.selectFrom('user_passkey').select('id').where('userId', '=', userId).execute()).map(
         ({ id }) => id,
       );
@@ -154,19 +199,6 @@ export class PasskeyRepository {
       }
       throw error;
     }
-  }
-
-  /**
-   * Forgets the account's unanswered registration challenges and password checks, so an
-   * administrator's password reset can't be followed by a passkey added on the old password.
-   */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async deletePendingRegistrations(userId: string): Promise<void> {
-    await this.db
-      .deleteFrom('auth_challenge')
-      .where('userId', '=', userId)
-      .where('purpose', 'in', ['register', 'password-proof'])
-      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -195,7 +227,7 @@ export class PasskeyRepository {
       .where('purpose', '=', purpose)
       .where('challenge', '=', challenge)
       .where('expiresAt', '>', new Date())
-      .returning(['userId', 'sessionId', 'origin', 'rpId'])
+      .returning(['userId', 'sessionId', 'origin', 'rpId', 'credentialVersion'])
       .executeTakeFirst();
   }
 

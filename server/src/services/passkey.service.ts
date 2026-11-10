@@ -170,6 +170,7 @@ export class PasskeyService extends BaseService {
     }
     await this.requirePasswordProof(auth, session.id, dto.password, details);
 
+    const credentialVersion = await this.passkeyRepository.getCredentialVersion(auth.user.id);
     const existing = await this.passkeyRepository.getByUser(auth.user.id);
     const options = await generateRegistrationOptions({
       rpName: 'Frameleaf',
@@ -192,6 +193,7 @@ export class PasskeyService extends BaseService {
       sessionId: session.id,
       origin: place.origin,
       rpId: place.rpId,
+      credentialVersion,
       expiresAt: expiresIn(PASSKEY_CHALLENGE_SECONDS),
     });
     return { passkeysAvailable: true, reason: null, options: options as unknown as Record<string, unknown> };
@@ -231,17 +233,24 @@ export class PasskeyService extends BaseService {
     }
 
     const info = verification.registrationInfo;
-    const row = await this.passkeyRepository.create({
-      userId: auth.user.id,
-      credentialId: Buffer.from(info.credential.id, 'base64url'),
-      publicKey: Buffer.from(info.credential.publicKey),
-      counter: String(info.credential.counter),
-      transports: (info.credential.transports ?? []).slice(0, 8),
-      name: dto.name ? cleanPasskeyName(dto.name) : suggestedName(details),
-      rpId: stored.rpId,
-      aaguid: /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(info.aaguid) ? info.aaguid : null,
-      backedUp: info.credentialBackedUp,
-    });
+    const row = await this.passkeyRepository.create(
+      {
+        userId: auth.user.id,
+        credentialId: Buffer.from(info.credential.id, 'base64url'),
+        publicKey: Buffer.from(info.credential.publicKey),
+        counter: String(info.credential.counter),
+        transports: (info.credential.transports ?? []).slice(0, 8),
+        name: dto.name ? cleanPasskeyName(dto.name) : suggestedName(details),
+        rpId: stored.rpId,
+        aaguid: /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(info.aaguid) ? info.aaguid : null,
+        backedUp: info.credentialBackedUp,
+      },
+      stored.credentialVersion ?? 0,
+    );
+    if (row === 'stale') {
+      // an administrator reset this account's sign-in since this passkey was started
+      throw new BadRequestException('Your sign-in was reset while adding this passkey. Start again.');
+    }
     if (!row) {
       throw new ConflictException('This passkey is already saved');
     }
