@@ -3244,6 +3244,15 @@
           "nullable": false,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "failure_times",
+          "tableName": "frameleaf_rate_limit",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -48295,6 +48304,81 @@
           "tableName": "backup_device",
           "columnNames": [
             "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "user_known_device",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "user_known_device",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "fingerprintHash",
+          "tableName": "user_known_device",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "firstSeenAt",
+          "tableName": "user_known_device",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastSeenAt",
+          "tableName": "user_known_device",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "user_known_device_pkey",
+          "definition": "PRIMARY KEY (\"userId\", \"fingerprintHash\")",
+          "tableName": "user_known_device",
+          "columnNames": [
+            "userId",
+            "fingerprintHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "user_known_device_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "user_known_device",
+          "columnNames": [
+            "userId"
           ],
           "referenceTableName": "user",
           "referenceColumnNames": [

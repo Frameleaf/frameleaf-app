@@ -1166,6 +1166,9 @@
   "preferences.emailNotifications.enabled": {
     "type": "boolean"
   },
+  "preferences.emailNotifications.newSignIn": {
+    "type": "boolean"
+  },
   "preferences.expectedRevision": {
     "type": "string"
   },
