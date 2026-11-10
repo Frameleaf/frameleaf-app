@@ -95,6 +95,7 @@ const argumentsOf = {
   'cloud-backup-check-failed': z.object({ error: name }).strict(),
   'cloud-backup-cleanup-failed': z.object({ error: name }).strict(),
   'cloud-restore-failed': z.object({ error: name }).strict(),
+  'cloud-backup-drill-failed': z.object({ failure: name }).strict(),
   'studio-export-cancelled': z.object({}).strict(),
   'studio-export-cancelled-named': z.object({ label: name }).strict(),
   'studio-render-progress': z.object({ percent: count }).strict(),
@@ -381,6 +382,10 @@ export const NOTIFICATION_CATALOGS: NotificationCatalogs = {
       'cloud-restore-failed': {
         title: 'Restore from cloud backup failed',
         body: '{error}',
+      },
+      'cloud-backup-drill-failed': {
+        title: 'Your backup didn’t restore',
+        body: '{failure} Your backups are still running; until this is fixed, Frameleaf can’t prove they would restore.',
       },
       'studio-export-cancelled': {
         title: 'Render cancelled',

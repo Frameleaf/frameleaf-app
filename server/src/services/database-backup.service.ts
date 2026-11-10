@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { debounce } from 'lodash-es';
 import { DateTime } from 'luxon';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import path, { basename } from 'node:path';
 import { Duplex, PassThrough, Readable, Writable } from 'node:stream';
 import { finished, pipeline } from 'node:stream/promises';
+import { StringDecoder } from 'node:string_decoder';
 import { coerce, gt, satisfies } from 'semver';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
@@ -136,6 +137,13 @@ export class DatabaseBackupService {
     bin: 'pg_dump' | 'pg_dumpall' | 'psql',
     options: {
       singleTransaction?: boolean;
+      /** FL-879: connect to this database instead of the library's (a restore drill's scratch copy). */
+      database?: string;
+      /** FL-879: sign in as this role instead of the library's own (the restore drill's scratch role). */
+      username?: string;
+      password?: string;
+      /** FL-879: psql prints query results instead of echoing its input for progress. */
+      results?: boolean;
     } = {},
   ): Promise<{
     bin: string;
@@ -171,8 +179,23 @@ export class DatabaseBackupService {
 
         databaseUsername = decodeURIComponent(parsedUrl.username) || parsedUrl.searchParams.get('user');
         databasePassword = decodeURIComponent(parsedUrl.password);
+        // libpq prefers query parameters over the address itself, so an override drops the conflicting ones
+        if (options.database) {
+          parsedUrl.pathname = `/${encodeURIComponent(options.database)}`;
+          parsedUrl.searchParams.delete('dbname');
+        }
+        if (options.username) {
+          parsedUrl.searchParams.delete('user');
+          parsedUrl.searchParams.delete('password');
+          parsedUrl.username = encodeURIComponent(options.username);
+          parsedUrl.password = encodeURIComponent(options.password ?? '');
+          databaseUsername = options.username;
+          databasePassword = options.password ?? '';
+        }
 
         url = parsedUrl.href;
+      } else if (options.database) {
+        throw new Error('The database address cannot be read, so a scratch database cannot be used');
       }
 
       // assume typical values if we can't parse URL or not present
@@ -181,8 +204,8 @@ export class DatabaseBackupService {
 
       args.push(url);
     } else {
-      databaseUsername = databaseConfig.username;
-      databasePassword = databaseConfig.password;
+      databaseUsername = options.username ?? databaseConfig.username;
+      databasePassword = options.username ? (options.password ?? '') : databaseConfig.password;
 
       args.push(
         '--username',
@@ -207,7 +230,7 @@ export class DatabaseBackupService {
         }
       }
 
-      args.push(databaseConfig.database);
+      args.push(options.database ?? databaseConfig.database);
     }
 
     switch (bin) {
@@ -241,9 +264,13 @@ export class DatabaseBackupService {
         }
 
         args.push(
-          // used for progress monitoring
-          '--echo-all',
-          '--output=/dev/null',
+          ...(options.results
+            ? ['--no-psqlrc', '--no-align', '--tuples-only', '--quiet']
+            : [
+                // used for progress monitoring
+                '--echo-all',
+                '--output=/dev/null',
+              ]),
         );
         break;
       }
@@ -512,6 +539,7 @@ export class DatabaseBackupService {
       verifiedBy: verifier ? { id: verifier.id, name: verifier.name } : null,
       ...restoreVerificationDue(record, new Date()),
       intervalDays: RESTORE_VERIFICATION_INTERVAL_DAYS,
+      drillReportId: record.drillReportId ?? null,
     };
   }
 
@@ -529,9 +557,116 @@ export class DatabaseBackupService {
       metadataVerifiedAt: dto.metadata ? now : (record.metadataVerifiedAt ?? null),
       originalsVerifiedAt: dto.originals ? now : (record.originalsVerifiedAt ?? null),
       verifiedBy: auth.user.id,
+      drillReportId: null,
     });
     await this.recordReview(auth, 'Recovery readiness', now);
     return this.getRestoreVerification();
+  }
+
+  /**
+   * FL-879: a restore drill that passed proved both parts: the library data rebuilt in a scratch copy
+   * and a sample of originals matched. It is recorded for the administrator who owns the drill.
+   */
+  async recordDrillVerification(reportId: string, ownerId: string, at = new Date()): Promise<void> {
+    const now = at.toISOString();
+    await this.systemMetadataRepository.set(SystemMetadataKey.BackupRestoreVerification, {
+      metadataVerifiedAt: now,
+      originalsVerifiedAt: now,
+      verifiedBy: ownerId,
+      drillReportId: reportId,
+    });
+  }
+
+  /**
+   * FL-879: rebuild a database dump in a scratch database and count what it holds, never touching the
+   * library's own database. The scratch database is created empty, the dump is read through a guard that
+   * refuses any psql command except the dump's own `\restrict` lines (so nothing can connect elsewhere or
+   * run a program), and the scratch database is dropped whatever happens.
+   */
+  async rehearseRestore(
+    filePath: string,
+    { name, assetIds, signal = executionSignal() }: { name: string; assetIds: string[]; signal?: AbortSignal },
+  ): Promise<{ counts: { asset: number; user: number; album: number }; presentAssetIds: string[] }> {
+    if (!DRILL_DATABASE_NAME.test(name)) throw new Error('Invalid scratch database name');
+    const ids = assetIds.filter((id) => UUID_TEXT.test(id));
+    const live = await this.buildPostgresLaunchArguments('psql', { results: true });
+    const scratch = await this.buildPostgresLaunchArguments('psql', { results: true, database: name });
+    const role = `${name}_restore`;
+    // The dump is rebuilt by psql signed in as the scratch role itself, never a superuser that switched role:
+    // a superuser session could switch back (RESET ROLE, even from dynamic SQL), a role that signed in cannot.
+    const secret = randomBytes(24).toString('hex');
+    const restore = await this.buildPostgresLaunchArguments('psql', {
+      singleTransaction: true,
+      database: name,
+      username: role,
+      password: secret,
+    });
+    const env = { PATH: process.env.PATH, PGPASSWORD: live.databasePassword };
+    const query = async (target: typeof live, command: string) => {
+      const child = this.processRepository.spawnDuplexStream(target.bin, [...target.args, '--command', command], {
+        signal,
+        env,
+      });
+      child.end();
+      const chunks: Buffer[] = [];
+      for await (const chunk of child) chunks.push(chunk as Buffer);
+      return Buffer.concat(chunks).toString('utf8').trim();
+    };
+    const dropAll = async () => {
+      await query(live, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      await query(live, `DROP ROLE IF EXISTS "${role}"`);
+    };
+    await dropAll();
+    try {
+      // The dump is rebuilt by a role that is not a superuser and owns only the scratch database: whatever a
+      // damaged or forged dump says, it cannot run programs, write server files or reach other databases.
+      // Both are made inside the clean-up, so a failed CREATE DATABASE still drops the role.
+      await query(
+        live,
+        `CREATE ROLE "${role}" LOGIN PASSWORD '${secret}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`,
+      );
+      await query(live, `CREATE DATABASE "${name}" OWNER "${role}"`);
+      // Extensions need a superuser, so the library's own are made here first; the dump's extension lines are dropped.
+      const extensions = (await query(live, "SELECT extname FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql'"))
+        .split('\n')
+        .filter((extension) => /^[a-z\d_-]+$/.test(extension));
+      for (const extension of extensions) {
+        await query(scratch, `CREATE EXTENSION IF NOT EXISTS "${extension}" WITH SCHEMA public CASCADE`);
+      }
+      const psql = this.processRepository.spawnDuplexStream(restore.bin, ['--no-psqlrc', ...restore.args], {
+        signal,
+        env: { PATH: process.env.PATH, PGPASSWORD: secret },
+      });
+      await pipeline(
+        this.readDatabaseDump(filePath),
+        createSqlCommandGuard(),
+        createSqlExtensionFilter(),
+        createSqlOwnerTransformStream(role),
+        psql,
+        new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+        { signal },
+      );
+      const [asset, user, album] = (
+        await query(
+          scratch,
+          "SELECT (SELECT count(*) FROM public.asset) || ',' || (SELECT count(*) FROM public.\"user\") || ',' || (SELECT count(*) FROM public.album)",
+        )
+      )
+        .split(',')
+        .map(Number);
+      const present =
+        ids.length === 0
+          ? ''
+          : await query(scratch, `SELECT id FROM public.asset WHERE id IN (${ids.map((id) => `'${id}'`).join(',')})`);
+      return {
+        counts: { asset, user, album },
+        presentAssetIds: present.split('\n').filter((line) => UUID_TEXT.test(line)),
+      };
+    } finally {
+      await dropAll().catch((error: unknown) =>
+        this.logger.warn(`Could not remove the scratch database ${name}: ${error}`),
+      );
+    }
   }
 
   /**
@@ -932,6 +1067,197 @@ export function createSqlProgressStreams(cb: (progress: number) => void): [PassT
   });
 
   return [source, sink];
+}
+
+/** FL-879: a restore drill's scratch database; never the library's own. */
+export const DRILL_DATABASE_NAME = /^frameleaf_drill_[\da-f]{32}$/;
+const UUID_TEXT = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
+/**
+ * FL-879: what a dump rebuilt in a scratch database may say. It is SQL and COPY data only:
+ * - a psql meta-command anywhere outside a literal, identifier or comment (`\connect`, `\!`, `\o`, `\copy`, …)
+ *   fails the stream; psql reads them mid-line too, so the whole text is lexed, not just line starts. Only
+ *   pg_dump's own `\restrict`/`\unrestrict` lines and the `\.` that ends COPY data pass;
+ * - statements a library dump never holds fail it too: COPY other than `FROM stdin`, programs, server
+ *   settings, roles, databases, role switches, `DO` blocks, `LOAD` and languages other than SQL and PL/pgSQL.
+ * The restore also runs as a role that is not a superuser, so this is a second line, not the only one.
+ */
+const FORBIDDEN_STATEMENTS = [
+  /\b(?:FROM|TO)\s+PROGRAM\b/i,
+  /\bALTER\s+SYSTEM\b/i,
+  /\b(?:CREATE|ALTER|DROP)\s+(?:ROLE|USER|GROUP|DATABASE|TABLESPACE|SUBSCRIPTION|SERVER|FOREIGN\s+DATA\s+WRAPPER|EVENT\s+TRIGGER)\b/i,
+  /\b(?:SET|RESET)\s+(?:LOCAL\s+|SESSION\s+)?(?:ROLE|SESSION\s+AUTHORIZATION)\b/i,
+  /^\s*DO\b/i,
+  /^\s*LOAD\b/i,
+  /^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[\s\S]*\bLANGUAGE\s+(?!sql\b|plpgsql\b)["\w]+/i,
+];
+const isAllowedCopy = (statement: string) =>
+  !/^\s*COPY\b/i.test(statement) || /^\s*COPY\s[^;]*\sFROM\s+stdin\s*$/i.test(statement);
+
+export function createSqlCommandGuard() {
+  let carry = '';
+  let inCopy = false;
+  /** Outside COPY data: normal text, a '…' literal (escaping after E), a "…" identifier, $tag$…$tag$, a block comment. */
+  let mode: 'normal' | 'single' | 'escaped' | 'double' | 'dollar' | 'block' = 'normal';
+  let dollarTag = '';
+  let blockDepth = 0;
+  let statement = '';
+  const refuse = (): never => {
+    throw new Error('The backup holds a command that is not library data');
+  };
+  const endStatement = () => {
+    if (FORBIDDEN_STATEMENTS.some((pattern) => pattern.test(statement)) || !isAllowedCopy(statement)) refuse();
+    const copy = /^\s*COPY\s/i.test(statement);
+    statement = '';
+    return copy;
+  };
+  const check = (line: string) => {
+    if (inCopy) {
+      if (line === String.raw`\.`) inCopy = false;
+      return;
+    }
+    if (mode === 'normal' && statement.trim() === '' && /^\\(?:un)?restrict(?:\s+\w+)?\s*$/.test(line)) return;
+    for (let index = 0; index < line.length; index++) {
+      const char = line[index];
+      const next = line[index + 1];
+      switch (mode) {
+        case 'normal': {
+          if (char === '\\') refuse();
+          if (char === '-' && next === '-') {
+            index = line.length;
+            continue;
+          }
+          if (char === '/' && next === '*') {
+            mode = 'block';
+            blockDepth = 1;
+            index++;
+            continue;
+          }
+          if (char === "'") {
+            const previous = line[index - 1] ?? '';
+            mode = /[eE]/.test(previous) && !/[\w$]/.test(line[index - 2] ?? '') ? 'escaped' : 'single';
+            statement += ' ';
+            continue;
+          }
+          if (char === '"') {
+            mode = 'double';
+            statement += ' ';
+            continue;
+          }
+          if (char === '$' && !/[\w$]/.test(line[index - 1] ?? '')) {
+            const tag = /^\$[A-Za-z_]*\$/.exec(line.slice(index));
+            if (tag) {
+              mode = 'dollar';
+              dollarTag = tag[0];
+              index += tag[0].length - 1;
+              statement += ' ';
+              continue;
+            }
+          }
+          if (char === ';') {
+            if (endStatement()) {
+              // COPY … FROM stdin: its data starts on the next line
+              if (line.slice(index + 1).trim() !== '') refuse();
+              inCopy = true;
+              return;
+            }
+            continue;
+          }
+          statement += char;
+          break;
+        }
+        case 'single': {
+          if (char === "'") {
+            if (next === "'") index++;
+            else mode = 'normal';
+          }
+          break;
+        }
+        case 'escaped': {
+          if (char === '\\') index++;
+          else if (char === "'") {
+            if (next === "'") index++;
+            else mode = 'normal';
+          }
+          break;
+        }
+        case 'double': {
+          if (char === '"') {
+            if (next === '"') index++;
+            else mode = 'normal';
+          }
+          break;
+        }
+        case 'dollar': {
+          if (char === '$' && line.startsWith(dollarTag, index)) {
+            mode = 'normal';
+            index += dollarTag.length - 1;
+          }
+          break;
+        }
+        case 'block': {
+          if (char === '/' && next === '*') {
+            blockDepth++;
+            index++;
+          } else if (char === '*' && next === '/') {
+            blockDepth--;
+            index++;
+            if (blockDepth === 0) mode = 'normal';
+          }
+          break;
+        }
+      }
+    }
+    if (mode === 'normal') statement += '\n';
+  };
+  return new PassThrough({
+    transform(chunk: Buffer, _encoding, callback) {
+      try {
+        const lines = (carry + chunk.toString('utf8')).split('\n');
+        carry = lines.pop() ?? '';
+        for (const line of lines) check(line);
+        callback(null, chunk);
+      } catch (error) {
+        callback(error as Error);
+      }
+    },
+    flush(callback) {
+      try {
+        check(carry);
+        if (inCopy || mode !== 'normal') refuse();
+        endStatement();
+        callback();
+      } catch (error) {
+        callback(error as Error);
+      }
+    },
+  });
+}
+
+/** FL-879: the dump's own extension lines; the scratch database already has the library's extensions. */
+export function createSqlExtensionFilter() {
+  let carry = '';
+  // A chunk can end inside a multi-byte character; the decoder holds those bytes for the next chunk.
+  const decoder = new StringDecoder('utf8');
+  const keep = (line: string) =>
+    !/^(?:DROP EXTENSION IF EXISTS|CREATE EXTENSION IF NOT EXISTS|COMMENT ON EXTENSION) [^;]*;$/.test(line);
+  return new PassThrough({
+    transform(chunk: Buffer, _encoding, callback) {
+      const lines = (carry + decoder.write(chunk)).split('\n');
+      carry = lines.pop() ?? '';
+      callback(
+        null,
+        lines
+          .filter((line) => keep(line))
+          .map((line) => `${line}\n`)
+          .join(''),
+      );
+    },
+    flush(callback) {
+      carry += decoder.end();
+      callback(null, keep(carry) ? carry : '');
+    },
+  });
 }
 
 export function createSqlOwnerTransformStream(databaseUsername: string) {

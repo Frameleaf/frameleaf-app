@@ -172,6 +172,22 @@ type EventMap = {
   /** FL-228: something happened that registered devices may be told about by push. */
   PushNotify: [PushNotice];
 
+  /** FL-900: a scheduled restore drill (FL-879) finished; administrators get its email. */
+  RestoreDrillFinished: [
+    {
+      reportId: string;
+      result: 'passed' | 'failed';
+      target: string;
+      startedAt: string;
+      backupFrom: string | null;
+      sample: number;
+      matched: number;
+      durationSeconds: number;
+      failure: string | null;
+      failedStep: string | null;
+    },
+  ];
+
   /** FL-721: a person's Locked encryption finished turning off; the API process releases their pinned key. */
   LockedEncryptionOff: [{ userId: string }];
   /** FL-721: a restore changed a person's key file; every process drops the key it holds for them. */

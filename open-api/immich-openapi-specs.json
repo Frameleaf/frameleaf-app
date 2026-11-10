@@ -2002,6 +2002,217 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/backup/drills": {
+      "get": {
+        "description": "FL-879: the restore drills, newest first (at most 50).",
+        "operationId": "listCloudBackupDrills",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CloudBackupDrillDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List restore drills",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "FL-879: queues a restore drill. It fetches the newest backup named by the signed snapshot history, unlocks it, rebuilds its library data in a scratch database and compares a random sample of originals, then signs a report. Nothing in the library changes; the scratch copy is removed afterwards.",
+        "operationId": "startCloudBackupDrill",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run a restore drill",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.run",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/drills/{id}": {
+      "get": {
+        "description": "FL-879: one restore drill: what was checked, what matched, and which step failed.",
+        "operationId": "getCloudBackupDrill",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupDrillDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a restore drill",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/drills/{id}/report.json": {
+      "get": {
+        "description": "FL-879: the signed report. `signature.value` is the Ed25519 signature (base64url) of `signature.prefix` followed by the canonical JSON of `report` (keys sorted, no spaces), by the key in `signature.publicKey`, whose RFC 7638 thumbprint is `signature.keyFingerprint`.",
+        "operationId": "getCloudBackupDrillReport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupDrillReportDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a restore drill report",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup/escrow": {
       "delete": {
         "description": "Deletes the wrapped key Frameleaf Cloud keeps for this server.",
@@ -83474,6 +83685,13 @@
       },
       "BackupRestoreVerificationResponseDto": {
         "properties": {
+          "drillReportId": {
+            "description": "FL-879: the restore drill that recorded the last test; null when an administrator recorded it",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "dueAt": {
             "description": "When the next test is due; null when a part has never been proved",
             "format": "date-time",
@@ -83523,6 +83741,7 @@
           }
         },
         "required": [
+          "drillReportId",
           "dueAt",
           "intervalDays",
           "metadataVerifiedAt",
@@ -87903,6 +88122,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "drill": {
+            "description": "FL-879: this is a restore drill (its task reads as verify, which it is a kind of)",
+            "type": "boolean"
+          },
           "operationId": {
             "type": "string"
           },
@@ -87934,6 +88157,7 @@
         "required": [
           "bytesUploaded",
           "checked",
+          "drill",
           "operationId",
           "phase",
           "progress",
@@ -88148,6 +88372,249 @@
         "enum": [
           "between",
           "recent"
+        ],
+        "type": "string"
+      },
+      "CloudBackupDrillDto": {
+        "properties": {
+          "backupFrom": {
+            "description": "When the backup that was used was made",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "checked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "durationSeconds": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "failedStep": {
+            "$ref": "#/components/schemas/CloudBackupDrillStep"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "keyFingerprint": {
+            "description": "The signing key (RFC 7638 thumbprint of the Ed25519 key)",
+            "nullable": true,
+            "type": "string"
+          },
+          "library": {
+            "description": "What the backup holds",
+            "nullable": true,
+            "properties": {
+              "albums": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "items": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "photos": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "videos": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "items",
+              "photos",
+              "videos",
+              "albums"
+            ],
+            "type": "object"
+          },
+          "matched": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "mismatches": {
+            "items": {
+              "properties": {
+                "assetId": {
+                  "type": "string"
+                },
+                "problem": {
+                  "$ref": "#/components/schemas/CloudBackupDrillProblem"
+                }
+              },
+              "required": [
+                "assetId",
+                "problem"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "restored": {
+            "description": "Rows the rebuilt library data holds",
+            "nullable": true,
+            "properties": {
+              "album": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "asset": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "user": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "asset",
+              "user",
+              "album"
+            ],
+            "type": "object"
+          },
+          "result": {
+            "$ref": "#/components/schemas/CloudBackupDrillResult"
+          },
+          "sampleSize": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "signed": {
+            "type": "boolean"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "target": {
+            "description": "managed or byo-s3",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/CloudBackupDrillTrigger"
+          }
+        },
+        "required": [
+          "backupFrom",
+          "checked",
+          "durationSeconds",
+          "failedStep",
+          "finishedAt",
+          "id",
+          "keyFingerprint",
+          "library",
+          "matched",
+          "mismatches",
+          "restored",
+          "result",
+          "sampleSize",
+          "signed",
+          "startedAt",
+          "target",
+          "trigger"
+        ],
+        "type": "object"
+      },
+      "CloudBackupDrillProblem": {
+        "enum": [
+          "different",
+          "missing",
+          "not-in-library-data"
+        ],
+        "type": "string"
+      },
+      "CloudBackupDrillReportDto": {
+        "properties": {
+          "report": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "signature": {
+            "properties": {
+              "algorithm": {
+                "enum": [
+                  "Ed25519"
+                ],
+                "type": "string"
+              },
+              "keyFingerprint": {
+                "type": "string"
+              },
+              "prefix": {
+                "type": "string"
+              },
+              "publicKey": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "algorithm",
+              "prefix",
+              "keyFingerprint",
+              "publicKey",
+              "value"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "report",
+          "signature"
+        ],
+        "type": "object"
+      },
+      "CloudBackupDrillResult": {
+        "enum": [
+          "running",
+          "passed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "CloudBackupDrillStep": {
+        "description": "fetch: the backup could not be fetched intact; unlock: the recovery key did not unlock it; rebuild: its library data did not rebuild; compare: sampled originals did not match",
+        "enum": [
+          "fetch",
+          "unlock",
+          "rebuild",
+          "compare",
+          null
+        ],
+        "nullable": true,
+        "type": "string"
+      },
+      "CloudBackupDrillTrigger": {
+        "enum": [
+          "scheduled",
+          "manual"
         ],
         "type": "string"
       },
@@ -89459,6 +89926,14 @@
             "description": "The newest run's coverage report (FL-362)",
             "nullable": true
           },
+          "drillDue": {
+            "description": "FL-879: a restore drill runs after the next scheduled backup",
+            "type": "boolean"
+          },
+          "drillNeedsAttention": {
+            "description": "FL-879: the newest restore drill failed",
+            "type": "boolean"
+          },
           "endpoint": {
             "nullable": true,
             "type": "string"
@@ -89484,6 +89959,15 @@
                 "$ref": "#/components/schemas/CloudBackupKeyMode"
               }
             ],
+            "nullable": true
+          },
+          "lastDrill": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupDrillDto"
+              }
+            ],
+            "description": "FL-879: the newest finished restore drill",
             "nullable": true
           },
           "lastManifestKey": {
@@ -89539,6 +90023,12 @@
             "description": "Frameleaf-managed storage can be chosen: this server is linked to Frameleaf Cloud",
             "type": "boolean"
           },
+          "nextDrillAt": {
+            "description": "FL-879: when the next restore drill is due; null when it is due now or backup is off",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "region": {
             "nullable": true,
             "type": "string"
@@ -89575,12 +90065,15 @@
           "claimedAt",
           "configured",
           "coverage",
+          "drillDue",
+          "drillNeedsAttention",
           "endpoint",
           "escrow",
           "instanceId",
           "keyFingerprint",
           "keyLoaded",
           "keyMode",
+          "lastDrill",
           "lastManifestKey",
           "lastPrune",
           "lastRestore",
@@ -89589,6 +90082,7 @@
           "lastVerify",
           "managed",
           "managedAvailable",
+          "nextDrillAt",
           "region",
           "target",
           "usage"

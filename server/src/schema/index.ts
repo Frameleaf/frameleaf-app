@@ -97,6 +97,7 @@ import { AssetVideoFingerprintTable } from 'src/schema/tables/asset-video-finger
 import { AssetViewTable } from 'src/schema/tables/asset-view.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
+import { BackupRestoreReportTable } from 'src/schema/tables/backup-restore-report.table.js';
 import { BookmarkTagTable } from 'src/schema/tables/bookmark-tag.table.js';
 import { BookmarkTable } from 'src/schema/tables/bookmark.table.js';
 import {
@@ -425,6 +426,7 @@ export class ImmichDatabase {
     LandmarkAreaTable,
     AssetLandmarkTable,
     IntegrityReportTable,
+    BackupRestoreReportTable,
     LibraryTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
@@ -690,6 +692,7 @@ export interface DB extends QueueDatabase {
   asset_landmark: AssetLandmarkTable;
 
   integrity_report: IntegrityReportTable;
+  backup_restore_report: BackupRestoreReportTable;
   asset_integrity_verification: AssetIntegrityVerificationTable;
   cloud_backup_manifest_original: CloudBackupManifestOriginalTable;
   cloud_backup_object_verification: CloudBackupObjectVerificationTable;
