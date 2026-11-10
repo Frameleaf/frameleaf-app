@@ -50801,13 +50801,13 @@
         "x-immich-state": "Stable"
       }
     },
-    "/shared-links/direct/{keyOrSlug}.jpg": {
+    "/shared-links/direct/key/{key}.jpg": {
       "get": {
         "description": "Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.",
-        "operationId": "getSharedLinkDirectImage",
+        "operationId": "getSharedLinkDirectImageByKey",
         "parameters": [
           {
-            "name": "keyOrSlug",
+            "name": "key",
             "required": true,
             "in": "path",
             "schema": {
@@ -50848,7 +50848,71 @@
             "description": ""
           }
         },
-        "summary": "View the image of a single-photo shared link",
+        "summary": "View the image of a single-photo shared link, by its key",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/shared-links/direct/s/{slug}.jpg": {
+      "get": {
+        "description": "Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.",
+        "operationId": "getSharedLinkDirectImageBySlug",
+        "parameters": [
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+            }
+          },
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "View the image of a single-photo shared link, by its slug",
         "tags": [
           "Shared links"
         ],
@@ -144094,7 +144158,7 @@
             "type": "string"
           },
           "directUrl": {
-            "description": "FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root (/api/shared-links/direct/...).",
+            "description": "FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root: /api/shared-links/direct/s/<slug>.jpg for a link with a slug, /api/shared-links/direct/key/<key>.jpg otherwise.",
             "nullable": true,
             "type": "string",
             "x-immich-history": [

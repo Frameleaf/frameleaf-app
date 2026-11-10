@@ -39,6 +39,9 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
 import { getSharedLinkToken, requireSharedLinkUnlocked, sharedLinkSecretEqual } from 'src/utils/shared-link.js';
 
+/** FL-788: how a direct image address names its link (`/direct/s/<slug>.jpg` or `/direct/key/<key>.jpg`). */
+export type DirectImageAddress = { slug: string } | { key: string };
+
 /** A bcrypt hash as stored for a shared-link password (FL-161); anything else is a legacy plaintext value. */
 const BCRYPT_HASH = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
 export const isBcryptHash = (value: string) => BCRYPT_HASH.test(value);
@@ -377,13 +380,13 @@ export class SharedLinkService extends BaseService {
    * full-size copy is served only where full-resolution files may go (FL-161).
    */
   async getDirectImage(
-    keyOrSlug: string,
+    address: DirectImageAddress,
     dto: SharedLinkDirectImageDto,
     via: FrameleafVia | null = null,
   ): Promise<FileDownloadResponse> {
     const notFound = () => new NotFoundException('Image not found');
 
-    const found = await this.findDirectLink(keyOrSlug);
+    const found = await this.findDirectLink(address);
     if (!found?.user || found.password || !found.allowDownload) {
       throw notFound();
     }
@@ -425,15 +428,17 @@ export class SharedLinkService extends BaseService {
     });
   }
 
-  /** A direct image address names its link by slug, or by key when the link has no slug. */
-  private async findDirectLink(keyOrSlug: string) {
-    const bySlug = await this.sharedLinkRepository.getBySlug(keyOrSlug);
-    if (bySlug) {
-      return bySlug;
+  /**
+   * A direct image address names its link either by slug or by key, never one standing in for the other
+   * (see `sharedLinkDirectPath`).
+   */
+  private async findDirectLink(address: DirectImageAddress) {
+    if ('slug' in address) {
+      return this.sharedLinkRepository.getBySlug(address.slug);
     }
-    const key = Buffer.from(keyOrSlug, 'base64url');
+    const key = Buffer.from(address.key, 'base64url');
     // only a well-formed key (50 random bytes, see create) is looked up
-    if (key.length !== 50 || key.toString('base64url') !== keyOrSlug) {
+    if (key.length !== 50 || key.toString('base64url') !== address.key) {
       return;
     }
     return this.sharedLinkRepository.getByKey(key);

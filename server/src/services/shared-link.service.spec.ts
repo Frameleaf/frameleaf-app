@@ -633,22 +633,22 @@ describe(SharedLinkService.name, () => {
 
       const [first, second, ...rest] = await sut.getAll(authStub.user1, {});
 
-      expect(first.directUrl).toBe('https://photos.example.com/api/shared-links/direct/lake-morning.jpg');
-      expect(second.directUrl).toBe(`https://photos.example.com/api/shared-links/direct/${second.key}.jpg`);
+      expect(first.directUrl).toBe('https://photos.example.com/api/shared-links/direct/s/lake-morning.jpg');
+      expect(second.directUrl).toBe(`https://photos.example.com/api/shared-links/direct/key/${second.key}.jpg`);
       expect(rest.map(({ directUrl }) => directUrl)).toEqual(ineligible.map(() => null));
     });
 
     it('gives a path from the server root when no external domain is set', async () => {
       mocks.sharedLink.getAll.mockResolvedValue([listedWithCount(singlePhoto({ slug: 'summer trip/2026' }))]);
       const [link] = await sut.getAll(authStub.user1, {});
-      expect(link.directUrl).toBe('/api/shared-links/direct/summer%20trip%2F2026.jpg');
+      expect(link.directUrl).toBe('/api/shared-links/direct/s/summer%20trip%2F2026.jpg');
     });
 
     it('serves the preview without its location, with no cache header of its own', async () => {
       const link = singlePhoto();
       serve(link);
 
-      const file = await sut.getDirectImage('lake-morning', {});
+      const file = await sut.getDirectImage({ slug: 'lake-morning' }, {});
 
       expect(mocks.sharedLink.get).toHaveBeenCalledWith(link.userId, link.id);
       expect(mocks.asset.getHiddenContentAssetIds).toHaveBeenCalledWith([link.assets[0].id], {
@@ -668,18 +668,49 @@ describe(SharedLinkService.name, () => {
     it('finds a link without a slug by its key', async () => {
       const link = singlePhoto({ slug: null, key: randomBytes(50) });
       serve(link);
-      mocks.sharedLink.getBySlug.mockResolvedValue(undefined);
       mocks.sharedLink.getByKey.mockResolvedValue(found(link) as never);
 
-      await sut.getDirectImage(link.key.toString('base64url'), {});
+      await sut.getDirectImage({ key: link.key.toString('base64url') }, {});
 
       expect(mocks.sharedLink.getByKey).toHaveBeenCalledWith(link.key);
+      expect(mocks.sharedLink.getBySlug).not.toHaveBeenCalled();
     });
 
     it('never looks up a malformed key', async () => {
-      mocks.sharedLink.getBySlug.mockResolvedValue(undefined);
-      await expect(sut.getDirectImage('not-a-key', {})).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.getDirectImage({ key: 'not-a-key' }, {})).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.sharedLink.getByKey).not.toHaveBeenCalled();
+    });
+
+    it("never takes a slug that spells another link's key for that key, or a key for a slug", async () => {
+      // one link's slug is exactly another link's key
+      const keyed = singlePhoto({ slug: null, key: randomBytes(50) });
+      const collidingSlug = keyed.key.toString('base64url');
+      serve(keyed);
+      mocks.sharedLink.getBySlug.mockResolvedValue(undefined);
+      mocks.sharedLink.getByKey.mockResolvedValue(found(keyed) as never);
+
+      // as a slug it is looked up only among slugs, and no link holds that slug
+      await expect(sut.getDirectImage({ slug: collidingSlug }, {})).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.sharedLink.getBySlug).toHaveBeenCalledWith(collidingSlug);
+      expect(mocks.sharedLink.getByKey).not.toHaveBeenCalled();
+
+      // as a key it is looked up only among keys
+      mocks.sharedLink.getBySlug.mockClear();
+      await sut.getDirectImage({ key: collidingSlug }, {});
+      expect(mocks.sharedLink.getByKey).toHaveBeenCalledWith(keyed.key);
+      expect(mocks.sharedLink.getBySlug).not.toHaveBeenCalled();
+    });
+
+    it('gives a slug and a key that spell the same text different addresses', async () => {
+      const key = randomBytes(50);
+      mocks.sharedLink.getAll.mockResolvedValue(
+        [singlePhoto({ slug: key.toString('base64url') }), singlePhoto({ slug: null, key })].map((link) =>
+          listedWithCount(link),
+        ),
+      );
+      const [bySlug, byKey] = await sut.getAll(authStub.user1, {});
+      expect(bySlug.directUrl).toBe(`/api/shared-links/direct/s/${key.toString('base64url')}.jpg`);
+      expect(byKey.directUrl).toBe(`/api/shared-links/direct/key/${key.toString('base64url')}.jpg`);
     });
 
     it('serves the full-size copy, cleaned of its location, when asked and generated', async () => {
@@ -687,7 +718,7 @@ describe(SharedLinkService.name, () => {
       serve(link);
       mocks.asset.getForThumbnail.mockResolvedValue({ path: '/thumbs/fullsize.jpeg' } as never);
 
-      const file = await sut.getDirectImage('lake-morning', { size: 'fullsize' });
+      const file = await sut.getDirectImage({ slug: 'lake-morning' }, { size: 'fullsize' });
 
       expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(link.assets[0].id, AssetFileType.FullSize, true);
       expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/thumbs/fullsize.jpeg');
@@ -696,13 +727,13 @@ describe(SharedLinkService.name, () => {
 
     it('answers a full-size request with the preview when no full-size copy exists', async () => {
       serve(singlePhoto());
-      await sut.getDirectImage('lake-morning', { size: 'fullsize' });
+      await sut.getDirectImage({ slug: 'lake-morning' }, { size: 'fullsize' });
       expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/thumbs/preview.jpeg');
     });
 
     it('keeps full-size files off the relay unless an administrator allowed originals there', async () => {
       serve(singlePhoto());
-      await sut.getDirectImage('lake-morning', { size: 'fullsize' }, 'relay');
+      await sut.getDirectImage({ slug: 'lake-morning' }, { size: 'fullsize' }, 'relay');
       expect(mocks.asset.getForThumbnail).not.toHaveBeenCalledWith(expect.anything(), AssetFileType.FullSize, true);
     });
 
@@ -712,13 +743,13 @@ describe(SharedLinkService.name, () => {
       ['an expiry passed', { expiresAt: new Date(NOW.getTime() - 1000) }],
     ])('answers 404 for a link with %s', async (_label, patch) => {
       serve(singlePhoto(patch));
-      await expect(sut.getDirectImage('lake-morning', {})).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.getDirectImage({ slug: 'lake-morning' }, {})).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
     });
 
     it('answers 404 for a removed link, more than one item, a video or an album', async () => {
       mocks.sharedLink.getBySlug.mockResolvedValue(undefined);
-      await expect(sut.getDirectImage('lake-morning', {})).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.getDirectImage({ slug: 'lake-morning' }, {})).rejects.toBeInstanceOf(NotFoundException);
 
       for (const link of [
         getForSharedLink(SharedLinkFactory.from().asset({}, withExif).asset({}, withExif).build()),
@@ -726,7 +757,7 @@ describe(SharedLinkService.name, () => {
         getForSharedLink(SharedLinkFactory.from({ type: SharedLinkType.Album }).album().build()),
       ]) {
         serve(link);
-        await expect(sut.getDirectImage('lake-morning', {})).rejects.toBeInstanceOf(NotFoundException);
+        await expect(sut.getDirectImage({ slug: 'lake-morning' }, {})).rejects.toBeInstanceOf(NotFoundException);
       }
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
     });
@@ -735,13 +766,13 @@ describe(SharedLinkService.name, () => {
       const link = singlePhoto();
       serve(link);
       mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set([link.assets[0].id]));
-      await expect(sut.getDirectImage('lake-morning', {})).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.getDirectImage({ slug: 'lake-morning' }, {})).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('refuses rather than serve a file whose location could not be removed', async () => {
       serve(singlePhoto());
       mocks.metadata.acquireLocationFreeOriginal.mockRejectedValue(new Error('exiftool failed'));
-      await expect(sut.getDirectImage('lake-morning', {})).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.getDirectImage({ slug: 'lake-morning' }, {})).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

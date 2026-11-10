@@ -256,7 +256,8 @@ describe('SharedLinkList', () => {
     render(SharedLinkList);
     await screen.findByText('Lake morning');
 
-    const buttons = screen.getAllByRole('button', { name: en.frameleaf_sharing.copy_image_link });
+    // each card's button is named for its own link, like Copy link beside it
+    const buttons = screen.getAllByRole('button', { name: /^Copy image link for / });
     expect(buttons).toHaveLength(1);
     await fireEvent.click(buttons[0]);
 

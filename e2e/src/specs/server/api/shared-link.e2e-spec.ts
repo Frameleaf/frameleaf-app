@@ -618,7 +618,7 @@ describe('/shared-links', () => {
     });
   });
 
-  describe('GET /shared-links/direct/:keyOrSlug.jpg (FL-788)', () => {
+  describe('GET /shared-links/direct/{s,key}/:x.jpg (FL-788)', () => {
     beforeAll(async () => {
       await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
     });
@@ -630,7 +630,7 @@ describe('/shared-links', () => {
         showMetadata: true,
         slug: 'direct-image',
       });
-      expect(link.directUrl).toMatch(/\/api\/shared-links\/direct\/direct-image\.jpg$/);
+      expect(link.directUrl).toMatch(/\/api\/shared-links\/direct\/s\/direct-image\.jpg$/);
 
       const { status, headers } = await request(baseUrl).get(new URL(link.directUrl!, baseUrl).pathname);
       expect(status).toBe(200);
@@ -683,7 +683,7 @@ describe('/shared-links', () => {
       expect(noDownloads.directUrl).toBeNull();
 
       for (const link of [several, noDownloads]) {
-        const { status } = await request(baseUrl).get(`/api/shared-links/direct/${link.key}.jpg`);
+        const { status } = await request(baseUrl).get(`/api/shared-links/direct/key/${link.key}.jpg`);
         expect(status).toBe(404);
       }
     });

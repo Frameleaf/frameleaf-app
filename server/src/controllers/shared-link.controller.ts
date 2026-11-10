@@ -34,7 +34,7 @@ import { Auth, Authenticated, FileResponse, GetLoginDetails } from 'src/middlewa
 import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { SharedLinkService } from 'src/services/shared-link.service.js';
+import { type DirectImageAddress, SharedLinkService } from 'src/services/shared-link.service.js';
 import { sendFile } from 'src/utils/file.js';
 import { respondWithCookie } from 'src/utils/response.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -112,27 +112,56 @@ export class SharedLinkController {
     return this.service.getMine(auth, getAuthTokens(req.cookies));
   }
 
-  @Get('direct/:keyOrSlug.jpg')
+  @Get('direct/s/:slug.jpg')
   @Authenticated({ public: true })
   @FileResponse('image/jpeg', 'image/webp')
   @Endpoint({
-    summary: 'View the image of a single-photo shared link',
+    summary: 'View the image of a single-photo shared link, by its slug',
     description:
       'Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.',
     history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
   })
-  async getSharedLinkDirectImage(
-    @Param('keyOrSlug') keyOrSlug: string,
+  getSharedLinkDirectImageBySlug(
+    @Param('slug') slug: string,
     @Query() dto: SharedLinkDirectImageDto,
     @Req() req: Request,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
+    return this.sendDirectImage({ slug }, dto, req, res, next);
+  }
+
+  @Get('direct/key/:key.jpg')
+  @Authenticated({ public: true })
+  @FileResponse('image/jpeg', 'image/webp')
+  @Endpoint({
+    summary: 'View the image of a single-photo shared link, by its key',
+    description:
+      'Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  getSharedLinkDirectImageByKey(
+    @Param('key') key: string,
+    @Query() dto: SharedLinkDirectImageDto,
+    @Req() req: Request,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    return this.sendDirectImage({ key }, dto, req, res, next);
+  }
+
+  private async sendDirectImage(
+    address: DirectImageAddress,
+    dto: SharedLinkDirectImageDto,
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     await sendFile(
       res,
       next,
       async () => {
-        const file = await this.service.getDirectImage(keyOrSlug, dto, requestVia(req));
+        const file = await this.service.getDirectImage(address, dto, requestVia(req));
         res.header('Cache-Control', DIRECT_IMAGE_CACHE_CONTROL);
         res.header('Cross-Origin-Resource-Policy', 'cross-origin');
         return file;

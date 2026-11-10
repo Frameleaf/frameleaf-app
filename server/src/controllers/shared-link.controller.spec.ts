@@ -36,14 +36,14 @@ describe(SharedLinkController.name, () => {
     });
   });
 
-  describe('GET /shared-links/direct/:keyOrSlug.jpg (FL-788)', () => {
+  describe('GET /shared-links/direct/{s,key}/:x.jpg (FL-788)', () => {
     it('is public and passes the slug without the extension', async () => {
       service.getDirectImage.mockRejectedValue(new NotFoundException('Image not found'));
       const { status, headers } = await request(ctx.getHttpServer()).get(
-        '/shared-links/direct/summer.trip.jpg?size=fullsize',
+        '/shared-links/direct/s/summer.trip.jpg?size=fullsize',
       );
       expect(status).toBe(404);
-      expect(service.getDirectImage).toHaveBeenCalledWith('summer.trip', { size: 'fullsize' }, null);
+      expect(service.getDirectImage).toHaveBeenCalledWith({ slug: 'summer.trip' }, { size: 'fullsize' }, null);
       // a refusal is never cached as if it were the image
       expect(headers['cache-control']).not.toBe('public, max-age=3600');
     });
@@ -60,15 +60,24 @@ describe(SharedLinkController.name, () => {
           viewerId: null,
         }),
       );
-      const { status, headers } = await request(ctx.getHttpServer()).get(`/shared-links/direct/${'k'.repeat(67)}.jpg`);
+      const { status, headers } = await request(ctx.getHttpServer()).get(
+        `/shared-links/direct/key/${'k'.repeat(67)}.jpg`,
+      );
       expect(status).toBe(200);
       expect(headers['cache-control']).toBe('public, max-age=3600');
       expect(headers['cross-origin-resource-policy']).toBe('cross-origin');
       expect(headers['content-disposition']).toMatch(/^inline;/);
+      expect(service.getDirectImage).toHaveBeenCalledWith({ key: 'k'.repeat(67) }, {}, null);
+    });
+
+    it('has no form that leaves the service to guess between a slug and a key', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/shared-links/direct/summer.jpg');
+      expect(status).toBe(404);
+      expect(service.getDirectImage).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown size', async () => {
-      const { status } = await request(ctx.getHttpServer()).get('/shared-links/direct/summer.jpg?size=original');
+      const { status } = await request(ctx.getHttpServer()).get('/shared-links/direct/s/summer.jpg?size=original');
       expect(status).toBe(400);
       expect(service.getDirectImage).not.toHaveBeenCalled();
     });

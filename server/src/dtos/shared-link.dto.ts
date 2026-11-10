@@ -138,7 +138,7 @@ const SharedLinkResponseSchema = z
       .string()
       .nullable()
       .describe(
-        "FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root (/api/shared-links/direct/...).",
+        "FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root: /api/shared-links/direct/s/<slug>.jpg for a link with a slug, /api/shared-links/direct/key/<key>.jpg otherwise.",
       )
       .meta(new HistoryBuilder().added('v3.4.0').getExtensions()),
   })
@@ -199,9 +199,15 @@ export const isDirectImageLink = (
   return count === 1 && assets.length === 1 && assets[0].type === AssetType.Image;
 };
 
-/** FL-788: the path of a link's direct image, by its slug when it has one, otherwise by its key. */
+/**
+ * FL-788: the path of a link's direct image: `/s/<slug>.jpg` when it has a slug, otherwise
+ * `/key/<key>.jpg`. The two forms never share a path, so a slug that happens to spell another link's
+ * key can only ever name the link that holds the slug (as `/s/` and `/share/` do for the pages).
+ */
 export const sharedLinkDirectPath = (sharedLink: Pick<SharedLink, 'key' | 'slug'>) =>
-  `/api/shared-links/direct/${encodeURIComponent(sharedLink.slug || sharedLink.key.toString('base64url'))}.jpg`;
+  sharedLink.slug
+    ? `/api/shared-links/direct/s/${encodeURIComponent(sharedLink.slug)}.jpg`
+    : `/api/shared-links/direct/key/${sharedLink.key.toString('base64url')}.jpg`;
 
 const sharedLinkDirectUrl = (sharedLink: SharedLink, externalDomain: string | undefined): string | null => {
   if (!isDirectImageLink(sharedLink)) {

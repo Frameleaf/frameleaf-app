@@ -51,7 +51,7 @@ const PATH_SECRET_ROUTES = [
   /^(\/(?:api\/)?cast\/)[^/?#]+/i,
   /^(\/(?:api\/)?render-workers\/operations\/[^/?#]+\/inputs\/)[^/?#]+/i,
   /^(\/(?:api\/)?photography\/galleries\/[^/?#]+\/zip\/)[^/?#]+/i,
-  /^(\/(?:api\/)?shared-links\/direct\/)[^/?#]+/i,
+  /^(\/(?:api\/)?shared-links\/direct\/(?:s|key)\/)[^/?#]+/i,
 ];
 
 const redactPathSecrets = (url: string) => {

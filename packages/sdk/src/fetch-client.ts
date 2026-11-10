@@ -16476,7 +16476,7 @@ export type SharedLinkResponseDto = {
     createdAt: string;
     /** Link description */
     description: string | null;
-    /** FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root (/api/shared-links/direct/...). */
+    /** FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root: /api/shared-links/direct/s/<slug>.jpg for a link with a slug, /api/shared-links/direct/key/<key>.jpg otherwise. */
     directUrl: string | null;
     /** Expiration date */
     expiresAt: string | null;
@@ -34115,16 +34115,32 @@ export function createSharedLink({ sharedLinkCreateDto }: {
     })));
 }
 /**
- * View the image of a single-photo shared link
+ * View the image of a single-photo shared link, by its key
  */
-export function getSharedLinkDirectImage({ keyOrSlug, size }: {
-    keyOrSlug: string;
+export function getSharedLinkDirectImageByKey({ key, size }: {
+    key: string;
     size?: SharedLinkDirectImageSize;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
         data: Blob;
-    }>(`/shared-links/direct/${encodeURIComponent(keyOrSlug)}.jpg${QS.query(QS.explode({
+    }>(`/shared-links/direct/key/${encodeURIComponent(key)}.jpg${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * View the image of a single-photo shared link, by its slug
+ */
+export function getSharedLinkDirectImageBySlug({ size, slug }: {
+    size?: SharedLinkDirectImageSize;
+    slug: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-links/direct/s/${encodeURIComponent(slug)}.jpg${QS.query(QS.explode({
         size
     }))}`, {
         ...opts

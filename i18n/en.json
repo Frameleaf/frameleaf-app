@@ -15947,6 +15947,7 @@
     "copy_image": "Copy image",
     "copy_image_failed": "The image could not be copied.",
     "copy_image_link": "Copy image link",
+    "copy_image_link_for": "Copy image link for {name}",
     "copy_link_for": "Copy link for {name}",
     "copy_unavailable": "Copying is not available here.",
     "create_public_link": "Create public link",

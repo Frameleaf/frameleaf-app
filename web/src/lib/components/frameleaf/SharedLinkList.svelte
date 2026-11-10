@@ -457,7 +457,10 @@
                 onCopied={() => (status = $t('frameleaf_sharing.link_copied_for', { values: { name: title } }))}
               />
               {#if link.directUrl}
-                <Button onclick={() => void copyImageLink(link, title)}>
+                <Button
+                  label={$t('frameleaf_sharing.copy_image_link_for', { values: { name: title } })}
+                  onclick={() => void copyImageLink(link, title)}
+                >
                   <Icon icon={mdiImageOutline} size="18" aria-hidden={true} />
                   {$t('frameleaf_sharing.copy_image_link')}
                 </Button>
