@@ -4,7 +4,7 @@
 // base-image bump cannot drop a format without anyone noticing. Something that is missing on purpose,
 // or not yet built, goes in KNOWN_GAPS with the reason; an entry that is no longer a gap fails the
 // run until it is removed.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -89,7 +89,9 @@ for (const [coder, module] of Object.entries({
 }
 
 // FL-1356: the still ladder's other decoders, each run as its own program.
-check('still decoder', 'djpeg (libjpeg-turbo 3)', /version 3\./.test(output('djpeg', ['-version'])));
+// djpeg prints its version on stderr and exits 0, so both streams are read.
+const djpeg = spawnSync('djpeg', ['-version'], { encoding: 'utf8' });
+check('still decoder', 'djpeg (libjpeg-turbo 3)', /version 3\./.test(`${djpeg.stdout}${djpeg.stderr}`));
 check('still decoder', 'magick', /ImageMagick 7\./.test(output('magick', ['-version'])));
 // JxrDecApp has no version flag; run bare it prints its usage, and names itself.
 check('still decoder', 'JxrDecApp (jxrlib)', /JPEG XR Decoder Utility/i.test(output('JxrDecApp', [])));
