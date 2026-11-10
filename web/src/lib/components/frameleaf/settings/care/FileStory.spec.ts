@@ -315,6 +315,26 @@ describe('What happened (FL-1338)', () => {
       await vi.waitFor(() => expect(onDone).toHaveBeenCalledWith('IMG_0611.jpg is in the Trash.'));
     });
 
+    it.each([400, 403])(
+      'says plainly that it failed, never the Trash’s own %s refusal, and keeps the sheet open',
+      async (status) => {
+        confirmFrameleaf.mockResolvedValue(true);
+        sdkMock.deleteAssets.mockRejectedValue(
+          Object.assign(new Error('Bad Request'), {
+            status,
+            data: { message: 'Not found or no asset.delete access' },
+          }),
+        );
+        const { sheet, onDone } = show(missing);
+
+        await fireEvent.click(await sheet().findByRole('button', { name: 'Remove from library…' }));
+
+        expect(await sheet().findByText(en.frameleaf_files_action_failed)).toBeInTheDocument();
+        expect(sheet().queryByText('Not found or no asset.delete access')).not.toBeInTheDocument();
+        expect(onDone).not.toHaveBeenCalled();
+      },
+    );
+
     it('removes nothing when the person changes their mind', async () => {
       confirmFrameleaf.mockResolvedValue(false);
       const { sheet, onDone } = show(blank);

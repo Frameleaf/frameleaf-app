@@ -212,14 +212,15 @@
     onDone(message);
     open = false;
   };
-  const act = async (call: () => Promise<unknown>, message: () => string) => {
+  /** `statuses`: the refusals whose words were written for people; the rest get the plain line. */
+  const act = async (call: () => Promise<unknown>, message: () => string, statuses?: number[]) => {
     working = true;
     failure = undefined;
     try {
       await call();
       finish(message());
     } catch (error) {
-      failure = failureOf(error);
+      failure = failureOf(error, statuses);
     } finally {
       working = false;
     }
@@ -280,9 +281,11 @@
       confirmText: $t('frameleaf_files_remove_confirm'),
     });
     if (confirmed) {
+      // the Trash's own refusals are written for operators ("no asset.delete access"): always the plain line
       await act(
         () => deleteAssets({ assetBulkDeleteDto: { ids: [assetId] } }),
         () => $t('frameleaf_files_removed', { values: { name } }),
+        [],
       );
     }
   };
