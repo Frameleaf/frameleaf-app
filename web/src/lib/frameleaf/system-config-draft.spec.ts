@@ -203,6 +203,15 @@ describe('credentials never leave the page (FL-66)', () => {
     expect(exported.trash.days).toBe(30);
   });
 
+  it('ignores imported or edited metrics status and leaves it out of exports', () => {
+    const config = { ...configFixture(), metrics: { enabled: true } };
+    const changed = { ...config, metrics: { enabled: false } };
+
+    expect(diffConfig(config, changed)).toEqual([]);
+    expect(importConfig(config, changed).draft.metrics.enabled).toBe(true);
+    expect(redactConfigForExport(config)).not.toHaveProperty('metrics.enabled');
+  });
+
   it('never journals secrets or URL credentials', () => {
     const baseline = configFixture();
     const draft = withChange((config) => {
