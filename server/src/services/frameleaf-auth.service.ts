@@ -29,6 +29,7 @@ import {
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
 import {
+  AccountEventAction,
   AdminAuditAction,
   AuthCookie,
   DatabaseLock,
@@ -37,7 +38,12 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
-import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
+import {
+  type LoginDetails,
+  UNVERIFIED_EMAIL_MESSAGE,
+  emailVerificationProblem,
+  loginEventDetails,
+} from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
@@ -499,6 +505,7 @@ export class FrameleafAuthService extends BaseService {
       await this.endSessions([session.id]);
       throw error;
     }
+    await this.recordFrameleafSignIn(user, session.id, loginDetails);
     return response;
   }
 
@@ -604,7 +611,20 @@ export class FrameleafAuthService extends BaseService {
       await this.endSessions([session.id]);
       throw error;
     }
+    await this.recordFrameleafSignIn(user, session.id, loginDetails);
     return response;
+  }
+
+  /** FL-808: a Sign in with Frameleaf session, in the account's activity log. */
+  private recordFrameleafSignIn(user: { id: string; name: string }, sessionId: string, details: LoginDetails) {
+    return this.recordAccountEvent({
+      userId: user.id,
+      sessionId,
+      action: AccountEventAction.SignedIn,
+      subject: user.name,
+      detail: 'frameleaf',
+      ...loginEventDetails(details),
+    });
   }
 
   /** `GET oauth/frameleaf/link`: this person's Frameleaf account link. */

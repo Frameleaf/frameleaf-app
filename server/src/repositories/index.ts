@@ -1,4 +1,5 @@
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
@@ -189,6 +190,7 @@ export const repositories = [
   AccessRepository,
   ActivityRepository,
   AdminAuditRepository,
+  AccountEventRepository,
   AlbumRepository,
   AlbumSummaryRepository,
   AnalyticsRepository,
