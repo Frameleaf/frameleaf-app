@@ -11,7 +11,7 @@ import type { LoginResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
 import {
   getOAuthContinue,
@@ -89,6 +89,10 @@ beforeEach(() => {
   vi.mocked(oauth.isCallback).mockReturnValue(false);
   vi.mocked(oauth.isAutoLaunchEnabled).mockReturnValue(false);
   vi.mocked(oauth.isAutoLaunchDisabled).mockReturnValue(false);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('login mandatory-change routing', () => {
@@ -391,7 +395,6 @@ describe('Sign in with Frameleaf (FL-158)', () => {
 
       render(Page, { data: relay() } as never);
       await waitFor(() => expect(goto).toHaveBeenCalledWith('/auth/change-password?local=1', { invalidateAll: true }));
-      vi.unstubAllGlobals();
     },
   );
 });

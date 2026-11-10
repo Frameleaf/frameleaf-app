@@ -2,12 +2,12 @@ import { changePassword, updateMyUser } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { goto } from '$app/navigation';
+import { goto, invalidateAll } from '$app/navigation';
 import en from '../../../../../i18n/en.json';
 import { takeAuthNotice } from '../auth-notice';
 import Page from './+page.svelte';
 
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }));
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   changePassword: vi.fn(),
@@ -24,7 +24,9 @@ beforeEach(() => {
 
 describe('forced password change', () => {
   it('treats the strength meter as advisory and lets the server decide', async () => {
-    render(Page, { data: { local: false, destination: '/photos', meta: { title: 'Change password' } } });
+    render(Page, {
+      data: { local: false, statusUnavailable: false, destination: '/photos', meta: { title: 'Change password' } },
+    });
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_new_password), {
       target: { value: 'new-password' },
     });
@@ -41,7 +43,9 @@ describe('forced password change', () => {
   });
 
   it('waits for a matching confirmation', async () => {
-    render(Page, { data: { local: false, destination: '/photos', meta: { title: 'Change password' } } });
+    render(Page, {
+      data: { local: false, statusUnavailable: false, destination: '/photos', meta: { title: 'Change password' } },
+    });
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_new_password), { target: { value: 'abc' } });
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_confirm_new_password), { target: { value: 'abd' } });
     expect(screen.getByRole('button', { name: en.frameleaf_auth_save_and_sign_in })).toBeDisabled();
@@ -50,7 +54,9 @@ describe('forced password change', () => {
 });
 
 it('sets the paired owner’s first password and continues in the authenticated session', async () => {
-  render(Page, { data: { local: true, destination: '/albums', meta: { title: 'Set a local password' } } });
+  render(Page, {
+    data: { local: true, statusUnavailable: false, destination: '/albums', meta: { title: 'Set a local password' } },
+  });
   await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_new_password), {
     target: { value: 'new-password' },
   });
@@ -65,4 +71,19 @@ it('sets the paired owner’s first password and continues in the authenticated 
   );
   expect(goto).toHaveBeenCalledWith('/albums', { invalidateAll: true });
   expect(updateMyUser).not.toHaveBeenCalled();
+});
+
+it('lets the signed-in owner retry an unavailable setup check', async () => {
+  render(Page, {
+    data: {
+      local: true,
+      statusUnavailable: true,
+      destination: '/albums',
+      meta: { title: 'Set a local password' },
+    },
+  });
+  expect(screen.getByRole('alert')).toHaveTextContent(en.frameleaf_auth_local_password_status_unavailable);
+  expect(screen.queryByLabelText(en.frameleaf_auth_new_password)).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: en.retry }));
+  expect(invalidateAll).toHaveBeenCalledOnce();
 });

@@ -12,13 +12,15 @@ export const load = (async ({ url }) => {
   const requested = url.searchParams.get('continue');
   const destination =
     requested && /^\/(?![/\\])/.test(requested) ? Route.setupContinue(requested, url) : Route.photos();
-  if (local ? !(await getAuthStatus()).localPasswordRequired : !authManager.user.shouldChangePassword) {
+  const status = local ? await getAuthStatus().catch(() => undefined) : undefined;
+  if (local ? status && !status.localPasswordRequired : !authManager.user.shouldChangePassword) {
     redirect(307, local ? destination : Route.photos());
   }
   const $t = await getFormatter();
 
   return {
     local,
+    statusUnavailable: local && !status,
     destination,
     meta: {
       title: $t('change_password'),
