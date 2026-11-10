@@ -371,7 +371,11 @@
     color: var(--fl-accent);
   }
 
-  /* FL-1338, MediaViewer.jsx FILE_PROBLEM / media-viewer.css .mv-problem: a pill, amber when the original is gone, red when damaged. */
+  /*
+   * FL-1338, MediaViewer.jsx FILE_PROBLEM / media-viewer.css .mv-problem: a pill, amber when the original is gone, red
+   * when damaged. Its tint sits on the viewer's opaque panel colour rather than on the frosted glass, so the words keep
+   * 4.5:1 or more over a bright photo too (final review W5); on a dark photo it looks the same as the mock.
+   */
   .fl-file-problem {
     /* The viewer's chrome is dark in every theme, so these are the dark theme's warning and danger colours (tokens.css). */
     --fl-problem: #e4bd69;
@@ -383,7 +387,7 @@
     padding: 0 10px 0 12px;
     border-radius: var(--fl-radius-pill);
     color: var(--fl-problem);
-    background: color-mix(in srgb, var(--fl-problem) 16%, transparent);
+    background: color-mix(in srgb, var(--fl-problem) 16%, var(--fl-viewer-panel));
     font-size: var(--fl-font-sm);
     font-weight: var(--fl-weight-semibold);
     text-decoration: none;
@@ -408,9 +412,10 @@
     --fl-problem: #f0625d;
   }
 
+  /* A lighter tint would take the red below 4.5:1, so hover adds a ring in the pill's colour instead. */
   .fl-file-problem:hover,
   .fl-file-problem:focus-visible {
-    background: color-mix(in srgb, var(--fl-problem) 26%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fl-problem) 60%, transparent);
   }
 
   .fl-file-problem:focus-visible {
