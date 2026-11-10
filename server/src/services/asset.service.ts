@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ProcessingFailureActionDto, ProcessingFailureQueryDto } from 'src/dtos/processing-failure.dto.js';
 import type { HealedDateAfter, HealedDateBefore } from 'src/repositories/album-suggestion.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
@@ -54,6 +55,7 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
+import { isProcessingFailureStep } from 'src/queue/processing-failure.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -1315,6 +1317,33 @@ export class AssetService extends BaseService {
     const ordinary = (changed ?? []).filter((id) => !sequencedIds.has(id));
     if (ordinary.length > 0)
       await this.eventRepository.emit('AssetTrashAll', { assetIds: ordinary, userId: auth.user.id });
+  }
+
+  async getProcessingFailures(auth: AuthDto, query: ProcessingFailureQueryDto) {
+    const failures = await this.assetJobRepository.getProcessingFailures(auth, query);
+    return failures.flatMap(({ lastFailedAt, quarantinedAt, step, ...failure }) =>
+      isProcessingFailureStep(step)
+        ? [
+            {
+              ...failure,
+              step,
+              lastFailedAt: new Date(lastFailedAt).toISOString(),
+              quarantinedAt: quarantinedAt ? new Date(quarantinedAt).toISOString() : null,
+            },
+          ]
+        : [],
+    );
+  }
+
+  retryProcessingFailures(auth: AuthDto, dto: ProcessingFailureActionDto) {
+    return this.assetJobRepository.updateProcessingFailures(auth, dto, {
+      queueName: (name) => this.jobRepository.getQueueName(name),
+      enqueue: (tx, name, id) => this.jobRepository.queueInTransaction(tx, { name, data: { id } }),
+    });
+  }
+
+  dismissProcessingFailures(auth: AuthDto, dto: ProcessingFailureActionDto) {
+    return this.assetJobRepository.updateProcessingFailures(auth, dto);
   }
 
   async getMetadata(auth: AuthDto, id: string): Promise<AssetMetadataResponseDto[]> {

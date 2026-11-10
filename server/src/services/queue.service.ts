@@ -461,17 +461,18 @@ export class QueueService extends BaseService {
     return { name, isPaused, statistics, hasUnfinishedWork };
   }
 
-  private async start(name: QueueName, { force }: QueueCommandDto): Promise<void> {
+  private async start(name: QueueName, { force, includeSetAside }: QueueCommandDto): Promise<void> {
     const isActive = await this.jobRepository.isActive(name);
     if (isActive) {
       throw new BadRequestException(`Job is already running`);
     }
 
     await this.eventRepository.emit('QueueStart', { name });
+    const processing = { force, ...(force && includeSetAside && { includeSetAside: true }) };
 
     switch (name) {
       case QueueName.VideoConversion: {
-        return this.jobRepository.queue({ name: JobName.AssetEncodeVideoQueueAll, data: { force } });
+        return this.jobRepository.queue({ name: JobName.AssetEncodeVideoQueueAll, data: processing });
       }
 
       case QueueName.StorageTemplateMigration: {
@@ -483,7 +484,7 @@ export class QueueService extends BaseService {
       }
 
       case QueueName.SmartSearch: {
-        return this.jobRepository.queue({ name: JobName.SmartSearchQueueAll, data: { force } });
+        return this.jobRepository.queue({ name: JobName.SmartSearchQueueAll, data: processing });
       }
 
       case QueueName.DuplicateDetection: {
@@ -495,7 +496,7 @@ export class QueueService extends BaseService {
       }
 
       case QueueName.MetadataExtraction: {
-        return this.jobRepository.queue({ name: JobName.AssetExtractMetadataQueueAll, data: { force } });
+        return this.jobRepository.queue({ name: JobName.AssetExtractMetadataQueueAll, data: processing });
       }
 
       case QueueName.Sidecar: {
@@ -503,11 +504,11 @@ export class QueueService extends BaseService {
       }
 
       case QueueName.ThumbnailGeneration: {
-        return this.jobRepository.queue({ name: JobName.AssetGenerateThumbnailsQueueAll, data: { force } });
+        return this.jobRepository.queue({ name: JobName.AssetGenerateThumbnailsQueueAll, data: processing });
       }
 
       case QueueName.FaceDetection: {
-        return this.jobRepository.queue({ name: JobName.AssetDetectFacesQueueAll, data: { force } });
+        return this.jobRepository.queue({ name: JobName.AssetDetectFacesQueueAll, data: processing });
       }
 
       case QueueName.FacialRecognition: {
@@ -523,7 +524,7 @@ export class QueueService extends BaseService {
       }
 
       case QueueName.Ocr: {
-        return this.jobRepository.queue({ name: JobName.OcrQueueAll, data: { force } });
+        return this.jobRepository.queue({ name: JobName.OcrQueueAll, data: processing });
       }
 
       case QueueName.NsfwDetection: {

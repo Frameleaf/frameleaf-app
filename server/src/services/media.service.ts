@@ -63,6 +63,7 @@ import {
   queueExecution,
 } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { SharpOperationError } from 'src/queue/sharp-pool.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -257,7 +258,10 @@ export class MediaService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetGenerateThumbnailsQueueAll, queue: QueueName.ThumbnailGeneration })
-  async handleQueueGenerateThumbnails({ force }: JobOf<JobName.AssetGenerateThumbnailsQueueAll>): Promise<JobStatus> {
+  async handleQueueGenerateThumbnails({
+    force,
+    includeSetAside,
+  }: JobOf<JobName.AssetGenerateThumbnailsQueueAll>): Promise<JobStatus> {
     const config = await this.getConfig({ withCache: true });
 
     const isFullsizeEnabled = config.image.fullsize.enabled;
@@ -269,6 +273,7 @@ export class MediaService extends BaseService {
     await this.jobRepository.queueSelection(
       JobName.AssetGenerateThumbnails,
       force ? selected : selected.where('asset.isEdited', '=', false),
+      ...processingSetAsideOverride(force, includeSetAside),
     );
     await this.jobRepository.queueSelection(
       JobName.AssetEditThumbnailGeneration,
@@ -1307,11 +1312,12 @@ export class MediaService extends BaseService {
 
   @OnJob({ name: JobName.AssetEncodeVideoQueueAll, queue: QueueName.VideoConversion })
   async handleQueueVideoConversion(job: JobOf<JobName.AssetEncodeVideoQueueAll>): Promise<JobStatus> {
-    const { force } = job;
+    const { force, includeSetAside } = job;
 
     await this.jobRepository.queueSelection(
       JobName.AssetEncodeVideo,
       this.assetJobRepository.selectionForVideoConversion(force),
+      ...processingSetAsideOverride(force, includeSetAside),
     );
     // FL-650: the same run makes seek-bar previews; a video whose previews exist is a quick cache hit
     await this.jobRepository.queueSelection(

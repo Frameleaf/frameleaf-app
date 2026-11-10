@@ -435,7 +435,7 @@ export class JobRepository {
                     for (const publish of context.failureDiagnostics!) await publish(tx);
                   })
               : undefined,
-            { settlements: context.failureSettlements },
+            { settlements: context.failureSettlements, interrupted: !!this.stopping && abort.signal.aborted },
           ),
         );
       } catch {
@@ -451,6 +451,7 @@ export class JobRepository {
           await retryLockContention(undefined, () =>
             this.store.fail(claim, 'Job deadline or cancellation requested', undefined, {
               stopRequestedOnly: !context.failureSettlements?.length,
+              interrupted: !!this.stopping && abort.signal.aborted,
               settlements: context.failureSettlements,
             }),
           );
