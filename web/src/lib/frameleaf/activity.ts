@@ -975,7 +975,10 @@ export const matchesActivityFilter = (item: ActivityItem, filter: ActivityFilter
 export type ActivityFinishedRow = {
   /** The newest run's id. */
   id: string;
-  /** The newest run: the line's name, result and actions are its own. */
+  /**
+   * The newest run: the line's name, result and actions are its own. Runs that ended at the same moment, or
+   * whose times are not known, are told apart by nothing, so the first one listed stands for them.
+   */
   item: ActivityItem;
   /** How many runs the line stands for. */
   count: number;

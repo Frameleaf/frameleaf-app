@@ -173,9 +173,20 @@
   const hasFinished = $derived(items.some((item) => item.canDismiss));
 
   /** The one sentence the page opens on (prototype `summaryFor`): how the work is going, most urgent first. */
-  const status = $derived(
-    activityWorkStatus({ rows: features, needsLook: counts.failed, jobs: counts.running + cloudWork.length }),
+  /** A run that is no feature's task (FL-1177: a held import): it has a row of its own, and counts as work. */
+  const otherWork = $derived(otherWorkCards(serverWork));
+  /** Work in progress that is not a feature's: the viewer's own jobs, cloud backups or restores, and those runs. */
+  const otherMoving = $derived(counts.running + cloudWork.length + otherWork.length);
+  /** The first answers are not in yet: the page does not know how the work is going, so it does not say. */
+  const settling = $derived(activitySession.loading || runningJobsSession.loading);
+  /** A read failed, so "up to date" would be a guess about numbers that may be old. */
+  const stale = $derived(
+    activitySession.unreachable || runningJobsSession.unreachable || (isAdmin && cloudWorkSession.unreachable),
   );
+  const status = $derived.by(() => {
+    const known = activityWorkStatus({ rows: features, needsLook: counts.failed, jobs: otherMoving });
+    return known === 'idle' && stale ? 'unread' : known;
+  });
   const banner = $derived.by(() => {
     const left = features.reduce((sum, row) => sum + row.left, 0);
     switch (status) {
@@ -214,7 +225,7 @@
           warn: true,
           icon: mdiAlertCircleOutline,
           title: $t('frameleaf_computers_cover_unknown'),
-          body: $t('frameleaf_activity_background_stale'),
+          body: $t('frameleaf_computers_unread'),
         };
       }
       case 'tonight': {
@@ -238,7 +249,7 @@
         return {
           warn: false,
           icon: mdiProgressClock,
-          title: $t('frameleaf_activity_work_jobs', { values: { count: counts.running + cloudWork.length } }),
+          title: $t('frameleaf_activity_work_jobs', { values: { count: otherMoving } }),
           body: $t('frameleaf_activity_work_jobs_body'),
         };
       }
@@ -571,33 +582,35 @@
   {/if}
 
   <!-- The page's answer (prototype `.fw3-status`): how the work is going, Pause all, and its settings. -->
-  <section class="fw3-status" class:is-warn={banner.warn} aria-label={$t('frameleaf_activity_work_status')}>
-    <Icon icon={banner.icon} size="28" aria-hidden={true} />
-    <div class="fw3-status-text">
-      <h2>{banner.title}</h2>
-      <p>{banner.body}</p>
-    </div>
-    {#if canManage}
-      <div class="fw3-status-actions">
-        {#if status === 'paused'}
-          <Button variant="primary" disabled={pausing} onclick={() => pauseAll(false)}>
-            <Icon icon={mdiPlay} size="1.125rem" aria-hidden={true} />{$t('resume')}
-          </Button>
-        {:else if serverWork.length > 0}
-          <Button disabled={pausing} onclick={() => pauseAll(true)}>
-            <Icon icon={mdiPause} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_work_pause_all')}
-          </Button>
-        {/if}
-        <IconButton
-          variant="default"
-          href={commandCenterUrl('processing', 'queues')}
-          label={$t('frameleaf_activity_work_settings')}
-        >
-          <Icon icon={mdiCogOutline} size="1.125rem" />
-        </IconButton>
+  {#if !(settling && status === 'idle')}
+    <section class="fw3-status" class:is-warn={banner.warn} aria-label={$t('frameleaf_activity_work_status')}>
+      <Icon icon={banner.icon} size="28" aria-hidden={true} />
+      <div class="fw3-status-text">
+        <h2>{banner.title}</h2>
+        <p>{banner.body}</p>
       </div>
-    {/if}
-  </section>
+      {#if canManage}
+        <div class="fw3-status-actions">
+          {#if status === 'paused'}
+            <Button variant="primary" disabled={pausing} onclick={() => pauseAll(false)}>
+              <Icon icon={mdiPlay} size="1.125rem" aria-hidden={true} />{$t('resume')}
+            </Button>
+          {:else if serverWork.length > 0}
+            <Button disabled={pausing} onclick={() => pauseAll(true)}>
+              <Icon icon={mdiPause} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_work_pause_all')}
+            </Button>
+          {/if}
+          <IconButton
+            variant="default"
+            href={commandCenterUrl('processing', 'queues')}
+            label={$t('frameleaf_activity_work_settings')}
+          >
+            <Icon icon={mdiCogOutline} size="1.125rem" />
+          </IconButton>
+        </div>
+      {/if}
+    </section>
+  {/if}
 
   {#if activitySession.loading && items.length === 0}
     <p class="fla-empty" role="status" aria-busy="true">{$t('loading')}</p>
@@ -805,7 +818,7 @@
         <!-- Every feature while any of them is busy, so what is up to date shows beside what is not. -->
         <ActivityWorkFeatures
           rows={serverWork.length > 0 ? features : []}
-          others={otherWorkCards(serverWork)}
+          others={otherWork}
           cloudStatus={isAdmin ? cloudWorkSession.status : null}
           canPause={canManage}
           busy={pausing}

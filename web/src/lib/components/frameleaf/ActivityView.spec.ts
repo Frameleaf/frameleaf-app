@@ -608,6 +608,9 @@ describe('Frameleaf Activity page', () => {
       expect(link).toHaveAccessibleName('Library import: Waiting for the file check · 40 left. Open Background work.');
       expect(link).toHaveAttribute('href', expect.stringContaining('section=queues'));
       expect(link.getAttribute('href')).not.toContain('immich-import-derived');
+      // It is work in progress, so the page never opens on "Everything is up to date" above it.
+      expect(screen.getByRole('heading', { name: '1 job in progress' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Everything is up to date' })).not.toBeInTheDocument();
     } finally {
       runningJobsSession.summary = idle;
     }
@@ -684,9 +687,23 @@ describe('Frameleaf Activity page', () => {
       await mount([]);
 
       expect(await screen.findByText(en.frameleaf_activity_background_stale)).toBeInTheDocument();
+      // Numbers that may be old are never read as "up to date".
+      expect(screen.getByRole('heading', { name: 'Couldn’t be read' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Everything is up to date' })).not.toBeInTheDocument();
     } finally {
       restore();
       runningJobsSession.unreachable = false;
     }
+  });
+
+  it('says nothing about how the work is going until the server has answered', async () => {
+    let answer: (value: undefined) => void = () => {};
+    sdkMock.getRunningJobs.mockReturnValue(new Promise((resolve) => (answer = resolve)) as never);
+    runningJobsSession.loading = true;
+    await mount([]);
+
+    expect(screen.queryByRole('region', { name: 'How the work is going' })).not.toBeInTheDocument();
+    answer(undefined);
+    expect(await screen.findByRole('heading', { name: 'Everything is up to date' })).toBeInTheDocument();
   });
 });
