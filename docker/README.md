@@ -55,7 +55,7 @@ For local inference with internet access denied, use the release's `docker-compo
 
 `docker-compose.restoration.yml` adds a separate restoration container (`frameleaf-restoration`, port 3004 on the Compose network) built from `machine-learning/Dockerfile.video-restoration`. Library analysis stays in `frameleaf-machine-learning`; the two never share a worker. Use it from a source checkout with `docker compose -f docker-compose.yml -f docker-compose.restoration.yml up -d`, then add the worker under Administration > Processing destinations. No restoration image is published and the worker is not qualified; see [Workers and endpoints](../docs/docs/administration/workers-and-endpoints.md) and `machine-learning/video-restoration/README.md`.
 
-Test fixtures are frozen at commit `6742055402de1aa48f93d12ded7d18f4057f9d1f`. Hosted jobs use `bash scripts/checkout-test-assets.sh`; the manual Frameleaf frozen media fixtures workflow creates an attributed, checksummed archive for later authorized publication. No fixture tracking branch or submodule updates are followed.
+Test fixtures are frozen at commit `63a12e4f97e7a1ce54bb72ebd9fa5c2c812480bf`. Hosted jobs use `bash scripts/checkout-test-assets.sh`; the manual Frameleaf frozen media fixtures workflow creates an attributed, checksummed archive for later authorized publication. No fixture tracking branch or submodule updates are followed.
 
 ### Finding the server from the mobile app
 

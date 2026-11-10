@@ -18,12 +18,12 @@ jobs:
       - name: Archive the owned fixture input with checksums
         run: |
           mkdir -p "$RUNNER_TEMP/frameleaf-fixtures"
-          tar --exclude=.git -czf "$RUNNER_TEMP/frameleaf-fixtures/frameleaf-test-assets-6742055402de1aa48f93d12ded7d18f4057f9d1f.tar.gz" -C e2e/test-assets .
+          tar --exclude=.git -czf "$RUNNER_TEMP/frameleaf-fixtures/frameleaf-test-assets-63a12e4f97e7a1ce54bb72ebd9fa5c2c812480bf.tar.gz" -C e2e/test-assets .
           cd "$RUNNER_TEMP/frameleaf-fixtures"
           sha256sum *.tar.gz > SHA256SUMS
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: frameleaf-test-assets-6742055402de1aa48f93d12ded7d18f4057f9d1f
+          name: frameleaf-test-assets-63a12e4f97e7a1ce54bb72ebd9fa5c2c812480bf
           path: ${{ runner.temp }}/frameleaf-fixtures/
           if-no-files-found: error
           retention-days: 30
