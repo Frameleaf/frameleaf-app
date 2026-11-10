@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { text } from 'node:stream/consumers';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { NEEDS_ATTENTION_MEDIA_HEALTH_STATUSES } from 'src/dtos/media-health.dto.js';
 import {
   AssetFileType,
   AssetPathType,
@@ -11,6 +12,7 @@ import {
   IntegrityReport,
   JobName,
   JobStatus,
+  MediaHealthCategory,
   SystemMetadataKey,
 } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
@@ -22,6 +24,7 @@ import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -244,6 +247,92 @@ describe(IntegrityService.name, () => {
       ]);
 
       await expect(sut.getIntegrityOverview()).resolves.toEqual(expect.objectContaining({ missing: 0, damaged: 1 }));
+      await sql`DELETE FROM public.asset_health`.execute(defaultDatabase);
+    });
+  });
+
+  describe('photos kept as they are, everywhere else (FL-1347)', () => {
+    const health = (assetId: string, category: string, status: string, evidence: object) =>
+      sql`INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName", evidence, resolution, "checkedAt")
+        VALUES (${assetId}, ${category}, ${status}, 'warning', '/x', 'x', ${JSON.stringify(evidence)}::text::jsonb, '{}', now())`.execute(
+        defaultDatabase,
+      );
+
+    it('leave the File checks lists and counts, the folder counts, Restore and Trash all, and the Utilities totals', async () => {
+      const { sut, ctx } = setup();
+      const {
+        result: { id: ownerId },
+      } = await ctx.newUser();
+      const photo = async () => (await ctx.newAsset({ ownerId })).asset;
+      const keptMissing = await photo();
+      const keptDamaged = await photo();
+      // the fix left this RAW as it is because the decoder can't read it: not kept with Keep (N1/N2)
+      const unreadableRaw = await photo();
+      const missing = await photo();
+      const damaged = await photo();
+      // only Library care has found these
+      const keptMissingInCare = await photo();
+      const missingInCare = await photo();
+      await ctx.get(IntegrityRepository).create([
+        { type: IntegrityReport.MissingFile, path: '/drive/a', assetId: keptMissing.id },
+        { type: IntegrityReport.ChecksumFail, path: '/drive/b', assetId: keptDamaged.id },
+        { type: IntegrityReport.ChecksumFail, path: '/drive/c', assetId: unreadableRaw.id },
+        { type: IntegrityReport.MissingFile, path: '/drive/d', assetId: missing.id },
+        { type: IntegrityReport.ChecksumFail, path: '/drive/e', assetId: damaged.id },
+      ]);
+      await health(keptMissing.id, 'missing', 'missing', { fixState: 'left-as-is' });
+      await health(keptDamaged.id, 'corrupt', 'corrupt_confirmed', { fixState: 'left-as-is' });
+      await health(unreadableRaw.id, 'corrupt', 'unsupported_raw', { fixState: 'left-as-is' });
+      await health(missing.id, 'missing', 'missing', { fixState: 'missing' });
+      await health(keptMissingInCare.id, 'missing', 'missing', { fixState: 'left-as-is' });
+      await health(missingInCare.id, 'missing', 'missing', { fixState: 'cant-repair' });
+      const repository = ctx.get(IntegrityRepository);
+      const sorted = (values: Array<string | null>) => values.toSorted((a, b) => String(a).localeCompare(String(b)));
+
+      // File checks' own Missing and Damaged rows: their counts and their lists
+      await expect(sut.getIntegrityReportSummary()).resolves.toEqual({
+        missing_file: 1,
+        checksum_mismatch: 2,
+        untracked_file: 0,
+      });
+      const listed = async (type: IntegrityReport) =>
+        sorted((await sut.getIntegrityReport({ type })).items.map(({ path }) => path));
+      await expect(listed(IntegrityReport.MissingFile)).resolves.toEqual(['/drive/d']);
+      await expect(listed(IntegrityReport.ChecksumFail)).resolves.toEqual(['/drive/c', '/drive/e']);
+      // Trash all moves only the photos the list shows
+      const streamed = async (type: IntegrityReport) => {
+        const paths: string[] = [];
+        for await (const { path } of repository.streamIntegrityReportsByProperty('assetId', type)) {
+          paths.push(path);
+        }
+        return sorted(paths);
+      };
+      await expect(streamed(IntegrityReport.MissingFile)).resolves.toEqual(['/drive/d']);
+      await expect(streamed(IntegrityReport.ChecksumFail)).resolves.toEqual(['/drive/c', '/drive/e']);
+
+      // a folder that can't be reached says how many missing files are inside it
+      await expect(repository.countMissingUnder(['/drive/'])).resolves.toEqual([1]);
+
+      // Restore from a backup
+      await expect(sut.getFindingAssetIds({ kind: 'missing' })).resolves.toEqual({
+        assetIds: sorted([missing.id, missingInCare.id]),
+      });
+      await expect(sut.getFindingAssetIds({ kind: 'damaged' })).resolves.toEqual({
+        assetIds: sorted([unreadableRaw.id, damaged.id]),
+      });
+
+      // the Utilities Missing media and Damaged media tables, which list what still needs attention
+      const care = new MediaHealthRepository(defaultDatabase);
+      const attention = async (category: MediaHealthCategory) => {
+        const options = { category, statuses: NEEDS_ATTENTION_MEDIA_HEALTH_STATUSES };
+        const rows = await care.list({ ...options, size: 10 });
+        return { listed: sorted(rows.map(({ assetId }) => assetId)), total: await care.count(options) };
+      };
+      await expect(attention(MediaHealthCategory.Missing)).resolves.toEqual({
+        listed: sorted([missing.id, missingInCare.id]),
+        total: 2,
+      });
+      await expect(attention(MediaHealthCategory.Corrupt)).resolves.toEqual({ listed: [unreadableRaw.id], total: 1 });
       await sql`DELETE FROM public.asset_health`.execute(defaultDatabase);
     });
   });

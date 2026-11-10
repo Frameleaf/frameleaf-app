@@ -27,6 +27,30 @@ select
   count(*) as "count"
 from
   "integrity_report"
+where
+  NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.asset_health kept
+    WHERE
+      kept."assetId" = "integrity_report"."assetId"
+      AND kept.category = CASE "integrity_report"."type"
+        WHEN 'missing_file' THEN 'missing'
+        WHEN 'checksum_mismatch' THEN 'corrupt'
+      END
+      AND kept.evidence ->> 'fixState' = 'left-as-is'
+      AND kept."resolvedAt" IS NULL
+      AND kept."dismissedAt" IS NULL
+      AND kept.status IN (
+        'missing',
+        'candidate',
+        'found',
+        'corrupt_suspect',
+        'corrupt_confirmed',
+        'trash_queued'
+      )
+  )
 group by
   "type"
 
@@ -44,6 +68,29 @@ from
   left join "asset" on "asset"."id" = "integrity_report"."assetId"
 where
   "integrity_report"."type" = $1
+  and NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.asset_health kept
+    WHERE
+      kept."assetId" = "integrity_report"."assetId"
+      AND kept.category = CASE "integrity_report"."type"
+        WHEN 'missing_file' THEN 'missing'
+        WHEN 'checksum_mismatch' THEN 'corrupt'
+      END
+      AND kept.evidence ->> 'fixState' = 'left-as-is'
+      AND kept."resolvedAt" IS NULL
+      AND kept."dismissedAt" IS NULL
+      AND kept.status IN (
+        'missing',
+        'candidate',
+        'found',
+        'corrupt_suspect',
+        'corrupt_confirmed',
+        'trash_queued'
+      )
+  )
   and "integrity_report"."id" <= $2
 order by
   "integrity_report"."id" desc
@@ -196,7 +243,30 @@ select
 from
   "integrity_report"
 where
-  "abcdefghi" is not null
+  NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.asset_health kept
+    WHERE
+      kept."assetId" = "integrity_report"."assetId"
+      AND kept.category = CASE "integrity_report"."type"
+        WHEN 'missing_file' THEN 'missing'
+        WHEN 'checksum_mismatch' THEN 'corrupt'
+      END
+      AND kept.evidence ->> 'fixState' = 'left-as-is'
+      AND kept."resolvedAt" IS NULL
+      AND kept."dismissedAt" IS NULL
+      AND kept.status IN (
+        'missing',
+        'candidate',
+        'found',
+        'corrupt_suspect',
+        'corrupt_confirmed',
+        'trash_queued'
+      )
+  )
+  and "abcdefghi" is not null
 
 -- IntegrityRepository.deleteById
 delete from "integrity_report"

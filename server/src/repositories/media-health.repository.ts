@@ -199,7 +199,7 @@ const FIXED_TAB_DAYS = 30;
  * The missing and damaged findings a person keeps with Keep (FL-1337). A RAW the decoder cannot read is not one:
  * the fix leaves it as it is, and it still counts as an unreadable RAW.
  */
-const KEPT_STATUSES = [
+export const KEPT_STATUSES = [
   MediaHealthStatus.Missing,
   MediaHealthStatus.Candidate,
   MediaHealthStatus.Found,
@@ -207,6 +207,9 @@ const KEPT_STATUSES = [
   MediaHealthStatus.CorruptConfirmed,
   MediaHealthStatus.TrashQueued,
 ];
+/** A finding that is not one a person kept as it is with Keep (FL-1337 W3, with the N1/N2 status guard). */
+const notKept = sql<boolean>`((asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
+  OR asset_health.status NOT IN (${sql.join(KEPT_STATUSES)}))`;
 /** A search id as a claim names it: compared as a uuid, so the job's primary key is used. */
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 @Injectable()
@@ -299,7 +302,10 @@ export class MediaHealthRepository {
     ownerId?: string;
     privacy?: MediaHealthPrivacy;
     status?: MediaHealthStatus;
-    /** Library Care's "needs attention" (FL-69): any of these statuses. */
+    /**
+     * Library Care's "needs attention" (FL-69): any of these statuses. A photo its owner kept as it is waits for no
+     * one, so it is left out (FL-1347).
+     */
     statuses?: readonly MediaHealthStatus[];
     size: number;
     offset?: number;
@@ -313,7 +319,7 @@ export class MediaHealthRepository {
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
       .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
       .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
-      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]))
+      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]).where(notKept))
       .orderBy('asset_health.checkedAt', 'desc')
       .orderBy('asset_health.id', 'desc')
       .limit(options.size)
@@ -336,7 +342,7 @@ export class MediaHealthRepository {
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
       .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
       .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
-      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]))
+      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]).where(notKept))
       .executeTakeFirstOrThrow();
     return Number(row.count);
   }
@@ -359,10 +365,7 @@ export class MediaHealthRepository {
       .select(['asset_health.category', 'asset_health.status'])
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .where('asset.deletedAt', 'is', null)
-      .where(
-        sql<boolean>`((asset_health.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
-          OR asset_health.status NOT IN (${sql.join(KEPT_STATUSES)}))`,
-      )
+      .where(notKept)
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
       .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
