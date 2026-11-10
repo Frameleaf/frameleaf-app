@@ -69,6 +69,7 @@ export const envData: EnvData = {
     importRoots: [],
   },
 
+  metrics: { enabled: false, port: 8081 },
   telemetry: {
     apiPort: 8081,
     microservicesPort: 8082,

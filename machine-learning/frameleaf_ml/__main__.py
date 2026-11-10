@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .config import DEPRECATED_ENV, log, non_prefixed_settings, settings
-from .env_aliases import deprecated_env_warning
+from .env_aliases import deprecated_env_warning, read_env
 from .studio_worker import start_studio_worker
 from .worker_logs import initialize_worker_log_spool
 
@@ -60,6 +60,12 @@ if settings.workers > 1:
     except (OSError, sqlite3.Error):
         log.warning("Could not initialize the shared worker log spool")
 
+metrics_dir = None
+if read_env(os.environ, "FRAMELEAF_ML_METRICS_ENABLED").strip().lower() in {"1", "true", "yes", "on"}:
+    # Each supervisor launch gets fresh counter storage shared by all its inference workers.
+    metrics_dir = TemporaryDirectory(prefix="frameleaf-ml-metrics-")
+    inference_env["PROMETHEUS_MULTIPROC_DIR"] = metrics_dir.name
+
 try:
     with subprocess.Popen(
         [
@@ -93,6 +99,8 @@ except KeyboardInterrupt:
 finally:
     if log_directory is not None:
         log_directory.cleanup()
+    if metrics_dir is not None:
+        metrics_dir.cleanup()
     if studio_worker is not None:
         studio_worker.stop()
 exit(cmd.returncode)

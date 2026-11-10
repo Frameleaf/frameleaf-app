@@ -7,7 +7,7 @@ import secrets
 import signal
 import threading
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from functools import partial
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable
@@ -23,13 +23,13 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.formparsers import MultiPartParser
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.clip.hugging_face import inspect_custom_clip_model
-from frameleaf_ml.models.constants import is_custom_clip_model
+from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS, get_model_source, is_custom_clip_model
 from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.subject_matte import MAX_FRAME_BYTES as SUBJECT_MATTE_MAX_FRAME_BYTES
 from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
@@ -56,6 +56,7 @@ from .config import PreloadModelData, log, model_source, settings
 from .env_aliases import read_env
 from .hardware_report import container_report
 from .inference_executor import InferenceBusy, InferenceExecutor
+from .metrics import InferenceMetrics, metrics_enabled, private_scraper
 from .models.cache import ModelCache
 from .producer_binding import BoundPredictor
 from .schemas import (
@@ -366,6 +367,71 @@ def get_worker_logs(request: Request, since: str = "") -> Response:
     )
 
 
+inference_metrics = InferenceMetrics() if metrics_enabled() else None
+
+
+def _inference_stream_error(task: ModelTask, message: str) -> bytes:
+    if inference_metrics is not None:
+        inference_metrics.request_errors.labels(task=task.value).inc()
+    return orjson.dumps({"type": "error", "message": message}) + b"\n"
+
+
+# Each of these routes has a fixed task. The generic /predict route can contain several tasks.
+_INFERENCE_ROUTES = {
+    "/predict-bound": ModelTask.SEARCH,
+    "/predict-face-bound": ModelTask.FACIAL_RECOGNITION,
+    "/transcribe": ModelTask.TRANSCRIBE,
+    "/music": ModelTask.MUSIC,
+    "/translate": ModelTask.TRANSLATE,
+    "/voice-cleanup": ModelTask.VOICE_CLEANUP,
+    "/subject-matte": ModelTask.SUBJECT_MATTE,
+}
+
+
+class InferenceMetricsMiddleware:
+    def __init__(self, app: ASGIApp, metrics: InferenceMetrics) -> None:
+        self.app = app
+        self.metrics = metrics
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        task = _INFERENCE_ROUTES.get(scope["path"]) if scope["type"] == "http" and scope["method"] == "POST" else None
+        if task is None:
+            await self.app(scope, receive, send)
+            return
+        status = 200
+
+        async def observe(message: Message) -> None:
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            await send(message)
+
+        # ASGI returns after the last streaming chunk, not when the headers are sent.
+        with self.metrics.request(task.value):
+            await self.app(scope, receive, observe)
+            if status >= 400:
+                self.metrics.request_errors.labels(task=task.value).inc()
+
+
+if inference_metrics is not None:
+    app.add_middleware(InferenceMetricsMiddleware, metrics=inference_metrics)
+
+
+@app.get("/metrics", include_in_schema=False)
+def scrape_metrics(request: Request) -> Response:
+    if (
+        inference_metrics is None
+        or not private_scraper(request.client.host if request.client else None)
+        or any(
+            name in request.headers
+            for name in ("x-frameleaf-via", "x-frameleaf-via-auth", "forwarded", "x-forwarded-for", "x-forwarded-host")
+        )
+    ):
+        raise HTTPException(404)
+    body, content_type = inference_metrics.scrape()
+    return Response(body, headers={"Content-Type": content_type, "Cache-Control": "no-store"})
+
+
 @app.get("/")
 async def root() -> ORJSONResponse:
     return ORJSONResponse({"message": "Frameleaf ML"})
@@ -636,7 +702,7 @@ async def transcribe(
                     item = await reservation.run(thread_pool, next, items, None)
                 except Exception as error:
                     log.error(f"Transcription failed: {error}")
-                    yield orjson.dumps({"type": "error", "message": "Transcription failed"}) + b"\n"
+                    yield _inference_stream_error(ModelTask.TRANSCRIBE, "Transcription failed")
                     return
                 if item is None:
                     break
@@ -691,7 +757,7 @@ async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingRe
                     item = await run(next, items, None)
                 except Exception as error:
                     log.error(f"Music generation failed: {error}")
-                    yield orjson.dumps({"type": "error", "message": "Music generation failed"}) + b"\n"
+                    yield _inference_stream_error(ModelTask.MUSIC, "Music generation failed")
                     return
                 if item is None:
                     break
@@ -778,7 +844,7 @@ async def voice_cleanup(
                     item = await reservation.run(thread_pool, next, items, None)
                 except Exception as error:
                     log.error(f"Voice clean-up failed: {error}")
-                    yield orjson.dumps({"type": "error", "message": "Voice clean-up failed"}) + b"\n"
+                    yield _inference_stream_error(ModelTask.VOICE_CLEANUP, "Voice clean-up failed")
                     return
                 if item is None:
                     break
@@ -920,11 +986,11 @@ async def subject_matte(
                     item = await run(next, items, None)
                 except ValueError as error:
                     # The server reads at most 512 characters of a message (its stream schema).
-                    yield orjson.dumps({"type": "error", "message": str(error)[:512]}) + b"\n"
+                    yield _inference_stream_error(ModelTask.SUBJECT_MATTE, str(error)[:512])
                     return
                 except Exception as error:
                     log.error(f"Cut-out failed: {error}")
-                    yield orjson.dumps({"type": "error", "message": "Cut-out failed"}) + b"\n"
+                    yield _inference_stream_error(ModelTask.SUBJECT_MATTE, "Cut-out failed")
                     return
                 if item is None:
                     break
@@ -965,7 +1031,19 @@ async def run_inference(
                 message = f"Task {entry['task']} of type {entry['type']} depends on output of {dep}"
                 raise HTTPException(400, message)
         model = await load(model)
-        output = await run(model.predict, *inputs, **entry["options"])
+        if inference_metrics is None:
+            output = await run(model.predict, *inputs, **entry["options"])
+        else:
+            # Only published, built-in identities reach labels. Private names share one bucket.
+            name = model.model_name
+            label = name if get_model_source(name) is not None and not is_custom_clip_model(name) else "other"
+            providers = getattr(getattr(model, "session", None), "providers", [])
+            provider = next((p for p in providers if p in SUPPORTED_PROVIDERS), model.model_format.value)
+            prediction = inference_metrics.inference_duration.labels(
+                task=entry["task"].value, model=label, provider=provider
+            )
+            with prediction.time():
+                output = await run(model.predict, *inputs, **entry["options"])
         outputs[model.identity] = output
         response[entry["task"]] = output
 
@@ -973,7 +1051,8 @@ async def run_inference(
 
     async def admitted(entry: InferenceEntry) -> None:
         async with capacity:
-            await _run_inference(entry)
+            with inference_metrics.request(entry["task"].value) if inference_metrics else nullcontext():
+                await _run_inference(entry)
 
     without_deps, with_deps = entries
     await asyncio.gather(*[admitted(entry) for entry in without_deps])

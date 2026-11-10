@@ -1944,6 +1944,14 @@ export type AdminConfigFacesDto = {
 export type AdminConfigMetadataDto = {
     faces: AdminConfigFacesDto;
 };
+export type MetricsStatusDto = {
+    /** Whether the local metrics listener is configured to run */
+    enabled: boolean;
+};
+export type MetricsStatusDtoRead = {
+    /** Whether the local metrics listener is configured to run */
+    enabled: boolean;
+};
 export type AdminConfigNewVersionCheckDto = {
     channel: ReleaseChannel;
     /** Enabled */
@@ -2176,6 +2184,41 @@ export type AdminConfigDto = {
     machineLearning: AdminConfigMachineLearningDto;
     map: AdminConfigMapDto;
     metadata: AdminConfigMetadataDto;
+    metrics?: MetricsStatusDto;
+    newVersionCheck: AdminConfigNewVersionCheckDto;
+    nightlyTasks: AdminConfigNightlyTasksDto;
+    notifications: AdminConfigNotificationsDto;
+    oauth: AdminConfigOAuthDto;
+    passwordLogin: AdminConfigPasswordLoginDto;
+    reverseGeocoding: AdminConfigReverseGeocodingDto;
+    server: AdminConfigServerDto;
+    smartAlbums?: AdminConfigSmartAlbumsDto;
+    storageTemplate: AdminConfigStorageTemplateDto;
+    storageWarning?: AdminConfigStorageWarningDto;
+    templates: AdminConfigTemplatesDto;
+    theme: AdminConfigThemeDto;
+    trash: AdminConfigTrashDto;
+    user: AdminConfigUserDto;
+};
+export type AdminConfigDtoRead = {
+    analytics?: AdminConfigAnalyticsDto;
+    backup: AdminConfigBackupsDto;
+    editing?: AdminConfigEditingDto;
+    ffmpeg: AdminConfigFFmpegDto;
+    frameleafCloud?: AdminConfigFrameleafCloudDto;
+    help?: AdminConfigHelpDto;
+    icloud?: AdminConfigICloudDto;
+    image: AdminConfigImageDto;
+    integrityChecks: AdminConfigIntegrityChecksDto;
+    job: AdminConfigJobDto;
+    library: AdminConfigLibraryDto;
+    libraryCare?: AdminConfigLibraryCareDto;
+    localFeatures?: AdminConfigLocalFeaturesDto;
+    logging: AdminConfigLoggingDto;
+    machineLearning: AdminConfigMachineLearningDto;
+    map: AdminConfigMapDto;
+    metadata: AdminConfigMetadataDto;
+    metrics?: MetricsStatusDtoRead;
     newVersionCheck: AdminConfigNewVersionCheckDto;
     nightlyTasks: AdminConfigNightlyTasksDto;
     notifications: AdminConfigNotificationsDto;
@@ -2236,8 +2279,18 @@ export type AdminConfigRevisionResponseDto = {
     /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
     revision: string;
 };
+export type AdminConfigRevisionResponseDtoRead = {
+    config: AdminConfigDtoRead;
+    /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
+    revision: string;
+};
 export type AdminConfigRevisionUpdateDto = {
     config: AdminConfigDto;
+    /** The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed */
+    expectedRevision: string;
+};
+export type AdminConfigRevisionUpdateDtoRead = {
+    config: AdminConfigDtoRead;
     /** The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed */
     expectedRevision: string;
 };
@@ -22553,7 +22606,7 @@ export function markCloudTourSeen({ cloudTourSeenDto }: {
 export function getAdminConfig(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/admin/config", {
         ...opts
     }));
@@ -22566,7 +22619,7 @@ export function updateAdminConfig({ adminConfigDto }: {
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/admin/config", oazapfts.json({
         ...opts,
         method: "PUT",
@@ -22620,7 +22673,7 @@ export function updateConfigCredential({ name, configCredentialUpdateDto }: {
 export function getAdminConfigDefaults(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/admin/config/defaults", {
         ...opts
     }));
@@ -22642,7 +22695,7 @@ export function getAdminConfigHistory(opts?: Oazapfts.RequestOpts) {
 export function getAdminConfigWithRevision(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigRevisionResponseDto;
+        data: AdminConfigRevisionResponseDtoRead;
     }>("/admin/config/revision", {
         ...opts
     }));
@@ -22655,7 +22708,7 @@ export function updateAdminConfigWithRevision({ adminConfigRevisionUpdateDto }: 
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigRevisionResponseDto;
+        data: AdminConfigRevisionResponseDtoRead;
     } | {
         status: 409;
     }>("/admin/config/revision", oazapfts.json({
@@ -35430,7 +35483,7 @@ export function getSyncStream({ syncStreamDto }: {
 export function getConfig(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/system-config", {
         ...opts
     }));
@@ -35443,7 +35496,7 @@ export function updateConfig({ adminConfigDto }: {
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/system-config", oazapfts.json({
         ...opts,
         method: "PUT",
@@ -35482,7 +35535,7 @@ export function reloadConfigFile({ configFileReloadDto }: {
 export function getConfigDefaults(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/system-config/defaults", {
         ...opts
     }));

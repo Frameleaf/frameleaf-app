@@ -19,6 +19,7 @@ import {
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 import { EnvAlias, deprecatedEnvWarning, describeEnvName, resolveEnvAliases } from 'src/utils/env-aliases.js';
+import { MetricsEnvSchema } from 'src/utils/environment-schema.js';
 import { parseWorkerSelection } from 'src/utils/environment-values.js';
 import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
 import { FRAMELEAF_RELEASES_API, FRAMELEAF_RELEASE_FEED } from 'src/utils/frameleaf-release.js';
@@ -102,6 +103,8 @@ export interface EnvData {
   setup: {
     allow: boolean;
   };
+
+  metrics: { enabled: boolean; port: number; token?: string };
 
   telemetry: {
     apiPort: number;
@@ -210,6 +213,12 @@ const getEnv = (): EnvData => {
     throw new Error(messages.join('\n'));
   }
   const dto = parseResult.data;
+  const metricsEnv = MetricsEnvSchema.safeParse(resolvedEnv);
+  if (!metricsEnv.success) {
+    throw new Error(
+      `Invalid metrics environment variables: ${metricsEnv.error.issues.map(({ path }) => path.join('.')).join(', ')}`,
+    );
+  }
   const helpLinks = parseHelpLinks(dto);
 
   const workers = parseWorkerSelection(dto);
@@ -355,6 +364,12 @@ const getEnv = (): EnvData => {
       mediaLocation: dto.FRAMELEAF_MEDIA_LOCATION,
       importRoots: dto.FRAMELEAF_IMPORT_ROOTS,
       recoveryRoots: parseRecoveryRoots(dto.FRAMELEAF_RECOVERY_ROOTS),
+    },
+
+    metrics: {
+      enabled: metricsEnv.data.FRAMELEAF_METRICS_ENABLED ?? false,
+      port: metricsEnv.data.FRAMELEAF_METRICS_PORT ?? 8081,
+      token: metricsEnv.data.FRAMELEAF_METRICS_TOKEN,
     },
 
     telemetry: {

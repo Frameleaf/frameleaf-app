@@ -14,7 +14,9 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
+from frameleaf_ml import main
 from frameleaf_ml.config import settings
+from frameleaf_ml.metrics import InferenceMetrics
 from frameleaf_ml.models import get_model_class
 from frameleaf_ml.models.base import ModelUnavailableError
 from frameleaf_ml.models.constants import TRANSCRIBE_MODEL_ALIAS, get_transcribe_model_file
@@ -325,12 +327,16 @@ class TestEndpoint:
 
             return generate(), SimpleNamespace(language="en", language_probability=1.0, duration=1.0)
 
+        metrics = InferenceMetrics()
+        mocker.patch.object(main, "inference_metrics", metrics)
         mocker.patch.object(served.session, "transcribe", side_effect=broken)
         response = deployed_app.post(
             "http://localhost:3003/transcribe", data={"entries": entries()}, files={"audio": wav(1.0)}
         )
         body = lines(response.text)
+        assert response.status_code == 200
         assert body[-1] == {"type": "error", "message": "Transcription failed"}
+        assert metrics.registry.get_sample_value("frameleaf_ml_request_errors_total", {"task": "transcribe"}) == 1
 
     def test_a_worker_without_the_model_answers_503(
         self, tmp_path: Path, mocker: MockerFixture, deployed_app: TestClient
