@@ -369,7 +369,7 @@ export class WorkflowRepository {
     return this.queryBuilder()
       .$if(!!dto.id, (qb) => qb.where('workflow.id', '=', dto.id!))
       .$if(!!dto.userId, (qb) => qb.where('workflow.ownerId', '=', dto.userId!))
-      .$if(!!dto.trigger, (qb) => qb.where('workflow.trigger', '=', dto.trigger!))
+      .$if(!!dto.trigger, (qb) => qb.where('workflow.trigger', '=', dto.trigger as WorkflowTrigger))
       .$if(dto.enabled !== undefined, (qb) => qb.where('workflow.enabled', '=', dto.enabled!))
       .orderBy('workflow.createdAt', 'desc')
       .execute();
