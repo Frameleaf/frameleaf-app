@@ -21803,7 +21803,7 @@ export type WorkflowSearchDto = {
     /** Workflow name */
     name?: string;
     /** Workflow trigger type */
-    trigger?: string;
+    trigger?: WorkflowTrigger;
 };
 /**
  * List all activities
@@ -38251,7 +38251,7 @@ export function searchWorkflows({ description, enabled, id, logging, name, trigg
     id?: string;
     logging?: boolean;
     name?: string;
-    trigger?: string;
+    trigger?: WorkflowTrigger;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
