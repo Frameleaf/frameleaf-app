@@ -345,6 +345,10 @@ describe('mimeTypes', () => {
       'clip.y4m',
       'clip.dif',
       'clip.evo',
+      'clip.apv',
+      'clip.cine',
+      'M19-0333.MLV',
+      'clip.vc1',
     ]) {
       it(`should import ${filename} as a video`, () => {
         expect(mimeTypes.isVideo(filename)).toBe(true);

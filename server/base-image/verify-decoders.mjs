@@ -142,6 +142,10 @@ for (const name of [
   'hevc', // .h265 .hevc
   'yuv4mpegpipe', // .y4m
   'dv', // .dif
+  'apv',
+  'vc1',
+  'cine',
+  'mlv',
   'r3d', // early RED ONE .r3d; newer ones are kept but do not play
 ]) {
   check('ffmpeg demuxer', name, demuxers.has(name));
