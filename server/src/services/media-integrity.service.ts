@@ -7,6 +7,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
@@ -88,6 +89,10 @@ export type MediaIntegrityValidation = {
   cancel: () => void;
 };
 
+/** Over the pixel or memory limit, or the image worker died: nothing about the file. */
+const isDecoderLimit = (error: unknown) =>
+  error instanceof SharpResourceLimitError || (error instanceof Error && /^Sharp child closed \(/.test(error.message));
+
 @Injectable()
 export class MediaIntegrityService {
   // Hold a slot until native hashing/LibRaw settles, even after the caller's deadline expires.
@@ -118,22 +123,22 @@ export class MediaIntegrityService {
       controller.abort();
       refusal.resolve({ status: 'timeout', reason: 'validation_timeout' });
     };
-    let progressAt = Date.now();
+    // Each sign of progress restarts the window, so only a read that has stalled for the whole window is
+    // stopped. The timer alone keeps the time: no clock is read.
+    let timer = setTimeout(cancel, this.timeoutMs);
     const touch = () => {
-      progressAt = Date.now();
+      if (controller.signal.aborted) {
+        return; // a read that outlives its refusal starts no new window
+      }
+      clearTimeout(timer);
+      timer = setTimeout(cancel, this.timeoutMs);
     };
-    const work = this.validateFile(input, controller.signal, touch).finally(() => {
+    // a cancelled job stops a read that is still making progress, and frees its slot
+    const execution = executionSignal();
+    const signal = execution ? AbortSignal.any([controller.signal, execution]) : controller.signal;
+    const work = this.validateFile(input, signal, touch).finally(() => {
       this.activeValidations--;
     });
-    let timer: ReturnType<typeof setTimeout>;
-    const watch = () => {
-      const idle = Date.now() - progressAt;
-      if (idle >= this.timeoutMs) {
-        return cancel();
-      }
-      timer = setTimeout(watch, this.timeoutMs - idle);
-    };
-    watch();
     return {
       result: Promise.race([work, refusal.promise]).finally(() => clearTimeout(timer)),
       settled: work.then(() => {}).catch(() => {}),
@@ -223,22 +228,38 @@ export class MediaIntegrityService {
       if (!stream) {
         return { status: 'unsupported', reason: 'decode_unsupported' };
       }
-      const packets = await this.mediaRepository.probePackets(input.path, stream.index, { signal, onProgress: touch });
       const tick = stream.timeBaseRational
         ? stream.timeBaseRational.num / stream.timeBaseRational.den
         : stream.timeBase
           ? 1 / stream.timeBase
           : undefined;
-      const seconds =
-        packets?.presentation && tick
+      const readable = async () => {
+        const packets = await this.mediaRepository.probePackets(input.path, stream.index, {
+          signal,
+          onProgress: touch,
+        });
+        return packets?.presentation && tick
           ? (packets.presentation.endPts - packets.presentation.startPts) * tick
           : undefined;
+      };
       // Only what could be measured counts: packets without timing say nothing about the length.
-      if (seconds !== undefined && stream.duration && seconds < stream.duration * 0.9 - 2) {
+      const short = (seconds?: number) =>
+        seconds !== undefined && !!stream.duration && seconds < stream.duration * 0.9 - 2;
+      const seconds = await readable();
+      if (short(seconds)) {
+        // A read that failed partway also ends early. The file is only cut short when a second read stops
+        // at the same place; anything else is a drive that could not be read, which is no verdict.
+        const again = await readable();
+        if (!short(again)) {
+          return undefined;
+        }
+        if (again !== seconds) {
+          return { status: 'transient', reason: 'decode_unverified' };
+        }
         return {
           status: 'corrupt',
           reason: 'decode_failed',
-          message: `truncated: ${Math.floor(seconds)} of ${Math.floor(stream.duration)} seconds can be read`,
+          message: `truncated: ${Math.floor(seconds!)} of ${Math.floor(stream.duration!)} seconds can be read`,
         };
       }
       return undefined;
@@ -267,7 +288,8 @@ export class MediaIntegrityService {
         .replace(/^[\s:]+/, '')
         .trim();
       const said = message ? { message } : {};
-      if (/moov atom not found|invalid data found when processing input|end of file|partial file/i.test(message)) {
+      // "End of file" and "partial file" are also what a failed read looks like, so they stay unverified.
+      if (/moov atom not found|invalid data found when processing input/i.test(message)) {
         return { status: 'corrupt', reason: 'decode_failed', ...said };
       }
       return { status: 'transient', reason: 'decode_unverified', ...said };
@@ -346,9 +368,9 @@ export class MediaIntegrityService {
       if ('code' in details && details.code === 'ENOENT') {
         return { status: 'transient', reason: 'decoder_unavailable' };
       }
-      const message = error instanceof Error ? error.message : '';
-      if (error instanceof SharpResourceLimitError || /^Sharp child closed \(/.test(message)) {
-        // over the pixel or memory limit, or the image worker died: nothing about the file
+      // the path is never part of the verdict: a folder may be called "corrupt"
+      const message = error instanceof Error ? error.message.replaceAll(input.path, '') : '';
+      if (isDecoderLimit(error)) {
         return { status: 'transient', reason: 'decoder_resource_limit' };
       }
       if (isRaw) {
@@ -361,7 +383,14 @@ export class MediaIntegrityService {
       let opens = true;
       try {
         await this.mediaRepository.decodeImage(input.path, lenient);
-      } catch {
+      } catch (lenientError) {
+        // the second read could not finish: that says nothing about the file
+        if (signal.aborted) {
+          return { status: 'timeout', reason: 'validation_timeout' };
+        }
+        if (isDecoderLimit(lenientError)) {
+          return { status: 'transient', reason: 'decoder_resource_limit' };
+        }
         opens = false;
       }
       if (opens) {
@@ -385,7 +414,7 @@ export class MediaIntegrityService {
         }
         return { status: 'unsupported', reason: 'decode_unsupported', ...said };
       }
-      if (classifyImageDecodeFailure(error, { isRaw: false }) === MediaHealthStatus.CorruptConfirmed) {
+      if (classifyImageDecodeFailure(message, { isRaw: false }) === MediaHealthStatus.CorruptConfirmed) {
         return { status: 'corrupt', reason: 'decode_failed', ...said };
       }
       return { status: 'transient', reason: 'decode_unverified', ...said };

@@ -1655,9 +1655,14 @@ export class MediaHealthService {
     if (action === 'find-original') {
       if (finding.status !== MediaHealthStatus.CorruptConfirmed) {
         // it is proven changed: the search for a verified replacement only looks for confirmed damage
+        const evidence = { ...(finding.evidence as Record<string, unknown> | null) };
+        if (evidence.fixState === 'couldnt-check') {
+          delete evidence.fixState; // it has been checked now
+        }
         finding =
           (await this.mediaHealthRepository.upsertFinding({
             ...finding,
+            evidence,
             expectedUpdateId: asset.updateId,
             status: MediaHealthStatus.CorruptConfirmed,
             severity: MediaHealthSeverity.Critical,
