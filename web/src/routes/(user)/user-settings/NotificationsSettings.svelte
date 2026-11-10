@@ -34,7 +34,7 @@
   const serverSends = $derived(featureFlagsManager.value.email);
   const mine = $derived(draft['emailNotifications.enabled']);
 
-  const emailed = new Map<string, (typeof SECTION_KEYS.notifications)[number]>([
+  const emailed = new Map<string, `emailNotifications.${'albumInvite' | 'albumUpdate' | 'newSignIn'}`>([
     ['shares', 'emailNotifications.albumInvite'],
     ['updates', 'emailNotifications.albumUpdate'],
     ['newSignIn', 'emailNotifications.newSignIn'],
