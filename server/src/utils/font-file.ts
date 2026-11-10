@@ -62,9 +62,8 @@ export const isBrowserFont = (filename: string) =>
   ['.ttf', '.otf', '.woff', '.woff2'].includes(getFilenameExtension(filename).toLowerCase());
 
 const clean = (value: unknown, max = TEXT_MAX) =>
-  // eslint-disable-next-line no-control-regex
   (typeof value === 'string' ? value : '')
-    .replaceAll(/[\u0000-\u001F\u007F]+/g, ' ')
+    .replaceAll(/\p{Cc}+/gu, ' ')
     .trim()
     .slice(0, max);
 const finite = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
@@ -92,7 +91,7 @@ const SCRIPTS: { name: string; from: number; to: number; needs: number; sample: 
 ];
 
 export function fontScripts(codePoints: Iterable<number>): string[] {
-  const counts = new Array<number>(SCRIPTS.length).fill(0);
+  const counts = SCRIPTS.map(() => 0);
   for (const point of codePoints) {
     for (const [index, { from, to }] of SCRIPTS.entries()) {
       if (point >= from && point <= to) counts[index]++;

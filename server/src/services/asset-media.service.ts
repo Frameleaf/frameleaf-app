@@ -61,10 +61,10 @@ import {
   getFilenameExtension,
   lockedViewerOf,
 } from 'src/utils/file.js';
+import { hasFontSignature } from 'src/utils/font-file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { hasFontSignature } from 'src/utils/font-file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   OriginalAsset,

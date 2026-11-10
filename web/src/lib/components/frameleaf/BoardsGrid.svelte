@@ -4,11 +4,13 @@
    * items out in columns, each keeping its own shape; Grid crops them to even squares. A saved link
    * is a card with its picture, title and site. Each tile carries its badges (a video's length, a
    * file type other than JPEG or PNG, the rating) and a round check in the corner that selects it.
+   * A font (FL-1359) is its specimen picture with a Font badge and its name and file type under it.
    *
    * Pressing a tile opens it in Details (`onOpen`) rather than the full viewer; once something is
    * selected, pressing a tile adds it to the selection or takes it out. Ctrl or ⌘ selects, Shift
    * selects a range, and a double-click opens a picture or video large (`onOpenLarge`).
    */
+  import { fontFileTitle, isFontName } from '$lib/frameleaf/boards-fonts';
   import { libraryReferenceUrl } from '$lib/frameleaf/library-reference';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import { formatDuration } from '$lib/frameleaf/viewer-headline';
@@ -20,6 +22,7 @@
   import {
     mdiCheckboxBlankCircleOutline,
     mdiCheckCircle,
+    mdiFormatFont,
     mdiLinkVariant,
     mdiPlay,
     mdiStar,
@@ -72,6 +75,7 @@
         format: string | null;
         duration: string | null;
         rating: number | null;
+        font: boolean;
       }
     | {
         kind: 'link';
@@ -93,10 +97,12 @@
         const name = asset.originalFileName ?? '';
         const extension = name.includes('.') ? name.split('.').pop()!.toUpperCase() : '';
         const exif = 'exifInfo' in item.asset ? item.asset.exifInfo : undefined;
+        const font = !asset.isImage && !asset.isVideo && isFontName(name);
         return [
           {
             kind: 'asset',
             key: asset.id,
+            font,
             name,
             asset,
             format: extension && !PLAIN_TYPES.has(extension) ? extension : null,
@@ -183,12 +189,17 @@
             ? $t(selecting ? 'frameleaf_boards_select_link' : 'frameleaf_boards_open_link', {
                 values: { title: tile.name },
               })
-            : $t(selecting ? 'frameleaf_boards_select_item' : 'frameleaf_boards_open_item', {
-                values: { name: tile.name },
-              })}
+            : $t(
+                selecting
+                  ? 'frameleaf_boards_select_item'
+                  : tile.font
+                    ? 'frameleaf_boards_open_font'
+                    : 'frameleaf_boards_open_item',
+                { values: { name: tile.name } },
+              )}
           onclick={(event) => press(tile, event)}
           ondblclick={() => {
-            if (tile.kind === 'asset' && !selecting) {
+            if (tile.kind === 'asset' && !tile.font && !selecting) {
               onOpenLarge?.(tile.asset);
             }
           }}
@@ -219,9 +230,14 @@
               alt=""
               loading="lazy"
               draggable="false"
-              style:aspect-ratio={layout === 'board' ? String(tile.asset.ratio || 1) : undefined}
+              style:aspect-ratio={tile.font ? '4 / 3' : layout === 'board' ? String(tile.asset.ratio || 1) : undefined}
             />
-            {#if showNames}<span class="bg-name">{tile.name}</span>{/if}
+            {#if tile.font}
+              <span class="bg-link-text">
+                <strong>{fontFileTitle(tile.name)}</strong>
+                <small><Icon icon={mdiFormatFont} size="13" aria-hidden={true} />{tile.format}</small>
+              </span>
+            {:else if showNames}<span class="bg-name">{tile.name}</span>{/if}
           {/if}
         </button>
         <button
@@ -234,7 +250,11 @@
         >
           <Icon icon={isSelected ? mdiCheckCircle : mdiCheckboxBlankCircleOutline} size="22" aria-hidden={true} />
         </button>
-        {#if tile.kind === 'asset' && tile.duration}
+        {#if tile.kind === 'asset' && tile.font}
+          <span class="bg-badge"
+            ><Icon icon={mdiFormatFont} size="13" aria-hidden={true} />{$t('frameleaf_boards_font')}</span
+          >
+        {:else if tile.kind === 'asset' && tile.duration}
           <span class="bg-badge"><Icon icon={mdiPlay} size="13" aria-hidden={true} />{tile.duration}</span>
         {:else if tile.kind === 'asset' && tile.format}
           <span class="bg-badge">{tile.format}</span>

@@ -68,6 +68,7 @@ import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceAuditTable } from 'src/schema/tables/asset-face-audit.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
+import { AssetFontTable } from 'src/schema/tables/asset-font.table.js';
 import {
   AssetHealthCandidateTable,
   AssetHealthRunTable,
@@ -83,7 +84,6 @@ import {
 } from 'src/schema/tables/asset-local-effect.table.js';
 import { AssetLockTable } from 'src/schema/tables/asset-lock.table.js';
 import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.table.js';
-import { AssetFontTable } from 'src/schema/tables/asset-font.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';

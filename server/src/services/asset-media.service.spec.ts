@@ -251,7 +251,7 @@ describe(AssetMediaService.name, () => {
     });
 
     it('refuses a file that only has a font’s name', async () => {
-      mocks.storage.readFile.mockResolvedValue(Buffer.from('MZ\u0090\u0000\u0003\u0000\u0000\u0000', 'latin1'));
+      mocks.storage.readFile.mockResolvedValue(Buffer.from('MZ\u{90}\0\u{3}\0\0\0', 'latin1'));
       await expect(
         sut.prepareUploadAsset(authStub.user1, { ...createDto, libraryScope: LibraryScope.Design }, font),
       ).rejects.toBeInstanceOf(BadRequestException);

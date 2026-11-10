@@ -8,9 +8,9 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
+import { hasFontSignature } from 'src/utils/font-file.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
-import { hasFontSignature } from 'src/utils/font-file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 

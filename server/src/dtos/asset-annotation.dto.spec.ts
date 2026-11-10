@@ -35,7 +35,7 @@ describe('Boards annotation documents', () => {
     const font = '6f9f0c1e-8f0c-4b1e-9d1e-2f0a3b4c5d6e';
 
     it('accepts a font, size, colour and variable-font values on text, each on its own or together', () => {
-      const full = { fontAssetId: font, size: 0.06, color: '#1A2b3c', variation: { wght: 650, opsz: 14 } };
+      const full = { fontAssetId: font, size: 1.4, color: '#1A2b3c', variation: { wght: 650, opsz: 14 } };
       expect(parse([{ ...text, style: full }]).success).toBe(true);
       expect(parse([{ ...text, style: {} }]).success).toBe(true);
       expect(parse([{ ...text, style: { color: '#000000' } }]).success).toBe(true);
@@ -44,7 +44,7 @@ describe('Boards annotation documents', () => {
     it.each([
       ['a style on a rectangle', { ...rect, style: { color: '#000000' } }],
       ['a font that is not an id', { ...text, style: { fontAssetId: 'Helvetica' } }],
-      ['a size larger than the picture', { ...text, style: { size: 1.5 } }],
+      ['a size out of range', { ...text, style: { size: 12 } }],
       ['a named colour', { ...text, style: { color: 'red' } }],
       ['an axis tag that is not four characters', { ...text, style: { variation: { weight: 700 } } }],
       ['an unknown style field', { ...text, style: { shadow: true } }],

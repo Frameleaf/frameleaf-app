@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
 import {
   fontFactsFromName,
   fontScripts,
@@ -7,7 +8,6 @@ import {
   isBrowserFont,
   readFontFacts,
 } from 'src/utils/font-file.js';
-import { describe, expect, it } from 'vitest';
 
 const anton = () => readFileSync('resources/studio-fonts/anton-latin-400-normal.ttf');
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => from + index);

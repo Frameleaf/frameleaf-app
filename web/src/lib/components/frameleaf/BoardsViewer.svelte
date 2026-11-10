@@ -115,7 +115,7 @@
    */
   const onWindowKey = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement | null;
-    if (target?.closest?.('input, textarea')) {
+    if (target?.closest?.('input, textarea, select, [data-text-style]')) {
       event.stopPropagation();
       if (event.key === 'Escape') {
         event.preventDefault();

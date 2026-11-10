@@ -6260,6 +6260,18 @@ export type AssetAnnotationGeometry = {
     /** Top edge of a rectangle, tail of an arrow, or the baseline of a text label */
     y: number;
 };
+export type AssetAnnotationStyle = {
+    /** Text colour as #RRGGBB */
+    color?: string;
+    /** A font item in Boards to draw the text in */
+    fontAssetId?: string;
+    /** Text size as a multiple of the standard size (1 when left out) */
+    size?: number;
+    /** Variable-font axis values by tag, for example {"wght": 650} */
+    variation?: {
+        [key: string]: number;
+    };
+};
 export type AssetAnnotationItem = {
     geometry: AssetAnnotationGeometry;
     id: string;
@@ -6267,6 +6279,8 @@ export type AssetAnnotationItem = {
     note?: string;
     /** Set when the annotation was brought over from Eagle */
     origin?: AssetAnnotationOrigin;
+    /** Text annotations only: font, size and colour */
+    style?: AssetAnnotationStyle;
     /** Text annotations only: the words drawn */
     text?: string;
 };
@@ -6719,6 +6733,63 @@ export type AssetFilmstripResponseDto = {
     spriteWidth: number;
     /** Changes whenever the video changes; pass it to the sprite request */
     version: string;
+};
+export type AssetFontAxisDto = {
+    "default": number;
+    max: number;
+    min: number;
+    /** The name the font gives the axis, for example "Weight" */
+    name: string;
+    /** The axis tag, for example "wght" */
+    tag: string;
+};
+export type AssetFontFaceDto = {
+    /** Family name, for example "Source Serif 4" */
+    family: string;
+    /** How many glyphs the face holds; 0 when unknown */
+    glyphCount: number;
+    italic: boolean;
+    /** Style name, for example "Bold Italic" */
+    style: string;
+    /** Weight class from 1 to 1000 (400 is regular), or null when the file does not say */
+    weight: number | null;
+};
+export type AssetFontInstanceDto = {
+    /** Axis tag to value */
+    coordinates: {
+        [key: string]: number;
+    };
+    /** A named style of a variable font, for example "SemiBold" */
+    name: string;
+};
+export type AssetFontResponseDto = {
+    /** Variable-font axes; empty for a static font */
+    axes: AssetFontAxisDto[];
+    /** True when a browser can load the original itself (TTF, OTF, WOFF, WOFF2) for a live type tester. Collections and Type 1 fonts show the specimen picture only. */
+    browserLoadable: boolean;
+    /** Every face of a font collection; empty for a single font */
+    faces: AssetFontFaceDto[];
+    /** Family name, for example "Source Serif 4" */
+    family: string;
+    /** OpenType feature tags the font offers, for example "liga" */
+    features: string[];
+    /** How many glyphs the face holds; 0 when unknown */
+    glyphCount: number;
+    /** Named styles of a variable font */
+    instances: AssetFontInstanceDto[];
+    italic: boolean;
+    /** The licence text the file carries, if any */
+    license: string | null;
+    /** The licence link the file carries, if any */
+    licenseUrl: string | null;
+    /** False until the file has been read; the facts are then placeholders from its name */
+    ready: boolean;
+    /** Writing systems the font covers, as lower-case names such as "latin", "cyrillic", "han" */
+    scripts: string[];
+    /** Style name, for example "Bold Italic" */
+    style: string;
+    /** Weight class from 1 to 1000 (400 is regular), or null when the file does not say */
+    weight: number | null;
 };
 export type ImageDescriptionEnrichmentResponseDto = {
     appliedDescription: boolean;
@@ -16468,6 +16539,8 @@ export type WarmLibrarySetupDto = {
     reset?: boolean;
 };
 export type ServerMediaTypesResponseDto = {
+    /** Font file extensions an upload into Boards (libraryScope=design) accepts */
+    font: string[];
     /** Supported image MIME types */
     image: string[];
     /** Supported sidecar MIME types */
@@ -26451,6 +26524,24 @@ export function viewAssetFilmstripSprite({ count, format, height, id, key, slug,
         key,
         slug,
         version
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Read what a font in Boards says about itself
+ */
+export function getAssetFont({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetFontResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/font${QS.query(QS.explode({
+        key,
+        slug
     }))}`, {
         ...opts
     }));

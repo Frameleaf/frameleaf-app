@@ -600,7 +600,8 @@ from
   "asset"
   inner join "asset_job_status" as "job_status" on "assetId" = "asset"."id"
 where
-  "asset"."visibility" != $1
+  "asset"."type" != 'OTHER'
+  and "asset"."visibility" != $1
   and "asset"."deletedAt" is null
   and exists (
     select
@@ -1162,7 +1163,8 @@ from
   "asset"
   inner join "asset_job_status" as "job_status" on "assetId" = "asset"."id"
 where
-  "asset"."visibility" != $1
+  "asset"."type" != 'OTHER'
+  and "asset"."visibility" != $1
   and "asset"."deletedAt" is null
   and exists (
     select
@@ -1185,6 +1187,7 @@ from
 where
   "asset_job_status"."ocrAt" is null
   and "asset"."deletedAt" is null
+  and "asset"."type" != 'OTHER'
   and "asset"."visibility" != $1
 
 -- AssetJobRepository.streamForImageDescriptionJob
@@ -1194,7 +1197,8 @@ from
   "asset"
   inner join "asset_job_status" as "job_status" on "assetId" = "asset"."id"
 where
-  "asset"."visibility" != $1
+  "asset"."type" != 'OTHER'
+  and "asset"."visibility" != $1
   and "asset"."deletedAt" is null
   and exists (
     select
@@ -1254,7 +1258,8 @@ from
   "asset"
   inner join "asset_job_status" as "job_status" on "assetId" = "asset"."id"
 where
-  "asset"."visibility" != $1
+  "asset"."type" != 'OTHER'
+  and "asset"."visibility" != $1
   and "asset"."deletedAt" is null
   and exists (
     select

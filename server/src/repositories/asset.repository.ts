@@ -19,6 +19,7 @@ import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
+import type { FontFacts } from 'src/utils/font-file.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetFile, LockableProperty, Stack } from 'src/database.js';
@@ -53,8 +54,6 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
-import type { FontFacts } from 'src/utils/font-file.js';
-import { mimeTypes } from 'src/utils/mime-types.js';
 import { getLivePhotoMotion } from 'src/utils/asset.util.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
@@ -109,6 +108,7 @@ import {
   visibilityIs,
 } from 'src/utils/locked.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { filterNamesPeople } from 'src/utils/search-filter.js';
@@ -1664,8 +1664,9 @@ export class AssetRepository {
   }
 
   async upsertFont(assetId: string, facts: FontFacts): Promise<void> {
-    // jsonb columns take text: node-postgres would send a JavaScript array as a Postgres array
-    const json = (value: unknown) => JSON.stringify(value) as never;
+    // jsonb takes its text: the driver would send a JavaScript array as a Postgres array, and a bare
+    // string parameter as a JSON string (the whole list in quotes)
+    const json = (value: unknown) => sql<never>`${JSON.stringify(value)}::text::jsonb`;
     const row = {
       ...facts,
       axes: json(facts.axes),

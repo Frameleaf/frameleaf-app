@@ -77,6 +77,8 @@ import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { isBusy } from 'src/utils/file-problem.js';
+import { FONT_PARSE_LIMIT, fontFactsFromName, readFontFacts } from 'src/utils/font-file.js';
+import { FONT_SPECIMEN } from 'src/utils/font-specimen.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
 import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { DJI_SRT_HEAD_BYTES, getDjiSrtCandidates, parseDjiSrtColorMode } from 'src/utils/log-video-srt.js';
@@ -127,8 +129,6 @@ import {
   validateVideoMaster,
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.js';
-import { FONT_PARSE_LIMIT, fontFactsFromName, readFontFacts } from 'src/utils/font-file.js';
-import { FONT_SPECIMEN } from 'src/utils/font-specimen.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';

@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import {
   DummyDriver,
   Kysely,
@@ -7,6 +6,7 @@ import {
   PostgresQueryCompiler,
   ShallowDehydrateObject,
 } from 'kysely';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';

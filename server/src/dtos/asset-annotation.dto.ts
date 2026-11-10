@@ -41,11 +41,11 @@ export const AssetAnnotationStyleSchema = z
     fontAssetId: z.uuid().optional().describe('A font item in Boards to draw the text in'),
     size: z
       .number()
-      .min(0.005)
-      .max(1)
+      .min(0.25)
+      .max(8)
       .meta({ format: 'double' })
       .optional()
-      .describe('Text height as a fraction of the picture height'),
+      .describe('Text size as a multiple of the standard size (1 when left out)'),
     color: z
       .string()
       .regex(/^#[0-9a-fA-F]{6}$/)

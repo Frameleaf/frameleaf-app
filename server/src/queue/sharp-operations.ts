@@ -22,10 +22,10 @@ import { type LinearHdrImage, type PairedHdrImage, imageHdrInput, imageHdrOperat
 
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
 import { extractPalette } from '../utils/asset-palette.js';
-import { FONT_SPECIMEN } from '../utils/font-specimen.js';
 import { applyDevelopCleanup } from '../utils/develop-cleanup.js';
 import { perspectiveFor, warpPerspective } from '../utils/develop-perspective.js';
 import { developRenderArtifacts, isActiveMask, planDevelopGeometry } from '../utils/develop-recipe.js';
+import { FONT_SPECIMEN } from '../utils/font-specimen.js';
 import { JPEG_EOI, type JpegRepairResult, jpegRepairCandidates } from '../utils/jpeg-repair.js';
 import { HASH_GRID } from '../utils/video-fingerprint.js';
 
