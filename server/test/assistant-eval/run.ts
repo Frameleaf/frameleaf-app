@@ -297,8 +297,19 @@ function assistantWithReplayPlanner(
     planWithModel: (question: string, language: string, catalog: unknown) => Promise<unknown>;
     resolve: (filters: EvalFilters, catalog: unknown) => unknown;
   };
-  resolver.planWithModel = (question, _language, catalog) =>
-    Promise.resolve(plans.has(question) ? resolver.resolve(plans.get(question)!, catalog) : undefined);
+  resolver.planWithModel = (question, _language, catalog) => {
+    const recorded = plans.get(question);
+    if (!recorded) {
+      return Promise.resolve();
+    }
+    try {
+      // the same check a live candidate's plan gets before it is counted (an unusable transcript query)
+      preparePlan(recorded);
+    } catch {
+      return Promise.resolve();
+    }
+    return Promise.resolve(resolver.resolve(recorded, catalog));
+  };
   return { sut, plans };
 }
 

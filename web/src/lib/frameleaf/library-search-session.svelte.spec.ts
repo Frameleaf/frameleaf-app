@@ -1,4 +1,5 @@
 import {
+  askAssistant,
   askSearch,
   searchLibraryItems,
   LibraryBookmarkItemKind,
@@ -9,6 +10,7 @@ import {
   searchSmart,
   type SearchResponseDto,
   type AskSearchResponseDto,
+  type AssistantAskResponseDto,
 } from '@frameleaf/sdk';
 import { LibrarySearchSession } from './library-search-session.svelte';
 import type { LibrarySearchTerms, LibrarySearchQuery } from './library-search-session.svelte';
@@ -17,6 +19,7 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
+  askAssistant: vi.fn(),
   askSearch: vi.fn(),
   searchAssets: vi.fn(),
   searchLibraryItems: vi.fn(),
@@ -241,4 +244,23 @@ it('discards a completed mixed response after an access reset', async () => {
   expect(session.items).toEqual([]);
   expect(session.count).toBeNull();
   expect(session.nextCursor).toBeNull();
+});
+
+describe('LibrarySearchSession: Library Assistant (FL-918)', () => {
+  it('asks the assistant once, keeps its answer and has no next page', async () => {
+    const answer = { results: result('lake'), reasons: [], answeredBy: 'rules' } as unknown as AssistantAskResponseDto;
+    vi.mocked(askAssistant).mockResolvedValue(answer);
+    const session = createSession();
+    session.reset({ kind: 'assistant', query: 'Emma by the lake' });
+    await session.loadNextPage(options);
+
+    expect(askAssistant).toHaveBeenCalledWith(
+      { assistantAskDto: { query: 'Emma by the lake', language: 'en' } },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(session.assets.map(({ id }) => id)).toEqual(['lake']);
+    expect(session.assistantResponse).toEqual(answer);
+    expect(session.nextPage).toBeNull();
+    expect(askSearch).not.toHaveBeenCalled();
+  });
 });

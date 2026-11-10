@@ -4150,6 +4150,8 @@ export type SavedSearch = {
     };
 };
 export type SearchPreferencesResponse = {
+    /** FL-918: whether search questions use classic search instead of the Library Assistant */
+    classic: boolean;
     /** Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none */
     includeArchived: boolean;
 };
@@ -4297,6 +4299,8 @@ export type RecentlyAddedUpdate = {
     sidebarWeb?: boolean;
 };
 export type SearchPreferencesUpdate = {
+    /** FL-918: whether search questions use classic search instead of the Library Assistant */
+    classic?: boolean;
     /** Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none */
     includeArchived?: boolean;
 };
