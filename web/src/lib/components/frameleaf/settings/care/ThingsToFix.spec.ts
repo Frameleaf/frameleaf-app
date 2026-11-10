@@ -1,4 +1,4 @@
-import { FileProblemTab, type AdminConfigDto } from '@frameleaf/sdk';
+import { FileProblemTab, ProcessingFailureStep, type AdminConfigDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -90,6 +90,7 @@ describe('Things to fix (FL-366)', () => {
     sdkMock.getLivePhotoCandidates.mockResolvedValue({ candidates: [], total: 0, suggestionsEnabled: true });
     sdkMock.getFileProblems.mockResolvedValue({ items: [], total: 0 });
     sdkMock.getAttention.mockResolvedValue(attention(0));
+    sdkMock.getProcessingFailures.mockResolvedValue([]);
   });
 
   it('says "Nothing to fix" when nothing is waiting', async () => {
@@ -122,6 +123,33 @@ describe('Things to fix (FL-366)', () => {
     expect(row('Missing files').getByText('1 found')).toBeInTheDocument();
     // FL-520: the missing RAW originals to match have a count of their own
     expect(row('RAW files to match').getByText('1 waiting')).toBeInTheDocument();
+  });
+
+  it("lists the files Frameleaf couldn't process, once each, with how many were set aside (FL-862)", async () => {
+    const failure = (assetId: string, step: ProcessingFailureStep, quarantinedAt: string | null) => ({
+      assetId,
+      step,
+      cause: 'unreadable',
+      attempts: quarantinedAt ? 3 : 1,
+      lastFailedAt: '2026-11-10T08:00:00.000Z',
+      quarantinedAt,
+      ownerId: 'u1',
+      ownerName: 'Taylor',
+      fileName: `${assetId}.MOV`,
+    });
+    sdkMock.getProcessingFailures.mockResolvedValue([
+      failure('a1', ProcessingFailureStep.AssetEncodeVideo, '2026-11-10T08:00:00.000Z'),
+      failure('a1', ProcessingFailureStep.AssetGenerateThumbnails, null),
+      failure('a2', ProcessingFailureStep.Ocr, null),
+    ]);
+    newStore();
+    render(ThingsToFix);
+
+    expect(await hero().findByRole('heading', { name: '2 files couldn’t be processed' })).toBeInTheDocument();
+    expect(row('Couldn’t process').getByText('2 files')).toBeInTheDocument();
+    expect(row('Couldn’t process').getByText('1 set aside after 3 tries')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Review Couldn’t process' }));
+    expect(nav.goto).toHaveBeenCalledWith(expect.stringContaining('section=couldnt-process'));
   });
 
   it('gives an administrator a switch on the two kinds that can be turned off', async () => {

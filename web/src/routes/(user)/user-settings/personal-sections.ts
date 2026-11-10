@@ -3,6 +3,7 @@ import {
   mdiCloudOutline,
   mdiDeleteOutline,
   mdiFileAlertOutline,
+  mdiFileClockOutline,
   mdiImport,
   mdiMapMarkerOutline,
   mdiTools,
@@ -88,6 +89,14 @@ export const personalSections = (
     title: $t('frameleaf_cc_section_files'),
     subtitle: $t('frameleaf_cc_section_files_description'),
     icon: mdiFileAlertOutline,
+  },
+  // FL-862: Library care → Couldn't process, for every account: a member sees their own files, an
+  // administrator also the household's, without their pictures.
+  {
+    key: 'couldnt-process',
+    title: $t('frameleaf_cc_section_couldnt_process'),
+    subtitle: $t('frameleaf_cc_section_couldnt_process_description'),
+    icon: mdiFileClockOutline,
   },
   // Library care → Identify photo locations, for every account (its own library).
   {
