@@ -5,7 +5,9 @@ import { ApiModule } from 'src/app.module.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ApiService } from 'src/services/api.service.js';
 import { isRetryableStartupError, isStartUpError } from 'src/utils/misc.js';
+import { stopPrivateLogs } from 'src/utils/private-log-runtime.js';
 import { API_STARTUP_RETRY_EXIT_CODE, HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
+import { prepareWorkerMetrics } from 'src/utils/worker-metrics.js';
 
 async function bootstrap() {
   process.title = 'frameleaf-api';
@@ -20,13 +22,28 @@ async function bootstrap() {
     routeConflictPolicy: { duplicate: 'error' },
     routeResolutionStrategy: 'specificity',
   });
+  const metrics = prepareWorkerMetrics(app, 'api');
+  if (metrics) app.use(metrics.middleware);
   const http = new HttpRequestTracker(app.getHttpServer());
   const appRepository = app.get(AppRepository);
-  appRepository.setCloseFn((graceMs) => closeGracefully({ http, close: () => app.close(), graceMs }));
+  appRepository.setCloseFn((graceMs) =>
+    closeGracefully({
+      http,
+      close: async () => {
+        await metrics?.close();
+        await app.close();
+        await stopPrivateLogs();
+      },
+      graceMs,
+    }),
+  );
   stop = () => appRepository.stop(0);
 
   await configureExpress(app, {
     ssr: ApiService,
+  });
+  await metrics?.listen().catch((error: NodeJS.ErrnoException) => {
+    console.error(`Unable to start the local API metrics listener: ${error.code ?? error.name}`);
   });
 }
 

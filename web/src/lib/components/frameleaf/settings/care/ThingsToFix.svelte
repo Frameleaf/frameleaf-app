@@ -12,6 +12,10 @@
    * The counts: for an administrator, the server's one source of findings (FL-520, a photo both
    * checkers report counted once, and the missing RAW originals to match); for a member, their own
    * Library Care queues. Look-alike groups and the Live Photo pairs found come from their own lists.
+   *
+   * FL-1338: "Fixed for you" is the Overview's own 7-day count (`getAttention().fileProblems.fixed`, an
+   * administrator's reading), so the two screens never disagree about "this week". The hero's "{n} files need you"
+   * is the Needs you list's total, the page its Review buttons open.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -29,6 +33,9 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import {
+    FileProblemTab,
+    getAttention,
+    getFileProblems,
     getIntegrityOverview,
     getLivePhotoCandidates,
     getSummary,
@@ -38,6 +45,7 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
+    mdiAutoFix,
     mdiCheckCircleOutline,
     mdiChevronRight,
     mdiFileAlertOutline,
@@ -59,6 +67,10 @@
   let summary = $state<MediaHealthSummaryResponseDto>();
   let integrity = $state<IntegrityOverviewResponseDto>();
   let live = $state<LivePhotoCandidatesResponseDto>();
+  /** How many damaged or missing files Frameleaf fixed in the last 7 days (the Overview's count). */
+  let fixedFiles = $state(0);
+  /** How many are on the Needs you list. */
+  let needsYou = $state(0);
   let loaded = $state(false);
 
   /** FL-520: the one source of findings, or nothing when it cannot be read. */
@@ -70,6 +82,24 @@
     }
   };
 
+  /** The file problems page's own total (FL-1337), so the hero and the page its buttons open always agree. */
+  const totalOf = async (tab: FileProblemTab) => {
+    try {
+      return (await getFileProblems({ tab, take: 1 })).total;
+    } catch {
+      return 0;
+    }
+  };
+
+  /** The Overview's count of what Frameleaf fixed in the last 7 days; it is an administrator's reading. */
+  const fixedThisWeek = async () => {
+    try {
+      return (await getAttention()).fileProblems.fixed;
+    } catch {
+      return 0;
+    }
+  };
+
   $effect(() => {
     const admin = isAdmin;
     let current = true;
@@ -78,13 +108,17 @@
       getSummary(admin ? { allAccounts: true } : {}).catch(() => undefined),
       admin ? overviewOf() : Promise.resolve(undefined),
       getLivePhotoCandidates().catch(() => undefined),
-    ]).then(([health, reports, pairs]) => {
+      admin ? fixedThisWeek() : Promise.resolve(0),
+      totalOf(FileProblemTab.Needs),
+    ]).then(([health, reports, pairs, fixed, needs]) => {
       if (!current) {
         return;
       }
       summary = health;
       integrity = reports;
       live = pairs;
+      fixedFiles = fixed;
+      needsYou = needs;
       loaded = true;
     });
     return () => {
@@ -124,12 +158,18 @@
 
   const hero = $derived.by(() => {
     if (attention > 0) {
+      // "need you" only when the Needs you list has them: a file someone kept as it is is not waiting for them
+      const needing = fixedFiles > 0 && needsYou > 0;
       return {
         tone: 'warn' as const,
         icon: mdiShieldAlertOutline,
-        title: $t('frameleaf_care_fix_hero_attention', { values: { count: attention } }),
+        title: needing
+          ? $t('frameleaf_care_fix_fixed_hero_title', { values: { count: needsYou } })
+          : $t('frameleaf_care_fix_hero_attention', { values: { count: attention } }),
         body: [
-          $t('frameleaf_care_fix_hero_attention_body', { values: { missing, damaged } }),
+          needing
+            ? $t('frameleaf_care_fix_fixed_hero_body', { values: { fixed: fixedFiles, missing, damaged } })
+            : $t('frameleaf_care_fix_hero_attention_body', { values: { missing, damaged } }),
           suggestions > 0 ? $t('frameleaf_care_fix_hero_also', { values: { count: suggestions } }) : '',
           $t('frameleaf_care_fix_nothing_changes'),
         ]
@@ -160,7 +200,7 @@
     detail: string;
     /** Undefined when the app keeps no count for this kind. */
     count?: number;
-    unit: 'found' | 'waiting' | 'groups';
+    unit: 'found' | 'waiting' | 'groups' | 'week';
     note: string;
     tone: KitTone;
     /** The row's switch, for an administrator. */
@@ -171,7 +211,8 @@
   };
 
   const rows = $derived.by((): Row[] => {
-    const fromChecks = isAdmin ? commandCenterUrl('care', 'integrity-checks') : undefined;
+    // Damaged and missing files open their own page, which every account has (FL-1338).
+    const needing = commandCenterUrl('care', 'files', { tab: FileProblemTab.Needs });
     const all: (Row | false)[] = [
       {
         id: 'missing',
@@ -180,9 +221,9 @@
         detail: $t('frameleaf_care_fc_missing_detail'),
         count: missing,
         unit: 'found',
-        note: isAdmin ? $t('frameleaf_care_fix_from_checks') : $t('frameleaf_care_fix_admin_fixes'),
+        note: $t('frameleaf_care_fix_from_checks'),
         tone: 'warn',
-        href: fromChecks,
+        href: needing,
       },
       {
         id: 'damaged',
@@ -191,9 +232,21 @@
         detail: $t('frameleaf_care_fc_damaged_detail'),
         count: damaged,
         unit: 'found',
-        note: isAdmin ? $t('frameleaf_care_fix_from_checks') : $t('frameleaf_care_fix_admin_fixes'),
+        note: $t('frameleaf_care_fix_from_checks'),
         tone: 'warn',
-        href: fromChecks,
+        href: needing,
+      },
+      // the 7-day count is an administrator's reading, like the Overview it matches
+      isAdmin && {
+        id: 'fixed',
+        icon: mdiAutoFix,
+        name: $t('frameleaf_care_fix_fixed_name'),
+        detail: $t('frameleaf_care_fix_fixed_detail'),
+        count: fixedFiles,
+        unit: 'week',
+        note: '',
+        tone: 'good',
+        href: commandCenterUrl('care', 'files', { tab: FileProblemTab.Fixed }),
       },
       {
         id: 'live',

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, sql } from 'kysely';
+import { Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { Asset } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
 import {
@@ -26,9 +27,9 @@ import {
   PreservationRestoreItemTable,
   PreservationRestoreTable,
 } from 'src/schema/tables/preservation.table.js';
-import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
+import { anyUuid, hiddenByOwnerRules, searchAssetBuilder } from 'src/utils/database.js';
 import { assertExecutionActive } from 'src/utils/execution-signal.js';
-import { isLocked, isNotLocked } from 'src/utils/locked.js';
+import { isLocked } from 'src/utils/locked.js';
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
 import {
   PreservationAssetSource,
@@ -71,20 +72,33 @@ export type PreservationPreviewCounts = {
  */
 const jsonb = (value: unknown) => sql<any>`${JSON.stringify(value)}::text::jsonb`;
 const toNumber = (value: unknown) => Number(value ?? 0);
+/** Preservation reads current rules from storage, including in background jobs without a session. */
+const lockedPreservationAsset = (alias = 'asset') => sql<boolean>`(${isLocked(alias)} or ${hiddenByOwnerRules(alias)})`;
 /**
- * A package item is Locked when it was written Locked or its original has been locked in the library
- * since. Background work reads every item; an ordinary (not unlocked) session is never told such an
- * item exists, not even as a count (owner decision, September 22, 2026).
+ * A package item is private when it was written Locked, or its original is locked or matches current
+ * Locked rules. Background work reads every item; an ordinary (not unlocked) session is never told
+ * such an item exists, not even as a count (owner decision, September 22, 2026).
  */
 const lockedPackageItem = sql<boolean>`(preservation_item.locked or exists (
-  select 1 from asset_lock where asset_lock."assetId" = preservation_item."assetId"
+  select 1 from asset where asset.id = preservation_item."assetId" and ${lockedPreservationAsset()}
 ))`;
-/**
- * A restoration item is Locked when the package says so or the original it matched in the library is
- * Locked there: its current values would otherwise reach an ordinary session as a conflict.
- */
-const lockedRestoreItem = sql<boolean>`(preservation_restore_item.locked or exists (
-  select 1 from asset_lock where asset_lock."assetId" = preservation_restore_item."assetId"
+/** Privacy carried by the archive and retained source, which a restored copy must preserve. */
+const retainedRestoreItem = (matchedAssetId?: string) => sql<boolean>`(preservation_restore_item.locked or exists (
+  select 1 from preservation_item
+  join preservation_restore on preservation_restore."packageId" = preservation_item."packageId"
+  where preservation_restore.id = preservation_restore_item."restoreId"
+    and preservation_item."sourceAssetId" = preservation_restore_item."sourceAssetId"
+    and ${
+      matchedAssetId
+        ? sql<boolean>`(preservation_item.locked or (
+            preservation_item."assetId" != ${matchedAssetId}::uuid and ${lockedPackageItem}
+          ))`
+        : lockedPackageItem
+    }
+))`;
+/** Destination rules hide conflicts too, but must not become permanent locks on public restores. */
+const lockedRestoreItem = sql<boolean>`(${retainedRestoreItem()} or exists (
+  select 1 from asset where asset.id = preservation_restore_item."assetId" and ${lockedPreservationAsset()}
 ))`;
 const lockedBookmark = sql<boolean>`(bookmark."isLocked" or exists (
   select 1 from user_metadata preferences
@@ -173,7 +187,7 @@ export class PreservationRepository {
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
       .where('asset.status', '=', AssetStatus.Active)
-      .$if(!includeLocked, (qb) => qb.where(isNotLocked('asset')));
+      .$if(!includeLocked, (qb) => qb.where(sql<boolean>`not ${lockedPreservationAsset()}`));
   }
   /** How many items a selection holds and how large they are, split by whether they are Locked. */
   async previewSelection(
@@ -183,7 +197,7 @@ export class PreservationRepository {
   ): Promise<PreservationPreviewCounts> {
     const matched = this.selection(this.db, ownerId, selection, true).select([
       'asset.id',
-      isLocked('asset').as('locked'),
+      lockedPreservationAsset().as('locked'),
       'asset_exif.fileSizeInByte as bytes',
     ]);
     const row = await this.db
@@ -293,7 +307,7 @@ export class PreservationRepository {
           sql<string>`${created.id}::uuid`.as('packageId'),
           eb.ref('asset.id').as('sourceAssetId'),
           eb.ref('asset.id').as('assetId'),
-          isLocked('asset').as('locked'),
+          lockedPreservationAsset().as('locked'),
         ]);
         await tx
           .insertInto('preservation_item')
@@ -304,14 +318,14 @@ export class PreservationRepository {
         // The video half of a selected Live Photo, when it is the owner's and allowed in this package.
         await sql`
         insert into preservation_item ("packageId", "sourceAssetId", "assetId", "locked")
-        select ${created.id}::uuid, motion.id, motion.id, ${isLocked('motion')}
+        select ${created.id}::uuid, motion.id, motion.id, ${lockedPreservationAsset('motion')}
         from preservation_item item
         inner join asset still on still.id = item."assetId"
         inner join asset motion on motion.id = still."livePhotoVideoId"
         where item."packageId" = ${created.id}::uuid
           and motion."ownerId" = ${input.ownerId}::uuid
           and motion."deletedAt" is null
-          and (${includeLocked} or not ${isLocked('motion')})
+          and (${includeLocked} or not ${lockedPreservationAsset('motion')})
         on conflict do nothing
       `.execute(tx);
         const counted = await tx
@@ -616,7 +630,8 @@ export class PreservationRepository {
         .set({
           state: patch.state,
           ...(patch.entry !== undefined && { entry: patch.entry === null ? null : jsonb(patch.entry) }),
-          ...(patch.locked !== undefined && { locked: patch.locked }),
+          // Removal can retain a newer privacy decision while a worker is still copying old state.
+          ...(patch.locked !== undefined && { locked: sql<boolean>`locked or ${patch.locked}` }),
           reasonKey: patch.reasonKey ?? null,
           error: patch.error ?? null,
           verifyState: null,
@@ -680,7 +695,7 @@ export class PreservationRepository {
         .onConflict((oc) =>
           oc.columns(['packageId', 'sourceAssetId']).doUpdateSet((eb) => ({
             entry: eb.ref('excluded.entry'),
-            locked: eb.ref('excluded.locked'),
+            locked: sql<boolean>`preservation_item.locked or ${eb.ref('excluded.locked')}`,
             verifyState: null,
           })),
         )
@@ -760,20 +775,35 @@ export class PreservationRepository {
     return new Set(rows.map(({ id }) => id));
   }
 
+  /** Package-wide totals and job progress must not reveal items withheld from an ordinary session. */
+  async restrictedPackageIds(packageIds: string[]): Promise<Set<string>> {
+    if (packageIds.length === 0) return new Set();
+    const restricted = await this.lockedBookmarkPackageIds(packageIds);
+    const { rows } = await sql<{ id: string }>`
+      select package.id from preservation_package package
+      where package.id = ${anyUuid(packageIds)} and (
+        package."includeLocked" or exists (
+          select 1 from preservation_item
+          where preservation_item."packageId" = package.id and ${lockedPackageItem}
+        ) or exists (
+          select 1 from preservation_restore_item
+          join preservation_restore on preservation_restore.id = preservation_restore_item."restoreId"
+          where preservation_restore."packageId" = package.id and ${lockedRestoreItem}
+        )
+      )
+    `.execute(this.db);
+    for (const { id } of rows) restricted.add(id);
+    return restricted;
+  }
+
   /** Whether any item of the package is Locked in the library now, or was when it was written. */
   async hasLockedItems(packageId: string): Promise<boolean> {
     const row = await this.db
       .selectFrom('preservation_item')
       .select('preservation_item.id')
-      .leftJoin('asset', 'asset.id', 'preservation_item.assetId')
       .where('preservation_item.packageId', '=', packageId)
       .where('preservation_item.state', 'in', ['copied', 'listed'])
-      .where((eb) =>
-        eb.or([
-          eb('preservation_item.locked', '=', true),
-          eb.and([eb('asset.id', 'is not', null), sql<boolean>`${isLocked('asset')}`]),
-        ]),
-      )
+      .where(lockedPackageItem)
       .limit(1)
       .executeTakeFirst();
     if (row) return true;
@@ -793,11 +823,12 @@ export class PreservationRepository {
     const assetIds = items.filter((item) => !item.locked && item.assetId).map((item) => item.assetId!);
     if (assetIds.length > 0) {
       const rows = await this.db
-        .selectFrom('asset_lock')
-        .select('assetId')
-        .where('assetId', '=', anyUuid(assetIds))
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', anyUuid(assetIds))
+        .where(lockedPreservationAsset())
         .execute();
-      const locked = new Set(rows.map((row) => row.assetId));
+      const locked = new Set(rows.map((row) => row.id));
       for (const item of items) {
         if (item.assetId && locked.has(item.assetId)) {
           hidden.add(item.id);
@@ -856,7 +887,7 @@ export class PreservationRepository {
         'asset_exif.exifImageHeight',
         'asset_exif.orientation',
         'asset_exif.projectionType',
-        isLocked('asset').as('isLocked'),
+        lockedPreservationAsset().as('isLocked'),
       ])
       .where('asset.id', '=', id)
       .executeTakeFirst();
@@ -1380,6 +1411,7 @@ export class PreservationRepository {
     return this.db
       .selectFrom('preservation_restore_item')
       .selectAll()
+      .select(retainedRestoreItem().as('locked'))
       .where('restoreId', '=', restoreId)
       .where('state', '=', 'pending')
       .$if(!!afterId, (qb) => qb.where('id', '>', afterId!))
@@ -1397,6 +1429,7 @@ export class PreservationRepository {
     return this.db
       .selectFrom('preservation_restore_item')
       .selectAll()
+      .select(retainedRestoreItem().as('locked'))
       .where('restoreId', '=', restoreId)
       .where('appliedAt', 'is', null)
       .where((eb) =>
@@ -1624,6 +1657,53 @@ export class PreservationRepository {
       .where(lockedRestoreItem)
       .execute();
     return rows.map((row) => row.id);
+  }
+  /** Archive privacy survives matching; a live source's own current rules remain reversible rules. */
+  async retainedRestoreItemIds(restoreId: string, ids: string[], matchedAssetId?: string): Promise<string[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('preservation_restore_item')
+      .select('id')
+      .where('restoreId', '=', restoreId)
+      .where('id', '=', anyUuid(ids))
+      .where(retainedRestoreItem(matchedAssetId))
+      .execute();
+    return rows.map((row) => row.id);
+  }
+  /** Publish only after file preparation, with current source privacy and the new asset committed together. */
+  async publishRestoreAsset(
+    restoreId: string,
+    itemId: string,
+    ownerId: string,
+    archiveLocked: boolean,
+    create: (tx: Transaction<DB>, locked: boolean) => Promise<Asset>,
+  ): Promise<Asset> {
+    assertExecutionActive();
+    return this.db.transaction().execute(async (tx) => {
+      const item = await tx
+        .selectFrom('preservation_restore_item')
+        .innerJoin('preservation_restore', 'preservation_restore.id', 'preservation_restore_item.restoreId')
+        .select('preservation_restore_item.id')
+        .where('preservation_restore_item.id', '=', itemId)
+        .where('preservation_restore_item.restoreId', '=', restoreId)
+        .where('preservation_restore.ownerId', '=', ownerId)
+        .where('preservation_restore_item.state', '=', 'creating')
+        .where('preservation_restore_item.appliedAt', 'is', null)
+        .forUpdate('preservation_restore_item')
+        .executeTakeFirst();
+      if (!item) throw new PreservationPackageError('restore_item_changed', 'The restoration item changed');
+      // A separate statement sees a deletion's retained lock even when acquiring the row waited for it.
+      const locked =
+        archiveLocked || (await new PreservationRepository(tx).retainedRestoreItemIds(restoreId, [itemId])).length > 0;
+      const asset = await create(tx, locked);
+      await tx
+        .updateTable('preservation_restore_item')
+        .set({ assetId: asset.id, match: 'new', locked })
+        .where('id', '=', itemId)
+        .execute();
+      assertExecutionActive();
+      return asset;
+    });
   }
   /** The owner's choices for items not yet applied. Applied items keep what was done with them. */
   async setDecisions(

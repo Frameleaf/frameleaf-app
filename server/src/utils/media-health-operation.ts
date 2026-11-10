@@ -48,6 +48,11 @@ export type MediaHealthLocateSnapshot = {
   rootIds: string[] | null;
   /** True when the search covers findings of other accounts (administrators only, checked again). */
   anyOwner: boolean;
+  /**
+   * FL-1337: a person's Look in a folder, by the folder's name. Once the search is complete each problem's
+   * history says what was found there, and the one exact copy is put back.
+   */
+  lookIn?: { folder: string };
 };
 
 export type MediaHealthOperationSnapshot = MediaHealthScanSnapshot | MediaHealthLocateSnapshot;
@@ -113,6 +118,8 @@ export const parseMediaHealthSnapshot = (value: unknown): MediaHealthOperationSn
       findingIds,
       rootIds: Array.isArray(value.rootIds) ? asStrings(value.rootIds) : null,
       anyOwner: value.anyOwner === true,
+      ...(isRecord(value.lookIn) &&
+        typeof value.lookIn.folder === 'string' && { lookIn: { folder: value.lookIn.folder } }),
     };
   }
 

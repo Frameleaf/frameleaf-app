@@ -32,6 +32,11 @@ vi.mock('src/utils/misc.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/misc.js')>()),
   useSwagger: vi.fn(),
 }));
+vi.mock('src/utils/private-log-runtime.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/utils/private-log-runtime.js')>()),
+  startPrivateLogs: vi.fn(),
+  stopPrivateLogs: vi.fn(),
+}));
 vi.mock('src/utils/shutdown.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/shutdown.js')>()),
   onStopRequest: vi.fn(),
@@ -55,8 +60,10 @@ const setup = () => {
           environment: 'testing',
           port: 0,
           helmet: {},
+          storage: {},
+          logRetentionDays: 7,
           resourcePaths: { web: { root: '/unused-web-root' } },
-          network: { trustedProxies: [] },
+          network: { trustConfiguredProxies: false, trustedProxies: [] },
           frameleafCloud: { edge: { secret: '' } },
         }),
       },

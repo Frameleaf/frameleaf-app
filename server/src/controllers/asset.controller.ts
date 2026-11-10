@@ -31,11 +31,22 @@ import {
   VideoEditVersionParamsDto,
   VideoEditVersionResponseDto,
 } from 'src/dtos/editing.dto.js';
+import {
+  LostOriginalsCheckedDto,
+  LostOriginalsQueryDto,
+  LostOriginalsResponseDto,
+} from 'src/dtos/lost-originals.dto.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
+import {
+  ProcessingFailureActionDto,
+  ProcessingFailureQueryDto,
+  ProcessingFailureResponseDto,
+} from 'src/dtos/processing-failure.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { MediaHealthService } from 'src/services/media-health.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Assets)
@@ -44,6 +55,7 @@ export class AssetController {
   constructor(
     private service: AssetService,
     private imageEnrichmentService: ImageEnrichmentService,
+    private mediaHealthService: MediaHealthService,
   ) {}
 
   @Get('statistics')
@@ -142,6 +154,57 @@ export class AssetController {
   })
   getAssetsInfo(@Auth() auth: AuthDto, @Body() dto: AssetInfoBatchDto): Promise<AssetInfoBatchResponseDto> {
     return this.service.getMany(auth, dto);
+  }
+
+  @Get('lost-originals')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'List the photos the server lost',
+    description:
+      "Lists the caller's own photos and videos whose original file the server cannot find anywhere, so a phone can look for them and send them back. Empty while asking phones is switched off.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getLostOriginals(@Auth() auth: AuthDto, @Query() dto: LostOriginalsQueryDto): Promise<LostOriginalsResponseDto> {
+    return this.mediaHealthService.listLostOriginals(auth, dto);
+  }
+
+  @Post('lost-originals/checked')
+  @Authenticated({ permission: Permission.AssetUpload })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Report lost photos a phone does not have',
+    description:
+      "Says which of the caller's lost originals this phone looked for and does not have. Anything that is not one of the caller's open lost originals is ignored.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  reportLostOriginalsChecked(@Auth() auth: AuthDto, @Body() dto: LostOriginalsCheckedDto): Promise<void> {
+    return this.mediaHealthService.recordPhoneChecked(auth, dto);
+  }
+
+  @Get('processing-failures')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({ summary: 'List asset processing failures', history: new HistoryBuilder().added('v3').alpha('v3') })
+  getProcessingFailures(
+    @Auth() auth: AuthDto,
+    @Query() query: ProcessingFailureQueryDto,
+  ): Promise<ProcessingFailureResponseDto[]> {
+    return this.service.getProcessingFailures(auth, query);
+  }
+
+  @Post('processing-failures/retry')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({ summary: 'Retry asset processing failures', history: new HistoryBuilder().added('v3').alpha('v3') })
+  retryProcessingFailures(@Auth() auth: AuthDto, @Body() dto: ProcessingFailureActionDto): Promise<void> {
+    return this.service.retryProcessingFailures(auth, dto);
+  }
+
+  @Post('processing-failures/dismiss')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({ summary: 'Dismiss asset processing failures', history: new HistoryBuilder().added('v3').alpha('v3') })
+  dismissProcessingFailures(@Auth() auth: AuthDto, @Body() dto: ProcessingFailureActionDto): Promise<void> {
+    return this.service.dismissProcessingFailures(auth, dto);
   }
 
   @Get(':id')

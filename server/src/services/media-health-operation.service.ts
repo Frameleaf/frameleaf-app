@@ -328,6 +328,8 @@ export class MediaHealthOperationService {
     await this.mediaHealth.setRunState(snapshot, 'running', result);
 
     let complete = false;
+    // FL-1337: the findings the walk's last step checked, which a Look in a folder speaks for
+    let checkedIds: string[] = [];
     while (!complete) {
       if (this.stopping) {
         await this.handBack(id, claimToken, snapshot, result);
@@ -339,6 +341,7 @@ export class MediaHealthOperationService {
       }
 
       const step = await this.mediaHealth.locateStep(snapshot, result.managedSearch);
+      checkedIds = step.checkedIds ?? [];
       result = {
         managedSearch: step.continuation ?? null,
         checked: step.checkedAssets,
@@ -361,7 +364,7 @@ export class MediaHealthOperationService {
       }
     }
 
-    await this.finish(id, claimToken, snapshot, result);
+    await this.finish(id, claimToken, snapshot, result, checkedIds);
   }
 
   private async start(id: string, claimToken: string, processed: number, total: number | null) {
@@ -383,6 +386,7 @@ export class MediaHealthOperationService {
     claimToken: string,
     snapshot: MediaHealthOperationSnapshot,
     counts: { checked: number; missing?: number; corrupt?: number; found?: number },
+    checkedIds: string[] = [],
   ) {
     if (await this.operations.beginValidation(id, claimToken)) {
       await this.mediaHealth.setRunState(snapshot, 'completed', counts);
@@ -393,6 +397,14 @@ export class MediaHealthOperationService {
         return;
       }
       this.logger.log(`Library Care ${snapshot.mode} ${id} finished (${counts.checked} checked)`);
+      if (snapshot.mode === 'locate' && snapshot.lookIn) {
+        // FL-1337: a person's Look in a folder says what it found, and puts back the one exact copy
+        await this.mediaHealth
+          .finishLookIn(snapshot, checkedIds)
+          .catch((error: unknown) =>
+            this.logger.warn(`Library Care search ${id} could not record what it found: ${bulkErrorMessage(error)}`),
+          );
+      }
       return;
     }
 

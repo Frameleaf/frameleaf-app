@@ -9,7 +9,10 @@ import {
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
+import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import type { DB } from 'src/schema/index.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -50,6 +53,7 @@ import { asUploadRequest } from 'src/utils/asset.util.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
+import { isPhoneSession, phoneName } from 'src/utils/file-steps.js';
 import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
 import {
   FileDownloadResponse,
@@ -73,6 +77,15 @@ import { fromChecksum } from 'src/utils/request.js';
 export interface AssetMediaRedirectResponse {
   targetSize: AssetMediaSize | 'original';
 }
+
+/** Internal callers decide privacy and record their receipt in the asset's publication transaction. */
+export type AssetUploadPublication = (
+  create: (tx: Transaction<DB>, locked: boolean) => Promise<Asset>,
+) => Promise<Asset>;
+
+type PreparedUploadOriginal = {
+  stored: Awaited<ReturnType<PhysicalFileRepository['linkUploadedOriginal']>>;
+};
 
 @Injectable()
 export class AssetMediaService extends BaseService {
@@ -174,7 +187,7 @@ export class AssetMediaService extends BaseService {
       this.logger.log(`Upload brought asset ${restored} back from the Trash`);
       const fileUsed =
         !(await this.storageRepository.checkFileExists(asset.originalPath)) &&
-        (await this.restoreOriginalFrom(asset, dto, file, checksums));
+        (await this.restoreOriginalFrom(auth, asset, dto, file, checksums));
       return { id: restored, visible: true, fileUsed };
     }
     const lost = await this.lostOriginalMatches(auth, checksums, { includeHidden: true });
@@ -182,7 +195,7 @@ export class AssetMediaService extends BaseService {
       return;
     }
     for (const asset of lost) {
-      if (await this.restoreOriginalFrom(asset, dto, file, checksums)) {
+      if (await this.restoreOriginalFrom(auth, asset, dto, file, checksums)) {
         const options = this.getDuplicateCheckOptions(auth);
         const visible = options ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options) : lost;
         return { id: asset.id, visible: visible.some(({ id }) => id === asset.id), fileUsed: true };
@@ -190,13 +203,26 @@ export class AssetMediaService extends BaseService {
     }
   }
 
+  /** What the history calls the device that uploaded: its session's model, else its system. */
+  private async uploadingDevice(auth: AuthDto): Promise<string | undefined> {
+    if (!auth.session) {
+      return;
+    }
+    const sessionId = auth.session.id;
+    const session = (await this.sessionRepository.getByUserId(auth.user.id)).find(({ id }) => id === sessionId);
+    // only a phone or tablet is the phone that was asked
+    return (session && isPhoneSession(session) && phoneName(session)) || undefined;
+  }
+
   private async restoreOriginalFrom(
+    auth: AuthDto,
     asset: { id: string; originalPath: string },
     dto: AssetMediaCreateDto,
     file: UploadFile,
     checksums: Buffer[],
   ) {
     const sha1 = file.legacyChecksum ?? (await this.cryptoRepository.hashFileDigests(file.originalPath)).sha1;
+    const device = await this.uploadingDevice(auth);
     const restored = await this.physicalFileRepository.restoreLostOriginal({
       assetId: asset.id,
       expectedOriginalPath: asset.originalPath,
@@ -205,6 +231,14 @@ export class AssetMediaService extends BaseService {
       sha256: checksums[0],
       sizeInBytes: file.size,
       reason: 'restored_by_upload',
+      // FL-1337: the upload is the true original, so the history gets no undo
+      finding: {
+        evidence: { fixState: 'found-again' },
+        steps: [
+          ...(device ? [{ step: 'asked-phones' as const, outcome: 'ok' as const, facts: { device } }] : []),
+          { step: 'put-back', outcome: 'ok' },
+        ],
+      },
     });
     if (restored) {
       await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
@@ -328,6 +362,20 @@ export class AssetMediaService extends BaseService {
     };
   }
 
+  private uploadOriginalChecks(assetId: string, file: UploadFile) {
+    const checks = storedCopyChecks(
+      this.storageRepository,
+      this.cryptoRepository,
+      { checksum: file.checksum, sizeInBytes: file.size },
+      (path) => this.logger.warn(`Upload ${assetId} keeps its own file: the stored copy at ${path} holds other bytes`),
+    );
+    return {
+      ...checks,
+      // A sealed Locked file cannot stand in for a plaintext upload, including one sealed meanwhile.
+      verify: async (path: string) => ((await isLockedPath(path)) ? null : checks.verify(path)),
+    };
+  }
+
   /** Post-publication ingestion is retried against the recorded asset, never another creation. */
   async finishUploadAsset(
     auth: AuthDto,
@@ -337,6 +385,7 @@ export class AssetMediaService extends BaseService {
     sidecarFile?: UploadFile,
     options: {
       preparedFile?: boolean;
+      preparedOriginal?: PreparedUploadOriginal;
       quotaCharged?: boolean;
       ingestion?: { resourceId: string; token: string; ownerId: string };
       checkIngestion?: () => Promise<void>;
@@ -359,10 +408,10 @@ export class AssetMediaService extends BaseService {
       });
       await this.storageRepository.utimes(sidecarFile.originalPath, new Date(), new Date(dto.fileModifiedAt));
     }
-    if (!options.preparedFile) {
+    if (!options.preparedFile && !options.preparedOriginal) {
       await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
     }
-    if (!options.quotaCharged) {
+    if (!options.quotaCharged && !options.preparedOriginal) {
       await this.assetRepository.upsertExif({
         exif: { assetId: asset.id, fileSizeInByte: file.size },
         lockedPropertiesBehavior: 'override',
@@ -373,17 +422,13 @@ export class AssetMediaService extends BaseService {
     // linked to that file and the upload released; new content becomes its own primary file. FL-412: only
     // a stored file proven to hold the same bytes replaces the upload's own copy.
     const expected = { checksum: file.checksum, sizeInBytes: file.size };
-    const checks = storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
-      this.logger.warn(`Upload ${asset.id} keeps its own file: the stored copy at ${path} holds other bytes`),
-    );
-    const stored = await this.physicalFileRepository.linkUploadedOriginal(asset.id, expected, {
-      ...checks,
-      // FL-721 (spec §6.1): a sealed Locked file never stands in for an upload; the upload keeps its own
-      // file (the repository already leaves encrypted files out; this holds for one sealed meanwhile)
-      verify: async (path) => ((await isLockedPath(path)) ? null : checks.verify(path)),
-      untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
-      ...(options.quotaCharged && { ingestion: options.ingestion }),
-    });
+    const stored = options.preparedOriginal
+      ? options.preparedOriginal.stored
+      : await this.physicalFileRepository.linkUploadedOriginal(asset.id, expected, {
+          ...this.uploadOriginalChecks(asset.id, file),
+          untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
+          ...(options.quotaCharged && { ingestion: options.ingestion }),
+        });
     if (stored?.linked) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.originalPath] } });
       asset.originalPath = stored.physicalFile.path;
@@ -419,10 +464,48 @@ export class AssetMediaService extends BaseService {
     dto: AssetMediaCreateDto,
     file: UploadFile,
     sidecarFile?: UploadFile,
+    publication?: AssetUploadPublication,
   ): Promise<AssetMediaResponseDto> {
     let asset: Asset | undefined;
     try {
       const prepared = await this.prepareUploadAsset(auth, dto, file);
+      if (publication) {
+        if (sidecarFile || prepared.asset.livePhotoVideoId) {
+          throw new BadRequestException('Guarded publication requires an independent original without a sidecar');
+        }
+        const id = this.cryptoRepository.randomUUID();
+        const expected = { checksum: file.checksum, sizeInBytes: file.size };
+        const checks = this.uploadOriginalChecks(id, file);
+        await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
+        const proof = await this.physicalFileRepository.proveStoredCopy(id, expected, checks.verify);
+        let original: PreparedUploadOriginal | undefined;
+        // The caller takes its final privacy decision after long file work, together with creation
+        // and its receipt. Do not repair a newly appeared existing asset outside that boundary;
+        // the checksum constraint below makes it a match without adopting any uploaded bytes.
+        asset = await publication(async (tx, locked) => {
+          const created = await this.assetRepository.create(
+            { ...prepared.asset, id },
+            prepared.lock ?? (locked ? { reason: AssetLockReason.Marked, lockedBy: auth.user.id } : undefined),
+            tx,
+          );
+          await this.assetRepository.upsertExif(
+            { exif: { assetId: created.id, fileSizeInByte: file.size }, lockedPropertiesBehavior: 'override' },
+            tx,
+          );
+          // Adopt the proof without another hash. If it is stale, keep the verified upload; moving
+          // an unused file across filesystems would put long I/O inside the publication transaction.
+          original = {
+            stored: await this.physicalFileRepository.linkUploadedOriginal(created.id, expected, checks, {
+              transaction: tx,
+              proof,
+            }),
+          };
+          return created;
+        });
+        if (!original || asset.id !== id) throw new InternalServerErrorException('Upload was not published');
+        await this.finishUploadAsset(auth, dto, file, asset, undefined, { preparedOriginal: original });
+        return { id: asset.id, status: AssetMediaStatus.CREATED };
+      }
       const restored = await this.restoreLostOriginal(auth, dto, file);
       if (restored) {
         // The photo kept its own file (it only left the Trash): the upload is not needed.

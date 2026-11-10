@@ -1,3 +1,4 @@
+import { AccountEventAdminController, AccountEventController } from 'src/controllers/account-event.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
 import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
@@ -98,6 +99,7 @@ import { PhysicalDeduplicationController } from 'src/controllers/physical-dedupl
 import { PhysicalFileTrashController } from 'src/controllers/physical-file-trash.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { PreservationController } from 'src/controllers/preservation.controller.js';
+import { PrivateLogsController } from 'src/controllers/private-logs.controller.js';
 import { PushController } from 'src/controllers/push.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
 import { RawSupportController } from 'src/controllers/raw-support.controller.js';
@@ -145,6 +147,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  PrivateLogsController,
   PhotoLocationsController,
   AssetLocationInsightController,
   SpeechController,
@@ -189,6 +192,8 @@ export const controllers = [
   HelpController,
   ICloudSyncController,
   ICloudIdentityController,
+  AccountEventAdminController,
+  AccountEventController,
   ApiKeyController,
   ActivityController,
   AlbumController,

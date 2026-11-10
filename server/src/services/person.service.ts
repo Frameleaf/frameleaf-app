@@ -64,6 +64,7 @@ import {
 } from 'src/enum.js';
 import { deferJobAdoption, publishJobResult } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -959,7 +960,10 @@ export class PersonService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetDetectFacesQueueAll, queue: QueueName.FaceDetection })
-  async handleQueueDetectFaces({ force }: JobOf<JobName.AssetDetectFacesQueueAll>): Promise<JobStatus> {
+  async handleQueueDetectFaces({
+    force,
+    includeSetAside,
+  }: JobOf<JobName.AssetDetectFacesQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       deferJobUntilDependency('workload-disabled');
@@ -970,6 +974,7 @@ export class PersonService extends BaseService {
     await this.jobRepository.queueSelection(
       JobName.AssetDetectFaces,
       this.assetJobRepository.selectionForDetectFacesJob(force),
+      ...processingSetAsideOverride(force, includeSetAside),
     );
 
     if (force === undefined) {

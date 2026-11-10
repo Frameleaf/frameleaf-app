@@ -48,7 +48,7 @@ import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
-import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
+import { LockedKeyUnavailableError, withPlainCopy } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
@@ -67,6 +67,11 @@ const rawBuffer = Buffer.from('raw image data');
 const extractedBuffer = Buffer.from('embedded image file');
 const renderedRawBuffer = Buffer.from('rendered raw image');
 const getFilterOption = (outputOptions: string[], option = '-vf') => outputOptions[outputOptions.indexOf(option) + 1];
+
+vi.mock('src/utils/locked-read.js', async (original) => {
+  const actual = await original<typeof import('src/utils/locked-read.js')>();
+  return { ...actual, withPlainCopy: vi.fn(actual.withPlainCopy) };
+});
 
 vi.mock('src/utils/raw-renderer.js', async (original) => ({
   ...(await original<typeof import('src/utils/raw-renderer.js')>()),
@@ -1939,6 +1944,133 @@ describe(MediaService.name, () => {
       });
     });
 
+    /** One queue attempt at the thumbnails, as the job system runs it: the hand-off is noted on it. */
+    const thumbnailAttempt = () =>
+      ({
+        claim: { id: newUuid(), token: newUuid(), data: {}, attempt: 1, safeToRetry: true },
+        signal: new AbortController().signal,
+        adoptions: [],
+        followups: [],
+        progress: vi.fn(),
+      }) as unknown as QueueExecution;
+
+    it('a damaged image is sent to Library care, not failed', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const message = 'VipsJpeg: premature end of JPEG image';
+      // the image worker could not decode the original (`decodeFailure`)
+      mocks.media.decodeImage.mockRejectedValue(new SharpOperationError(message));
+      const execution = thumbnailAttempt();
+
+      await expect(queueExecution.run(execution, () => sut.handleGenerateThumbnails({ id: asset.id }))).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.MediaHealthFixAsset,
+        data: { id: asset.id, from: 'preview', message },
+      });
+      expect(execution.handedToCare).toBe(true);
+    });
+
+    it('two attempts at the same photo at once: one failing after its own hand-off leaves the other hand-off in place', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.decodeImage.mockRejectedValue(new SharpOperationError('VipsJpeg: premature end of JPEG image'));
+      const handingOver = thumbnailAttempt();
+      const failing = thumbnailAttempt();
+      const cleanupFailure = new Error('could not delete the temporary copy');
+      const handedOver = Promise.withResolvers<void>();
+      const failed = Promise.withResolvers<void>();
+      // the real wrapper runs the job, then cleans up the encrypted temporary copy: for one attempt that throws,
+      // after the other attempt has handed the photo over and before it returns
+      const plainCopy: typeof withPlainCopy = async (path, run) => {
+        const status = await run(path);
+        if (queueExecution.getStore() === failing) {
+          await handedOver.promise;
+          failed.resolve();
+          throw cleanupFailure;
+        }
+        handedOver.resolve();
+        await failed.promise;
+        return status;
+      };
+      vi.mocked(withPlainCopy).mockImplementationOnce(plainCopy).mockImplementationOnce(plainCopy);
+
+      const [settled, failure] = await Promise.allSettled([
+        queueExecution.run(handingOver, () => sut.handleGenerateThumbnails({ id: asset.id })),
+        queueExecution.run(failing, () => sut.handleGenerateThumbnails({ id: asset.id })),
+      ]);
+
+      expect(settled).toEqual({ status: 'fulfilled', value: JobStatus.Skipped });
+      expect(failure).toEqual({ status: 'rejected', reason: cleanupFailure });
+      // the hand-off belongs to the attempt that made it, so the failing attempt could not take it away
+      expect(handingOver.handedToCare).toBe(true);
+    });
+
+    it.each([
+      new SharpOperationError("VipsForeignSave: can't open /data/thumbs/x.webp: Permission denied"),
+      new SharpOperationError('vips_colourspace: no known route from P3 to sRGB'),
+    ])('a preview that could not be written fails the job and is never sent to Library care: %s', async (failure) => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      // the original decoded; making or writing a preview from it failed (`decodeFailure` is false)
+      mocks.media.generateThumbnail.mockRejectedValue(failure);
+      const execution = thumbnailAttempt();
+
+      await expect(queueExecution.run(execution, () => sut.handleGenerateThumbnails({ id: asset.id }))).rejects.toBe(
+        failure,
+      );
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+      expect(execution.handedToCare).toBeUndefined();
+    });
+
+    it('fails, instead of going back to Library care, when Library care asked for the previews of a file that opens', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const failure = new SharpOperationError('VipsJpeg: premature end of JPEG image');
+      mocks.media.decodeImage.mockRejectedValue(failure);
+      const execution = thumbnailAttempt();
+
+      await expect(
+        queueExecution.run(execution, () => sut.handleGenerateThumbnails({ id: asset.id, afterCare: true })),
+      ).rejects.toThrow(failure.message);
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+      expect(execution.handedToCare).toBeUndefined();
+    });
+
+    it('an unsupported RAW is sent too', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
+      const failure = new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: false, enhancedRaw: { enabled: true } } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.MediaHealthFixAsset,
+        data: { id: asset.id, from: 'preview', message: failure.message },
+      });
+    });
+
+    it.each([
+      new SharpOperationError('Sharp child closed before the task finished'),
+      new SharpOperationError('image worker stopped making progress'),
+      new SharpOperationError('operation timed out'),
+      new RawRenderError('timeout', 'ETIMEDOUT'),
+    ])('a timeout or worker exit still fails the job so it retries: %s', async (failure) => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.generateThumbnail.mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(failure);
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+    });
+
     it('should skip unsupported or corrupt raw files', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.cr2' })
         .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
@@ -1974,8 +2106,6 @@ describe(MediaService.name, () => {
       new RawRenderError('timeout', 'ETIMEDOUT'),
       new RawRenderError('resource_limit', 'ERR_RAW_RESOURCE_LIMIT'),
       new RawRenderError('io', 'EIO'),
-      new RawRenderError('damaged', 'ERR_RAW_DAMAGED'),
-      new RawRenderError('decode_failed', 'ERR_RAW_DECODE'),
     ])('propagates classified RAW failure for retry or diagnosis: %s', async (failure) => {
       const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
       mocks.systemMetadata.get.mockResolvedValue({
@@ -2124,8 +2254,10 @@ describe(MediaService.name, () => {
       const error = new SharpOperationError('output encoding failed');
       mocks.media.generateThumbnail.mockRejectedValueOnce(error);
 
+      // FL-1337: an output failure is the job's, not the photo's: it fails to be retried
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
 
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
       expect(renderRawWithLibRaw).not.toHaveBeenCalled();
       expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
     });
@@ -2285,7 +2417,7 @@ describe(MediaService.name, () => {
 
     it('does not repeat a failed sensor attempt or use the embedded JPEG to hide it', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
-      const error = new RawRenderError('damaged', 'ERR_RAW_DAMAGED');
+      const error = new RawRenderError('io', 'EIO');
       mocks.systemMetadata.get.mockResolvedValue({
         image: { fullsize: { enabled: true }, extractEmbedded: true, enhancedRaw: { enabled: true } },
       });
@@ -6192,8 +6324,12 @@ describe(MediaService.name, () => {
           targetResolution: '1080p',
         },
       });
-      await sut.handleVideoConversion({ id: 'video-id' });
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledExactlyOnceWith({
+        assetId: 'video-id',
+        transcodeSkippedFor: expect.stringMatching(new RegExp(`^${asset.checksum.toString('hex')}:[a-f0-9]{64}$`)),
+      });
     });
 
     describe('should skip transcoding for accepted audio codecs with optimal policy if video is fine', () => {

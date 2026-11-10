@@ -7,6 +7,7 @@ import { AlbumInviteEmail } from 'src/emails/album-invite.email.js';
 import { AlbumUpdateEmail } from 'src/emails/album-update.email.js';
 import { GalleryInviteEmail } from 'src/emails/gallery-invite.email.js';
 import { ItemShareEmail } from 'src/emails/item-share.email.js';
+import { NewSignInEmail } from 'src/emails/new-sign-in.email.js';
 import { PasswordLinkEmail } from 'src/emails/password-link.email.js';
 import { SignInReminderEmail } from 'src/emails/sign-in-reminder.email.js';
 import { StudioInquiryEmail } from 'src/emails/studio-inquiry.email.js';
@@ -74,6 +75,7 @@ export enum EmailTemplate {
   RESET_PASSWORD = 'reset-password',
   PASSWORD_LINK = 'password-link',
   FRAMELEAF_SIGN_IN_REMINDER = 'frameleaf-sign-in-reminder',
+  NEW_SIGN_IN = 'new-sign-in',
 
   // ALBUM
   ALBUM_INVITE = 'album-invite',
@@ -175,7 +177,11 @@ export interface AlbumUpdateEmailProps extends BaseEmailProps {
   cid?: string;
 }
 
+export type NewSignInEmailProps = BaseEmailProps &
+  ({ kind: 'attempts' } | { kind: 'new-device'; device: string; place: string; time: string });
+
 export type EmailRenderRequest =
+  | { template: EmailTemplate.NEW_SIGN_IN; data: NewSignInEmailProps; customTemplate?: string }
   | {
       template: EmailTemplate.TEST_EMAIL;
       data: TestEmailProps;
@@ -362,6 +368,9 @@ export class EmailRepository {
         return createElement(TestEmail, { ...data, customTemplate });
       }
 
+      case EmailTemplate.NEW_SIGN_IN: {
+        return createElement(NewSignInEmail, data);
+      }
       case EmailTemplate.WELCOME: {
         return createElement(WelcomeEmail, { ...data, customTemplate });
       }

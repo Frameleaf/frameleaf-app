@@ -39,6 +39,10 @@ describe('Library care settings (FL-69, settings-catalog.mjs:905-977)', () => {
         'Preserve manual metadata on rerun',
         'Rule provenance and model versions identify replaceable generated output.',
       ],
+      autoRepair: [
+        'Repair damaged photos by themselves',
+        'A repaired copy takes the damaged one’s place, and the damaged file is kept beside it. Any repair can be undone.',
+      ],
     });
   });
 });

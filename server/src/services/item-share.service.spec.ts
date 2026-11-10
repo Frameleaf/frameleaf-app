@@ -15,7 +15,7 @@ import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { newUuid } from 'test/small.factory.js';
-import { ServiceMocks, newTestService } from 'test/utils.js';
+import { ServiceMocks, expectNoSecretsInAccountEvents, newTestService } from 'test/utils.js';
 
 /**
  * FL-83 (AL-30b, owner decision 2026-09-27): sharing individual items with a person in this library.
@@ -79,6 +79,12 @@ describe(ItemShareService.name, () => {
         count: 2,
         link: `https://photos.family.example${SHARED_WITH_YOU_PATH}`,
       });
+      // FL-808: one row per recipient: their name and how many items, never the items' paths
+      expect(mocks.accountEvent.create).toHaveBeenCalledTimes(1);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: owner.id, action: 'item-shared', subject: 'Jamie', detail: '2' }),
+      );
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, [a, b]);
     });
 
     it('does not notify again for items that were already shared', async () => {

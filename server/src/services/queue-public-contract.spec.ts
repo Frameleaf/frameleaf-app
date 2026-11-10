@@ -40,6 +40,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.LockedUnseal,
       JobName.LockedRewrap,
       JobName.LockedSweep,
+      JobName.MediaHealthFixAsset,
     ]);
     const legacyNames = Object.values(JobName).filter((name) => !internal.has(name));
     const schema = QueueJobResponseDto.schema.shape.name;

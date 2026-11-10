@@ -39,6 +39,18 @@ const huffmanTables = (bytes: Buffer) =>
     })
     .sort();
 const pixels = (bytes: Buffer) => sharp(bytes).raw().toBuffer();
+/** A JPEG of the same noise every time: no long runs of one byte, and about the same bytes on every row. */
+const noise = (width: number, height: number) => {
+  const values = Buffer.alloc(width * height * 3);
+  let seed = 1;
+  for (let index = 0; index < values.length; index++) {
+    seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+    values[index] = seed >>> 24;
+  }
+  return sharp(values, { raw: { width, height, channels: 3 } })
+    .jpeg()
+    .toBuffer();
+};
 
 describe('SharpOperations.repairJpeg', () => {
   let directory: string;
@@ -101,6 +113,16 @@ describe('SharpOperations.repairJpeg', () => {
     const { result, output } = await repair(good.subarray(0, Math.floor(good.length * 0.7)));
     expect(result).toMatchObject({ method: 'rebuilt', width: 320, height: 240 });
     await expect(sharp(output, { failOn: 'warning' }).raw().toBuffer()).resolves.toBeDefined();
+  });
+
+  it('says how much of a cut-off picture was saved (FL-1337)', async () => {
+    // a noisy picture spends about the same bytes on every row, so a cut at 70% of them keeps about 70% of its rows
+    const textured = await noise(320, 240);
+    const { result } = await repair(textured.subarray(0, Math.floor(textured.length * 0.7)));
+    expect(result.method).toBe('rebuilt');
+    expect(result.percentSaved).toBeGreaterThan(55);
+    expect(result.percentSaved).toBeLessThan(85);
+    // a lossless repair keeps the whole picture, so it says nothing (see the `toEqual` above)
   });
 
   it('trims zero padding after a cut', async () => {

@@ -426,6 +426,8 @@ export const adminConfigDefaults = {
     duplicateReview: true,
     incrementalEnrichment: true,
     manualMetadata: true,
+    autoRepair: true,
+    askPhones: true,
   },
   // FL-422: Edited masters and AI restoration.
   editing: {

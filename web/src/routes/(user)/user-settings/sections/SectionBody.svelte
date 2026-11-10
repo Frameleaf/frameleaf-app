@@ -13,6 +13,7 @@
   import RemoteAccessSection from '$lib/components/frameleaf/cloud/RemoteAccessSection.svelte';
   import CareProgress from '$lib/components/frameleaf/settings/care/CareProgress.svelte';
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
+  import FileProblems from '$lib/components/frameleaf/settings/care/FileProblems.svelte';
   import PhotoLocationScan from '$lib/components/frameleaf/settings/care/PhotoLocationScan.svelte';
   import ThingsToFix from '$lib/components/frameleaf/settings/care/ThingsToFix.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
@@ -59,6 +60,8 @@
     <FrameleafSignInSection />
   {:else if section.key === 'integrity'}
     <FileChecks />
+  {:else if section.key === 'files'}
+    <FileProblems />
   {:else if maintenanceSection}
     <MaintenanceSection section={maintenanceSection} />
   {:else if section.key === 'accounts'}
@@ -70,6 +73,8 @@
   {/if}
 {:else if section.key === 'repair'}
   <ThingsToFix />
+{:else if section.key === 'files'}
+  <FileProblems />
 {:else if section.key === 'contents'}
   <TrashSection />
 {:else if section.key === 'location-scan'}

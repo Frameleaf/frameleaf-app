@@ -118,6 +118,29 @@ export class ImmichSource {
     return hash.digest('hex');
   }
 
+  /**
+   * Where Immich was last moving each original (its `move_history` rows, one per photo and kind), by photo id.
+   * Empty when the source has no such table. The pair (entityId, pathType) is unique there.
+   */
+  async intendedPaths(assetIds: string[]): Promise<Map<string, string>> {
+    const moves = new Map<string, string>();
+    if (assetIds.length === 0) return moves;
+    const [table] = await this.db.query(`SELECT to_regclass('public.move_history') IS NOT NULL AS present`);
+    if (!table?.present) return moves;
+    for (let index = 0; index < assetIds.length; index += 1000) {
+      const rows = await this.db.query(
+        `SELECT "entityId"::text AS "entityId", "newPath" FROM public.move_history
+        WHERE "pathType" = 'original' AND "entityId" IN (SELECT jsonb_array_elements_text($1::text::jsonb)::uuid)
+        ORDER BY "entityId"`,
+        [JSON.stringify(assetIds.slice(index, index + 1000))],
+      );
+      for (const row of rows) {
+        if (typeof row.newPath === 'string' && row.newPath) moves.set(String(row.entityId), row.newPath);
+      }
+    }
+    return moves;
+  }
+
   private async noodleOnlyData(): Promise<string[]> {
     const [found] = await this.db.query(
       `SELECT coalesce(array_agg(c.relname::text), '{}') AS tables FROM pg_class c

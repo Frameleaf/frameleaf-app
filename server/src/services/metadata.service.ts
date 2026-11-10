@@ -33,6 +33,7 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { afterJobCommit, attemptOutputPath, jobSignal, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
@@ -315,13 +316,14 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.AssetExtractMetadataQueueAll, queue: QueueName.MetadataExtraction })
   async handleQueueMetadataExtraction(job: JobOf<JobName.AssetExtractMetadataQueueAll>): Promise<JobStatus> {
-    const { force } = job;
+    const { force, includeSetAside } = job;
 
     await this.jobRepository.queueSelection(
       JobName.AssetExtractMetadata,
       process.env.FRAMELEAF_HDR_IMAGES === 'experimental'
         ? this.assetJobRepository.selectionForMetadataExtraction(force, true)
         : this.assetJobRepository.selectionForMetadataExtraction(force),
+      ...processingSetAsideOverride(force, includeSetAside),
     );
 
     return JobStatus.Success;

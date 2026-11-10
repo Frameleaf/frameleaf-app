@@ -24,12 +24,19 @@ export class BackupDeviceRepository {
     private db: Kysely<DB>,
   ) {}
   register(ownerId: string, dto: BackupDeviceWriteDto) {
+    const { phoneItemCount, pendingReasons, ...rest } = dto;
+    // FL-771: older apps omit the receipt fields; an omitted field keeps what is stored.
+    const receipt = {
+      ...(phoneItemCount === undefined ? {} : { phoneItemCount }),
+      ...(pendingReasons === undefined ? {} : { pendingReasons }),
+    };
     return this.db.transaction().execute((tx) =>
       tx
         .insertInto('backup_device')
         .values({
           ownerId,
-          ...dto,
+          ...rest,
+          ...receipt,
           lastSuccessfulBackupAt: dto.lastSuccessfulBackupAt ? new Date(dto.lastSuccessfulBackupAt) : null,
           deletedAt: null,
         })
@@ -40,6 +47,7 @@ export class BackupDeviceRepository {
             platform: dto.platform,
             appVersion: dto.appVersion,
             pendingCount: dto.pendingCount,
+            ...receipt,
             lastSuccessfulBackupAt: dto.lastSuccessfulBackupAt ? new Date(dto.lastSuccessfulBackupAt) : null,
             reportedAt: sql`clock_timestamp()`,
             deletedAt: null,
@@ -59,6 +67,32 @@ export class BackupDeviceRepository {
       .limit(page.limit + 1)
       .offset(page.offset)
       .execute();
+  }
+  /** FL-771: the latest completed check per device; a newer unfinished run never replaces it. */
+  lastChecks(deviceIds: string[]) {
+    if (deviceIds.length === 0) return Promise.resolve([]);
+    return this.db
+      .selectFrom('backup_reconciliation')
+      .distinctOn('deviceId')
+      .select(['id', 'deviceId', 'checkedAt', 'completedAt', 'itemsChecked', 'itemsMissing'])
+      .where('deviceId', 'in', deviceIds)
+      .where('completedAt', 'is not', null)
+      .orderBy('deviceId')
+      .orderBy('completedAt', 'desc')
+      .orderBy('id', 'desc')
+      .execute();
+  }
+  /** An own, current device; another owner's or a removed device is not found. */
+  async get(ownerId: string, id: string) {
+    const device = await this.db
+      .selectFrom('backup_device')
+      .selectAll()
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirst();
+    if (!device) throw new NotFoundException('Backup device not found');
+    return device;
   }
   async remove(ownerId: string, id: string) {
     const row = await this.db.transaction().execute((tx) =>

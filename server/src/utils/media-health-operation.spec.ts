@@ -19,6 +19,23 @@ describe('media-health-operation (FL-69)', () => {
       ).toEqual({ mode: 'locate', userId: 'u', runId: 'r', findingIds: ['a', 'b'], rootIds: null, anyOwner: false });
     });
 
+    it('reads the folder a person asked to look in, ignoring one it cannot read (FL-1337)', () => {
+      const base = {
+        mode: 'locate',
+        userId: 'u',
+        runId: 'r',
+        findingIds: ['a'],
+        rootIds: ['managed'],
+        anyOwner: false,
+      };
+      expect(parseMediaHealthSnapshot({ ...base, lookIn: { folder: 'Holiday drive' } })).toEqual({
+        ...base,
+        lookIn: { folder: 'Holiday drive' },
+      });
+      expect(parseMediaHealthSnapshot({ ...base, lookIn: { folder: 3 } })).toEqual(base);
+      expect(parseMediaHealthSnapshot({ ...base, lookIn: 'Holiday drive' })).toEqual(base);
+    });
+
     it('reads a scheduled incremental scan, ignoring a date it cannot read (Library care)', () => {
       const base = { mode: 'scan', userId: 'u', missingRunId: 'm', corruptRunId: 'c' } as const;
       expect(parseMediaHealthSnapshot({ ...base, changedSince: '2026-09-20T02:00:00.000Z', scheduled: true })).toEqual({

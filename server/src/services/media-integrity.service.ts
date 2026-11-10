@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { execFile as execFileCallback } from 'node:child_process';
+import { open } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import type { Stats } from 'node:fs';
 import { AssetType, Colorspace, MediaHealthStatus } from 'src/enum.js';
@@ -7,12 +8,27 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
 const execFile = promisify(execFileCallback);
+/** Whether the file's first 64 KiB hold a JPEG start marker; undefined when it could not be read (FL-1337). */
+const hasJpegMarker = async (path: string): Promise<boolean | undefined> => {
+  try {
+    const file = await open(path, 'r');
+    try {
+      const { bytesRead, buffer } = await file.read(Buffer.alloc(JPEG_MARKER_WINDOW), 0, JPEG_MARKER_WINDOW, 0);
+      return findJpegMarker(buffer.subarray(0, bytesRead)) !== null;
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return undefined;
+  }
+};
 // Admin override for full decoding of long videos. Native operations retain their concurrency slot after timeout.
 const validationTimeout = () => {
   const value = Number(readAliasedEnv('FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS') ?? 120_000);
@@ -30,8 +46,16 @@ export type MediaIntegrityResult =
     }
   | { status: 'missing'; reason: 'file_missing' }
   | { status: 'unreadable'; reason: 'access_denied' | 'not_regular_file' }
-  | { status: 'corrupt'; reason: 'expected_mismatch' | 'empty_file' | 'decode_failed' }
-  | { status: 'unsupported'; reason: 'raw_decode_unsupported' | 'media_type_unsupported' | 'decode_unsupported' }
+  /**
+   * FL-1337: `message` is the decoder's own words, when a decode failed, so a damaged file can be told
+   * apart by its cause (`classifyFileProblem`). Raw text: never shown on an everyday screen or stored.
+   */
+  | { status: 'corrupt'; reason: 'expected_mismatch' | 'empty_file' | 'decode_failed'; message?: string }
+  | {
+      status: 'unsupported';
+      reason: 'raw_decode_unsupported' | 'media_type_unsupported' | 'decode_unsupported';
+      message?: string;
+    }
   | { status: 'timeout'; reason: 'validation_timeout' | 'decode_timeout' }
   /**
    * FL-721 (spec §8.3): a sealed Locked file (its bytes start with `FLLK`). It is never hashed or
@@ -48,6 +72,7 @@ export type MediaIntegrityResult =
         | 'raw_decode_damaged'
         | 'decode_unverified'
         | 'validation_busy';
+      message?: string;
     };
 export type MediaIntegrityInput = {
   path: string;
@@ -231,13 +256,25 @@ export class MediaIntegrityService {
         return { status: 'unsupported', reason: 'raw_decode_unsupported' };
       }
       const message = error instanceof Error ? error.message : '';
+      const said = message ? { message } : {};
       if (/unsupported|decoder.*not found|unknown decoder/i.test(message)) {
-        return { status: 'unsupported', reason: 'decode_unsupported' };
+        // "Unsupported" on a file that holds a JPEG start marker is a damaged JPEG, not an unknown format.
+        if (/unsupported/i.test(message) && isJpegFileName(input.originalFileName)) {
+          const marked = await hasJpegMarker(input.path);
+          if (marked === undefined) {
+            // FL-1337: a read that failed says nothing, and an unsupported file is left as it is: so it is busy
+            return { status: 'transient', reason: 'io_failed' };
+          }
+          if (marked) {
+            return { status: 'corrupt', reason: 'decode_failed', ...said };
+          }
+        }
+        return { status: 'unsupported', reason: 'decode_unsupported', ...said };
       }
       if (classifyImageDecodeFailure(error, { isRaw: false }) === MediaHealthStatus.CorruptConfirmed) {
-        return { status: 'corrupt', reason: 'decode_failed' };
+        return { status: 'corrupt', reason: 'decode_failed', ...said };
       }
-      return { status: 'transient', reason: 'decode_unverified' };
+      return { status: 'transient', reason: 'decode_unverified', ...said };
     }
   }
 }

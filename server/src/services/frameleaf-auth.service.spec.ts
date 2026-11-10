@@ -1101,8 +1101,11 @@ describe(FrameleafAuthService.name, () => {
         expect.objectContaining({ sid: 'fl-sid', sub: 'fl-sub', userId: user.id }),
       );
 
+      expect(mocks.signInSecurity.signedIn).toHaveBeenCalledWith(user, loginDetails);
+
       mocks.frameleafAccount.takeHandoff.mockResolvedValue(void 0);
       await expect(sut.redeemHandoff({ code }, loginDetails)).rejects.toThrow('not valid');
+      expect(mocks.signInSecurity.signedIn).toHaveBeenCalledTimes(1);
     });
 
     it('returns only to a home address this server published (FL-167)', async () => {

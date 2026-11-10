@@ -217,6 +217,15 @@ describe('Library Care health tool (FL-69)', () => {
     await waitFor(() => expect(state.sdk.cancelMediaOperation).toHaveBeenCalledWith({ id: 'op-1' }));
   });
 
+  it('links each row to its What happened sheet in Library care (FL-1338)', async () => {
+    renderPage([item(), item({ id: 'health-2', assetId: 'asset-2', originalFileName: 'Dock.jpg' })]);
+
+    await userEvent.click(screen.getByRole('button', { name: 'What happened to Dock.jpg' }));
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=care&section=files&file=health-2');
+    await userEvent.click(screen.getByRole('button', { name: 'What happened to Lake.jpg' }));
+    expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=care&section=files&file=health-1');
+  });
+
   it('offers Repair on the reader’s own damaged JPEG only', async () => {
     const damaged = (id: string, ownerId: string) =>
       item({

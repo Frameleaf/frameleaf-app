@@ -103,6 +103,7 @@
   import {
     createJob,
     deferImageDescriptionRequeue,
+    getAssetInfo,
     getImageDescriptionRequeueEstimate,
     getAnalyticsScopes,
     getQueueJobs,
@@ -966,6 +967,31 @@
   /** The jobs-over-time graph draws only while its disclosure is open. */
   let trendOpen = $state(false);
   let detailOpen = $state(false);
+  /** The open problem of the failed job's photo, found when its details open (one lookup per dialog). */
+  let detailProblem = $state<{ photo: string; findingId: string } | null>(null);
+  $effect(() => {
+    const current = detail;
+    const photo = detailOpen && current?.status === 'failed' ? current.data?.id : undefined;
+    detailProblem = null;
+    if (typeof photo !== 'string') {
+      return;
+    }
+    // a slow answer for an earlier dialog must not show on a later one
+    let stale = false;
+    void (async () => {
+      try {
+        const asset = await getAssetInfo({ id: photo });
+        if (!stale && asset?.fileProblem) {
+          detailProblem = { photo, findingId: asset.fileProblem.findingId };
+        }
+      } catch {
+        // a photo that can't be read just shows nothing extra
+      }
+    })();
+    return () => {
+      stale = true;
+    };
+  });
 
   // A new queue or tab starts from its first page with its own list.
   $effect(() => {
@@ -1897,12 +1923,19 @@
         <div class="jm-failure">
           <h3>{$t('frameleaf_jobs_detail_error')}</h3>
           <p>{detail.failedReason || $t('frameleaf_jobs_detail_error_none')}</p>
-          <Button onclick={() => void goto(Route.systemWorkers())}>{$t('frameleaf_jobs_check_workers')}</Button>
-          {#if detail.id}
-            <Button variant="primary" onclick={() => detail && void oneJob(detail, 'retry')}>
-              {$t('frameleaf_jobs_retry_one')}
-            </Button>
-          {/if}
+          <div class="jm-failure-actions">
+            <Button onclick={() => void goto(Route.systemWorkers())}>{$t('frameleaf_jobs_check_workers')}</Button>
+            {#if detailProblem}
+              <a class="button" href={commandCenterUrl('care', 'files', { file: detailProblem.findingId })}>
+                {$t('frameleaf_jobs_in_library_care')}
+              </a>
+            {/if}
+            {#if detail.id}
+              <Button variant="primary" onclick={() => detail && void oneJob(detail, 'retry')}>
+                {$t('frameleaf_jobs_retry_one')}
+              </Button>
+            {/if}
+          </div>
         </div>
       {:else if detail.id && STARTABLE.has(detail.status)}
         <div class="jm-detail-actions">
@@ -2510,6 +2543,11 @@
     margin: 0 0 4px;
     font-size: 13px;
     color: var(--jm-red);
+  }
+  .jm-failure-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
   }
   .jm-failure p {
     margin: 0 0 10px;

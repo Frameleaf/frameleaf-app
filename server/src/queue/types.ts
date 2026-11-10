@@ -91,6 +91,8 @@ export type QueueExecution = {
   progressUnits: number;
   outcome?: 'completed' | 'failed';
   dependencyReason?: JobDependencyReason;
+  /** FL-1337: this attempt handed its photo to Library care. It ends with the attempt; no other attempt sees it. */
+  handedToCare?: true;
 };
 export type QueueDispatch =
   | { type: 'execute'; claim: QueueClaim }

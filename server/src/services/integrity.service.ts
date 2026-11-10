@@ -48,6 +48,7 @@ import { FileDownloadResponse } from 'src/utils/file.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, handlePromiseError } from 'src/utils/misc.js';
+import { unreachableRoots } from 'src/utils/storage-reach.js';
 
 /** FL-520: how many past checks "Recent checks" keeps. */
 export const INTEGRITY_HISTORY_KEPT = 30;
@@ -213,34 +214,10 @@ export class IntegrityService extends BaseService {
    * cannot be reached says how many missing files are inside it.
    */
   private async getUnreachableFolders(): Promise<IntegrityUnreachableFolder[]> {
-    const candidates: Omit<IntegrityUnreachableFolder, 'missing'>[] = [];
-    for (const folder of [StorageFolder.Library, StorageFolder.Upload, StorageFolder.EncodedVideo]) {
-      const base = StorageCore.getBaseFolder(folder);
-      if ((await this.pathState(`${base}/.frameleaf`)) === 'missing') {
-        candidates.push({ kind: 'storage', name: '', path: base });
-      }
-    }
     const libraries = await this.libraryRepository.getAll().catch(() => []);
-    for (const library of libraries) {
-      for (const importPath of library.importPaths) {
-        if ((await this.pathState(importPath)) === 'missing') {
-          candidates.push({ kind: 'library', name: library.name, path: importPath.replace(/\/+$/, '') });
-        }
-      }
-    }
+    const candidates = await unreachableRoots(this.storageRepository, libraries);
     const counts = await this.integrityRepository.countMissingUnder(candidates.map(({ path }) => `${path}/`));
-    return candidates.map((candidate, index) => ({ ...candidate, missing: counts[index] }));
-  }
-
-  /** `missing` only when the filesystem says so; any other failure says nothing. */
-  private async pathState(path: string): Promise<'present' | 'missing' | 'unknown'> {
-    try {
-      await this.storageRepository.stat(path);
-      return 'present';
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException)?.code;
-      return code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unknown';
-    }
+    return candidates.map(({ kind, name, path }, index) => ({ kind, name, path, missing: counts[index] }));
   }
 
   /** FL-520: the photos behind the missing or damaged findings, for "Restore from a backup". */

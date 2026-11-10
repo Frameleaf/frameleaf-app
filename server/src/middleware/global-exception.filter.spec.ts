@@ -44,11 +44,13 @@ describe('FL-328 server error display contract', () => {
     const { res, body } = respond(new HttpException(input.response, input.status));
     expect(res.status).toHaveBeenCalledWith(input.status);
     expect(body).toEqual(expected);
-    expect(res.header).toHaveBeenCalledWith({
-      [RequestHeader.CorrelationId]: 'request-a',
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
-    });
+    expect(res.header).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [RequestHeader.CorrelationId]: 'request-a',
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      }),
+    );
   });
 
   it('keeps real setup refusal semantics', () => {
@@ -130,6 +132,7 @@ describe('FL-328 server error display contract', () => {
       'request-b',
     );
     expect(a.body.displayError.args).toEqual({ retryAfter: 2 });
+    expect(a.res.header).toHaveBeenCalledWith(expect.objectContaining({ 'Retry-After': '2' }));
     expect(b.body.displayError.args).toEqual({ retryAfter: 0 });
     expect(JSON.stringify(b.body)).not.toContain('Account A');
     expect(b.res.header).toHaveBeenCalledWith(expect.objectContaining({ [RequestHeader.CorrelationId]: 'request-b' }));

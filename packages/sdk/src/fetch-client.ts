@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.2.13
+ * 1.2.14
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -54,9 +54,53 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type AccountEventResponseDto = {
+    /** What happened, for example `signed-in`, `sign-in-failed`, `signed-out`, `session-revoked`, `password-changed`, `pin-changed`, `api-key-created`, `shared-link-created`, `partner-added` or `item-shared`; admin events use the administrator history actions. New values may appear. */
+    action: string;
+    /** For admin events, the administrator; null otherwise */
+    actorId: string | null;
+    /** For admin events, the administrator's name; null otherwise */
+    actorName: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** What the action carries, such as how someone signed in; null otherwise */
+    detail: string | null;
+    /** The client's operating system */
+    deviceOS: string | null;
+    /** The client, as the session list names it */
+    deviceType: string | null;
+    /** Event ID */
+    id: string;
+    /** The client address cut to its /24 or /48; null when unknown */
+    ipPrefix: string | null;
+    /** `account` for what the account did, `admin` for what an administrator did to it */
+    source: string;
+    /** A name: a device, an API key, a partner, an album or the account */
+    subject: string;
+    /** The account the event is about */
+    userId: string;
+    /** `home`, `direct` or `relay`; null when not known */
+    via: string | null;
+};
+export type AccountActivityResponseDto = {
+    /** Newest first */
+    events: AccountEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
+};
 export type AttentionCheckDto = {
     kind: AttentionKind;
     state: AttentionCheckState;
+};
+export type AttentionFileProblemsDto = {
+    /** Damaged or missing files Frameleaf fixed in the last 7 days */
+    fixed: number;
+    /** When the newest of those fixes was made, or null when there are none */
+    latest: string | null;
+    /** Damaged or missing files that need the reader */
+    needsYou: number;
+    /** When the earliest of those fixes was made, or null when there are none */
+    since: string | null;
 };
 export type AttentionBackupDto = {
     /** Whole days since it last finished, when it is behind */
@@ -115,6 +159,8 @@ export type AttentionResponseDto = {
     checks: AttentionCheckDto[];
     /** Overview items an administrator dismissed (FL-363); they stop counting as needing attention */
     dismissed: string[];
+    /** FL-1337: the Overview counts of damaged and missing files, for the files the reader may see. They add no item and change no check. */
+    fileProblems: AttentionFileProblemsDto;
     /** What needs attention, the most urgent first */
     items: AttentionItemDto[];
 };
@@ -142,15 +188,32 @@ export type OAuthCheckResponseDto = {
     /** Whether the provider answered */
     ok: boolean;
 };
+export type BackupDeviceLastCheckDto = {
+    checkedAt: string;
+    completedAt: string;
+    id: string;
+    itemsChecked: number;
+    itemsMissing: number;
+};
+export type BackupPendingReasonDto = {
+    /** Free-form reason code, e.g. wifi, charging, low-power, too-large; stored verbatim */
+    code: string;
+    count: number;
+};
 export type BackupDeviceDto = {
     appVersion: string;
     deviceKey: string;
     displayName: string;
     id: string;
+    /** Latest completed server check; incomplete runs are ignored, null before any completes */
+    lastCheck: (BackupDeviceLastCheckDto) | null;
     lastSuccessfulBackupAt: string | null;
     model: string;
     ownerId: string;
     pendingCount: number;
+    pendingReasons: BackupPendingReasonDto[];
+    /** Device-reported item count; null until reported */
+    phoneItemCount: number | null;
     platform: string;
     /** Elapsed whole days since reported success; null if never reported */
     quietForDays: number | null;
@@ -1728,6 +1791,10 @@ export type AdminConfigLibraryDto = {
     watch: AdminConfigLibraryWatchDto;
 };
 export type AdminConfigLibraryCareDto = {
+    /** Ask phones for missing photos */
+    askPhones?: boolean;
+    /** Repair damaged photos by themselves */
+    autoRepair?: boolean;
     /** Health scans verify each original against its recorded checksum */
     checksumScan: boolean;
     /** Group near-duplicates for review; deletion stays explicit */
@@ -1929,6 +1996,14 @@ export type AdminConfigFacesDto = {
 export type AdminConfigMetadataDto = {
     faces: AdminConfigFacesDto;
 };
+export type MetricsStatusDto = {
+    /** Whether the local metrics listener is configured to run */
+    enabled: boolean;
+};
+export type MetricsStatusDtoRead = {
+    /** Whether the local metrics listener is configured to run */
+    enabled: boolean;
+};
 export type AdminConfigNewVersionCheckDto = {
     channel: ReleaseChannel;
     /** Enabled */
@@ -1956,6 +2031,8 @@ export type AdminConfigNightlyTasksDto = {
     missingThumbnails: boolean;
     /** Heavy background work (beyond thumbnails) waits for the overnight window */
     quietHours?: boolean;
+    /** Finish anything that did not process overnight */
+    reprocessUnfinished?: boolean;
     /** Start time (HH:MM) */
     startTime: string;
     /** When each step runs: every night, once a week, or only when started */
@@ -2161,6 +2238,41 @@ export type AdminConfigDto = {
     machineLearning: AdminConfigMachineLearningDto;
     map: AdminConfigMapDto;
     metadata: AdminConfigMetadataDto;
+    metrics?: MetricsStatusDto;
+    newVersionCheck: AdminConfigNewVersionCheckDto;
+    nightlyTasks: AdminConfigNightlyTasksDto;
+    notifications: AdminConfigNotificationsDto;
+    oauth: AdminConfigOAuthDto;
+    passwordLogin: AdminConfigPasswordLoginDto;
+    reverseGeocoding: AdminConfigReverseGeocodingDto;
+    server: AdminConfigServerDto;
+    smartAlbums?: AdminConfigSmartAlbumsDto;
+    storageTemplate: AdminConfigStorageTemplateDto;
+    storageWarning?: AdminConfigStorageWarningDto;
+    templates: AdminConfigTemplatesDto;
+    theme: AdminConfigThemeDto;
+    trash: AdminConfigTrashDto;
+    user: AdminConfigUserDto;
+};
+export type AdminConfigDtoRead = {
+    analytics?: AdminConfigAnalyticsDto;
+    backup: AdminConfigBackupsDto;
+    editing?: AdminConfigEditingDto;
+    ffmpeg: AdminConfigFFmpegDto;
+    frameleafCloud?: AdminConfigFrameleafCloudDto;
+    help?: AdminConfigHelpDto;
+    icloud?: AdminConfigICloudDto;
+    image: AdminConfigImageDto;
+    integrityChecks: AdminConfigIntegrityChecksDto;
+    job: AdminConfigJobDto;
+    library: AdminConfigLibraryDto;
+    libraryCare?: AdminConfigLibraryCareDto;
+    localFeatures?: AdminConfigLocalFeaturesDto;
+    logging: AdminConfigLoggingDto;
+    machineLearning: AdminConfigMachineLearningDto;
+    map: AdminConfigMapDto;
+    metadata: AdminConfigMetadataDto;
+    metrics?: MetricsStatusDtoRead;
     newVersionCheck: AdminConfigNewVersionCheckDto;
     nightlyTasks: AdminConfigNightlyTasksDto;
     notifications: AdminConfigNotificationsDto;
@@ -2221,8 +2333,18 @@ export type AdminConfigRevisionResponseDto = {
     /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
     revision: string;
 };
+export type AdminConfigRevisionResponseDtoRead = {
+    config: AdminConfigDtoRead;
+    /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
+    revision: string;
+};
 export type AdminConfigRevisionUpdateDto = {
     config: AdminConfigDto;
+    /** The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed */
+    expectedRevision: string;
+};
+export type AdminConfigRevisionUpdateDtoRead = {
+    config: AdminConfigDtoRead;
     /** The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed */
     expectedRevision: string;
 };
@@ -2821,6 +2943,22 @@ export type LicenseCheckoutResponseDto = {
     expiresAt: string;
     /** The Frameleaf store page to open; the buyer signs into the account that owns this server */
     url: string;
+};
+export type PrivateLogPageDto = {
+    entries: {
+        assetId?: string;
+        at: string;
+        context: string;
+        id: string;
+        jobId?: string;
+        jobName?: string;
+        level: Level;
+        message: string;
+        requestId?: string;
+        route?: string;
+        worker: Worker;
+    }[];
+    nextCursor: string | null;
 };
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
@@ -3824,6 +3962,8 @@ export type EmailNotificationsResponse = {
     albumUpdate: boolean;
     /** Whether email notifications are enabled */
     enabled: boolean;
+    /** Whether to receive email when a new device signs in */
+    newSignIn?: boolean;
 };
 export type FoldersResponse = {
     /** Whether folders are enabled */
@@ -3975,6 +4115,8 @@ export type EmailNotificationsUpdate = {
     albumUpdate?: boolean;
     /** Whether email notifications are enabled */
     enabled?: boolean;
+    /** Whether to receive email when a new device signs in */
+    newSignIn?: boolean;
 };
 export type FoldersUpdate = {
     /** Whether folders are enabled */
@@ -4815,6 +4957,12 @@ export type ExifResponseDto = {
     /** Time zone */
     timeZone?: string | null;
 };
+export type AssetFileProblemDto = {
+    /** The file problem to open, as the file problems list names it */
+    findingId: string;
+    /** True when the original is gone; false when the file is damaged */
+    missing: boolean;
+};
 export type ImageEncodingInfo = {
     bitDepth?: number;
     codec?: string;
@@ -4933,6 +5081,8 @@ export type AssetResponseDto = {
     fileCreatedAt: string;
     /** The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken. */
     fileModifiedAt: string;
+    /** Set on GET /assets/{id} only, for the photo's owner or an administrator: the file problem that needs attention on this photo. Null when there is none. */
+    fileProblem?: (AssetFileProblemDto) | null;
     /** Whether asset has metadata */
     hasMetadata: boolean;
     /** Asset height */
@@ -5850,6 +6000,28 @@ export type AssetJobsDto = {
     assetIds: string[];
     name: AssetJobName;
 };
+export type LostOriginalDto = {
+    /** The photo or video */
+    assetId: string;
+    /** SHA-1 of the lost file, base64: what the phone matches its own file by */
+    checksum: string;
+    /** When the file was created */
+    fileCreatedAt: string;
+    /** The name the file had */
+    originalFileName: string;
+};
+export type LostOriginalsResponseDto = {
+    /** Whether more follow this page */
+    hasNextPage: boolean;
+    /** The caller's own lost originals, oldest problem first */
+    items: LostOriginalDto[];
+};
+export type LostOriginalsCheckedDto = {
+    /** The phone or tablet that looked */
+    deviceId: string;
+    /** Checksums (base64) of lost originals this device does not have */
+    notHere: string[];
+};
 export type AssetMetadataBulkDeleteItemDto = {
     /** Asset ID */
     assetId: string;
@@ -5885,6 +6057,23 @@ export type AssetMetadataBulkResponseDto = {
     value: {
         [key: string]: any;
     };
+};
+export type ProcessingFailureResponseDto = {
+    assetId: string;
+    attempts: number;
+    cause: string;
+    fileName: string;
+    lastFailedAt: string;
+    ownerId: string;
+    ownerName: string;
+    quarantinedAt: string | null;
+    step: ProcessingFailureStep;
+};
+export type ProcessingFailureActionDto = {
+    items: {
+        assetId: string;
+        step: ProcessingFailureStep;
+    }[];
 };
 export type SafetyLookupDto = {
     /** SHA-256 hex hashes; inaccessible and foreign assets are omitted, including for administrators */
@@ -6795,7 +6984,7 @@ export type ChangePasswordDto = {
     invalidateSessions?: boolean;
     /** New password (min 8 characters) */
     newPassword: string;
-    /** Current password */
+    /** Current password, or empty when setting the linked owner’s first local password */
     password: string;
 };
 export type LoginCredentialDto = {
@@ -6891,6 +7080,8 @@ export type AuthStatusResponseDto = {
     expiresAt?: string;
     /** Is elevated session */
     isElevated: boolean;
+    /** This freshly signed-in owner needs to set their first local password */
+    localPasswordRequired?: boolean;
     /** Has password set */
     password: boolean;
     /** Has PIN code set */
@@ -6964,6 +7155,8 @@ export type BestPhotoAssetResponseDto = {
     fileCreatedAt: string;
     /** The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken. */
     fileModifiedAt: string;
+    /** Set on GET /assets/{id} only, for the photo's owner or an administrator: the file problem that needs attention on this photo. Null when there is none. */
+    fileProblem?: (AssetFileProblemDto) | null;
     /** Whether asset has metadata */
     hasMetadata: boolean;
     /** Asset height */
@@ -9636,6 +9829,15 @@ export type ItemShareReceivedResponseDto = {
     /** The address of this list, as sent in share notifications */
     link: string | null;
 };
+export type ProcessingReconcileSummary = {
+    completedAt: string;
+    faces: number;
+    metadata: number;
+    search: number;
+    text: number;
+    thumbnails: number;
+    video: number;
+};
 export type QueueStatusLegacyDto = {
     /** Whether the queue is currently active (has running jobs) */
     isActive: boolean;
@@ -9644,6 +9846,7 @@ export type QueueStatusLegacyDto = {
 };
 export type QueueResponseLegacyDto = {
     jobCounts: QueueStatisticsDto;
+    processingReconcileLastRun?: ProcessingReconcileSummary;
     queueStatus: QueueStatusLegacyDto;
     /** Durable run created by a batch start */
     runId?: string;
@@ -9837,6 +10040,8 @@ export type QueueCommandDto = {
     command: QueueCommand;
     /** Force the command execution (if applicable) */
     force?: boolean;
+    /** Include quarantined assets in a forced processing run */
+    includeSetAside?: boolean;
 };
 export type LibraryScanResponseDto = {
     /** New items indexed */
@@ -10332,6 +10537,96 @@ export type MediaHealthScanDto = {
 export type MediaHealthBulkActionDto = {
     /** Media health finding IDs */
     ids: string[];
+};
+export type FileProblemLineDto = {
+    /** What the sentence needs: places searched, the part saved, a phone’s name, who did it… */
+    facts: {
+        [key: string]: any;
+    };
+    /** How it went: ok, not-found, failed, waiting or info */
+    outcome: string;
+    /** What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed */
+    step: string;
+};
+export type FileProblemRowDto = {
+    /** The photo or video */
+    assetId: string;
+    /** The caller may undo it, keep it, look in a folder for it or remove it: its owner only */
+    canAct: boolean;
+    category: MediaHealthCategory;
+    /** How the fixes left it. Fixed for you: repaired, part-saved, found-again, restored. Needs you: missing, waiting-phone, cant-repair, couldnt-check, or null when no fix has looked at it yet. Left as they are: left-as-is. */
+    fixState: string | null;
+    /** The problem */
+    id: string;
+    /** The step its one-line story is told from: the newest, apart from the damaged file kept beside a repair. Null while its history is empty. */
+    line: (FileProblemLineDto) | null;
+    /** The name of its file */
+    originalFileName: string;
+    /** Whose library it is in */
+    ownerId: string;
+    /** The name of the account whose library it is in */
+    ownerName: string;
+    /** A repair saved only part of the picture */
+    partSaved: boolean;
+    /** The caller may see its picture: false on another account’s file */
+    pictureAllowed: boolean;
+    /** When it last changed */
+    updatedAt: string;
+};
+export type FileProblemPageDto = {
+    /** One page of the tab, in its order */
+    items: FileProblemRowDto[];
+    /** How many the tab holds */
+    total: number;
+};
+export type FileProblemFolderDto = {
+    /** The folder, as Look in a folder names it */
+    id: string;
+    /** Its name */
+    name: string;
+};
+export type FileStepDto = {
+    /** When it happened */
+    at: string;
+    /** What the sentence needs: places searched, the part saved, a phone’s name, who did it… */
+    facts: {
+        [key: string]: any;
+    };
+    /** How it went: ok, not-found, failed, waiting or info */
+    outcome: string;
+    /** What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed */
+    step: string;
+};
+export type FileProblemDto = {
+    /** The photo or video */
+    assetId: string;
+    /** The caller may undo it, keep it, look in a folder for it or remove it: its owner only */
+    canAct: boolean;
+    category: MediaHealthCategory;
+    /** How the fixes left it. Fixed for you: repaired, part-saved, found-again, restored. Needs you: missing, waiting-phone, cant-repair, couldnt-check, or null when no fix has looked at it yet. Left as they are: left-as-is. */
+    fixState: string | null;
+    /** The problem */
+    id: string;
+    /** The step its one-line story is told from: the newest, apart from the damaged file kept beside a repair. Null while its history is empty. */
+    line: (FileProblemLineDto) | null;
+    /** The name of its file */
+    originalFileName: string;
+    /** Whose library it is in */
+    ownerId: string;
+    /** The name of the account whose library it is in */
+    ownerName: string;
+    /** A repair saved only part of the picture */
+    partSaved: boolean;
+    /** The caller may see its picture: false on another account’s file */
+    pictureAllowed: boolean;
+    /** Its history, oldest first */
+    steps: FileStepDto[];
+    /** When it last changed */
+    updatedAt: string;
+};
+export type FileProblemLookInDto = {
+    /** One of the folders the caller may search */
+    folderId: string;
 };
 export type MediaHealthLocateDto = {
     /** Media health finding IDs */
@@ -18598,7 +18893,32 @@ export type BackupDeviceWriteDto = {
     lastSuccessfulBackupAt: string | null;
     model: string;
     pendingCount: number;
+    /** Why items wait, by reason code; omitted keeps the stored value */
+    pendingReasons?: BackupPendingReasonDto[];
+    /** Items the device holds for backup; omitted keeps the stored value */
+    phoneItemCount?: number;
     platform: string;
+};
+export type BackupDeviceReceiptDto = {
+    appVersion: string;
+    deviceKey: string;
+    displayName: string;
+    id: string;
+    /** Latest completed server check; incomplete runs are ignored, null before any completes */
+    lastCheck: (BackupDeviceLastCheckDto) | null;
+    lastSuccessfulBackupAt: string | null;
+    model: string;
+    ownerId: string;
+    pendingCount: number;
+    pendingReasons: BackupPendingReasonDto[];
+    /** Device-reported item count; null until reported */
+    phoneItemCount: number | null;
+    platform: string;
+    /** Elapsed whole days since reported success; null if never reported */
+    quietForDays: number | null;
+    reportedAt: string;
+    /** Items the latest completed check found on the server (checked minus missing); null before any */
+    serverVerifiedCount: number | null;
 };
 export type ReconciliationHistoryDto = {
     nextOffset: number | null;
@@ -19510,6 +19830,13 @@ export type FaceSearchDto = {
     /** Also list faces the asset's owner hid (owner only) */
     withHidden?: boolean;
 };
+export type FileProblemListQueryDto = {
+    /** How many to skip */
+    skip?: number;
+    tab: FileProblemTab;
+    /** How many to list (1 to 200) */
+    take?: number;
+};
 export type FileTrashListQueryDto = {
     /** Page number, from 1 */
     page?: number;
@@ -19967,6 +20294,12 @@ export type LibrarySearchDto = {
     withDeleted?: boolean;
 };
 export type LicenseResponseDto = UserLicense;
+export type LostOriginalsQueryDto = {
+    /** How many to skip */
+    skip?: number;
+    /** How many to list (1 to 1000) */
+    take?: number;
+};
 export type MachineLearningHardwareQueryDto = {
     /** Destination to probe. When omitted, the first enabled local destination is probed; a cloud destination is never chosen implicitly. */
     destinationId?: string;
@@ -20185,6 +20518,11 @@ export type PreservationRestoreItemsQueryDto = {
     filter?: PreservationRestoreItemFilter;
     skip?: number;
     take?: number;
+};
+export type ProcessingFailureQueryDto = {
+    skip?: number;
+    take?: number;
+    userId?: string;
 };
 export type PushKnownEventsDto = {
     events: PushEventType[];
@@ -21326,6 +21664,31 @@ export function deleteActivity({ id }: {
     return oazapfts.ok(oazapfts.fetchText(`/activities/${encodeURIComponent(id)}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * Retrieve account activity
+ */
+export function getAccountActivityAdmin({ action, before, $from, take, to, userId }: {
+    action?: string;
+    before?: string;
+    $from?: string;
+    take?: number;
+    to?: string;
+    userId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AccountActivityResponseDto;
+    }>(`/admin/activity${QS.query(QS.explode({
+        action,
+        before,
+        "from": $from,
+        take,
+        to,
+        userId
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -22497,7 +22860,7 @@ export function markCloudTourSeen({ cloudTourSeenDto }: {
 export function getAdminConfig(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/admin/config", {
         ...opts
     }));
@@ -22510,7 +22873,7 @@ export function updateAdminConfig({ adminConfigDto }: {
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/admin/config", oazapfts.json({
         ...opts,
         method: "PUT",
@@ -22564,7 +22927,7 @@ export function updateConfigCredential({ name, configCredentialUpdateDto }: {
 export function getAdminConfigDefaults(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/admin/config/defaults", {
         ...opts
     }));
@@ -22586,7 +22949,7 @@ export function getAdminConfigHistory(opts?: Oazapfts.RequestOpts) {
 export function getAdminConfigWithRevision(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigRevisionResponseDto;
+        data: AdminConfigRevisionResponseDtoRead;
     }>("/admin/config/revision", {
         ...opts
     }));
@@ -22599,7 +22962,7 @@ export function updateAdminConfigWithRevision({ adminConfigRevisionUpdateDto }: 
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigRevisionResponseDto;
+        data: AdminConfigRevisionResponseDtoRead;
     } | {
         status: 409;
     }>("/admin/config/revision", oazapfts.json({
@@ -23243,6 +23606,64 @@ export function refreshLicense(opts?: Oazapfts.RequestOpts) {
     }>("/admin/license/refresh", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List recent local server logs
+ */
+export function listServerLogs({ before, level, limit, q, since, worker }: {
+    before?: string;
+    level?: "verbose" | "debug" | "log" | "warn" | "error" | "fatal";
+    limit?: number;
+    q?: string;
+    since?: string;
+    worker?: "api" | "microservices" | "maintenance" | "machine-learning";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PrivateLogPageDto;
+    }>(`/admin/logs${QS.query(QS.explode({
+        before,
+        level,
+        limit,
+        q,
+        since,
+        worker
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Download local server logs
+ */
+export function downloadServerLogs({ hours }: {
+    hours?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/admin/logs/download${QS.query(QS.explode({
+        hours
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Follow local server logs
+ */
+export function streamServerLogs({ level, q, since, worker }: {
+    level?: "verbose" | "debug" | "log" | "warn" | "error" | "fatal";
+    q?: string;
+    since?: string;
+    worker?: "api" | "microservices" | "maintenance" | "machine-learning";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/logs/stream${QS.query(QS.explode({
+        level,
+        q,
+        since,
+        worker
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -24959,6 +25380,35 @@ export function lockAssets({ bulkIdsDto }: {
     })));
 }
 /**
+ * List the photos the server lost
+ */
+export function getLostOriginals({ skip, take }: {
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LostOriginalsResponseDto;
+    }>(`/assets/lost-originals${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Report lost photos a phone does not have
+ */
+export function reportLostOriginalsChecked({ lostOriginalsCheckedDto }: {
+    lostOriginalsCheckedDto: LostOriginalsCheckedDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assets/lost-originals/checked", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lostOriginalsCheckedDto
+    })));
+}
+/**
  * Delete asset metadata
  */
 export function deleteBulkAssetMetadata({ assetMetadataBulkDeleteDto }: {
@@ -24983,6 +25433,49 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
         ...opts,
         method: "PUT",
         body: assetMetadataBulkUpsertDto
+    })));
+}
+/**
+ * List asset processing failures
+ */
+export function getProcessingFailures({ skip, take, userId }: {
+    skip?: number;
+    take?: number;
+    userId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ProcessingFailureResponseDto[];
+    }>(`/assets/processing-failures${QS.query(QS.explode({
+        skip,
+        take,
+        userId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Dismiss asset processing failures
+ */
+export function dismissProcessingFailures({ processingFailureActionDto }: {
+    processingFailureActionDto: ProcessingFailureActionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assets/processing-failures/dismiss", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: processingFailureActionDto
+    })));
+}
+/**
+ * Retry asset processing failures
+ */
+export function retryProcessingFailures({ processingFailureActionDto }: {
+    processingFailureActionDto: ProcessingFailureActionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assets/processing-failures/retry", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: processingFailureActionDto
     })));
 }
 /**
@@ -29207,6 +29700,120 @@ export function dismiss({ mediaHealthBulkActionDto }: {
         method: "POST",
         body: mediaHealthBulkActionDto
     })));
+}
+/**
+ * List damaged and missing files
+ */
+export function getFileProblems({ skip, tab, take }: {
+    skip?: number;
+    tab: FileProblemTab;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileProblemPageDto;
+    }>(`/media-health/files${QS.query(QS.explode({
+        skip,
+        tab,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * List the folders to look in for a file
+ */
+export function getFileProblemFolders(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileProblemFolderDto[];
+    }>("/media-health/files/folders", {
+        ...opts
+    }));
+}
+/**
+ * Get a damaged or missing file
+ */
+export function getFileProblem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Keep a damaged or missing file as it is
+ */
+export function keepFileProblem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}/keep`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Download the damaged file a repair kept
+ */
+export function downloadFileProblemKeptFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-health/files/${encodeURIComponent(id)}/kept-file`, {
+        ...opts
+    }));
+}
+/**
+ * Look in a folder for a missing or changed file
+ */
+export function lookInFolderForFileProblem({ id, fileProblemLookInDto }: {
+    id: string;
+    fileProblemLookInDto: FileProblemLookInDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}/look-in`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: fileProblemLookInDto
+    })));
+}
+/**
+ * Try to fix a damaged or missing file again
+ */
+export function tryFileProblemAgain({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}/try-again`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Undo what Frameleaf fixed
+ */
+export function undoFileProblemFix({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FileProblemDto;
+    }>(`/media-health/files/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Locate missing media
@@ -35316,7 +35923,7 @@ export function getSyncStream({ syncStreamDto }: {
 export function getConfig(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/system-config", {
         ...opts
     }));
@@ -35329,7 +35936,7 @@ export function updateConfig({ adminConfigDto }: {
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/system-config", oazapfts.json({
         ...opts,
         method: "PUT",
@@ -35368,7 +35975,7 @@ export function reloadConfigFile({ configFileReloadDto }: {
 export function getConfigDefaults(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: AdminConfigDto;
+        data: AdminConfigDtoRead;
     }>("/system-config/defaults", {
         ...opts
     }));
@@ -36438,6 +37045,23 @@ export function updateMyUser({ userUpdateMeDto }: {
     })));
 }
 /**
+ * Retrieve my account activity
+ */
+export function getMyActivity({ before, take }: {
+    before?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AccountActivityResponseDto;
+    }>(`/users/me/activity${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * List own backup devices
  */
 export function listBackupDevices({ limit, offset }: {
@@ -36478,6 +37102,19 @@ export function removeBackupDevice({ id }: {
     return oazapfts.ok(oazapfts.fetchText(`/users/me/backup-devices/${encodeURIComponent(id)}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * Get the backup receipt for an own device
+ */
+export function getBackupDeviceReceipt({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupDeviceReceiptDto;
+    }>(`/users/me/backup-devices/${encodeURIComponent(id)}/receipt`, {
+        ...opts
     }));
 }
 /**
@@ -38165,6 +38802,20 @@ export enum Plan {
     CloudMonthly = "cloud-monthly",
     CloudAnnual = "cloud-annual"
 }
+export enum Level {
+    Verbose = "verbose",
+    Debug = "debug",
+    Log = "log",
+    Warn = "warn",
+    Error = "error",
+    Fatal = "fatal"
+}
+export enum Worker {
+    Api = "api",
+    Microservices = "microservices",
+    Maintenance = "maintenance",
+    MachineLearning = "machine-learning"
+}
 export enum MaintenanceAction {
     Start = "start",
     End = "end",
@@ -39175,6 +39826,14 @@ export enum AssetJobName {
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
 }
+export enum ProcessingFailureStep {
+    AssetExtractMetadata = "AssetExtractMetadata",
+    AssetGenerateThumbnails = "AssetGenerateThumbnails",
+    AssetEncodeVideo = "AssetEncodeVideo",
+    SmartSearch = "SmartSearch",
+    AssetDetectFaces = "AssetDetectFaces",
+    Ocr = "Ocr"
+}
 export enum State2 {
     Unavailable = "unavailable",
     NotBackedUp = "not-backed-up",
@@ -40005,6 +40664,11 @@ export enum MediaHealthRepairMethod {
     Rebuilt = "rebuilt",
     Preview = "preview",
     Converted = "converted"
+}
+export enum FileProblemTab {
+    Needs = "needs",
+    Fixed = "fixed",
+    Kept = "kept"
 }
 export enum RawSupportSource {
     Sensor = "sensor",

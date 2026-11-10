@@ -82,7 +82,7 @@ export class SharedLinkController {
     @Res({ passthrough: true }) res: Response,
     @GetLoginDetails() loginDetails: LoginDetails,
   ): Promise<SharedLinkResponseDto> {
-    const { sharedLink, token } = await this.service.login(auth, dto);
+    const { sharedLink, token } = await this.service.login(auth, dto, loginDetails);
 
     return respondWithCookie(res, sharedLink, {
       isSecure: loginDetails.isSecure,

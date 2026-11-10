@@ -244,6 +244,53 @@ describe('media-health-roots (FL-69)', () => {
         return actual;
       };
 
+      it('publishes a verified copy by writing it, never replacing a different file (FL-1337)', async () => {
+        await withoutHardLinks();
+        const bytes = Buffer.from('original bytes');
+        const source = join(backup, 'nested', 'a.jpg');
+        await writeFile(source, bytes);
+        const destination = join(root, 'media', 'IMG_2041.jpg');
+
+        await expect(publishVerifiedCopy({ source, destination, expected: digestsOf(bytes), hash })).resolves.toEqual(
+          digestsOf(bytes),
+        );
+        expect(link).toHaveBeenCalled();
+        await expect(readFile(destination)).resolves.toEqual(bytes);
+        await expect(readFile(source)).resolves.toEqual(bytes);
+        // no temporary copy is left beside it
+        await expect(readdir(join(root, 'media'))).resolves.toEqual(['IMG_2041.jpg']);
+
+        // its own earlier copy is accepted; a different file there is never replaced, nor removed
+        await expect(publishVerifiedCopy({ source, destination, expected: digestsOf(bytes), hash })).resolves.toEqual(
+          digestsOf(bytes),
+        );
+        await writeFile(destination, 'someone else’s file');
+        await expect(publishVerifiedCopy({ source, destination, expected: digestsOf(bytes), hash })).rejects.toThrow(
+          'does not match',
+        );
+        await expect(readFile(destination, 'utf8')).resolves.toBe('someone else’s file');
+        await expect(readdir(join(root, 'media'))).resolves.toEqual(['IMG_2041.jpg']);
+      });
+
+      it('removes only the copy it wrote when that copy does not check out (FL-1337)', async () => {
+        await withoutHardLinks();
+        const bytes = Buffer.from('original bytes');
+        const source = join(backup, 'nested', 'a.jpg');
+        await writeFile(source, bytes);
+        const destination = join(root, 'media', 'IMG_2041.jpg');
+        // the drive hands back other bytes than were written
+        const misread = (filePath: string) =>
+          filePath === destination ? Promise.resolve(digestsOf(Buffer.from('other bytes'))) : hash(filePath);
+
+        await expect(
+          publishVerifiedCopy({ source, destination, expected: digestsOf(bytes), hash: misread }),
+        ).rejects.toThrow('does not match');
+
+        // the name is free again for a later attempt, and nothing else is left
+        await expect(readdir(join(root, 'media'))).resolves.toEqual([]);
+        await expect(readFile(source)).resolves.toEqual(bytes);
+      });
+
       it('moves a file by copying it, and removes the source once the copy holds the same bytes', async () => {
         await withoutHardLinks();
         const source = join(root, 'damaged.jpg');

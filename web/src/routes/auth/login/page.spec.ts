@@ -1,6 +1,7 @@
 import {
   createFrameleafHandoff,
   finishFrameleafSignIn,
+  getAuthStatus,
   isHttpError,
   login,
   redeemFrameleafHandoff,
@@ -10,7 +11,7 @@ import type { LoginResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
 import {
   getOAuthContinue,
@@ -30,6 +31,7 @@ vi.mock('@frameleaf/sdk', () => ({
   isHttpError: vi.fn(() => false),
   startFrameleafSignIn: vi.fn(),
   finishFrameleafSignIn: vi.fn(),
+  getAuthStatus: vi.fn(async () => ({ localPasswordRequired: false })),
   createFrameleafHandoff: vi.fn(),
   redeemFrameleafHandoff: vi.fn(),
 }));
@@ -87,6 +89,10 @@ beforeEach(() => {
   vi.mocked(oauth.isCallback).mockReturnValue(false);
   vi.mocked(oauth.isAutoLaunchEnabled).mockReturnValue(false);
   vi.mocked(oauth.isAutoLaunchDisabled).mockReturnValue(false);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('login mandatory-change routing', () => {
@@ -360,6 +366,37 @@ describe('Sign in with Frameleaf (FL-158)', () => {
     expect(oauth.login).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
+
+  it.each([false, true])(
+    'checks the local password before entry when the initial status check fails: %s',
+    async (statusFailed) => {
+      localStorage.setItem(
+        'frameleaf.auth.frameleafRequest.paired',
+        JSON.stringify({ purpose: 'sign-in', expiresAt: Date.now() + 60_000 }),
+      );
+      vi.stubGlobal('location', {
+        ...location,
+        href: 'https://photos.example.test/auth/login?code=abc&state=paired',
+        search: '?code=abc&state=paired',
+      });
+      vi.mocked(oauth.isCallback).mockReturnValue(true);
+      vi.mocked(finishFrameleafSignIn).mockResolvedValue({
+        ...forced,
+        isAdmin: true,
+        shouldChangePassword: false,
+      } as LoginResponseDto);
+      if (statusFailed) {
+        vi.mocked(getAuthStatus).mockRejectedValueOnce(new Error('Temporarily unavailable'));
+      } else {
+        vi.mocked(getAuthStatus).mockResolvedValueOnce({ localPasswordRequired: true } as Awaited<
+          ReturnType<typeof getAuthStatus>
+        >);
+      }
+
+      render(Page, { data: relay() } as never);
+      await waitFor(() => expect(goto).toHaveBeenCalledWith('/auth/change-password?local=1', { invalidateAll: true }));
+    },
+  );
 });
 
 describe('Sign in with Frameleaf from a home address (FL-167)', () => {

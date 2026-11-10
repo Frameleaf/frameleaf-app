@@ -12,6 +12,9 @@ import type { Translations } from 'svelte-i18n';
  *   originals in searches for originals, and near-duplicate groups are suggested at all.
  * - `incrementalEnrichment` makes a full description rerun redo only affected results.
  * - `manualMetadata` makes a description rerun keep what a person wrote.
+ * - `autoRepair` makes a damaged photo repair itself when a check finds it; it sits in File checks'
+ *   "When a check finds a problem" rather than in a page's toggle list. (`askPhones`, whether phones
+ *   are asked for missing photos, has no switch here; it is set on its own page.)
  */
 export type LibraryCareToggleKey =
   | 'healthScan'
@@ -21,7 +24,8 @@ export type LibraryCareToggleKey =
   | 'rawRecovery'
   | 'duplicateReview'
   | 'incrementalEnrichment'
-  | 'manualMetadata';
+  | 'manualMetadata'
+  | 'autoRepair';
 
 export type LibraryCareSection = 'integrity-checks' | 'repair' | 'enrichment-care';
 
@@ -53,6 +57,10 @@ export const LIBRARY_CARE_TOGGLES: Readonly<
   manualMetadata: {
     titleKey: 'frameleaf_care_manual_metadata',
     descriptionKey: 'frameleaf_care_manual_metadata_description',
+  },
+  autoRepair: {
+    titleKey: 'frameleaf_care_fc_when_problem_repair_name',
+    descriptionKey: 'frameleaf_care_fc_when_problem_repair_on',
   },
 });
 

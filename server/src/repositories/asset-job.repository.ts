@@ -1,10 +1,22 @@
-import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Kysely, type Transaction, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ProcessingFailureActionDto, ProcessingFailureQueryDto } from 'src/dtos/processing-failure.dto.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetMetadataKey,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  JobName,
+  LibraryScope,
+  QueueName,
+} from 'src/enum.js';
+import { processingFailureSteps } from 'src/queue/processing-failure.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -19,11 +31,13 @@ import {
   withFacesAndPeople,
   withFilePath,
   withFiles,
+  withHiddenContentFilter,
   withVideoFormat,
   withVideoStream,
 } from 'src/utils/database.js';
+import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
-import { effectiveVisibility, isLocked, isNotLocked } from 'src/utils/locked.js';
+import { effectiveVisibility, getLockedOwnerId, isLocked, isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /**
@@ -50,10 +64,164 @@ const keepsOwnCopyThumbnails = sql<boolean>`EXISTS (
     AND copy_file.path <> source_file.path
 )`;
 
+/**
+ * FL-1337: a photo Library care has in hand, with a file problem still open or a fix still to run (the hand-off
+ * of a preview that would not open, or a fix waiting for its drive). Its previews are Library care's to remake
+ * after a fix, so the overnight check (FL-811) never queues them again.
+ */
+const notInLibraryCare = sql<boolean>`not exists (
+    select 1 from public.asset_health health
+    where health."assetId" = asset.id and health."resolvedAt" is null and health."dismissedAt" is null
+  ) and not exists (
+    select 1 from job
+    where job.queue = ${QueueName.MediaHealth} and job.name = ${JobName.MediaHealthFixAsset}
+      and job.state in ('pending', 'waiting', 'active') and lower(job.data->>'id') collate "C" = asset.id::text
+    offset 0
+  )`;
+
+type ProcessingFailureStep = ProcessingFailureActionDto['items'][number]['step'];
+
+type ReconciledJob =
+  | JobName.AssetExtractMetadata
+  | JobName.AssetGenerateThumbnails
+  | JobName.AssetEncodeVideo
+  | JobName.SmartSearch
+  | JobName.AssetDetectFaces
+  | JobName.Ocr;
+
 @Injectable()
 export class AssetJobRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
     this.db = publicationDatabase(this.db);
+  }
+
+  /** Select only inputs each normal processor can use, with no other live job for the same step. */
+  selectionForUnfinished(
+    name: ReconciledJob,
+    options: { queue: QueueName; fullsizeEnabled: boolean; videoPolicy: string; after?: string | null },
+  ) {
+    const selection = {
+      [JobName.AssetExtractMetadata]: () => this.selectionForMetadataExtraction(false, false, true),
+      [JobName.AssetGenerateThumbnails]: () =>
+        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }).where(
+          notInLibraryCare,
+        ),
+      [JobName.AssetEncodeVideo]: () =>
+        this.selectionForVideoConversion(false)
+          .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+          .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+          .where('asset_job_status.metadataExtractedAt', 'is not', null)
+          .where(sql<boolean>`"asset_job_status"."transcodeSkippedFor" is distinct from
+            (encode(asset.checksum, 'hex') || ':' || ${options.videoPolicy})`),
+      [JobName.SmartSearch]: () => this.selectionForEncodeClip(false),
+      [JobName.AssetDetectFaces]: () => this.selectionForDetectFacesJob(false).clearOrderBy(),
+      [JobName.Ocr]: () => this.assetsWithPreviews().select('asset.id').where('job_status.ocrAt', 'is', null),
+    }[name]();
+
+    // Earlier pages only enqueue IDs below this cursor. Keep those rows out of the live-job lookup.
+    const subject = sql`lower(job.data->>'id') collate "C"`;
+    const liveRange = options.after ? sql`and ${subject} > ${options.after}` : sql``;
+    // Keep this indexed lookup correlated even before PostgreSQL has analyzed a newly filled job table.
+    return selection.where(sql<boolean>`asset.status = 'active' and not asset."isOffline" and not exists (
+        select 1 from job
+        where job.queue = ${options.queue} and job.name = ${name} and job.state in ('pending', 'waiting', 'active')
+          and ${subject} = asset.id::text ${liveRange}
+        offset 0
+      )`);
+  }
+
+  private visibleProcessingFailures(auth: AuthDto, db: Kysely<DB>, userId?: string) {
+    const ownerId = auth.user.isAdmin ? userId : auth.user.id;
+    return db
+      .selectFrom('asset_processing_failure as failure')
+      .innerJoin('asset', 'asset.id', 'failure.assetId')
+      .where('asset.deletedAt', 'is', null)
+      .where(notLockedOrOwnedBy(getLockedOwnerId(auth)))
+      .$call((qb) =>
+        withHiddenContentFilter(qb, {
+          ...getHiddenContentQueryOptions(auth),
+          ...getOthersRulesQueryOptions(auth),
+        }),
+      )
+      .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!));
+  }
+
+  getProcessingFailures(auth: AuthDto, { userId, take, skip }: ProcessingFailureQueryDto) {
+    return this.visibleProcessingFailures(auth, this.db, userId)
+      .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
+      .where('failure.dismissedAt', 'is', null)
+      .where('failure.step', 'in', processingFailureSteps)
+      .select([
+        'failure.assetId',
+        'failure.step',
+        'failure.attempts',
+        'failure.lastError as cause',
+        'failure.lastFailedAt',
+        'failure.quarantinedAt',
+        'asset.ownerId',
+        'owner.name as ownerName',
+        'asset.originalFileName as fileName',
+      ])
+      .orderBy('failure.lastFailedAt', 'desc')
+      .orderBy('failure.assetId')
+      .orderBy('failure.step')
+      .limit(take)
+      .offset(skip)
+      .execute();
+  }
+
+  async updateProcessingFailures(
+    auth: AuthDto,
+    { items }: ProcessingFailureActionDto,
+    retry?: {
+      queueName: (step: ProcessingFailureStep) => QueueName;
+      enqueue: (tx: Transaction<DB>, step: ProcessingFailureStep, id: string) => Promise<void>;
+    },
+  ) {
+    await this.db.transaction().execute(async (tx) => {
+      if (retry) {
+        const queues = [...new Set(items.map(({ step }) => retry.queueName(step)))];
+        // Claim holds the queue row until a pending job becomes active or blocked.
+        await tx
+          .selectFrom('job_queue')
+          .select('name')
+          .where('name', 'in', queues)
+          .orderBy('name')
+          .forNoKeyUpdate()
+          .execute();
+      }
+      // Stable locking order makes two overlapping bulk actions safe.
+      const ordered = items.toSorted((a, b) => a.assetId.localeCompare(b.assetId) || a.step.localeCompare(b.step));
+      for (const { assetId, step } of ordered) {
+        const row = await this.visibleProcessingFailures(auth, tx)
+          .where('failure.assetId', '=', assetId)
+          .where('failure.step', '=', step)
+          .select(['failure.attempts', 'failure.dismissedAt', 'failure.quarantinedAt'])
+          .forUpdate('failure')
+          .executeTakeFirst();
+        if (!row) throw new NotFoundException('Processing failure not found');
+        const update = tx
+          .updateTable('asset_processing_failure')
+          .where('assetId', '=', assetId)
+          .where('step', '=', step);
+        if (!retry) {
+          await update.set({ dismissedAt: new Date() }).execute();
+          continue;
+        }
+        if (row.attempts === 0 && !row.dismissedAt && !row.quarantinedAt) continue;
+        await update.set({ attempts: 0, dismissedAt: null, quarantinedAt: null }).execute();
+        const live = await tx
+          .selectFrom('job')
+          .select('id')
+          .where('queue', '=', retry.queueName(step))
+          .where('name', '=', step)
+          .where('state', 'in', ['pending', 'waiting', 'active'])
+          .where(sql<boolean>`lower(data->>'id') collate "C" = ${assetId.toLowerCase()}`)
+          .limit(1)
+          .executeTakeFirst();
+        if (!live) await retry.enqueue(tx, step, assetId.toLowerCase());
+      }
+    });
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -136,8 +304,11 @@ export class AssetJobRepository {
       .$if(!!options.force, (qb) => qb.where(rendersOwnThumbnails))
       .$if(!options.force, (qb) =>
         qb
-          // If there aren't any entries, metadata extraction hasn't run yet which is required for thumbnails
+          // A status row can exist before metadata extraction, for example on a partner copy.
           .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+          .where(({ exists, selectFrom }) =>
+            exists(selectFrom('asset_exif').select('assetId').whereRef('asset_exif.assetId', '=', 'asset.id')),
+          )
           .where(({ and, eb, exists, not, or, selectFrom }) => {
             const file = (type: AssetFileType) =>
               selectFrom('asset_file').whereRef('assetId', '=', 'asset.id').where('type', '=', sql.lit(type));
@@ -616,7 +787,7 @@ export class AssetJobRepository {
     return this.selectionForMetadataExtraction(force).stream();
   }
 
-  selectionForMetadataExtraction(force?: boolean, encodingBackfill = false) {
+  selectionForMetadataExtraction(force?: boolean, encodingBackfill = false, verifyExif = false) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
@@ -626,6 +797,11 @@ export class AssetJobRepository {
             eb('asset_job_status.metadataExtractedAt', 'is', null),
             eb('asset_job_status.assetId', 'is', null),
           ];
+          if (verifyExif) {
+            conditions.push(
+              eb.not(eb.exists(eb.selectFrom('asset_exif').select('assetId').whereRef('assetId', '=', 'asset.id'))),
+            );
+          }
           if (encodingBackfill) {
             const raw = Object.keys(mimeTypes.raw).map((extension) => sql.lit(`%${extension}`));
             conditions.push(

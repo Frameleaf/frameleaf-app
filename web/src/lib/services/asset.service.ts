@@ -53,6 +53,8 @@ import { ProjectionType } from '$lib/constants';
 import { currentDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
 import { canSendCopies, isSendable, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
 import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';
+import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+import { toastAction } from '$lib/frameleaf/toast';
 import { folderOf } from '$lib/frameleaf/viewer-headline';
 import { isPanorama, isStitchedVideoProjection } from '$lib/frameleaf/viewer-media';
 import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
@@ -84,6 +86,24 @@ export const canPlaySlideshow = (asset: Pick<AssetResponseDto, 'visibility'>): b
  */
 export const showsEdit = (asset: Pick<AssetResponseDto, 'id' | 'ownerId' | 'isEdited'>): boolean =>
   asset.isEdited || currentDevelopPlaybackRevision(asset) !== null;
+
+/**
+ * Only the preview of a photo whose original is missing can be shown, so what needs the original (Download,
+ * Download original, Edit, Send a copy, the still exports) says so and points to what happened (Damaged and missing
+ * files) instead of failing. Returns true when it did.
+ */
+export const explainOnlyPreview = (asset: Pick<AssetResponseDto, 'fileProblem'>, $t: MessageFormatter): boolean => {
+  const problem = asset.fileProblem;
+  if (!problem?.missing) {
+    return false;
+  }
+  toastAction($t('frameleaf_viewer_file_only_preview'), {
+    label: $t('frameleaf_viewer_file_see_what_happened'),
+    onAction: () => goto(commandCenterUrl('care', 'files', { file: problem.findingId })),
+    tone: 'warning',
+  });
+  return true;
+};
 
 export const getAssetActions = (
   $t: MessageFormatter,
@@ -123,14 +143,14 @@ export const getAssetActions = (
     icon: mdiDownload,
     shortcuts: { key: 'd', shift: true },
     $if: () => !!authUser && (!sharedLink || sendCopyPermitted(sharedLink)),
-    onAction: () => handleDownloadAsset(asset, { edited: true }),
+    onAction: () => explainOnlyPreview(asset, $t) || handleDownloadAsset(asset, { edited: true }),
   };
 
   const DownloadOriginal: ActionItem = {
     title: $t('download_original'),
     icon: mdiDownloadBox,
     $if: () => !!authUser && showsEdit(asset) && (!sharedLink || sendCopyPermitted(sharedLink)),
-    onAction: () => handleDownloadAsset(asset, { edited: false }),
+    onAction: () => explainOnlyPreview(asset, $t) || handleDownloadAsset(asset, { edited: false }),
   };
 
   const SharedLinkDownload: ActionItem = {
@@ -148,7 +168,11 @@ export const getAssetActions = (
     title: $t('frameleaf_send_copy'),
     icon: mdiExportVariant,
     $if: () => sendCopyPermitted(sharedLink) && isSendable(asset) && canSendCopies(),
-    onAction: () => void sendCopiesWithFeedback([asset.id]),
+    onAction: () => {
+      if (!explainOnlyPreview(asset, $t)) {
+        void sendCopiesWithFeedback([asset.id]);
+      }
+    },
   };
 
   const PlayMotionPhoto: ActionItem = {
@@ -284,7 +308,7 @@ export const getAssetActions = (
     title: $t('editor'),
     icon: mdiTune,
     $if: () => !sharedLink && isOwner && !asset.isTrashed && (isEditableImage || isEditableVideo),
-    onAction: () => assetViewerManager.openEditor(),
+    onAction: () => explainOnlyPreview(asset, $t) || assetViewerManager.openEditor(),
     shortcuts: [{ key: 'e' }],
   };
 

@@ -1,7 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import {
+  FileProblemDto,
+  FileProblemFolderDto,
+  FileProblemListQueryDto,
+  FileProblemLookInDto,
+  FileProblemPageDto,
+} from 'src/dtos/file-problem.dto.js';
 import {
   MediaHealthBulkActionDto,
   MediaHealthBulkResponseDto,
@@ -22,13 +30,19 @@ import {
   MediaHealthSummaryResponseDto,
 } from 'src/dtos/media-health.dto.js';
 import { ApiTag } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
+import { sendFile } from 'src/utils/file.js';
+import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.MediaHealth)
 @Controller('media-health')
 export class MediaHealthController {
-  constructor(private service: MediaHealthService) {}
+  constructor(
+    private service: MediaHealthService,
+    private logger: LoggingRepository,
+  ) {}
 
   @Get()
   @Authenticated()
@@ -62,6 +76,117 @@ export class MediaHealthController {
   })
   getRoots(@Auth() auth: AuthDto): Promise<MediaHealthRootsResponseDto> {
     return this.service.getRoots(auth);
+  }
+
+  @Get('files')
+  @Authenticated()
+  @Endpoint({
+    summary: 'List damaged and missing files',
+    description:
+      'One page of a tab of damaged and missing files: what needs the caller, what Frameleaf fixed in the last 30 days, or what was left as it is. Members see their own; administrators see every account, without another account’s pictures.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  getFileProblems(@Auth() auth: AuthDto, @Query() dto: FileProblemListQueryDto): Promise<FileProblemPageDto> {
+    return this.service.listFileProblems(auth, dto);
+  }
+
+  @Get('files/folders')
+  @Authenticated()
+  @Endpoint({
+    summary: 'List the folders to look in for a file',
+    description:
+      'The folders the caller may search for an exact copy of a missing or changed file: library storage and their own external libraries, and for administrators also recovery folders and drives added in Frameleaf Manager.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  getFileProblemFolders(@Auth() auth: AuthDto): Promise<FileProblemFolderDto[]> {
+    return this.service.getFileProblemFolders(auth);
+  }
+
+  // Task 11b: declared before every other route under files/:id
+  @Get('files/:id/kept-file')
+  @FileResponse('image/jpeg')
+  @Authenticated()
+  // the damaged file is as large as an original
+  @OriginalTransfer()
+  @Endpoint({
+    summary: 'Download the damaged file a repair kept',
+    description:
+      'The damaged file Frameleaf kept when it repaired the photo, as it was. Only the owner can download it, only while the latest fix is a repair whose kept file is still there, and not while the photo is Locked.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  async downloadFileProblemKeptFile(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ): Promise<void> {
+    // checked before the file is sent, so a refusal keeps its own status instead of becoming a missing file
+    const file = await this.service.getFileProblemKeptFile(auth, id);
+    // a damaged original never goes into a browser's or a proxy's cache, as a sealed file does not
+    res.header('Cache-Control', 'private, no-store');
+    await sendFile(res, next, () => file, this.logger);
+  }
+
+  @Get('files/:id')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Get a damaged or missing file',
+    description: 'One damaged or missing file and what happened to it, oldest first, open or closed.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  getFileProblem(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<FileProblemDto> {
+    return this.service.getFileProblem(auth, id);
+  }
+
+  @Post('files/:id/undo')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Undo what Frameleaf fixed',
+    description:
+      'Put back the file the photo used before Frameleaf repaired, relinked or restored it, keeping every file. Only the owner can undo, not once the photo changed since the fix, and not while it is Locked.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  undoFileProblemFix(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<FileProblemDto> {
+    return this.service.undoFileProblemFix(auth, id);
+  }
+
+  @Post('files/:id/keep')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Keep a damaged or missing file as it is',
+    description: 'Move a file that needs the owner to the files left as they are. Only the owner can keep it.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  keepFileProblem(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<FileProblemDto> {
+    return this.service.keepFileProblem(auth, id);
+  }
+
+  @Post('files/:id/try-again')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Try to fix a damaged or missing file again',
+    description:
+      'Check the file again and fix what can be fixed, from the start. A repair someone undid is not redone by itself.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  tryFileProblemAgain(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<FileProblemDto> {
+    return this.service.tryFileProblemAgain(auth, id);
+  }
+
+  @Post('files/:id/look-in')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Look in a folder for a missing or changed file',
+    description:
+      'Search one folder the owner may search for an exact copy, and put it back when there is exactly one. Answers at once; what was found is added to the history when the search is done.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  lookInFolderForFileProblem(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: FileProblemLookInDto,
+  ): Promise<FileProblemDto> {
+    return this.service.lookInFolderForFileProblem(auth, id, dto);
   }
 
   @Post('candidates/choose')

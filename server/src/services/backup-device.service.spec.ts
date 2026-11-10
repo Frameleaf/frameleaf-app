@@ -12,6 +12,8 @@ const repository = {
   start: vi.fn(),
   submit: vi.fn(),
   history: vi.fn(),
+  get: vi.fn(),
+  lastChecks: vi.fn(),
 };
 const events = { emit: vi.fn() };
 const sut = new BackupDeviceService(repository as unknown as BackupDeviceRepository, events as never);
@@ -26,7 +28,10 @@ const dto = {
   lastSuccessfulBackupAt: null,
   pendingCount: 1,
 };
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  repository.lastChecks.mockResolvedValue([]);
+});
 describe(BackupDeviceService.name, () => {
   it('refuses un-elevated and filtered reconciliation before any repository write', async () => {
     await expect(sut.start(factory.auth(), auth.user.id, { buckets: bucketInventory([]) })).rejects.toThrow();
@@ -103,5 +108,53 @@ describe(BackupDeviceService.name, () => {
     await sut.start(auth, auth.user.id, { buckets: bucketInventory([]) });
 
     expect(events.emit).not.toHaveBeenCalled();
+  });
+
+  describe('backup receipt (FL-771)', () => {
+    it('bounds pending reasons: at most 20, codes 1..64 chars, any code text accepted', () => {
+      const reason = (code = 'wifi') => ({ code, count: 1 });
+      expect(BackupDeviceWriteSchema.safeParse({ ...dto, pendingReasons: [reason('made-up-code')] }).success).toBe(
+        true,
+      );
+      expect(
+        BackupDeviceWriteSchema.safeParse({ ...dto, pendingReasons: Array.from({ length: 20 }, () => reason()) })
+          .success,
+      ).toBe(true);
+      expect(
+        BackupDeviceWriteSchema.safeParse({ ...dto, pendingReasons: Array.from({ length: 21 }, () => reason()) })
+          .success,
+      ).toBe(false);
+      expect(BackupDeviceWriteSchema.safeParse({ ...dto, pendingReasons: [reason('x'.repeat(65))] }).success).toBe(
+        false,
+      );
+      expect(BackupDeviceWriteSchema.safeParse({ ...dto, pendingReasons: [reason('')] }).success).toBe(false);
+      expect(BackupDeviceWriteSchema.safeParse({ ...dto, phoneItemCount: -1 }).success).toBe(false);
+    });
+    it('refuses an un-elevated receipt before reading the device', async () => {
+      await expect(sut.receipt(factory.auth(), 'device')).rejects.toThrow('elevated');
+      expect(repository.get).not.toHaveBeenCalled();
+    });
+    it('reports verified count as checked minus missing of the latest completed check', async () => {
+      const device = {
+        ...dto,
+        id: 'device',
+        ownerId: auth.user.id,
+        reportedAt: new Date(),
+        lastSuccessfulBackupAt: null,
+        phoneItemCount: 12,
+        pendingReasons: [{ code: 'wifi', count: 1 }],
+        deletedAt: null,
+      };
+      repository.get.mockResolvedValue(device);
+      expect(await sut.receipt(auth, 'device')).toMatchObject({ lastCheck: null, serverVerifiedCount: null });
+      repository.lastChecks.mockResolvedValue([run({ deviceId: 'device' })]);
+      expect(await sut.receipt(auth, 'device')).toMatchObject({
+        phoneItemCount: 12,
+        pendingReasons: [{ code: 'wifi', count: 1 }],
+        lastCheck: { itemsChecked: 10, itemsMissing: 2 },
+        serverVerifiedCount: 8,
+      });
+      expect(repository.get).toHaveBeenCalledWith(auth.user.id, 'device');
+    });
   });
 });

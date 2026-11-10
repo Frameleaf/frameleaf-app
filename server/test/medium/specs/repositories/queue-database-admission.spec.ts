@@ -35,7 +35,7 @@ describe('queue database admission', () => {
       if (!claimCommands || event.level !== 'query') return;
       const text = event.query.sql.trimStart();
       if (text.startsWith('insert into job_attempt')) claimCommands.push('attempt');
-      if (text.startsWith('update job set')) claimCommands.push('claim');
+      if (/\bupdate job(?: [a-z]+)? set state\b/u.test(text)) claimCommands.push('claim');
     });
     store = new SqlQueueStore(db);
   });

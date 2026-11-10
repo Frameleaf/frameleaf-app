@@ -267,6 +267,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     databaseCleanup: true,
     clusterNewFaces: true,
     missingThumbnails: true,
+    reprocessUnfinished: true,
     generateMemories: true,
     syncQuotaUsage: true,
     stopTime: '06:00',
@@ -495,6 +496,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
     duplicateReview: true,
     incrementalEnrichment: true,
     manualMetadata: true,
+    autoRepair: true,
+    askPhones: true,
   },
   editing: {
     trimMode: VideoTrimMode.Precise,

@@ -51,6 +51,8 @@ describe('diffConfig (FL-66)', () => {
     // FL-69: Library care's toggles are spread over three pages.
     expect(sectionForConfigPath('libraryCare.healthScan')).toBe('integrity-checks');
     expect(sectionForConfigPath('libraryCare.rawRecovery')).toBe('repair');
+    // FL-1338: asking phones is switched on Damaged and missing files
+    expect(sectionForConfigPath('libraryCare.askPhones')).toBe('files');
     expect(sectionForConfigPath('libraryCare.manualMetadata')).toBe('enrichment-care');
     expect(sectionForConfigPath('localFeatures.askSearch.enabled')).toBe('smart-search');
     // FL-366: each Search & intelligence feature has its own page.
@@ -201,6 +203,17 @@ describe('credentials never leave the page (FL-66)', () => {
     expect(exported.machineLearning.imageDescription).not.toHaveProperty('pendingRequeueAt');
     expect(exported).not.toHaveProperty('revision');
     expect(exported.trash.days).toBe(30);
+  });
+
+  it('ignores imported or edited metrics status and leaves it out of exports', () => {
+    const config = { ...configFixture(), metrics: { enabled: true } };
+    const changed = { ...config, metrics: { enabled: false } };
+
+    expect(diffConfig(config, changed)).toEqual([]);
+    expect(importConfig(config, changed).draft.metrics.enabled).toBe(true);
+    const exported = redactConfigForExport(config);
+    expect(exported).not.toHaveProperty('metrics');
+    expect(importConfig(config, exported).unsupported).toEqual([]);
   });
 
   it('never journals secrets or URL credentials', () => {

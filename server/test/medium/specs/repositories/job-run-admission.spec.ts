@@ -96,6 +96,45 @@ describe('atomic initial run admission', () => {
     ]);
   });
 
+  it('keeps every later shared search a job of one run asks for, which the run itself would drop (FL-1337 F8)', async () => {
+    jobs['handlers'][JobName.MediaHealthLocateMissing] = { queueName: queue as QueueName } as never;
+    const runId = await store.createRun(queue, {});
+    // a fix running as a job of an administrator's queue run (Generate thumbnails, say)
+    const execution = { claim: { runId, rootItemKey: null }, buffering: false } as unknown as QueueExecution;
+    const request = { name: JobName.MediaHealthLocateMissing, data: { userId: randomUUID(), pending: true } } as const;
+    const live = () =>
+      db
+        .selectFrom('job')
+        .select(['runId', 'itemKey'])
+        .where('queue', '=', queue)
+        .where('state', 'in', ['pending', 'waiting', 'active'])
+        .execute();
+    const searchRuns = () =>
+      db
+        .updateTable('job')
+        .set({ state: 'completed', finishedAt: new Date() })
+        .where('queue', '=', queue)
+        .where('state', 'in', ['pending', 'waiting'])
+        .execute();
+
+    // as a job of the run, the owner's search runs once; the run then drops the next request for good
+    await store.enqueue([queueExecution.run(execution, () => jobs['intent'](request))]);
+    await expect(live()).resolves.toHaveLength(1);
+    await searchRuns();
+    await store.enqueue([queueExecution.run(execution, () => jobs['intent'](request))]);
+    await expect(live()).resolves.toEqual([]);
+
+    // outside the run, each request after a search has run is a search of its own
+    for (let request_ = 0; request_ < 2; request_++) {
+      await queueExecution.run(execution, () => jobs.queueOutsideRun([request]));
+      await expect(live()).resolves.toEqual([{ runId: null, itemKey: null }]);
+      // and a burst still collapses into the one waiting search
+      await queueExecution.run(execution, () => jobs.queueOutsideRun([request]));
+      await expect(live()).resolves.toHaveLength(1);
+      await searchRuns();
+    }
+  });
+
   it('discards prepared intents when later validation fails and exposes nothing during preparation', async () => {
     await expect(
       jobs.createRun(queue, {}, async () => {

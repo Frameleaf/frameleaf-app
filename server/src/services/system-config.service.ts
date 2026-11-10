@@ -225,7 +225,15 @@ export class SystemConfigService extends BaseService {
 
   async getAdminConfig(): Promise<AdminConfigDto> {
     const config = await this.getConfig({ withCache: false });
-    return mapAdminConfig(config);
+    return this.mapRuntimeAdminConfig(config);
+  }
+
+  private mapRuntimeAdminConfig(config: SystemConfig): AdminConfigDto {
+    const response = mapAdminConfig(config);
+    if (this.configRepository.getEnv().metrics?.enabled) {
+      response.metrics = { enabled: true };
+    }
+    return response;
   }
 
   getAdminConfigDefaults(): AdminConfigDto {
@@ -415,7 +423,7 @@ export class SystemConfigService extends BaseService {
   /** FL-66: the saved settings with the revision the settings editor sends back on save. */
   async getAdminConfigWithRevision(): Promise<AdminConfigRevisionResponseDto> {
     const config = await this.readConfigForUpdate();
-    return { config: mapAdminConfig(config), revision: getConfigRevision(config) };
+    return { config: this.mapRuntimeAdminConfig(config), revision: getConfigRevision(config) };
   }
 
   /**
@@ -427,11 +435,11 @@ export class SystemConfigService extends BaseService {
     auth?: AuthDto,
   ): Promise<AdminConfigRevisionResponseDto> {
     const newConfig = await this.saveAdminConfig(config, auth, expectedRevision);
-    return { config: mapAdminConfig(newConfig), revision: getConfigRevision(newConfig) };
+    return { config: this.mapRuntimeAdminConfig(newConfig), revision: getConfigRevision(newConfig) };
   }
 
   async updateAdminConfig(dto: AdminConfigDto, auth?: AuthDto): Promise<AdminConfigDto> {
-    return mapAdminConfig(await this.saveAdminConfig(dto, auth));
+    return this.mapRuntimeAdminConfig(await this.saveAdminConfig(dto, auth));
   }
 
   /**
@@ -457,6 +465,7 @@ export class SystemConfigService extends BaseService {
     }
 
     const incoming = cloneDeep(toPlainObject(dto));
+    delete incoming.metrics;
     let prepared = await this.prepareAdminConfig(cloneDeep(incoming), expectedRevision);
 
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
