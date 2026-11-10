@@ -1737,7 +1737,7 @@ export class MediaHealthService {
     if ((await this.findOriginal(job, asset, finding, [])) === 'done') {
       return JobStatus.Success;
     }
-    // F4: phones are asked only for a photo they are shown (a SHA-1 of its contents, not external, not Locked)
+    // F4: phones are asked only for a photo they are shown (a checksum of its contents, not external, not Locked)
     if (!settings.askPhones || !(await this.mediaHealthRepository.isShownToPhones(asset.ownerId, asset.id))) {
       await this.settle(finding, 'missing', []);
       return JobStatus.Success;
@@ -2344,6 +2344,7 @@ export class MediaHealthService {
         checksum: row.checksum.toString('base64'),
         originalFileName: row.originalFileName,
         fileCreatedAt: asDateTimeString(row.fileCreatedAt),
+        fileSize: row.fileSize ?? null,
       })),
       hasNextPage: rows.length > take,
     };
@@ -2360,9 +2361,10 @@ export class MediaHealthService {
     if (!sessionId || !(await this.careSettings()).askPhones) {
       return;
     }
+    // SHA-1 (20 bytes) or SHA-256 (32 bytes, every upload since FL-1108), as the list gave them (FL-1347)
     const checksums = [...new Set(notHere)]
       .map((checksum) => Buffer.from(checksum, 'base64'))
-      .filter((checksum) => checksum.length === 20);
+      .filter((checksum) => checksum.length === 20 || checksum.length === 32);
     const findings = await this.mediaHealthRepository.findLostOriginals(auth.user.id, checksums);
     if (findings.length === 0) {
       return;

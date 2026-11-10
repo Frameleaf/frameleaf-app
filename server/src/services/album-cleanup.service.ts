@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Kysely, Transaction } from 'kysely';
 import type {
   AlbumCleanupApplyDto,
@@ -27,6 +27,7 @@ import { ReversesAlbumChange } from 'src/services/album-change-run.service.js';
 import { AlbumDateHealService } from 'src/services/album-date-heal.service.js';
 import { AlbumMergeService, chooseMergeWinner } from 'src/services/album-merge.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { recordAlbumEdit } from 'src/services/partner-copy.service.js';
 import {
   CLEANUP_APPLY_STALLED_MINUTES,
@@ -106,6 +107,9 @@ const isSkippable = (error: unknown) =>
  */
 @Injectable()
 export class AlbumCleanupService extends BaseService {
+  /** FL-1347: for the AlbumDateHealService this builds by hand, as Nest gives one to its own (FL-721, see `BaseService.create`). */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
   private get merges() {
     return BaseService.create(AlbumMergeService, this);
   }

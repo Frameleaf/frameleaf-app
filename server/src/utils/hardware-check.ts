@@ -72,6 +72,10 @@ export type TestTranscode = {
   error: string | null;
 };
 
+/** A visible cgroup limit, with unknown evidence distinguished from no visible limit. */
+export type MlResourceLimit =
+  { status: 'limited'; value: number } | { status: 'unlimited' | 'unavailable'; value: null };
+
 /** What the ML container reported (`GET /hardware` → `container`). */
 export type MlContainerReport = {
   image: string;
@@ -88,6 +92,8 @@ export type MlContainerReport = {
   };
   /** Absent from an older ML image. */
   host?: HostFacts | null;
+  /** Visible cgroup limits only, not free capacity or model qualification; absent on older workers. */
+  resources?: { memoryBytes: MlResourceLimit; cpuCores: MlResourceLimit };
   /** CUDA compute capability of the first GPU, such as "7.5"; bf16 and FlashAttention need 8.0. */
   computeCapability?: string | null;
   /** ROCm: the gfx targets of the GPUs and the `HSA_OVERRIDE_GFX_VERSION` set, if any. */

@@ -6,7 +6,7 @@ import {
   WorkflowResponse,
   WorkflowTrigger,
 } from '@frameleaf/plugin-sdk';
-import { HttpException, UnauthorizedException } from '@nestjs/common';
+import { HttpException, Inject, UnauthorizedException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -33,6 +33,7 @@ import {
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { TagService } from 'src/services/tag.service.js';
 import { WorkflowService } from 'src/services/workflow.service.js';
 import { inheritWorkflowCausation, workflowCausation, workflowOwnership } from 'src/utils/workflow-context.js';
@@ -93,6 +94,9 @@ export const getAutomaticRetryExecutionId = (executionId: string): string => {
 };
 
 export class WorkflowExecutionService extends BaseService {
+  /** FL-1347: for the AssetService this builds by hand, as Nest gives one to its own (FL-721, see `BaseService.create`). */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
   private jwtSecret!: string;
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onWorkflowScheduleBootstrap() {
