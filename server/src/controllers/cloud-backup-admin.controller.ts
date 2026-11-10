@@ -6,6 +6,7 @@ import {
   CloudBackupCoverageResponseDto,
   CloudBackupExclusionsDto,
   CloudBackupExclusionsResponseDto,
+  CloudBackupLicenceCoverageResponseDto,
 } from 'src/dtos/cloud-backup-selection.dto.js';
 import {
   CloudBackupCheckDto,
@@ -268,6 +269,19 @@ export class CloudBackupAdminController {
   })
   getCoverage(): Promise<CloudBackupCoverageResponseDto> {
     return this.service.getCoverage();
+  }
+
+  @Get('licence-coverage')
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudBackupLicenceCoverage',
+    summary: 'Get the accounts currently covered for Cloud Backup',
+    description:
+      'Reads the current licence scope from Frameleaf Cloud without provisioning storage or issuing credentials. Unknown when no grant exists, the server is unlinked or the scope cannot be checked. Names are resolved locally; no account choices or media are returned.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getLicenceCoverage(): Promise<CloudBackupLicenceCoverageResponseDto> {
+    return this.service.getLicenceCoverage();
   }
 
   @Post('restore')

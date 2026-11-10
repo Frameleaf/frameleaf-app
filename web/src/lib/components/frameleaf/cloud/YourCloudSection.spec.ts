@@ -130,6 +130,7 @@ describe('YourCloudSection (FL-544: Plan, Licence and Support Frameleaf as one p
     sdkMock.getCloudStatus.mockResolvedValue(status());
     sdkMock.getLicenseStatus.mockResolvedValue(license());
     sdkMock.getLicenseProducts.mockResolvedValue(products());
+    sdkMock.getCloudBackupLicenceCoverage.mockResolvedValue({ scope: 'all', accounts: [] } as never);
     sdkMock.getCloudMlStatus.mockResolvedValue({
       enabled: false,
       wallet: { availableUsd: 0, topUpUrl: null },
@@ -173,7 +174,7 @@ describe('YourCloudSection (FL-544: Plan, Licence and Support Frameleaf as one p
       'href',
       'https://frameleaf.cloud.test/servers/018f',
     );
-    expect(screen.getByText('1 TB, for everyone')).toBeInTheDocument();
+    expect(screen.getByText('Everyone')).toBeInTheDocument();
     expect(
       screen.getByText(/\$9\.99 a month for each TB of Cloud Backup storage, or \$92\.91 a year/),
     ).toBeInTheDocument();

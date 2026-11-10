@@ -682,6 +682,14 @@ export type CloudBackupUnlockDto = {
     /** The key file, the base64 key or the recovery code. Kept in memory only */
     key: string;
 };
+export type CloudBackupLicensedAccountDto = {
+    name: string;
+    userId: string;
+};
+export type CloudBackupLicenceCoverageResponseDto = {
+    accounts: CloudBackupLicensedAccountDto[];
+    scope: CloudBackupLicenceScope;
+};
 export type CloudBackupManifestDto = {
     assets: number;
     bytes: number;
@@ -16468,6 +16476,8 @@ export type SharedLinkResponseDto = {
     createdAt: string;
     /** Link description */
     description: string | null;
+    /** FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root (/api/shared-links/direct/...). */
+    directUrl: string | null;
     /** Expiration date */
     expiresAt: string | null;
     /** Shared link ID */
@@ -20588,6 +20598,9 @@ export type SearchSuggestionRequestDto = {
     state?: string;
     "type": SearchSuggestionType;
 };
+export type SharedLinkDirectImageDto = {
+    size?: SharedLinkDirectImageSize;
+};
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
     albumId?: string;
@@ -22169,6 +22182,17 @@ export function unlockCloudBackupKey({ cloudBackupUnlockDto }: {
         method: "POST",
         body: cloudBackupUnlockDto
     })));
+}
+/**
+ * Get the accounts currently covered for Cloud Backup
+ */
+export function getCloudBackupLicenceCoverage(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupLicenceCoverageResponseDto;
+    }>("/admin/cloud/backup/licence-coverage", {
+        ...opts
+    }));
 }
 /**
  * List the kept backups
@@ -34091,6 +34115,22 @@ export function createSharedLink({ sharedLinkCreateDto }: {
     })));
 }
 /**
+ * View the image of a single-photo shared link
+ */
+export function getSharedLinkDirectImage({ keyOrSlug, size }: {
+    keyOrSlug: string;
+    size?: SharedLinkDirectImageSize;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-links/direct/${encodeURIComponent(keyOrSlug)}.jpg${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Shared link login
  */
 export function sharedLinkLogin({ key, slug, sharedLinkLoginDto }: {
@@ -38274,6 +38314,12 @@ export enum CloudBackupCoverageReportState {
     Local = "local",
     Unknown = "unknown"
 }
+export enum CloudBackupLicenceScope {
+    Unknown = "unknown",
+    None = "none",
+    All = "all",
+    Users = "users"
+}
 export enum CloudBackupManifestStatus {
     Complete = "complete",
     Degraded = "degraded"
@@ -41846,6 +41892,10 @@ export enum ReleaseType {
 export enum SharedLinkType {
     Album = "ALBUM",
     Individual = "INDIVIDUAL"
+}
+export enum SharedLinkDirectImageSize {
+    Preview = "preview",
+    Fullsize = "fullsize"
 }
 export enum AssetIdErrorReason {
     Duplicate = "duplicate",

@@ -24,6 +24,7 @@ describe(CloudBackupAdminController.name, () => {
     storeEscrow: vi.fn(),
     removeEscrow: vi.fn(),
     getCoverage: vi.fn(),
+    getLicenceCoverage: vi.fn(),
     listManifestExclusions: vi.fn(),
   };
   const runId = '0192a4c1-5e2b-7c91-9a4d-2f6b1e0c8d55';
@@ -60,6 +61,7 @@ describe(CloudBackupAdminController.name, () => {
       ['put', '/admin/cloud/backup/escrow'],
       ['delete', '/admin/cloud/backup/escrow'],
       ['get', '/admin/cloud/backup/coverage'],
+      ['get', '/admin/cloud/backup/licence-coverage'],
       ['post', '/admin/cloud/backup/manifests/exclusions'],
     ] as const) {
       await request(ctx.getHttpServer())[method](path);
