@@ -617,14 +617,15 @@ export class DatabaseBackupService {
       await query(live, `DROP ROLE IF EXISTS "${role}"`);
     };
     await dropAll();
-    // The dump is rebuilt by a role that is not a superuser and owns only the scratch database: whatever a
-    // damaged or forged dump says, it cannot run programs, write server files or reach other databases.
-    await query(
-      live,
-      `CREATE ROLE "${role}" LOGIN PASSWORD '${secret}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`,
-    );
-    await query(live, `CREATE DATABASE "${name}" OWNER "${role}"`);
     try {
+      // The dump is rebuilt by a role that is not a superuser and owns only the scratch database: whatever a
+      // damaged or forged dump says, it cannot run programs, write server files or reach other databases.
+      // Both are made inside the clean-up, so a failed CREATE DATABASE still drops the role.
+      await query(
+        live,
+        `CREATE ROLE "${role}" LOGIN PASSWORD '${secret}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`,
+      );
+      await query(live, `CREATE DATABASE "${name}" OWNER "${role}"`);
       // Extensions need a superuser, so the library's own are made here first; the dump's extension lines are dropped.
       const extensions = (await query(live, "SELECT extname FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql'"))
         .split('\n')
@@ -1258,7 +1259,6 @@ export function createSqlExtensionFilter() {
     },
   });
 }
-
 
 export function createSqlOwnerTransformStream(databaseUsername: string) {
   const ownerMarker = Buffer.from('OWNER TO ');

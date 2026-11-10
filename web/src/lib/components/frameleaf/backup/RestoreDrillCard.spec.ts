@@ -1,4 +1,10 @@
-import type { CloudBackupDrillDto, CloudBackupStatusResponseDto } from '@frameleaf/sdk';
+import {
+  CloudBackupDrillResult,
+  CloudBackupDrillStep,
+  CloudBackupDrillTrigger,
+  type CloudBackupDrillDto,
+  type CloudBackupStatusResponseDto,
+} from '@frameleaf/sdk';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -9,10 +15,10 @@ import en from '../../../../../../i18n/en.json';
 const drill = (overrides: Partial<CloudBackupDrillDto> = {}): CloudBackupDrillDto => ({
   id: '00000000-0000-7000-8000-000000000001',
   target: 'managed',
-  trigger: 'scheduled',
+  trigger: CloudBackupDrillTrigger.Scheduled,
   startedAt: '2026-11-08T03:40:00.000Z',
   finishedAt: '2026-11-08T03:46:12.000Z',
-  result: 'passed',
+  result: CloudBackupDrillResult.Passed,
   failedStep: null,
   backupFrom: '2026-11-08T02:00:00.000Z',
   library: { items: 48_210, photos: 44_860, videos: 3350, albums: 12 },
@@ -83,7 +89,10 @@ describe('RestoreDrillCard (FL-900)', () => {
 
   it('failed: names the step in plain words and offers the recovery key', () => {
     render(RestoreDrillCard, {
-      status: status({ lastDrill: drill({ result: 'failed', failedStep: 'unlock' }), drillNeedsAttention: true }),
+      status: status({
+        lastDrill: drill({ result: CloudBackupDrillResult.Failed, failedStep: CloudBackupDrillStep.Unlock }),
+        drillNeedsAttention: true,
+      }),
       onStatus: vi.fn(),
     });
     expect(screen.getByRole('heading', { name: 'Your backup didn’t restore' })).toBeInTheDocument();

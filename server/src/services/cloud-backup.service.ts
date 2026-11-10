@@ -3626,9 +3626,21 @@ export class CloudBackupService {
       await this.finishDrill(operation, claimToken, outcome, { target, scheduled, startedAt });
     } catch (error) {
       // An unreadable identity key or a failed write must not leave the drill running and other backup work
-      // blocked: the unfinished report is dropped and the operation ends, so the next drill can run.
+      // blocked, nor hide it: a report not yet stored is kept as a failed, unsigned drill, so Backups shows it.
       this.logger.warn(`Restore drill ${operation.id} could not be recorded: ${errorMessage(error)}`);
-      await this.drills.remove(operation.id).catch(() => undefined);
+      const stored = await this.drills.get(operation.id).catch(() => undefined);
+      if (!stored?.finishedAt) {
+        await this.drills
+          .finish(operation.id, {
+            finishedAt: new Date().toISOString(),
+            result: 'failed',
+            failedStep: outcome.failedStep,
+            signature: null,
+            keyFingerprint: null,
+            signerKey: null,
+          })
+          .catch(() => undefined);
+      }
       await this.completeTask(operation, claimToken);
     }
   }
