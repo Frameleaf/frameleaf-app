@@ -94,6 +94,8 @@ async def test_signed_event_reaches_the_bus_once(hass: HomeAssistant, aioclient_
     }
     assert (await client.post(path, data=body, headers=headers)).status == 200
     assert (await client.post(path, data=body, headers=headers)).status == 200
+    # a replay with another delivery header is still the same signed delivery
+    assert (await client.post(path, data=body, headers={**headers, "X-Frameleaf-Delivery": "other"})).status == 200
     forged = {**headers, "X-Frameleaf-Signature": sign("guess", timestamp, body), "X-Frameleaf-Delivery": "x"}
     assert (await client.post(path, data=body, headers=forged)).status == 401
     await hass.async_block_till_done()

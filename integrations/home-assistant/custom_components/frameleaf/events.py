@@ -65,13 +65,15 @@ def make_handler(secret: str):
             data: dict[str, Any] = message["data"]
         except (ValueError, KeyError, TypeError):
             return web.Response(status=400)
-        delivery = request.headers.get("X-Frameleaf-Delivery") or data.get("deliveryId")
-        if delivery in seen:
+        # dedupe on what the signature covers: the delivery id in the signed body (the header is not
+        # signed), else the signature itself, so a replay with a changed header is still a replay
+        delivery = data.get("deliveryId")
+        key = delivery or request.headers.get("X-Frameleaf-Signature")
+        if key in seen:
             return web.Response(status=200)
-        if delivery:
-            seen[delivery] = None
-            while len(seen) > _SEEN_LIMIT:
-                seen.popitem(last=False)
+        seen[key] = None
+        while len(seen) > _SEEN_LIMIT:
+            seen.popitem(last=False)
         hass.bus.async_fire(
             EVENT_FRAMELEAF,
             {
