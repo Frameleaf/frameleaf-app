@@ -38,13 +38,20 @@ describe('BoardsTextStyle (FL-1359)', () => {
     expect(onChange).toHaveBeenLastCalledWith({ color: '#ffffff' }, false);
   });
 
-  it('sets a variable font’s weight, as one undo step while dragging', async () => {
+  it('sets a variable font’s weight, one undo step for each drag', async () => {
     const onChange = vi.fn();
     render(BoardsTextStyle, { style: { fontAssetId: 'f1' }, onChange });
     const weight = await screen.findByRole('slider');
     expect(weight).toHaveValue('400');
+    // the first change of a drag starts an undo step, the rest of the drag joins it
+    await fireEvent.input(weight, { target: { value: '600' } });
+    expect(onChange).toHaveBeenLastCalledWith({ fontAssetId: 'f1', variation: { wght: 600 } }, false);
     await fireEvent.input(weight, { target: { value: '700' } });
     expect(onChange).toHaveBeenLastCalledWith({ fontAssetId: 'f1', variation: { wght: 700 } }, true);
+    // letting go ends it: the next drag or key press is its own step
+    await fireEvent.change(weight, { target: { value: '700' } });
+    await fireEvent.input(weight, { target: { value: '710' } });
+    expect(onChange).toHaveBeenLastCalledWith({ fontAssetId: 'f1', variation: { wght: 710 } }, false);
   });
 
   it('says so when the chosen font is no longer in Boards, and going back to the standard font clears the style', async () => {
@@ -53,5 +60,16 @@ describe('BoardsTextStyle (FL-1359)', () => {
     expect(await screen.findByText('frameleaf_boards_text_font_missing')).toBeInTheDocument();
     await fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '' } });
     expect(onChange).toHaveBeenLastCalledWith(undefined, false);
+  });
+
+  it('lists fonts beyond the first page of results', async () => {
+    sdkMock.searchLibraryItems
+      .mockResolvedValueOnce({ items: [item('x', 'notes.bin')], nextCursor: 'page-2' } as never)
+      .mockResolvedValueOnce({ items: [item('f9', 'Alder Serif.otf')], nextCursor: null } as never);
+    render(BoardsTextStyle, { style: undefined, onChange: vi.fn() });
+    expect(await screen.findByRole('option', { name: 'Alder Serif · OTF' })).toBeInTheDocument();
+    expect(sdkMock.searchLibraryItems).toHaveBeenLastCalledWith({
+      libraryItemSearchDto: expect.objectContaining({ cursor: 'page-2' }),
+    });
   });
 });
