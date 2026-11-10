@@ -1118,6 +1118,8 @@
   const showFilmstripStrip = $derived($showFilmstrip && filmstripAssets.length > 1 && !assetViewerManager.isShowEditor);
   /** The filmstrip's height, so the information card and the floating buttons end above it. */
   let stripsHeight = $state(0);
+  /** The footer as drawn: on a phone a video's zoom row wraps it onto a second line (FL-801). */
+  let footerHeight = $state(0);
   /** Everything above the footer, the stack card included, so a video's controls stay clear of it. */
   let stripsAreaHeight = $state(0);
 
@@ -1699,6 +1701,7 @@
   class:dragging={!!dismissDrag}
   class:with-footer={showFilmstripStrip || showStackStrip}
   class:info-open={showDetailPanel}
+  style:--fl-viewer-footer-height={showFooter && footerHeight > 0 ? `${footerHeight}px` : undefined}
   style:--fl-viewer-strips-height="{showFilmstripStrip ? stripsHeight : 0}px"
   style:--fl-viewer-strips-area-height="{stripsAreaHeight}px"
   style:background-color={dismissDrag ? `rgb(0 0 0 / ${1 - dismissDrag.progress})` : undefined}
@@ -2075,7 +2078,11 @@
 
   <!-- V-13: the footer (MediaViewer.jsx:1693-1797), frosted over the bottom of the photo. -->
   {#if showFooter}
-    <div class="absolute inset-x-0 bottom-0 z-2 col-span-4 col-start-1" data-viewer-chrome="footer">
+    <div
+      class="absolute inset-x-0 bottom-0 z-2 col-span-4 col-start-1"
+      data-viewer-chrome="footer"
+      bind:clientHeight={footerHeight}
+    >
       <ViewerFooter
         {asset}
         canNavigateCollection={!!(nextAsset || previousAsset)}

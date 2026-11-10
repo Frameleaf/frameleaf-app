@@ -174,7 +174,7 @@ export const videoZoomAction = (node: HTMLElement, initial: VideoZoomOptions) =>
   });
 
   const pointers = new Map<number, { x: number; y: number }>();
-  let pan: { x: number; y: number; view: VideoZoomView } | null = null;
+  let pan: { x: number; y: number } | null = null;
   let pinchDistance: number | null = null;
   let pressStart: { x: number; y: number } | null = null;
   let dragged = false;
@@ -183,7 +183,7 @@ export const videoZoomAction = (node: HTMLElement, initial: VideoZoomOptions) =>
 
   const startPan = () => {
     const [first] = pointers.values();
-    pan = first && view.zoom > 1 ? { x: first.x, y: first.y, view } : null;
+    pan = first && view.zoom > 1 ? { x: first.x, y: first.y } : null;
   };
 
   const pinchState = () => {
@@ -213,7 +213,10 @@ export const videoZoomAction = (node: HTMLElement, initial: VideoZoomOptions) =>
           Math.hypot(tap.x - lastTap.x, tap.y - lastTap.y) <= DOUBLE_TAP_SLOP_PX;
         lastTap = isDoubleTap ? null : tap;
         if (isDoubleTap) {
+          // The zoom animation owns the view; this press does not also pan it.
+          pan = null;
           togglePointZoom(tap.x, tap.y);
+          return;
         }
       }
       startPan();
@@ -247,7 +250,12 @@ export const videoZoomAction = (node: HTMLElement, initial: VideoZoomOptions) =>
     }
     if (pan && pointers.size === 1) {
       event.preventDefault();
-      commit({ ...pan.view, x: pan.view.x + event.clientX - pan.x, y: pan.view.y + event.clientY - pan.y });
+      // Each move adds to the view as it is now, so a wheel step or zoom animation mid-drag is kept.
+      const dx = event.clientX - pan.x;
+      const dy = event.clientY - pan.y;
+      pan.x = event.clientX;
+      pan.y = event.clientY;
+      commit({ ...view, x: view.x + dx, y: view.y + dy });
     }
   };
 
@@ -296,9 +304,9 @@ export const videoZoomAction = (node: HTMLElement, initial: VideoZoomOptions) =>
   const controller = new AbortController();
   const { signal } = controller;
   node.addEventListener('pointerdown', onPointerDown, { signal });
-  window.addEventListener('pointermove', onPointerMove, { signal, passive: false });
-  window.addEventListener('pointerup', onPointerEnd, { signal });
-  window.addEventListener('pointercancel', onPointerEnd, { signal });
+  addEventListener('pointermove', onPointerMove, { signal, passive: false });
+  addEventListener('pointerup', onPointerEnd, { signal });
+  addEventListener('pointercancel', onPointerEnd, { signal });
   node.addEventListener('click', onClick, { capture: true, signal });
   node.addEventListener('dblclick', onDoubleClick, { signal });
   node.addEventListener('wheel', onWheel, { signal, passive: false });

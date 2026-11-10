@@ -12,7 +12,7 @@ describe('video zoom (FL-801)', () => {
     it('holds the zoom between fit and the ceiling, and centres at fit', () => {
       expect(clampVideoView({ zoom: 0.5, x: -10, y: -10 }, 400, 200)).toEqual({ zoom: 1, x: 0, y: 0 });
       expect(clampVideoView({ zoom: 40, x: 0, y: 0 }, 400, 200).zoom).toBe(10);
-      expect(clampVideoView({ zoom: Number.NaN, x: 3, y: 3 }, 400, 200)).toEqual({ zoom: 1, x: 0, y: 0 });
+      expect(clampVideoView({ zoom: NaN, x: 3, y: 3 }, 400, 200)).toEqual({ zoom: 1, x: 0, y: 0 });
     });
   });
 
@@ -47,8 +47,10 @@ describe('video zoom (FL-801)', () => {
       controls = document.createElement('div');
       frame.append(video, controls);
       document.body.append(frame);
-      Object.defineProperty(frame, 'clientWidth', { value: 400 });
-      Object.defineProperty(frame, 'clientHeight', { value: 200 });
+      Object.defineProperties(frame, {
+        clientWidth: { value: 400 },
+        clientHeight: { value: 200 },
+      });
       frame.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 200 }) as DOMRect;
       assetViewerManager.resetZoomState();
       action = videoZoomAction(frame, { target: video, enabled: true });
@@ -72,11 +74,11 @@ describe('video zoom (FL-801)', () => {
       expect(video.style.transform).toBe('translate(-200px, -100px) scale(2)');
 
       pointer('pointerdown', frame, 200, 100);
-      pointer('pointermove', window, 260, 130);
+      pointer('pointermove', globalThis, 260, 130);
       expect(video.style.transform).toBe('translate(-140px, -70px) scale(2)');
-      pointer('pointermove', window, 900, 900);
+      pointer('pointermove', globalThis, 900, 900);
       expect(video.style.transform).toBe('translate(0px, 0px) scale(2)');
-      pointer('pointerup', window, 900, 900);
+      pointer('pointerup', globalThis, 900, 900);
 
       // A drag is not a click: the player does not play or pause.
       const click = new MouseEvent('click', { bubbles: true, cancelable: true });
@@ -87,10 +89,23 @@ describe('video zoom (FL-801)', () => {
       expect(assetViewerManager.zoomState.currentPositionX).toBe(0);
     });
 
+    it('keeps a zoom change made during a drag', () => {
+      assetViewerManager.zoom = 2;
+      pointer('pointerdown', frame, 200, 100);
+      pointer('pointermove', globalThis, 190, 100);
+      expect(video.style.transform).toBe('translate(-210px, -100px) scale(2)');
+
+      assetViewerManager.zoom = 4;
+      pointer('pointermove', globalThis, 180, 100);
+      expect(assetViewerManager.zoom).toBe(4);
+      expect(video.style.transform).toContain('scale(4)');
+      pointer('pointerup', globalThis, 180, 100);
+    });
+
     it('leaves presses on the controls to the controls', () => {
       assetViewerManager.zoom = 2;
       pointer('pointerdown', controls, 200, 100);
-      pointer('pointermove', window, 260, 130);
+      pointer('pointermove', globalThis, 260, 130);
       expect(video.style.transform).toBe('translate(-200px, -100px) scale(2)');
     });
 
@@ -104,7 +119,7 @@ describe('video zoom (FL-801)', () => {
       down(250, 2);
       const move = new MouseEvent('pointermove', { bubbles: true, cancelable: true, clientX: 300, clientY: 100 });
       Object.assign(move, { pointerId: 2, pointerType: 'touch' });
-      window.dispatchEvent(move);
+      dispatchEvent(move);
       // The fingers moved from 100px apart to 150px: 1.5x about their middle.
       expect(assetViewerManager.zoom).toBeCloseTo(1.5);
     });
