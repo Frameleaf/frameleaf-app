@@ -494,6 +494,8 @@ export interface IMediaHealthFixAssetJob extends IEntityJob {
   requeue?: number;
   /** How many times it has waited for an unplugged drive; it stops after a day. */
   waits?: number;
+  /** How many times it has waited for Cloud Backup to be free; after a day it carries on without it. */
+  backupWaits?: number;
   /** The owner's shared search by contents is complete: decide from what it found, without walking. */
   searched?: boolean;
   /**

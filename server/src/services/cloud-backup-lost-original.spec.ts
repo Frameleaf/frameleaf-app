@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { access, link, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -15,6 +15,12 @@ import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-sessio
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
+
+// Real filesystem calls; one case simulates a drive without hard links through `link`.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, link: vi.fn(actual.link) };
+});
 
 /**
  * FL-1337: Library care puts one lost original back from Cloud Backup by itself. Real files on disk: the
@@ -304,6 +310,64 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
     expect(await leftovers()).toEqual([]);
   });
 
+  it('restores on a drive without hard links, still never replacing anything', async () => {
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    vi.mocked(link).mockRejectedValue(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+    onTestFinished(() => {
+      vi.mocked(link).mockReset().mockImplementation(actual.link);
+    });
+    const changed = Buffer.from('a file that is no longer the photo');
+    await writeFile(originalPath, changed);
+    backup(PHOTO);
+
+    const result = await sut.restoreLostOriginal(ASSET_ID);
+
+    expect(result).toMatchObject({ outcome: 'restored', retainedPath: expect.stringContaining('.library-care') });
+    expect(link).toHaveBeenCalled();
+    await expect(readFile(originalPath)).resolves.toEqual(PHOTO);
+    await expect(readFile(result.retainedPath!)).resolves.toEqual(changed);
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it('moves nothing aside while the drive of the Library care folder is unplugged', async () => {
+    // the original lives in the library folder (a storage template); the Library care folder is on the uploads drive
+    originalPath = join(StorageCore.getBaseFolder(StorageFolder.Library), OWNER_ID, '2019', 'IMG_2041.jpg');
+    await mkdir(dirname(originalPath), { recursive: true });
+    target = { ...target, originalPath };
+    const changed = Buffer.from('a file that is no longer the photo');
+    await writeFile(originalPath, changed);
+    backup(PHOTO);
+    await rm(join(StorageCore.getBaseFolder(StorageFolder.Upload), '.frameleaf'));
+
+    await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'busy' });
+
+    // the changed file is where it was, nothing went into the empty mount point, and nothing is left behind
+    await expect(readFile(originalPath)).resolves.toEqual(changed);
+    const libraryCare = join(
+      dirname(StorageCore.getNestedPath(StorageFolder.Upload, OWNER_ID, ASSET_ID)),
+      '.library-care',
+    );
+    await expect(exists(libraryCare)).resolves.toBe(false);
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it.each([
+    ['refused credentials', 'not-set-up', new CloudBackupStoreError('Access denied', 403, 'AccessDenied')],
+    ['an unsigned request', 'not-set-up', new CloudBackupStoreError('Unauthorized', 401, null)],
+    ['a bad request', 'not-set-up', new CloudBackupStoreError('Bad request', 400, null)],
+    ['a bucket that is gone', 'not-set-up', new CloudBackupStoreError('No such bucket', 404, 'NoSuchBucket')],
+    ['a provider error', 'busy', new CloudBackupStoreError('Unavailable', 503, null)],
+    ['a rate limit', 'busy', new CloudBackupStoreError('Slow down', 429, 'SlowDown')],
+    ['an unreachable provider', 'busy', new CloudBackupStoreError('could not be reached', null, null)],
+  ] as const)('answers %s with %s, never as a backup without the photo', async (_name, outcome, error) => {
+    backup(PHOTO);
+    store.download.mockRejectedValueOnce(error);
+
+    await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome });
+    await expect(exists(originalPath)).resolves.toBe(false);
+    expect(await leftovers()).toEqual([]);
+  });
+
   it('leaves the photo’s own bytes where they are, fetching nothing', async () => {
     await writeFile(originalPath, PHOTO);
     backup(PHOTO);
@@ -448,11 +512,47 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
       expect(store.download).not.toHaveBeenCalled();
     });
 
-    it('treats a refused key as busy, never as a backup without the photo', async () => {
+    it('treats a key refused for now as busy, and one refused for good as not set up', async () => {
       backup(PHOTO);
-      store.download.mockRejectedValueOnce(new ManagedBackupAuthorizationError());
-
+      store.download.mockRejectedValueOnce(new ManagedBackupAuthorizationError(undefined, 60_000));
       await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'busy' });
+
+      store.download.mockRejectedValueOnce(new ManagedBackupAuthorizationError());
+      await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'not-set-up' });
+    });
+
+    it('reads for one photo at a time: each new restore key revokes the one before', async () => {
+      backup(PHOTO);
+      const events: string[] = [];
+      cloudBackup.rotate.mockImplementation(() => {
+        events.push('rotate');
+        return Promise.resolve(grant);
+      });
+      const download = store.download.getMockImplementation()!;
+      const { promise: firstHeld, resolve: releaseFirst } = Promise.withResolvers<void>();
+      store.download.mockImplementation(async (...args: unknown[]) => {
+        events.push('download');
+        if (events.filter((event) => event === 'download').length === 1) {
+          await firstHeld;
+        }
+        const result = await download(...args);
+        events.push('downloaded');
+        return result;
+      });
+
+      const first = sut.restoreLostOriginal(ASSET_ID);
+      const second = sut.restoreLostOriginal(ASSET_ID);
+      await vi.waitFor(() => expect(events).toContain('download'));
+      // the second fix waits for the first read to end before it asks for a key
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(cloudBackup.rotate).toHaveBeenCalledTimes(1);
+      releaseFirst();
+
+      await expect(first).resolves.toMatchObject({ outcome: 'restored' });
+      await expect(second).resolves.toMatchObject({ outcome: 'restored' });
+      expect(events).toEqual(['rotate', 'download', 'downloaded', 'rotate', 'download', 'downloaded']);
+      await expect(readFile(originalPath)).resolves.toEqual(PHOTO);
+      expect(await leftovers()).toEqual([]);
     });
   });
 

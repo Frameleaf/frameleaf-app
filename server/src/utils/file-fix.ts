@@ -14,6 +14,8 @@ export const BUSY_RETRY_DELAYS_MS: readonly number[] = [5, 30, 120].map((minutes
 export const FIX_WAIT_MS = 30 * 60_000;
 /** A day of waits for an unplugged drive. Then it stops until the next file check or Try again. */
 export const MAX_DRIVE_WAITS = 48;
+/** A day of waits for Cloud Backup to be free. Then the fix carries on without it, naming no backup. */
+export const MAX_BACKUP_WAITS = 48;
 /** How long the owner's shared search waits for more fixes to ask, so a burst of them is one walk. */
 export const FIX_SEARCH_DELAY_MS = 2 * 60_000;
 

@@ -102,6 +102,7 @@ import { asDateTimeString } from 'src/utils/date.js';
 import {
   BUSY_RETRY_DELAYS_MS,
   FIX_WAIT_MS,
+  MAX_BACKUP_WAITS,
   MAX_DRIVE_WAITS,
   checkedStep,
   folderFacts,
@@ -1684,9 +1685,15 @@ export class MediaHealthService {
         return 'done';
       }
       case 'busy': {
-        // a backup or restore is running: ask again later, without searching again
-        await this.putFixBack(job, { stage: 'backups', delay: FIX_WAIT_MS });
-        return 'done';
+        const waits = job.backupWaits ?? 0;
+        if (waits < MAX_BACKUP_WAITS) {
+          // a backup or restore is running: ask again later, without searching again
+          await this.putFixBack(job, { stage: 'backups', backupWaits: waits + 1, delay: FIX_WAIT_MS });
+          return 'done';
+        }
+        // a day of waiting: carry on without Cloud Backup, naming no backup
+        this.logger.log(`Library care stopped waiting for Cloud Backup to put back ${asset.id}`);
+        return 'none';
       }
       case 'not-in-backup': {
         await this.mediaHealthRepository.appendSteps(
@@ -2583,6 +2590,13 @@ export class MediaHealthService {
     const extension = path.extname(retained).toLowerCase();
     const suffix = /^\.[a-z0-9]{1,12}$/.test(extension) ? extension : '';
     const destination = path.join(folder, `${finding.assetId}-${finding.id}.damaged${suffix}`);
+    const libraries = await this.libraryRepository.getAll().catch(() => []);
+    if (!(await isFileRootReachable(this.storageRepository, destination, libraries))) {
+      // Review Focus 1: never moved into the empty mount point of a drive that is not there, which would hide
+      // it once the drive is back. It stays where it is, still recorded and never overwritten.
+      this.logger.log(`Library care left the damaged file of ${finding.assetId} where it is until its drive is back`);
+      return keptWhere();
+    }
     try {
       await retainFile(retained, destination);
     } catch (error) {

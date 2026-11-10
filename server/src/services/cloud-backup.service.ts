@@ -132,7 +132,7 @@ import {
   type LostOriginalRestore,
   type LostOriginalTarget,
   backupLacksFile,
-  bucketUnavailable,
+  bucketRefusal,
   holdsOwnBytes,
   isRestorableOriginal,
   lostOriginalCandidates,
@@ -242,6 +242,7 @@ import {
   executionSignal,
   reportExecutionProgress,
 } from 'src/utils/execution-signal.js';
+import { FIX_WAIT_MS } from 'src/utils/file-fix.js';
 import { type BackupCoverageSnapshot, LEGACY_MANIFEST_KEY } from 'src/utils/frameleaf-cloud-backup-coverage.js';
 import {
   BackupGrantResponse,
@@ -471,6 +472,8 @@ export class CloudBackupService {
   private readonly workerId = `cloud-backup-${randomUUID()}`;
   /** FL-164: this process holds the schedule (`DatabaseLock.FrameleafCloudBackupCheck`). */
   private scheduleLock = false;
+  /** FL-1337: the managed lost-original reads of this process, one after another (each rotates the key). */
+  private managedLostOriginalReads: Promise<unknown> = Promise.resolve();
   /** FL-164: the last manifest a restore list read, so paging through it reads the bucket once. */
   private manifestCache?: { bucketRef: string; key: string; binding: string; manifest: CloudBackupManifest };
   private readonly maintenance: CloudBackupMaintenance;
@@ -4859,6 +4862,19 @@ export class CloudBackupService {
       // back already (its drive came back, or a copy was put there): nothing to fetch, nothing moved
       return { outcome: 'restored', ...since };
     }
+    const read = () => this.readLostOriginal(metadata, target, candidates, since);
+    // Each managed read rotates the restore key, which revokes the one before: two fixes at once would revoke
+    // each other's, so this process makes them one after another.
+    return metadata.target === 'managed' ? this.oneManagedReadAtATime(read) : read();
+  }
+
+  /** The bucket opened, and the candidates tried in turn until one puts the photo's own bytes back. */
+  private async readLostOriginal(
+    metadata: FrameleafCloudBackup,
+    target: LostOriginalTarget,
+    candidates: Array<{ key: string; sha256: string }>,
+    since: { since?: string },
+  ): Promise<LostOriginalRestore> {
     const bucket = await this.openForLostOriginal(metadata);
     if (typeof bucket === 'string') {
       return { outcome: bucket };
@@ -4871,18 +4887,26 @@ export class CloudBackupService {
           return { outcome: 'busy' };
         }
         if (placed) {
-          this.logger.log(`Library care put the original of ${assetId} back from cloud backup ${candidate.key}`);
+          this.logger.log(`Library care put the original of ${target.assetId} back from cloud backup ${candidate.key}`);
           return { outcome: 'restored', ...since, ...placed };
         }
       }
     } catch (error) {
-      if (!bucketUnavailable(error)) {
+      const refusal = bucketRefusal(error);
+      if (!refusal) {
         throw error;
       }
-      this.logger.warn(`Cloud backup could not be read to put back ${assetId} just now: ${errorMessage(error)}`);
-      return { outcome: 'busy' };
+      this.logger.warn(`Cloud backup could not be read to put back ${target.assetId}: ${errorMessage(error)}`);
+      return { outcome: refusal };
     }
     return { outcome: 'not-in-backup', ...since };
+  }
+
+  /** `read` after every managed lost-original read this process started before it has ended. */
+  private oneManagedReadAtATime<T>(read: () => Promise<T>): Promise<T> {
+    const turn = this.managedLostOriginalReads.then(read);
+    this.managedLostOriginalReads = turn.catch(() => {});
+    return turn;
   }
 
   /**
@@ -4942,7 +4966,11 @@ export class CloudBackupService {
         this.logger.warn(`Cloud backup ${candidate.key} holds other bytes than ${target.assetId}'s original`);
         return;
       }
-      return await placeLostOriginal({ crypto: this.cryptoRepository, logger: this.logger }, target, staged);
+      return await placeLostOriginal(
+        { crypto: this.cryptoRepository, logger: this.logger, storage: this.storageRepository },
+        target,
+        staged,
+      );
     } finally {
       await rm(staged, { force: true });
     }
@@ -4983,7 +5011,7 @@ export class CloudBackupService {
         managedCredentials: managedBackupSession(grant, 'restore', async () => {
           const next = await rotate();
           if (next === 'busy') {
-            throw new ManagedBackupAuthorizationError('A cloud backup operation holds the bucket.');
+            throw new ManagedBackupAuthorizationError('A cloud backup operation holds the bucket.', FIX_WAIT_MS);
           }
           return next;
         }),

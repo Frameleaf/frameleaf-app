@@ -4081,6 +4081,36 @@ describe(MediaHealthService.name, () => {
       );
     });
 
+    it('repairs, but leaves the damaged file where it is while the drive for the kept copy is unplugged', async () => {
+      await cutShort();
+      const damaged = asset.originalPath;
+      // the repaired copy lands in the Library care folder on the uploads drive, which then goes away
+      const uploads = join(root, 'upload');
+      const baseFolder = StorageCore.getBaseFolder.bind(StorageCore);
+      const base = vi
+        .spyOn(StorageCore, 'getBaseFolder')
+        .mockImplementation((folder) => (folder === StorageFolder.Upload ? uploads : baseFolder(folder)));
+      onTestFinished(() => base.mockRestore());
+      vi.mocked(mediaHealthRepository.getByIds).mockImplementation(() => {
+        const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0]?.[0];
+        return Promise.resolve([
+          {
+            ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.Resolved, { retainedPath: damaged }),
+            originalPath: input?.originalPath,
+          },
+        ] as never);
+      });
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' });
+
+      expect(stepsWritten()).toEqual(['wont-open/failed', 'repaired/ok', 'kept-damaged/info']);
+      // still where it was, still recorded there: never moved into the empty mount point
+      await expect(stat(damaged)).resolves.toBeDefined();
+      expect(stepNamed('kept-damaged')?.undo).toMatchObject({ kind: 'repair', previousPath: damaged });
+      expect(mediaHealthRepository.setRetainedPath).not.toHaveBeenCalled();
+      expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('until its drive is back'));
+    });
+
     it('leaves a Photoshop file as it is', async () => {
       await original(join(root, 'Album-cover.psd'), Buffer.concat([Buffer.from('8BPS'), Buffer.alloc(2048, 3)]));
 
@@ -4224,7 +4254,7 @@ describe(MediaHealthService.name, () => {
       expect(stepsWritten()).toEqual(['searched-copy/not-found']);
       expect(mocks.job.queue).toHaveBeenLastCalledWith({
         name: JobName.MediaHealthFixAsset,
-        data: expect.objectContaining({ id: 'asset-1', stage: 'backups', delay: minutes(30) }),
+        data: expect.objectContaining({ id: 'asset-1', stage: 'backups', backupWaits: 1, delay: minutes(30) }),
       });
 
       // half an hour later it asks Cloud Backup only
@@ -4235,6 +4265,21 @@ describe(MediaHealthService.name, () => {
         'checked-backups/not-found',
         'asked-phones/not-found',
       ]);
+    });
+
+    it('stops waiting for Cloud Backup after a day, and carries on without it', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+      cloudBackupService.restoreLostOriginal.mockResolvedValue({ outcome: 'busy' });
+
+      await expect(
+        sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true, stage: 'backups', backupWaits: 48 }),
+      ).resolves.toBe(JobStatus.Success);
+
+      // not put back again: no backup is named, and the phones are asked
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+      expect(stepsWritten()).toEqual(['asked-phones/not-found']);
+      expect(fixState()).toMatchObject({ fixState: 'missing' });
     });
 
     it.each(['not-set-up', 'skipped'])('names no backup when Cloud Backup answers %s', async (outcome) => {
