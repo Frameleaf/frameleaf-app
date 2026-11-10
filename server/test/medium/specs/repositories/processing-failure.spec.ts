@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetType, JobName, QueueName } from 'src/enum.js';
+import { recordProcessingFailure } from 'src/queue/processing-failure.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -25,6 +26,12 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
   const queue = QueueName.ThumbnailGeneration;
   const worker = randomUUID();
   await store.initialize([queue], worker);
+  await recordProcessingFailure(
+    db,
+    { name: JobName.AssetGenerateThumbnails, assetId: corrupt.id },
+    'Prepared output source changed',
+  );
+  expect(await db.selectFrom('asset_processing_failure').select('assetId').execute()).toEqual([]);
   const enqueue = (id: string) =>
     store.enqueue([
       {
