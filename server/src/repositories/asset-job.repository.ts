@@ -78,11 +78,12 @@ export class AssetJobRepository {
     options: { queue: QueueName; fullsizeEnabled: boolean; videoPolicy: string; after?: string | null },
   ) {
     const selection = {
-      [JobName.AssetExtractMetadata]: () => this.selectionForMetadataExtraction(false),
+      [JobName.AssetExtractMetadata]: () => this.selectionForMetadataExtraction(false, false, true),
       [JobName.AssetGenerateThumbnails]: () =>
         this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }),
       [JobName.AssetEncodeVideo]: () =>
         this.selectionForVideoConversion(false)
+          .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
           .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
           .where('asset_job_status.metadataExtractedAt', 'is not', null)
           .where(sql<boolean>`"asset_job_status"."transcodeSkippedFor" is distinct from
@@ -169,8 +170,11 @@ export class AssetJobRepository {
       .$if(!!options.force, (qb) => qb.where(rendersOwnThumbnails))
       .$if(!options.force, (qb) =>
         qb
-          // If there aren't any entries, metadata extraction hasn't run yet which is required for thumbnails
+          // A status row can exist before metadata extraction, for example on a partner copy.
           .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+          .where(({ exists, selectFrom }) =>
+            exists(selectFrom('asset_exif').select('assetId').whereRef('asset_exif.assetId', '=', 'asset.id')),
+          )
           .where(({ and, eb, exists, not, or, selectFrom }) => {
             const file = (type: AssetFileType) =>
               selectFrom('asset_file').whereRef('assetId', '=', 'asset.id').where('type', '=', sql.lit(type));
@@ -649,7 +653,7 @@ export class AssetJobRepository {
     return this.selectionForMetadataExtraction(force).stream();
   }
 
-  selectionForMetadataExtraction(force?: boolean, encodingBackfill = false) {
+  selectionForMetadataExtraction(force?: boolean, encodingBackfill = false, verifyExif = false) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
@@ -659,6 +663,11 @@ export class AssetJobRepository {
             eb('asset_job_status.metadataExtractedAt', 'is', null),
             eb('asset_job_status.assetId', 'is', null),
           ];
+          if (verifyExif) {
+            conditions.push(
+              eb.not(eb.exists(eb.selectFrom('asset_exif').select('assetId').whereRef('assetId', '=', 'asset.id'))),
+            );
+          }
           if (encodingBackfill) {
             const raw = Object.keys(mimeTypes.raw).map((extension) => sql.lit(`%${extension}`));
             conditions.push(

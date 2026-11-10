@@ -132,11 +132,15 @@ describe(AssetJobRepository.name, () => {
     const offline = await make({ isOffline: true });
     const trashed = await make({ status: AssetStatus.Trashed });
     const thumbnail = await make();
+    const statusWithoutExif = await make();
     const ml = await make({ thumbhash: Buffer.from('test') });
     const video = await make({ type: AssetType.Video });
     const playable = await make({ type: AssetType.Video });
-    for (const asset of [thumbnail, ml, video, playable]) {
+    for (const asset of [thumbnail, statusWithoutExif, ml, video, playable]) {
       await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date(), facesRecognizedAt: null });
+    }
+    for (const asset of [thumbnail, ml, video, playable]) {
+      await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
     }
     await ctx.get(AssetRepository).upsertJobStatus({
       assetId: playable.id,
@@ -172,7 +176,7 @@ describe(AssetJobRepository.name, () => {
       return rows.map(({ id }) => id).sort();
     };
 
-    await expect(ids(JobName.AssetExtractMetadata)).resolves.toEqual([metadata.id]);
+    await expect(ids(JobName.AssetExtractMetadata)).resolves.toEqual([metadata.id, statusWithoutExif.id].sort());
     await expect(ids(JobName.AssetGenerateThumbnails)).resolves.toEqual([thumbnail.id, video.id, playable.id].sort());
     for (const name of [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr] as const) {
       await expect(ids(name)).resolves.toEqual([ml.id]);
@@ -421,6 +425,7 @@ describe(AssetJobRepository.name, () => {
       const { user } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
 
       const stream = sut.streamForThumbnailJob({ force: false, fullsizeEnabled: false });
       await expect(consume(stream)).resolves.toEqual([expect.objectContaining({ id: asset.id })]);
@@ -431,6 +436,7 @@ describe(AssetJobRepository.name, () => {
       const { user } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user.id, thumbhash: Buffer.from('fake-thumbhash-buffer') });
       await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: 'thumbnail.jpg' });
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
 
@@ -449,6 +455,7 @@ describe(AssetJobRepository.name, () => {
         originalFileName: 'photo.cr2',
       });
       await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: 'thumbnail.jpg' });
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
 
@@ -463,6 +470,7 @@ describe(AssetJobRepository.name, () => {
       const { user } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user.id, thumbhash: Buffer.from('fake-thumbhash-buffer') });
       await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: 'thumbnail.jpg' });
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.FullSize, path: 'fullsize.jpg' });
@@ -482,6 +490,7 @@ describe(AssetJobRepository.name, () => {
         originalFileName: 'photo.jpg',
       });
       await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: 'thumbnail.jpg' });
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
 
