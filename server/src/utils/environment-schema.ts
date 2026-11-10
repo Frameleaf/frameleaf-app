@@ -39,13 +39,20 @@ const trustedProxiesSchema = z
 
   .pipe(z.union([z.undefined(), IsIPRange({ requireCIDR: false })]));
 
+// EnvSchema keys are also a recovery API enum that existing native apps decode strictly.
+export const MetricsEnvSchema = z.object({
+  FRAMELEAF_METRICS_ENABLED: stringBool.optional(),
+  FRAMELEAF_METRICS_PORT: z.coerce.number().int().min(1).max(65_534).optional(),
+  FRAMELEAF_METRICS_TOKEN: z.string().min(1).max(1024).optional(),
+});
+
 /**
  * Every variable is validated under its FRAMELEAF_ name. Deprecated IMMICH_ names are resolved to these
  * first (FL-294, `src/utils/env-aliases.ts`), in ConfigRepository.getEnv.
  */
 export const EnvSchema = z
   .object({
-    /** FL-294: inert (no metrics are served or collected), so accepted under the old name only. */
+    /** FL-294: inert; the local metrics listener uses its own settings. */
     IMMICH_API_METRICS_PORT: z.coerce.number().int().optional(),
     FRAMELEAF_BUILD_DATA: z.string().optional(),
     FRAMELEAF_BUILD: z.string().optional(),

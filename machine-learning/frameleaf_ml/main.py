@@ -7,7 +7,7 @@ import secrets
 import signal
 import threading
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from functools import partial
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable
@@ -29,7 +29,7 @@ from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.clip.hugging_face import inspect_custom_clip_model
-from frameleaf_ml.models.constants import is_custom_clip_model
+from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS, get_model_source, is_custom_clip_model
 from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.subject_matte import MAX_FRAME_BYTES as SUBJECT_MATTE_MAX_FRAME_BYTES
 from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
@@ -56,6 +56,7 @@ from .config import PreloadModelData, log, model_source, settings
 from .env_aliases import read_env
 from .hardware_report import container_report
 from .inference_executor import InferenceBusy, InferenceExecutor
+from .metrics import InferenceMetrics, metrics_enabled, private_scraper
 from .models.cache import ModelCache
 from .producer_binding import BoundPredictor
 from .schemas import (
@@ -346,6 +347,53 @@ if not _expected_token:
     )
 
 app.add_middleware(BearerAuthMiddleware, expected_token=_expected_token)
+inference_metrics = InferenceMetrics() if metrics_enabled() else None
+
+# Each of these routes has a fixed task. The generic /predict route can contain several tasks.
+_INFERENCE_ROUTES = {
+    "/predict-bound": ModelTask.SEARCH,
+    "/predict-face-bound": ModelTask.FACIAL_RECOGNITION,
+    "/transcribe": ModelTask.TRANSCRIBE,
+    "/music": ModelTask.MUSIC,
+    "/translate": ModelTask.TRANSLATE,
+    "/voice-cleanup": ModelTask.VOICE_CLEANUP,
+    "/subject-matte": ModelTask.SUBJECT_MATTE,
+}
+
+
+class InferenceMetricsMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: ASGIApp, metrics: InferenceMetrics) -> None:
+        super().__init__(app)
+        self.metrics = metrics
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        task = _INFERENCE_ROUTES.get(request.url.path)
+        if request.method != "POST" or task is None:
+            return await call_next(request)
+        with self.metrics.request(task.value):
+            response = await call_next(request)
+            if response.status_code >= 400:
+                self.metrics.request_errors.labels(task=task.value).inc()
+            return response
+
+
+if inference_metrics is not None:
+    app.add_middleware(InferenceMetricsMiddleware, metrics=inference_metrics)
+
+
+@app.get("/metrics", include_in_schema=False)
+def scrape_metrics(request: Request) -> Response:
+    if (
+        inference_metrics is None
+        or not private_scraper(request.client.host if request.client else None)
+        or any(
+            name in request.headers
+            for name in ("x-frameleaf-via", "x-frameleaf-via-auth", "forwarded", "x-forwarded-for", "x-forwarded-host")
+        )
+    ):
+        raise HTTPException(404)
+    body, content_type = inference_metrics.scrape()
+    return Response(body, headers={"Content-Type": content_type, "Cache-Control": "no-store"})
 
 
 @app.get("/")
@@ -947,7 +995,19 @@ async def run_inference(
                 message = f"Task {entry['task']} of type {entry['type']} depends on output of {dep}"
                 raise HTTPException(400, message)
         model = await load(model)
-        output = await run(model.predict, *inputs, **entry["options"])
+        if inference_metrics is None:
+            output = await run(model.predict, *inputs, **entry["options"])
+        else:
+            # Only published, built-in identities reach labels. Private names share one bucket.
+            name = model.model_name
+            label = name if get_model_source(name) is not None and not is_custom_clip_model(name) else "other"
+            providers = getattr(getattr(model, "session", None), "providers", [])
+            provider = next((p for p in providers if p in SUPPORTED_PROVIDERS), model.model_format.value)
+            prediction = inference_metrics.inference_duration.labels(
+                task=entry["task"].value, model=label, provider=provider
+            )
+            with prediction.time():
+                output = await run(model.predict, *inputs, **entry["options"])
         outputs[model.identity] = output
         response[entry["task"]] = output
 
@@ -955,7 +1015,8 @@ async def run_inference(
 
     async def admitted(entry: InferenceEntry) -> None:
         async with capacity:
-            await _run_inference(entry)
+            with inference_metrics.request(entry["task"].value) if inference_metrics else nullcontext():
+                await _run_inference(entry)
 
     without_deps, with_deps = entries
     await asyncio.gather(*[admitted(entry) for entry in without_deps])

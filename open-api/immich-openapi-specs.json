@@ -66890,6 +66890,9 @@
           "metadata": {
             "$ref": "#/components/schemas/AdminConfigMetadataDto"
           },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsStatusDto"
+          },
           "newVersionCheck": {
             "$ref": "#/components/schemas/AdminConfigNewVersionCheckDto"
           },
@@ -110578,6 +110581,19 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "MetricsStatusDto": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the local metrics listener is configured to run",
+            "type": "boolean"
+          }
+        },
+        "readOnly": true,
+        "required": [
+          "enabled"
+        ],
         "type": "object"
       },
       "MirrorAxis": {

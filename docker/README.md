@@ -62,3 +62,33 @@ Test fixtures are frozen at commit `6742055402de1aa48f93d12ded7d18f4057f9d1f`. H
 On Linux, the Compose stack includes a small `frameleaf-lan-discovery` companion. It uses the host network to publish Bonjour (`_frameleaf._tcp`) while the application, database and machine learning keep their private Docker network. The companion uses the same server image, mounts no media or database storage, and receives no database credentials. It withdraws the announcement when the server is unavailable or LAN discovery is disabled in Settings.
 
 The companion is part of the regular `docker-compose.yml` only; with the rootless file, enter the server address in the app. If you change the published web port with `FRAMELEAF_HOST_PORT`, the companion's `FRAMELEAF_DISCOVERY_URL` follows it automatically. If you publish the port another way, for example in an override, set `FRAMELEAF_DISCOVERY_URL` to the full URL for that host port, such as `http://127.0.0.1:3000`, under `frameleaf-lan-discovery.environment` in the same override. Phones must be on a network that permits mDNS multicast (UDP 5353); discovery does not cross VLANs without a configured mDNS gateway. Docker Desktop needs host networking enabled to use the companion; entering the server address remains available.
+
+## Local monitoring with Prometheus and Grafana
+
+Local metrics are off by default. They are collected only while monitoring is enabled and are available for Prometheus to pull over the private network. Frameleaf does not send them anywhere. Keep ports 8081, 8082 and 3003 off the public network and out of reverse proxy rules.
+
+Save the following as a Compose override beside `docker-compose.yml` and `prometheus.yml`. Start the stack with both Compose files. In Grafana, add a Prometheus data source using `http://prometheus:9090`, then import `grafana/frameleaf-dashboard.json` and select that data source.
+
+```yaml
+services:
+  frameleaf-server:
+    environment:
+      FRAMELEAF_METRICS_ENABLED: 'true'
+  frameleaf-machine-learning:
+    environment:
+      FRAMELEAF_ML_METRICS_ENABLED: 'true'
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - '127.0.0.1:3001:3000'
+```
+
+`FRAMELEAF_METRICS_PORT` changes the API metrics port from 8081. The job worker uses the next port. Update the two targets in `prometheus.yml` if you change it. Native installs bind these listeners to loopback.
+
+To protect the server scrapes with a bearer credential, set `FRAMELEAF_METRICS_TOKEN` on the server. Add `authorization.credentials_file` to the `frameleaf_api` and `frameleaf_microservices` jobs in `prometheus.yml` and mount the credential file read-only into Prometheus. If your ML worker uses `FRAMELEAF_ML_AUTH_TOKEN`, configure its credential file separately on the `frameleaf_ml` job. Use only private networks for these connections.
+
+Library totals and queue counts refresh at intervals. The machine-learning panels populate after processing starts. Custom model identities are grouped together to keep private names out of labels.
