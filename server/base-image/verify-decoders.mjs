@@ -4,7 +4,7 @@
 // base-image bump cannot drop a format without anyone noticing. Something that is missing on purpose,
 // or not yet built, goes in KNOWN_GAPS with the reason; an entry that is no longer a gap fails the
 // run until it is removed.
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -18,12 +18,10 @@ const KNOWN_GAPS = {};
 
 const present = new Map(); // "<group> <name>" -> true | reason it is missing
 const check = (group, name, ok, why = 'missing') => present.set(`${group} ${name}`, ok ? true : why);
+// Both streams, whatever the exit code: `djpeg -version` answers on stderr and exits cleanly.
 const output = (command, args) => {
-  try {
-    return execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (error) {
-    return `${error.stdout ?? ''}${error.stderr ?? ''}`;
-  }
+  const { stdout, stderr } = spawnSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return `${stdout ?? ''}${stderr ?? ''}`;
 };
 
 // libvips loaders, as sharp reports them (sharp names the JPEG 2000 loader "jp2").

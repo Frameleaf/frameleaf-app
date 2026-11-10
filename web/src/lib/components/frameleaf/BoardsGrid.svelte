@@ -221,7 +221,12 @@
           {:else}
             {#if previewFailed[previewKey(tile.asset)]}
               <!-- No preview (a design file with no picture inside, or one still being made): the quiet placeholder. -->
-              <BrokenAsset class="bg-missing" hideMessage />
+              <span
+                class="bg-missing"
+                style:aspect-ratio={layout === 'board' ? String(tile.asset.ratio || 1) : undefined}
+              >
+                <BrokenAsset hideMessage width="100%" height="100%" />
+              </span>
             {:else}
               <img
                 src={getAssetMediaUrl({
@@ -328,11 +333,13 @@
   .bg-grid.grid .bg-tile.asset img {
     aspect-ratio: 1;
   }
-  .bg-open :global(.bg-missing) {
+  /* The placeholder keeps the picture's own shape, so a tile does not change size when its thumbnail fails. */
+  .bg-missing {
+    display: block;
     width: 100%;
     aspect-ratio: 4 / 3;
   }
-  .bg-grid.grid .bg-tile.asset .bg-open :global(.bg-missing) {
+  .bg-grid.grid .bg-tile.asset .bg-missing {
     aspect-ratio: 1;
   }
   .bg-link-picture,

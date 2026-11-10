@@ -35,6 +35,8 @@ describe('BoardsGrid', () => {
     expect(container.querySelectorAll(':scope .bg-open img')).toHaveLength(1);
     expect(container.querySelectorAll('[data-broken-asset]')).toHaveLength(1);
     expect(container.textContent).toContain('logo.eps');
+    // in the grid layout the tile's square comes from the stylesheet, so no shape is set inline
+    expect(container.querySelector<HTMLElement>(':scope .bg-missing')?.style.aspectRatio).toBe('');
 
     // opening the item tries its thumbnail again
     await fireEvent.click(container.querySelector(':scope .bg-open')!);
