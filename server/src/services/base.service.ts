@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { PROPERTY_DEPS_METADATA } from '@nestjs/common/constants.js';
 import { Insertable } from 'kysely';
 import { cloneDeep } from 'lodash-es';
 import sanitize from 'sanitize-filename';
@@ -215,6 +216,11 @@ export const BASE_SERVICE_DEPENDENCIES = [
   WorkflowRepository,
 ] as const;
 
+/** The dependencies Nest sets on a service's properties (`@Inject` on a property), with the token of each. */
+const propertyDependencies = (Service: object): Array<{ key: string; type: unknown }> =>
+  // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
+  Reflect.getMetadata(PROPERTY_DEPS_METADATA, Service) ?? [];
+
 @Injectable()
 export class BaseService {
   protected storageCore: StorageCore;
@@ -397,6 +403,17 @@ export class BaseService {
     );
 
     service.logger.setContext(BaseService.name);
+
+    // FL-1347: Nest also sets a service's property-injected dependencies (Locked encryption, FL-721). One built here
+    // gets each from the service that builds it, which Nest gave the same instance.
+    const held = propertyDependencies(ctx.constructor);
+    for (const { key, type } of propertyDependencies(Service)) {
+      const from = held.find((dependency) => dependency.type === type);
+      const value = from && (ctx as unknown as Record<string, unknown>)[from.key];
+      if (value !== undefined) {
+        Object.assign(service, { [key]: value });
+      }
+    }
 
     return service as InstanceType<T>;
   }

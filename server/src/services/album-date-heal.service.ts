@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AlbumChangeReversal, AlbumChangeRow } from 'src/repositories/album-change-run.repository.js';
@@ -17,6 +17,7 @@ import { AlbumChangeRunKind, AlbumChangeRunStatus } from 'src/schema/tables/albu
 import { ReversesAlbumChange } from 'src/services/album-change-run.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { healDates, suspiciousDate } from 'src/utils/album-suggestions.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
@@ -51,6 +52,9 @@ const toHealPhoto = (row: HealPhotoRow, viewerId: string): HealPhoto => ({
  */
 @Injectable()
 export class AlbumDateHealService extends BaseService {
+  /** FL-1347: for the AssetService this builds by hand, as Nest gives one to its own (FL-721, see `BaseService.create`). */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
   /**
    * A later edit wins, and Locked stays Locked: a session without the PIN can undo a run but learns nothing of
    * the Locked photos in it, neither their names nor how many were put back.
