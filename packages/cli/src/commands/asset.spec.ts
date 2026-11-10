@@ -347,6 +347,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
       image: ['.jpg'],
       sidecar: ['.xmp'],
       video: ['.mp4'],
+      font: [],
     });
 
     testFolder = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'test-startWatch-'));

@@ -264,6 +264,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
           '.tiff',
         ],
         sidecar: ['.xmp'],
+        font: ['.otf', '.ttf', '.woff', '.woff2'],
       },
     });
   });

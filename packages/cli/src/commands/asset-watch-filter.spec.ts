@@ -15,7 +15,12 @@ it('admits the same filenames synchronously without changing watcher timing', as
   // eslint-disable-next-line unicorn/prefer-event-target -- Chokidar exposes Node EventEmitter listeners and events.
   const watcher = Object.assign(new EventEmitter(), { close: vi.fn() });
   vi.mocked(watch).mockReturnValue(watcher as never);
-  vi.mocked(getSupportedMediaTypes).mockResolvedValue({ image: ['.jpg', '.png'], video: ['.mp4'], sidecar: [] });
+  vi.mocked(getSupportedMediaTypes).mockResolvedValue({
+    image: ['.jpg', '.png'],
+    video: ['.mp4'],
+    sidecar: [],
+    font: [],
+  });
   const add = vi.spyOn(Batcher.prototype, 'add');
   let stopWatch: Awaited<ReturnType<typeof startWatch>> | undefined;
   try {

@@ -17,7 +17,12 @@ beforeEach(() => {
   vi.mocked(getAssetStatistics).mockResolvedValue({ images: 3, videos: 2, total: 5 } as never);
   vi.mocked(getMyUser).mockResolvedValue({ email: 'reader@example.com' } as never);
   vi.mocked(getServerVersion).mockResolvedValue({ major: 3, minor: 2, patch: 1 } as never);
-  vi.mocked(getSupportedMediaTypes).mockResolvedValue({ image: ['.jpg', '.png'], video: ['.mp4'], sidecar: [] });
+  vi.mocked(getSupportedMediaTypes).mockResolvedValue({
+    image: ['.jpg', '.png'],
+    video: ['.mp4'],
+    sidecar: [],
+    font: [],
+  });
 });
 afterEach(() => vi.restoreAllMocks());
 
