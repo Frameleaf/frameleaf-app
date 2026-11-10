@@ -646,9 +646,9 @@ export async function runCountsPhotos(db: Kysely<any>, runId: string): Promise<b
   return run?.countsPhotos;
 }
 
-/** The photos (roots) of one cause that still need a look. */
-export async function runFailureRoots(db: Kysely<any>, runId: string, cause: RunFailureCause) {
-  const { rows } = await sql<{ root: string }>`select t.root from (${runFailureTasks(runId, true)}) t
+/** The photos (roots) of one cause that still need a look; in a run that counts tasks, the failed jobs' ids. */
+export async function runFailureRoots(db: Kysely<any>, runId: string, cause: RunFailureCause, countsPhotos = true) {
+  const { rows } = await sql<{ root: string }>`select t.root from (${runFailureTasks(runId, countsPhotos)}) t
     where t."photoRank" = ${causeRank(cause)}::int and not t."photoStopped"
     group by t.root`.execute(db);
   return rows.map(({ root }) => root);

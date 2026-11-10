@@ -550,3 +550,24 @@ describe('left-over count (review)', () => {
     expect(live.leftOver).toBeLessThanOrEqual(live.failed + live.needsAttention);
   });
 });
+
+describe('a run that counts tasks (review)', () => {
+  it('Try again now puts its failed tasks back', async () => {
+    const id = await run();
+    const ids: string[] = [];
+    for (const error of ['Timed out', 'unsupported format']) {
+      const jobId = randomUUID();
+      ids.push(jobId);
+      await sql`insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", "runId", state, error,
+          "finishedAt")
+        values (${jobId}::uuid, 'thumbnailGeneration', 'Cleanup', '{}', true, false, 1000, ${id}::uuid, 'failed',
+          ${error}, now())`.execute(db);
+    }
+    // without photos every task is other
+    expect(await summarizeRunFailures(db, id, false)).toEqual([expect.objectContaining({ cause: 'other', count: 2 })]);
+    expect(await new SqlQueueStore(database).retryRunFailures(id, 'other')).toBe(2);
+    const { rows } = await sql<{ id: string; state: string }>`select id, state from job where "runId" = ${id}::uuid
+      order by id`.execute(db);
+    expect(rows).toEqual(ids.toSorted().map((jobId) => ({ id: jobId, state: 'pending' })));
+  });
+});

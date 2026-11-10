@@ -22,6 +22,7 @@ import {
   observeQueueRun,
   reportedQueueJobs,
   rewriteFailureCauses,
+  runCountsPhotos,
   runFailureRoots,
 } from 'src/queue/run-query.js';
 import {
@@ -1181,8 +1182,12 @@ export class SqlQueueStore {
     return (await this.putBackRunWork(runId, db)).jobs;
   }
 
-  /** `retryRun`, of only the photos (roots) `roots` when given; returns how many jobs and photos went back. */
-  private async putBackRunWork(runId: string, db: Executor, roots?: string[]) {
+  /**
+   * `retryRun`, of only the photos (roots) `only.roots`, or the jobs `only.jobIds`, when given; returns how many jobs
+   * and photos went back.
+   */
+  private async putBackRunWork(runId: string, db: Executor, only: { roots?: string[]; jobIds?: string[] } = {}) {
+    const { roots, jobIds } = only;
     let total = 0;
     const photos = new Set<string>();
     for (;;) {
@@ -1190,6 +1195,7 @@ export class SqlQueueStore {
         SELECT j.id,j."parentId",j.state FROM job j
         WHERE j."runId"=${runId}::uuid AND j."safeToRetry" AND j.data->>'operationId' IS NULL
           ${roots ? sql`AND j."rootItemKey" = any(${roots}::text[])` : sql``}
+          ${jobIds ? sql`AND j.id = any(${jobIds}::uuid[])` : sql``}
           AND j.state IN ('failed','blocked') AND NOT (${queuedProcessingIsSetAside})
           AND (j."dedupKey" IS NULL OR NOT EXISTS (
             SELECT 1 FROM job d WHERE d.queue=j.queue AND d."dedupKey"=j."dedupKey" AND d.id<>j.id
@@ -1215,8 +1221,8 @@ export class SqlQueueStore {
 
   /**
    * FL-1349 Try again now: one cause's left-over photos (stopped ones aside) go back, their processing failures
-   * re-armed first (set aside work is never put back otherwise). Returns how many photos went back, or undefined for
-   * an unknown run.
+   * re-armed first (set aside work is never put back otherwise). Returns how many photos went back (tasks, in a run
+   * that counts tasks), or undefined for an unknown run.
    */
   async retryRunFailures(runId: string, cause: RunFailureCause): Promise<number | undefined> {
     const photos = await this.db.transaction().execute(async (tx) => {
@@ -1224,15 +1230,22 @@ export class SqlQueueStore {
         rows: [run],
       } = await sql`select id from job_run where id = ${runId}::uuid for no key update`.execute(tx);
       if (!run) return;
-      const roots = await runFailureRoots(tx, runId, cause);
-      if (roots.length === 0) return 0;
+      // a run that counts tasks has no photos: each failed task is its own item, named by its job id
+      const countsPhotos = (await runCountsPhotos(tx, runId)) ?? true;
+      const items = await runFailureRoots(tx, runId, cause, countsPhotos);
+      if (items.length === 0) return 0;
       await sql`update asset_processing_failure f set "quarantinedAt" = null, attempts = 0 from job j
-        where j."runId" = ${runId}::uuid and j."rootItemKey" = any(${roots}::text[]) and j.state = 'failed'
+        where j."runId" = ${runId}::uuid and j.state = 'failed'
+          and ${countsPhotos ? sql`j."rootItemKey" = any(${items}::text[])` : sql`j.id = any(${items}::uuid[])`}
           and f."assetId" = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end
           and f.step = j.name and f."dismissedAt" is null`.execute(tx);
-      const { photos } = await this.putBackRunWork(runId, tx, roots);
+      const { jobs, photos } = await this.putBackRunWork(
+        runId,
+        tx,
+        countsPhotos ? { roots: items } : { jobIds: items },
+      );
       await rewriteFailureCauses(tx, runId);
-      return photos;
+      return countsPhotos ? photos : jobs;
     });
     if (photos !== undefined) this.forgetRunReads();
     return photos;
