@@ -89,9 +89,9 @@ export class SignInSecurityService extends BaseService {
   }
 
   async signedIn(user: AlertUser, details: LoginDetails): Promise<void> {
-    const { environment, frameleafCloud } = this.configRepository.getEnv();
-    if (environment === FrameleafEnvironment.Testing) return;
     try {
+      const { environment, frameleafCloud } = this.configRepository.getEnv();
+      if (environment === FrameleafEnvironment.Testing) return;
       const clientIp = details.securityClientIp ?? details.clientIp;
       const network = signInNetwork(clientIp);
       if (!network) return;

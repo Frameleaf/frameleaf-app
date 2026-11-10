@@ -115,6 +115,7 @@ export const GetLoginDetails = createParamDecorator((data, context: ExecutionCon
 
   return {
     clientIp: (request as FrameleafRequest).frameleafForwarded?.for ?? request.ip ?? '',
+    // A request without a verified IP stays unknown for security counters and activity.
     securityClientIp: requestSecurityAddress(request) ?? '',
     isSecure: request.secure,
     ...device,

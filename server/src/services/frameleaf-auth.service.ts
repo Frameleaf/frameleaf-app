@@ -511,7 +511,8 @@ export class FrameleafAuthService extends BaseService {
       throw error;
     }
     await this.recordFrameleafSignIn(user, session.id, loginDetails);
-    await this.signInSecurity.signedIn(user, loginDetails);
+    // Device observation and mail do not need to keep the Frameleaf authority locks held.
+    void this.signInSecurity.signedIn(user, loginDetails);
     return response;
   }
 

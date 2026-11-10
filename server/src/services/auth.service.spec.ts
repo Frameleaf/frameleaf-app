@@ -9,7 +9,7 @@ import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
 import { AdminAuditAction, AuthCookie, AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { ImportedPassword } from 'src/library-import/passwords.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
-import { AuthService, emailVerificationProblem } from 'src/services/auth.service.js';
+import { AuthService, emailVerificationProblem, loginEventDetails } from 'src/services/auth.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -3149,6 +3149,10 @@ describe(AuthService.name, () => {
       via: 'relay' as const,
     };
     const device = { deviceOS: 'iOS', deviceType: 'Safari', via: 'relay', ipPrefix: '203.0.113.0/24' };
+
+    it('keeps the activity address unknown if the request had no verified address', () => {
+      expect(loginEventDetails({ ...details, securityClientIp: '' }).ipPrefix).toBeNull();
+    });
 
     it('records one signed-in row with device and via', async () => {
       const user = UserFactory.create({ password: 'hash-password' });
