@@ -355,12 +355,12 @@ describe(MediaIntegrityService.name, () => {
     it('are proved by their checksum and signature, and never decoded', async () => {
       mocks.media.decodeImage.mockRejectedValue(new Error('magickload: corrupt image, premature end of file'));
       for (const [name, start] of [
-        ['layers.psd', '8BPS\0\u0001'],
-        ['poster.psb', '8BPS\0\u0002'],
+        ['layers.psd', '8BPS\0\u{1}'],
+        ['poster.psb', '8BPS\0\u{2}'],
         ['brochure.pdf', '%PDF-1.7'],
         ['logo.ai', '%PDF-1.5'],
         ['logo.eps', '%!PS-Adobe-3.0 EPSF-3.0'],
-        ['screens.sketch', 'PK\u0003\u0004'],
+        ['screens.sketch', 'PK\u{3}\u{4}'],
       ]) {
         const result = await design(name, Buffer.concat([Buffer.from(start, 'latin1'), Buffer.alloc(64, 7)]));
         expect(result, name).toMatchObject({ status: 'healthy' });
@@ -378,7 +378,7 @@ describe(MediaIntegrityService.name, () => {
 
     it('still report bytes that changed since they were stored', async () => {
       const path = join(directory, 'layers.psd');
-      await writeFile(path, Buffer.from('8BPS\0\u0001 changed'));
+      await writeFile(path, Buffer.from('8BPS\0\u{1} changed'));
       expect(
         await sut.validate({
           ...input,

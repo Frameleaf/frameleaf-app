@@ -1,7 +1,7 @@
 import { open } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { crc32, inflateRawSync } from 'node:zlib';
-import { readTakeoutZipDirectory, takeoutZipDataOffset, TakeoutZipError } from 'src/utils/takeout-zip.js';
+import { TakeoutZipError, readTakeoutZipDirectory, takeoutZipDataOffset } from 'src/utils/takeout-zip.js';
 
 /**
  * Design files (FL-1358). One ladder shows them, in `MediaRepository`:
@@ -97,7 +97,7 @@ export const extractContainerPreview = async (path: string): Promise<Buffer | nu
   }
 };
 
-const ZIP = Buffer.from('PK\u0003\u0004', 'latin1');
+const ZIP = Buffer.from('PK\u{3}\u{4}', 'latin1');
 const DOS_EPS = Buffer.from([0xc5, 0xd0, 0xd3, 0xc6]);
 const startsWith = (magic: Buffer | string) => (head: Buffer) =>
   head.subarray(0, magic.length).equals(Buffer.from(magic as string, 'latin1'));

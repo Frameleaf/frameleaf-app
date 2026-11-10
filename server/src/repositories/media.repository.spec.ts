@@ -11,8 +11,8 @@ import { SharpOperationError, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
-import { orientedToOriginal } from 'src/utils/develop-cleanup.js';
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
+import { orientedToOriginal } from 'src/utils/develop-cleanup.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
   audioReattachOffsetSeconds,
@@ -103,7 +103,8 @@ describe(MediaRepository.name, () => {
 
   describe('design files (FL-1358)', () => {
     const options = { colorspace: Colorspace.Srgb, processInvalidImages: false };
-    const decoded = { data: Buffer.alloc(3), info: { width: 1, height: 1, channels: 3 } };
+    const decoded = { data: Buffer.alloc(3), info: { width: 1, height: 1, channels: 3 } } as never;
+    const batch = { outputs: [], edits: [], checkTransparency: false };
     const design = (name: string) => join('test/fixtures/formats/design', name);
     let run: ReturnType<typeof vi.spyOn>;
     let embedded: ReturnType<typeof vi.spyOn>;
@@ -142,16 +143,9 @@ describe(MediaRepository.name, () => {
           .mockImplementation((tag: string) =>
             tag === 'PhotoshopThumbnail' ? Promise.resolve(Buffer.from('jpeg')) : Promise.reject(new Error('none')),
           );
-        const thumbnails = await sut.generateImageThumbnails(design('thumbnail-only.psd'), options, {
-          outputs: [],
-          edits: [],
-        });
+        const thumbnails = await sut.generateImageThumbnails(design('thumbnail-only.psd'), options, batch);
         expect(thumbnails).toMatchObject({ designRung: 'embedded' });
-        expect(run).toHaveBeenLastCalledWith('generateImageThumbnails', [
-          Buffer.from('jpeg'),
-          options,
-          { outputs: [], edits: [] },
-        ]);
+        expect(run).toHaveBeenLastCalledWith('generateImageThumbnails', [Buffer.from('jpeg'), options, batch]);
       }
     });
 
@@ -171,9 +165,7 @@ describe(MediaRepository.name, () => {
       await expect(sut.decodeImage(design('flat.psd'), options)).rejects.toBe(stopped);
       const unwritable = new SharpOperationError('EACCES: permission denied, open /thumbs/a.webp');
       run.mockRejectedValue(unwritable);
-      await expect(sut.generateImageThumbnails(design('flat.psd'), options, { outputs: [], edits: [] })).rejects.toBe(
-        unwritable,
-      );
+      await expect(sut.generateImageThumbnails(design('flat.psd'), options, batch)).rejects.toBe(unwritable);
       expect(embedded).not.toHaveBeenCalled();
     });
 

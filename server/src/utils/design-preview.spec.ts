@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import {
   extractContainerPreview,
   hasDesignSignature,
@@ -8,7 +9,6 @@ import {
 } from 'src/utils/design-preview.js';
 import { stripPngMetadata } from 'src/utils/image-metadata-strip.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { describe, expect, it } from 'vitest';
 
 const fixture = (name: string) => join('test/fixtures/formats/design', name);
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
@@ -39,7 +39,7 @@ describe('design files (FL-1358)', () => {
       await expect(extractContainerPreview(fixture('flat.psd'))).resolves.toBeNull();
     });
 
-    it('does not take a file that is not a ZIP for one because of its name', async () => {
+    it('does not take a file that is not a ZIP for one because of its name', () => {
       // A .kra that is really a PDF: no preview, and no error either.
       const head = readFileSync(fixture('two-pages.pdf'));
       expect(hasDesignSignature('painting.kra', head)).toBe(false);

@@ -25,13 +25,13 @@ describe('BoardsGrid', () => {
       showNames: true,
       onOpen: vi.fn(),
     });
-    const pictures = container.querySelectorAll<HTMLImageElement>('.bg-open img');
+    const pictures = container.querySelectorAll<HTMLImageElement>(':scope .bg-open img');
     expect(pictures).toHaveLength(2);
     expect(container.querySelector('[data-broken-asset]')).toBeNull();
 
     await fireEvent.error(pictures[0]);
 
-    expect(container.querySelectorAll('.bg-open img')).toHaveLength(1);
+    expect(container.querySelectorAll(':scope .bg-open img')).toHaveLength(1);
     expect(container.querySelectorAll('[data-broken-asset]')).toHaveLength(1);
     expect(container.textContent).toContain('logo.eps');
   });
