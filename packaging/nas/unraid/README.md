@@ -163,11 +163,11 @@ Include the Unraid version, template/release version and sanitized error details
 Never include credentials, recovery keys or private media.
 
 This repository contains generated Docker templates, published automatically from
-signed Manager releases; packaging source lives in
+signed Manager and Frameleaf releases; packaging source lives in
 [Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app). Templates
 reference `:latest` images and never pin a release. The catalog contains the
-Frameleaf (Manager) template only; manual Server/ML templates await a compatible
-signed application release.
+Frameleaf (Manager) template and the manual `frameleaf-server` and `frameleaf-ml`
+templates.
 
 Community Apps listing requires Validate, Scan and moderator acceptance at
 [the submission portal](https://ca.unraid.net/submit/new). Before declaring a

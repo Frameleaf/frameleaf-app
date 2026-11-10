@@ -2265,6 +2265,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/backup/licence-coverage": {
+      "get": {
+        "description": "Reads the current licence scope from Frameleaf Cloud without provisioning storage or issuing credentials. Unknown when no grant exists, the server is unlinked or the scope cannot be checked. Names are resolved locally; no account choices or media are returned.",
+        "operationId": "getCloudBackupLicenceCoverage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupLicenceCoverageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the accounts currently covered for Cloud Backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup/manifests": {
       "get": {
         "description": "The backups retention keeps, newest first, with their size and the database dump each pairs with.",
@@ -87004,6 +87051,50 @@
           "missing",
           "operationId",
           "status"
+        ],
+        "type": "object"
+      },
+      "CloudBackupLicenceCoverageResponseDto": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupLicensedAccountDto"
+            },
+            "type": "array"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CloudBackupLicenceScope"
+          }
+        },
+        "required": [
+          "accounts",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "CloudBackupLicenceScope": {
+        "enum": [
+          "unknown",
+          "none",
+          "all",
+          "users"
+        ],
+        "type": "string"
+      },
+      "CloudBackupLicensedAccountDto": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "userId"
         ],
         "type": "object"
       },

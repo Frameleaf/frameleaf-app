@@ -534,8 +534,9 @@
     await api(claimed ? 'login' : 'claim', claimed ? { password } : { password, name });
     password = '';
     claimed = true;
-    signedIn = true;
+    // Signed in only once the installation is known: without it the screen falls back to first-run setup.
     await refresh();
+    signedIn = true;
     await go(activeOperation ? 'progress' : installation ? 'overview' : 'welcome');
   }
   async function signOut() {
