@@ -4,6 +4,7 @@ import '@testing-library/jest-dom';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
+import { goto } from '$app/navigation';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -17,6 +18,8 @@ import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AssetViewerNavBar from './AssetViewerNavBar.svelte';
+
+vi.mock(import('$app/navigation'), async (original) => ({ ...(await original()), goto: vi.fn() }));
 
 vi.mock(import('$lib/utils/asset-utils'), async (original) => ({
   ...(await original()),
@@ -184,6 +187,27 @@ describe('AssetViewerNavBar component', () => {
       expect(flag).toHaveAttribute('href', commandCenterUrl('care', 'files', { file: 'finding-1' }));
       expect(flag).toHaveAttribute('title', 'frameleaf_viewer_file_missing_title');
       expect(flag).toHaveClass('is-missing');
+    });
+
+    it('keeps its accessible name when the words are hidden on a phone', () => {
+      signIn();
+      const asset = build({ findingId: 'finding-1', missing: true });
+      const { getByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      const link = getByRole('link', { name: 'frameleaf_viewer_file_missing' });
+      expect(link).toHaveAttribute('aria-label', 'frameleaf_viewer_file_missing');
+      expect(link).toHaveAttribute('title', 'frameleaf_viewer_file_missing_title');
+    });
+
+    it('the toast action opens the care files sheet', async () => {
+      signIn();
+      const asset = build({ findingId: 'finding-1', missing: true });
+      const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({ id: 't', close: () => {} }) as never);
+      const { getByLabelText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      await fireEvent.click(getByLabelText('frameleaf_viewer_edit'));
+      const [item] = show.mock.calls[0] as unknown as [{ button: { onclick: () => unknown } }];
+      await item.button.onclick();
+      expect(goto).toHaveBeenCalledWith(commandCenterUrl('care', 'files', { file: 'finding-1' }));
+      show.mockRestore();
     });
 
     it('shows "Damaged file" when the original is there but unreadable', () => {

@@ -181,10 +181,13 @@
       class:is-damaged={!missing}
       data-testid="viewer-file-problem"
       href={commandCenterUrl('care', 'files', { file: asset.fileProblem.findingId })}
+      aria-label={$t(missing ? 'frameleaf_viewer_file_missing' : 'frameleaf_viewer_file_damaged')}
       title={$t(missing ? 'frameleaf_viewer_file_missing_title' : 'frameleaf_viewer_file_damaged_title')}
     >
       <Icon icon={missing ? mdiImageOffOutline : mdiFileAlertOutline} size="16" aria-hidden />
-      {$t(missing ? 'frameleaf_viewer_file_missing' : 'frameleaf_viewer_file_damaged')}
+      <span class="fl-file-problem-label"
+        >{$t(missing ? 'frameleaf_viewer_file_missing' : 'frameleaf_viewer_file_damaged')}</span
+      >
       <Icon icon={mdiChevronRight} size="16" aria-hidden />
     </a>
   {/if}
@@ -385,6 +388,20 @@
     font-weight: var(--fl-weight-semibold);
     text-decoration: none;
     white-space: nowrap;
+  }
+
+  /* Phones: icon and chevron only, so the photo's name keeps its room; the words stay in the aria-label. */
+  @media (max-width: 639px) {
+    .fl-file-problem {
+      min-width: 36px;
+      justify-content: center;
+      gap: 2px;
+      padding: 0 8px;
+    }
+
+    .fl-file-problem-label {
+      display: none;
+    }
   }
 
   .fl-file-problem.is-damaged {
