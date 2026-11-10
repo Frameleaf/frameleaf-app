@@ -5023,12 +5023,16 @@ export type ImageEncodingInfo = {
     gainMap: string;
     height?: number;
     inspectionStatus?: InspectionStatus;
+    /** Pages in a PDF or Illustrator document; the first is shown */
+    pages?: number;
     /** Decoder can reconstruct this source; does not imply a published HDR rendition or qualified display */
     reconstructionAvailable: boolean;
     /** Processing reference white in cd/m²; not measured display brightness */
     referenceWhite?: number;
     renderingPolicy?: string;
     transfer?: number | "adaptive";
+    /** A named flavour of the container, such as "fireworks-png"; unknown values are ignored */
+    variant?: string;
     width?: number;
 };
 export type LandmarkIconDto = {

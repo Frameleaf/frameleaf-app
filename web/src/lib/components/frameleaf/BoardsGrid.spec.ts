@@ -1,9 +1,9 @@
-import BoardsGrid from '$lib/components/frameleaf/BoardsGrid.svelte';
-import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
 import { LibraryAssetItemKind, type LibraryItemDto } from '@frameleaf/sdk';
 import { fireEvent, render } from '@testing-library/svelte';
-import { timelineAssetFactory } from '@test-data/factories/asset-factory';
 import { describe, expect, it, vi } from 'vitest';
+import BoardsGrid from '$lib/components/frameleaf/BoardsGrid.svelte';
+import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
+import { timelineAssetFactory } from '@test-data/factories/asset-factory';
 
 const session = { selection: [], select: vi.fn(), setScrollAnchor: vi.fn() } as unknown as LibrarySessionStore;
 
