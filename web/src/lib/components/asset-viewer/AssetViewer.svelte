@@ -30,7 +30,8 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
   import { isDialogOpen, isTypingTarget } from '$lib/frameleaf/viewer-keys';
-  import { isPanorama } from '$lib/frameleaf/viewer-media';
+  import { isPanorama, isPanoramaVideoProjection } from '$lib/frameleaf/viewer-media';
+  import { castManager } from '$lib/managers/cast-manager.svelte';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -1117,6 +1118,8 @@
   const showFilmstripStrip = $derived($showFilmstrip && filmstripAssets.length > 1 && !assetViewerManager.isShowEditor);
   /** The filmstrip's height, so the information card and the floating buttons end above it. */
   let stripsHeight = $state(0);
+  /** The footer as drawn: on a phone a video's zoom row wraps it onto a second line (FL-801). */
+  let footerHeight = $state(0);
   /** Everything above the footer, the stack card included, so a video's controls stay clear of it. */
   let stripsAreaHeight = $state(0);
 
@@ -1622,6 +1625,12 @@
     infoAssetId = id;
   });
 
+  /** FL-801: the open video zooms and pans, unless it is a 360 video or is playing on a cast device. */
+  const videoZoomable = $derived(
+    viewerKind === 'VideoViewer' &&
+      !isPanoramaVideoProjection(asset.exifInfo?.projectionType) &&
+      !castManager.isCasting,
+  );
   const VIDEO_VIEWERS = new Set(['VideoViewer', 'StackVideoViewer', 'LiveVideoViewer']);
 
   // FL-36 / V-18: the footer stays while an inline slideshow plays, so Pause and the settings are
@@ -1692,6 +1701,7 @@
   class:dragging={!!dismissDrag}
   class:with-footer={showFilmstripStrip || showStackStrip}
   class:info-open={showDetailPanel}
+  style:--fl-viewer-footer-height={showFooter && footerHeight > 0 ? `${footerHeight}px` : undefined}
   style:--fl-viewer-strips-height="{showFilmstripStrip ? stripsHeight : 0}px"
   style:--fl-viewer-strips-area-height="{stripsAreaHeight}px"
   style:background-color={dismissDrag ? `rgb(0 0 0 / ${1 - dismissDrag.progress})` : undefined}
@@ -1820,6 +1830,7 @@
           projectionType={asset.exifInfo?.projectionType}
           loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
           extendedControls
+          zoomable={videoZoomable}
           onPreviousAsset={() => navigateAsset('previous')}
           onNextAsset={() => navigateAsset('next')}
           onClose={closeViewer}
@@ -2067,13 +2078,17 @@
 
   <!-- V-13: the footer (MediaViewer.jsx:1693-1797), frosted over the bottom of the photo. -->
   {#if showFooter}
-    <div class="absolute inset-x-0 bottom-0 z-2 col-span-4 col-start-1" data-viewer-chrome="footer">
+    <div
+      class="absolute inset-x-0 bottom-0 z-2 col-span-4 col-start-1"
+      data-viewer-chrome="footer"
+      bind:clientHeight={footerHeight}
+    >
       <ViewerFooter
         {asset}
         canNavigateCollection={!!(nextAsset || previousAsset)}
         canShowFilmstrip={filmstripAssets.length > 1}
         hasStack={!!stack && withStacked}
-        zoomable={viewerKind === 'PhotoViewer' && !previewStackedAsset}
+        zoomable={(viewerKind === 'PhotoViewer' && !previewStackedAsset) || videoZoomable}
         {isPlayingOriginalVideo}
         {setPlayOriginalVideo}
         fullscreen={isFullScreen}
