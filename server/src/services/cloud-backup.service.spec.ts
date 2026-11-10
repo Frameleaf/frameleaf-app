@@ -5884,6 +5884,32 @@ describe(CloudBackupService.name, () => {
       expect(operations.createExclusive).not.toHaveBeenCalled();
     });
 
+    it('waits for the operation holding the bucket, then starts, instead of being lost', async () => {
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = {
+        ...claim(),
+        lastRun: { operationId: 'run-1', status: 'completed' },
+      } as never;
+      mocks.user.getAdmin.mockResolvedValue({ id: 'admin-1' } as never);
+      drills.latestFinished.mockResolvedValue(undefined);
+      operations.createExclusive.mockResolvedValueOnce({
+        active: { id: 'check-1', ownerId: 'admin-1', fingerprint: null },
+      });
+      operations.getOfKind.mockResolvedValueOnce(operationOf({ id: 'check-1', snapshot: { task: 'verify' } }));
+      await sut['startDueDrill'](operationOf({ snapshot: { task: 'backup', scheduled: true } }));
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ drillDueAt: expect.any(String) });
+
+      // the check ends: the held drill starts and is no longer due
+      operations.createExclusive.mockResolvedValueOnce({ created: operationOf() });
+      await sut['startHeldDrill']();
+      expect(operations.createExclusive).toHaveBeenLastCalledWith(
+        expect.objectContaining({ snapshot: expect.objectContaining({ task: 'drill', scheduled: true }) }),
+        DatabaseLock.FrameleafCloudBackup,
+        { alsoKinds: [MediaOperationKind.CloudRestore] },
+      );
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).not.toHaveProperty('drillDueAt');
+    });
+
     it('serves a finished report with the key that signed it, and nothing for an unfinished one', async () => {
       drills.get.mockResolvedValue(report());
       await expect(sut.getDrillReport('id')).resolves.toMatchObject({

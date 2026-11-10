@@ -413,6 +413,9 @@
     if (needs.some((need) => need.id === 'plan')) {
       phrases.push({ wrong: true, text: $t('frameleaf_overview_says_plan') });
     }
+    if (needs.some((need) => need.id === 'restore-drill')) {
+      phrases.push({ wrong: true, text: $t('frameleaf_overview_says_drill_failed') });
+    }
     if (needs.some((need) => need.id === 'restore-test')) {
       phrases.push({ wrong: true, text: $t('frameleaf_overview_says_restore_untried') });
     }

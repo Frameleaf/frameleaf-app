@@ -46,10 +46,15 @@
 
   // While a drill runs the card follows it, so its steps tick over and its result appears.
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // a look still in flight when the card goes away must not report back or poll again
+  let disposed = false;
   const look = async () => {
     let next = status;
     try {
       next = await getCloudBackupStatus();
+      if (disposed) {
+        return;
+      }
       onStatus(next);
     } catch {
       // the next look tries again
@@ -59,6 +64,9 @@
     }
   };
   const follow = () => {
+    if (disposed) {
+      return;
+    }
     clearTimeout(timer);
     timer = setTimeout(() => void look(), 3000);
   };
@@ -67,7 +75,10 @@
       follow();
     }
   });
-  onDestroy(() => clearTimeout(timer));
+  onDestroy(() => {
+    disposed = true;
+    clearTimeout(timer);
+  });
 
   const day = (iso: string) =>
     new Intl.DateTimeFormat($locale, { month: 'short', day: 'numeric' }).format(new Date(iso));

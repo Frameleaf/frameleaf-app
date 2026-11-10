@@ -289,9 +289,48 @@ describe('scratch database guard (FL-879)', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('refuses any other psql command', async () => {
+  it('refuses any other psql command, at the start of a line or after SQL', async () => {
     await expect(run('SELECT 1;\n\\connect immich\n')).rejects.toThrow('not library data');
-    await expect(run('\\! rm -rf /\n')).rejects.toThrow('not library data');
+    await expect(run('\\! touch /tmp/x\n')).rejects.toThrow('not library data');
+    await expect(run('CREATE TABLE a (b text); \\! touch /tmp/x\n')).rejects.toThrow('not library data');
+    await expect(run('SELECT 1 \\g /tmp/x\n')).rejects.toThrow('not library data');
+    await expect(run('COPY public.a (b) FROM stdin;\n\\N\n')).rejects.toThrow('not library data');
+  });
+
+  it('lets backslashes through inside literals, quoted names, function bodies and comments', async () => {
+    await expect(
+      run(
+        [
+          String.raw`-- a comment with \! in it`,
+          String.raw`CREATE FUNCTION public.f() RETURNS text LANGUAGE plpgsql AS $_$BEGIN RETURN '\x'; END$_$;`,
+          String.raw`SELECT 'C:\path', E'it\'s', "we\ird";`,
+          String.raw`/* block \! comment */ SELECT 1;`,
+          '',
+        ].join('\n'),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('refuses statements a library dump never holds', async () => {
+    for (const sql of [
+      "COPY public.a TO PROGRAM 'touch /tmp/x';",
+      "COPY public.a FROM '/etc/passwd';",
+      'SET ROLE postgres;',
+      'RESET ROLE;',
+      'SET SESSION AUTHORIZATION postgres;',
+      "ALTER SYSTEM SET archive_command = 'x';",
+      'CREATE ROLE evil SUPERUSER;',
+      'DROP DATABASE frameleaf;',
+      'DO $$BEGIN PERFORM 1; END$$;',
+      "LOAD 'evil';",
+      "CREATE FUNCTION public.f() RETURNS void LANGUAGE c AS 'evil', 'f';",
+    ]) {
+      await expect(run(`${sql}\n`), sql).rejects.toThrow('not library data');
+    }
+  });
+
+  it('keeps columns that are only called language', async () => {
+    await expect(run('CREATE TABLE public.t (\n    language text\n);\n')).resolves.toBeUndefined();
   });
 
   it('only names scratch databases', () => {

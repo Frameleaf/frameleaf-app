@@ -91,4 +91,24 @@ describe('RestoreDrillCard (FL-900)', () => {
     expect(screen.getByRole('link', { name: 'Check the recovery key' })).toBeInTheDocument();
     expect(screen.getByText(/^Failed, /)).toBeInTheDocument();
   });
+
+  it('stops following a running drill once the card is gone', async () => {
+    vi.useFakeTimers();
+    try {
+      const running = status({ activeRun: { drill: true, progress: 30, task: 'verify' } as never });
+      let answer: (value: CloudBackupStatusResponseDto) => void = () => {};
+      sdkMock.getCloudBackupStatus.mockImplementation(() => new Promise((resolve) => (answer = resolve)) as never);
+      const onStatus = vi.fn();
+      const { unmount } = render(RestoreDrillCard, { status: running, onStatus });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(1);
+      unmount();
+      answer(running);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(onStatus).not.toHaveBeenCalled();
+      expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -24,13 +24,23 @@ export const drillCardState = (status: CloudBackupStatusResponseDto | null): Dri
 export const runningStep = (progress: number): number =>
   progress < 10 ? 0 : progress < 25 ? 1 : progress < 50 ? 2 : 3;
 
-/** Each step's state in a finished drill: passed, the one that failed, then not reached. */
+/**
+ * Each step's state in a drill: passed, the one that failed, then not reached. A drill still running
+ * has finished nothing yet as far as its report goes, so its steps are all waiting.
+ */
 export const stepStates = (drill: Pick<CloudBackupDrillDto, 'result' | 'failedStep'>) => {
   const failedAt = drill.failedStep ? DRILL_STEPS.indexOf(drill.failedStep) : -1;
   return DRILL_STEPS.map((step, index) => ({
     step,
-    state: failedAt === -1 || index < failedAt ? 'done' : index === failedAt ? 'failed' : 'skipped',
-  })) as { step: DrillStepId; state: 'done' | 'failed' | 'skipped' }[];
+    state:
+      drill.result === 'running'
+        ? 'waiting'
+        : failedAt === -1 || index < failedAt
+          ? 'done'
+          : index === failedAt
+            ? 'failed'
+            : 'skipped',
+  })) as { step: DrillStepId; state: 'done' | 'failed' | 'skipped' | 'waiting' }[];
 };
 
 /** "7F3A 9C21 …": the signing key's fingerprint in groups of four, as the report shows it. */

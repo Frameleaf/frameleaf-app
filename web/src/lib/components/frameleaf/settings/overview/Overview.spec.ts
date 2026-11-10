@@ -111,6 +111,7 @@ describe('Overview (FL-363)', () => {
     });
     render(Overview);
     expect(await screen.findByText('Your backup didn’t restore')).toBeInTheDocument();
+    expect(screen.getByText(/backup didn’t restore in its last drill/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'See the report' })).toHaveAttribute(
       'href',
       expect.stringContaining('drill=00000000-0000-7000-8000-000000000001'),

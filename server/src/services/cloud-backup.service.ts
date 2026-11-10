@@ -1793,6 +1793,10 @@ export class CloudBackupService {
         this.logger.warn(`Could not start the scheduled cloud backup: ${errorMessage(error)}`),
       );
     }
+    // FL-879: a scheduled backup run takes precedence; a held drill starts after whatever ended here
+    await this.startHeldDrill().catch((error: unknown) =>
+      this.logger.warn(`Could not start the restore drill: ${errorMessage(error)}`),
+    );
   }
 
   private async runBackup(operation: MediaOperation, claimToken: string): Promise<void> {
@@ -3483,7 +3487,27 @@ export class CloudBackupService {
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
     if (!metadata || metadata.lastRun?.operationId !== backup.id || metadata.lastRun.status !== 'completed') return;
     if (!this.drillDue(await this.drills.latestFinished(), new Date())) return;
-    await this.createOperation(backup.ownerId, metadata, 'drill', { scheduled: true });
+    const created = await this.createOperation(backup.ownerId, metadata, 'drill', { scheduled: true });
+    if (!created.created && created.activeTask !== 'drill') {
+      // another operation took the bucket first: the drill waits for it, as a scheduled run does
+      await this.updateMetadata((current) => ({ ...current, drillDueAt: new Date().toISOString() }));
+    }
+  }
+
+  /** FL-879: a drill that found the bucket busy starts once the operation holding it has ended. */
+  private async startHeldDrill() {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (!metadata?.drillDueAt) return;
+    const { frameleafCloud } = await this.readSettings();
+    const owner = await this.userRepository.getAdmin();
+    if (!owner || !frameleafCloud.cloudBackup.enabled || frameleafCloud.cloudBackup.target === 'off') {
+      await this.updateMetadata(({ drillDueAt: _due, ...current }) => current);
+      return;
+    }
+    const created = await this.createOperation(owner.id, metadata, 'drill', { scheduled: true });
+    if (created.created || created.activeTask === 'drill') {
+      await this.updateMetadata(({ drillDueAt: _due, ...current }) => current);
+    }
   }
 
   private drillDue(latest: BackupRestoreReport | null | undefined, now: Date) {

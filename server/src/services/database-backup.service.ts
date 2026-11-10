@@ -589,9 +589,27 @@ export class DatabaseBackupService {
       for await (const chunk of child) chunks.push(chunk as Buffer);
       return Buffer.concat(chunks).toString('utf8').trim();
     };
-    await query(live, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
-    await query(live, `CREATE DATABASE "${name}"`);
+    const role = `${name}_restore`;
+    const dropAll = async () => {
+      await query(live, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      await query(live, `DROP ROLE IF EXISTS "${role}"`);
+    };
+    await dropAll();
+    // The dump is rebuilt by a role that is not a superuser and owns only the scratch database: whatever a
+    // damaged or forged dump says, it cannot run programs, write server files or reach other databases.
+    await query(
+      live,
+      `CREATE ROLE "${role}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`,
+    );
+    await query(live, `CREATE DATABASE "${name}" OWNER "${role}"`);
     try {
+      // Extensions need a superuser, so the library's own are made here first; the dump's extension lines are dropped.
+      const extensions = (await query(live, "SELECT extname FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql'"))
+        .split('\n')
+        .filter((extension) => /^[a-z\d_-]+$/.test(extension));
+      for (const extension of extensions) {
+        await query(scratch, `CREATE EXTENSION IF NOT EXISTS "${extension}" WITH SCHEMA public CASCADE`);
+      }
       const psql = this.processRepository.spawnDuplexStream(restore.bin, ['--no-psqlrc', ...restore.args], {
         signal,
         env,
@@ -599,7 +617,9 @@ export class DatabaseBackupService {
       await pipeline(
         this.readDatabaseDump(filePath),
         createSqlCommandGuard(),
-        createSqlOwnerTransformStream(restore.databaseUsername),
+        createSqlExtensionFilter(),
+        createSqlOwnerTransformStream(role),
+        createSqlPrefix(`SET ROLE "${role}";\n`),
         psql,
         new Writable({ write: (_chunk, _encoding, callback) => callback() }),
         { signal },
@@ -621,7 +641,7 @@ export class DatabaseBackupService {
         presentAssetIds: present.split('\n').filter((line) => UUID_TEXT.test(line)),
       };
     } finally {
-      await query(live, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`).catch((error: unknown) =>
+      await dropAll().catch((error: unknown) =>
         this.logger.warn(`Could not remove the scratch database ${name}: ${error}`),
       );
     }
@@ -1032,24 +1052,141 @@ export const DRILL_DATABASE_NAME = /^frameleaf_drill_[\da-f]{32}$/;
 const UUID_TEXT = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
 /**
- * FL-879: a dump rebuilt in a scratch database may only hold SQL and COPY data. A psql command outside
- * COPY data (`\connect`, `\!`, `\o`, …) fails the stream; pg_dump's own `\restrict`/`\unrestrict` pass.
+ * FL-879: what a dump rebuilt in a scratch database may say. It is SQL and COPY data only:
+ * - a psql meta-command anywhere outside a literal, identifier or comment (`\connect`, `\!`, `\o`, `\copy`, …)
+ *   fails the stream; psql reads them mid-line too, so the whole text is lexed, not just line starts. Only
+ *   pg_dump's own `\restrict`/`\unrestrict` lines and the `\.` that ends COPY data pass;
+ * - statements a library dump never holds fail it too: COPY other than `FROM stdin`, programs, server
+ *   settings, roles, databases, role switches, `DO` blocks, `LOAD` and languages other than SQL and PL/pgSQL.
+ * The restore also runs as a role that is not a superuser, so this is a second line, not the only one.
  */
+const FORBIDDEN_STATEMENTS = [
+  /\b(?:FROM|TO)\s+PROGRAM\b/i,
+  /\bALTER\s+SYSTEM\b/i,
+  /\b(?:CREATE|ALTER|DROP)\s+(?:ROLE|USER|GROUP|DATABASE|TABLESPACE|SUBSCRIPTION|SERVER|FOREIGN\s+DATA\s+WRAPPER|EVENT\s+TRIGGER)\b/i,
+  /\b(?:SET|RESET)\s+(?:LOCAL\s+|SESSION\s+)?(?:ROLE|SESSION\s+AUTHORIZATION)\b/i,
+  /^\s*DO\b/i,
+  /^\s*LOAD\b/i,
+  /^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[\s\S]*\bLANGUAGE\s+(?!sql\b|plpgsql\b)["\w]+/i,
+];
+const isAllowedCopy = (statement: string) =>
+  !/^\s*COPY\b/i.test(statement) || /^\s*COPY\s[^;]*\sFROM\s+stdin\s*$/i.test(statement);
+
 export function createSqlCommandGuard() {
   let carry = '';
   let inCopy = false;
+  /** Outside COPY data: normal text, a '…' literal (escaping after E), a "…" identifier, $tag$…$tag$, a block comment. */
+  let mode: 'normal' | 'single' | 'escaped' | 'double' | 'dollar' | 'block' = 'normal';
+  let dollarTag = '';
+  let blockDepth = 0;
+  let statement = '';
+  const refuse = (): never => {
+    throw new Error('The backup holds a command that is not library data');
+  };
+  const endStatement = () => {
+    if (FORBIDDEN_STATEMENTS.some((pattern) => pattern.test(statement)) || !isAllowedCopy(statement)) refuse();
+    const copy = /^\s*COPY\s/i.test(statement);
+    statement = '';
+    return copy;
+  };
   const check = (line: string) => {
     if (inCopy) {
       if (line === String.raw`\.`) inCopy = false;
       return;
     }
-    if (/^COPY\s.+\sFROM stdin;\s*$/.test(line)) {
-      inCopy = true;
-      return;
+    if (mode === 'normal' && statement.trim() === '' && /^\\(?:un)?restrict(?:\s+\w+)?\s*$/.test(line)) return;
+    for (let index = 0; index < line.length; index++) {
+      const char = line[index];
+      const next = line[index + 1];
+      switch (mode) {
+        case 'normal': {
+          if (char === '\\') refuse();
+          if (char === '-' && next === '-') {
+            index = line.length;
+            continue;
+          }
+          if (char === '/' && next === '*') {
+            mode = 'block';
+            blockDepth = 1;
+            index++;
+            continue;
+          }
+          if (char === "'") {
+            const previous = line[index - 1] ?? '';
+            mode = /[eE]/.test(previous) && !/[\w$]/.test(line[index - 2] ?? '') ? 'escaped' : 'single';
+            statement += ' ';
+            continue;
+          }
+          if (char === '"') {
+            mode = 'double';
+            statement += ' ';
+            continue;
+          }
+          if (char === '$' && !/[\w$]/.test(line[index - 1] ?? '')) {
+            const tag = /^\$[A-Za-z_]*\$/.exec(line.slice(index));
+            if (tag) {
+              mode = 'dollar';
+              dollarTag = tag[0];
+              index += tag[0].length - 1;
+              statement += ' ';
+              continue;
+            }
+          }
+          if (char === ';') {
+            if (endStatement()) {
+              // COPY … FROM stdin: its data starts on the next line
+              if (line.slice(index + 1).trim() !== '') refuse();
+              inCopy = true;
+              return;
+            }
+            continue;
+          }
+          statement += char;
+          break;
+        }
+        case 'single': {
+          if (char === "'") {
+            if (next === "'") index++;
+            else mode = 'normal';
+          }
+          break;
+        }
+        case 'escaped': {
+          if (char === '\\') index++;
+          else if (char === "'") {
+            if (next === "'") index++;
+            else mode = 'normal';
+          }
+          break;
+        }
+        case 'double': {
+          if (char === '"') {
+            if (next === '"') index++;
+            else mode = 'normal';
+          }
+          break;
+        }
+        case 'dollar': {
+          if (char === '$' && line.startsWith(dollarTag, index)) {
+            mode = 'normal';
+            index += dollarTag.length - 1;
+          }
+          break;
+        }
+        case 'block': {
+          if (char === '/' && next === '*') {
+            blockDepth++;
+            index++;
+          } else if (char === '*' && next === '/') {
+            blockDepth--;
+            index++;
+            if (blockDepth === 0) mode = 'normal';
+          }
+          break;
+        }
+      }
     }
-    if (line.startsWith('\\') && !/^\\(?:un)?restrict(?:\s|$)/.test(line)) {
-      throw new Error('The backup holds a command that is not library data');
-    }
+    if (mode === 'normal') statement += '\n';
   };
   return new PassThrough({
     transform(chunk: Buffer, _encoding, callback) {
@@ -1065,10 +1202,53 @@ export function createSqlCommandGuard() {
     flush(callback) {
       try {
         check(carry);
+        if (inCopy || mode !== 'normal') refuse();
+        endStatement();
         callback();
       } catch (error) {
         callback(error as Error);
       }
+    },
+  });
+}
+
+/** FL-879: the dump's own extension lines; the scratch database already has the library's extensions. */
+export function createSqlExtensionFilter() {
+  let carry = '';
+  const keep = (line: string) =>
+    !/^(?:DROP EXTENSION IF EXISTS|CREATE EXTENSION IF NOT EXISTS|COMMENT ON EXTENSION) [^;]*;$/.test(line);
+  return new PassThrough({
+    transform(chunk: Buffer, _encoding, callback) {
+      const lines = (carry + chunk.toString('utf8')).split('\n');
+      carry = lines.pop() ?? '';
+      callback(
+        null,
+        lines
+          .filter((line) => keep(line))
+          .map((line) => `${line}\n`)
+          .join(''),
+      );
+    },
+    flush(callback) {
+      callback(null, keep(carry) ? carry : '');
+    },
+  });
+}
+
+/** FL-879: text sent to psql before the dump (the role switch). */
+export function createSqlPrefix(prefix: string) {
+  let sent = false;
+  return new PassThrough({
+    transform(chunk: Buffer, _encoding, callback) {
+      if (sent) {
+        callback(null, chunk);
+        return;
+      }
+      sent = true;
+      callback(null, Buffer.concat([Buffer.from(prefix), chunk]));
+    },
+    flush(callback) {
+      callback(null, sent ? undefined : prefix);
     },
   });
 }

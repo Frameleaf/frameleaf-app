@@ -1556,7 +1556,11 @@ describe(DatabaseBackupService.name, () => {
       });
       mocks.database.getPostgresVersion.mockResolvedValue('19.0');
       mocks.storage.createPlainReadStream.mockImplementation(() =>
-        Readable.from([gzipSync('CREATE TABLE asset (id uuid);\nCOPY public.asset (id) FROM stdin;\n\\N\n\\.\n')]),
+        Readable.from([
+          gzipSync(
+            'CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;\nCREATE TABLE asset (id uuid);\nCOPY public.asset (id) FROM stdin;\n\\N\n\\.\n',
+          ),
+        ]),
       );
       mocks.storage.createGunzip.mockImplementation(() => createGunzip());
     });
@@ -1566,7 +1570,13 @@ describe(DatabaseBackupService.name, () => {
         const call = { command, args, input: '' };
         calls.push(call);
         const command_ = args.at(-1) ?? '';
-        const stdout = command_.includes('count(*)') ? '5,1,2\n' : command_.includes('SELECT id') ? `${assetId}\n` : '';
+        const stdout = command_.includes('count(*)')
+          ? '5,1,2\n'
+          : command_.includes('SELECT id')
+            ? `${assetId}\n`
+            : command_.includes('pg_extension')
+              ? 'vector\nnot ok!\n'
+              : '';
         const isRestore = !args.includes('--command');
         return mockDuplex((chunk) => (call.input += chunk.toString()))(
           command,
@@ -1585,24 +1595,46 @@ describe(DatabaseBackupService.name, () => {
         presentAssetIds: [assetId],
       });
       const commands = calls.map(({ args }) => (args.includes('--command') ? args.at(-1) : 'restore'));
+      const role = `${name}_restore`;
       expect(commands).toEqual([
         `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`,
-        `CREATE DATABASE "${name}"`,
+        `DROP ROLE IF EXISTS "${role}"`,
+        `CREATE ROLE "${role}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`,
+        `CREATE DATABASE "${name}" OWNER "${role}"`,
+        "SELECT extname FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql'",
+        'CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA public CASCADE',
         'restore',
         expect.stringContaining('count(*)'),
         `SELECT id FROM public.asset WHERE id IN ('${assetId}')`,
         `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`,
+        `DROP ROLE IF EXISTS "${role}"`,
       ]);
-      const restore = calls[2];
+      const restore = calls[6];
       expect(restore.args).toContain(`postgresql://frameleaf:pw@db:5432/${name}`);
-      expect(restore.args.join(' ')).not.toContain('db:5432/frameleaf ');
+      expect(restore.args).toContain('--no-psqlrc');
+      // the dump runs as the scratch role, which is not a superuser
+      expect(restore.input.startsWith(`SET ROLE "${role}";\n`)).toBe(true);
       expect(restore.input).toContain('CREATE TABLE asset');
+      expect(restore.input).not.toContain('CREATE EXTENSION');
     });
 
     it('drops the scratch database when the rebuild fails', async () => {
       spawnWith(3);
       await expect(sut.rehearseRestore('/backups/dump.sql.gz', { name, assetIds: [] })).rejects.toThrow();
-      expect(calls.at(-1)?.args.at(-1)).toBe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      expect(calls.at(-2)?.args.at(-1)).toBe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      expect(calls.at(-1)?.args.at(-1)).toBe(`DROP ROLE IF EXISTS "${name}_restore"`);
+    });
+
+    it('refuses a dump that would run a program, and still removes the scratch database and role', async () => {
+      spawnWith();
+      mocks.storage.createPlainReadStream.mockImplementation(() =>
+        Readable.from([gzipSync('CREATE TABLE asset (id uuid);\n\\! touch /tmp/x\n')]),
+      );
+      await expect(sut.rehearseRestore('/backups/dump.sql.gz', { name, assetIds: [] })).rejects.toThrow(
+        'not library data',
+      );
+      expect(calls.find(({ args }) => !args.includes('--command'))?.input ?? '').not.toContain('touch');
+      expect(calls.at(-1)?.args.at(-1)).toBe(`DROP ROLE IF EXISTS "${name}_restore"`);
     });
 
     it('refuses a name that is not a scratch database', async () => {
