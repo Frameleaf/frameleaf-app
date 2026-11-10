@@ -9925,8 +9925,12 @@ export type JobRunResponseDto = {
     kind: string;
     lastProgressAt: string | null;
     lastStage: string | null;
+    /** Photos that still need a look: the sum of failureCauses, present whenever it is. Cards use it rather than failed + needsAttention, which keep counting stopped photos and a live run's photos still being worked on */
+    leftOver?: number;
     /** With foldNightly, on the newest nightly run: how long the same photos have been left over */
     leftOverStreak?: {
+        /** Every night it could count back through left them all: it may be longer ("N or more nights") */
+        capped?: boolean;
         /** Nights in a row, this one included, that left all of them over */
         nights: number;
         /** Photos this run left over (stopped ones aside) */
@@ -20222,6 +20226,10 @@ export type IntegrityGetReportDto = {
 export type IntegrityReportDto = {
     "type": IntegrityReport;
 };
+export type JobRunItemSearchDto = {
+    skip?: number;
+    take?: number;
+};
 export type JobRunSearchDto = {
     /** Show only the newest nightly run, with its earlier nights (Recent work); a nightly run with a newer one is left out */
     foldNightly?: boolean;
@@ -29302,8 +29310,7 @@ export function actOnJobRunFailures({ id, jobRunFailureActionDto }: {
 /**
  * Inspect selected job run items
  */
-export function getJobRunItems({ foldNightly, id, skip, take }: {
-    foldNightly?: boolean;
+export function getJobRunItems({ id, skip, take }: {
     id: string;
     skip?: number;
     take?: number;
@@ -29312,7 +29319,6 @@ export function getJobRunItems({ foldNightly, id, skip, take }: {
         status: 200;
         data: JobRunItemPageDto;
     }>(`/jobs/runs/${encodeURIComponent(id)}/items${QS.query(QS.explode({
-        foldNightly,
         skip,
         take
     }))}`, {

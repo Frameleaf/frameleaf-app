@@ -8,6 +8,7 @@ import {
   JobRunFailuresDto,
   JobRunIdParamDto,
   JobRunItemPageDto,
+  JobRunItemSearchDto,
   JobRunPageDto,
   JobRunSearchDto,
 } from 'src/dtos/job-run.dto.js';
@@ -40,7 +41,7 @@ export class JobController {
   @Get('runs/:id/items')
   @Authenticated({ permission: Permission.JobRead, admin: true })
   @Endpoint({ summary: 'Inspect selected job run items', history: new HistoryBuilder().added('v3').alpha('v3') })
-  getJobRunItems(@Param() { id }: JobRunIdParamDto, @Query() dto: JobRunSearchDto): Promise<JobRunItemPageDto> {
+  getJobRunItems(@Param() { id }: JobRunIdParamDto, @Query() dto: JobRunItemSearchDto): Promise<JobRunItemPageDto> {
     return this.service.getRunItems(id, dto);
   }
 

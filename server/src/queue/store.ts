@@ -1222,7 +1222,7 @@ export class SqlQueueStore {
       if (roots.length === 0) return 0;
       await sql`update asset_processing_failure f set "quarantinedAt" = null, attempts = 0 from job j
         where j."runId" = ${runId}::uuid and j."rootItemKey" = any(${roots}::text[]) and j.state = 'failed'
-          and f."assetId" = case when pg_input_is_valid(j."rootItemKey", 'uuid') then j."rootItemKey"::uuid end
+          and f."assetId" = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end
           and f.step = j.name and f."dismissedAt" is null`.execute(tx);
       const { photos } = await this.putBackRunWork(runId, tx, roots);
       await rewriteFailureCauses(tx, runId);
@@ -1247,17 +1247,24 @@ export class SqlQueueStore {
       if (roots.length === 0) return 0;
       // a fixed cause, never exception text (`recordProcessingFailure`)
       const lastError = cause === 'unsupported' ? 'unsupported' : 'unreadable';
-      const { rows } = await sql<{ assetId: string }>`insert into asset_processing_failure as f
-          ("assetId", step, attempts, "lastError", "lastFailedAt", "dismissedAt")
-        select distinct a.id, j.name, 1, ${lastError}::text, clock_timestamp(), clock_timestamp()
-        from job j join asset a
-          on a.id = case when pg_input_is_valid(j."rootItemKey", 'uuid') then j."rootItemKey"::uuid end
-        where j."runId" = ${runId}::uuid and j."rootItemKey" = any(${roots}::text[])
-          and j.state in ('failed','needs_attention') and j.name = any(${[...processingFailureSteps]}::text[])
-        on conflict ("assetId", step) do update set "dismissedAt" = coalesce(f."dismissedAt", excluded."dismissedAt")
-        returning "assetId"`.execute(tx);
+      // keyed by what each task works on (`data.id`), as the set-aside checks are; counted by photo (root)
+      const {
+        rows: [stopped],
+      } = await sql<{ photos: number }>`with picked as (
+          select distinct j."rootItemKey" root, a.id "assetId", j.name step from job j join asset a
+            on a.id = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end
+          where j."runId" = ${runId}::uuid and j."rootItemKey" = any(${roots}::text[])
+            and j.state in ('failed','needs_attention') and j.name = any(${[...processingFailureSteps]}::text[])
+        ), written as (
+          insert into asset_processing_failure as f ("assetId", step, attempts, "lastError", "lastFailedAt", "dismissedAt")
+          select distinct "assetId", step, 1, ${lastError}::text, clock_timestamp(), clock_timestamp() from picked
+          on conflict ("assetId", step) do update set "dismissedAt" = coalesce(f."dismissedAt", excluded."dismissedAt")
+          returning 1
+        ) select (select count(distinct root) from picked)::int photos, (select count(*) from written) "written"`.execute(
+        tx,
+      );
       await rewriteFailureCauses(tx, runId);
-      return new Set(rows.map(({ assetId }) => assetId)).size;
+      return stopped.photos;
     });
     if (photos !== undefined) this.forgetRunReads();
     return photos;

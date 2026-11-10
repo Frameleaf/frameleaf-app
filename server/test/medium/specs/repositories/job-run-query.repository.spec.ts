@@ -401,12 +401,19 @@ describe('Recent work (FL-1349)', () => {
     const newest = await night(1, ['a', 'b'], ['c']);
     await finishRuns(db, 10);
     const [card] = await listRuns(db, 25, 0, true);
-    expect(card).toMatchObject({ id: newest, leftOverStreak: { photos: 2, nights: 2 } });
+    expect(card).toMatchObject({ id: newest, leftOverStreak: { photos: 2, nights: 2, capped: false } });
 
     // pruned history can only shorten it
     await sql`delete from job where "runId" = ${newest}::uuid`.execute(db);
     const [pruned] = await listRuns(db, 25, 0, true);
     expect(pruned.leftOverStreak).toBeUndefined();
+  });
+
+  it('says the streak may be longer once it counts back through every night it reads', async () => {
+    for (let daysAgo = 8; daysAgo >= 1; daysAgo--) await night(daysAgo, ['a']);
+    await finishRuns(db, 20);
+    const [card] = await listRuns(db, 25, 0, true);
+    expect(card).toMatchObject({ leftOverStreak: { photos: 1, nights: 7, capped: true }, leftOver: 1 });
   });
 
   it('names the paused step’s queue for Resume', async () => {

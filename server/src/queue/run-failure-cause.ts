@@ -14,7 +14,8 @@ export type RunFailureCause = (typeof RUN_FAILURE_CAUSES)[number];
  */
 export const FAILURE_PATTERNS = {
   unreachable: 'ENOENT|ENOTDIR|EACCES|ESTALE|EHOSTDOWN|no such file',
-  missing: 'ENOENT|no such file|not found',
+  // file wording only: machine learning's "404 Not Found" or "model not found" isn't a missing photo
+  missing: 'ENOENT|no such file|file not found',
   damaged:
     'premature end|truncated|incomplete|huffman|(^|[^a-z])SOI([^a-z]|$)|marker|APP[0-9]* segment|improper image header|corrupt',
   unsupported: 'unsupported|unknown format|no decode delegate|not supported',
@@ -24,18 +25,21 @@ export const FAILURE_PATTERNS = {
 export const NIGHTLY_RUN_KINDS: readonly string[] = [JobName.OvernightSequence];
 
 export type RunFailureInput = {
+  /** The task's photo exists; without one (a non-photo root, a removed asset) the cause is always other */
+  asset: boolean;
   error: string | null;
   /** The photo is in an external library */
   external: boolean;
   offline: boolean;
-  /** Its open Library care finding; missing first when it has both */
+  /** Its open Library care finding (or a damaged file Library care fixed); missing first when it has both */
   finding: 'missing' | 'corrupt' | null;
 };
 
 const matches = (error: string | null, pattern: string) => new RegExp(pattern, 'i').test(error ?? '');
 
 /** The cause of one failed task. Mirrors `failureCauseSql`, which is what the server counts with. */
-export const runFailureCause = ({ error, external, offline, finding }: RunFailureInput): RunFailureCause => {
+export const runFailureCause = ({ asset, error, external, offline, finding }: RunFailureInput): RunFailureCause => {
+  if (!asset) return 'other';
   if (offline || (external && matches(error, FAILURE_PATTERNS.unreachable))) return 'drive';
   if (finding === 'missing' || (!external && matches(error, FAILURE_PATTERNS.missing))) return 'missing';
   if (finding === 'corrupt' || matches(error, FAILURE_PATTERNS.damaged)) return 'damaged';
@@ -47,6 +51,7 @@ export const runFailureCause = ({ error, external, offline, finding }: RunFailur
 export const causeRank = (cause: RunFailureCause) => RUN_FAILURE_CAUSES.indexOf(cause) + 1;
 
 type CauseColumns = {
+  asset: RawBuilder<unknown>;
   error: RawBuilder<unknown>;
   external: RawBuilder<unknown>;
   offline: RawBuilder<unknown>;
@@ -54,10 +59,11 @@ type CauseColumns = {
 };
 
 /** `runFailureCause` in SQL, as its rank (1 = drive … 5 = other); `failureCauseName` turns a rank back into a cause. */
-export const failureCauseRank = ({ error, external, offline, finding }: CauseColumns) => {
+export const failureCauseRank = ({ asset, error, external, offline, finding }: CauseColumns) => {
   const text = sql`coalesce(${error}, '')`;
   const is = (pattern: string) => sql`${text} ~* ${pattern}::text`;
   return sql<number>`case
+    when not coalesce(${asset}, false) then 5
     when coalesce(${offline}, false) or (coalesce(${external}, false) and ${is(FAILURE_PATTERNS.unreachable)}) then 1
     when ${finding} = 'missing' or (not coalesce(${external}, false) and ${is(FAILURE_PATTERNS.missing)}) then 2
     when ${finding} = 'corrupt' or ${is(FAILURE_PATTERNS.damaged)} then 3

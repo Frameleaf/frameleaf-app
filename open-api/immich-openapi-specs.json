@@ -31141,15 +31141,6 @@
         "operationId": "getJobRunItems",
         "parameters": [
           {
-            "name": "foldNightly",
-            "required": false,
-            "in": "query",
-            "description": "Show only the newest nightly run, with its earlier nights (Recent work); a nightly run with a newer one is left out",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
             "name": "id",
             "required": true,
             "in": "path",
@@ -103339,6 +103330,23 @@
         ],
         "type": "object"
       },
+      "JobRunItemSearchDto": {
+        "properties": {
+          "skip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take": {
+            "default": 25,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "JobRunPageDto": {
         "properties": {
           "hasNextPage": {
@@ -103507,9 +103515,19 @@
             "nullable": true,
             "type": "string"
           },
+          "leftOver": {
+            "description": "Photos that still need a look: the sum of failureCauses, present whenever it is. Cards use it rather than failed + needsAttention, which keep counting stopped photos and a live run's photos still being worked on",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "leftOverStreak": {
             "description": "With foldNightly, on the newest nightly run: how long the same photos have been left over",
             "properties": {
+              "capped": {
+                "description": "Every night it could count back through left them all: it may be longer (\"N or more nights\")",
+                "type": "boolean"
+              },
               "nights": {
                 "description": "Nights in a row, this one included, that left all of them over",
                 "maximum": 9007199254740991,

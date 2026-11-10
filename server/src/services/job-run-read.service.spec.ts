@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
+import { JobRunItemSearchDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { RunItemRead, RunRead } from 'src/queue/run-query.js';
 import { JobService } from 'src/services/job.service.js';
 import { factory } from 'test/small.factory.js';
@@ -71,16 +71,16 @@ describe('durable run read service', () => {
     mocks.job.listRunItems.mockResolvedValue([
       { ...item, itemKey: 'face-id', rootItemKey: 'media-id', selection: { filename: 'private-name' } },
     ] as never);
-    const page = await sut.getRunItems(run.id, JobRunSearchDto.schema.parse({}));
+    const page = await sut.getRunItems(run.id, JobRunItemSearchDto.schema.parse({}));
     expect(mocks.job.listRunItems).toHaveBeenCalledWith(run.id, 26, 0);
     expect(page).toMatchObject({ hasNextPage: false, items: [{ id: 'opaque-operational-id', outcome: 'active' }] });
     expect(JSON.stringify(page)).not.toMatch(/face-id|media-id|private-name|itemKey|rootItemKey|selection/);
   });
   it('distinguishes a missing run from an empty item page', async () => {
     mocks.job.listRunItems.mockResolvedValue(undefined);
-    await expect(sut.getRunItems(run.id, JobRunSearchDto.schema.parse({}))).rejects.toThrow('Job run not found');
+    await expect(sut.getRunItems(run.id, JobRunItemSearchDto.schema.parse({}))).rejects.toThrow('Job run not found');
     mocks.job.listRunItems.mockResolvedValue([]);
-    await expect(sut.getRunItems(run.id, JobRunSearchDto.schema.parse({}))).resolves.toEqual({
+    await expect(sut.getRunItems(run.id, JobRunItemSearchDto.schema.parse({}))).resolves.toEqual({
       items: [],
       hasNextPage: false,
     });
@@ -112,7 +112,8 @@ describe('durable run read service', () => {
             leftOver: 863,
           },
         ],
-        leftOverStreak: { photos: 863, nights: 2 },
+        leftOverStreak: { photos: 863, nights: 2, capped: false },
+        leftOver: 863,
       },
     ]);
     const page = await sut.getRuns(JobRunSearchDto.schema.parse({ foldNightly: 'true' }));
@@ -131,7 +132,8 @@ describe('durable run read service', () => {
           leftOver: 863,
         },
       ],
-      leftOverStreak: { photos: 863, nights: 2 },
+      leftOverStreak: { photos: 863, nights: 2, capped: false },
+      leftOver: 863,
     });
     expect(JobRunPageDto.schema.parse(page)).toEqual(page);
 
@@ -140,6 +142,7 @@ describe('durable run read service', () => {
     expect(mocks.job.listRuns).toHaveBeenLastCalledWith(26, 0, false);
     expect(plain.items[0]).not.toHaveProperty('earlierRuns');
     expect(plain.items[0]).not.toHaveProperty('leftOverStreak');
+    expect(plain.items[0]).not.toHaveProperty('leftOver');
   });
   describe('left-over photos (FL-1349)', () => {
     const review = {
@@ -234,6 +237,9 @@ describe('durable run read service', () => {
     await expect(sut.releaseRun(run.id)).rejects.toBeInstanceOf(BadRequestException);
     mocks.job.releaseRun.mockResolvedValueOnce('not_found');
     await expect(sut.releaseRun(run.id)).rejects.toBeInstanceOf(NotFoundException);
+  });
+  it('keeps foldNightly to the run list', () => {
+    expect(JobRunItemSearchDto.schema.parse({ foldNightly: 'true' })).not.toHaveProperty('foldNightly');
   });
   it.each([{ take: 0 }, { take: 101 }, { skip: -1 }, { take: 'all' }])('rejects invalid pagination %j', (page) => {
     expect(() => JobRunSearchDto.schema.parse(page)).toThrow();

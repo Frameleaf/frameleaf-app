@@ -9,6 +9,7 @@ import {
   JobRunFailureActionResponseDto,
   JobRunFailuresDto,
   JobRunItemPageDto,
+  JobRunItemSearchDto,
   JobRunPageDto,
   JobRunSearchDto,
   mapJobRun,
@@ -144,7 +145,7 @@ export class JobService extends BaseService {
     };
   }
 
-  async getRunItems(id: string, { take, skip }: JobRunSearchDto): Promise<JobRunItemPageDto> {
+  async getRunItems(id: string, { take, skip }: JobRunItemSearchDto): Promise<JobRunItemPageDto> {
     const rows = await this.jobRepository.listRunItems(id, take + 1, skip);
     if (!rows) {
       throw new NotFoundException('Job run not found');

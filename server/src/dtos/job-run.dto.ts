@@ -76,11 +76,13 @@ const progress = z.object({
   lastStage: z.string().nullable(),
   reasons: z.array(JobRunReasonSchema),
 });
+const page = z.object({
+  take: z.coerce.number().int().min(1).max(100).default(25),
+  skip: z.coerce.number().int().min(0).default(0),
+});
 export class JobRunSearchDto extends createZodDto(
-  z
-    .object({
-      take: z.coerce.number().int().min(1).max(100).default(25),
-      skip: z.coerce.number().int().min(0).default(0),
+  page
+    .extend({
       foldNightly: stringToBool
         .optional()
         .describe(
@@ -89,6 +91,7 @@ export class JobRunSearchDto extends createZodDto(
     })
     .meta({ id: 'JobRunSearchDto' }),
 ) {}
+export class JobRunItemSearchDto extends createZodDto(page.meta({ id: 'JobRunItemSearchDto' })) {}
 export class JobRunIdParamDto extends createZodDto(z.object({ id: z.uuid() })) {}
 export const JobRunResponseSchema = counts
   .extend({
@@ -134,6 +137,13 @@ export const JobRunResponseSchema = counts
       .describe(
         'Photos left over (failed or needing attention) by cause, most telling first; stopped ones are left out. Absent when nothing failed',
       ),
+    leftOver: z
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        "Photos that still need a look: the sum of failureCauses, present whenever it is. Cards use it rather than failed + needsAttention, which keep counting stopped photos and a live run's photos still being worked on",
+      ),
     earlierRuns: z
       .array(
         z.object({
@@ -151,6 +161,10 @@ export const JobRunResponseSchema = counts
       .object({
         photos: z.int().min(1).describe('Photos this run left over (stopped ones aside)'),
         nights: z.int().min(1).describe('Nights in a row, this one included, that left all of them over'),
+        capped: z
+          .boolean()
+          .optional()
+          .describe('Every night it could count back through left them all: it may be longer ("N or more nights")'),
       })
       .optional()
       .describe('With foldNightly, on the newest nightly run: how long the same photos have been left over'),
@@ -259,6 +273,7 @@ export const mapJobRun = (row: RunRead): JobRunResponseDto => ({
   pausedQueues: row.pausedQueues as QueueName[],
   ...(row.unreachableLibraries && { unreachableLibraries: row.unreachableLibraries }),
   ...(row.failureCauses && { failureCauses: row.failureCauses }),
+  ...(row.leftOver !== undefined && { leftOver: row.leftOver }),
   ...(row.earlierRuns && {
     earlierRuns: row.earlierRuns.map((earlier) => ({
       id: earlier.id,

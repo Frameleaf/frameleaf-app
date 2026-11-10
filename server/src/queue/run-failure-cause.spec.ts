@@ -6,8 +6,8 @@ import {
   runFailureCause,
 } from 'src/queue/run-failure-cause.js';
 
-const upload = { external: false, offline: false, finding: null };
-const external = { external: true, offline: false, finding: null };
+const upload = { asset: true, external: false, offline: false, finding: null };
+const external = { asset: true, external: true, offline: false, finding: null };
 
 describe('runFailureCause', () => {
   it('maps FL-1337 decoder words', () => {
@@ -33,6 +33,18 @@ describe('runFailureCause', () => {
     expect(runFailureCause({ ...external, error })).toBe('drive');
     expect(runFailureCause({ ...external, error: 'EHOSTDOWN: host is down' })).toBe('drive');
     expect(runFailureCause({ ...upload, error: 'Original file not found' })).toBe('missing');
+  });
+
+  it("machine learning's not found is not a missing file", () => {
+    expect(runFailureCause({ ...upload, error: 'Request failed: 404 Not Found' })).toBe('other');
+    expect(runFailureCause({ ...upload, error: 'model not found: buffalo_l' })).toBe('other');
+  });
+
+  it('a task with no photo is other, never missing', () => {
+    for (const error of ['ENOENT: no such file or directory', 'premature end', null]) {
+      expect(runFailureCause({ ...upload, asset: false, error })).toBe('other');
+      expect(runFailureCause({ ...external, asset: false, offline: true, error, finding: 'missing' })).toBe('other');
+    }
   });
 
   it('an open corrupt finding wins over an unknown message', () => {

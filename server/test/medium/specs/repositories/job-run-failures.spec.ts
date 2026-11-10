@@ -27,7 +27,7 @@ beforeAll(async () => {
   db = database as unknown as Kysely<any>;
 });
 beforeEach(async () => {
-  await sql`truncate job_attempt, job, job_run, job_worker, job_queue cascade`.execute(db);
+  await sql`truncate job_attempt, job, job_run, job_worker, job_queue, asset_processing_failure cascade`.execute(db);
   await sql`insert into job_queue(name) values ('thumbnailGeneration'), ('faceDetection')`.execute(db);
   await sql`insert into job_worker(id) values (${randomUUID()}::uuid)`.execute(db);
 });
@@ -45,22 +45,21 @@ const failedJob = async (
   root: string,
   name: string,
   error: string | null,
-  options: { state?: string; queue?: string; sensitive?: boolean } = {},
+  options: { state?: string; queue?: string; sensitive?: boolean; dataId?: string } = {},
 ) => {
   await sql`insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", "runId", "itemKey",
       "rootItemKey", state, error, "finishedAt")
     values (${randomUUID()}::uuid, ${options.queue ?? 'thumbnailGeneration'}, ${name},
-      ${JSON.stringify({ id: root })}::text::jsonb, true, ${options.sensitive ?? false}, 1000, ${runId}::uuid,
+      ${JSON.stringify({ id: options.dataId ?? root })}::text::jsonb, true, ${options.sensitive ?? false}, 1000, ${runId}::uuid,
       ${`${root}:${name}`}, ${root}, ${options.state ?? 'failed'}, ${error},
       case when ${options.state ?? 'failed'} in ('pending','waiting','active') then null else now() end)`.execute(db);
 };
-const finding = async (assetId: string, category: MediaHealthCategory, evidence: object = {}) => {
+const finding = async (assetId: string, category: MediaHealthCategory, evidence: object = {}, resolved = false) => {
   await sql`insert into asset_health("assetId", category, status, severity, "originalPath", "originalFileName",
-      evidence, resolution, "checkedAt")
+      evidence, resolution, "checkedAt", "resolvedAt")
     values (${assetId}::uuid, ${category}, ${category === MediaHealthCategory.Missing ? MediaHealthStatus.Missing : MediaHealthStatus.CorruptConfirmed},
-      ${MediaHealthSeverity.Critical}, '/p', 'p.jpg', ${JSON.stringify(evidence)}::text::jsonb, '{}', now())`.execute(
-    db,
-  );
+      ${MediaHealthSeverity.Critical}, '/p', 'p.jpg', ${JSON.stringify(evidence)}::text::jsonb, '{}', now(),
+      case when ${resolved}::boolean then now() end)`.execute(db);
 };
 
 /** Every read of `job` in a plan: how it reads it, and the index condition it reads by. */
@@ -124,10 +123,8 @@ describe('summarizeRunFailures', () => {
     );
 
     const groups = await summarizeRunFailures(db, id);
-    expect(groups.map(({ cause, count }) => ({ cause, count }))).toEqual([
-      { cause: 'damaged', count: 1428 },
-      { cause: 'other', count: 1429 },
-    ]);
+    // the roots are no photos here, so every one is other
+    expect(groups.map(({ cause, count }) => ({ cause, count }))).toEqual([{ cause: 'other', count: 2857 }]);
     expect(groups[0]).toMatchObject({ stopped: 0, repaired: 0, queues: ['thumbnailGeneration'], libraries: [] });
   }, 120_000);
 
@@ -174,17 +171,24 @@ describe('summarizeRunFailures', () => {
     const { asset: damaged } = await ctx.newAsset({ ownerId: user.id });
     const { asset: lost } = await ctx.newAsset({ ownerId: user.id });
     await finding(damaged.id, MediaHealthCategory.Corrupt, { fixState: 'repaired' });
+    // fixed and closed: still damaged, so "repaired N of these" counts it
+    const { asset: fixed } = await ctx.newAsset({ ownerId: user.id });
+    await finding(fixed.id, MediaHealthCategory.Corrupt, { fixState: 'found-again' }, true);
     await finding(lost.id, MediaHealthCategory.Missing);
     const id = await run();
     await failedJob(id, offline.id, JobName.AssetGenerateThumbnails, 'Timed out');
     await failedJob(id, gone.id, JobName.AssetGenerateThumbnails, 'ENOENT: no such file or directory');
     await failedJob(id, damaged.id, JobName.AssetGenerateThumbnails, 'Something odd');
     await failedJob(id, lost.id, JobName.AssetGenerateThumbnails, 'Something odd');
+    await failedJob(id, fixed.id, JobName.AssetGenerateThumbnails, 'Something odd');
+    // a root that is no photo is other, whatever its message
+    await failedJob(id, 'not-a-photo', JobName.AssetGenerateThumbnails, 'ENOENT: no such file');
 
     expect(await summarizeRunFailures(db, id)).toEqual([
       expect.objectContaining({ cause: 'drive', count: 2, libraries: ['Holiday drive'] }),
       expect.objectContaining({ cause: 'missing', count: 1, libraries: [] }),
-      expect.objectContaining({ cause: 'damaged', count: 1, repaired: 1 }),
+      expect.objectContaining({ cause: 'damaged', count: 2, repaired: 2 }),
+      expect.objectContaining({ cause: 'other', count: 1, repaired: 0 }),
     ]);
   });
 
@@ -209,8 +213,11 @@ describe('summarizeRunFailures', () => {
   });
 
   it('finishRuns stores failureCauses in the summary', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
     const id = await run();
-    await failedJob(id, randomUUID(), JobName.AssetGenerateThumbnails, 'premature end of JPEG image');
+    await failedJob(id, asset.id, JobName.AssetGenerateThumbnails, 'premature end of JPEG image');
     await failedJob(id, randomUUID(), JobName.AssetGenerateThumbnails, null, { state: 'completed' });
     const clean = await run();
     await failedJob(clean, randomUUID(), JobName.AssetGenerateThumbnails, null, { state: 'completed' });
@@ -224,8 +231,9 @@ describe('summarizeRunFailures', () => {
     });
     // read back from the summary once history is pruned
     await sql`delete from job where "runId" = ${id}::uuid`.execute(db);
-    expect(await getRun(db, id)).toMatchObject({ failureCauses: [{ cause: 'damaged', count: 1 }] });
+    expect(await getRun(db, id)).toMatchObject({ failureCauses: [{ cause: 'damaged', count: 1 }], leftOver: 1 });
     expect((await getRun(db, clean))?.failureCauses).toBeUndefined();
+    expect((await getRun(db, clean))?.leftOver).toBeUndefined();
   });
 
   it('classifies in SQL exactly as the TypeScript mirror does', async () => {
@@ -242,13 +250,17 @@ describe('summarizeRunFailures', () => {
       'APP1 segment too short',
       'no decode delegate for this image format',
       'Huffman table broken',
+      'Request failed: 404 Not Found',
+      'model not found',
     ];
     const inputs: RunFailureInput[] = [];
     for (const error of errors) {
-      for (const external of [false, true]) {
-        for (const offline of [false, true]) {
-          for (const found of [null, 'missing', 'corrupt'] as const) {
-            inputs.push({ error, external, offline, finding: found });
+      for (const asset of [true, false]) {
+        for (const external of [false, true]) {
+          for (const offline of [false, true]) {
+            for (const found of [null, 'missing', 'corrupt'] as const) {
+              inputs.push({ asset, error, external, offline, finding: found });
+            }
           }
         }
       }
@@ -257,6 +269,7 @@ describe('summarizeRunFailures', () => {
       const {
         rows: [row],
       } = await sql<{ cause: string }>`select ${failureCauseSql({
+        asset: sql`${input.asset}::boolean`,
         error: sql`${input.error}::text`,
         external: sql`${input.external}::boolean`,
         offline: sql`${input.offline}::boolean`,
@@ -426,5 +439,114 @@ describe('reviewing and acting on a run’s left-over photos', () => {
       finishedAt: null,
       failureCauses: [{ cause: 'unsupported', count: 1 }],
     });
+  });
+});
+
+describe('the task names the photo it works on (review)', () => {
+  const motionPair = async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset: still } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: motion } = await ctx.newAsset({ ownerId: user.id });
+    for (const asset of [still, motion]) {
+      await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
+    }
+    return { still, motion };
+  };
+  const nightlyPicks = async (ids: string[]) => {
+    const nightly = await run();
+    const store = new SqlQueueStore(database);
+    const selection = new AssetJobRepository(database)
+      .selectionForUnfinished(JobName.AssetGenerateThumbnails, {
+        queue: QueueName.ThumbnailGeneration,
+        fullsizeEnabled: false,
+        videoPolicy: 'current-policy',
+      })
+      .where('asset.id', 'in', ids);
+    await database.transaction().execute((tx) =>
+      store.insertSelectionPage(
+        {
+          queue: QueueName.ThumbnailGeneration,
+          name: JobName.AssetGenerateThumbnails,
+          data: {},
+          runId: nightly,
+          safeToRetry: true,
+          sensitive: false,
+          deadlineMs: 1000,
+        },
+        selection,
+        null,
+        100,
+        tx,
+      ),
+    );
+    const { rows } = await sql<{ id: string }>`select data->>'id' id from job where "runId" = ${nightly}::uuid`.execute(
+      db,
+    );
+    return rows.map(({ id }) => id);
+  };
+
+  it("stop sets aside the motion part a still's follow-up task works on", async () => {
+    const { still, motion } = await motionPair();
+    const id = await run();
+    await failedJob(id, still.id, JobName.AssetGenerateThumbnails, 'unsupported image format', { dataId: motion.id });
+    expect(await new SqlQueueStore(database).stopRunFailures(id, 'unsupported')).toBe(1);
+    const { rows } = await sql<{ assetId: string }>`select "assetId" from asset_processing_failure`.execute(db);
+    expect(rows).toEqual([{ assetId: motion.id }]);
+    expect(await summarizeRunFailures(db, id)).toEqual([
+      expect.objectContaining({ cause: 'unsupported', count: 0, stopped: 1 }),
+    ]);
+    expect(await nightlyPicks([still.id, motion.id])).toEqual([still.id]);
+  });
+
+  it('retry re-arms the motion part and puts back its job', async () => {
+    const { still, motion } = await motionPair();
+    const id = await run();
+    await failedJob(id, still.id, JobName.AssetGenerateThumbnails, 'Timed out', { dataId: motion.id });
+    await sql`insert into asset_processing_failure("assetId", step, attempts, "lastError", "lastFailedAt", "quarantinedAt")
+      values (${motion.id}::uuid, ${JobName.AssetGenerateThumbnails}, 3, 'timed-out', now(), now()),
+        (${still.id}::uuid, ${JobName.AssetGenerateThumbnails}, 3, 'timed-out', now(), now())`.execute(db);
+    expect(await new SqlQueueStore(database).retryRunFailures(id, 'other')).toBe(1);
+    const { rows: failures } = await sql<{ assetId: string; quarantinedAt: Date | null }>`select "assetId",
+      "quarantinedAt" from asset_processing_failure order by "assetId" = ${motion.id}::uuid desc`.execute(db);
+    // only the pair the job names is re-armed
+    expect(failures).toEqual([
+      { assetId: motion.id, quarantinedAt: null },
+      { assetId: still.id, quarantinedAt: expect.any(Date) },
+    ]);
+    const { rows: jobs } = await sql<{ id: string; state: string }>`select data->>'id' id, state from job
+      where "runId" = ${id}::uuid`.execute(db);
+    expect(jobs).toEqual([{ id: motion.id, state: 'pending' }]);
+  });
+});
+
+describe('left-over count (review)', () => {
+  it('adds up with the causes after Stop trying, on a finished run', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const id = await run();
+    await failedJob(id, asset.id, JobName.AssetGenerateThumbnails, 'unsupported image format');
+    expect(await finishRuns(db, 10)).toBe(1);
+    expect(await getRun(db, id)).toMatchObject({ failed: 1, leftOver: 1 });
+    await new SqlQueueStore(database).stopRunFailures(id, 'unsupported');
+    // the run keeps its history (one failed photo) and says nothing is left to look at
+    expect(await getRun(db, id)).toMatchObject({
+      state: 'completed_with_errors',
+      failed: 1,
+      failureCauses: [],
+      leftOver: 0,
+    });
+  });
+
+  it('a live run leaves out photos still being worked on', async () => {
+    const id = await run();
+    await failedJob(id, 'a', JobName.AssetGenerateThumbnails, null);
+    await failedJob(id, 'a', JobName.AssetDetectFaces, null, { state: 'pending', queue: 'faceDetection' });
+    await failedJob(id, 'b', JobName.AssetGenerateThumbnails, null);
+    const live = (await getRun(db, id))!;
+    expect(live).toMatchObject({ failed: 1, leftOver: 1, failureCauses: [{ cause: 'other', count: 1 }] });
+    expect(live.leftOver).toBeLessThanOrEqual(live.failed + live.needsAttention);
   });
 });
