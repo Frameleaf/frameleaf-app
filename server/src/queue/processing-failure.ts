@@ -58,15 +58,19 @@ export async function recordProcessingFailure(
     return false;
   }
   const cause = processingFailureCause(reason, lifecycle);
+  // FL-1356: a file no decoder can open will not open on a second or third try. It is set aside at once
+  // ("can't show yet"), and comes back when someone retries it after an update.
+  const atOnce = cause === 'unsupported';
   // Store a fixed cause rather than exception text, which can contain paths or private metadata.
   const { rows } = await sql<{ setAside: boolean }>`insert into asset_processing_failure as f
-    ("assetId", step, attempts, "lastError", "lastFailedAt")
-    select id, ${name}, 1, ${cause}, clock_timestamp()
+    ("assetId", step, attempts, "lastError", "lastFailedAt", "quarantinedAt")
+    select id, ${name}, 1, ${cause}, clock_timestamp(), case when ${atOnce} then clock_timestamp() end
     from asset where id = ${assetId}::uuid and status = 'active' and not "isOffline"
     on conflict ("assetId", step) do update set attempts = f.attempts + 1,
       "lastError" = excluded."lastError", "lastFailedAt" = excluded."lastFailedAt",
       "dismissedAt" = case when ${includeSetAside} then null else f."dismissedAt" end,
-      "quarantinedAt" = coalesce(f."quarantinedAt", case when f.attempts >= 2 then excluded."lastFailedAt" end)
+      "quarantinedAt" = coalesce(f."quarantinedAt",
+        case when f.attempts >= 2 or ${atOnce} then excluded."lastFailedAt" end)
     returning ("quarantinedAt" is not null or "dismissedAt" is not null) as "setAside"`.execute(db);
   return rows[0]?.setAside ?? false;
 }

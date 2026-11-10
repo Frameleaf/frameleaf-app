@@ -205,7 +205,6 @@ const RAW_EXTENSIONS: ReadonlySet<string> = new Set([
   'ari',
   'arw',
   'cap',
-  'cin',
   'cr2',
   'cr3',
   'crw',
