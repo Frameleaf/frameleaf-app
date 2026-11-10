@@ -79,7 +79,8 @@ clip() { # clip <output> <ffmpeg output options...>
 }
 clip h264.mp4 -c:v libx264 -pix_fmt yuv420p
 clip h264.mkv -c:v libx264 -pix_fmt yuv420p
-clip h264.ts -c:v libx264 -pix_fmt yuv420p
+# Not ".ts": the server build would take a transport stream for TypeScript.
+clip h264.m2ts -c:v libx264 -pix_fmt yuv420p -f mpegts
 clip hevc.mp4 -c:v libx265 -x265-params log-level=error -pix_fmt yuv420p -tag:v hvc1
 clip av1.mp4 -c:v libaom-av1 -cpu-used 8 -pix_fmt yuv420p
 clip vp8.webm -c:v libvpx -pix_fmt yuv420p

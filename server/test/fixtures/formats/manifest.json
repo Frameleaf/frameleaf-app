@@ -46,7 +46,7 @@
     {"file": "video/h264-no-index.mp4", "root": "generated", "kind": "video", "decodes": false, "integrity": "cut-short"},
     {"file": "video/h264.mkv", "root": "generated", "kind": "video", "decodes": true, "rung": "ffmpeg", "width": 160, "height": 120, "codec": "h264", "integrity": "healthy"},
     {"file": "video/h264.mp4", "root": "generated", "kind": "video", "decodes": true, "rung": "ffmpeg", "width": 160, "height": 120, "codec": "h264", "integrity": "healthy"},
-    {"file": "video/h264.ts", "root": "generated", "kind": "video", "decodes": true, "rung": "ffmpeg", "width": 160, "height": 120, "codec": "h264", "integrity": "healthy"},
+    {"file": "video/h264.m2ts", "root": "generated", "kind": "video", "decodes": true, "rung": "ffmpeg", "width": 160, "height": 120, "codec": "h264", "integrity": "healthy"},
     {"file": "video/hevc.mp4", "root": "generated", "kind": "video", "decodes": true, "rung": "ffmpeg", "width": 160, "height": 120, "codec": "hevc", "integrity": "healthy"},
     {"file": "video/jpeg2000.mov", "root": "generated", "kind": "video", "decodes": true, "rung": "ffmpeg", "width": 160, "height": 120, "codec": "jpeg2000", "integrity": "healthy"},
     {"file": "video/mjpeg.avi", "root": "generated", "kind": "video", "decodes": true, "rung": "ffmpeg", "width": 160, "height": 120, "codec": "mjpeg", "integrity": "healthy"},
