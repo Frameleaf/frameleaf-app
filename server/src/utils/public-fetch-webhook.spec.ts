@@ -38,6 +38,7 @@ describe('sendWebhook', () => {
   });
 
   it('refuses plain http to a public address even with the home network allowed', async () => {
+    // eslint-disable-next-line unicorn/prefer-https -- the test checks that plain http to a public host is refused
     await expect(sendWebhook('http://example.com/hook', message, { allowHomeNetwork: true })).rejects.toThrow(
       PublicFetchError,
     );
