@@ -1,6 +1,8 @@
 import { isDeepStrictEqual } from 'node:util';
 import z from 'zod';
 
+export const RESULT_LIMIT = 24;
+
 export const filtersSchema = z.strictObject({
   people: z.array(z.string()).min(1).optional(),
   pets: z.array(z.string()).min(1).optional(),
@@ -107,12 +109,17 @@ export function score(questions: EvalCase[], library: EvalAsset[], answers: Eval
   for (const { id, expect } of questions) {
     const { filters, hits } = byId.get(id)!;
     correctFilters += Number(isDeepStrictEqual(canonical(filters), canonical(expect.filters)));
-    const returned = new Set(hits.slice(0, 24).map(({ key }) => key));
+    const page = new Map<string, Reason[]>();
+    for (const { key, reasons } of hits.slice(0, RESULT_LIMIT)) {
+      if (!page.has(key)) {
+        page.set(key, reasons);
+      }
+    }
     recall +=
       expect.assetKeys.length > 0
-        ? expect.assetKeys.filter((key) => returned.has(key)).length / expect.assetKeys.length
-        : Number(returned.size === 0);
-    for (const { key, reasons: claims } of hits) {
+        ? expect.assetKeys.filter((key) => page.has(key)).length / expect.assetKeys.length
+        : Number(page.size === 0);
+    for (const [key, claims] of page) {
       reasons += Math.max(1, claims.length);
       supported += claims.filter((claim) => supports(assets.get(key), claim)).length;
     }

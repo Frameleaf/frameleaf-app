@@ -21,11 +21,10 @@ import cases from 'test/assistant-eval/cases.json' with { type: 'json' };
 import library from 'test/assistant-eval/library.json' with { type: 'json' };
 import { requestPlan } from 'test/assistant-eval/planner.js';
 import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
-import { EvalAnswer, EvalFilters, Reason, readFixtures, score } from 'test/assistant-eval/score.js';
+import { EvalAnswer, EvalFilters, Reason, RESULT_LIMIT, readFixtures, score } from 'test/assistant-eval/score.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 
-const PAGE_SIZE = 24;
 // This supplies the same CLIP vector for all items and all queries. The baseline measures the
 // rule planner and database filters without assigning semantic relevance to a fake embedding.
 const neutralEmbedding = `[1,${'0,'.repeat(766)}0]`;
@@ -180,7 +179,7 @@ export async function run(database: Kysely<DB>, options: Mode) {
     let filters: EvalFilters;
     let ids: string[];
     if (mode === 'baseline') {
-      const { plan, results } = await sut.askSearch(auth, { query: question, size: PAGE_SIZE });
+      const { plan, results } = await sut.askSearch(auth, { query: question, size: RESULT_LIMIT });
       const raw = plan.filters;
       filters = {
         ...(raw.personIds?.length && { people: raw.personIds.map((id) => personNames.get(id) ?? id) }),
@@ -219,10 +218,10 @@ export async function run(database: Kysely<DB>, options: Mode) {
       };
       if (filters.spoken) {
         const query = `"${filters.spoken.replaceAll('"', '')}"`;
-        const { items } = await speech.search(auth, { query, size: PAGE_SIZE, filter }, speechQuery(query));
+        const { items } = await speech.search(auth, { query, size: RESULT_LIMIT, filter }, speechQuery(query));
         ids = items.map(({ asset }) => asset.id);
       } else {
-        const { assets } = await sut.searchMetadata(auth, { size: PAGE_SIZE, filter });
+        const { assets } = await sut.searchMetadata(auth, { size: RESULT_LIMIT, filter });
         ids = assets.items.map(({ id }) => id);
       }
     }

@@ -53,7 +53,7 @@ const question: EvalCase = {
   expect: { filters: { city: 'Banff', type: 'IMAGE' }, assetKeys: ['one'] },
 };
 
-it('counts only supported reasons and top 24 unique matches', () => {
+it('counts only supported reasons', () => {
   const result = score(
     [question],
     [asset],
@@ -75,6 +75,30 @@ it('counts only supported reasons and top 24 unique matches', () => {
     ],
   );
   assert.deepEqual(result, { filterAccuracy: 1, recallAt24: 1, faithfulness: 0.5, p95Ms: 75 });
+});
+
+it('scores recall and reasons over the same unique hits in the top 24 ranks', () => {
+  const page = Array.from({ length: 23 }, (_, index) => ({ ...asset, key: `asset-${index}` }));
+  const afterPage = { ...asset, key: 'rank-25' };
+  const matchingReason = { field: 'city', value: 'Banff' } as const;
+  const mislabeledReason = { field: 'city', value: 'Calgary' } as const;
+  const result = score(
+    [{ ...question, expect: { ...question.expect, assetKeys: [page[0].key, afterPage.key] } }],
+    [...page, afterPage],
+    [
+      {
+        id: question.id,
+        filters: question.expect.filters,
+        hits: [
+          ...page.map(({ key }) => ({ key, reasons: [matchingReason] })),
+          { key: page[0].key, reasons: [mislabeledReason] },
+          { key: afterPage.key, reasons: [mislabeledReason] },
+        ],
+        elapsedMs: 2,
+      },
+    ],
+  );
+  assert.deepEqual(result, { filterAccuracy: 1, recallAt24: 0.5, faithfulness: 1, p95Ms: 2 });
 });
 
 it('penalizes missing reasons, incorrect empty results, and hallucinated fields', () => {
