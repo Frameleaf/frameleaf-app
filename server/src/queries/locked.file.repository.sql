@@ -159,59 +159,6 @@ from
   public.video_moment_frame frame
 where
   frame."assetId" = $10::uuid
-union all
-select
-  kept.path,
-  'other',
-  'asset_health',
-  null,
-  true,
-  null
-from
-  public.asset_health h
-  cross join lateral (
-    select
-      h.evidence ->> 'retainedPath'
-    union all
-    select
-      p.path
-    from
-      public.asset_health_step s
-      cross join lateral (
-        values
-          (s.undo ->> 'previousPath'),
-          (s.undo ->> 'retainedPath'),
-          (
-            case
-              when strpos(s.undo ->> 'originalPath', $11) > 0 then s.undo ->> 'originalPath'
-            end
-          )
-      ) as p (path)
-    where
-      s."healthId" = h.id
-      and jsonb_typeof(s.undo) = 'object'
-  ) as kept (path)
-where
-  h."assetId" = $12::uuid
-  and kept.path like '/%'
-  and not exists (
-    select
-      1
-    from
-      public.asset other
-    where
-      other."originalPath" = kept.path
-      and other.id <> $13::uuid
-  )
-  and not exists (
-    select
-      1
-    from
-      public.asset_file f
-    where
-      f.path = kept.path
-      and f."assetId" <> $14::uuid
-  )
 
 -- LockedFileRepository.encryptedSetOwner
 select

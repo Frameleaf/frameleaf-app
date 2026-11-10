@@ -83,7 +83,7 @@ describe(LockedFileRepository.name, () => {
       expect(files.find(({ path }) => path === extra)).toMatchObject({ table: 'video_edit_version' });
     });
 
-    it('lists the files Library care kept of the photo, optional, and none another asset reads (FL-1364)', async () => {
+    it('reads the kept paths Library care records of the photo, and which of them something else names (FL-1364)', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const care = `/media/${randomUUID()}/.library-care`;
@@ -124,26 +124,23 @@ describe(LockedFileRepository.name, () => {
         { kind: 'relink', previousPath: 'relative.jpg', originalPath: original, retainedPath: theirThumbnail },
       ]);
       // another photo's findings are its own
-      await finding(other.id, 'corrupt', `${care}/${other.id}.damaged.jpg`, []);
+      const otherDamaged = `${care}/${other.id}.damaged.jpg`;
+      await finding(other.id, 'corrupt', otherDamaged, []);
+      const trashed = `${care}/${asset.id}-trashed.jpg`;
+      await sql`INSERT INTO public.physical_file_trash (checksum, "originalFileName", path, "sizeInBytes")
+        VALUES (${Buffer.alloc(32, 2)}, 'IMG_0001.jpg', ${trashed}, 1)`.execute(db);
 
-      const files = await sut.filesOf(asset.id);
-
-      expect(
-        files
-          .filter(({ table }) => table === 'asset_health')
-          .map(({ path }) => path)
-          .toSorted(),
-      ).toEqual([damaged, changed, orphan].toSorted());
-      expect(files.find(({ path }) => path === damaged)).toEqual({
-        path: damaged,
-        kind: 'other',
-        table: 'asset_health',
-        optional: true,
-      });
-      // the photo's own file is listed once, as its original
-      expect(files.filter(({ path }) => path === original)).toEqual([
-        expect.objectContaining({ kind: 'original', table: 'asset' }),
-      ]);
+      // what the records name, unchecked (an `originalPath` only inside Library care)
+      expect((await sut.recordedKeptPaths(asset.id)).toSorted()).toEqual(
+        [damaged, orphan, theirs, original, changed, 'relative.jpg', theirThumbnail].toSorted(),
+      );
+      // of those, what something else names: never the photo's to seal
+      const taken = await db
+        .transaction()
+        .execute((trx) =>
+          sut.keptPathsTaken(asset.id, [damaged, changed, orphan, theirs, theirThumbnail, otherDamaged, trashed], trx),
+        );
+      expect([...taken].toSorted()).toEqual([theirs, theirThumbnail, otherDamaged, trashed].toSorted());
     });
 
     it('is empty for an asset that does not exist', async () => {

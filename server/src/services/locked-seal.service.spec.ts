@@ -132,6 +132,8 @@ describe(LockedSealService.name, () => {
     mocks.lockedEncryption.get.mockImplementation(() => Promise.resolve(row as never));
     mocks.lockedEncryption.getAllUserIds.mockImplementation(() => Promise.resolve(row ? [OWNER] : []));
     mocks.lockedEncryption.getUnlockedFilePaths.mockResolvedValue([]);
+    mocks.lockedEncryption.getUnlockedCareAssetIds.mockResolvedValue([]);
+    mocks.lockedFile.keptPathsTaken.mockResolvedValue(new Set());
     mocks.lockedEncryption.getLockedAssets.mockImplementation(() =>
       Promise.resolve([
         {
@@ -415,12 +417,12 @@ describe(LockedSealService.name, () => {
       await expect(sut.handleSeal({ id: ASSET })).resolves.toBe(JobStatus.Success);
       expect((await decrypted(original)).equals(plain.get(original)!)).toBe(true);
       expect((await decrypted(kept)).equals(plain.get(kept)!)).toBe(true);
-      expect(mocks.lockedFile.plainReaders).toHaveBeenCalledWith(ASSET, kept, LOCK_TRX);
+      expect(mocks.lockedFile.keptPathsTaken).toHaveBeenCalledWith(ASSET, [kept], LOCK_TRX);
 
-      // another photo took it as its file after the registry looked: it stays as it is
+      // something else came to name it after the registry looked: it stays as it is
       const other = await write('asset-health-2.damaged.jpg', 'other', 'asset_health');
-      mocks.lockedFile.plainReaders.mockImplementation((_id, path) =>
-        Promise.resolve(path === other ? ['their-asset'] : []),
+      mocks.lockedFile.keptPathsTaken.mockImplementation((_id, paths) =>
+        Promise.resolve(new Set(paths.filter((path) => path === other))),
       );
       await expect(sut.handleSeal({ id: ASSET })).resolves.toBe(JobStatus.Skipped);
       expect((await fs.readFile(other)).equals(plain.get(other)!)).toBe(true);

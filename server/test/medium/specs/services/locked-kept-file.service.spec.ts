@@ -3,13 +3,17 @@ import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
-import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
+import {
+  LIBRARY_CARE_SETTLE_MS,
+  LockedFileRepository,
+  libraryCareFolderOf,
+} from 'src/repositories/locked-file.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -86,19 +90,33 @@ const setup = async (options: { status?: 'encrypting' | 'on' } = {}) => {
     { create: vi.fn() } as never,
   );
 
-  const folder = join(media, 'upload', user.id, randomUUID().slice(0, 2));
-  const care = join(folder, LIBRARY_CARE_FOLDER);
+  const id = randomUUID();
+  // the photo's own Library care folder, where its recovered copy (its original now) and kept files are
+  const care = libraryCareFolderOf(user.id, id);
   await fs.mkdir(care, { recursive: true });
-  const original = join(care, `${randomUUID()}.jpg`);
+  const original = join(care, `${id}-${randomUUID()}-0123abcd.jpg`);
   const originalBytes = randomBytes(90_000);
   await fs.writeFile(original, originalBytes);
   const { asset } = await ctx.newAsset({
+    id,
     ownerId: user.id,
     originalPath: original,
     originalFileName: 'IMG_0001.jpg',
     visibility: AssetVisibility.Locked,
   });
   await turnOn(user.id, options.status);
+
+  /** A file in the photo's Library care folder that no record names, written long enough ago to have settled. */
+  const unrecorded = async (name: string, settled = true) => {
+    const path = join(care, name);
+    const bytes = randomBytes(20_000);
+    await fs.writeFile(path, bytes);
+    if (settled) {
+      const then = new Date(Date.now() - LIBRARY_CARE_SETTLE_MS - 60_000);
+      await fs.utimes(path, then, then);
+    }
+    return { path, bytes };
+  };
 
   /** A repair's damaged file, kept beside the recovered copy and recorded as Library care records it. */
   const keep = async (
@@ -146,12 +164,16 @@ const setup = async (options: { status?: 'encrypting' | 'on' } = {}) => {
     original,
     originalBytes,
     keep,
+    unrecorded,
     decrypted,
     loadKey,
     temporaries,
     lockedFile,
   };
 };
+
+const lockOf = (assetId: string) =>
+  db.selectFrom('asset_lock').select('assetId').where('assetId', '=', assetId).executeTakeFirst();
 
 describe('FL-1364: Library care kept files under Locked encryption', () => {
   it('a seal encrypts the kept damaged file with the original, under the same key', async () => {
@@ -276,4 +298,146 @@ describe('FL-1364: Library care kept files under Locked encryption', () => {
     expect((await fs.readFile(kept)).equals(bytes)).toBe(true);
     expect((await fs.readdir(care)).filter((name) => name.endsWith('.fllk.tmp'))).toEqual([]);
   });
+
+  it('seals the copies no record names: a restored file an Undo moved aside, a repaired copy left unreferenced', async () => {
+    const { sut, asset, care, unrecorded, decrypted, temporaries } = await setup();
+    const restored = await unrecorded(`${asset.id}-${randomUUID()}.restored.jpg`);
+    const repaired = await unrecorded(`${asset.id}-${randomUUID()}-89abcdef.jpg`);
+    const partial = await unrecorded(`${asset.id}-${randomUUID()}-89abcdef.jpg.${randomUUID()}.partial`);
+    // still being written by a fix, perhaps: a later sweep
+    const fresh = await unrecorded(`${asset.id}-${randomUUID()}-fedcba98.jpg`, false);
+    // another photo's, in the same folder
+    const theirs = await unrecorded(`${randomUUID()}-${randomUUID()}.restored.jpg`);
+    // a link, even one named after the photo, is never followed
+    const outside = join(media, `${randomUUID()}.jpg`);
+    await fs.writeFile(outside, 'not a kept file');
+    const link = join(care, `${asset.id}-${randomUUID()}.link.jpg`);
+    await fs.symlink(outside, link);
+
+    await expect(sut.handleSeal({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+    for (const { path, bytes } of [restored, repaired, partial]) {
+      expect(await header(path)).toBe('FLLK');
+      expect((await decrypted(path)).equals(bytes)).toBe(true);
+    }
+    for (const { path, bytes } of [fresh, theirs]) {
+      expect((await fs.readFile(path)).equals(bytes)).toBe(true);
+    }
+    await expect(fs.readFile(outside, 'utf8')).resolves.toBe('not a kept file');
+    expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
+    expect(await temporaries()).toEqual([]);
+    expect((await fs.readdir(care)).length).toBe(7);
+  });
+
+  it('an unreadable kept file never stops the photo’s other files, and is tried again', async () => {
+    const { sut, job, user, asset, original, keep, unrecorded, decrypted } = await setup({ status: 'encrypting' });
+    const { kept } = await keep();
+    const later = await unrecorded(`${asset.id}-${randomUUID()}.restored.jpg`);
+    await fs.chmod(kept, 0o000);
+    try {
+      await expect(sut.handleSeal({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(await header(original)).toBe('FLLK');
+      expect((await decrypted(later.path)).equals(later.bytes)).toBe(true);
+
+      // the sweep reads it as unreadable, never throws, and queues the seal again
+      await expect(sut.handleSweep({ userId: user.id })).resolves.toBe(JobStatus.Success);
+      expect(job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+    } finally {
+      await fs.chmod(kept, 0o600);
+    }
+    await expect(sut.handleSeal({ id: asset.id })).resolves.toBe(JobStatus.Success);
+    expect(await header(kept)).toBe('FLLK');
+  });
+
+  it('never touches a recorded kept path that is not the photo’s own file', async () => {
+    const { ctx, sut, user, asset, care, keep, lockedFile } = await setup();
+    // the file trash keeps a file at this path (the finding's own kept file)
+    const trashed = await keep();
+    await sql`INSERT INTO public.physical_file_trash (checksum, "originalFileName", path, "sizeInBytes")
+      VALUES (${Buffer.alloc(32, 1)}, 'IMG_0001.jpg', ${trashed.kept}, 50000)`.execute(db);
+    const undoing = (previousPath: string) =>
+      sql`INSERT INTO public.asset_health_step ("healthId", "assetId", step, outcome, undo)
+        VALUES (${trashed.healthId}::uuid, ${asset.id}::uuid, 'put-back', 'ok',
+          ${JSON.stringify({ kind: 'relink', previousPath, originalPath: '/elsewhere.jpg' })}::text::jsonb)`.execute(
+        db,
+      );
+    // outside the owner's own folders
+    const { user: other } = await ctx.newUser();
+    await fs.mkdir(join(media, 'upload', other.id), { recursive: true });
+    const elsewhere = join(media, 'upload', other.id, `${randomUUID()}.jpg`);
+    await fs.writeFile(elsewhere, 'someone else’s photo');
+    await undoing(elsewhere);
+    // a link inside the owner's folder to a file outside it
+    const target = join(media, `${randomUUID()}.jpg`);
+    await fs.writeFile(target, 'outside the library');
+    const link = join(media, 'upload', user.id, `${randomUUID()}.jpg`);
+    await fs.symlink(target, link);
+    await undoing(link);
+    // written in a form other than its own
+    const name = `${randomUUID()}.jpg`;
+    await fs.writeFile(join(care, name), 'a file');
+    const crooked = `${care}/../${LIBRARY_CARE_FOLDER}/${name}`;
+    await undoing(crooked);
+    // another photo's kept file
+    const { asset: theirs } = await ctx.newAsset({ ownerId: user.id });
+    const shared = join(media, 'upload', user.id, `${randomUUID()}.damaged.jpg`);
+    await fs.writeFile(shared, 'their damaged file');
+    await sql`INSERT INTO public.asset_health ("assetId", category, status, severity, "originalPath", "originalFileName",
+        evidence, resolution, "checkedAt")
+      VALUES (${theirs.id}::uuid, 'corrupt', 'resolved', 'info', ${theirs.originalPath}, 'x.jpg',
+        ${JSON.stringify({ retainedPath: shared })}::text::jsonb, '{}'::jsonb, now())`.execute(db);
+    await undoing(shared);
+    // and one that is the photo's own, beside them
+    const mine = join(media, 'upload', user.id, `${randomUUID()}.jpg`);
+    await fs.writeFile(mine, 'the photo’s old original');
+    await undoing(mine);
+
+    const listed = new Set((await lockedFile.filesOf(asset.id)).map(({ path }) => path));
+    expect([trashed.kept, elsewhere, link, crooked, shared, mine].map((path) => listed.has(path))).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
+
+    await expect(sut.handleSeal({ id: asset.id })).resolves.toBe(JobStatus.Success);
+    expect((await fs.readFile(trashed.kept)).equals(trashed.bytes)).toBe(true);
+    await expect(fs.readFile(elsewhere, 'utf8')).resolves.toBe('someone else’s photo');
+    await expect(fs.readFile(target, 'utf8')).resolves.toBe('outside the library');
+    expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
+    await expect(fs.readFile(join(care, name), 'utf8')).resolves.toBe('a file');
+    await expect(fs.readFile(shared, 'utf8')).resolves.toBe('their damaged file');
+    expect(await header(mine)).toBe('FLLK');
+  });
+
+  it('a kept file still sealed after its photo left Locked is opened by the sweep once the key is loaded', async () => {
+    const { sut, job, user, asset, care, keep, unrecorded, loadKey } = await setup();
+    const { kept, bytes } = await keep();
+    const restored = await unrecorded(`${asset.id}-${randomUUID()}.restored.jpg`);
+    await expect(sut.handleSeal({ id: asset.id })).resolves.toBe(JobStatus.Success);
+    expect(await header(kept)).toBe('FLLK');
+    // the unlock finished while the kept files' drive was away
+    await db.deleteFrom('asset_lock').where('assetId', '=', asset.id).execute();
+    expect(await lockOf(asset.id)).toBeUndefined();
+    const stale = join(care, `${basename(restored.path)}.${randomUUID()}.fllk.tmp`);
+    await fs.writeFile(stale, 'left by a crash');
+
+    // without the key there is nothing to do
+    await expect(sut.handleSweep({ userId: user.id })).resolves.toBe(JobStatus.Success);
+    expect(job.queueAll).not.toHaveBeenCalled();
+
+    loadKey();
+    await expect(sut.handleSweep({ userId: user.id })).resolves.toBe(JobStatus.Success);
+    expect(job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedUnseal, data: { id: asset.id } }]);
+    await expect(sut.handleUnseal({ id: asset.id })).resolves.toBe(JobStatus.Success);
+    expect((await fs.readFile(kept)).equals(bytes)).toBe(true);
+    expect((await fs.readFile(restored.path)).equals(restored.bytes)).toBe(true);
+
+    // start-up clears a temporary file a crash left beside a kept file of an item out of Locked
+    await sut.removeStaleTemp();
+    await expect(fs.stat(stale)).rejects.toThrow();
+    // start-up reads every person's items, so it takes a while on a database the other specs filled
+  }, 60_000);
 });
