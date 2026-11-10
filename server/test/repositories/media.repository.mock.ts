@@ -5,6 +5,7 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaRepository>> => {
   return {
     getHdrCodecCapabilities: vitest.fn().mockResolvedValue(null),
+    hasLibplacebo: vitest.fn().mockResolvedValue(false),
     inspectImageEncoding: vitest.fn().mockResolvedValue({
       dynamicRange: 'unknown',
       gainMap: 'none',

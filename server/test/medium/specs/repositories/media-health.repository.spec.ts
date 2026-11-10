@@ -1448,6 +1448,31 @@ describe(MediaHealthRepository.name, () => {
       await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeDefined();
     });
 
+    it('keeps proven damage flagged and counted while it waits to go to the trash (FL-1372)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const { result: uncheckedAsset } = await ctx.newAsset({ ownerId: user.id });
+      // the repair found the drive away, then the person sent the damaged file to the trash
+      const queued = await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+        evidence: { fixState: 'couldnt-check' },
+      });
+      await sut.markStatus([queued.id], MediaHealthStatus.TrashQueued);
+      // suspected only, and it could not be checked: still not damage
+      await arrangeProblem(sut, uncheckedAsset, {
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptSuspect,
+        evidence: { fixState: 'couldnt-check' },
+      });
+
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toMatchObject({ id: queued.id });
+      await expect(sut.getOpenFileProblem(uncheckedAsset.id)).resolves.toBeUndefined();
+      const counts = await sut.countByStatus({ ownerId: user.id, privacy: {} });
+      expect(counts.map(({ status, count }) => [status, Number(count)])).toEqual([[MediaHealthStatus.TrashQueued, 1]]);
+    });
+
     it('flags it once a later check proves the damage (FL-1353)', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

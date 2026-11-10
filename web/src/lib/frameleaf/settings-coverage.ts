@@ -330,10 +330,10 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'connectedApps.allowRegistration',
-    // FL-803: the server setting; its switch on the settings page comes with FL-860
-    kind: 'api-only',
-    file: 'src/lib/frameleaf/system-config-draft.ts',
-    evidence: 'connectedApps.allowRegistration',
+    // FL-860: Sign-in › Connected apps
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
+    evidence: 'connectedApps?.allowRegistration',
   },
   {
     pattern: 'libraryCare.healthScanCronExpression',
