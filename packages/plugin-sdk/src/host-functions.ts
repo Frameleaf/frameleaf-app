@@ -35,6 +35,8 @@ type HttpRequestOptions = {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
+  /** FL-819: sign the message with this shared secret (`X-Frameleaf-Signature`). */
+  signingSecret?: string;
 };
 type HttpResponse = {
   ok: boolean;

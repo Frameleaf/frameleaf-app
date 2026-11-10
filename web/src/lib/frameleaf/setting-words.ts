@@ -65,6 +65,7 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     values: ($t, value) => (value === '' ? $t('frameleaf_server_identity_zone_computer') : undefined),
   },
   'server.lanDiscovery': { label: 'frameleaf_server_identity_lan' },
+  'server.automationsLocalNetwork': { label: 'frameleaf_server_automations_local' },
   // Server › Help (FL-489)
   'help.askEnabled': { label: 'frameleaf_help_ask_setting' },
   'icloud.enabled': { label: 'frameleaf_icloud_setting' },

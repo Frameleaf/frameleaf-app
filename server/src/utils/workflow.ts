@@ -1,5 +1,6 @@
-import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
+import { type FrameleafEventTrigger, WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { WorkflowType } from 'src/enum.js';
+import { FRAMELEAF_EVENTS, isFrameleafEventTrigger } from 'src/utils/workflow-event.js';
 import { PluginMethodSearchResponse } from 'src/repositories/plugin.repository.js';
 
 export const triggerMap: Record<WorkflowTrigger, WorkflowType[]> = {
@@ -9,14 +10,30 @@ export const triggerMap: Record<WorkflowTrigger, WorkflowType[]> = {
   // [WorkflowTrigger.PersonRecognized]: [WorkflowType.AssetPersonV1],
   [WorkflowTrigger.AssetMetadataExtraction]: [WorkflowType.AssetV1],
   [WorkflowTrigger.AssetTagged]: [WorkflowType.AssetV1],
+  // FL-819: Frameleaf events
+  [WorkflowTrigger.StudioExportCompleted]: [WorkflowType.EventV1],
+  [WorkflowTrigger.CloudBackupCompleted]: [WorkflowType.EventV1],
+  [WorkflowTrigger.CloudBackupFailed]: [WorkflowType.EventV1],
+  [WorkflowTrigger.ClientsGalleryApproved]: [WorkflowType.EventV1],
+  [WorkflowTrigger.CloudJobCompleted]: [WorkflowType.EventV1],
 };
 
+/** The triggers for photos and videos, as the published `WorkflowTrigger` enum lists them. */
 export const getWorkflowTriggers = () =>
-  Object.entries(triggerMap).map(([trigger, types]) => ({ trigger: trigger as WorkflowTrigger, types }));
+  Object.entries(triggerMap)
+    .filter(([trigger]) => !isFrameleafEventTrigger(trigger))
+    .map(([trigger, types]) => ({ trigger: trigger as Exclude<WorkflowTrigger, FrameleafEventTrigger>, types }));
+
+/** FL-819: the Frameleaf event triggers, listed apart so older apps never meet an unknown trigger. */
+export const getFrameleafEventTriggers = () =>
+  Object.keys(triggerMap)
+    .filter((trigger) => isFrameleafEventTrigger(trigger))
+    .map((trigger) => ({ trigger, event: FRAMELEAF_EVENTS[trigger as FrameleafEventTrigger].event }));
 
 /** some types extend other types and have implied compatibility */
 const inferredMap: Record<WorkflowType, WorkflowType[]> = {
   [WorkflowType.AssetV1]: [],
+  [WorkflowType.EventV1]: [],
   // [WorkflowType.AssetPersonV1]: [WorkflowType.AssetV1],
 };
 

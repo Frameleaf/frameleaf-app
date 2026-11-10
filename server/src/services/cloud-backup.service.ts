@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import {
   BadRequestException,
   ConflictException,
@@ -3158,6 +3159,44 @@ export class CloudBackupService {
     }));
     if (announce) {
       await this.announceActivation();
+    }
+    if (changed && (status === 'completed' || status === 'failed')) {
+      await this.queueBackupEvent(operation, result, status);
+    }
+  }
+
+  /**
+   * FL-819: workflows that start when a backup finishes or fails. Counts only: never a photo, an
+   * account or the error text, which can name files. The delivery id is the run's, so a run recorded
+   * twice is announced once. Never fails the backup.
+   */
+  private async queueBackupEvent(
+    operation: MediaOperation,
+    result: CloudBackupRunResult,
+    status: 'completed' | 'failed',
+  ) {
+    try {
+      await this.jobRepository.queue({
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: {
+            trigger: status === 'completed' ? WorkflowTrigger.CloudBackupCompleted : WorkflowTrigger.CloudBackupFailed,
+            ownerId: operation.ownerId,
+            deliveryId: `cloud-backup:${operation.id}:${status}`,
+            occurredAt: new Date().toISOString(),
+            subject: { kind: 'cloud-backup', id: operation.id, name: 'Cloud Backup' },
+            detail: {
+              uploaded: result.uploaded,
+              alreadyBackedUp: result.skipped,
+              missing: result.missing,
+              bytesUploaded: result.bytesUploaded,
+              startedAt: asIso(operation.createdAt) ?? null,
+            },
+          },
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Could not start the workflows for cloud backup run ${operation.id}: ${errorMessage(error)}`);
     }
   }
 

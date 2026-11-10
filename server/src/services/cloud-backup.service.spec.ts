@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import {
   encryptFile as encryptLockedFile,
   generateKeyPair as generateLockedKeyPair,
@@ -27,6 +28,7 @@ import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
   DatabaseLock,
+  JobName,
   JobStatus,
   MediaOperationKind,
   MediaOperationStatus,
@@ -1886,6 +1888,17 @@ describe(CloudBackupService.name, () => {
         lastManifestKey: MANIFEST_KEY,
         lastRun: { status: 'completed', uploaded: 3, skipped: 1 },
       });
+      // FL-819: the owner's workflows that start when a backup finishes
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: expect.objectContaining({
+            trigger: WorkflowTrigger.CloudBackupCompleted,
+            deliveryId: 'cloud-backup:run-1:completed',
+            detail: expect.objectContaining({ uploaded: 3, alreadyBackedUp: 1 }),
+          }),
+        },
+      });
     });
 
     it('uploads no file on a second run when nothing changed', async () => {
@@ -2344,6 +2357,23 @@ describe(CloudBackupService.name, () => {
       );
       expect(index.finishManifest).toHaveBeenCalledWith(MANIFEST_ID, { status: 'failed' });
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRun: { status: 'failed' } });
+      // FL-819: workflows hear of the failure once, with counts only (never the error, which can name files)
+      const events = mocks.job.queue.mock.calls.filter(([item]) => item.name === JobName.WorkflowEventDispatch);
+      expect(events).toEqual([
+        [
+          {
+            name: JobName.WorkflowEventDispatch,
+            data: {
+              event: expect.objectContaining({
+                trigger: WorkflowTrigger.CloudBackupFailed,
+                deliveryId: 'cloud-backup:run-1:failed',
+                subject: { kind: 'cloud-backup', id: 'run-1', name: 'Cloud Backup' },
+              }),
+            },
+          },
+        ],
+      ]);
+      expect(JSON.stringify(events)).not.toContain('403');
       // The checkpointed dump remains reachable for a retry; a fresh run can remove abandoned dumps.
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });

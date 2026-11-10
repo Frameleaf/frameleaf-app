@@ -289,6 +289,8 @@ const methods = wrapper<Manifest>({
         data,
       }),
       headers,
+      // FL-819: the server signs the message; the secret itself is never sent
+      ...(config.secret && { signingSecret: config.secret }),
     });
 
     return {};

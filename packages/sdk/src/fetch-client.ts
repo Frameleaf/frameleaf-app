@@ -2137,6 +2137,8 @@ export type AdminConfigReverseGeocodingDto = {
     enabled: boolean;
 };
 export type AdminConfigServerDto = {
+    /** Let automations send Frameleaf events to devices on this network, such as Home Assistant. Off: they only reach public https addresses */
+    automationsLocalNetwork?: boolean;
     /** External domain */
     externalDomain: string;
     /** Advertise this server on the local network (DNS-SD `_frameleaf._tcp`) so apps on the same Wi-Fi can find it without typing an address. Turning this off does not require additional sign-in steps or block direct connections - it only stops the broadcast. While on, any device on this network can see that a Frameleaf server exists here and its display name. */
@@ -14507,6 +14509,8 @@ export type PluginMethodResponseDto = {
     allowedHosts: string[];
     /** Description */
     description: string;
+    /** Whether the method can run on Frameleaf events, such as a finished Studio export (FL-819) */
+    frameleafEvents: boolean;
     hostFunctions: boolean;
     /** Key */
     key: string;
@@ -19464,6 +19468,12 @@ export type WorkflowCapabilitiesDto = {
     timezone: string;
     version: number;
 };
+export type WorkflowEventTriggerResponseDto = {
+    /** Event name the webhook step sends, for example cloud.backup.failed */
+    event: string;
+    /** Trigger to store on a workflow, for example CloudBackupFailed */
+    trigger: string;
+};
 export type PluginTemplateResponseDto = {
     /** Template description */
     description: string;
@@ -19485,6 +19495,8 @@ export type WorkflowTriggerResponseDto = {
     types: WorkflowType[];
 };
 export type WorkflowDiscoveryResponseDto = {
+    /** Frameleaf events a workflow can start on (FL-819); they feed only the webhook step. Listed to administrators only */
+    eventTriggers: WorkflowEventTriggerResponseDto[];
     templates: PluginTemplateResponseDto[];
     triggers: WorkflowTriggerResponseDto[];
 };

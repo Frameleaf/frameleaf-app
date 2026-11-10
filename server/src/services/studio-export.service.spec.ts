@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -2313,6 +2314,19 @@ describe(StudioExportService.name, () => {
             assetIds: ['asset-new'],
             data: expect.objectContaining({ versionId: VERSION, status: 'published', jobType: 'media-operation' }),
             systemTemplate: { version: 1, key: 'studio-export-ready-named', args: { label: 'Lake trip' } },
+          }),
+        },
+      });
+      // FL-819: the owner's workflows that start on a finished export, queued with it; gated on the result
+      expect(jobs.queueInTransaction).toHaveBeenCalledWith(tx, {
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: expect.objectContaining({
+            trigger: WorkflowTrigger.StudioExportCompleted,
+            ownerId: OWNER,
+            deliveryId: `studio-export:${VERSION}`,
+            subject: { kind: 'studio-export', id: VERSION, name: 'Lake trip' },
+            privacyAssetIds: ['asset-new'],
           }),
         },
       });

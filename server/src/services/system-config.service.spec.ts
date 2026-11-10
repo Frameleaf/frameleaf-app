@@ -321,6 +321,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     timeZone: '',
     publicUsers: true,
     lanDiscovery: true,
+    automationsLocalNetwork: false,
   },
   storageTemplate: {
     enabled: false,

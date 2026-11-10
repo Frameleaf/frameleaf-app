@@ -1,4 +1,4 @@
-import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
+import { FRAMELEAF_EVENT_TRIGGERS, WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import z from 'zod';
 
 // eslint-disable-next-line no-restricted-imports -- Native Node pre-import consumers share pure environment values without application aliases.
@@ -2501,6 +2501,10 @@ export enum JobName {
 
   // Workflow
   WorkflowAssetTrigger = 'WorkflowAssetTrigger',
+  /** FL-819: one Frameleaf event, handed to each of its owner's workflows that start on it. */
+  WorkflowEventDispatch = 'WorkflowEventDispatch',
+  /** FL-819: one workflow run for one Frameleaf event. */
+  WorkflowEventTrigger = 'WorkflowEventTrigger',
 
   // Integrity
   IntegrityUntrackedFilesQueueAll = 'IntegrityUntrackedFilesQueueAll',
@@ -2521,7 +2525,8 @@ export enum JobName {
 // duplicate queue, observed as that queue, FL-667's filler-tag clean-up runs once, and FL-721's
 // Locked encryption jobs are observed through the Locked encryption status. Landmark inference
 // is observed through asset details rather than the public job catalogue, and FL-1092's album auto-add
-// and FL-1094's outfit crops through the album itself.
+// and FL-1094's outfit crops through the album itself. FL-819's workflow event jobs are observed
+// through the workflow's run history.
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
@@ -2540,6 +2545,8 @@ export const JobNameSchema = z
     JobName.LockedRewrap,
     JobName.LockedSweep,
     JobName.MediaHealthFixAsset,
+    JobName.WorkflowEventDispatch,
+    JobName.WorkflowEventTrigger,
   ])
   .describe('Job name')
   .meta({ id: 'JobName' });
@@ -3433,8 +3440,11 @@ export enum ApiTag {
   Workflows = 'Workflows',
 }
 
+// FL-819: Frameleaf events stay out of the published enum, whose closed list native apps decode;
+// automation discovery lists them in `eventTriggers` as plain strings.
 export const WorkflowTriggerSchema = z
   .enum(WorkflowTrigger)
+  .exclude([...FRAMELEAF_EVENT_TRIGGERS])
   .describe('Plugin trigger type')
   .meta({ id: 'WorkflowTrigger' });
 
@@ -3448,9 +3458,19 @@ export const LegacyWorkflowTriggerSchema = z.enum([
 export enum WorkflowType {
   AssetV1 = 'AssetV1',
   // AssetPersonV1 = 'AssetPersonV1',
+  /** FL-819: a Frameleaf event (a finished Studio export, a Cloud Backup result and so on). */
+  EventV1 = 'EventV1',
 }
 
-export const WorkflowTypeSchema = z.enum(WorkflowType).describe('Workflow type').meta({ id: 'WorkflowType' });
+/** FL-819: `EventV1` is not published; a method that runs on events says so in `frameleafEvents`. */
+export const WorkflowTypeSchema = z
+  .enum(WorkflowType)
+  .exclude([WorkflowType.EventV1])
+  .describe('Workflow type')
+  .meta({ id: 'WorkflowType' });
+
+/** Every type a plugin manifest may declare, `EventV1` included; never part of a response. */
+export const PluginManifestWorkflowTypeSchema = z.enum(WorkflowType);
 
 export enum CalendarHeatmapType {
   Upload = 'Upload',

@@ -251,3 +251,26 @@
   width: 40px;
   height: 40px;
 }
+/* FL-819: what a Frameleaf event sends, shown by Check instead of a photo count (prototype FL-778). */
+.wd-event {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+}
+.wd-event > p {
+  margin: 0;
+}
+.wd-event pre {
+  margin: 0;
+  padding: 0.875rem 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-panel);
+  font-size: var(--fl-font-small);
+  line-height: 1.55;
+  white-space: pre;
+}

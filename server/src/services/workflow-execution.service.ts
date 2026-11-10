@@ -38,6 +38,8 @@ import { TagService } from 'src/services/tag.service.js';
 import { WorkflowService } from 'src/services/workflow.service.js';
 import { inheritWorkflowCausation, workflowCausation, workflowOwnership } from 'src/utils/workflow-context.js';
 import { definitionFromSteps, redactRunError, workflowIssues } from 'src/utils/workflow-definition.js';
+import { sendWebhook } from 'src/utils/public-fetch.js';
+import { type FrameleafEventOccurrence, eventRunIds, signEventBody, toEventPayload } from 'src/utils/workflow-event.js';
 import { nextWorkflowOccurrence, resolveWorkflowSource, workflowDefinitionHash } from 'src/utils/workflow-source.js';
 
 const dummy = () => {
@@ -78,6 +80,20 @@ const definitionSha256 = (definition: ReturnType<typeof definitionFromSteps>) =>
 type HostContext = {
   allowedHosts: string[];
   causation?: string[];
+  /**
+   * FL-819: set for a run on a Frameleaf event. Its messages go out through the guarded sender (no
+   * private address unless the administrator allows the home network, no redirects) and name the
+   * occurrence, so a receiver can ignore a second delivery of it.
+   */
+  event?: { deliveryId: string; allowHomeNetwork: boolean };
+};
+
+type HttpRequestOptions = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  /** FL-819: the step's shared secret; the message is then signed (`X-Frameleaf-Signature`). */
+  signingSecret?: string;
 };
 
 /** FL-179: how long a queued run's completed steps are kept for a replay of its job. */
@@ -313,16 +329,7 @@ export class WorkflowExecutionService extends BaseService {
     const addAssetsToAlbums = this.wrap<[dto: AlbumsAddAssetsDto]>((authDto, ctx, args) =>
       albumService.addAssetsToAlbums(authDto, ...args),
     );
-    const httpRequest = this.wrap<
-      [
-        url: string,
-        options?: {
-          method?: string;
-          headers?: Record<string, string>;
-          body?: string;
-        },
-      ]
-    >(async (authDto, context, args) => {
+    const httpRequest = this.wrap<[url: string, options?: HttpRequestOptions]>(async (authDto, context, args) => {
       const allowedHosts = context.allowedHosts.map(
         (pattern) =>
           new RegExp(
@@ -334,8 +341,33 @@ export class WorkflowExecutionService extends BaseService {
           ),
       );
       let url = new URL(args[0]);
-      const headers = new Headers(args[1]?.headers);
-      const options: RequestInit = { ...args[1], headers, redirect: 'manual' };
+      const { signingSecret, ...request } = args[1] ?? {};
+      const headers = new Headers(request.headers);
+      for (const name of [...headers.keys()]) {
+        if (name.startsWith('x-frameleaf-')) {
+          headers.delete(name);
+        }
+      }
+      if (context.event) {
+        headers.set('X-Frameleaf-Delivery', context.event.deliveryId);
+      }
+      if (signingSecret) {
+        // FL-819: the receiver recomputes this over the timestamp and the exact body it received
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+        headers.set('X-Frameleaf-Timestamp', timestamp);
+        headers.set('X-Frameleaf-Signature', signEventBody(signingSecret, timestamp, request.body ?? ''));
+      }
+      if (context.event) {
+        if (allowedHosts.every((pattern) => !pattern.test(url.hostname))) {
+          throw new Error('Hostname did not match any listed in methods[].allowedHosts in the plugin manifest');
+        }
+        return sendWebhook(
+          url.href,
+          { method: request.method, headers, body: request.body },
+          { allowHomeNetwork: context.event.allowHomeNetwork },
+        );
+      }
+      const options: RequestInit = { ...request, headers, redirect: 'manual' };
 
       for (let redirects = 0; redirects <= 20; redirects++) {
         if (allowedHosts.every((pattern) => !pattern.test(url.hostname))) {
@@ -654,7 +686,7 @@ export class WorkflowExecutionService extends BaseService {
     return workflowCausation.run(
       job.causation ?? [`chain:${job.runId ?? job.executionId ?? crypto.randomUUID()}`, `${job.workflowId}:${assetId}`],
       () =>
-        this.execute(job, [assetId], (type) => {
+        this.execute<WorkflowType.AssetV1>(job, [assetId], (type) => {
           const assetService = BaseService.create(AssetService, this);
 
           switch (type) {
@@ -695,6 +727,199 @@ export class WorkflowExecutionService extends BaseService {
             }
           }
         }),
+    );
+  }
+
+  /**
+   * FL-819: a Frameleaf event reached its owner. Each of the owner's enabled workflows that start on it
+   * gets one run, whose ids come from the workflow and the occurrence: a second report of the same
+   * occurrence queues nothing new. Only an administrator's workflows run on events (they decide what
+   * leaves the server), and nothing runs while a photo the event is about is Locked, hidden or
+   * sensitive.
+   */
+  @OnJob({ name: JobName.WorkflowEventDispatch, queue: QueueName.Workflow })
+  async handleEventDispatch({ event }: JobOf<JobName.WorkflowEventDispatch>): Promise<JobStatus> {
+    if (!(await this.mayRunOnEvent(event))) {
+      return JobStatus.Skipped;
+    }
+    const workflows = await this.workflowRepository.search({
+      userId: event.ownerId,
+      trigger: event.trigger,
+      enabled: true,
+    });
+    await this.jobRepository.queueAll(
+      workflows.map((workflow) => ({
+        name: JobName.WorkflowEventTrigger,
+        data: {
+          workflowId: workflow.id,
+          event,
+          ...eventRunIds(workflow.id, event.deliveryId),
+          definitionSha256: workflowDefinitionHash(
+            workflow.definition ?? definitionFromSteps(workflow.trigger, workflow.steps ?? []),
+          ),
+        },
+      })),
+    );
+    return JobStatus.Success;
+  }
+
+  /** The owner is still an administrator and no photo the event is about is private. */
+  private async mayRunOnEvent(event: FrameleafEventOccurrence): Promise<boolean> {
+    const owner = await this.userRepository.get(event.ownerId, {});
+    if (!owner?.isAdmin) {
+      return false;
+    }
+    for (const assetId of event.privacyAssetIds ?? []) {
+      if (!(await this.workflowRepository.isWorkflowEligible(assetId, { requireEnrichment: false }))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * FL-819: one workflow run for one Frameleaf event. Its steps can only send the event on (the webhook
+   * step); they change nothing in the library. Like a run for a photo, a failed step gets one automatic
+   * retry from that step, and a replay of an interrupted run skips the steps it completed.
+   */
+  @OnJob({ name: JobName.WorkflowEventTrigger, queue: QueueName.Workflow })
+  async handleEventTrigger(job: JobOf<JobName.WorkflowEventTrigger>): Promise<JobStatus | undefined> {
+    const { workflowId, event, runId, executionId } = job;
+    const attempt = job.attempt ?? 0;
+    const workflow = await this.workflowRepository.getForWorkflowRun(workflowId);
+    if (!workflow || workflow.ownerId !== event.ownerId || workflow.trigger !== event.trigger) {
+      return JobStatus.Skipped;
+    }
+    const definition = definitionOf(workflow);
+    const definitionHash = workflowDefinitionHash(definition);
+    if (definition.trigger !== event.trigger || (job.definitionSha256 && job.definitionSha256 !== definitionHash)) {
+      return JobStatus.Skipped;
+    }
+    if (!(await this.mayRunOnEvent(event))) {
+      return JobStatus.Skipped;
+    }
+
+    type RunLogEntry = Omit<WorkflowRunLog, 'workflowId' | 'runId' | 'attempt' | 'triggerDataId'>;
+    const record = async (entry: RunLogEntry) => {
+      if (!workflow.logging) {
+        return;
+      }
+      try {
+        await this.workflowRepository.log({ ...entry, workflowId, runId, attempt });
+      } catch (error: any) {
+        this.logger.error(`Unable to save the ${entry.result} result of workflow ${workflowId} run ${runId}: ${error}`);
+      }
+    };
+
+    const problem = await this.getRunProblem(workflow);
+    if (problem) {
+      this.logger.warn(`Workflow ${workflowId} was not run: ${problem}`);
+      await record({ result: WorkflowResult.Error, errorCode: WorkflowRunErrorCode.Unsupported, error: problem });
+      return JobStatus.Skipped;
+    }
+
+    let steps = workflow.steps;
+    if (job.fromStepId) {
+      const index = steps.findIndex((step) => step.id === job.fromStepId);
+      if (index === -1) {
+        return JobStatus.Skipped;
+      }
+      steps = steps.slice(index);
+    }
+
+    const completedSteps = await this.workflowRepository.getCompletedSteps(executionId);
+    const { server } = await this.getConfig({ withCache: true });
+    const data = toEventPayload(event);
+    let replayed = false;
+    let haltedStepId: string | undefined;
+    for (const step of steps) {
+      const completed = completedSteps.get(step.id);
+      if (completed) {
+        replayed = true;
+        if (completed.halted) {
+          haltedStepId = step.id;
+          break;
+        }
+        continue;
+      }
+      // paused, deleted or edited since the run was queued: it is not this workflow any more
+      const live = await this.workflowRepository.getForWorkflowRun(workflowId);
+      if (!live || workflowDefinitionHash(definitionOf(live)) !== definitionHash) {
+        return JobStatus.Skipped;
+      }
+      if (step.methodName.startsWith('noop')) {
+        continue;
+      }
+      const definitionStep = definition.steps.find((item) => item.id === step.id);
+      try {
+        const payload: WorkflowEventPayload<WorkflowType.EventV1> = {
+          trigger: workflow.trigger,
+          type: WorkflowType.EventV1,
+          config: step.config ?? {},
+          workflow: { id: workflowId, authToken: this.sign(workflow.ownerId), stepId: step.id },
+          data,
+        };
+        const context: HostContext = {
+          allowedHosts: step.allowedHosts,
+          causation: [],
+          event: { deliveryId: event.deliveryId, allowHomeNetwork: server.automationsLocalNetwork },
+        };
+        const result = await this.pluginRepository.callMethod<WorkflowResponse<WorkflowType.EventV1>>(
+          {
+            pluginKey: this.getPluginKey({ id: step.pluginId, hostFunctions: step.hostFunctions }),
+            methodName: step.methodName,
+          },
+          payload,
+          context,
+        );
+        const halts = !(result?.workflow?.continue ?? true);
+        await this.workflowRepository.completeStep({ executionId, workflowId, stepId: step.id, halted: halts });
+        if (halts) {
+          haltedStepId = step.id;
+          break;
+        }
+      } catch (error) {
+        const message = redactRunError(error instanceof Error ? error.message : String(error), {
+          config: step.config ?? null,
+          stepExtra: definitionStep?.extra ?? null,
+          workflowExtra: definition.extra ?? null,
+        });
+        this.logger.warn(`Workflow ${workflowId} run ${runId} (attempt ${attempt}) failed: ${message}`);
+        await record({
+          result: WorkflowResult.Error,
+          workflowStepId: step.id,
+          errorCode: WorkflowRunErrorCode.StepFailed,
+          error: message,
+        });
+        if (attempt === 0) {
+          try {
+            await this.jobRepository.queue({
+              name: JobName.WorkflowEventTrigger,
+              data: {
+                ...job,
+                attempt: 1,
+                fromStepId: step.id,
+                definitionSha256: definitionHash,
+                executionId: getAutomaticRetryExecutionId(executionId),
+              },
+            });
+          } catch (queueError: any) {
+            this.logger.error(
+              `Unable to queue the automatic retry of workflow ${workflowId} run ${runId}: ${queueError}`,
+            );
+          }
+        }
+        return JobStatus.Failed;
+      }
+    }
+
+    if (replayed && workflow.logging && (await this.isRunFinished(workflowId, runId, attempt))) {
+      return;
+    }
+    await record(
+      haltedStepId
+        ? { result: WorkflowResult.Halted, workflowStepId: haltedStepId }
+        : { result: WorkflowResult.Completed },
     );
   }
 
