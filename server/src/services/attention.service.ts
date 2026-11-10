@@ -11,6 +11,7 @@ import {
   type AttentionResponseDto,
 } from 'src/dtos/attention.dto.js';
 import { QueueName, StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -60,6 +61,7 @@ export class AttentionService {
     private jobRepository: JobRepository,
     private buddyRepository: BuddyBackupRepository,
     private mediaHealthRepository: MediaHealthRepository,
+    private assetJobRepository: AssetJobRepository,
   ) {
     this.logger.setContext(AttentionService.name);
   }
@@ -87,6 +89,7 @@ export class AttentionService {
       checks: ATTENTION_KINDS.map((kind) => ({ kind, state: results[kind].state })),
       dismissed: await this.dismissed(),
       fileProblems: await this.fileProblems(auth),
+      processingFailures: await this.processingFailures(auth),
     };
   }
 
@@ -112,6 +115,19 @@ export class AttentionService {
       // like a check that could not be read: the rest of the Overview still answers
       this.logger.warn(`Could not count damaged and missing files for what needs attention: ${error}`);
       return { fixed: 0, needsYou: 0, since: null, latest: null };
+    }
+  }
+
+  /**
+   * FL-862: photos and videos Frameleaf could not process (FL-845), for the Overview and Library care. Only what
+   * the reader may see is counted: the same rules as the Couldn't process list. It adds no item and changes no check.
+   */
+  private async processingFailures(auth: AuthDto): Promise<AttentionResponseDto['processingFailures']> {
+    try {
+      return await this.assetJobRepository.countProcessingFailures(auth);
+    } catch (error) {
+      this.logger.warn(`Could not count the files Frameleaf could not process for what needs attention: ${error}`);
+      return { count: 0, setAside: 0 };
     }
   }
 

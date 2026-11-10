@@ -22,6 +22,7 @@ import {
   mdiDownload,
   mdiFeatureSearchOutline,
   mdiFileAlertOutline,
+  mdiFileClockOutline,
   mdiFileCheckOutline,
   mdiFileDocumentOutline,
   mdiFolderOutline,
@@ -151,6 +152,13 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       title: $t('frameleaf_cc_section_files'),
       icon: mdiFileAlertOutline,
       href: commandCenterUrl('care', 'files'),
+    },
+    // FL-862: Library care's Couldn't process, every account's own list.
+    {
+      id: 'care-couldnt-process',
+      title: $t('frameleaf_cc_section_couldnt_process'),
+      icon: mdiFileClockOutline,
+      href: commandCenterUrl('care', 'couldnt-process'),
     },
   ];
   for (const extra of extras) {
