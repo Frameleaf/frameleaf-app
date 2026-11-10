@@ -122,9 +122,15 @@ export class MediaIntegrityService {
       controller.abort();
       refusal.resolve({ status: 'timeout', reason: 'validation_timeout' });
     };
-    let progressAt = Date.now();
+    // Each sign of progress restarts the window, so only a read that has stalled for the whole window is
+    // stopped. The timer alone keeps the time: no clock is read.
+    let timer = setTimeout(cancel, this.timeoutMs);
     const touch = () => {
-      progressAt = Date.now();
+      if (controller.signal.aborted) {
+        return; // a read that outlives its refusal starts no new window
+      }
+      clearTimeout(timer);
+      timer = setTimeout(cancel, this.timeoutMs);
     };
     // a cancelled job stops a read that is still making progress, and frees its slot
     const execution = executionSignal();
@@ -132,15 +138,6 @@ export class MediaIntegrityService {
     const work = this.validateFile(input, signal, touch).finally(() => {
       this.activeValidations--;
     });
-    let timer: ReturnType<typeof setTimeout>;
-    const watch = () => {
-      const idle = Date.now() - progressAt;
-      if (idle >= this.timeoutMs) {
-        return cancel();
-      }
-      timer = setTimeout(watch, this.timeoutMs - idle);
-    };
-    watch();
     return {
       result: Promise.race([work, refusal.promise]).finally(() => clearTimeout(timer)),
       settled: work.then(() => {}).catch(() => {}),
