@@ -47,6 +47,8 @@ export class CloudManager {
   #backupCoverage = $state<CloudBackupLicenceCoverageResponseDto | null>(null);
   #coverageCurrent: () => boolean = () => false;
   #coverageGeneration = 0;
+  #licenseAction = 0;
+  #licenseRevision = 0;
   #error = $state<unknown>(null);
   #loading = $state(false);
   #listeners = 0;
@@ -119,6 +121,7 @@ export class CloudManager {
     this.#loading = true;
     const generation = ++this.#generation;
     const coverageGeneration = ++this.#coverageGeneration;
+    const licenseRevision = this.#licenseRevision;
     const isCurrent = authManager.captureSession({ reactive: true });
     // each loads on its own, so a licence or price failure never hides a status that loaded
     this.#backupCoverage = null;
@@ -128,12 +131,12 @@ export class CloudManager {
       getLicenseProducts(),
       getCloudBackupLicenceCoverage(),
     ]);
-    if (generation !== this.#generation) {
+    if (generation !== this.#generation || !isCurrent()) {
       // a Cancel, Unlink or other change started meanwhile; its answer is the current one
       this.#loading = false;
       return;
     }
-    if (license.status === 'fulfilled') {
+    if (license.status === 'fulfilled' && licenseRevision === this.#licenseRevision) {
       this.#license = license.value;
     }
     if (products.status === 'fulfilled') {
@@ -184,26 +187,54 @@ export class CloudManager {
   refreshLicense = () => this.#runLicense(() => refreshLicense());
 
   async #runLicense(call: () => Promise<LicenseStatusResponseDto>) {
-    const generation = ++this.#coverageGeneration;
+    const action = ++this.#licenseAction;
+    // Generic reads must not overwrite an action with a snapshot from before/during that action.
+    ++this.#licenseRevision;
+    ++this.#coverageGeneration;
+    const isCurrent = authManager.captureSession({ reactive: true });
+    const isLinkCurrent = this.#captureLink();
     this.#backupCoverage = null;
-    const license = await call();
-    if (generation === this.#coverageGeneration) {
-      this.#license = license;
-      await this.#refreshBackupCoverage(generation);
+    try {
+      const license = await call();
+      if (action === this.#licenseAction && isCurrent() && isLinkCurrent()) {
+        this.#license = license;
+      }
+      return license;
+    } finally {
+      if (action === this.#licenseAction && isCurrent() && isLinkCurrent()) {
+        ++this.#licenseRevision;
+        this.#backupCoverage = null;
+        // A licence action finishes independently of Cloud; failed actions also recheck current cover.
+        void this.#refreshBackupCoverage(++this.#coverageGeneration, isCurrent);
+      }
     }
-    return license;
   }
 
-  async #refreshBackupCoverage(generation: number) {
-    const isCurrent = authManager.captureSession({ reactive: true });
+  #captureLink() {
+    const { state, cloudHost, instanceId, linkedAt, cloneSuspected } = this.#status ?? {};
+    const accountId = this.#status?.account?.id;
+    return () =>
+      this.#status?.state === state &&
+      this.#status?.cloudHost === cloudHost &&
+      this.#status?.instanceId === instanceId &&
+      this.#status?.account?.id === accountId &&
+      this.#status?.linkedAt === linkedAt &&
+      this.#status?.cloneSuspected === cloneSuspected;
+  }
+
+  async #refreshBackupCoverage(generation: number, isCurrent: () => boolean) {
+    if (generation !== this.#coverageGeneration || !isCurrent() || this.#status?.state !== 'linked') {
+      return;
+    }
+    const isLinkCurrent = this.#captureLink();
     try {
       const coverage = await getCloudBackupLicenceCoverage();
-      if (generation === this.#coverageGeneration && isCurrent()) {
+      if (generation === this.#coverageGeneration && isCurrent() && isLinkCurrent()) {
         this.#coverageCurrent = isCurrent;
         this.#backupCoverage = coverage;
       }
     } catch {
-      if (generation === this.#coverageGeneration) {
+      if (generation === this.#coverageGeneration && isCurrent() && isLinkCurrent()) {
         this.#backupCoverage = null;
       }
     }
@@ -220,17 +251,15 @@ export class CloudManager {
 
   async #run(call: () => Promise<CloudStatusResponseDto>) {
     const generation = ++this.#generation;
-    const coverageGeneration = ++this.#coverageGeneration;
+    ++this.#coverageGeneration;
+    const isCurrent = authManager.captureSession({ reactive: true });
     this.#backupCoverage = null;
     this.#stopPolling();
     let applied = false;
     try {
       const status = await call();
-      if (generation === this.#generation) {
+      if (generation === this.#generation && isCurrent()) {
         this.#apply(status);
-        if (status.state === 'linked') {
-          void this.#refreshBackupCoverage(coverageGeneration);
-        }
         applied = true;
       }
       return status;
@@ -238,8 +267,12 @@ export class CloudManager {
       // a failed action (for example "Get a new code" or Cancel) leaves a pending code waiting:
       // keep checking it, or the page would sit on "Waiting" for good
       const pending = this.#status?.state === 'pending' ? this.#status.pending : null;
-      if (!applied && generation === this.#generation && pending) {
-        this.#schedulePoll(Math.max(1, pending.intervalSeconds));
+      if (generation === this.#generation && isCurrent()) {
+        if (!applied && pending) {
+          this.#schedulePoll(Math.max(1, pending.intervalSeconds));
+        }
+        this.#backupCoverage = null;
+        void this.#refreshBackupCoverage(++this.#coverageGeneration, isCurrent);
       }
     }
   }
