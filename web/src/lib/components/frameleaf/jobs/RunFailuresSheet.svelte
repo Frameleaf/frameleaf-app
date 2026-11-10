@@ -25,7 +25,7 @@
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 
   let {
@@ -34,6 +34,7 @@
     onChanged,
     onClose,
   }: {
+    /** The run as Recent work last read it: while it is still going, a change in what it left over reads the sheet again. */
     run: DurableJobRun;
     /** What the work is called, as its card says. */
     name: string;
@@ -80,13 +81,43 @@
     void load();
   });
 
-  const load = async () => {
+  /** What the card knows about the run's left-overs; when Recent work's poll changes it, the sheet reads again. */
+  const leftOverSeen = $derived(JSON.stringify([run.state, run.leftOver, run.failureCauses]));
+  let lastSeen: string | undefined;
+  $effect(() => {
+    const seen = leftOverSeen;
+    untrack(() => {
+      const changed = lastSeen !== undefined && seen !== lastSeen;
+      lastSeen = seen;
+      // Never in the middle of an action (it reads again itself once done), nor before the first read is in. What the
+      // person has open (its photos, Technical details) and any confirmation are kept: they live outside the data.
+      if (changed && open && !acting && failures) {
+        void load();
+      }
+    });
+  });
+
+  /** A read asked for while another is on its way runs once that one ends, so the last read is always current. */
+  let loading = false;
+  let again = false;
+  const load = async (): Promise<void> => {
+    if (loading) {
+      again = true;
+      return;
+    }
+    loading = true;
     try {
       failures = await getJobRunFailures({ id: run.id });
       failed = false;
     } catch {
       // A read again after an action that fails keeps what is shown; only a first read says it couldn't load.
       failed = !failures;
+    } finally {
+      loading = false;
+    }
+    if (again) {
+      again = false;
+      await load();
     }
   };
 

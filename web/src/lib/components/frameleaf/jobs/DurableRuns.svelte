@@ -301,7 +301,13 @@
   </ol>
   {#if reviewing && Sheet}
     {#key reviewing.id}
-      <Sheet run={reviewing} name={title(reviewing)} onChanged={() => void load()} onClose={() => (reviewing = null)} />
+      <!-- The run as the latest poll read it, so a sheet open on unfinished work keeps up with it. -->
+      <Sheet
+        run={runs.find((run) => run.id === reviewing?.id) ?? reviewing}
+        name={title(reviewing)}
+        onChanged={() => void load()}
+        onClose={() => (reviewing = null)}
+      />
     {/key}
   {/if}
   {#if offset > 0 || hasNext}

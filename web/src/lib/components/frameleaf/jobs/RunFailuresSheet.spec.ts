@@ -201,6 +201,35 @@ describe('review what failed (FL-1349)', () => {
     );
   });
 
+  it('keeps up with a run that is still going, and keeps an expanded cause open', async () => {
+    const sample = { assetId: 'mine-1', fileName: 'scan-014.jpg', ownerName: 'Taylor', pictureAllowed: true };
+    sdkMock.getJobRunFailures.mockResolvedValueOnce(
+      failures([group({ cause: JobRunFailureCause.Unsupported, count: 2, samples: [sample] })]),
+    );
+    const run = durableRun({ leftOver: 2, failureCauses: [{ cause: JobRunFailureCause.Unsupported, count: 2 }] });
+    const { rerender } = render(RunFailuresSheet, { run, name: 'Thumbnails', onChanged: vi.fn(), onClose: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Show photos' }));
+    expect(screen.getByText('2 photos')).toBeInTheDocument();
+
+    // Recent work's poll brings more left over: the sheet reads again, and what was open stays open.
+    sdkMock.getJobRunFailures.mockResolvedValueOnce(
+      failures([group({ cause: JobRunFailureCause.Unsupported, count: 9, samples: [sample] })]),
+    );
+    await rerender({
+      run: { ...run, leftOver: 9, failureCauses: [{ cause: JobRunFailureCause.Unsupported, count: 9 }] },
+    });
+    expect(await screen.findByText('9 photos')).toBeInTheDocument();
+    expect(sdkMock.getJobRunFailures).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Hide photos' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('and 8 more')).toBeInTheDocument();
+
+    // The same run read again unchanged reads nothing.
+    await rerender({
+      run: { ...run, leftOver: 9, failureCauses: [{ cause: JobRunFailureCause.Unsupported, count: 9 }] },
+    });
+    expect(sdkMock.getJobRunFailures).toHaveBeenCalledTimes(2);
+  });
+
   it('says so when what failed cannot be loaded', async () => {
     sdkMock.getJobRunFailures.mockRejectedValue(new Error('offline'));
     open();
