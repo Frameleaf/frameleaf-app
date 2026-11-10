@@ -1900,7 +1900,7 @@ test("media fixture source is immutable and the owned archive cannot publish", (
   );
   assert.match(
     bootstrap,
-    /fixture_commit=6742055402de1aa48f93d12ded7d18f4057f9d1f/,
+    /fixture_commit=63a12e4f97e7a1ce54bb72ebd9fa5c2c812480bf/,
   );
   assert.match(
     bootstrap,
