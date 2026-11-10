@@ -30,6 +30,7 @@ import {
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 
 /** The steps for the finding a write has just recorded, written in that write's transaction (FL-1337). */
@@ -180,6 +181,11 @@ export type UndoFileFix = {
   relinkTo?: { path: string; digests?: FileDigests; takeChecksum: boolean };
   /** A restore: moves its files, under the lock, once the photo is proven unchanged; the caller puts them back if this fails. */
   moveFiles?: () => Promise<void>;
+  /**
+   * FL-1364: the kept files the Undo makes the photo's or puts back. Held by their path locks (the ones the Locked
+   * seal jobs take) and refused (`sealed`) while one is still sealed for Locked.
+   */
+  keptPaths?: string[];
   /** Where the problem goes back to: reopened, with these states merged into its evidence and these steps. */
   status: MediaHealthStatus;
   evidence: Record<string, unknown>;
@@ -189,7 +195,7 @@ export type UndoFileFix = {
  * What `undoFix` did: `undone`; `changed`, when the photo is no longer as the fix left it; `open`, when the
  * same photo has another problem open (Review Focus 5). Nothing is written or moved unless `undone`.
  */
-export type UndoFileFixResult = 'undone' | 'changed' | 'open' | 'locked';
+export type UndoFileFixResult = 'undone' | 'changed' | 'open' | 'locked' | 'sealed';
 /** The fix states of each tab of Damaged and missing files (FL-1337 ruling 1). */
 const NEEDS_FIX_STATES = ['missing', 'waiting-phone', 'cant-repair', 'couldnt-check'];
 const FIXED_FIX_STATES = ['repaired', 'part-saved', 'found-again', 'restored'];
@@ -1875,7 +1881,8 @@ export class MediaHealthRepository {
       if (!owner) {
         return 'changed';
       }
-      for (const filePath of [...new Set([input.expectedOriginalPath, ...(target ? [target] : [])])].sort()) {
+      const kept = (input.keptPaths ?? []).map((keptPath) => path.normalize(keptPath));
+      for (const filePath of [...new Set([input.expectedOriginalPath, ...(target ? [target] : []), ...kept])].sort()) {
         await lockFilePath(trx, filePath);
       }
       const asset = await trx
@@ -1889,6 +1896,12 @@ export class MediaHealthRepository {
       if (asset?.isLocked) {
         // Task 11b: put in Locked since the caller looked; nothing is relinked or moved
         return 'locked';
+      }
+      for (const keptPath of kept) {
+        // FL-1364: read again under the path lock a seal or unseal of it holds, so none can change it meanwhile
+        if (await isLockedPath(keptPath)) {
+          return 'sealed';
+        }
       }
       const health = await trx
         .withSchema('public')

@@ -5940,6 +5940,8 @@ describe(MediaHealthService.name, () => {
           stepId: 'step-3',
           expectedOriginalPath: repaired,
           expectedChecksum: sha256('the repaired file'),
+          // FL-1364: held and read again under their path locks
+          keptPaths: [damaged],
           // the photo is the kept damaged file again, with that file's own checksum
           relinkTo: {
             path: damaged,
@@ -6516,13 +6518,31 @@ describe(MediaHealthService.name, () => {
         await writeFile(damaged, Buffer.concat([Buffer.from('FLLK', 'latin1'), Buffer.alloc(64, 1)]));
         await expect(sut.getFileProblemKeptFile(owner, 'health-1')).rejects.toMatchObject({
           status: 409,
-          message: "This photo is locked, so the damaged file Frameleaf kept can't be downloaded.",
+          message: "The damaged file Frameleaf kept can't be opened yet. Frameleaf will try again; try later.",
         });
         await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toMatchObject({
           status: 409,
-          message: "This photo is locked, so this fix can't be undone.",
+          message:
+            "A file Frameleaf kept for this photo can't be opened yet, so this fix can't be undone now. Frameleaf will try again; try later.",
         });
         expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+        // the owner's Locked sweep opens it as soon as their key is loaded
+        expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LockedSweep, data: { userId: owner.user.id } });
+      });
+
+      it('refuses an Undo whose kept file was sealed after the check, found under its path lock (FL-1364)', async () => {
+        const crypto = new CryptoRepository();
+        vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((file) => crypto.hashFileDigests(file));
+        vi.mocked(mediaHealthRepository.undoFix).mockResolvedValue('sealed');
+
+        await expect(sut.undoFileProblemFix(owner, 'health-1')).rejects.toMatchObject({
+          status: 409,
+          message:
+            "A file Frameleaf kept for this photo can't be opened yet, so this fix can't be undone now. Frameleaf will try again; try later.",
+        });
+        // the repository holds and re-reads the kept file itself
+        expect(mediaHealthRepository.undoFix).toHaveBeenCalledWith(expect.objectContaining({ keptPaths: [damaged] }));
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
       });
 
       it.each([
