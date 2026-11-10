@@ -64,6 +64,7 @@ describe('Server logs (FL-893)', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(listServerLogs).mockReset();
     FakeEventSource.all = [];
     vi.stubGlobal('EventSource', FakeEventSource);
     vi.mocked(listServerLogs).mockResolvedValue({ entries: PAGE, nextCursor: null });
@@ -127,6 +128,37 @@ describe('Server logs (FL-893)', () => {
       'Couldn’t convert VID_0001.MOV',
     ]);
     expect(screen.queryByRole('button', { name: en.frameleaf_logs_older })).not.toBeInTheDocument();
+  });
+
+  it('adds an older page above the lines in time order when asked', async () => {
+    const full = Array.from({ length: 60 }, (_, index) =>
+      line(100 + index, { at: `2026-11-10T10:${String(index).padStart(2, '0')}:00.000Z`, message: `Line ${index}` }),
+    ).toReversed();
+    vi.mocked(listServerLogs)
+      .mockResolvedValueOnce({ entries: full, nextCursor: 'cursor-1' })
+      .mockResolvedValueOnce({
+        entries: [
+          line(1, { at: '2026-11-10T09:00:02.000Z', message: 'Older B' }),
+          line(2, { at: '2026-11-10T09:00:01.000Z', message: 'Older A' }),
+        ],
+        nextCursor: null,
+      });
+    render(LogViewer);
+    await screen.findByText('Line 0');
+    expect(listServerLogs).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_logs_older }));
+    expect(await screen.findByText('Older A')).toBeInTheDocument();
+    expect(listServerLogs).toHaveBeenLastCalledWith({
+      worker: undefined,
+      q: undefined,
+      before: 'cursor-1',
+      limit: 200,
+    });
+    const messages = lines()
+      .getAllByRole('button')
+      .map((row) => row.querySelector('.message')?.textContent);
+    expect(messages.slice(0, 3)).toEqual(['Older A', 'Older B', 'Line 0']);
   });
 
   it('sends the search and the source to the server, and says when nothing matches', async () => {
