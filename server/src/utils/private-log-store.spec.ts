@@ -25,6 +25,24 @@ describe(PrivateLogStore.name, () => {
     expect(await messages()).toEqual([]);
   });
 
+  it('includes the full since second when the query omits milliseconds', async () => {
+    const store = new PrivateLogStore(root);
+    const since = '2026-11-09T12:00:00Z';
+    const now = new Date('2026-11-09T12:00:01Z');
+    const tail = await store.follow({ since });
+    await store.append(
+      'api',
+      [
+        { level: 'log', context: 'Test', message: 'before', at: '2026-11-09T11:59:59.999Z' },
+        { level: 'log', context: 'Test', message: 'match', at: '2026-11-09T12:00:00.000Z' },
+      ],
+      now,
+    );
+    const { entries } = await store.list({ limit: 2, since }, now);
+    expect(entries.map((entry) => entry.message)).toEqual(['match']);
+    expect((await Array.fromAsync(tail())).flat().map((entry) => entry.message)).toEqual(['match']);
+  });
+
   it('caps worker files, prunes expired days, and pages newest first with private content removed', async () => {
     const store = new PrivateLogStore(root, 7, 1024, 256);
     const now = new Date('2026-11-09T12:00:00Z');

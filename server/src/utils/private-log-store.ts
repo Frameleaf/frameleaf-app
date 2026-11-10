@@ -136,7 +136,8 @@ export class PrivateLogStore {
   async *read(query: Omit<PrivateLogQuery, 'limit'>, now = new Date(), oldest?: () => string) {
     const retained = new Date(now.getTime() - (this.days - 1) * DAY_MS);
     retained.setUTCHours(0, 0, 0, 0);
-    const since = query.since && query.since > retained.toISOString() ? query.since : retained.toISOString();
+    const requested = query.since ? Date.parse(query.since) : retained.getTime();
+    const since = new Date(Math.max(requested, retained.getTime())).toISOString();
     const sinceDay = dayKey(new Date(since));
     for (const item of await this.files(query.worker)) {
       // Entries are clamped to the segment's write day.
@@ -148,7 +149,8 @@ export class PrivateLogStore {
 
   async follow(query: Omit<PrivateLogQuery, 'limit' | 'before'>) {
     const positions = new Map((await this.files(query.worker)).map(({ name, bytes }) => [name, bytes]));
-    return () => this.readAppends(query, positions);
+    const since = query.since ? new Date(query.since).toISOString() : undefined;
+    return () => this.readAppends({ ...query, since }, positions);
   }
 
   private async *readAppends(query: Omit<PrivateLogQuery, 'limit' | 'before'>, positions: Map<string, number>) {
