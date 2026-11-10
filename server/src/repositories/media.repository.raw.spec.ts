@@ -200,6 +200,14 @@ describe('MediaRepository.renderRaw (FL-1355 ladder)', () => {
     expect(sut.extract).not.toHaveBeenCalled();
   });
 
+  it('does not settle for the camera preview because the drive filled up under the second decoder', async () => {
+    const full = Object.assign(new Error('ENOSPC: no space left on device, copyfile'), { code: 'ENOSPC' });
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
+    vi.mocked(renderDarktable).mockRejectedValue(full);
+    await expect(sut.renderRaw('a.gpr')).rejects.toBe(full);
+    expect(sut.extract).not.toHaveBeenCalled();
+  });
+
   it('stops when cancelled during the second decoder', async () => {
     const controller = new AbortController();
     vi.mocked(renderRawWithLibRaw).mockRejectedValue(unsupported());
