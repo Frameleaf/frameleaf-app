@@ -43,6 +43,39 @@ describe(JobService.name, () => {
   });
 
   describe('onJobRun', () => {
+    it.each([
+      [JobName.AssetMetadataPostprocess, QueueName.MetadataExtraction, JobName.AssetGenerateThumbnails],
+      [JobName.AssetGenerateThumbnails, QueueName.ThumbnailGeneration, JobName.SmartSearch],
+    ] as const)('queues eligible work only after an overnight %s publishes', async (name, queue, eligible) => {
+      const id = newUuid();
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+      mocks.job.getQueueName.mockReturnValue(queue);
+      const where = vi.fn();
+      mocks.assetJob.selectionForUnfinished.mockImplementation((step) => {
+        const result = step === eligible ? { id } : undefined;
+        return {
+          where: (...args: unknown[]) => {
+            where(...args);
+            return { executeTakeFirst: () => Promise.resolve(result) };
+          },
+        } as never;
+      });
+      const execution = { signal: new AbortController().signal, adoptions: [] } as unknown as QueueExecution;
+      await queueExecution.run(execution, () => sut.onJobRun(queue, { name, data: { id, reconcileUnfinished: true } }));
+
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(execution.adoptions).toHaveLength(1);
+      await execution.adoptions[0]({} as never);
+      expect(where).toHaveBeenCalledWith('asset.id', '=', id);
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([
+        {
+          name: eligible,
+          data: eligible === JobName.AssetGenerateThumbnails ? { id, reconcileUnfinished: true } : { id },
+        },
+      ]);
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+
     it('does not follow designer semantic or face jobs with personal enrichment', async () => {
       const asset = AssetFactory.create({ libraryScope: LibraryScope.Design });
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));

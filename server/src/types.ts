@@ -400,6 +400,7 @@ export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
   notify?: boolean;
+  reconcileUnfinished?: boolean;
 }
 
 export interface IAssetDeleteJob extends IEntityJob {

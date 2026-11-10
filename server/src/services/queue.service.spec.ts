@@ -93,6 +93,14 @@ describe(QueueService.name, () => {
         JobName.AssetDetectFaces,
         JobName.Ocr,
       ]);
+      for (const name of [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails]) {
+        expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+          name,
+          expect.any(Function),
+          { reconcileUnfinished: true },
+          1000,
+        );
+      }
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.ProcessingReconcileLastRun, {
         completedAt: expect.any(String),
         metadata: 3,
