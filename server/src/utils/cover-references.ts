@@ -7,6 +7,7 @@ import { AlbumKind, AlbumUserRole, AssetVisibility, JobName, PetObservationState
 import { DB } from 'src/schema/index.js';
 import { anyUuid, nsfwAssetIdExists } from 'src/utils/database.js';
 import { isLockedAssetId, isUnlockedAsset } from 'src/utils/locked-state.js';
+import { archivedAllowedInPeople } from 'src/utils/people-visibility.js';
 /**
  * Locked photos are never covers (owner decisions, September 22, 2026, FL-53).
  *
@@ -173,7 +174,7 @@ const releaseSharedSpacePersonCovers = async (db: Kysely<DB>, assetIds: string[]
  * The face that stands in for a person once their featured face is on a Locked photo: another of
  * their visible faces on a photo neither Locked nor trashed; faces on photos that are not sensitive
  * first (as `PersonRepository.getRandomFace` does), then Best Photos, then the newest. None when there
- * is no such face.
+ * is no such face. An archived photo only when the owner includes archived photos in People (FL-795).
  */
 export const nextPersonFace = (eb: ExpressionBuilder<DB, 'person'>, scores: BestPhotoScoreTable) =>
   eb
@@ -185,6 +186,8 @@ export const nextPersonFace = (eb: ExpressionBuilder<DB, 'person'>, scores: Best
     .where('asset_face.isVisible', 'is', true)
     .where('asset.deletedAt', 'is', null)
     .where(isUnlockedAsset())
+    // FL-795: archived only when the person's owner includes archived photos in People
+    .where(archivedAllowedInPeople(sql.ref('person.ownerId')))
     .orderBy(sensitiveLast(sql.ref('asset.id')), 'asc')
     .orderBy(bestPhotoRank(scores, sql.ref('asset.id')), 'desc')
     .orderBy('asset.fileCreatedAt', 'desc')

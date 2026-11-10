@@ -115271,6 +115271,16 @@
             "description": "Whether people are enabled",
             "type": "boolean"
           },
+          "includeArchived": {
+            "description": "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.4.0",
+                "state": "Added"
+              }
+            ]
+          },
           "minimumFaces": {
             "description": "People face threshold",
             "maximum": 9007199254740991,
@@ -115294,6 +115304,7 @@
         },
         "required": [
           "enabled",
+          "includeArchived",
           "sidebarWeb",
           "suggestInSpaces"
         ],
@@ -115348,6 +115359,16 @@
           "enabled": {
             "description": "Whether people are enabled",
             "type": "boolean"
+          },
+          "includeArchived": {
+            "description": "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.4.0",
+                "state": "Added"
+              }
+            ]
           },
           "minimumFaces": {
             "description": "People face threshold",

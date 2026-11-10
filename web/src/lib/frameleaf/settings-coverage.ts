@@ -1713,6 +1713,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'people.enabled',
   },
   {
+    pattern: 'people.includeArchived',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
+    evidence: 'people.includeArchived',
+  },
+  {
     pattern: 'people.minimumFaces',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',

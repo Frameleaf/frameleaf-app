@@ -1218,6 +1218,9 @@
   "preferences.people.enabled": {
     "type": "boolean"
   },
+  "preferences.people.includeArchived": {
+    "type": "boolean"
+  },
   "preferences.people.minimumFaces": {
     "type": "integer",
     "minimum": 1,

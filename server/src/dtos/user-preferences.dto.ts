@@ -68,6 +68,13 @@ const PeopleUpdateSchema = z
       .optional()
       .describe('Whether a shared Space suggests which of my named people appear in it')
       .meta(new HistoryBuilder().added('v3').getExtensions()),
+    includeArchived: z
+      .boolean()
+      .optional()
+      .describe(
+        "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
+      )
+      .meta(new HistoryBuilder().added('v3.4.0').getExtensions()),
   })
   .optional()
   .meta({ id: 'PeopleUpdate' });
@@ -317,6 +324,12 @@ const PeopleResponseSchema = z
       .boolean()
       .describe('Whether a shared Space suggests which of my named people appear in it')
       .meta(new HistoryBuilder().added('v3').getExtensions()),
+    includeArchived: z
+      .boolean()
+      .describe(
+        "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
+      )
+      .meta(new HistoryBuilder().added('v3.4.0').getExtensions()),
   })
   .meta({ id: 'PeopleResponse' });
 
