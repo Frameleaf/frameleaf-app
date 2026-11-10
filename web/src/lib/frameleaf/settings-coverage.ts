@@ -270,9 +270,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'libraryCare.askPhones',
-    // Switched on the page about phones (a later task); the server reads it now
-    kind: 'api-only',
-    file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/FileProblems.svelte',
     evidence: 'libraryCare.askPhones',
   },
   {

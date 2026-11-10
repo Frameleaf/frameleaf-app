@@ -407,6 +407,16 @@ describe('File checks (FL-366)', () => {
     await fireEvent.click(repair);
 
     expect(store.draft.libraryCare?.autoRepair).toBe(false);
-    expect(screen.getByText('Damaged photos wait for you. You see each repair before choosing it.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Damaged photos wait for you. You see each repair before choosing it.'),
+    ).toBeInTheDocument();
+  });
+
+  it('opens Damaged and missing files from "When a check finds a problem" (FL-1338)', async () => {
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'See damaged and missing files' }));
+    expect(goto).toHaveBeenCalledWith('/user-settings?area=care&section=files');
   });
 });

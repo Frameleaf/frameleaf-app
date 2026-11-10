@@ -27,8 +27,8 @@
    * anything, so they are not shown. `?report=<type>` opens one check's
    * path-by-path list (Details for support).
    *
-   * "When a check finds a problem" holds the `libraryCare.autoRepair` switch. Whether phones are asked for
-   * missing photos (`libraryCare.askPhones`) is set on its own page, not here.
+   * "When a check finds a problem" holds the `libraryCare.autoRepair` switch and opens Damaged and missing
+   * files (FL-1338), where the same switch sits beside the one that asks phones for missing photos.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -727,7 +727,7 @@
       description={$t('frameleaf_care_fc_when_problem_description')}
     >
       {#snippet action()}
-        <Button onclick={() => goto(commandCenterUrl('care', 'repair'))}>
+        <Button onclick={() => goto(commandCenterUrl('care', 'files'))}>
           {$t('frameleaf_care_fc_when_problem_see_files')}
         </Button>
       {/snippet}

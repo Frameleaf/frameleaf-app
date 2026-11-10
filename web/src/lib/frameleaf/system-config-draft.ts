@@ -114,6 +114,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
 const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
   'libraryCare.livePhotoRepair': 'repair',
   'libraryCare.rawRecovery': 'repair',
+  // FL-1338: asking phones for lost photos is switched on Damaged and missing files
+  'libraryCare.askPhones': 'files',
   // FL-366: one look-alike switch on Duplicates drives both settings.
   'libraryCare.duplicateReview': 'duplicates',
   'machineLearning.duplicateDetection': 'duplicates',

@@ -310,12 +310,17 @@ describe('Frameleaf settings areas', () => {
       expect(areaSectionKeys('care')).toEqual([
         'integrity-checks',
         'repair',
+        // FL-1338: Damaged and missing files, an account page every account has
+        'files',
         'duplicates',
         'enrichment-care',
         'unused-files',
         'location-scan',
       ]);
       expect(sectionsForArea([care[1]], 'care').map((s) => s.key)).toEqual(['repair']);
+      expect(sectionsForArea([{ key: 'files', title: 'Damaged and missing files' }], 'care').map((s) => s.key)).toEqual(
+        ['files'],
+      );
     });
 
     it('opens the prototype addresses and the folded tuning pages on the page that took them (FL-366)', () => {
@@ -377,6 +382,7 @@ describe('Frameleaf settings areas', () => {
     it("groups each area's sections as the template's directory does, with More for strays and none for Maintenance", () => {
       expect(directoryGroup('storage', 'storage-template')).toBe('storage');
       expect(directoryGroup('care', 'deduplication')).toBe('identical_files');
+      expect(directoryGroup('care', 'files')).toBe('repairs');
       expect(directoryGroup('privacy', 'suppressed-content')).toBe('locked_content');
       expect(directoryGroup('storage', 'something-new')).toBe('more');
       expect(directoryGroup('maintenance', 'mode')).toBeUndefined();
