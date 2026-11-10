@@ -328,17 +328,21 @@ jobs:
         if: inputs.raw_engine == 'formats'
         shell: bash
         run: |
+          # FATE samples state no licence: fetched here against pinned checksums, never committed.
+          sh server/test/fixtures/formats/fetch-fate.sh "$RUNNER_TEMP/fate"
           in_image() {
             docker run --rm --network none --entrypoint node \
               --mount "type=bind,src=$GITHUB_WORKSPACE/server/base-image,dst=/harness,readonly" \
               --mount "type=bind,src=$GITHUB_WORKSPACE/server/test/fixtures/formats,dst=/fixtures/generated,readonly" \
               --mount "type=bind,src=$GITHUB_WORKSPACE/e2e/test-assets,dst=/fixtures/test-assets,readonly" \
               --mount "type=bind,src=$GITHUB_WORKSPACE/server/resources,dst=/fixtures/resources,readonly" \
+              --mount "type=bind,src=$RUNNER_TEMP/fate,dst=/fixtures/fate,readonly" \
               frameleaf-native-raw:formats "$@"
           }
           in_image /harness/verify-decoders.mjs
           in_image /harness/verify-formats.mjs /fixtures/generated/manifest.json \
-            generated=/fixtures/generated test-assets=/fixtures/test-assets resources=/fixtures/resources
+            generated=/fixtures/generated test-assets=/fixtures/test-assets resources=/fixtures/resources \
+            fate=/fixtures/fate
 
   browser-extension:
     if: github.repository == 'Frameleaf/frameleaf-app'
