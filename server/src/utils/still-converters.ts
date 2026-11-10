@@ -51,11 +51,13 @@ const MAX_OUTPUT_BYTES = 1024 ** 3;
  * Runs one converter with a hard limit on the size of any file it writes (the shell's `ulimit -f`; shells
  * count it in 512-byte or 1024-byte blocks, so the real limit is `maxBytes` or twice that), so a huge picture stops the converter instead of filling the temporary folder. The
  * command and its arguments reach the shell as positional parameters, never as script text.
+ * Where the server already runs under a lower limit the shell cannot raise it: that stricter limit then
+ * applies and the converter still runs.
  */
 export const runConverter = (command: string, args: string[], signal?: AbortSignal, maxBytes = MAX_OUTPUT_BYTES) =>
   new Promise<void>((resolve, reject) => {
     const blocks = String(Math.ceil(maxBytes / 512));
-    const child = spawn('sh', ['-c', 'ulimit -f "$0" && exec "$@"', blocks, command, ...args], { stdio: 'ignore' });
+    const child = spawn('sh', ['-c', 'ulimit -f "$0" 2>/dev/null; exec "$@"', blocks, command, ...args], { stdio: 'ignore' });
     const lifetime = superviseMediaProcess(child, { signal });
     let failure: Error | undefined;
     child.once('error', (error) => {
