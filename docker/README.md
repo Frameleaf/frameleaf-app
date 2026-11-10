@@ -106,6 +106,10 @@ services:
 
 `FRAMELEAF_METRICS_PORT` changes the API metrics port from 8081. The job worker uses the next port. Update the two targets in `prometheus.yml` if you change it. Native installs bind these listeners to loopback.
 
-To protect the server scrapes with a bearer credential, set `FRAMELEAF_METRICS_TOKEN` on the server. Add `authorization.credentials_file` to the `frameleaf_api` and `frameleaf_microservices` jobs in `prometheus.yml` and mount the credential file read-only into Prometheus. If your ML worker uses `FRAMELEAF_ML_AUTH_TOKEN`, configure its credential file separately on the `frameleaf_ml` job. Use only private networks for these connections. Without a bearer credential, other services on the same Docker network can scrape the corresponding listener.
+The example uses HTTP for scrapes on a trusted private network. Other services on that network can read unauthenticated metrics.
+
+For credential-bearing scrapes, use HTTPS from Prometheus to each worker. Terminate TLS on the worker or in a proxy that forwards over loopback within the worker's network namespace. Set `scheme: https` for each protected job in `prometheus.yml`, and configure `tls_config.ca_file` if the worker uses a private certificate authority.
+
+Set `FRAMELEAF_METRICS_TOKEN` on the server and add `authorization.credentials_file` to the `frameleaf_api` and `frameleaf_microservices` jobs. If the ML worker uses `FRAMELEAF_ML_AUTH_TOKEN`, use its own credential file on the `frameleaf_ml` job. Mount the credential files read-only in Prometheus and keep these scrape endpoints on the private network.
 
 The dashboard uses the three job names in the supplied `prometheus.yml`. Update any custom queries that reference the previous example’s job names. Library totals and queue counts refresh at intervals. The machine-learning panels populate after processing starts. Custom model identities are grouped together to keep private names out of labels.
