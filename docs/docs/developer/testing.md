@@ -39,6 +39,23 @@ The tests check various things including:
 
 Medium tests (`server/test/medium`) run against a real PostgreSQL container started by [testcontainers](https://testcontainers.com). Run them with `pnpm --dir server test:medium`. The global setup builds `frameleaf-postgres:medium` from `docker/postgres`, runs the migrations once and stops and removes the container when the run finishes, so no Postgres containers are left behind.
 
+### Format matrix
+
+`server/test/fixtures/formats/manifest.json` lists a fixture for every file format and says what the server should make of it: whether it decodes, on which decoder rung, at what size, and what the integrity check answers. `verify-formats.mjs` runs each one through the server's own decode entry points, and `verify-decoders.mjs` checks that the image still has every decoder the list relies on. Both run inside a built server image:
+
+```bash
+bash scripts/checkout-test-assets.sh
+run() { docker run --rm --network none --entrypoint node \
+  -v "$PWD/server/base-image:/harness:ro" -v "$PWD/server/test/fixtures/formats:/fixtures/generated:ro" \
+  -v "$PWD/e2e/test-assets:/fixtures/test-assets:ro" -v "$PWD/server/resources:/fixtures/resources:ro" \
+  frameleaf-server:latest "$@"; }
+run /harness/verify-decoders.mjs
+run /harness/verify-formats.mjs /fixtures/generated/manifest.json \
+  generated=/fixtures/generated test-assets=/fixtures/test-assets resources=/fixtures/resources
+```
+
+Add `--actual` to print what the image does with each fixture today. A fixture that lands before its fix carries `expectedFailure` with the reason; remove it when the fix lands, because a marked fixture that passes fails the run. In CI the same two commands run from the manual `Frameleaf quality` dispatch with `raw_engine=formats`. `SOURCES.md` beside the manifest says where each fixture comes from.
+
 ## Container images and mirrors
 
 Building Frameleaf's Postgres image (`docker/postgres`) pulls the PostgreSQL base image from Docker Hub and downloads the pgvector source from `codeload.github.com` (checked against a pinned SHA-256). Docker Hub rate-limits anonymous pulls, so a busy machine or network can hit `toomanyrequests` errors. CI avoids this with Google's Docker Hub mirror, and you can do the same locally:
