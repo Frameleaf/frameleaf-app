@@ -50,6 +50,7 @@ import { asUploadRequest } from 'src/utils/asset.util.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
+import { phoneName } from 'src/utils/file-steps.js';
 import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
 import {
   FileDownloadResponse,
@@ -174,7 +175,7 @@ export class AssetMediaService extends BaseService {
       this.logger.log(`Upload brought asset ${restored} back from the Trash`);
       const fileUsed =
         !(await this.storageRepository.checkFileExists(asset.originalPath)) &&
-        (await this.restoreOriginalFrom(asset, dto, file, checksums));
+        (await this.restoreOriginalFrom(auth, asset, dto, file, checksums));
       return { id: restored, visible: true, fileUsed };
     }
     const lost = await this.lostOriginalMatches(auth, checksums, { includeHidden: true });
@@ -182,7 +183,7 @@ export class AssetMediaService extends BaseService {
       return;
     }
     for (const asset of lost) {
-      if (await this.restoreOriginalFrom(asset, dto, file, checksums)) {
+      if (await this.restoreOriginalFrom(auth, asset, dto, file, checksums)) {
         const options = this.getDuplicateCheckOptions(auth);
         const visible = options ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options) : lost;
         return { id: asset.id, visible: visible.some(({ id }) => id === asset.id), fileUsed: true };
@@ -190,13 +191,25 @@ export class AssetMediaService extends BaseService {
     }
   }
 
+  /** What the history calls the device that uploaded: its session's model, else its system. */
+  private async uploadingDevice(auth: AuthDto): Promise<string | undefined> {
+    if (!auth.session) {
+      return;
+    }
+    const sessionId = auth.session.id;
+    const session = (await this.sessionRepository.getByUserId(auth.user.id)).find(({ id }) => id === sessionId);
+    return (session && phoneName(session)) || undefined;
+  }
+
   private async restoreOriginalFrom(
+    auth: AuthDto,
     asset: { id: string; originalPath: string },
     dto: AssetMediaCreateDto,
     file: UploadFile,
     checksums: Buffer[],
   ) {
     const sha1 = file.legacyChecksum ?? (await this.cryptoRepository.hashFileDigests(file.originalPath)).sha1;
+    const device = await this.uploadingDevice(auth);
     const restored = await this.physicalFileRepository.restoreLostOriginal({
       assetId: asset.id,
       expectedOriginalPath: asset.originalPath,
@@ -205,6 +218,14 @@ export class AssetMediaService extends BaseService {
       sha256: checksums[0],
       sizeInBytes: file.size,
       reason: 'restored_by_upload',
+      // FL-1337: the upload is the true original, so the history gets no undo
+      finding: {
+        evidence: { fixState: 'found-again' },
+        steps: [
+          { step: 'asked-phones', outcome: 'ok', ...(device && { facts: { device } }) },
+          { step: 'put-back', outcome: 'ok' },
+        ],
+      },
     });
     if (restored) {
       await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));

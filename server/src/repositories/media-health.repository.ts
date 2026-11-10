@@ -26,7 +26,7 @@ import {
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
-import { isLocked } from 'src/utils/locked.js';
+import { isLocked, isNotLocked } from 'src/utils/locked.js';
 
 /** The steps for the finding a write has just recorded, written in that write's transaction (FL-1337). */
 const stepsFor = (steps: FindingStep[] | undefined, finding: { id: string; assetId: string }): NewFileStep[] =>
@@ -1387,6 +1387,109 @@ export class MediaHealthRepository {
         })),
       )
       .execute();
+  }
+
+  /**
+   * The owner's open Missing findings a phone may be able to answer (FL-1337): the photo is in the
+   * library, not in the Trash, not external and not Locked, and its checksum is the SHA-1 of its
+   * contents, which is how phones match. Only the owner's own rows, whoever asks.
+   */
+  private lostOriginals(ownerId: string) {
+    return this.db
+      .withSchema('public')
+      .selectFrom('asset_health')
+      .innerJoin('asset', 'asset.id', 'asset_health.assetId')
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .where('asset_health.category', '=', MediaHealthCategory.Missing)
+      .where('asset_health.resolvedAt', 'is', null)
+      .where('asset_health.dismissedAt', 'is', null)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.libraryId', 'is', null)
+      .where('asset.isExternal', '=', false)
+      .where('asset.checksumAlgorithm', '=', ChecksumAlgorithm.sha1File)
+      .where(isNotLocked('asset'));
+  }
+
+  /** A page of the owner's lost originals, in a stable order; one more than `take` says there is a next page. */
+  listLostOriginals(ownerId: string, take: number, skip: number) {
+    return this.lostOriginals(ownerId)
+      .select(['asset.id as assetId', 'asset.checksum', 'asset.originalFileName', 'asset.fileCreatedAt'])
+      .orderBy('asset_health.id')
+      .limit(take + 1)
+      .offset(skip)
+      .execute();
+  }
+
+  /** The owner's lost originals among these SHA-1 checksums, with where each one stands. */
+  findLostOriginals(ownerId: string, checksums: Buffer[]) {
+    if (checksums.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.lostOriginals(ownerId)
+      .select(['asset_health.id as healthId', 'asset.id as assetId', 'asset_health.evidence'])
+      .where('asset.checksum', 'in', checksums)
+      .execute();
+  }
+
+  /** The questions asked of phones, and the answers so far, for these findings, oldest first. */
+  listPhoneSteps(healthIds: string[]) {
+    if (healthIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.db
+      .selectFrom('asset_health_step')
+      .select(['healthId', 'step', 'outcome', 'facts'])
+      .where(
+        'healthId',
+        'in',
+        healthIds.map((id) => asUuid(id)),
+      )
+      .where('step', 'in', ['asked-phones', 'checked-on-phone'])
+      .orderBy('at')
+      .orderBy('id')
+      .execute();
+  }
+
+  /**
+   * What phones reported, in one transaction (FL-1337): each report's steps, and for the findings whose
+   * last phone has reported, `fixState: missing`. A finding resolved or dismissed meanwhile gets nothing.
+   */
+  async recordPhoneReports(
+    reports: Array<{ healthId: string; assetId: string; steps: FindingStep[]; settle: boolean }>,
+  ): Promise<void> {
+    if (reports.length === 0) {
+      return;
+    }
+    await this.db.transaction().execute(async (trx) => {
+      const open = await trx
+        .withSchema('public')
+        .selectFrom('asset_health')
+        .select('id')
+        .where(
+          'id',
+          'in',
+          reports.map(({ healthId }) => asUuid(healthId)),
+        )
+        .where('resolvedAt', 'is', null)
+        .where('dismissedAt', 'is', null)
+        .forUpdate()
+        .execute();
+      const stillOpen = new Set(open.map(({ id }) => id));
+      const current = reports.filter(({ healthId }) => stillOpen.has(healthId));
+      await this.appendSteps(
+        current.flatMap((report) => stepsFor(report.steps, { id: report.healthId, assetId: report.assetId })),
+        trx,
+      );
+      const settled = current.filter(({ settle }) => settle).map(({ healthId }) => asUuid(healthId));
+      if (settled.length > 0) {
+        await trx
+          .withSchema('public')
+          .updateTable('asset_health')
+          .set({ evidence: sql`coalesce(evidence, '{}'::jsonb) || '{"fixState":"missing"}'::jsonb` })
+          .where('id', 'in', settled)
+          .execute();
+      }
+    });
   }
 
   async listSteps(healthId: string): Promise<FileStep[]> {

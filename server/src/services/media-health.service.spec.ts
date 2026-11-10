@@ -101,6 +101,10 @@ describe(MediaHealthService.name, () => {
       settleFinding: vi.fn().mockResolvedValue(true),
       getFindingsForAsset: vi.fn().mockResolvedValue([]),
       claimSearchPending: vi.fn().mockResolvedValue([]),
+      listLostOriginals: vi.fn().mockResolvedValue([]),
+      findLostOriginals: vi.fn().mockResolvedValue([]),
+      listPhoneSteps: vi.fn().mockResolvedValue([]),
+      recordPhoneReports: vi.fn().mockResolvedValue(undefined),
     } as unknown as MediaHealthRepository;
     mediaOperationRepository = {
       list: vi.fn().mockResolvedValue({ items: [], total: 0 }),
@@ -137,11 +141,14 @@ describe(MediaHealthService.name, () => {
       mocks.database as never,
       mocks.systemMetadata as never,
       cloudBackupService as never,
+      mocks.session as never,
     );
     clearConfigCache();
     vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([]);
     vi.mocked(mediaHealthRepository.count).mockResolvedValue(0);
     vi.mocked(mocks.user.getList).mockResolvedValue([]);
+    // no phone is asked unless a spec says so
+    vi.mocked(mocks.session.getByUserId).mockResolvedValue([]);
     vi.mocked(mocks.library.getAll).mockResolvedValue([]);
     // a regular file that settled long ago; a recovery never touches a file still being written
     vi.mocked(mocks.storage.stat).mockResolvedValue(settledStat({ size: 10 }) as never);
@@ -4296,7 +4303,7 @@ describe(MediaHealthService.name, () => {
     it('waits for a phone when a missing file is nowhere else', async () => {
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
       recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
-      vi.spyOn(sut as any, 'phonesToAsk').mockResolvedValue([{ id: 'session-1', name: 'iPhone' }]);
+      vi.spyOn(sut as any, 'phonesToAsk').mockResolvedValue([{ deviceId: 'session-1', name: 'iPhone' }]);
       cloudBackupService.restoreLostOriginal.mockResolvedValue({
         outcome: 'not-in-backup',
         since: '2026-10-01T03:00:00.000Z',
@@ -4646,6 +4653,230 @@ describe(MediaHealthService.name, () => {
       await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Skipped);
       expect(written()).toEqual([]);
       expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+  describe('phones and lost originals (FL-1337)', () => {
+    const owner = { ...authStub.user1, session: { id: 'session-iphone', hasElevatedPermission: false } };
+    const care = (libraryCare: Record<string, unknown>) => {
+      clearConfigCache();
+      vi.mocked(mocks.systemMetadata.get).mockResolvedValue({ libraryCare } as never);
+    };
+    const sha1 = createHash('sha1').update('lost').digest();
+    const session = (id: string, deviceOS: string, deviceType: string, daysAgo = 1) => ({
+      id,
+      deviceOS,
+      deviceType,
+      updatedAt: new Date(Date.now() - daysAgo * 86_400_000),
+    });
+    const sessions = (...rows: ReturnType<typeof session>[]) =>
+      vi.mocked(mocks.session.getByUserId).mockResolvedValue(rows as never);
+    const open = (evidence?: Record<string, unknown>) => ({
+      healthId: 'health-1',
+      assetId: 'asset-1',
+      evidence: evidence ?? { fixState: 'waiting-phone' },
+    });
+    const waiting = { healthId: 'health-1', step: 'asked-phones', outcome: 'waiting', facts: { phones: 2 } };
+    const checkedBy = (id: string) => ({
+      healthId: 'health-1',
+      step: 'checked-on-phone',
+      outcome: 'not-found',
+      facts: { session: id },
+    });
+    const reported = () => vi.mocked(mediaHealthRepository.recordPhoneReports).mock.calls.at(-1)?.[0];
+
+    beforeEach(() => {
+      care({});
+      sessions(session('session-iphone', 'iOS', 'iPhone15,2'), session('session-pixel', 'Android', 'Pixel 8'));
+    });
+
+    describe('phonesToAsk', () => {
+      it('is the owner’s phones and tablets used in the last 90 days, by session', async () => {
+        sessions(
+          session('a', 'iOS', 'iPhone15,2'),
+          session('b', 'iPadOS', 'iPad13,4'),
+          session('c', 'android', 'Pixel 8'),
+          session('d', 'macOS', 'Chrome'),
+          session('e', 'Windows', 'Firefox'),
+          session('f', 'iOS', 'iPhone12,1', 91),
+          session('g', 'Android', '', 3),
+        );
+
+        await expect((sut as any).phonesToAsk('owner-1')).resolves.toEqual([
+          { deviceId: 'a', name: 'iPhone15,2' },
+          { deviceId: 'b', name: 'iPad13,4' },
+          { deviceId: 'c', name: 'Pixel 8' },
+          { deviceId: 'g', name: 'Android' },
+        ]);
+        expect(mocks.session.getByUserId).toHaveBeenCalledWith('owner-1');
+      });
+    });
+
+    describe('listLostOriginals', () => {
+      const row = (n: number) => ({
+        assetId: `asset-${n}`,
+        checksum: sha1,
+        originalFileName: `IMG_${n}.jpg`,
+        fileCreatedAt: new Date('2025-01-02T03:04:05.000Z'),
+      });
+
+      it('lists only the caller’s own, with base64 checksums', async () => {
+        vi.mocked(mediaHealthRepository.listLostOriginals).mockResolvedValue([row(1)] as never);
+
+        await expect(sut.listLostOriginals(owner, { take: 500, skip: 0 })).resolves.toEqual({
+          items: [
+            {
+              assetId: 'asset-1',
+              checksum: sha1.toString('base64'),
+              originalFileName: 'IMG_1.jpg',
+              fileCreatedAt: '2025-01-02T03:04:05.000Z',
+            },
+          ],
+          hasNextPage: false,
+        });
+        expect(mediaHealthRepository.listLostOriginals).toHaveBeenCalledWith(owner.user.id, 500, 0);
+      });
+
+      it('pages: one row beyond the page says there is more', async () => {
+        vi.mocked(mediaHealthRepository.listLostOriginals).mockResolvedValue([row(1), row(2), row(3)] as never);
+
+        const page = await sut.listLostOriginals(owner, { take: 2, skip: 4 });
+
+        expect(page.items.map(({ assetId }) => assetId)).toEqual(['asset-1', 'asset-2']);
+        expect(page.hasNextPage).toBe(true);
+        expect(mediaHealthRepository.listLostOriginals).toHaveBeenCalledWith(owner.user.id, 2, 4);
+      });
+
+      it('is empty while phones are not asked', async () => {
+        care({ askPhones: false });
+
+        await expect(sut.listLostOriginals(owner, { take: 500, skip: 0 })).resolves.toEqual({
+          items: [],
+          hasNextPage: false,
+        });
+        expect(mediaHealthRepository.listLostOriginals).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('recordPhoneChecked', () => {
+      const report = (notHere = [sha1.toString('base64')]) =>
+        sut.recordPhoneChecked(owner, { deviceId: 'device-1', notHere });
+
+      it('records the phone once, with its model and the app’s device id', async () => {
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
+        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([waiting] as never);
+
+        await report();
+
+        expect(mediaHealthRepository.findLostOriginals).toHaveBeenCalledWith(owner.user.id, [sha1]);
+        expect(reported()).toEqual([
+          {
+            healthId: 'health-1',
+            assetId: 'asset-1',
+            settle: false,
+            steps: [
+              {
+                step: 'checked-on-phone',
+                outcome: 'not-found',
+                facts: { device: 'iPhone15,2', deviceId: 'device-1', session: 'session-iphone' },
+              },
+            ],
+          },
+        ]);
+      });
+
+      it('adds nothing when the same phone reports again', async () => {
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
+        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([
+          waiting,
+          checkedBy('session-iphone'),
+        ] as never);
+
+        await report();
+
+        expect(reported()).toEqual([]);
+      });
+
+      it('counts a phone again after the phones were asked afresh', async () => {
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
+        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([
+          waiting,
+          checkedBy('session-iphone'),
+          waiting,
+        ] as never);
+
+        await report();
+
+        expect(reported()).toHaveLength(1);
+      });
+
+      it('ignores checksums that are not the caller’s open lost originals, and anything not SHA-1', async () => {
+        // the repository finds only the caller's own open ones: another account's, resolved, dismissed,
+        // trashed and unknown checksums come back as nothing
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([]);
+
+        await expect(
+          report([sha1.toString('base64'), 'not base64 !', Buffer.alloc(32).toString('base64')]),
+        ).resolves.toBeUndefined();
+
+        expect(mediaHealthRepository.findLostOriginals).toHaveBeenCalledWith(owner.user.id, [sha1]);
+        expect(mediaHealthRepository.listPhoneSteps).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.recordPhoneReports).not.toHaveBeenCalled();
+      });
+
+      it('settles as missing once the last phone has reported', async () => {
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
+        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([
+          waiting,
+          checkedBy('session-pixel'),
+        ] as never);
+
+        await report();
+
+        expect(reported()).toEqual([
+          expect.objectContaining({
+            settle: true,
+            steps: [
+              expect.objectContaining({ step: 'checked-on-phone', outcome: 'not-found' }),
+              { step: 'asked-phones', outcome: 'not-found' },
+            ],
+          }),
+        ]);
+      });
+
+      it('keeps waiting while another phone has yet to report, and settles nothing already settled', async () => {
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open()] as never);
+        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([waiting] as never);
+        await report();
+        expect(reported()).toEqual([expect.objectContaining({ settle: false })]);
+
+        vi.mocked(mediaHealthRepository.findLostOriginals).mockResolvedValue([open({ fixState: 'missing' })] as never);
+        vi.mocked(mediaHealthRepository.listPhoneSteps).mockResolvedValue([
+          waiting,
+          checkedBy('session-pixel'),
+        ] as never);
+        await report();
+        expect(reported()).toEqual([expect.objectContaining({ settle: false })]);
+      });
+
+      it('accepts a caller without a session and records nothing', async () => {
+        await expect(
+          sut.recordPhoneChecked(
+            { ...authStub.user1, session: undefined },
+            { deviceId: 'device-1', notHere: [sha1.toString('base64')] },
+          ),
+        ).resolves.toBeUndefined();
+
+        expect(mediaHealthRepository.findLostOriginals).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.recordPhoneReports).not.toHaveBeenCalled();
+      });
+
+      it('records nothing while phones are not asked', async () => {
+        care({ askPhones: false });
+
+        await report();
+
+        expect(mediaHealthRepository.recordPhoneReports).not.toHaveBeenCalled();
+      });
     });
   });
 });

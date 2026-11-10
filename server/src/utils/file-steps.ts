@@ -53,3 +53,17 @@ export const FIX_STATES = [
   'couldnt-check',
 ] as const;
 export type FixState = (typeof FIX_STATES)[number];
+
+/** The operating systems of a phone or tablet, in lower case (FL-1337). */
+const PHONE_SYSTEMS = new Set(['ios', 'ipados', 'android']);
+/** Phones and tablets that have not been used for this long are no longer asked (FL-1337). */
+export const PHONE_ACTIVE_DAYS = 90;
+
+/** Whether a session is a phone or tablet, used recently enough to still hold a lost photo. */
+export const isActivePhone = (session: { deviceOS: string; updatedAt: Date }, now = Date.now()) =>
+  PHONE_SYSTEMS.has(session.deviceOS.trim().toLowerCase()) &&
+  session.updatedAt.getTime() >= now - PHONE_ACTIVE_DAYS * 24 * 60 * 60 * 1000;
+
+/** What the history calls a session's device: the model the app sends, else its system. */
+export const phoneName = (session: { deviceType: string; deviceOS: string }) =>
+  session.deviceType.trim() || session.deviceOS.trim();

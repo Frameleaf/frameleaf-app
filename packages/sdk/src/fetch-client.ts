@@ -5852,6 +5852,28 @@ export type AssetJobsDto = {
     assetIds: string[];
     name: AssetJobName;
 };
+export type LostOriginalDto = {
+    /** The photo or video */
+    assetId: string;
+    /** SHA-1 of the lost file, base64: what the phone matches its own file by */
+    checksum: string;
+    /** When the file was created */
+    fileCreatedAt: string;
+    /** The name the file had */
+    originalFileName: string;
+};
+export type LostOriginalsResponseDto = {
+    /** Whether more follow this page */
+    hasNextPage: boolean;
+    /** The caller's own lost originals, oldest problem first */
+    items: LostOriginalDto[];
+};
+export type LostOriginalsCheckedDto = {
+    /** The phone or tablet that looked */
+    deviceId: string;
+    /** Checksums (base64) of lost originals this device does not have */
+    notHere: string[];
+};
 export type AssetMetadataBulkDeleteItemDto = {
     /** Asset ID */
     assetId: string;
@@ -19969,6 +19991,12 @@ export type LibrarySearchDto = {
     withDeleted?: boolean;
 };
 export type LicenseResponseDto = UserLicense;
+export type LostOriginalsQueryDto = {
+    /** How many to skip */
+    skip?: number;
+    /** How many to list (1 to 1000) */
+    take?: number;
+};
 export type MachineLearningHardwareQueryDto = {
     /** Destination to probe. When omitted, the first enabled local destination is probed; a cloud destination is never chosen implicitly. */
     destinationId?: string;
@@ -24958,6 +24986,35 @@ export function lockAssets({ bulkIdsDto }: {
         ...opts,
         method: "POST",
         body: bulkIdsDto
+    })));
+}
+/**
+ * List the photos the server lost
+ */
+export function getLostOriginals({ skip, take }: {
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LostOriginalsResponseDto;
+    }>(`/assets/lost-originals${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Report lost photos a phone does not have
+ */
+export function reportLostOriginalsChecked({ lostOriginalsCheckedDto }: {
+    lostOriginalsCheckedDto: LostOriginalsCheckedDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assets/lost-originals/checked", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lostOriginalsCheckedDto
     })));
 }
 /**

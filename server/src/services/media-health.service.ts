@@ -11,6 +11,11 @@ import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type {
+  LostOriginalsCheckedDto,
+  LostOriginalsQueryDto,
+  LostOriginalsResponseDto,
+} from 'src/dtos/lost-originals.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { LostOriginalRestore } from 'src/services/cloud-backup-lost-original.js';
 import type { JobOf } from 'src/types.js';
@@ -89,6 +94,7 @@ import {
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -115,6 +121,7 @@ import {
   nextFixAction,
   readFileShape,
 } from 'src/utils/file-problem.js';
+import { isActivePhone, phoneName } from 'src/utils/file-steps.js';
 import { fileIdentity } from 'src/utils/file-trash.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { JPEG_REPAIR_EXTENSIONS, type JpegRepairResult } from 'src/utils/jpeg-repair.js';
@@ -332,6 +339,7 @@ export class MediaHealthService {
     private databaseRepository: DatabaseRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private cloudBackupService: CloudBackupService,
+    private sessionRepository: SessionRepository,
   ) {
     this.logger.setContext(MediaHealthService.name);
   }
@@ -2043,10 +2051,96 @@ export class MediaHealthService {
     return this.cloudBackupService.restoreLostOriginal(assetId);
   }
 
-  /** FL-1337 stub until Task 8: the owner's phones and tablets that may still hold a lost photo. */
-  private phonesToAsk(ownerId: string): Promise<Array<{ id: string; name: string }>> {
-    this.logger.verbose(`Asking phones for ${ownerId}'s lost photos is not available yet`);
-    return Promise.resolve([]);
+  /**
+   * FL-1337: the owner's phones and tablets that may still hold a lost photo: sessions of an iOS, iPadOS
+   * or Android device used in the last 90 days. A phone is its session; its name is the model the app sends.
+   */
+  private async phonesToAsk(ownerId: string): Promise<Array<{ deviceId: string; name: string }>> {
+    return this.phonesOf(await this.sessionRepository.getByUserId(ownerId));
+  }
+
+  private phonesOf(sessions: Array<{ id: string; deviceOS: string; deviceType: string; updatedAt: Date }>) {
+    return sessions
+      .filter((session) => isActivePhone(session))
+      .map((session) => ({ deviceId: session.id, name: phoneName(session) }));
+  }
+
+  /** FL-1337: the caller's own lost originals, for their phones to look for (empty while phones are not asked). */
+  async listLostOriginals(auth: AuthDto, { take, skip }: LostOriginalsQueryDto): Promise<LostOriginalsResponseDto> {
+    if (!(await this.careSettings()).askPhones) {
+      return { items: [], hasNextPage: false };
+    }
+    const rows = await this.mediaHealthRepository.listLostOriginals(auth.user.id, take, skip);
+    return {
+      items: rows.slice(0, take).map((row) => ({
+        assetId: row.assetId,
+        checksum: row.checksum.toString('base64'),
+        originalFileName: row.originalFileName,
+        fileCreatedAt: asDateTimeString(row.fileCreatedAt),
+      })),
+      hasNextPage: rows.length > take,
+    };
+  }
+
+  /**
+   * FL-1337: a phone says which lost originals it does not have. Each one is written once into the
+   * history of the caller's own open finding; anything else (unknown, resolved, dismissed, in the Trash,
+   * another account's) is ignored without a word. Once every phone has said so, the problem settles as
+   * missing, in the write of the last report.
+   */
+  async recordPhoneChecked(auth: AuthDto, { deviceId, notHere }: LostOriginalsCheckedDto): Promise<void> {
+    const sessionId = auth.session?.id;
+    if (!sessionId || !(await this.careSettings()).askPhones) {
+      return;
+    }
+    const checksums = [...new Set(notHere)]
+      .map((checksum) => Buffer.from(checksum, 'base64'))
+      .filter((checksum) => checksum.length === 20);
+    const findings = await this.mediaHealthRepository.findLostOriginals(auth.user.id, checksums);
+    if (findings.length === 0) {
+      return;
+    }
+    const [sessions, history] = await Promise.all([
+      this.sessionRepository.getByUserId(auth.user.id),
+      this.mediaHealthRepository.listPhoneSteps(findings.map(({ healthId }) => healthId)),
+    ]);
+    const phones = this.phonesOf(sessions);
+    const reporter = sessions.find(({ id }) => id === sessionId);
+    const device = reporter ? phoneName(reporter) : '';
+    const reports = [];
+    for (const finding of findings) {
+      // what phones have said since the last time they were asked
+      const steps = history.filter(({ healthId }) => healthId === finding.healthId);
+      const asked = steps.findLastIndex(({ step, outcome }) => step === 'asked-phones' && outcome === 'waiting');
+      const answered = new Set(
+        steps
+          .slice(asked + 1)
+          .filter(({ step }) => step === 'checked-on-phone')
+          .map(({ facts }) => (facts as Record<string, unknown> | null)?.session),
+      );
+      if (answered.has(sessionId)) {
+        continue;
+      }
+      answered.add(sessionId);
+      const waiting =
+        asked !== -1 && (finding.evidence as Record<string, unknown> | null)?.fixState === 'waiting-phone';
+      const everyPhone = phones.every((phone) => answered.has(phone.deviceId));
+      const settle = waiting && everyPhone;
+      reports.push({
+        healthId: finding.healthId,
+        assetId: finding.assetId,
+        settle,
+        steps: [
+          {
+            step: 'checked-on-phone' as const,
+            outcome: 'not-found' as const,
+            facts: { ...(device && { device }), deviceId, session: sessionId },
+          },
+          ...(settle ? [{ step: 'asked-phones' as const, outcome: 'not-found' as const }] : []),
+        ],
+      });
+    }
+    await this.mediaHealthRepository.recordPhoneReports(reports);
   }
 
   /**
