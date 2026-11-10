@@ -93,7 +93,7 @@ export class AssetJobRepository {
     }[name]();
 
     // Earlier pages only enqueue IDs below this cursor. Keep those rows out of the live-job lookup.
-    const subject = sql`(job.data->>'id') collate "C"`;
+    const subject = sql`lower(job.data->>'id') collate "C"`;
     const liveRange = options.after ? sql`and ${subject} > ${options.after}` : sql``;
     return selection.where(sql<boolean>`asset.status = 'active' and not asset."isOffline" and not exists (
         select 1 from job

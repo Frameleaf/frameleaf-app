@@ -151,7 +151,7 @@ describe(AssetJobRepository.name, () => {
       {
         queue: QueueName.MetadataExtraction,
         name: JobName.AssetExtractMetadata,
-        data: { id: pending.id },
+        data: { id: pending.id.toUpperCase() },
         safeToRetry: true,
         sensitive: false,
         deadlineMs: 30_000,
