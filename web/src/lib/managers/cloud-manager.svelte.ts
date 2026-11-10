@@ -49,6 +49,7 @@ export class CloudManager {
   #coverageGeneration = 0;
   #licenseAction = 0;
   #licenseRevision = 0;
+  #licensePending = false;
   #error = $state<unknown>(null);
   #loading = $state(false);
   #listeners = 0;
@@ -123,6 +124,7 @@ export class CloudManager {
     const coverageGeneration = ++this.#coverageGeneration;
     const licenseRevision = this.#licenseRevision;
     const isCurrent = authManager.captureSession({ reactive: true });
+    const isLinkCurrent = this.#captureLink();
     // each loads on its own, so a licence or price failure never hides a status that loaded
     this.#backupCoverage = null;
     const [status, license, products, backupCoverage] = await Promise.allSettled([
@@ -148,6 +150,13 @@ export class CloudManager {
     }
     if (status.status === 'fulfilled') {
       this.#apply(status.value);
+      if (!isLinkCurrent() && licenseRevision !== this.#licenseRevision && !this.#licensePending) {
+        // This read crossed a finished action and discovered a different link. Reconcile that link
+        // without applying the superseded licence/coverage snapshot or restarting link polling.
+        void this.#refreshLicenseForLink(this.#licenseAction, this.#licenseRevision, isCurrent);
+        this.#backupCoverage = null;
+        void this.#refreshBackupCoverage(++this.#coverageGeneration, isCurrent);
+      }
     } else {
       this.#error = status.reason;
     }
@@ -188,6 +197,7 @@ export class CloudManager {
 
   async #runLicense(call: () => Promise<LicenseStatusResponseDto>) {
     const action = ++this.#licenseAction;
+    this.#licensePending = true;
     // Generic reads must not overwrite an action with a snapshot from before/during that action.
     ++this.#licenseRevision;
     ++this.#coverageGeneration;
@@ -201,12 +211,30 @@ export class CloudManager {
       }
       return license;
     } finally {
-      if (action === this.#licenseAction && isCurrent() && isLinkCurrent()) {
-        ++this.#licenseRevision;
+      if (action === this.#licenseAction) {
+        this.#licensePending = false;
+      }
+      if (action === this.#licenseAction && isCurrent()) {
+        const revision = ++this.#licenseRevision;
+        if (!isLinkCurrent()) {
+          void this.#refreshLicenseForLink(action, revision, isCurrent);
+        }
         this.#backupCoverage = null;
         // A licence action finishes independently of Cloud; failed actions also recheck current cover.
         void this.#refreshBackupCoverage(++this.#coverageGeneration, isCurrent);
       }
+    }
+  }
+
+  async #refreshLicenseForLink(action: number, revision: number, isCurrent: () => boolean) {
+    const isLinkCurrent = this.#captureLink();
+    try {
+      const license = await getLicenseStatus();
+      if (action === this.#licenseAction && revision === this.#licenseRevision && isCurrent() && isLinkCurrent()) {
+        this.#license = license;
+      }
+    } catch {
+      // One best-effort read; a Cloud outage must not hold the completed action or restart it.
     }
   }
 

@@ -206,6 +206,78 @@ describe('CloudManager (FL-155)', () => {
       expect(manager.license).toEqual(newLicense);
     });
 
+    it.each(['before', 'after'])('reconciles a changed-link refresh that lands %s action completion', async (order) => {
+      const manager = await ready();
+      const link = deferredPromise<CloudStatusResponseDto>();
+      const mutation = deferredPromise<LicenseStatusResponseDto>();
+      const recovery = deferredPromise<LicenseStatusResponseDto>();
+      sdkMock.getCloudStatus.mockReturnValueOnce(link.promise);
+      const refresh = manager.refresh();
+      sdkMock.refreshLicense.mockReturnValueOnce(mutation.promise);
+      const action = manager.refreshLicense();
+      sdkMock.getLicenseStatus.mockReturnValueOnce(recovery.promise);
+      sdkMock.getCloudBackupLicenceCoverage.mockResolvedValue(none);
+      if (order === 'before') {
+        link.resolve({ ...linked(), account: { id: 'account-2', label: 'New' } });
+        await refresh;
+        // The in-flight action owns recovery until it completes.
+        expect(sdkMock.getLicenseStatus).toHaveBeenCalledTimes(2);
+      }
+      mutation.resolve({ keyHint: 'retired' } as LicenseStatusResponseDto);
+      await action;
+      if (order === 'after') {
+        link.resolve({ ...linked(), account: { id: 'account-2', label: 'New' } });
+        await refresh;
+      }
+      expect(sdkMock.getLicenseStatus).toHaveBeenCalledTimes(3);
+      expect(sdkMock.getCloudStatus).toHaveBeenCalledTimes(2);
+      recovery.resolve(newLicense);
+      await Promise.resolve();
+      expect(manager.license).toEqual(newLicense);
+      expect(manager.backupCoverage).toEqual(none);
+    });
+
+    it.each(['session', 'relink', 'newer action', 'failure'])(
+      'guards changed-link recovery against %s',
+      async (change) => {
+        const manager = await ready();
+        const mutation = deferredPromise<LicenseStatusResponseDto>();
+        const recovery = deferredPromise<LicenseStatusResponseDto>();
+        sdkMock.refreshLicense.mockReturnValueOnce(mutation.promise);
+        const action = manager.refreshLicense();
+        sdkMock.checkInCloud.mockResolvedValueOnce({ ...linked(), account: { id: 'account-2', label: 'New' } });
+        await manager.checkIn();
+        sdkMock.getLicenseStatus.mockReturnValueOnce(recovery.promise);
+        mutation.resolve({ keyHint: 'retired' } as LicenseStatusResponseDto);
+        await action;
+        switch (change) {
+          case 'session': {
+            authManager.reset();
+            break;
+          }
+          case 'relink': {
+            sdkMock.checkInCloud.mockResolvedValueOnce({ ...linked(), account: { id: 'account-3', label: 'Third' } });
+            await manager.checkIn();
+            break;
+          }
+          case 'newer action': {
+            sdkMock.refreshLicense.mockResolvedValueOnce(newLicense);
+            await manager.refreshLicense();
+            break;
+          }
+          default: {
+            recovery.reject(new Error('offline'));
+          }
+        }
+        if (change !== 'failure') {
+          recovery.resolve({ keyHint: 'outdated recovery' } as LicenseStatusResponseDto);
+        }
+        await Promise.resolve();
+        expect(manager.license).toEqual(change === 'newer action' ? newLicense : oldLicense);
+        expect(sdkMock.getLicenseStatus).toHaveBeenCalledTimes(2);
+      },
+    );
+
     it('finishes a licence action while the coverage request is still pending', async () => {
       const manager = await ready();
       const coverage = deferredPromise<CloudBackupLicenceCoverageResponseDto>();
@@ -253,7 +325,7 @@ describe('CloudManager (FL-155)', () => {
       mutation.resolve({ keyHint: 'retired' } as LicenseStatusResponseDto);
       await action;
       expect(manager.license).toEqual(change === 'newer action' ? newLicense : oldLicense);
-      expect(sdkMock.getCloudBackupLicenceCoverage).toHaveBeenCalledTimes(checks);
+      expect(sdkMock.getCloudBackupLicenceCoverage).toHaveBeenCalledTimes(checks + (change === 'link' ? 1 : 0));
     });
 
     it.each(['session', 'unlink', 'relink', 'newer action'])('drops background coverage after %s', async (change) => {
