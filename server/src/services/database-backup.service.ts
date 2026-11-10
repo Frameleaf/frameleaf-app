@@ -136,6 +136,10 @@ export class DatabaseBackupService {
     bin: 'pg_dump' | 'pg_dumpall' | 'psql',
     options: {
       singleTransaction?: boolean;
+      /** FL-879: connect to this database instead of the library's (a restore drill's scratch copy). */
+      database?: string;
+      /** FL-879: psql prints query results instead of echoing its input for progress. */
+      results?: boolean;
     } = {},
   ): Promise<{
     bin: string;
@@ -171,8 +175,13 @@ export class DatabaseBackupService {
 
         databaseUsername = decodeURIComponent(parsedUrl.username) || parsedUrl.searchParams.get('user');
         databasePassword = decodeURIComponent(parsedUrl.password);
+        if (options.database) {
+          parsedUrl.pathname = `/${encodeURIComponent(options.database)}`;
+        }
 
         url = parsedUrl.href;
+      } else if (options.database) {
+        throw new Error('The database address cannot be read, so a scratch database cannot be used');
       }
 
       // assume typical values if we can't parse URL or not present
@@ -207,7 +216,7 @@ export class DatabaseBackupService {
         }
       }
 
-      args.push(databaseConfig.database);
+      args.push(options.database ?? databaseConfig.database);
     }
 
     switch (bin) {
@@ -241,9 +250,13 @@ export class DatabaseBackupService {
         }
 
         args.push(
-          // used for progress monitoring
-          '--echo-all',
-          '--output=/dev/null',
+          ...(options.results
+            ? ['--no-psqlrc', '--no-align', '--tuples-only', '--quiet']
+            : [
+                // used for progress monitoring
+                '--echo-all',
+                '--output=/dev/null',
+              ]),
         );
         break;
       }
@@ -512,6 +525,7 @@ export class DatabaseBackupService {
       verifiedBy: verifier ? { id: verifier.id, name: verifier.name } : null,
       ...restoreVerificationDue(record, new Date()),
       intervalDays: RESTORE_VERIFICATION_INTERVAL_DAYS,
+      drillReportId: record.drillReportId ?? null,
     };
   }
 
@@ -529,9 +543,88 @@ export class DatabaseBackupService {
       metadataVerifiedAt: dto.metadata ? now : (record.metadataVerifiedAt ?? null),
       originalsVerifiedAt: dto.originals ? now : (record.originalsVerifiedAt ?? null),
       verifiedBy: auth.user.id,
+      drillReportId: null,
     });
     await this.recordReview(auth, 'Recovery readiness', now);
     return this.getRestoreVerification();
+  }
+
+  /**
+   * FL-879: a restore drill that passed proved both parts: the library data rebuilt in a scratch copy
+   * and a sample of originals matched. It is recorded for the administrator who owns the drill.
+   */
+  async recordDrillVerification(reportId: string, ownerId: string, at = new Date()): Promise<void> {
+    const now = at.toISOString();
+    await this.systemMetadataRepository.set(SystemMetadataKey.BackupRestoreVerification, {
+      metadataVerifiedAt: now,
+      originalsVerifiedAt: now,
+      verifiedBy: ownerId,
+      drillReportId: reportId,
+    });
+  }
+
+  /**
+   * FL-879: rebuild a database dump in a scratch database and count what it holds, never touching the
+   * library's own database. The scratch database is created empty, the dump is read through a guard that
+   * refuses any psql command except the dump's own `\restrict` lines (so nothing can connect elsewhere or
+   * run a program), and the scratch database is dropped whatever happens.
+   */
+  async rehearseRestore(
+    filePath: string,
+    { name, assetIds, signal = executionSignal() }: { name: string; assetIds: string[]; signal?: AbortSignal },
+  ): Promise<{ counts: { asset: number; user: number; album: number }; presentAssetIds: string[] }> {
+    if (!DRILL_DATABASE_NAME.test(name)) throw new Error('Invalid scratch database name');
+    const ids = assetIds.filter((id) => UUID_TEXT.test(id));
+    const live = await this.buildPostgresLaunchArguments('psql', { results: true });
+    const scratch = await this.buildPostgresLaunchArguments('psql', { results: true, database: name });
+    const restore = await this.buildPostgresLaunchArguments('psql', { singleTransaction: true, database: name });
+    const env = { PATH: process.env.PATH, PGPASSWORD: live.databasePassword };
+    const query = async (target: typeof live, command: string) => {
+      const child = this.processRepository.spawnDuplexStream(target.bin, [...target.args, '--command', command], {
+        signal,
+        env,
+      });
+      child.end();
+      const chunks: Buffer[] = [];
+      for await (const chunk of child) chunks.push(chunk as Buffer);
+      return Buffer.concat(chunks).toString('utf8').trim();
+    };
+    await query(live, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+    await query(live, `CREATE DATABASE "${name}"`);
+    try {
+      const psql = this.processRepository.spawnDuplexStream(restore.bin, ['--no-psqlrc', ...restore.args], {
+        signal,
+        env,
+      });
+      await pipeline(
+        this.readDatabaseDump(filePath),
+        createSqlCommandGuard(),
+        createSqlOwnerTransformStream(restore.databaseUsername),
+        psql,
+        new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+        { signal },
+      );
+      const [asset, user, album] = (
+        await query(
+          scratch,
+          "SELECT (SELECT count(*) FROM public.asset) || ',' || (SELECT count(*) FROM public.\"user\") || ',' || (SELECT count(*) FROM public.album)",
+        )
+      )
+        .split(',')
+        .map(Number);
+      const present =
+        ids.length === 0
+          ? ''
+          : await query(scratch, `SELECT id FROM public.asset WHERE id IN (${ids.map((id) => `'${id}'`).join(',')})`);
+      return {
+        counts: { asset, user, album },
+        presentAssetIds: present.split('\n').filter((line) => UUID_TEXT.test(line)),
+      };
+    } finally {
+      await query(live, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`).catch((error: unknown) =>
+        this.logger.warn(`Could not remove the scratch database ${name}: ${error}`),
+      );
+    }
   }
 
   /**
@@ -932,6 +1025,52 @@ export function createSqlProgressStreams(cb: (progress: number) => void): [PassT
   });
 
   return [source, sink];
+}
+
+/** FL-879: a restore drill's scratch database; never the library's own. */
+export const DRILL_DATABASE_NAME = /^frameleaf_drill_[\da-f]{32}$/;
+const UUID_TEXT = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
+/**
+ * FL-879: a dump rebuilt in a scratch database may only hold SQL and COPY data. A psql command outside
+ * COPY data (`\connect`, `\!`, `\o`, …) fails the stream; pg_dump's own `\restrict`/`\unrestrict` pass.
+ */
+export function createSqlCommandGuard() {
+  let carry = '';
+  let inCopy = false;
+  const check = (line: string) => {
+    if (inCopy) {
+      if (line === String.raw`\.`) inCopy = false;
+      return;
+    }
+    if (/^COPY\s.+\sFROM stdin;\s*$/.test(line)) {
+      inCopy = true;
+      return;
+    }
+    if (line.startsWith('\\') && !/^\\(?:un)?restrict(?:\s|$)/.test(line)) {
+      throw new Error('The backup holds a command that is not library data');
+    }
+  };
+  return new PassThrough({
+    transform(chunk: Buffer, _encoding, callback) {
+      try {
+        const lines = (carry + chunk.toString('utf8')).split('\n');
+        carry = lines.pop() ?? '';
+        for (const line of lines) check(line);
+        callback(null, chunk);
+      } catch (error) {
+        callback(error as Error);
+      }
+    },
+    flush(callback) {
+      try {
+        check(carry);
+        callback();
+      } catch (error) {
+        callback(error as Error);
+      }
+    },
+  });
 }
 
 export function createSqlOwnerTransformStream(databaseUsername: string) {

@@ -1693,6 +1693,8 @@ export type BackupRestoreVerification = {
   metadataVerifiedAt?: string | null;
   originalsVerifiedAt?: string | null;
   verifiedBy?: string | null;
+  /** FL-879: the passing restore drill that recorded this, rather than an administrator by hand. */
+  drillReportId?: string | null;
 };
 
 /**

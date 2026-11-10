@@ -25,6 +25,7 @@ import { AssetSourceRepository } from 'src/repositories/asset-source.repository.
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
+import { BackupRestoreReportRepository } from 'src/repositories/backup-restore-report.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
 import { BrowserExtensionSignInRepository } from 'src/repositories/browser-extension-sign-in.repository.js';
@@ -175,6 +176,7 @@ export const repositories = [
   ICloudIdentityAdoptionRepository,
   AssetUploadResourceRepository,
   BackupDeviceRepository,
+  BackupRestoreReportRepository,
   PushDeviceRepository,
   FrameleafCloudPushRepository,
   ICloudMetadataRepository,
