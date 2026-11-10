@@ -27,6 +27,7 @@ import {
 import { AssetStats, RemovedAsset } from 'src/repositories/asset.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { BaseService } from 'src/services/base.service.js';
 import { tryPromise } from 'src/utils/promise.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -388,6 +389,19 @@ describe(AssetService.name, () => {
 
         const result = await sut.get(partner, asset.id);
         expect((result as AssetResponseDto).fileProblem ?? null).toBeNull();
+        expect(mocks.mediaHealth.getOpenFileProblem).not.toHaveBeenCalled();
+      });
+
+      it('reads the photo back without the flag for an AssetService another service builds (a workflow write)', async () => {
+        const { asset, auth } = own();
+        mocks.mediaHealth.getOpenFileProblem.mockResolvedValue({
+          id: 'finding-1',
+          category: MediaHealthCategory.Missing,
+        });
+        // `BaseService.create` passes the BaseService repositories only, as a workflow's write does
+        const built = BaseService.create(AssetService, sut);
+
+        await expect(built.get(auth, asset.id)).resolves.toMatchObject({ fileProblem: null });
         expect(mocks.mediaHealth.getOpenFileProblem).not.toHaveBeenCalled();
       });
 

@@ -161,9 +161,13 @@ export class AssetService extends BaseService {
   @Inject(LockedEncryptionService)
   private lockedEncryption!: LockedEncryptionService;
 
-  /** FL-1337: the open file problem of the photo the viewer shows (not a BaseService dependency). */
+  /**
+   * FL-1337: the open file problem of the photo the viewer shows (not a BaseService dependency). Nest sets it on the
+   * AssetService the controllers use. One that another service builds with `BaseService.create` (a workflow's write,
+   * an album's date healing) has none: those read the photo back for themselves, never for a viewer.
+   */
   @Inject(MediaHealthRepository)
-  private mediaHealthRepository!: MediaHealthRepository;
+  private mediaHealthRepository?: MediaHealthRepository;
 
   async getStatistics(auth: AuthDto, dto: AssetStatsDto) {
     if (dto.visibility === AssetVisibility.Locked) {
@@ -290,7 +294,7 @@ export class AssetService extends BaseService {
    * original wins over a damaged one. `readAsset`'s access check has already decided that the caller may open it.
    */
   private async fileProblemFor(auth: AuthDto, asset: { id: string; ownerId: string }) {
-    if (auth.sharedLink || (asset.ownerId !== auth.user.id && !auth.user.isAdmin)) {
+    if (!this.mediaHealthRepository || auth.sharedLink || (asset.ownerId !== auth.user.id && !auth.user.isAdmin)) {
       return null;
     }
     const problem = await this.mediaHealthRepository.getOpenFileProblem(asset.id);
