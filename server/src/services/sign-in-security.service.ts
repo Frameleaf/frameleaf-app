@@ -19,6 +19,20 @@ const SIGN_IN_FAILURE_DESCRIPTION =
   'There were repeated unsuccessful sign-in attempts. If they weren’t yours, review your signed-in devices and change your password.';
 const NEW_SIGN_IN_TITLE = 'New sign-in to your Frameleaf Library';
 
+/** Both counters of a password sign-in act as one: the longer wait applies, and a failure counts on each. */
+const bothAttempts = (address: SignInAttempt, account: SignInAttempt): SignInAttempt => ({
+  getWait: async () => Math.max(await address.getWait(), await account.getWait()),
+  recordFailure: async () => {
+    await Promise.all([address.recordFailure(), account.recordFailure()]);
+  },
+  clearFailures: async () => {
+    await Promise.all([address.clearFailures(), account.clearFailures()]);
+  },
+  release: async () => {
+    await Promise.all([address.release(), account.release()]);
+  },
+});
+
 @Injectable()
 export class SignInSecurityService extends BaseService {
   @Inject(RateLimitRepository)
@@ -49,6 +63,20 @@ export class SignInSecurityService extends BaseService {
         JSON.stringify([kind, principal, rateLimitAddress(details.securityClientIp ?? details.clientIp)]),
       );
       attempt = await this.counters.acquireSignInAttempt(`sign-in-backoff:${hash}`);
+      if (attempt && kind === 'password') {
+        // FL-850: a password guesser behind a trusted proxy can send a new forwarded address with every try, so
+        // wrong passwords for one account also count from every address. This wait holds back only further
+        // passwords for that account: passkeys and Frameleaf sign-in are never behind it.
+        const account = await this.key('sign-in-backoff', JSON.stringify([kind, principal.trim().toLowerCase()]));
+        const accountAttempt = await this.counters.acquireSignInAttempt(`sign-in-backoff:account:${account}`);
+        if (accountAttempt) {
+          attempt = bothAttempts(attempt, accountAttempt);
+        } else {
+          // another password for this account is being checked right now: wait for it, as for one address
+          await attempt.release();
+          attempt = undefined;
+        }
+      }
       wait = attempt ? await attempt.getWait() : 1;
     } catch {
       await attempt?.release();
