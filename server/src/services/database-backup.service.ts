@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { debounce } from 'lodash-es';
 import { DateTime } from 'luxon';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import path, { basename } from 'node:path';
 import { Duplex, PassThrough, Readable, Writable } from 'node:stream';
 import { finished, pipeline } from 'node:stream/promises';
+import { StringDecoder } from 'node:string_decoder';
 import { coerce, gt, satisfies } from 'semver';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
@@ -138,6 +139,9 @@ export class DatabaseBackupService {
       singleTransaction?: boolean;
       /** FL-879: connect to this database instead of the library's (a restore drill's scratch copy). */
       database?: string;
+      /** FL-879: sign in as this role instead of the library's own (the restore drill's scratch role). */
+      username?: string;
+      password?: string;
       /** FL-879: psql prints query results instead of echoing its input for progress. */
       results?: boolean;
     } = {},
@@ -178,6 +182,12 @@ export class DatabaseBackupService {
         if (options.database) {
           parsedUrl.pathname = `/${encodeURIComponent(options.database)}`;
         }
+        if (options.username) {
+          parsedUrl.username = encodeURIComponent(options.username);
+          parsedUrl.password = encodeURIComponent(options.password ?? '');
+          databaseUsername = options.username;
+          databasePassword = options.password ?? '';
+        }
 
         url = parsedUrl.href;
       } else if (options.database) {
@@ -190,8 +200,8 @@ export class DatabaseBackupService {
 
       args.push(url);
     } else {
-      databaseUsername = databaseConfig.username;
-      databasePassword = databaseConfig.password;
+      databaseUsername = options.username ?? databaseConfig.username;
+      databasePassword = options.username ? (options.password ?? '') : databaseConfig.password;
 
       args.push(
         '--username',
@@ -577,7 +587,16 @@ export class DatabaseBackupService {
     const ids = assetIds.filter((id) => UUID_TEXT.test(id));
     const live = await this.buildPostgresLaunchArguments('psql', { results: true });
     const scratch = await this.buildPostgresLaunchArguments('psql', { results: true, database: name });
-    const restore = await this.buildPostgresLaunchArguments('psql', { singleTransaction: true, database: name });
+    const role = `${name}_restore`;
+    // The dump is rebuilt by psql signed in as the scratch role itself, never a superuser that switched role:
+    // a superuser session could switch back (RESET ROLE, even from dynamic SQL), a role that signed in cannot.
+    const secret = randomBytes(24).toString('hex');
+    const restore = await this.buildPostgresLaunchArguments('psql', {
+      singleTransaction: true,
+      database: name,
+      username: role,
+      password: secret,
+    });
     const env = { PATH: process.env.PATH, PGPASSWORD: live.databasePassword };
     const query = async (target: typeof live, command: string) => {
       const child = this.processRepository.spawnDuplexStream(target.bin, [...target.args, '--command', command], {
@@ -589,7 +608,6 @@ export class DatabaseBackupService {
       for await (const chunk of child) chunks.push(chunk as Buffer);
       return Buffer.concat(chunks).toString('utf8').trim();
     };
-    const role = `${name}_restore`;
     const dropAll = async () => {
       await query(live, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
       await query(live, `DROP ROLE IF EXISTS "${role}"`);
@@ -599,7 +617,7 @@ export class DatabaseBackupService {
     // damaged or forged dump says, it cannot run programs, write server files or reach other databases.
     await query(
       live,
-      `CREATE ROLE "${role}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`,
+      `CREATE ROLE "${role}" LOGIN PASSWORD '${secret}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`,
     );
     await query(live, `CREATE DATABASE "${name}" OWNER "${role}"`);
     try {
@@ -612,14 +630,13 @@ export class DatabaseBackupService {
       }
       const psql = this.processRepository.spawnDuplexStream(restore.bin, ['--no-psqlrc', ...restore.args], {
         signal,
-        env,
+        env: { PATH: process.env.PATH, PGPASSWORD: secret },
       });
       await pipeline(
         this.readDatabaseDump(filePath),
         createSqlCommandGuard(),
         createSqlExtensionFilter(),
         createSqlOwnerTransformStream(role),
-        createSqlPrefix(`SET ROLE "${role}";\n`),
         psql,
         new Writable({ write: (_chunk, _encoding, callback) => callback() }),
         { signal },
@@ -1215,11 +1232,13 @@ export function createSqlCommandGuard() {
 /** FL-879: the dump's own extension lines; the scratch database already has the library's extensions. */
 export function createSqlExtensionFilter() {
   let carry = '';
+  // A chunk can end inside a multi-byte character; the decoder holds those bytes for the next chunk.
+  const decoder = new StringDecoder('utf8');
   const keep = (line: string) =>
     !/^(?:DROP EXTENSION IF EXISTS|CREATE EXTENSION IF NOT EXISTS|COMMENT ON EXTENSION) [^;]*;$/.test(line);
   return new PassThrough({
     transform(chunk: Buffer, _encoding, callback) {
-      const lines = (carry + chunk.toString('utf8')).split('\n');
+      const lines = (carry + decoder.write(chunk)).split('\n');
       carry = lines.pop() ?? '';
       callback(
         null,
@@ -1230,28 +1249,12 @@ export function createSqlExtensionFilter() {
       );
     },
     flush(callback) {
+      carry += decoder.end();
       callback(null, keep(carry) ? carry : '');
     },
   });
 }
 
-/** FL-879: text sent to psql before the dump (the role switch). */
-export function createSqlPrefix(prefix: string) {
-  let sent = false;
-  return new PassThrough({
-    transform(chunk: Buffer, _encoding, callback) {
-      if (sent) {
-        callback(null, chunk);
-        return;
-      }
-      sent = true;
-      callback(null, Buffer.concat([Buffer.from(prefix), chunk]));
-    },
-    flush(callback) {
-      callback(null, sent ? undefined : prefix);
-    },
-  });
-}
 
 export function createSqlOwnerTransformStream(databaseUsername: string) {
   const ownerMarker = Buffer.from('OWNER TO ');
