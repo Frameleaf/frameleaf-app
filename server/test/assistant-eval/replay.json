@@ -1,0 +1,1274 @@
+{
+  "people-01": {
+    "city": "Banff",
+    "takenAfter": "2023-01-01T00:00:00.000Z",
+    "takenBefore": "2023-01-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Maya"]
+  },
+  "pets-01": {
+    "city": "Banff",
+    "takenAfter": "2023-01-01T00:00:00.000Z",
+    "takenBefore": "2023-01-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Biscuit"]
+  },
+  "favorite-video-01": {
+    "city": "Banff",
+    "takenAfter": "2023-01-01T00:00:00.000Z",
+    "takenBefore": "2023-01-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-01": {
+    "city": "Banff",
+    "takenAfter": "2023-01-01T00:00:00.000Z",
+    "takenBefore": "2023-01-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-01": {
+    "city": "Banff",
+    "type": "IMAGE",
+    "ocr": "Rental return by 7pm"
+  },
+  "spoken-01": {
+    "city": "Banff",
+    "type": "VIDEO",
+    "spoken": "meet me by the rink"
+  },
+  "description-01": {
+    "city": "Banff",
+    "type": "IMAGE",
+    "description": "skaters pass under string lights"
+  },
+  "people-02": {
+    "city": "Calgary",
+    "takenAfter": "2023-02-01T00:00:00.000Z",
+    "takenBefore": "2023-02-28T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Sam"]
+  },
+  "pets-02": {
+    "city": "Calgary",
+    "takenAfter": "2023-02-01T00:00:00.000Z",
+    "takenBefore": "2023-02-28T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Rex"]
+  },
+  "favorite-video-02": {
+    "city": "Calgary",
+    "takenAfter": "2023-02-01T00:00:00.000Z",
+    "takenBefore": "2023-02-28T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-02": {
+    "city": "Calgary",
+    "takenAfter": "2023-02-01T00:00:00.000Z",
+    "takenBefore": "2023-02-28T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-02": {
+    "city": "Calgary",
+    "type": "IMAGE",
+    "ocr": "Table twelve"
+  },
+  "spoken-02": {
+    "city": "Calgary",
+    "type": "VIDEO",
+    "spoken": "try the maple latte"
+  },
+  "description-02": {
+    "city": "Calgary",
+    "type": "IMAGE",
+    "description": "mugs next to a rainy window"
+  },
+  "people-03": {
+    "city": "Vancouver",
+    "takenAfter": "2023-03-01T00:00:00.000Z",
+    "takenBefore": "2023-03-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Alice"]
+  },
+  "pets-03": {
+    "city": "Vancouver",
+    "takenAfter": "2023-03-01T00:00:00.000Z",
+    "takenBefore": "2023-03-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Pepper"]
+  },
+  "favorite-video-03": {
+    "city": "Vancouver",
+    "takenAfter": "2023-03-01T00:00:00.000Z",
+    "takenBefore": "2023-03-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-03": {
+    "city": "Vancouver",
+    "takenAfter": "2023-03-01T00:00:00.000Z",
+    "takenBefore": "2023-03-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-03": {
+    "city": "Vancouver",
+    "type": "IMAGE",
+    "ocr": "Keep the park clean"
+  },
+  "spoken-03": {
+    "city": "Vancouver",
+    "type": "VIDEO",
+    "spoken": "save me a seat"
+  },
+  "description-03": {
+    "city": "Vancouver",
+    "type": "IMAGE",
+    "description": "picnic blanket covered with daffodils"
+  },
+  "people-04": {
+    "city": "Victoria",
+    "takenAfter": "2023-04-01T00:00:00.000Z",
+    "takenBefore": "2023-04-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Bea"]
+  },
+  "pets-04": {
+    "city": "Victoria",
+    "takenAfter": "2023-04-01T00:00:00.000Z",
+    "takenBefore": "2023-04-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Scout"]
+  },
+  "favorite-video-04": {
+    "city": "Victoria",
+    "takenAfter": "2023-04-01T00:00:00.000Z",
+    "takenBefore": "2023-04-30T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-04": {
+    "city": "Victoria",
+    "takenAfter": "2023-04-01T00:00:00.000Z",
+    "takenBefore": "2023-04-30T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-04": {
+    "city": "Victoria",
+    "type": "IMAGE",
+    "ocr": "Bike lane closed"
+  },
+  "spoken-04": {
+    "city": "Victoria",
+    "type": "VIDEO",
+    "spoken": "watch the ferry"
+  },
+  "description-04": {
+    "city": "Victoria",
+    "type": "IMAGE",
+    "description": "cycles beside the marina"
+  },
+  "people-05": {
+    "city": "Seattle",
+    "takenAfter": "2023-05-01T00:00:00.000Z",
+    "takenBefore": "2023-05-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Rob"]
+  },
+  "pets-05": {
+    "city": "Seattle",
+    "takenAfter": "2023-05-01T00:00:00.000Z",
+    "takenBefore": "2023-05-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Mocha"]
+  },
+  "favorite-video-05": {
+    "city": "Seattle",
+    "takenAfter": "2023-05-01T00:00:00.000Z",
+    "takenBefore": "2023-05-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-05": {
+    "city": "Seattle",
+    "takenAfter": "2023-05-01T00:00:00.000Z",
+    "takenBefore": "2023-05-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-05": {
+    "city": "Seattle",
+    "type": "IMAGE",
+    "ocr": "Trailhead parking"
+  },
+  "spoken-05": {
+    "city": "Seattle",
+    "type": "VIDEO",
+    "spoken": "we should rent a canoe"
+  },
+  "description-05": {
+    "city": "Seattle",
+    "type": "IMAGE",
+    "description": "canoe on a green lake"
+  },
+  "people-06": {
+    "city": "Portland",
+    "takenAfter": "2023-06-01T00:00:00.000Z",
+    "takenBefore": "2023-06-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Inez"]
+  },
+  "pets-06": {
+    "city": "Portland",
+    "takenAfter": "2023-06-01T00:00:00.000Z",
+    "takenBefore": "2023-06-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Milo"]
+  },
+  "favorite-video-06": {
+    "city": "Portland",
+    "takenAfter": "2023-06-01T00:00:00.000Z",
+    "takenBefore": "2023-06-30T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-06": {
+    "city": "Portland",
+    "takenAfter": "2023-06-01T00:00:00.000Z",
+    "takenBefore": "2023-06-30T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-06": {
+    "city": "Portland",
+    "type": "IMAGE",
+    "ocr": "Fresh peaches"
+  },
+  "spoken-06": {
+    "city": "Portland",
+    "type": "VIDEO",
+    "spoken": "these plums are ripe"
+  },
+  "description-06": {
+    "city": "Portland",
+    "type": "IMAGE",
+    "description": "wooden crates of fruit"
+  },
+  "people-07": {
+    "city": "Montreal",
+    "takenAfter": "2023-07-01T00:00:00.000Z",
+    "takenBefore": "2023-07-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Lina"]
+  },
+  "pets-07": {
+    "city": "Montreal",
+    "takenAfter": "2023-07-01T00:00:00.000Z",
+    "takenBefore": "2023-07-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Poppy"]
+  },
+  "favorite-video-07": {
+    "city": "Montreal",
+    "takenAfter": "2023-07-01T00:00:00.000Z",
+    "takenBefore": "2023-07-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-07": {
+    "city": "Montreal",
+    "takenAfter": "2023-07-01T00:00:00.000Z",
+    "takenBefore": "2023-07-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-07": {
+    "city": "Montreal",
+    "type": "IMAGE",
+    "ocr": "Quiet after ten"
+  },
+  "spoken-07": {
+    "city": "Montreal",
+    "type": "VIDEO",
+    "spoken": "the fire is going out"
+  },
+  "description-07": {
+    "city": "Montreal",
+    "type": "IMAGE",
+    "description": "tent by a fire ring"
+  },
+  "people-08": {
+    "city": "Quebec",
+    "takenAfter": "2023-08-01T00:00:00.000Z",
+    "takenBefore": "2023-08-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Omar"]
+  },
+  "pets-08": {
+    "city": "Quebec",
+    "takenAfter": "2023-08-01T00:00:00.000Z",
+    "takenBefore": "2023-08-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Maple"]
+  },
+  "favorite-video-08": {
+    "city": "Quebec",
+    "takenAfter": "2023-08-01T00:00:00.000Z",
+    "takenBefore": "2023-08-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-08": {
+    "city": "Quebec",
+    "takenAfter": "2023-08-01T00:00:00.000Z",
+    "takenBefore": "2023-08-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-08": {
+    "city": "Quebec",
+    "type": "IMAGE",
+    "ocr": "Check in at the tent"
+  },
+  "spoken-08": {
+    "city": "Quebec",
+    "type": "VIDEO",
+    "spoken": "look how high it goes"
+  },
+  "description-08": {
+    "city": "Quebec",
+    "type": "IMAGE",
+    "description": "red kites above the field"
+  },
+  "people-09": {
+    "city": "Toronto",
+    "takenAfter": "2023-09-01T00:00:00.000Z",
+    "takenBefore": "2023-09-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Felix"]
+  },
+  "pets-09": {
+    "city": "Toronto",
+    "takenAfter": "2023-09-01T00:00:00.000Z",
+    "takenBefore": "2023-09-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Clover"]
+  },
+  "favorite-video-09": {
+    "city": "Toronto",
+    "takenAfter": "2023-09-01T00:00:00.000Z",
+    "takenBefore": "2023-09-30T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-09": {
+    "city": "Toronto",
+    "takenAfter": "2023-09-01T00:00:00.000Z",
+    "takenBefore": "2023-09-30T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-09": {
+    "city": "Toronto",
+    "type": "IMAGE",
+    "ocr": "Bridge closed"
+  },
+  "spoken-09": {
+    "city": "Toronto",
+    "type": "VIDEO",
+    "spoken": "the creek is louder today"
+  },
+  "description-09": {
+    "city": "Toronto",
+    "type": "IMAGE",
+    "description": "fallen yellow leaves by a bridge"
+  },
+  "people-10": {
+    "city": "Ottawa",
+    "takenAfter": "2023-10-01T00:00:00.000Z",
+    "takenBefore": "2023-10-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Nora"]
+  },
+  "pets-10": {
+    "city": "Ottawa",
+    "takenAfter": "2023-10-01T00:00:00.000Z",
+    "takenBefore": "2023-10-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Ginger"]
+  },
+  "favorite-video-10": {
+    "city": "Ottawa",
+    "takenAfter": "2023-10-01T00:00:00.000Z",
+    "takenBefore": "2023-10-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-10": {
+    "city": "Ottawa",
+    "takenAfter": "2023-10-01T00:00:00.000Z",
+    "takenBefore": "2023-10-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-10": {
+    "city": "Ottawa",
+    "type": "IMAGE",
+    "ocr": "Gallery closes at six"
+  },
+  "spoken-10": {
+    "city": "Ottawa",
+    "type": "VIDEO",
+    "spoken": "look at the blue vase"
+  },
+  "description-10": {
+    "city": "Ottawa",
+    "type": "IMAGE",
+    "description": "blue pottery in a glass cabinet"
+  },
+  "people-11": {
+    "city": "Banff",
+    "takenAfter": "2024-01-01T00:00:00.000Z",
+    "takenBefore": "2024-01-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Maya"]
+  },
+  "pets-11": {
+    "city": "Banff",
+    "takenAfter": "2024-01-01T00:00:00.000Z",
+    "takenBefore": "2024-01-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Biscuit"]
+  },
+  "favorite-video-11": {
+    "city": "Banff",
+    "takenAfter": "2024-01-01T00:00:00.000Z",
+    "takenBefore": "2024-01-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-11": {
+    "city": "Banff",
+    "takenAfter": "2024-01-01T00:00:00.000Z",
+    "takenBefore": "2024-01-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-11": {
+    "city": "Banff",
+    "type": "IMAGE",
+    "ocr": "Special of the day"
+  },
+  "spoken-11": {
+    "city": "Banff",
+    "type": "VIDEO",
+    "spoken": "pass the roast potatoes"
+  },
+  "description-11": {
+    "city": "Banff",
+    "type": "IMAGE",
+    "description": "candlelit dinner with roast potatoes"
+  },
+  "people-12": {
+    "city": "Calgary",
+    "takenAfter": "2024-02-01T00:00:00.000Z",
+    "takenBefore": "2024-02-29T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Sam"]
+  },
+  "pets-12": {
+    "city": "Calgary",
+    "takenAfter": "2024-02-01T00:00:00.000Z",
+    "takenBefore": "2024-02-29T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Rex"]
+  },
+  "favorite-video-12": {
+    "city": "Calgary",
+    "takenAfter": "2024-02-01T00:00:00.000Z",
+    "takenBefore": "2024-02-29T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-12": {
+    "city": "Calgary",
+    "takenAfter": "2024-02-01T00:00:00.000Z",
+    "takenBefore": "2024-02-29T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-12": {
+    "city": "Calgary",
+    "type": "IMAGE",
+    "ocr": "Lost mittens"
+  },
+  "spoken-12": {
+    "city": "Calgary",
+    "type": "VIDEO",
+    "spoken": "the lights are on"
+  },
+  "description-12": {
+    "city": "Calgary",
+    "type": "IMAGE",
+    "description": "snowy houses covered in lights"
+  },
+  "people-13": {
+    "city": "Vancouver",
+    "takenAfter": "2024-03-01T00:00:00.000Z",
+    "takenBefore": "2024-03-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Alice"]
+  },
+  "pets-13": {
+    "city": "Vancouver",
+    "takenAfter": "2024-03-01T00:00:00.000Z",
+    "takenBefore": "2024-03-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Pepper"]
+  },
+  "favorite-video-13": {
+    "city": "Vancouver",
+    "takenAfter": "2024-03-01T00:00:00.000Z",
+    "takenBefore": "2024-03-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-13": {
+    "city": "Vancouver",
+    "takenAfter": "2024-03-01T00:00:00.000Z",
+    "takenBefore": "2024-03-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-13": {
+    "city": "Vancouver",
+    "type": "IMAGE",
+    "ocr": "Thin ice ahead"
+  },
+  "spoken-13": {
+    "city": "Vancouver",
+    "type": "VIDEO",
+    "spoken": "the auger is in the truck"
+  },
+  "description-13": {
+    "city": "Vancouver",
+    "type": "IMAGE",
+    "description": "fishing hut on a frozen lake"
+  },
+  "people-14": {
+    "city": "Victoria",
+    "takenAfter": "2024-04-01T00:00:00.000Z",
+    "takenBefore": "2024-04-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Bea"]
+  },
+  "pets-14": {
+    "city": "Victoria",
+    "takenAfter": "2024-04-01T00:00:00.000Z",
+    "takenBefore": "2024-04-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Scout"]
+  },
+  "favorite-video-14": {
+    "city": "Victoria",
+    "takenAfter": "2024-04-01T00:00:00.000Z",
+    "takenBefore": "2024-04-30T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-14": {
+    "city": "Victoria",
+    "takenAfter": "2024-04-01T00:00:00.000Z",
+    "takenBefore": "2024-04-30T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-14": {
+    "city": "Victoria",
+    "type": "IMAGE",
+    "ocr": "Reserved for six"
+  },
+  "spoken-14": {
+    "city": "Victoria",
+    "type": "VIDEO",
+    "spoken": "make a wish"
+  },
+  "description-14": {
+    "city": "Victoria",
+    "type": "IMAGE",
+    "description": "birthday cake with blue icing"
+  },
+  "people-15": {
+    "city": "Seattle",
+    "takenAfter": "2024-05-01T00:00:00.000Z",
+    "takenBefore": "2024-05-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Rob"]
+  },
+  "pets-15": {
+    "city": "Seattle",
+    "takenAfter": "2024-05-01T00:00:00.000Z",
+    "takenBefore": "2024-05-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Mocha"]
+  },
+  "favorite-video-15": {
+    "city": "Seattle",
+    "takenAfter": "2024-05-01T00:00:00.000Z",
+    "takenBefore": "2024-05-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-15": {
+    "city": "Seattle",
+    "takenAfter": "2024-05-01T00:00:00.000Z",
+    "takenBefore": "2024-05-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-15": {
+    "city": "Seattle",
+    "type": "IMAGE",
+    "ocr": "Dogs on leash"
+  },
+  "spoken-15": {
+    "city": "Seattle",
+    "type": "VIDEO",
+    "spoken": "throw the tennis ball"
+  },
+  "description-15": {
+    "city": "Seattle",
+    "type": "IMAGE",
+    "description": "tennis ball under an oak tree"
+  },
+  "people-16": {
+    "city": "Portland",
+    "takenAfter": "2024-06-01T00:00:00.000Z",
+    "takenBefore": "2024-06-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Inez"]
+  },
+  "pets-16": {
+    "city": "Portland",
+    "takenAfter": "2024-06-01T00:00:00.000Z",
+    "takenBefore": "2024-06-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Milo"]
+  },
+  "favorite-video-16": {
+    "city": "Portland",
+    "takenAfter": "2024-06-01T00:00:00.000Z",
+    "takenBefore": "2024-06-30T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-16": {
+    "city": "Portland",
+    "takenAfter": "2024-06-01T00:00:00.000Z",
+    "takenBefore": "2024-06-30T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-16": {
+    "city": "Portland",
+    "type": "IMAGE",
+    "ocr": "Ticket booth"
+  },
+  "spoken-16": {
+    "city": "Portland",
+    "type": "VIDEO",
+    "spoken": "the band starts at noon"
+  },
+  "description-16": {
+    "city": "Portland",
+    "type": "IMAGE",
+    "description": "brass band marching downtown"
+  },
+  "people-17": {
+    "city": "Montreal",
+    "takenAfter": "2024-07-01T00:00:00.000Z",
+    "takenBefore": "2024-07-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Lina"]
+  },
+  "pets-17": {
+    "city": "Montreal",
+    "takenAfter": "2024-07-01T00:00:00.000Z",
+    "takenBefore": "2024-07-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Poppy"]
+  },
+  "favorite-video-17": {
+    "city": "Montreal",
+    "takenAfter": "2024-07-01T00:00:00.000Z",
+    "takenBefore": "2024-07-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-17": {
+    "city": "Montreal",
+    "takenAfter": "2024-07-01T00:00:00.000Z",
+    "takenBefore": "2024-07-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-17": {
+    "city": "Montreal",
+    "type": "IMAGE",
+    "ocr": "Pick only ripe fruit"
+  },
+  "spoken-17": {
+    "city": "Montreal",
+    "type": "VIDEO",
+    "spoken": "this basket is heavy"
+  },
+  "description-17": {
+    "city": "Montreal",
+    "type": "IMAGE",
+    "description": "cherry trees above a wooden basket"
+  },
+  "people-18": {
+    "city": "Quebec",
+    "takenAfter": "2024-08-01T00:00:00.000Z",
+    "takenBefore": "2024-08-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Omar"]
+  },
+  "pets-18": {
+    "city": "Quebec",
+    "takenAfter": "2024-08-01T00:00:00.000Z",
+    "takenBefore": "2024-08-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Maple"]
+  },
+  "favorite-video-18": {
+    "city": "Quebec",
+    "takenAfter": "2024-08-01T00:00:00.000Z",
+    "takenBefore": "2024-08-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-18": {
+    "city": "Quebec",
+    "takenAfter": "2024-08-01T00:00:00.000Z",
+    "takenBefore": "2024-08-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-18": {
+    "city": "Quebec",
+    "type": "IMAGE",
+    "ocr": "Shut the gate"
+  },
+  "spoken-18": {
+    "city": "Quebec",
+    "type": "VIDEO",
+    "spoken": "there is wood on the porch"
+  },
+  "description-18": {
+    "city": "Quebec",
+    "type": "IMAGE",
+    "description": "cabin porch stacked with firewood"
+  },
+  "people-19": {
+    "city": "Toronto",
+    "takenAfter": "2024-09-01T00:00:00.000Z",
+    "takenBefore": "2024-09-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Felix"]
+  },
+  "pets-19": {
+    "city": "Toronto",
+    "takenAfter": "2024-09-01T00:00:00.000Z",
+    "takenBefore": "2024-09-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Clover"]
+  },
+  "favorite-video-19": {
+    "city": "Toronto",
+    "takenAfter": "2024-09-01T00:00:00.000Z",
+    "takenBefore": "2024-09-30T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-19": {
+    "city": "Toronto",
+    "takenAfter": "2024-09-01T00:00:00.000Z",
+    "takenBefore": "2024-09-30T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-19": {
+    "city": "Toronto",
+    "type": "IMAGE",
+    "ocr": "Field number four"
+  },
+  "spoken-19": {
+    "city": "Toronto",
+    "type": "VIDEO",
+    "spoken": "the score is tied"
+  },
+  "description-19": {
+    "city": "Toronto",
+    "type": "IMAGE",
+    "description": "soccer players under floodlights"
+  },
+  "people-20": {
+    "city": "Ottawa",
+    "takenAfter": "2024-10-01T00:00:00.000Z",
+    "takenBefore": "2024-10-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Nora"]
+  },
+  "pets-20": {
+    "city": "Ottawa",
+    "takenAfter": "2024-10-01T00:00:00.000Z",
+    "takenBefore": "2024-10-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Ginger"]
+  },
+  "favorite-video-20": {
+    "city": "Ottawa",
+    "takenAfter": "2024-10-01T00:00:00.000Z",
+    "takenBefore": "2024-10-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-20": {
+    "city": "Ottawa",
+    "takenAfter": "2024-10-01T00:00:00.000Z",
+    "takenBefore": "2024-10-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-20": {
+    "city": "Ottawa",
+    "type": "IMAGE",
+    "ocr": "Lifeguard off duty"
+  },
+  "spoken-20": {
+    "city": "Ottawa",
+    "type": "VIDEO",
+    "spoken": "we missed the sunset"
+  },
+  "description-20": {
+    "city": "Ottawa",
+    "type": "IMAGE",
+    "description": "sandcastles next to a tide pool"
+  },
+  "people-21": {
+    "city": "Banff",
+    "takenAfter": "2025-01-01T00:00:00.000Z",
+    "takenBefore": "2025-01-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Maya"]
+  },
+  "pets-21": {
+    "city": "Banff",
+    "takenAfter": "2025-01-01T00:00:00.000Z",
+    "takenBefore": "2025-01-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Biscuit"]
+  },
+  "favorite-video-21": {
+    "city": "Banff",
+    "takenAfter": "2025-01-01T00:00:00.000Z",
+    "takenBefore": "2025-01-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-21": {
+    "city": "Banff",
+    "takenAfter": "2025-01-01T00:00:00.000Z",
+    "takenBefore": "2025-01-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-21": {
+    "city": "Banff",
+    "type": "IMAGE",
+    "ocr": "Cast and crew"
+  },
+  "spoken-21": {
+    "city": "Banff",
+    "type": "VIDEO",
+    "spoken": "the curtain is stuck"
+  },
+  "description-21": {
+    "city": "Banff",
+    "type": "IMAGE",
+    "description": "children wearing paper crowns"
+  },
+  "people-22": {
+    "city": "Calgary",
+    "takenAfter": "2025-02-01T00:00:00.000Z",
+    "takenBefore": "2025-02-28T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Sam"]
+  },
+  "pets-22": {
+    "city": "Calgary",
+    "takenAfter": "2025-02-01T00:00:00.000Z",
+    "takenBefore": "2025-02-28T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Rex"]
+  },
+  "favorite-video-22": {
+    "city": "Calgary",
+    "takenAfter": "2025-02-01T00:00:00.000Z",
+    "takenBefore": "2025-02-28T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-22": {
+    "city": "Calgary",
+    "takenAfter": "2025-02-01T00:00:00.000Z",
+    "takenBefore": "2025-02-28T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-22": {
+    "city": "Calgary",
+    "type": "IMAGE",
+    "ocr": "Please stay on the path"
+  },
+  "spoken-22": {
+    "city": "Calgary",
+    "type": "VIDEO",
+    "spoken": "the roses smell amazing"
+  },
+  "description-22": {
+    "city": "Calgary",
+    "type": "IMAGE",
+    "description": "pink roses along a gravel path"
+  },
+  "people-23": {
+    "city": "Vancouver",
+    "takenAfter": "2025-03-01T00:00:00.000Z",
+    "takenBefore": "2025-03-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Alice"]
+  },
+  "pets-23": {
+    "city": "Vancouver",
+    "takenAfter": "2025-03-01T00:00:00.000Z",
+    "takenBefore": "2025-03-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Pepper"]
+  },
+  "favorite-video-23": {
+    "city": "Vancouver",
+    "takenAfter": "2025-03-01T00:00:00.000Z",
+    "takenBefore": "2025-03-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-23": {
+    "city": "Vancouver",
+    "takenAfter": "2025-03-01T00:00:00.000Z",
+    "takenBefore": "2025-03-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-23": {
+    "city": "Vancouver",
+    "type": "IMAGE",
+    "ocr": "Do not feed the goats"
+  },
+  "spoken-23": {
+    "city": "Vancouver",
+    "type": "VIDEO",
+    "spoken": "the pony has a bell"
+  },
+  "description-23": {
+    "city": "Vancouver",
+    "type": "IMAGE",
+    "description": "small pony beside a red barn"
+  },
+  "people-24": {
+    "city": "Victoria",
+    "takenAfter": "2025-04-01T00:00:00.000Z",
+    "takenBefore": "2025-04-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Bea"]
+  },
+  "pets-24": {
+    "city": "Victoria",
+    "takenAfter": "2025-04-01T00:00:00.000Z",
+    "takenBefore": "2025-04-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Scout"]
+  },
+  "favorite-video-24": {
+    "city": "Victoria",
+    "takenAfter": "2025-04-01T00:00:00.000Z",
+    "takenBefore": "2025-04-30T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-24": {
+    "city": "Victoria",
+    "takenAfter": "2025-04-01T00:00:00.000Z",
+    "takenBefore": "2025-04-30T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-24": {
+    "city": "Victoria",
+    "type": "IMAGE",
+    "ocr": "Platform seven"
+  },
+  "spoken-24": {
+    "city": "Victoria",
+    "type": "VIDEO",
+    "spoken": "the next stop is ours"
+  },
+  "description-24": {
+    "city": "Victoria",
+    "type": "IMAGE",
+    "description": "train crossing an iron bridge"
+  },
+  "people-25": {
+    "city": "Seattle",
+    "takenAfter": "2025-05-01T00:00:00.000Z",
+    "takenBefore": "2025-05-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Rob"]
+  },
+  "pets-25": {
+    "city": "Seattle",
+    "takenAfter": "2025-05-01T00:00:00.000Z",
+    "takenBefore": "2025-05-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Mocha"]
+  },
+  "favorite-video-25": {
+    "city": "Seattle",
+    "takenAfter": "2025-05-01T00:00:00.000Z",
+    "takenBefore": "2025-05-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-25": {
+    "city": "Seattle",
+    "takenAfter": "2025-05-01T00:00:00.000Z",
+    "takenBefore": "2025-05-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-25": {
+    "city": "Seattle",
+    "type": "IMAGE",
+    "ocr": "Mulled cider"
+  },
+  "spoken-25": {
+    "city": "Seattle",
+    "type": "VIDEO",
+    "spoken": "buy another jar of jam"
+  },
+  "description-25": {
+    "city": "Seattle",
+    "type": "IMAGE",
+    "description": "jars of jam under paper lanterns"
+  },
+  "people-26": {
+    "city": "Portland",
+    "takenAfter": "2025-06-01T00:00:00.000Z",
+    "takenBefore": "2025-06-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Inez"]
+  },
+  "pets-26": {
+    "city": "Portland",
+    "takenAfter": "2025-06-01T00:00:00.000Z",
+    "takenBefore": "2025-06-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Milo"]
+  },
+  "favorite-video-26": {
+    "city": "Portland",
+    "takenAfter": "2025-06-01T00:00:00.000Z",
+    "takenBefore": "2025-06-30T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-26": {
+    "city": "Portland",
+    "takenAfter": "2025-06-01T00:00:00.000Z",
+    "takenBefore": "2025-06-30T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-26": {
+    "city": "Portland",
+    "type": "IMAGE",
+    "ocr": "Shark feeding at three"
+  },
+  "spoken-26": {
+    "city": "Portland",
+    "type": "VIDEO",
+    "spoken": "the rays are coming closer"
+  },
+  "description-26": {
+    "city": "Portland",
+    "type": "IMAGE",
+    "description": "stingrays against a blue window"
+  },
+  "people-27": {
+    "city": "Montreal",
+    "takenAfter": "2025-07-01T00:00:00.000Z",
+    "takenBefore": "2025-07-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Lina"]
+  },
+  "pets-27": {
+    "city": "Montreal",
+    "takenAfter": "2025-07-01T00:00:00.000Z",
+    "takenBefore": "2025-07-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Poppy"]
+  },
+  "favorite-video-27": {
+    "city": "Montreal",
+    "takenAfter": "2025-07-01T00:00:00.000Z",
+    "takenBefore": "2025-07-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-27": {
+    "city": "Montreal",
+    "takenAfter": "2025-07-01T00:00:00.000Z",
+    "takenBefore": "2025-07-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-27": {
+    "city": "Montreal",
+    "type": "IMAGE",
+    "ocr": "Life jackets required"
+  },
+  "spoken-27": {
+    "city": "Montreal",
+    "type": "VIDEO",
+    "spoken": "paddle to the left"
+  },
+  "description-27": {
+    "city": "Montreal",
+    "type": "IMAGE",
+    "description": "yellow kayak drifting past reeds"
+  },
+  "people-28": {
+    "city": "Quebec",
+    "takenAfter": "2025-08-01T00:00:00.000Z",
+    "takenBefore": "2025-08-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Omar"]
+  },
+  "pets-28": {
+    "city": "Quebec",
+    "takenAfter": "2025-08-01T00:00:00.000Z",
+    "takenBefore": "2025-08-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Maple"]
+  },
+  "favorite-video-28": {
+    "city": "Quebec",
+    "takenAfter": "2025-08-01T00:00:00.000Z",
+    "takenBefore": "2025-08-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-28": {
+    "city": "Quebec",
+    "takenAfter": "2025-08-01T00:00:00.000Z",
+    "takenBefore": "2025-08-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-28": {
+    "city": "Quebec",
+    "type": "IMAGE",
+    "ocr": "Artist talk upstairs"
+  },
+  "spoken-28": {
+    "city": "Quebec",
+    "type": "VIDEO",
+    "spoken": "that is a watercolor"
+  },
+  "description-28": {
+    "city": "Quebec",
+    "type": "IMAGE",
+    "description": "watercolor landscape in a white frame"
+  },
+  "people-29": {
+    "city": "Toronto",
+    "takenAfter": "2025-09-01T00:00:00.000Z",
+    "takenBefore": "2025-09-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Felix"]
+  },
+  "pets-29": {
+    "city": "Toronto",
+    "takenAfter": "2025-09-01T00:00:00.000Z",
+    "takenBefore": "2025-09-30T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Clover"]
+  },
+  "favorite-video-29": {
+    "city": "Toronto",
+    "takenAfter": "2025-09-01T00:00:00.000Z",
+    "takenBefore": "2025-09-30T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-29": {
+    "city": "Toronto",
+    "takenAfter": "2025-09-01T00:00:00.000Z",
+    "takenBefore": "2025-09-30T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-29": {
+    "city": "Toronto",
+    "type": "IMAGE",
+    "ocr": "No outside drinks"
+  },
+  "spoken-29": {
+    "city": "Toronto",
+    "type": "VIDEO",
+    "spoken": "this is my favorite song"
+  },
+  "description-29": {
+    "city": "Toronto",
+    "type": "IMAGE",
+    "description": "guitar player in a green jacket"
+  },
+  "people-30": {
+    "city": "Ottawa",
+    "takenAfter": "2025-10-01T00:00:00.000Z",
+    "takenBefore": "2025-10-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "people": ["Nora"]
+  },
+  "pets-30": {
+    "city": "Ottawa",
+    "takenAfter": "2025-10-01T00:00:00.000Z",
+    "takenBefore": "2025-10-31T23:59:59.999Z",
+    "type": "IMAGE",
+    "pets": ["Ginger"]
+  },
+  "favorite-video-30": {
+    "city": "Ottawa",
+    "takenAfter": "2025-10-01T00:00:00.000Z",
+    "takenBefore": "2025-10-31T23:59:59.999Z",
+    "type": "VIDEO",
+    "favorite": true
+  },
+  "place-date-30": {
+    "city": "Ottawa",
+    "takenAfter": "2025-10-01T00:00:00.000Z",
+    "takenBefore": "2025-10-31T23:59:59.999Z",
+    "type": "IMAGE"
+  },
+  "ocr-30": {
+    "city": "Ottawa",
+    "type": "IMAGE",
+    "ocr": "Heavy duty shelving"
+  },
+  "spoken-30": {
+    "city": "Ottawa",
+    "type": "VIDEO",
+    "spoken": "put the paint upstairs"
+  },
+  "description-30": {
+    "city": "Ottawa",
+    "type": "IMAGE",
+    "description": "paint cans on metal shelving"
+  },
+  "missing-place": {
+    "type": "IMAGE",
+    "city": "Whitehorse"
+  },
+  "missing-text": {
+    "type": "IMAGE",
+    "ocr": "Moon base gate 79"
+  },
+  "missing-dialogue": {
+    "type": "VIDEO",
+    "spoken": "the carousel is closed"
+  }
+}

@@ -30,6 +30,7 @@
     "test": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && vitest --config test/vitest.config.mjs",
     "test:cov": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && vitest --config test/vitest.config.mjs --coverage",
     "test:runtime": "pnpm run build && node --test test/runtime/*.test.mjs",
+    "test:assistant-eval": "pnpm run test:medium --run test/medium/specs/services/assistant-eval.spec.ts",
     "test:medium": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && vitest --config test/vitest.config.medium.mjs",
     "test:model-mirror": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && vitest run --config test/vitest.config.model-mirror.mjs",
     "migrations:debug": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations generate --debug",
