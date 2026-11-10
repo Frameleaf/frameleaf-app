@@ -16,7 +16,8 @@ import { init } from 'svelte-i18n';
  * implementation and every later animation (toasts, transitions) would get `undefined` back.
  */
 const animateAtOnce = Object.assign(
-  function animate(): Animation {
+  function animate(this: Element): Animation {
+    const element = this;
     let handler: ((event: AnimationPlaybackEvent) => void) | null = null;
     return {
       cancel: () => {},
@@ -34,6 +35,11 @@ const animateAtOnce = Object.assign(
         handler = next;
         if (next) {
           queueMicrotask(() => {
+            // A spec file's window can be torn down before this runs; finishing then would dispatch
+            // a CustomEvent from the new window on an element of the old one, which throws.
+            if (element.ownerDocument?.defaultView?.Event !== globalThis.Event) {
+              return;
+            }
             if (handler === next) {
               next({} as AnimationPlaybackEvent);
             }
