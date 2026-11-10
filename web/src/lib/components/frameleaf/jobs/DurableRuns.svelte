@@ -416,7 +416,7 @@
     padding: 7px 0;
     border-top: 1px solid var(--fl-border);
     font-weight: inherit;
-    text-align: left;
+    text-align: start;
   }
   .nights thead th {
     border-top: 0;
