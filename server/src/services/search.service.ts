@@ -699,6 +699,11 @@ export class SearchService extends BaseService {
     };
   }
 
+  /** FL-885: the rule planner, for the Library Assistant's fallback. The same plan `askSearch` runs. */
+  planAskSearch(auth: AuthDto, query: string, size: number) {
+    return this.buildAskSearchPlan(auth, query, { size });
+  }
+
   private async buildAskSearchPlan(auth: AuthDto, query: string, pagination: { page?: number; size: number }) {
     const normalizedQuery = query.trim().replaceAll(/\s+/g, ' ');
     const lower = normalizedQuery.toLowerCase();

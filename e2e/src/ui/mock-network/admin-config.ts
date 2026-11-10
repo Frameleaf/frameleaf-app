@@ -304,6 +304,11 @@ export const adminConfigDefaults = {
       enabled: true,
       maxResults: 100,
     },
+    assistant: {
+      enabled: true,
+      maxResults: 100,
+      planner: false,
+    },
   },
   storageTemplate: {
     enabled: false,

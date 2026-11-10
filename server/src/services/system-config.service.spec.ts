@@ -86,6 +86,11 @@ const updatedConfig = Object.freeze<SystemConfig>({
       enabled: true,
       maxResults: 100,
     },
+    assistant: {
+      enabled: true,
+      maxResults: 100,
+      planner: false,
+    },
   },
   ffmpeg: {
     crf: 30,

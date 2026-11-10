@@ -645,6 +645,17 @@
     "minimum": 1,
     "maximum": 1000
   },
+  "localFeatures.assistant.enabled": {
+    "type": "boolean"
+  },
+  "localFeatures.assistant.maxResults": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 500
+  },
+  "localFeatures.assistant.planner": {
+    "type": "boolean"
+  },
   "logging.enabled": {
     "type": "boolean"
   },

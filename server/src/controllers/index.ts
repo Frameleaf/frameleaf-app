@@ -19,6 +19,7 @@ import { AssetRestorationController } from 'src/controllers/asset-restoration.co
 import { AssetSourceController } from 'src/controllers/asset-source.controller.js';
 import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
 import { AssetController } from 'src/controllers/asset.controller.js';
+import { AssistantController } from 'src/controllers/assistant.controller.js';
 import { AttentionController } from 'src/controllers/attention.controller.js';
 import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
@@ -197,6 +198,7 @@ export const controllers = [
   ApiKeyController,
   ActivityController,
   AlbumController,
+  AssistantController,
   AlbumSuggestionController,
   AppController,
   ArchiveOperationController,

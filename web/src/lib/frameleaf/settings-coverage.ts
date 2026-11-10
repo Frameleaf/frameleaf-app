@@ -690,6 +690,24 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'askSearch.maxResults',
   },
   {
+    pattern: 'localFeatures.assistant.enabled',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
+    evidence: 'assistant.enabled',
+  },
+  {
+    pattern: 'localFeatures.assistant.maxResults',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
+    evidence: 'assistant.maxResults',
+  },
+  {
+    pattern: 'localFeatures.assistant.planner',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/intelligence/VisualSearch.svelte',
+    evidence: 'assistant.planner',
+  },
+  {
     pattern: 'logging.enabled',
     kind: 'control',
     file: 'src/routes/admin/system-settings/LoggingSettings.svelte',

@@ -260,6 +260,8 @@ export class ServerService extends BaseService {
       smartSearch: isSmartSearchEnabled(machineLearning),
       // FL-31: Ask Search answers through smart search, so it needs both the setting and smart search
       askSearch: localFeatures.askSearch.enabled && isSmartSearchEnabled(machineLearning),
+      // FL-885: the assistant's rule planner answers without smart search, so only its own setting counts
+      assistant: localFeatures.assistant.enabled,
       facialRecognition: isFacialRecognitionEnabled(machineLearning),
       duplicateDetection: isDuplicateDetectionEnabled(machineLearning),
       map: map.enabled,
