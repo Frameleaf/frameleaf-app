@@ -6010,6 +6010,23 @@ export type AssetMetadataBulkResponseDto = {
         [key: string]: any;
     };
 };
+export type ProcessingFailureResponseDto = {
+    assetId: string;
+    attempts: number;
+    cause: string;
+    fileName: string;
+    lastFailedAt: string;
+    ownerId: string;
+    ownerName: string;
+    quarantinedAt: string | null;
+    step: ProcessingFailureStep;
+};
+export type ProcessingFailureActionDto = {
+    items: {
+        assetId: string;
+        step: ProcessingFailureStep;
+    }[];
+};
 export type SafetyLookupDto = {
     /** SHA-256 hex hashes; inaccessible and foreign assets are omitted, including for administrators */
     hashes: string[];
@@ -9973,6 +9990,8 @@ export type QueueCommandDto = {
     command: QueueCommand;
     /** Force the command execution (if applicable) */
     force?: boolean;
+    /** Include quarantined assets in a forced processing run */
+    includeSetAside?: boolean;
 };
 export type LibraryScanResponseDto = {
     /** New items indexed */
@@ -20347,6 +20366,11 @@ export type PreservationRestoreItemsQueryDto = {
     skip?: number;
     take?: number;
 };
+export type ProcessingFailureQueryDto = {
+    skip?: number;
+    take?: number;
+    userId?: string;
+};
 export type PushKnownEventsDto = {
     events: PushEventType[];
 };
@@ -25227,6 +25251,49 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
         ...opts,
         method: "PUT",
         body: assetMetadataBulkUpsertDto
+    })));
+}
+/**
+ * List asset processing failures
+ */
+export function getProcessingFailures({ skip, take, userId }: {
+    skip?: number;
+    take?: number;
+    userId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ProcessingFailureResponseDto[];
+    }>(`/assets/processing-failures${QS.query(QS.explode({
+        skip,
+        take,
+        userId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Dismiss asset processing failures
+ */
+export function dismissProcessingFailures({ processingFailureActionDto }: {
+    processingFailureActionDto: ProcessingFailureActionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assets/processing-failures/dismiss", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: processingFailureActionDto
+    })));
+}
+/**
+ * Retry asset processing failures
+ */
+export function retryProcessingFailures({ processingFailureActionDto }: {
+    processingFailureActionDto: ProcessingFailureActionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assets/processing-failures/retry", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: processingFailureActionDto
     })));
 }
 /**
@@ -39462,6 +39529,14 @@ export enum AssetJobName {
     RefreshOcr = "refresh-ocr",
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
+}
+export enum ProcessingFailureStep {
+    AssetExtractMetadata = "AssetExtractMetadata",
+    AssetGenerateThumbnails = "AssetGenerateThumbnails",
+    AssetEncodeVideo = "AssetEncodeVideo",
+    SmartSearch = "SmartSearch",
+    AssetDetectFaces = "AssetDetectFaces",
+    Ocr = "Ocr"
 }
 export enum State2 {
     Unavailable = "unavailable",

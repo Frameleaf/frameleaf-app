@@ -15653,6 +15653,183 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/processing-failures": {
+      "get": {
+        "operationId": "getProcessingFailures",
+        "parameters": [
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProcessingFailureResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List asset processing failures",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/processing-failures/dismiss": {
+      "post": {
+        "operationId": "dismissProcessingFailures",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessingFailureActionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss asset processing failures",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/processing-failures/retry": {
+      "post": {
+        "operationId": "retryProcessingFailures",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessingFailureActionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry asset processing failures",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/safety/lookup": {
       "post": {
         "description": "Up to 2000 hashes. Current own accessible assets only, including for admins; shared and partner assets omitted. Completed membership and GET + SHA-256 verification are separate facts. No bucket credentials/settings.",
@@ -133006,6 +133183,123 @@
         ],
         "type": "object"
       },
+      "ProcessingFailureActionDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "step": {
+                  "$ref": "#/components/schemas/ProcessingFailureStep"
+                }
+              },
+              "required": [
+                "assetId",
+                "step"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ProcessingFailureQueryDto": {
+        "properties": {
+          "skip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProcessingFailureResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "attempts": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cause": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "lastFailedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "quarantinedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "step": {
+            "$ref": "#/components/schemas/ProcessingFailureStep"
+          }
+        },
+        "required": [
+          "assetId",
+          "attempts",
+          "cause",
+          "fileName",
+          "lastFailedAt",
+          "ownerId",
+          "ownerName",
+          "quarantinedAt",
+          "step"
+        ],
+        "type": "object"
+      },
+      "ProcessingFailureStep": {
+        "enum": [
+          "AssetExtractMetadata",
+          "AssetGenerateThumbnails",
+          "AssetEncodeVideo",
+          "SmartSearch",
+          "AssetDetectFaces",
+          "Ocr"
+        ],
+        "type": "string"
+      },
       "ProcessingProvenanceEvidence": {
         "enum": [
           "client-reported"
@@ -133670,6 +133964,10 @@
           },
           "force": {
             "description": "Force the command execution (if applicable)",
+            "type": "boolean"
+          },
+          "includeSetAside": {
+            "description": "Include quarantined assets in a forced processing run",
             "type": "boolean"
           }
         },

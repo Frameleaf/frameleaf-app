@@ -87,6 +87,7 @@ import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetOriginalTable } from 'src/schema/tables/asset-original.table.js';
 import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
+import { AssetProcessingFailureTable } from 'src/schema/tables/asset-processing-failure.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
@@ -365,6 +366,7 @@ export class ImmichDatabase {
     AssetMetadataTable,
     AssetMetadataAuditTable,
     AssetJobStatusTable,
+    AssetProcessingFailureTable,
     AssetKeyframeTable,
     AssetLockTable,
     LockedEncryptionTable,
@@ -616,6 +618,7 @@ export interface DB extends QueueDatabase {
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
+  asset_processing_failure: AssetProcessingFailureTable;
   photo_location_scan: PhotoLocationScanTable;
   photo_location_estimate: PhotoLocationEstimateTable;
   photo_location_scan_item: PhotoLocationScanItemTable;
