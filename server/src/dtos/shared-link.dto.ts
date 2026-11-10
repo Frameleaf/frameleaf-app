@@ -4,7 +4,7 @@ import { SharedLink } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseSchema, mapAlbum } from 'src/dtos/album.dto.js';
 import { AssetResponseSchema, mapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetType, SharedLinkType, SharedLinkTypeSchema } from 'src/enum.js';
+import { SharedLinkType, SharedLinkTypeSchema } from 'src/enum.js';
 import { isoDatetimeToDate } from 'src/validation.js';
 
 const SharedLinkSearchSchema = z
@@ -68,17 +68,6 @@ const SharedLinkEditSchema = z
   })
   .meta({ id: 'SharedLinkEditDto' });
 
-/** FL-788: which size a direct image link serves; the preview unless the full-size copy is asked for. */
-const SharedLinkDirectImageSchema = z
-  .object({
-    size: z
-      .enum(['preview', 'fullsize'])
-      .optional()
-      .describe('Image size: preview (default) or fullsize')
-      .meta({ id: 'SharedLinkDirectImageSize' }),
-  })
-  .meta({ id: 'SharedLinkDirectImageDto' });
-
 const SharedLinkLoginSchema = z
   .object({
     password: z.string().describe('Shared link password').meta({ example: 'password' }),
@@ -134,13 +123,6 @@ const SharedLinkResponseSchema = z
     owner: SharedLinkOwnerResponseSchema.optional().describe(
       'Display name of the user who created the link, for "Shared by" on the public page',
     ),
-    directUrl: z
-      .string()
-      .nullable()
-      .describe(
-        "FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root (/api/shared-links/direct/...).",
-      )
-      .meta(new HistoryBuilder().added('v3.4.0').getExtensions()),
   })
   .describe('Shared link response')
   .meta({ id: 'SharedLinkResponseDto' });
@@ -148,7 +130,6 @@ const SharedLinkResponseSchema = z
 export class SharedLinkSearchDto extends createZodDto(SharedLinkSearchSchema) {}
 export class SharedLinkCreateDto extends createZodDto(SharedLinkCreateSchema) {}
 export class SharedLinkEditDto extends createZodDto(SharedLinkEditSchema) {}
-export class SharedLinkDirectImageDto extends createZodDto(SharedLinkDirectImageSchema) {}
 export class SharedLinkLoginDto extends createZodDto(SharedLinkLoginSchema) {}
 export class SharedLinkResponseDto extends createZodDto(SharedLinkResponseSchema) {}
 
@@ -174,41 +155,6 @@ export const sharedLinkUrl = (
     ? `/s/${encodeURIComponent(sharedLink.slug)}`
     : `/share/${sharedLink.key.toString('base64url')}`;
   return `${base}${path}`;
-};
-
-/**
- * FL-788: whether a link may serve its photo at a direct image address. Only a link to exactly one
- * photo qualifies, and only while anyone holding the link could already download it: no password,
- * downloads allowed (which a link that hides metadata never does) and not expired. Album links and
- * videos never qualify. Locked and deleted items are already left out of a link's assets.
- */
-export const isDirectImageLink = (
-  sharedLink: Pick<SharedLink, 'type' | 'password' | 'allowDownload' | 'expiresAt' | 'assets' | 'assetCount'>,
-  now = new Date(),
-): boolean => {
-  if (
-    sharedLink.type !== SharedLinkType.Individual ||
-    sharedLink.password ||
-    !sharedLink.allowDownload ||
-    (sharedLink.expiresAt && new Date(sharedLink.expiresAt) <= now)
-  ) {
-    return false;
-  }
-  const assets = sharedLink.assets ?? [];
-  const count = sharedLink.assetCount ?? assets.length;
-  return count === 1 && assets.length === 1 && assets[0].type === AssetType.Image;
-};
-
-/** FL-788: the path of a link's direct image, by its slug when it has one, otherwise by its key. */
-export const sharedLinkDirectPath = (sharedLink: Pick<SharedLink, 'key' | 'slug'>) =>
-  `/api/shared-links/direct/${encodeURIComponent(sharedLink.slug || sharedLink.key.toString('base64url'))}.jpg`;
-
-const sharedLinkDirectUrl = (sharedLink: SharedLink, externalDomain: string | undefined): string | null => {
-  if (!isDirectImageLink(sharedLink)) {
-    return null;
-  }
-  const base = externalDomain?.trim().replace(/\/+$/, '') ?? '';
-  return `${base}${sharedLinkDirectPath(sharedLink)}`;
 };
 
 const SHARED_LINK_COVER_ASSETS = 4;
@@ -248,7 +194,6 @@ export function mapSharedLink(
     showMetadata: sharedLink.showExif,
     slug: sharedLink.slug,
     url: sharedLinkUrl(sharedLink, options.externalDomain),
-    directUrl: sharedLinkDirectUrl(sharedLink, options.externalDomain),
     // pick the name explicitly so nothing else about the owner can ride along
     owner: sharedLink.owner ? { name: sharedLink.owner.name } : undefined,
   };

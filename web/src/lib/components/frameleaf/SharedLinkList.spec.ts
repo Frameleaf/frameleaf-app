@@ -12,7 +12,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { addMessages } from 'svelte-i18n';
 import { replaceState } from '$app/navigation';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
-import { copyToClipboard, getAssetMediaUrl } from '$lib/utils';
+import { getAssetMediaUrl } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../i18n/en.json';
 import SharedLinkList from './SharedLinkList.svelte';
@@ -240,28 +240,6 @@ describe('SharedLinkList', () => {
     expect(screen.getByRole('button', { name: 'Open public page for Open link' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy link for Open link' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'QR code for Open link' })).toBeInTheDocument();
-  });
-
-  it('offers the image link only on a link that has one (FL-788)', async () => {
-    const photo = sharedLinkFactory.build({
-      type: SharedLinkType.Individual,
-      description: 'Lake morning',
-      expiresAt: null,
-      directUrl: '/api/shared-links/direct/lake-morning.jpg',
-    });
-    const album = sharedLinkFactory.build({ type: SharedLinkType.Individual, description: 'Two photos' });
-    vi.mocked(getAllSharedLinks).mockResolvedValue([photo, album]);
-    vi.mocked(copyToClipboard).mockResolvedValue(true);
-
-    render(SharedLinkList);
-    await screen.findByText('Lake morning');
-
-    const buttons = screen.getAllByRole('button', { name: en.frameleaf_sharing.copy_image_link });
-    expect(buttons).toHaveLength(1);
-    await fireEvent.click(buttons[0]);
-
-    expect(copyToClipboard).toHaveBeenCalledWith('http://localhost:2283/api/shared-links/direct/lake-morning.jpg');
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^Image link for .+ copied\.$/));
   });
 
   describe('card covers (AL-21)', () => {

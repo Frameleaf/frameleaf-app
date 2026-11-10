@@ -2,7 +2,6 @@ import { SharedLinkType, type ServerConfigDto } from '@frameleaf/sdk';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import {
-  asDirectImageUrl,
   asUrl,
   handleCreateSharedLink,
   handleUpdateSharedLink,
@@ -34,19 +33,6 @@ describe('SharedLinkService', () => {
       expect(asUrl(sharedLinkFactory.build({ slug: 'foo', url: 'https://photos.example.com/s/foo' }))).toBe(
         'https://photos.example.com/s/foo',
       );
-    });
-  });
-  describe('asDirectImageUrl (FL-788)', () => {
-    it("puts a root path after the server's address and keeps an absolute one", () => {
-      expect(asDirectImageUrl(sharedLinkFactory.build({ directUrl: '/api/shared-links/direct/a.jpg' }))).toBe(
-        'http://localhost:2283/api/shared-links/direct/a.jpg',
-      );
-      expect(
-        asDirectImageUrl(
-          sharedLinkFactory.build({ directUrl: 'https://photos.example.com/api/shared-links/direct/a.jpg' }),
-        ),
-      ).toBe('https://photos.example.com/api/shared-links/direct/a.jpg');
-      expect(asDirectImageUrl(sharedLinkFactory.build({ directUrl: null }))).toBe('');
     });
   });
   describe('creating a link', () => {
