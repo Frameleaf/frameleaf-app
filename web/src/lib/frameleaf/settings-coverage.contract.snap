@@ -604,6 +604,12 @@
   "library.watch.enabled": {
     "type": "boolean"
   },
+  "libraryCare.askPhones": {
+    "type": "boolean"
+  },
+  "libraryCare.autoRepair": {
+    "type": "boolean"
+  },
   "libraryCare.checksumScan": {
     "type": "boolean"
   },
@@ -904,6 +910,9 @@
   "metadata.faces.import": {
     "type": "boolean"
   },
+  "metrics.enabled": {
+    "type": "boolean"
+  },
   "newVersionCheck.channel": {
     "type": "string",
     "enum": [
@@ -940,6 +949,9 @@
     "type": "boolean"
   },
   "nightlyTasks.quietHours": {
+    "type": "boolean"
+  },
+  "nightlyTasks.reprocessUnfinished": {
     "type": "boolean"
   },
   "nightlyTasks.startTime": {
@@ -1164,6 +1176,9 @@
     "type": "boolean"
   },
   "preferences.emailNotifications.enabled": {
+    "type": "boolean"
+  },
+  "preferences.emailNotifications.newSignIn": {
     "type": "boolean"
   },
   "preferences.expectedRevision": {

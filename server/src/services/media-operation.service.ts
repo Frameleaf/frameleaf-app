@@ -298,50 +298,60 @@ export const studioWorkOf = (operation: MediaOperation): string | null => {
 };
 
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
-export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()): MediaOperationDto => {
+export const mapOperation = (
+  operation: MediaOperation,
+  hidden: ReadonlySet<string> = new Set(),
+  privatePreservation = false,
+): MediaOperationDto => {
   // A shared presenter must never turn an internal job into an unsupported legacy enum value.
   if (!isPublicMediaOperationKind(operation.kind)) {
     throw new NotFoundException('Media operation not found');
   }
-  const privateWeekly = isPrivateICloudOperation(operation);
+  const privateDetails = isPrivateICloudOperation(operation) || privatePreservation;
   return {
     id: operation.id,
     kind: operation.kind,
     status: operation.status as MediaOperationStatus,
     destination: operation.destination as MediaOperationDestination,
-    destinationDetail: privateWeekly ? null : operation.destinationDetail,
-    label: privateWeekly ? 'iCloud integrity verification' : isWithheld(operation, hidden) ? '' : operation.label,
-    withheld: privateWeekly || isWithheld(operation, hidden),
-    assetId: privateWeekly ? null : unlessHidden(operation.assetId, hidden),
-    resultAssetId: privateWeekly ? null : unlessHidden(operation.resultAssetId, hidden),
-    retryOfId: privateWeekly ? null : operation.retryOfId,
-    projectId: privateWeekly ? null : operation.projectId,
-    revisionId: privateWeekly ? null : operation.revisionId,
-    settings: privateWeekly ? {} : asObject(operation.settings),
-    estimate: privateWeekly ? null : mapEstimate(operation.estimate),
-    bulk: privateWeekly ? null : mapBulkSummary(operation),
-    cloudJob: privateWeekly ? null : cloudMlJobActivity(operation),
-    studioWork: studioWorkOf(operation),
-    renderProgress: privateWeekly ? null : studioRenderProgressOf(operation),
-    encryptedWithOlderKey: privateWeekly ? null : encryptedWithOlderKeyOf(operation),
-    progress: privateWeekly ? 0 : operation.progress,
-    processedUnits: privateWeekly ? '0' : String(operation.processedUnits ?? 0),
+    destinationDetail: privateDetails ? null : operation.destinationDetail,
+    label: privatePreservation
+      ? ''
+      : privateDetails
+        ? 'iCloud integrity verification'
+        : isWithheld(operation, hidden)
+          ? ''
+          : operation.label,
+    withheld: privateDetails || isWithheld(operation, hidden),
+    assetId: privateDetails ? null : unlessHidden(operation.assetId, hidden),
+    resultAssetId: privateDetails ? null : unlessHidden(operation.resultAssetId, hidden),
+    retryOfId: privateDetails ? null : operation.retryOfId,
+    projectId: privateDetails ? null : operation.projectId,
+    revisionId: privateDetails ? null : operation.revisionId,
+    settings: privateDetails ? {} : asObject(operation.settings),
+    estimate: privateDetails ? null : mapEstimate(operation.estimate),
+    bulk: privateDetails ? null : mapBulkSummary(operation),
+    cloudJob: privateDetails ? null : cloudMlJobActivity(operation),
+    studioWork: privateDetails ? null : studioWorkOf(operation),
+    renderProgress: privateDetails ? null : studioRenderProgressOf(operation),
+    encryptedWithOlderKey: privateDetails ? null : encryptedWithOlderKeyOf(operation),
+    progress: privateDetails ? 0 : operation.progress,
+    processedUnits: privateDetails ? '0' : String(operation.processedUnits ?? 0),
     totalUnits:
-      privateWeekly || operation.totalUnits === null || operation.totalUnits === undefined
+      privateDetails || operation.totalUnits === null || operation.totalUnits === undefined
         ? null
         : String(operation.totalUnits),
     attempt: operation.attempt,
     maxAttempts: operation.maxAttempts,
     autoRetries: operation.autoRetries ?? 0,
     retryAt: asIso(operation.retryAt),
-    ...(privateWeekly ? NO_ADMISSION_REFUSAL : admissionRefusalOf(operation)),
-    error: privateWeekly
+    ...(privateDetails ? NO_ADMISSION_REFUSAL : admissionRefusalOf(operation)),
+    error: privateDetails
       ? null
       : operation.error &&
           [MediaOperationKind.StudioExport, MediaOperationKind.StudioExportPublish].includes(operation.kind)
         ? studioExportFailure(operation.errorCode)
         : operation.error,
-    errorCode: privateWeekly ? null : operation.errorCode,
+    errorCode: privateDetails ? null : operation.errorCode,
     cancelRequestedAt: asIso(operation.cancelRequestedAt),
     cancelAcknowledgedAt: asIso(operation.cancelAcknowledgedAt),
     pausable: isPausableMediaOperationKind(operation.kind as MediaOperationKind) && cloudMlJobCanPause(operation),
@@ -406,7 +416,8 @@ export class MediaOperationService {
     });
 
     const hidden = await this.hiddenLockedIds(auth, items);
-    return { items: items.map((item) => mapOperation(item, hidden)), total };
+    const restricted = await this.restrictedPreservationIds(auth, items);
+    return { items: items.map((item) => mapOperation(item, hidden, restricted.has(item.id))), total };
   }
 
   /**
@@ -425,19 +436,27 @@ export class MediaOperationService {
     });
 
     const hidden = await this.hiddenLockedIds(auth, items);
-    return items.map((item) => mapOperation(item, hidden));
+    const restricted = await this.restrictedPreservationIds(auth, items);
+    return items.map((item) => mapOperation(item, hidden, restricted.has(item.id)));
   }
 
   async get(auth: AuthDto, id: string): Promise<MediaOperationDetailDto> {
     const operation = await this.findOwned(auth, id);
     const privateWeekly = isPrivateICloudOperation(operation);
-    const checkpoints = privateWeekly ? [] : await this.repository.getCheckpoints(operation.id);
+    const restricted = (await this.restrictedPreservationIds(auth, [operation])).has(operation.id);
+    const checkpoints = privateWeekly || restricted ? [] : await this.repository.getCheckpoints(operation.id);
     const hidden = await this.hiddenLockedIds(auth, [operation]);
 
     return {
-      ...mapOperation(operation, hidden),
+      ...mapOperation(operation, hidden, restricted),
       // A job about a Locked item names it throughout its snapshot; a locked session sees none of it.
-      snapshot: privateWeekly ? mapSnapshot(operation) : isWithheld(operation, hidden) ? {} : mapSnapshot(operation),
+      snapshot: restricted
+        ? {}
+        : privateWeekly
+          ? mapSnapshot(operation)
+          : isWithheld(operation, hidden)
+            ? {}
+            : mapSnapshot(operation),
       checkpoints: checkpoints.map((checkpoint) => mapCheckpoint(checkpoint)),
       bulkItems: privateWeekly ? [] : mapBulkItems(operation, hidden),
       bulkRetryPending: privateWeekly ? [] : mapBulkRetryPending(operation, hidden),
@@ -1155,7 +1174,31 @@ export class MediaOperationService {
   }
 
   private async present(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
-    return mapOperation(operation, await this.hiddenLockedIds(auth, [operation]));
+    return mapOperation(
+      operation,
+      await this.hiddenLockedIds(auth, [operation]),
+      (await this.restrictedPreservationIds(auth, [operation])).has(operation.id),
+    );
+  }
+
+  /** Preservation jobs have no assetId; their package and restore rows carry the privacy boundary. */
+  private async restrictedPreservationIds(auth: AuthDto, operations: MediaOperation[]): Promise<Set<string>> {
+    if (getLockedOwnerId(auth)) return new Set();
+    const packages = new Map<string, string>();
+    const restricted = new Set<string>();
+    for (const operation of operations) {
+      if (!isPreservationKind(operation.kind)) continue;
+      const packageId = asObject(operation.snapshot).packageId;
+      if (typeof packageId === 'string' && UUID_PATTERN.test(packageId)) packages.set(operation.id, packageId);
+      else restricted.add(operation.id);
+    }
+    if (packages.size > 0) {
+      const privatePackages = await this.preservation.restrictedPackageIds([...new Set(packages.values())]);
+      for (const [operationId, packageId] of packages) {
+        if (privatePackages.has(packageId)) restricted.add(operationId);
+      }
+    }
+    return restricted;
   }
 
   private async requireUnlockedFor(auth: AuthDto, assetIds: string[]): Promise<void> {

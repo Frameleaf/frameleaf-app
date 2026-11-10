@@ -364,6 +364,12 @@ const hostSchema = z.object({
   root: z.boolean(),
 });
 
+// FL-428: only limits visible to the worker, not host capacity/free memory or admission proof.
+const mlResourceLimitSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('limited'), value: z.number().min(0).max(Number.MAX_SAFE_INTEGER) }),
+  z.object({ status: z.enum(['unlimited', 'unavailable']), value: z.null() }),
+]);
+
 /** FL-159: what the container reached for AI work (`machine-learning/frameleaf_ml/hardware_report.py`). */
 const mlContainerSchema = z.object({
   image: z.string().max(40),
@@ -388,6 +394,7 @@ const mlContainerSchema = z.object({
   }),
   // Absent from an older ML image; the check then reports those facts as not known.
   host: hostSchema.nullable().optional(),
+  resources: z.object({ memoryBytes: mlResourceLimitSchema, cpuCores: mlResourceLimitSchema }).optional(),
   computeCapability: z.string().max(10).nullable().optional(),
   rocm: z
     .object({ gfxTargets: z.array(z.string().max(20)).max(16), hsaOverride: z.string().max(20).nullable() })
@@ -679,6 +686,37 @@ export class MachineLearningRepository implements RestorationInference {
   /** The deployment's own ML URLs from the admin configuration; these back `local` destinations. */
   getLocalUrls(): string[] {
     return [...this.config.urls];
+  }
+
+  /** Only the bundled or loopback worker can supply diagnostics for this server's log. */
+  async readBundledWorkerLogs(since: string): Promise<string | undefined> {
+    const authToken = process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim();
+    const endpoint = this.getLocalUrls()
+      .map((url) => URL.parse(url))
+      .find(
+        (url) =>
+          url &&
+          (url.protocol === 'https:' || (!authToken && url.protocol === 'http:')) &&
+          !url.username &&
+          !url.password &&
+          ['frameleaf-machine-learning', 'immich-machine-learning', '127.0.0.1', '[::1]', 'localhost'].includes(
+            url.hostname,
+          ),
+      );
+    if (!endpoint) return;
+    const url = new URL(endpoint.origin);
+    url.pathname = `${endpoint.pathname.replace(/\/$/u, '')}/logs`;
+    url.searchParams.set('since', since);
+    const { response, body } = await fetchJobText(
+      url,
+      {
+        redirect: 'error',
+        headers: this.authHeaders({ url: endpoint.origin, authToken }),
+      },
+      3000,
+      64 * 1024 ** 2,
+    );
+    return response.ok ? body : undefined;
   }
 
   /** Semantic proposals are instance-local only, independent of Cloud destinations and routing. */

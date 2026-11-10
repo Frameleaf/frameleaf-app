@@ -38,6 +38,7 @@
     AlbumChangeRunKind,
     AnalyticsRange,
     createJob,
+    FileProblemTab,
     getAlbumCleanupStatus,
     getLatestAlbumChangeRun,
     undoLatestAlbumChangeRun,
@@ -312,6 +313,12 @@
       : { tone: 'good', value: $t('frameleaf_carehome_reading_done'), note: $t('frameleaf_carehome_reading_none') },
   );
 
+  /**
+   * FL-1338: a member's own damaged and missing files are on Damaged and missing files (Needs you). Things to fix
+   * and File checks are an administrator's pages, so a member never opens them.
+   */
+  const memberFiles = commandCenterUrl('care', 'files', { tab: FileProblemTab.Needs });
+
   /** What needs attention, one row per kind, each opening the place it is fixed. */
   const problems = $derived(
     [
@@ -322,7 +329,7 @@
         name: $t('frameleaf_carehome_problem_missing', { values: { count: missing } }),
         status: $t('frameleaf_carehome_problem_missing_status'),
         button: $t('frameleaf_carehome_find_them'),
-        href: isAdmin ? utilitiesUrl('missing-media', { from: 'care' }) : commandCenterUrl('care', 'repair'),
+        href: isAdmin ? utilitiesUrl('missing-media', { from: 'care' }) : memberFiles,
       },
       {
         id: 'damaged',
@@ -331,7 +338,7 @@
         name: $t('frameleaf_carehome_problem_damaged', { values: { count: damaged } }),
         status: $t('frameleaf_carehome_problem_damaged_status'),
         button: $t('frameleaf_carehome_review'),
-        href: isAdmin ? commandCenterUrl('care', 'integrity-checks') : commandCenterUrl('care', 'repair'),
+        href: isAdmin ? commandCenterUrl('care', 'integrity-checks') : memberFiles,
       },
       {
         id: 'stray',
@@ -589,7 +596,10 @@
         note={$t('frameleaf_carehome_row_fix_note')}
       >
         {#snippet action()}
-          <Button label={openLabel('frameleaf_carehome_row_fix')} onclick={() => open('repair')}>
+          <Button
+            label={openLabel('frameleaf_carehome_row_fix')}
+            onclick={() => (isAdmin ? open('repair') : goto(memberFiles))}
+          >
             {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
           </Button>
         {/snippet}

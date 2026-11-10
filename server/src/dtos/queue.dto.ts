@@ -19,6 +19,7 @@ const QueueCommandSchemaDto = z
   .object({
     command: QueueCommandSchema,
     force: z.boolean().optional().describe('Force the command execution (if applicable)'),
+    includeSetAside: z.boolean().optional().describe('Include quarantined assets in a forced processing run'),
   })
   .meta({ id: 'QueueCommandDto' });
 

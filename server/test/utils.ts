@@ -21,6 +21,7 @@ import { AuthGuard } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
@@ -65,6 +66,7 @@ import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
@@ -106,6 +108,7 @@ import { AuthService } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { LockedSealService } from 'src/services/locked-seal.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { RepositoryInterface } from 'src/types.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { renderSystemNotification } from 'src/utils/notification-locale.js';
@@ -278,6 +281,8 @@ export type ServiceOverrides = {
   access: AccessRepository;
   activity: ActivityRepository;
   adminAudit: AdminAuditRepository;
+  accountEvent: AccountEventRepository;
+  signInSecurity: Pick<SignInSecurityService, 'attempt' | 'failed' | 'succeeded' | 'signedIn'>;
   album: AlbumRepository;
   albumSummary: AlbumSummaryRepository;
   albumUser: AlbumUserRepository;
@@ -307,6 +312,8 @@ export type ServiceOverrides = {
   lockedKey: LockedKeyRepository;
   /** FL-721: not a BaseService dependency either; `LockedEncryptionService` takes it explicitly. */
   lockedEncryption: LockedEncryptionRepository;
+  /** FL-1337: not a BaseService dependency; `AssetService` and `AttentionService` take it explicitly. */
+  mediaHealth: MediaHealthRepository;
   /** FL-721: `LockedSealService` only. */
   lockedFile: LockedFileRepository;
   logger: LoggingRepository;
@@ -402,6 +409,9 @@ export const getMocks = () => {
     activity: automock(ActivityRepository),
     // recording an administrator's change is incidental to most tests (FL-76)
     adminAudit: automock(AdminAuditRepository, { strict: false }),
+    // FL-808: recording account activity is incidental to most tests
+    accountEvent: automock(AccountEventRepository, { strict: false }),
+    signInSecurity: newSignInSecurityMock(),
     album: automock(AlbumRepository, { args: [database], strict: false }),
     albumSummary: automock(AlbumSummaryRepository, { args: [database], strict: false }),
     albumUser: automock(AlbumUserRepository),
@@ -428,6 +438,7 @@ export const getMocks = () => {
     library: automock(LibraryRepository, { strict: false }),
     lockedKey: automock(LockedKeyRepository),
     lockedEncryption: automock(LockedEncryptionRepository, { args: [database], strict: false }),
+    mediaHealth: automock(MediaHealthRepository, { args: [database], strict: false }),
     lockedFile: automock(LockedFileRepository, { args: [database], strict: false }),
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
     map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
@@ -560,6 +571,15 @@ export const getMocks = () => {
   return mocks;
 };
 
+export const newSignInSecurityMock = () => ({
+  attempt: vitest.fn<SignInSecurityService['attempt']>(async (_kind, _principal, _details, verify) =>
+    verify(),
+  ) as Mocked<Pick<SignInSecurityService, 'attempt'>>['attempt'],
+  failed: vitest.fn<SignInSecurityService['failed']>(),
+  succeeded: vitest.fn<SignInSecurityService['succeeded']>(),
+  signedIn: vitest.fn<SignInSecurityService['signedIn']>(),
+});
+
 export const newTestService = <T extends BaseService>(
   Service: Constructor<T, BaseServiceArgs>,
   overrides: Partial<ServiceOverrides> = {},
@@ -571,6 +591,7 @@ export const newTestService = <T extends BaseService>(
     overrides.access || (mocks.access as IAccessRepository as AccessRepository),
     overrides.activity || (mocks.activity as As<ActivityRepository>),
     overrides.adminAudit || (mocks.adminAudit as As<AdminAuditRepository>),
+    overrides.accountEvent || (mocks.accountEvent as As<AccountEventRepository>),
     overrides.album || (mocks.album as As<AlbumRepository>),
     overrides.albumSummary || (mocks.albumSummary as As<AlbumSummaryRepository>),
     overrides.albumUser || (mocks.albumUser as As<AlbumUserRepository>),
@@ -653,6 +674,11 @@ export const newTestService = <T extends BaseService>(
   for (const { key, type } of properties) {
     if (type === LockedEncryptionService) {
       Object.assign(sut, { [key]: newLockedEncryptionService(mocks) });
+    } else if (type === SignInSecurityService) {
+      Object.assign(sut, { [key]: overrides.signInSecurity ?? mocks.signInSecurity });
+    }
+    if (type === MediaHealthRepository) {
+      Object.assign(sut, { [key]: mocks.mediaHealth });
     }
   }
 
@@ -853,5 +879,24 @@ export const expectLocalisedSystemNotices = (emit: { mock: { calls: unknown[][] 
     const supplied = { title: notice.title, body: event === 'AdminNotify' ? notice.description : notice.body };
     expect(notice.systemTemplate, `${event}: ${notice.title}`).toBeDefined();
     expect(renderSystemNotification(notice.systemTemplate, 'en', { title: '', body: '' })).toEqual(supplied);
+  }
+};
+
+/**
+ * FL-808: no account activity row holds a secret. Every value of every recorded row is checked
+ * against the secrets the test used and against anything that looks like a file path.
+ */
+export const expectNoSecretsInAccountEvents = (mock: { mock: { calls: unknown[][] } }, secrets: string[]) => {
+  expect(mock.mock.calls.length).toBeGreaterThan(0);
+  for (const [event] of mock.mock.calls) {
+    for (const value of Object.values(event as Record<string, unknown>)) {
+      if (typeof value !== 'string') {
+        continue;
+      }
+      for (const secret of secrets) {
+        expect(value).not.toContain(secret);
+      }
+      expect(value).not.toMatch(/^\/|\\|\/upload\//);
+    }
   }
 };

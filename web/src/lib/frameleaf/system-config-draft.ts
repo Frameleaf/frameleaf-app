@@ -38,13 +38,13 @@ export type ConfigConflict = {
 };
 
 /**
- * Values the server keeps on its own: the re-queue reminder bookkeeping and the "a credential is
- * stored" indicators (FL-67). A save never changes them, so they are never a change, a conflict or
- * journaled.
+ * Values the server keeps on its own. A save never changes them, so they are never a change,
+ * a conflict or journaled.
  */
 export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'machineLearning.imageDescription.pendingRequeueAt',
   'machineLearning.imageDescription.lastConfigChangeAt',
+  'metrics.enabled',
   'notifications.smtp.transport.passwordConfigured',
   'oauth.clientSecretConfigured',
 ]);
@@ -114,6 +114,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
 const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
   'libraryCare.livePhotoRepair': 'repair',
   'libraryCare.rawRecovery': 'repair',
+  // FL-1338: asking phones for lost photos is switched on Damaged and missing files
+  'libraryCare.askPhones': 'files',
   // FL-366: one look-alike switch on Duplicates drives both settings.
   'libraryCare.duplicateReview': 'duplicates',
   'machineLearning.duplicateDetection': 'duplicates',
@@ -350,6 +352,7 @@ export const isJournalSafe = (change: ConfigChange) =>
 export const redactConfigForExport = <T extends object>(config: T): T => {
   const next = cloneConfig(config) as Record<string, unknown>;
   delete next.revision;
+  delete next.metrics;
   for (const [path, value] of configLeaves(next)) {
     if (isServerManagedConfigPath(path)) {
       unset(next, path);

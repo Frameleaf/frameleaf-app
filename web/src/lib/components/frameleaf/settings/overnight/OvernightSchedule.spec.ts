@@ -31,6 +31,7 @@ const config = () => ({
     emptyTrash: true,
     databaseCleanup: true,
     missingThumbnails: true,
+    reprocessUnfinished: true,
     clusterNewFaces: true,
     generateMemories: true,
     syncQuotaUsage: true,
@@ -118,6 +119,15 @@ describe('Overnight schedule (FL-363)', () => {
     expect(await screen.findByText('Trash is not being emptied')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Switch it back on' }));
     expect(store.draft.nightlyTasks.databaseCleanup).toBe(true);
+  });
+
+  it('lets an administrator switch off the unfinished processing check', async () => {
+    const store = draft.store as { draft: ReturnType<typeof config> };
+    render(OvernightSchedule);
+    const toggle = await screen.findByRole('switch', { name: "Finish anything that didn't process" });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await fireEvent.click(toggle);
+    expect(store.draft.nightlyTasks.reprocessUnfinished).toBe(false);
   });
 
   it('runs the night’s work now', async () => {

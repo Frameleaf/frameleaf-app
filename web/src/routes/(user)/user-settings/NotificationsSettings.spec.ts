@@ -34,6 +34,7 @@ const saveButton = () => screen.getByRole('button', { name: en.save });
 const EMAIL = 'Send me emails';
 const SHARES = 'Email me: When someone shares with you';
 const UPDATES = 'Email me: Album updates';
+const NEW_SIGN_INS = 'Email me: Sign-ins from unfamiliar devices or networks';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -53,7 +54,7 @@ describe('NotificationsSettings (FL-77)', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent("This server can't send email yet");
     expect(screen.getByRole('status')).toHaveTextContent('Ask your administrator');
-    for (const name of [EMAIL, SHARES, UPDATES]) {
+    for (const name of [EMAIL, SHARES, UPDATES, NEW_SIGN_INS]) {
       expect(toggle(name)).toBeDisabled();
       expect(toggle(name)).toHaveAttribute('aria-checked', 'true');
     }
@@ -95,6 +96,24 @@ describe('NotificationsSettings (FL-77)', () => {
       }),
     );
     await waitFor(() => expect(authManager.preferences.revision).toBe('revision-2'));
+  });
+
+  it('can turn new-device email off without changing other email preferences', async () => {
+    sdkMock.updateMyPreferences.mockResolvedValue(
+      preferencesFactory.build({
+        ...loaded,
+        emailNotifications: { ...loaded.emailNotifications, newSignIn: false },
+      }),
+    );
+    render(NotificationsSettings);
+    expect(toggle(NEW_SIGN_INS)).toHaveAttribute('aria-checked', 'true');
+    await fireEvent.click(toggle(NEW_SIGN_INS));
+    await fireEvent.click(saveButton());
+    await waitFor(() =>
+      expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
+        userPreferencesUpdateDto: { emailNotifications: { newSignIn: false }, expectedRevision: 'revision-1' },
+      }),
+    );
   });
 
   it('keeps the change when the preferences changed elsewhere and loads the latest values on request', async () => {

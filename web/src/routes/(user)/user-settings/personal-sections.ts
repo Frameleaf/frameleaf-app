@@ -2,6 +2,7 @@ import {
   mdiArchiveLockOutline,
   mdiCloudOutline,
   mdiDeleteOutline,
+  mdiFileAlertOutline,
   mdiImport,
   mdiMapMarkerOutline,
   mdiTools,
@@ -15,7 +16,8 @@ import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
  * The account's own Command Center sections (FL-71), drawn by `UserSettingsList.svelte`: the old
  * personal settings groups, the sign-in provider when the server offers one, and the per-account
  * imports and preservation (FL-65, FL-74) that sit in "Import & protection" for every account,
- * Library care's repair suggestions (administrators) and the account's Trash.
+ * Library care's repair suggestions (administrators), its damaged and missing files (every account) and
+ * the account's Trash.
  */
 export const personalSections = (
   $t: MessageFormatter,
@@ -79,6 +81,14 @@ export const personalSections = (
         },
       ]
     : []),
+  // FL-1338: Library care → Damaged and missing files, for every account: a member sees their own files, an
+  // administrator also the household's, without their pictures.
+  {
+    key: 'files',
+    title: $t('frameleaf_cc_section_files'),
+    subtitle: $t('frameleaf_cc_section_files_description'),
+    icon: mdiFileAlertOutline,
+  },
   // Library care → Identify photo locations, for every account (its own library).
   {
     key: 'location-scan',

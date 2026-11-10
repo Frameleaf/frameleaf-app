@@ -269,6 +269,18 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'signIn.invitedStorageQuota = value',
   },
   {
+    pattern: 'libraryCare.askPhones',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/FileProblems.svelte',
+    evidence: 'libraryCare.askPhones',
+  },
+  {
+    pattern: 'libraryCare.autoRepair',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
+    evidence: 'libraryCare.autoRepair',
+  },
+  {
     pattern: 'libraryCare.checksumScan',
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
@@ -1056,6 +1068,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'faces.import',
   },
   {
+    pattern: 'metrics.enabled',
+    kind: 'server-managed',
+    file: 'src/lib/frameleaf/system-config-draft.ts',
+    evidence: 'metrics.enabled',
+  },
+  {
     pattern: 'newVersionCheck.channel',
     kind: 'control',
     file: 'src/routes/admin/system-settings/NewVersionCheckSettings.svelte',
@@ -1115,6 +1133,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
     evidence: "'missingThumbnails'",
+  },
+  {
+    pattern: 'nightlyTasks.reprocessUnfinished',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.reprocessUnfinished',
   },
   {
     pattern: 'nightlyTasks.startTime',
@@ -1608,6 +1632,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/routes/(user)/user-settings/NotificationsSettings.svelte',
     evidence: 'emailNotifications.albumUpdate',
+  },
+  {
+    pattern: 'emailNotifications.newSignIn',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/NotificationsSettings.svelte',
+    evidence: 'emailNotifications.newSignIn',
   },
   {
     pattern: 'emailNotifications.enabled',

@@ -3,7 +3,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Partner } from 'src/database.js';
 import { PartnerCreateDto, PartnerResponseDto, PartnerSearchDto, PartnerUpdateDto } from 'src/dtos/partner.dto.js';
 import { mapUser } from 'src/dtos/user.dto.js';
-import { AssetVisibility, Permission, PushEventType } from 'src/enum.js';
+import { AccountEventAction, AssetVisibility, Permission, PushEventType } from 'src/enum.js';
 import { PartnerDirection, PartnerIds } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
@@ -48,6 +48,12 @@ export class PartnerService extends BaseService {
       sharedWithId,
     );
     await this.lockedEncryption.onPartnershipStarted(auth.user.id, sharedWithId);
+    await this.recordAccountEvent({
+      userId: auth.user.id,
+      sessionId: auth.session?.id ?? null,
+      action: AccountEventAction.PartnerAdded,
+      subject: user.name,
+    });
     // FL-228: the new partner gained access to this library
     await this.eventRepository.emit('PushNotify', {
       type: PushEventType.AccessChanged,
@@ -71,6 +77,12 @@ export class PartnerService extends BaseService {
     // FL-326: the former partner keeps every copy received; following and new copies stop
     await stopPartnerSharing({ partnerOrigin: this.partnerOriginRepository }, auth.user.id, sharedWithId);
     await this.lockedEncryption.onPartnershipEnded(auth.user.id, sharedWithId);
+    await this.recordAccountEvent({
+      userId: auth.user.id,
+      sessionId: auth.session?.id ?? null,
+      action: AccountEventAction.PartnerRemoved,
+      subject: partner.sharedWith?.name ?? 'Someone',
+    });
 
     // FL-54: revocation takes effect on open pages too. Access is always checked live on the server,
     // so this only tells the clients to drop what they already loaded (timeline months, the partner

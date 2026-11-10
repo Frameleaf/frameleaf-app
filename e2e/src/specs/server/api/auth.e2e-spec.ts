@@ -20,6 +20,29 @@ describe('/auth', () => {
   });
 
   describe('POST /auth/login', () => {
+    // Run this case alone against a disposable server with FRAMELEAF_ENV=production.
+    it.runIf(process.env.FRAMELEAF_E2E_SIGN_IN_BACKOFF === '1')(
+      'waits after five actual password failures, including a burst of concurrent attempts',
+      async () => {
+        const fail = () =>
+          request(app)
+            .post('/auth/login')
+            .send({ ...loginDto.admin, password: 'incorrect-password' });
+        for (let attempt = 0; attempt < 4; attempt++) {
+          await fail().expect(401);
+        }
+        const results = await Promise.all(Array.from({ length: 5 }, fail));
+        expect(results.map(({ status }) => status).toSorted((left, right) => left - right)).toEqual([
+          401, 429, 429, 429, 429,
+        ]);
+        const { body, headers } = await request(app).post('/auth/login').send(loginDto.admin).expect(429);
+        expect(body).toMatchObject({ code: 'rate_limited', retryAfter: expect.any(Number) });
+        expect(body.retryAfter).toBeGreaterThan(0);
+        expect(body.retryAfter).toBeLessThanOrEqual(30);
+        expect(headers['retry-after']).toBe(String(body.retryAfter));
+      },
+    );
+
     it('should set a session-only access token cookie when rememberMe is false', async () => {
       // FL-80: "Keep me signed in" off → the cookie ends with the browser session.
       const { status, headers } = await request(app)

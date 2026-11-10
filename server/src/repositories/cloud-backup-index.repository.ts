@@ -627,6 +627,62 @@ export class CloudBackupIndexRepository {
     }));
   }
   /**
+   * FL-1337: the kept manifests of this bucket that hold an asset's original, newest first, each with the
+   * SHA-256 that original was backed up with: where Library care looks for a lost original.
+   */
+  async getKeptOriginals(
+    bucket: string,
+    assetId: string,
+  ): Promise<Array<{ key: string; createdAt: Date; sha256: string }>> {
+    const rows = await this.db
+      .selectFrom('cloud_backup_manifest_original as o')
+      .innerJoin('cloud_backup_manifest as m', 'm.id', 'o.manifestId')
+      .select(['m.key', 'm.createdAt', 'o.sha256'])
+      .where('m.bucket', '=', bucket)
+      .where('m.status', 'in', [...KEPT_MANIFEST_STATUSES])
+      .where('o.assetId', '=', assetId)
+      .orderBy('m.createdAt', 'desc')
+      .orderBy('m.key', 'desc')
+      .execute();
+    return rows.map((row) => ({
+      key: row.key,
+      createdAt: new Date(row.createdAt as unknown as string),
+      sha256: row.sha256,
+    }));
+  }
+  /** FL-1337: an asset's original as a system restore of it reads it: where it goes, and what proves it. */
+  async getRestoreTarget(assetId: string): Promise<
+    | {
+        ownerId: string;
+        originalPath: string;
+        checksum: Buffer;
+        checksumAlgorithm: ChecksumAlgorithm;
+        isExternal: boolean;
+        active: boolean;
+        locked: boolean;
+      }
+    | undefined
+  > {
+    const row = await this.db
+      .selectFrom('asset')
+      .select(['ownerId', 'originalPath', 'checksum', 'checksumAlgorithm', 'isExternal', 'status', 'deletedAt'])
+      .select(isLocked('asset').as('locked'))
+      .where('id', '=', assetId)
+      .executeTakeFirst();
+    if (!row) {
+      return undefined;
+    }
+    return {
+      ownerId: row.ownerId,
+      originalPath: row.originalPath,
+      checksum: row.checksum,
+      checksumAlgorithm: row.checksumAlgorithm,
+      isExternal: row.isExternal,
+      active: row.status === AssetStatus.Active && !row.deletedAt,
+      locked: !!row.locked,
+    };
+  }
+  /**
    * FL-164: mark manifests by their bucket key: `pruned` once retention removed them from the bucket,
    * `degraded` when a verification found an object they name missing or damaged. A pruned manifest stays
    * pruned whatever a later verification says.

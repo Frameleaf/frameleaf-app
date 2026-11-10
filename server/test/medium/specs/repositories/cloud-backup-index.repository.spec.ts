@@ -479,6 +479,62 @@ describe(CloudBackupIndexRepository.name, () => {
     await expect(sut.countAssets()).resolves.toBeGreaterThanOrEqual(3);
   });
 
+  it('names the kept backups that hold an asset’s original, newest first, and what a restore of it needs (FL-1337)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+    const { asset: trashed } = await ctx.newAsset({
+      ownerId: user.id,
+      status: AssetStatus.Trashed,
+      deletedAt: new Date(),
+    });
+    const backup = async (key: string, originals: Array<[string, string]>, status: 'complete' | 'failed') => {
+      const manifest = await sut.createManifest({ bucket, key, operationId: randomUUID() });
+      await sut.upsertEntries(
+        manifest.id,
+        originals.map(([assetId, sha256]) => ({
+          fileKey: `${assetId}:original`,
+          assetId,
+          ownerId: user.id,
+          role: 'original',
+          path: `/data/${assetId}.jpg`,
+          sha256,
+          size: 1,
+          mtime: null,
+        })),
+      );
+      await sut.finishManifest(manifest.id, { status });
+    };
+    await backup('m/20261001T030000Z.json.gz', [[asset.id, sha('first')]], 'complete');
+    await backup('m/20261002T030000Z.json.gz', [[other.id, sha('other')]], 'complete');
+    await backup('m/20261003T030000Z.json.gz', [[asset.id, sha('failed')]], 'failed');
+    await backup('m/20261004T030000Z.json.gz', [[asset.id, sha('changed')]], 'complete');
+    await backup('m/20261005T030000Z.json.gz', [[asset.id, sha('pruned')]], 'complete');
+    await sut.markManifests(bucket, ['m/20261005T030000Z.json.gz'], 'pruned');
+
+    await expect(sut.getKeptOriginals(bucket, asset.id)).resolves.toEqual([
+      { key: 'm/20261004T030000Z.json.gz', createdAt: expect.any(Date), sha256: sha('changed') },
+      { key: 'm/20261001T030000Z.json.gz', createdAt: expect.any(Date), sha256: sha('first') },
+    ]);
+    await expect(sut.getKeptOriginals(`https://s3.example.test/${randomUUID()}`, asset.id)).resolves.toEqual([]);
+
+    await expect(sut.getRestoreTarget(asset.id)).resolves.toEqual({
+      ownerId: user.id,
+      originalPath: asset.originalPath,
+      checksum: asset.checksum,
+      checksumAlgorithm: asset.checksumAlgorithm,
+      isExternal: false,
+      active: true,
+      locked: false,
+    });
+    await expect(sut.getRestoreTarget(locked.id)).resolves.toMatchObject({ locked: true, active: true });
+    await expect(sut.getRestoreTarget(trashed.id)).resolves.toMatchObject({ locked: false, active: false });
+    await expect(sut.getRestoreTarget(randomUUID())).resolves.toBeUndefined();
+  });
+
   describe('FL-164', () => {
     it('keeps the dump of every kept manifest, lists the kept ones newest first, and never revives a pruned one', async () => {
       const { sut } = setup();

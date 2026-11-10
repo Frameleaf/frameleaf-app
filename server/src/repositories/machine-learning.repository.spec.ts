@@ -32,6 +32,7 @@ import {
   ModelTask,
   ModelType,
   RestorationWorkerError,
+  parseMlContainerReport,
 } from 'src/repositories/machine-learning.repository.js';
 import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
@@ -112,6 +113,47 @@ const selection = (
   record,
 });
 
+describe('ML container resource limits', () => {
+  const container = {
+    image: 'cpu',
+    backend: 'CPU',
+    gpus: [],
+    driver: null,
+    devices: { renderNodes: [], kfd: false, kfdAccessible: false, nvidia: false, nvidiaRequested: false },
+  };
+
+  it('preserves limited, unlimited and unavailable reports without inferring host capacity', () => {
+    for (const memoryBytes of [
+      { status: 'limited', value: 2 ** 30 },
+      { status: 'limited', value: 0 },
+      { status: 'unlimited', value: null },
+      { status: 'unavailable', value: null },
+    ]) {
+      const resources = { memoryBytes, cpuCores: { status: 'limited', value: 0.5 } };
+      expect(parseMlContainerReport({ container: { ...container, resources } })?.resources).toEqual(resources);
+    }
+  });
+
+  it('accepts older workers without a resource report', () => {
+    expect(parseMlContainerReport({ container })).toEqual({ ...container, nvidiaError: null });
+  });
+
+  it.each([
+    { status: 'limited', value: null },
+    { status: 'limited', value: -1 },
+    { status: 'limited', value: Infinity },
+    { status: 'limited', value: 2 ** 63 },
+    { status: 'unavailable', value: 1024 },
+    { status: 'unlimited', value: 0 },
+  ])('refuses an inconsistent resource report: %j', (memoryBytes) => {
+    expect(
+      parseMlContainerReport({
+        container: { ...container, resources: { memoryBytes, cpuCores: { status: 'unavailable', value: null } } },
+      }),
+    ).toBeNull();
+  });
+});
+
 describe(MachineLearningRepository.name, () => {
   let sut: MachineLearningRepository;
   let imagePath: string;
@@ -129,9 +171,37 @@ describe(MachineLearningRepository.name, () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     await rm(imagePath, { force: true });
+  });
+
+  describe('readBundledWorkerLogs', () => {
+    it('reads the default private HTTP worker without credentials', async () => {
+      vi.stubEnv('FRAMELEAF_ML_AUTH_TOKEN', '');
+      const fetch = vi.fn().mockResolvedValue(new Response('log'));
+      vi.stubGlobal('fetch', fetch);
+
+      await expect(sut.readBundledWorkerLogs('')).resolves.toBe('log');
+      expect(String(fetch.mock.calls[0][0])).toBe(`${localUrl}/logs?since=`);
+      expect(new Headers(fetch.mock.calls[0][1].headers).has('Authorization')).toBe(false);
+    });
+
+    it('keeps the bearer token off HTTP and uses the configured bundled HTTPS worker', async () => {
+      vi.stubEnv('FRAMELEAF_ML_AUTH_TOKEN', 'test-token');
+      const fetch = vi.fn().mockResolvedValue(new Response('log'));
+      vi.stubGlobal('fetch', fetch);
+      await expect(sut.readBundledWorkerLogs('')).resolves.toBeUndefined();
+      expect(fetch).not.toHaveBeenCalled();
+
+      const secureUrl = 'https://frameleaf-machine-learning:3443/ml';
+      sut.setup({ ...defaults.machineLearning, urls: [localUrl, 'https://other.example', secureUrl] });
+      await expect(sut.readBundledWorkerLogs('2026-11-10T00:00:00.000Z')).resolves.toBe('log');
+      expect(String(fetch.mock.calls[0][0])).toBe(`${secureUrl}/logs?since=2026-11-10T00%3A00%3A00.000Z`);
+      expect(new Headers(fetch.mock.calls[0][1].headers).get('Authorization')).toBe('Bearer test-token');
+      expect(fetch.mock.calls[0][1].redirect).toBe('error');
+    });
   });
 
   describe('getCustomClipDimSize', () => {

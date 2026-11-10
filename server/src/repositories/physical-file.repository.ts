@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import { join, normalize, parse } from 'node:path';
+import type { FindingStep } from 'src/utils/file-steps.js';
 import type { ReleasingPublicationRole } from 'src/utils/studio-import-reference-roles.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -803,6 +804,8 @@ export class PhysicalFileRepository {
     sha256: Buffer;
     sizeInBytes: number;
     reason: 'restored_by_upload' | 'restored_from_untracked_file';
+    /** FL-1337: what the history of each missing finding this resolves gains, written with it. */
+    finding?: { evidence: Record<string, unknown>; steps: FindingStep[] };
   }): Promise<boolean> {
     const restored = normalize(input.originalPath);
     return this.db.transaction().execute(async (trx) => {
@@ -891,10 +894,37 @@ export class PhysicalFileRepository {
           "verifiedPaths"=EXCLUDED."verifiedPaths", evidence=EXCLUDED.evidence, "verifiedAt"=now(), "updatedAt"=now()`.execute(
         trx,
       );
-      await sql`UPDATE asset_health SET "runId"=NULL, status='relinked', severity='info', "originalPath"=${restored},
-          evidence=jsonb_build_object('reason', ${input.reason}::text, 'previousPath', ${input.expectedOriginalPath}::text),
+      // The evidence is merged, so what the fix recorded (fixState, autoRepairDeclined) stays
+      const evidence = {
+        ...input.finding?.evidence,
+        reason: input.reason,
+        previousPath: input.expectedOriginalPath,
+      };
+      const { rows: resolved } = await sql<{
+        id: string;
+        assetId: string;
+      }>`UPDATE asset_health SET "runId"=NULL, status='relinked', severity='info', "originalPath"=${restored},
+          evidence=coalesce(evidence, '{}'::jsonb) || ${JSON.stringify(evidence)}::text::jsonb,
           "checkedAt"=now(), "resolvedAt"=now()
-        WHERE "assetId"=ANY(${ids}::uuid[]) AND category='missing' AND "resolvedAt" IS NULL`.execute(trx);
+        WHERE "assetId"=ANY(${ids}::uuid[]) AND category='missing' AND "resolvedAt" IS NULL
+        RETURNING id, "assetId"`.execute(trx);
+      if (input.finding?.steps.length && resolved.length > 0) {
+        await trx
+          .insertInto('asset_health_step')
+          .values(
+            resolved.flatMap(({ id, assetId }) =>
+              input.finding!.steps.map(({ step, outcome, facts, assetId: stepAsset }) => ({
+                healthId: id,
+                assetId: stepAsset ?? assetId,
+                step,
+                outcome,
+                facts: facts ?? {},
+                undo: null,
+              })),
+            ),
+          )
+          .execute();
+      }
       return true;
     });
   }

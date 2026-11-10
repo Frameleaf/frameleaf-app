@@ -109,6 +109,28 @@ export class DatabaseRepository {
     this.logger.setContext(DatabaseRepository.name);
   }
 
+  async getMetricsAssetCounts() {
+    const { rows } = await sql<{ type: string; count: number }>`
+      select type, count(*)::float8 as count from asset where "deletedAt" is null group by type
+    `.execute(this.db);
+    return rows;
+  }
+
+  async getMetricsQueueCounts() {
+    // Use the durable job table. Scheduled and held work is excluded from the waiting count.
+    const { rows } = await sql<{ queue: string; waiting: number; active: number; failed: number }>`
+      select q.name as queue,
+        count(j.id) filter (where j.state in ('pending', 'waiting') and j."availableAt" <= now()
+          and not q.paused and not coalesce(q."closedUntil" > now(), false))::float8 as waiting,
+        count(j.id) filter (where j.state = 'active')::float8 as active,
+        count(j.id) filter (where j.state in ('failed', 'needs_attention', 'blocked'))::float8 as failed
+      from job_queue q
+      left join job j on j.queue = q.name and j.state in ('pending','waiting','active','failed','needs_attention','blocked')
+      group by q.name
+    `.execute(this.db);
+    return rows.map(({ queue, ...counts }) => ({ queue, counts }));
+  }
+
   async shutdown() {
     await this.db.destroy();
   }
@@ -689,6 +711,27 @@ export class DatabaseRepository {
     return this.db.transaction().execute(async (trx) => {
       await sql`SELECT pg_advisory_xact_lock(-2, hashtext(${userId})::int)`.execute(trx);
       return callback(trx);
+    });
+  }
+
+  async hasSignInNotice(key: string): Promise<boolean> {
+    const { rows } = await sql`
+      SELECT 1 FROM public.frameleaf_rate_limit WHERE key = ${key} AND expires_at > statement_timestamp()
+    `.execute(this.db);
+    return rows.length > 0;
+  }
+
+  /** Commit the daily limit together with one channel's durable notice. */
+  async publishSignInNotice<R>(key: string, publish: (db: Transaction<DB>) => Promise<R>): Promise<R | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      const { rows } = await sql`
+        INSERT INTO public.frameleaf_rate_limit AS notice (key, count, expires_at)
+        VALUES (${key}, 1, statement_timestamp() + interval '24 hours')
+        ON CONFLICT (key) DO UPDATE SET count = 1, expires_at = excluded.expires_at
+        WHERE notice.expires_at <= statement_timestamp()
+        RETURNING key
+      `.execute(tx);
+      if (rows.length > 0) return publish(tx);
     });
   }
 

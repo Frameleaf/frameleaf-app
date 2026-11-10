@@ -1,0 +1,6 @@
+{
+  "filterAccuracy": 0.85,
+  "recallAt24": 0.8,
+  "faithfulness": 1,
+  "p95Ms": 6000
+}

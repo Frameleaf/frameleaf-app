@@ -289,6 +289,122 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/activity": {
+      "get": {
+        "description": "Every account’s activity log merged with what administrators did (`source: admin`), newest first. Filter by `userId`, `action`, `from` and `to`; page with `before` and `take`.",
+        "operationId": "getAccountActivityAdmin",
+        "parameters": [
+          {
+            "name": "action",
+            "required": false,
+            "in": "query",
+            "description": "Only this action",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Only events older than this event, for paging",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "Only events at or after this time",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 50 by default",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Only events before this time",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Only this account",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountActivityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve account activity",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminUser.read",
+        "x-immich-state": "Beta"
+      }
+    },
     "/admin/attention": {
       "get": {
         "description": "What needs an administrator on this server now: the drive the library is on filling up, a missed backup, background work that stopped, or a new version. Worked out from the server’s own records on every read.",
@@ -8005,6 +8121,259 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/logs": {
+      "get": {
+        "operationId": "listServerLogs",
+        "parameters": [
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\|[0-9a-f-]{36}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "verbose",
+                "debug",
+                "log",
+                "warn",
+                "error",
+                "fatal"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "worker",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "api",
+                "microservices",
+                "maintenance",
+                "machine-learning"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateLogPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List recent local server logs",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/admin/logs/download": {
+      "get": {
+        "operationId": "downloadServerLogs",
+        "parameters": [
+          {
+            "name": "hours",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 168,
+              "default": 24,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download local server logs",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/admin/logs/stream": {
+      "get": {
+        "operationId": "streamServerLogs",
+        "parameters": [
+          {
+            "name": "level",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "verbose",
+                "debug",
+                "log",
+                "warn",
+                "error",
+                "fatal"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "worker",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "api",
+                "microservices",
+                "maintenance",
+                "machine-learning"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Follow local server logs",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
     "/admin/maintenance": {
       "post": {
         "description": "Put Frameleaf into or take it out of maintenance mode",
@@ -15225,6 +15594,126 @@
         "x-immich-permission": "asset.update"
       }
     },
+    "/assets/lost-originals": {
+      "get": {
+        "description": "Lists the caller's own photos and videos whose original file the server cannot find anywhere, so a phone can look for them and send them back. Empty while asking phones is switched off.",
+        "operationId": "getLostOriginals",
+        "parameters": [
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "description": "How many to skip",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "How many to list (1 to 1000)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LostOriginalsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the photos the server lost",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/lost-originals/checked": {
+      "post": {
+        "description": "Says which of the caller's lost originals this phone looked for and does not have. Anything that is not one of the caller's open lost originals is ignored.",
+        "operationId": "reportLostOriginalsChecked",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LostOriginalsCheckedDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Report lost photos a phone does not have",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/metadata": {
       "delete": {
         "description": "Delete metadata key-value pairs for multiple assets.",
@@ -15329,6 +15818,183 @@
         ],
         "x-immich-permission": "asset.update",
         "x-immich-state": "Beta"
+      }
+    },
+    "/assets/processing-failures": {
+      "get": {
+        "operationId": "getProcessingFailures",
+        "parameters": [
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProcessingFailureResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List asset processing failures",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/processing-failures/dismiss": {
+      "post": {
+        "operationId": "dismissProcessingFailures",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessingFailureActionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss asset processing failures",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/processing-failures/retry": {
+      "post": {
+        "operationId": "retryProcessingFailures",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessingFailureActionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry asset processing failures",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/assets/safety/lookup": {
@@ -32555,6 +33221,485 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/files": {
+      "get": {
+        "description": "One page of a tab of damaged and missing files: what needs the caller, what Frameleaf fixed in the last 30 days, or what was left as it is. Members see their own; administrators see every account, without another account’s pictures.",
+        "operationId": "getFileProblems",
+        "parameters": [
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "description": "How many to skip",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "tab",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/FileProblemTab"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "How many to list (1 to 200)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileProblemPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List damaged and missing files",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/files/folders": {
+      "get": {
+        "description": "The folders the caller may search for an exact copy of a missing or changed file: library storage and their own external libraries, and for administrators also recovery folders and drives added in Frameleaf Manager.",
+        "operationId": "getFileProblemFolders",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FileProblemFolderDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the folders to look in for a file",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/files/{id}": {
+      "get": {
+        "description": "One damaged or missing file and what happened to it, oldest first, open or closed.",
+        "operationId": "getFileProblem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileProblemDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a damaged or missing file",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/files/{id}/keep": {
+      "post": {
+        "description": "Move a file that needs the owner to the files left as they are. Only the owner can keep it.",
+        "operationId": "keepFileProblem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileProblemDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Keep a damaged or missing file as it is",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/files/{id}/kept-file": {
+      "get": {
+        "description": "The damaged file Frameleaf kept when it repaired the photo, as it was. Only the owner can download it, only while the latest fix is a repair whose kept file is still there, and not while the photo is Locked.",
+        "operationId": "downloadFileProblemKeptFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download the damaged file a repair kept",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/files/{id}/look-in": {
+      "post": {
+        "description": "Search one folder the owner may search for an exact copy, and put it back when there is exactly one. Answers at once; what was found is added to the history when the search is done.",
+        "operationId": "lookInFolderForFileProblem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileProblemLookInDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileProblemDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Look in a folder for a missing or changed file",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/files/{id}/try-again": {
+      "post": {
+        "description": "Check the file again and fix what can be fixed, from the start. A repair someone undid is not redone by itself.",
+        "operationId": "tryFileProblemAgain",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileProblemDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Try to fix a damaged or missing file again",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/files/{id}/undo": {
+      "post": {
+        "description": "Put back the file the photo used before Frameleaf repaired, relinked or restored it, keeping every file. Only the owner can undo, not once the photo changed since the fix, and not while it is Locked.",
+        "operationId": "undoFileProblemFix",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileProblemDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo what Frameleaf fixed",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
             "state": "Alpha"
           }
         ],
@@ -62281,6 +63426,75 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/users/me/activity": {
+      "get": {
+        "description": "What happened to your account, newest first: sign-ins (and failed ones), sign-outs, signed-out devices, password, PIN and two-step sign-in changes, API keys, shared links, partners and shared items. Kept 400 days. Page with `before` and `take`.",
+        "operationId": "getMyActivity",
+        "parameters": [
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Only events older than this event, for paging",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 50 by default",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountActivityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve my account activity",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "user.read",
+        "x-immich-state": "Beta"
+      }
+    },
     "/users/me/backup-devices": {
       "get": {
         "operationId": "listBackupDevices",
@@ -62435,6 +63649,58 @@
           }
         ],
         "x-immich-permission": "user.update"
+      }
+    },
+    "/users/me/backup-devices/{id}/receipt": {
+      "get": {
+        "description": "Requires elevated unfiltered session. Phone count, pending count and reasons are device-reported; serverVerifiedCount is itemsChecked minus itemsMissing of the latest completed server check, null before any. Incomplete runs are ignored. Another owner device returns 404.",
+        "operationId": "getBackupDeviceReceipt",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupDeviceReceiptDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the backup receipt for an own device",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
       }
     },
     "/users/me/backup-devices/{id}/reconciliations": {
@@ -66069,7 +67335,7 @@
   "info": {
     "title": "Frameleaf",
     "description": "Frameleaf API",
-    "version": "1.2.13",
+    "version": "1.2.14",
     "contact": {}
   },
   "tags": [
@@ -66378,6 +67644,112 @@
       }
     },
     "schemas": {
+      "AccountActivityResponseDto": {
+        "properties": {
+          "events": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/AccountEventResponseDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "True when older events exist beyond this page",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "AccountEventResponseDto": {
+        "properties": {
+          "action": {
+            "description": "What happened, for example `signed-in`, `sign-in-failed`, `signed-out`, `session-revoked`, `password-changed`, `pin-changed`, `api-key-created`, `shared-link-created`, `partner-added` or `item-shared`; admin events use the administrator history actions. New values may appear.",
+            "type": "string"
+          },
+          "actorId": {
+            "description": "For admin events, the administrator; null otherwise",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "actorName": {
+            "description": "For admin events, the administrator's name; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it happened",
+            "format": "date-time",
+            "type": "string"
+          },
+          "detail": {
+            "description": "What the action carries, such as how someone signed in; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "deviceOS": {
+            "description": "The client's operating system",
+            "nullable": true,
+            "type": "string"
+          },
+          "deviceType": {
+            "description": "The client, as the session list names it",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Event ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "ipPrefix": {
+            "description": "The client address cut to its /24 or /48; null when unknown",
+            "nullable": true,
+            "type": "string"
+          },
+          "source": {
+            "description": "`account` for what the account did, `admin` for what an administrator did to it",
+            "type": "string"
+          },
+          "subject": {
+            "description": "A name: a device, an API key, a partner, an album or the account",
+            "type": "string"
+          },
+          "userId": {
+            "description": "The account the event is about",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "via": {
+            "description": "`home`, `direct` or `relay`; null when not known",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "actorId",
+          "actorName",
+          "createdAt",
+          "detail",
+          "deviceOS",
+          "deviceType",
+          "id",
+          "ipPrefix",
+          "source",
+          "subject",
+          "userId",
+          "via"
+        ],
+        "type": "object"
+      },
       "ActivityCreateDto": {
         "description": "Activity create",
         "properties": {
@@ -66884,6 +68256,9 @@
           },
           "metadata": {
             "$ref": "#/components/schemas/AdminConfigMetadataDto"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsStatusDto"
           },
           "newVersionCheck": {
             "$ref": "#/components/schemas/AdminConfigNewVersionCheckDto"
@@ -68273,6 +69648,14 @@
       },
       "AdminConfigLibraryCareDto": {
         "properties": {
+          "askPhones": {
+            "description": "Ask phones for missing photos",
+            "type": "boolean"
+          },
+          "autoRepair": {
+            "description": "Repair damaged photos by themselves",
+            "type": "boolean"
+          },
           "checksumScan": {
             "description": "Health scans verify each original against its recorded checksum",
             "type": "boolean"
@@ -68648,6 +70031,10 @@
           },
           "quietHours": {
             "description": "Heavy background work (beyond thumbnails) waits for the overnight window",
+            "type": "boolean"
+          },
+          "reprocessUnfinished": {
+            "description": "Finish anything that did not process overnight",
             "type": "boolean"
           },
           "startTime": {
@@ -77229,6 +78616,23 @@
         ],
         "type": "object"
       },
+      "AssetFileProblemDto": {
+        "properties": {
+          "findingId": {
+            "description": "The file problem to open, as the file problems list names it",
+            "type": "string"
+          },
+          "missing": {
+            "description": "True when the original is gone; false when the file is damaged",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "findingId",
+          "missing"
+        ],
+        "type": "object"
+      },
       "AssetFileResponseDto": {
         "properties": {
           "createdAt": {
@@ -78185,6 +79589,15 @@
             "description": "The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken.",
             "format": "date-time",
             "type": "string"
+          },
+          "fileProblem": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetFileProblemDto"
+              }
+            ],
+            "description": "Set on GET /assets/{id} only, for the photo's owner or an administrator: the file problem that needs attention on this photo. Null when there is none.",
+            "nullable": true
           },
           "hasMetadata": {
             "description": "Whether asset has metadata",
@@ -79734,6 +81147,41 @@
         ],
         "type": "object"
       },
+      "AttentionFileProblemsDto": {
+        "properties": {
+          "fixed": {
+            "description": "Damaged or missing files Frameleaf fixed in the last 7 days",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "latest": {
+            "description": "When the newest of those fixes was made, or null when there are none",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "needsYou": {
+            "description": "Damaged or missing files that need the reader",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "since": {
+            "description": "When the earliest of those fixes was made, or null when there are none",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "fixed",
+          "latest",
+          "needsYou",
+          "since"
+        ],
+        "type": "object"
+      },
       "AttentionItemDto": {
         "properties": {
           "backup": {
@@ -79858,6 +81306,10 @@
             },
             "type": "array"
           },
+          "fileProblems": {
+            "$ref": "#/components/schemas/AttentionFileProblemsDto",
+            "description": "FL-1337: the Overview counts of damaged and missing files, for the files the reader may see. They add no item and change no check."
+          },
           "items": {
             "description": "What needs attention, the most urgent first",
             "items": {
@@ -79870,6 +81322,7 @@
           "checkedAt",
           "checks",
           "dismissed",
+          "fileProblems",
           "items"
         ],
         "type": "object"
@@ -80011,6 +81464,10 @@
             "description": "Is elevated session",
             "type": "boolean"
           },
+          "localPasswordRequired": {
+            "description": "This freshly signed-in owner needs to set their first local password",
+            "type": "boolean"
+          },
           "password": {
             "description": "Has password set",
             "type": "boolean"
@@ -80069,6 +81526,15 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "lastCheck": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BackupDeviceLastCheckDto"
+              }
+            ],
+            "description": "Latest completed server check; incomplete runs are ignored, null before any completes",
+            "nullable": true
+          },
           "lastSuccessfulBackupAt": {
             "format": "date-time",
             "nullable": true,
@@ -80085,6 +81551,19 @@
           "pendingCount": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pendingReasons": {
+            "items": {
+              "$ref": "#/components/schemas/BackupPendingReasonDto"
+            },
+            "type": "array"
+          },
+          "phoneItemCount": {
+            "description": "Device-reported item count; null until reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
             "type": "integer"
           },
           "platform": {
@@ -80107,13 +81586,51 @@
           "deviceKey",
           "displayName",
           "id",
+          "lastCheck",
           "lastSuccessfulBackupAt",
           "model",
           "ownerId",
           "pendingCount",
+          "pendingReasons",
+          "phoneItemCount",
           "platform",
           "quietForDays",
           "reportedAt"
+        ],
+        "type": "object"
+      },
+      "BackupDeviceLastCheckDto": {
+        "properties": {
+          "checkedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "itemsChecked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "itemsMissing": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "completedAt",
+          "id",
+          "itemsChecked",
+          "itemsMissing"
         ],
         "type": "object"
       },
@@ -80155,6 +81672,105 @@
         },
         "type": "object"
       },
+      "BackupDeviceReceiptDto": {
+        "properties": {
+          "appVersion": {
+            "type": "string"
+          },
+          "deviceKey": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "lastCheck": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BackupDeviceLastCheckDto"
+              }
+            ],
+            "description": "Latest completed server check; incomplete runs are ignored, null before any completes",
+            "nullable": true
+          },
+          "lastSuccessfulBackupAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "pendingCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pendingReasons": {
+            "items": {
+              "$ref": "#/components/schemas/BackupPendingReasonDto"
+            },
+            "type": "array"
+          },
+          "phoneItemCount": {
+            "description": "Device-reported item count; null until reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "quietForDays": {
+            "description": "Elapsed whole days since reported success; null if never reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "reportedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "serverVerifiedCount": {
+            "description": "Items the latest completed check found on the server (checked minus missing); null before any",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appVersion",
+          "deviceKey",
+          "displayName",
+          "id",
+          "lastCheck",
+          "lastSuccessfulBackupAt",
+          "model",
+          "ownerId",
+          "pendingCount",
+          "pendingReasons",
+          "phoneItemCount",
+          "platform",
+          "quietForDays",
+          "reportedAt",
+          "serverVerifiedCount"
+        ],
+        "type": "object"
+      },
       "BackupDeviceWriteDto": {
         "properties": {
           "appVersion": {
@@ -80190,6 +81806,20 @@
             "minimum": 0,
             "type": "integer"
           },
+          "pendingReasons": {
+            "description": "Why items wait, by reason code; omitted keeps the stored value",
+            "items": {
+              "$ref": "#/components/schemas/BackupPendingReasonDto"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "phoneItemCount": {
+            "description": "Items the device holds for backup; omitted keeps the stored value",
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
           "platform": {
             "maxLength": 50,
             "minLength": 1,
@@ -80204,6 +81834,26 @@
           "model",
           "pendingCount",
           "platform"
+        ],
+        "type": "object"
+      },
+      "BackupPendingReasonDto": {
+        "properties": {
+          "code": {
+            "description": "Free-form reason code, e.g. wifi, charging, low-power, too-large; stored verbatim",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "count"
         ],
         "type": "object"
       },
@@ -80408,6 +82058,15 @@
             "description": "The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken.",
             "format": "date-time",
             "type": "string"
+          },
+          "fileProblem": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetFileProblemDto"
+              }
+            ],
+            "description": "Set on GET /assets/{id} only, for the photo's owner or an administrator: the file problem that needs attention on this photo. Null when there is none.",
+            "nullable": true
           },
           "hasMetadata": {
             "description": "Whether asset has metadata",
@@ -83350,7 +85009,7 @@
             "type": "string"
           },
           "password": {
-            "description": "Current password",
+            "description": "Current password, or empty when setting the linked owner’s first local password",
             "example": "password",
             "type": "string"
           }
@@ -93188,6 +94847,10 @@
           "enabled": {
             "description": "Whether email notifications are enabled",
             "type": "boolean"
+          },
+          "newSignIn": {
+            "description": "Whether to receive email when a new device signs in",
+            "type": "boolean"
           }
         },
         "required": [
@@ -93209,6 +94872,10 @@
           },
           "enabled": {
             "description": "Whether email notifications are enabled",
+            "type": "boolean"
+          },
+          "newSignIn": {
+            "description": "Whether to receive email when a new device signs in",
             "type": "boolean"
           }
         },
@@ -94204,6 +95871,311 @@
         },
         "required": [
           "id"
+        ],
+        "type": "object"
+      },
+      "FileProblemDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo or video",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "canAct": {
+            "description": "The caller may undo it, keep it, look in a folder for it or remove it: its owner only",
+            "type": "boolean"
+          },
+          "category": {
+            "$ref": "#/components/schemas/MediaHealthCategory"
+          },
+          "fixState": {
+            "description": "How the fixes left it. Fixed for you: repaired, part-saved, found-again, restored. Needs you: missing, waiting-phone, cant-repair, couldnt-check, or null when no fix has looked at it yet. Left as they are: left-as-is.",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "The problem",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "line": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FileProblemLineDto"
+              }
+            ],
+            "description": "The step its one-line story is told from: the newest, apart from the damaged file kept beside a repair. Null while its history is empty.",
+            "nullable": true
+          },
+          "originalFileName": {
+            "description": "The name of its file",
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Whose library it is in",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "The name of the account whose library it is in",
+            "type": "string"
+          },
+          "partSaved": {
+            "description": "A repair saved only part of the picture",
+            "type": "boolean"
+          },
+          "pictureAllowed": {
+            "description": "The caller may see its picture: false on another account’s file",
+            "type": "boolean"
+          },
+          "steps": {
+            "description": "Its history, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/FileStepDto"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "description": "When it last changed",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "canAct",
+          "category",
+          "fixState",
+          "id",
+          "line",
+          "originalFileName",
+          "ownerId",
+          "ownerName",
+          "partSaved",
+          "pictureAllowed",
+          "steps",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "FileProblemFolderDto": {
+        "properties": {
+          "id": {
+            "description": "The folder, as Look in a folder names it",
+            "type": "string"
+          },
+          "name": {
+            "description": "Its name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "FileProblemLineDto": {
+        "properties": {
+          "facts": {
+            "additionalProperties": {},
+            "description": "What the sentence needs: places searched, the part saved, a phone’s name, who did it…",
+            "type": "object"
+          },
+          "outcome": {
+            "description": "How it went: ok, not-found, failed, waiting or info",
+            "type": "string"
+          },
+          "step": {
+            "description": "What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "facts",
+          "outcome",
+          "step"
+        ],
+        "type": "object"
+      },
+      "FileProblemListQueryDto": {
+        "properties": {
+          "skip": {
+            "default": 0,
+            "description": "How many to skip",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tab": {
+            "$ref": "#/components/schemas/FileProblemTab"
+          },
+          "take": {
+            "default": 50,
+            "description": "How many to list (1 to 200)",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tab"
+        ],
+        "type": "object"
+      },
+      "FileProblemLookInDto": {
+        "properties": {
+          "folderId": {
+            "description": "One of the folders the caller may search",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "folderId"
+        ],
+        "type": "object"
+      },
+      "FileProblemPageDto": {
+        "properties": {
+          "items": {
+            "description": "One page of the tab, in its order",
+            "items": {
+              "$ref": "#/components/schemas/FileProblemRowDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "How many the tab holds",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "FileProblemRowDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo or video",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "canAct": {
+            "description": "The caller may undo it, keep it, look in a folder for it or remove it: its owner only",
+            "type": "boolean"
+          },
+          "category": {
+            "$ref": "#/components/schemas/MediaHealthCategory"
+          },
+          "fixState": {
+            "description": "How the fixes left it. Fixed for you: repaired, part-saved, found-again, restored. Needs you: missing, waiting-phone, cant-repair, couldnt-check, or null when no fix has looked at it yet. Left as they are: left-as-is.",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "The problem",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "line": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FileProblemLineDto"
+              }
+            ],
+            "description": "The step its one-line story is told from: the newest, apart from the damaged file kept beside a repair. Null while its history is empty.",
+            "nullable": true
+          },
+          "originalFileName": {
+            "description": "The name of its file",
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Whose library it is in",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "The name of the account whose library it is in",
+            "type": "string"
+          },
+          "partSaved": {
+            "description": "A repair saved only part of the picture",
+            "type": "boolean"
+          },
+          "pictureAllowed": {
+            "description": "The caller may see its picture: false on another account’s file",
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "description": "When it last changed",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "canAct",
+          "category",
+          "fixState",
+          "id",
+          "line",
+          "originalFileName",
+          "ownerId",
+          "ownerName",
+          "partSaved",
+          "pictureAllowed",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "FileProblemTab": {
+        "description": "Needs you, Fixed for you (the last 30 days) or Left as they are",
+        "enum": [
+          "needs",
+          "fixed",
+          "kept"
+        ],
+        "type": "string"
+      },
+      "FileStepDto": {
+        "properties": {
+          "at": {
+            "description": "When it happened",
+            "format": "date-time",
+            "type": "string"
+          },
+          "facts": {
+            "additionalProperties": {},
+            "description": "What the sentence needs: places searched, the part saved, a phone’s name, who did it…",
+            "type": "object"
+          },
+          "outcome": {
+            "description": "How it went: ok, not-found, failed, waiting or info",
+            "type": "string"
+          },
+          "step": {
+            "description": "What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "facts",
+          "outcome",
+          "step"
         ],
         "type": "object"
       },
@@ -105346,6 +107318,99 @@
         ],
         "type": "object"
       },
+      "LostOriginalDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo or video",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "checksum": {
+            "description": "SHA-1 of the lost file, base64: what the phone matches its own file by",
+            "type": "string"
+          },
+          "fileCreatedAt": {
+            "description": "When the file was created",
+            "format": "date-time",
+            "type": "string"
+          },
+          "originalFileName": {
+            "description": "The name the file had",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "checksum",
+          "fileCreatedAt",
+          "originalFileName"
+        ],
+        "type": "object"
+      },
+      "LostOriginalsCheckedDto": {
+        "properties": {
+          "deviceId": {
+            "description": "The phone or tablet that looked",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "notHere": {
+            "description": "Checksums (base64) of lost originals this device does not have",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "deviceId",
+          "notHere"
+        ],
+        "type": "object"
+      },
+      "LostOriginalsQueryDto": {
+        "properties": {
+          "skip": {
+            "default": 0,
+            "description": "How many to skip",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take": {
+            "default": 500,
+            "description": "How many to list (1 to 1000)",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LostOriginalsResponseDto": {
+        "properties": {
+          "hasNextPage": {
+            "description": "Whether more follow this page",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "The caller's own lost originals, oldest problem first",
+            "items": {
+              "$ref": "#/components/schemas/LostOriginalDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "hasNextPage",
+          "items"
+        ],
+        "type": "object"
+      },
       "MachineLearningHardwareAcceleration": {
         "description": "Machine learning hardware acceleration backend",
         "enum": [
@@ -110424,6 +112489,19 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "MetricsStatusDto": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the local metrics listener is configured to run",
+            "type": "boolean"
+          }
+        },
+        "readOnly": true,
+        "required": [
+          "enabled"
+        ],
         "type": "object"
       },
       "MirrorAxis": {
@@ -132189,6 +134267,210 @@
         },
         "type": "object"
       },
+      "PrivateLogPageDto": {
+        "properties": {
+          "entries": {
+            "items": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "at": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "context": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "jobId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "jobName": {
+                  "type": "string"
+                },
+                "level": {
+                  "enum": [
+                    "verbose",
+                    "debug",
+                    "log",
+                    "warn",
+                    "error",
+                    "fatal"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "requestId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "route": {
+                  "type": "string"
+                },
+                "worker": {
+                  "enum": [
+                    "api",
+                    "microservices",
+                    "maintenance",
+                    "machine-learning"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "worker",
+                "at",
+                "level",
+                "context",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\|[0-9a-f-]{36}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "ProcessingFailureActionDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "step": {
+                  "$ref": "#/components/schemas/ProcessingFailureStep"
+                }
+              },
+              "required": [
+                "assetId",
+                "step"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ProcessingFailureQueryDto": {
+        "properties": {
+          "skip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProcessingFailureResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "attempts": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cause": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "lastFailedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "quarantinedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "step": {
+            "$ref": "#/components/schemas/ProcessingFailureStep"
+          }
+        },
+        "required": [
+          "assetId",
+          "attempts",
+          "cause",
+          "fileName",
+          "lastFailedAt",
+          "ownerId",
+          "ownerName",
+          "quarantinedAt",
+          "step"
+        ],
+        "type": "object"
+      },
+      "ProcessingFailureStep": {
+        "enum": [
+          "AssetExtractMetadata",
+          "AssetGenerateThumbnails",
+          "AssetEncodeVideo",
+          "SmartSearch",
+          "AssetDetectFaces",
+          "Ocr"
+        ],
+        "type": "string"
+      },
       "ProcessingProvenanceEvidence": {
         "enum": [
           "client-reported"
@@ -132213,6 +134495,55 @@
         ],
         "format": "int32",
         "type": "integer"
+      },
+      "ProcessingReconcileSummary": {
+        "properties": {
+          "completedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "faces": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "metadata": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "search": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "thumbnails": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "video": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "completedAt",
+          "faces",
+          "metadata",
+          "search",
+          "text",
+          "thumbnails",
+          "video"
+        ],
+        "type": "object"
       },
       "PublicConfigDto": {
         "properties": {
@@ -132805,6 +135136,10 @@
           "force": {
             "description": "Force the command execution (if applicable)",
             "type": "boolean"
+          },
+          "includeSetAside": {
+            "description": "Include quarantined assets in a forced processing run",
+            "type": "boolean"
           }
         },
         "required": [
@@ -133118,6 +135453,9 @@
         "properties": {
           "jobCounts": {
             "$ref": "#/components/schemas/QueueStatisticsDto"
+          },
+          "processingReconcileLastRun": {
+            "$ref": "#/components/schemas/ProcessingReconcileSummary"
           },
           "queueStatus": {
             "$ref": "#/components/schemas/QueueStatusLegacyDto"

@@ -13,8 +13,9 @@ import {
   LibraryScope,
   ManualJobName,
 } from 'src/enum.js';
-import { afterJobCommit, queueExecution } from 'src/queue/context.js';
+import { afterJobCommit, jobHandedToCare, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
+import { workerMetrics } from 'src/repositories/metrics.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { deferForLockedKey } from 'src/utils/locked-read.js';
@@ -26,6 +27,7 @@ import {
   isOcrEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
+import { unfinishedProcessing } from 'src/utils/unfinished-processing.js';
 
 const asJobItem = (dto: JobCreateDto): JobItem => {
   switch (dto.name) {
@@ -180,6 +182,7 @@ export class JobService extends BaseService {
       deferForLockedKey(error);
       // A dependency refusal defers the job rather than failing it; the queue warns about it once.
       if (!queueExecution.getStore()?.dependencyReason) {
+        workerMetrics?.observeJob(job.name, 'failed');
         await this.reportJobError(job, error);
       }
       throw error;
@@ -203,7 +206,10 @@ export class JobService extends BaseService {
 
   private async onSuccess(job: JobItem, response: JobStatus | undefined) {
     try {
-      await afterJobCommit(() => this.eventRepository.emit('JobSuccess', { job, response }));
+      await afterJobCommit(async () => {
+        if (response === JobStatus.Success || response === undefined) workerMetrics?.observeJob(job.name, 'completed');
+        await this.eventRepository.emit('JobSuccess', { job, response });
+      });
     } catch {
       this.logger.error(`Unable to notify success of ${job.name}`);
     }
@@ -213,7 +219,7 @@ export class JobService extends BaseService {
       [JobStatus.Success, JobStatus.Skipped].includes(response) &&
       !(job.name === JobName.AssetVideoFingerprint && response === JobStatus.Skipped);
     if (shouldRunFollowUp) {
-      await this.onDone(job);
+      await this.onDone(job, response);
     }
   }
 
@@ -253,10 +259,35 @@ export class JobService extends BaseService {
     return asset;
   }
 
+  /** Check eligibility after the accepted job publishes its metadata or preview. */
+  private async queueUnfinishedFollowups(id: string, afterMetadata: boolean) {
+    const config = await this.getConfig({ withCache: true });
+    if (!config.nightlyTasks.reprocessUnfinished) return;
+    const { selections, options } = unfinishedProcessing(config);
+    const { thumbnails, video, search, faces, text } = selections;
+    const steps = afterMetadata ? [thumbnails, video, search, faces, text] : [video, search, faces, text];
+    await publishJobResult(async () => {
+      const jobs: JobItem[] = [];
+      for (const [name, enabled] of steps) {
+        if (!enabled) continue;
+        const queue = this.jobRepository.getQueueName(name);
+        const eligible = await this.assetJobRepository
+          .selectionForUnfinished(name, { ...options, queue })
+          .where('asset.id', '=', id)
+          .executeTakeFirst();
+        if (eligible) {
+          const data = name === JobName.AssetGenerateThumbnails ? { id, reconcileUnfinished: true } : { id };
+          jobs.push({ name, data });
+        }
+      }
+      await this.jobRepository.queueAll(jobs);
+    });
+  }
+
   /**
    * Queue follow up jobs
    */
-  private async onDone(item: JobItem) {
+  private async onDone(item: JobItem, response: JobStatus) {
     switch (item.name) {
       case JobName.SidecarCheck: {
         await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: item.data });
@@ -268,6 +299,13 @@ export class JobService extends BaseService {
           name: JobName.AssetExtractMetadata,
           data: { id: item.data.id, source: 'sidecar-write' },
         });
+        break;
+      }
+
+      case JobName.AssetMetadataPostprocess: {
+        if (item.data.reconcileUnfinished && response === JobStatus.Success) {
+          await this.queueUnfinishedFollowups(item.data.id, true);
+        }
         break;
       }
 
@@ -325,6 +363,13 @@ export class JobService extends BaseService {
       }
 
       case JobName.AssetGenerateThumbnails: {
+        // FL-1337: a photo handed to Library care has no picture to work from yet. Thumbnails are queued again
+        // after a fix and the follow-up work runs then, so the overnight check (FL-811) queues none of it either.
+        // The upload is still announced. The hand-off is this attempt's own: it is read from this job's execution.
+        const handedToCare = response === JobStatus.Skipped && jobHandedToCare();
+        if (item.data.reconcileUnfinished && !handedToCare) {
+          await this.queueUnfinishedFollowups(item.data.id, false);
+        }
         if (!item.data.notify && item.data.source !== 'upload') {
           break;
         }
@@ -363,7 +408,7 @@ export class JobService extends BaseService {
           }
         }
 
-        await this.jobRepository.queueAll(jobs);
+        await this.jobRepository.queueAll(handedToCare ? [] : jobs);
         await afterJobCommit(async () => {
           const [asset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([item.data.id]);
           if (!asset) {

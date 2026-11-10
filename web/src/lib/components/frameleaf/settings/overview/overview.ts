@@ -81,3 +81,56 @@ export const statusPhrases = (phrases: readonly { wrong: boolean; text: string }
   const wrong = phrases.filter((phrase) => phrase.wrong);
   return (wrong.length > 0 ? wrong : phrases).map((phrase) => phrase.text);
 };
+
+/** FL-1338: how long ago Frameleaf's file fixes were made, in the words the Overview uses. */
+export type FixedWhen = 'last_night' | 'today' | 'week';
+
+/**
+ * "last night" when the first and the newest fix of the week were both made during the last overnight run,
+ * "today" when both were made on today's date where the reader is, else "this week" (the server counts seven days).
+ */
+export const fixedWhen = (
+  since: string,
+  latest: string,
+  night: { startedAt: string; finishedAt: string } | undefined,
+  now: Date,
+): FixedWhen => {
+  const times = [since, latest].map((iso) => new Date(iso));
+  if (night) {
+    const from = new Date(night.startedAt).getTime();
+    const to = new Date(night.finishedAt).getTime();
+    if (times.every((time) => time.getTime() >= from && time.getTime() <= to)) {
+      return 'last_night';
+    }
+  }
+  // The reader's own calendar day: the browser's time zone, as the rest of the Overview reads dates.
+  const day = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  return times.every((time) => day(time) === day(now)) ? 'today' : 'week';
+};
+
+const DISMISSED_FIXES = 'fileproblems:';
+
+/** What a dismissal of the Done-for-you row is kept under: the newest fix it covered (lower case, as the server requires). */
+export const fileProblemsDismissalId = (latest: string) => `${DISMISSED_FIXES}${new Date(latest).getTime()}`;
+
+/**
+ * The Done-for-you dismissals a new one makes redundant: only the newest counts, so the older ones are taken back
+ * rather than crowding the server's short list of dismissals (it keeps the last 32) and pushing out others.
+ * None when `id` is not a Done-for-you dismissal.
+ */
+export const olderFileProblemsDismissals = (dismissed: Iterable<string>, id: string) =>
+  id.startsWith(DISMISSED_FIXES)
+    ? [...dismissed].filter((other) => other.startsWith(DISMISSED_FIXES) && other !== id)
+    : [];
+
+/** Whether the row is dismissed: no fix is newer than the newest one dismissed, however the week rolls. */
+export const fileProblemsDismissed = (dismissed: Iterable<string>, latest: string) => {
+  const at = new Date(latest).getTime();
+  return [...dismissed].some((id) => {
+    if (!id.startsWith(DISMISSED_FIXES)) {
+      return false;
+    }
+    const covered = Number(id.slice(DISMISSED_FIXES.length));
+    return Number.isFinite(covered) && at <= covered;
+  });
+};

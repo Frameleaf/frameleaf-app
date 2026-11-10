@@ -22,6 +22,7 @@ import {
   SyncRequestType,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
@@ -60,6 +61,7 @@ import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
@@ -112,13 +114,14 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 import { BASE_SERVICE_DEPENDENCIES, BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
+import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types.js';
 import { getConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory.js';
-import { automock, wait } from 'test/utils.js';
+import { automock, newSignInSecurityMock, wait } from 'test/utils.js';
 
 // eslint-disable-next-line unicorn/prefer-module
 export const testAssetsDir = resolve(__dirname, '../../e2e/test-assets');
@@ -134,6 +137,7 @@ type BaseServiceDeps = typeof BASE_SERVICE_DEPENDENCIES;
 type MediumRepositoryKey =
   | BaseServiceDeps[number]
   | typeof LockedEncryptionRepository
+  | typeof MediaHealthRepository
   | typeof MediaOperationRepository
   | typeof StudioProjectRepository
   | typeof VideoMomentRepository;
@@ -168,13 +172,26 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
    * FL-721: services that take LockedEncryptionService by property injection get a real one, on the
    * spec's own repositories where it chose them (real or mock), a real Locked encryption table, and
    * mocks for the rest. The key files stay mocked: medium specs don't write under the upload location.
+   * FL-1337: AssetService's MediaHealthRepository (the viewer's file problem flag) is a real one, on the
+   * spec's database.
    */
   private injectProperties(Service: S) {
     // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
     const properties: { key: string; type: unknown }[] = Reflect.getMetadata(PROPERTY_DEPS_METADATA, Service) ?? [];
     for (const { key, type } of properties) {
-      if (type === LockedEncryptionService) {
-        Object.assign(this.sut, { [key]: this.newLockedEncryptionService() });
+      switch (type) {
+        case LockedEncryptionService: {
+          Object.assign(this.sut, { [key]: this.newLockedEncryptionService() });
+          break;
+        }
+        case SignInSecurityService: {
+          Object.assign(this.sut, { [key]: newSignInSecurityMock() });
+          break;
+        }
+        case MediaHealthRepository: {
+          Object.assign(this.sut, { [key]: this.get(MediaHealthRepository) });
+          break;
+        }
       }
     }
   }
@@ -586,6 +603,7 @@ export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
 const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>): InstanceType<T> => {
   switch (key) {
     case AccessRepository:
+    case AccountEventRepository:
     case AdminAuditRepository:
     case AlbumRepository:
     case AlbumUserRepository:
@@ -601,6 +619,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case DuplicateRepository:
     case IntegrityRepository:
     case LockedEncryptionRepository:
+    case MediaHealthRepository:
     case MediaOperationRepository:
     case MemoryRepository:
     case MoveRepository:
@@ -692,6 +711,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
 const newMockRepository = <T>(key: ClassConstructor<T>) => {
   switch (key) {
     case ActivityRepository:
+    case AccountEventRepository:
     case AdminAuditRepository:
     case AlbumUserRepository:
     case ConfigRepository:

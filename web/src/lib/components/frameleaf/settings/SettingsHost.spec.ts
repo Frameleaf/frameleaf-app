@@ -327,6 +327,38 @@ describe('the Command Center (FL-71)', () => {
         '/user-settings?area=maintenance',
       );
     });
+
+    // FL-1338: Damaged and missing files is opened from Things to fix (prototype `care/files.jsx` back), which
+    // only an administrator has; a member's way back is Library care.
+    it('takes Damaged and missing files back to Things to fix for an administrator', () => {
+      open('/user-settings?area=care&section=files');
+      render(SettingsHost, {
+        sections: [
+          ...care(),
+          accountSection('repair', 'Things to fix'),
+          accountSection('files', 'Damaged and missing files'),
+        ],
+      });
+
+      expect(screen.getByRole('link', { name: 'Things to fix' })).toHaveAttribute(
+        'href',
+        '/user-settings?area=care&section=repair',
+      );
+      expect(screen.queryByRole('link', { name: 'Library care' })).toBeNull();
+    });
+
+    it('takes Damaged and missing files back to Library care for a member', () => {
+      open('/user-settings?area=care&section=files', false);
+      render(SettingsHost, {
+        sections: [
+          ...sections.filter((section) => !section.admin),
+          accountSection('files', 'Damaged and missing files'),
+        ],
+      });
+
+      expect(screen.getByRole('link', { name: 'Library care' })).toHaveAttribute('href', '/user-settings?area=care');
+      expect(screen.queryByRole('link', { name: 'Things to fix' })).toBeNull();
+    });
   });
 
   it('opens Storage & originals and Import & export on landing pages, and Deleted items at its old addresses (FL-365)', () => {

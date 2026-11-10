@@ -48,6 +48,7 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     label: 'frameleaf_bgwork_capacity',
     values: ($t, value) => (value === 0 ? $t('frameleaf_bgwork_capacity_automatic') : undefined),
   },
+  'nightlyTasks.reprocessUnfinished': { label: 'frameleaf_overnight_reprocess_unfinished' },
   // People & sharing
   'server.publicUsers': { label: 'frameleaf_sharing_find_label' },
   // Server & updates › Server name & welcome
@@ -132,6 +133,10 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   // FL-1333: a retired switch the server ignores (every copy is checked); the promise is said on Folder layout only
   'storageTemplate.hashVerificationEnabled': { label: 'frameleaf_folders_copy_check_retired' },
   'storageTemplate.template': { label: 'frameleaf_layout_pattern' },
+  // Library care › File checks › When a check finds a problem (FL-1337)
+  'libraryCare.autoRepair': { label: 'frameleaf_care_fc_when_problem_repair_name' },
+  // Library care › Damaged and missing files › What Frameleaf does by itself
+  'libraryCare.askPhones': { label: 'frameleaf_files_auto_phones_name' },
   // Access & security › Sign in with Frameleaf
   'frameleafCloud.signIn.showOnLocalLogin': { label: 'frameleaf_signin_offer_home' },
   'frameleafCloud.signIn.buttonText': { label: 'frameleaf_signin_words' },
@@ -205,6 +210,7 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'emailNotifications.enabled': { label: 'frameleaf_notify_yours_send' },
   'emailNotifications.albumInvite': { label: 'frameleaf_notify_yours_shares' },
   'emailNotifications.albumUpdate': { label: 'frameleaf_notify_yours_updates' },
+  'emailNotifications.newSignIn': { label: 'frameleaf_notify_yours_new_sign_in' },
   'avatar.color': { label: 'frameleaf_prefs_colour' },
   'purchase.showSupportBadge': { label: 'frameleaf_words_support_badge' },
 });

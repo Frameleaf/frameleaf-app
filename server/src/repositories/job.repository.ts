@@ -54,6 +54,7 @@ import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
+import { FIX_SEARCH_DELAY_MS } from 'src/utils/file-fix.js';
 import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
@@ -149,7 +150,17 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.LockedUnseal,
   JobName.LockedRewrap,
   JobName.LockedSweep,
+  // FL-1337: every write checks the asset and finding it read are unchanged, and a repair, relink or
+  // kept file is published under a name fixed by the asset and finding, so a re-run reuses its own
+  JobName.MediaHealthFixAsset,
 ]);
+/**
+ * Requests that are repeatable although their job name is not (the rest of that job's work is unaudited).
+ * FL-1337: the fixes' shared search claims its findings under its own search id, so a rerun of a step
+ * claims the same ones again; a step only replaces candidate lists and feeds fixes under their own keys.
+ */
+const isRepeatableRequest = (item: JobItem) =>
+  item.name === JobName.MediaHealthLocateMissing && item.data?.pending === true;
 /** Rows a selection producer inserts per fenced transaction. */
 const SELECTION_PAGE = 2000;
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
@@ -424,7 +435,7 @@ export class JobRepository {
                     for (const publish of context.failureDiagnostics!) await publish(tx);
                   })
               : undefined,
-            { settlements: context.failureSettlements },
+            { settlements: context.failureSettlements, interrupted: !!this.stopping && abort.signal.aborted },
           ),
         );
       } catch {
@@ -440,6 +451,7 @@ export class JobRepository {
           await retryLockContention(undefined, () =>
             this.store.fail(claim, 'Job deadline or cancellation requested', undefined, {
               stopRequestedOnly: !context.failureSettlements?.length,
+              interrupted: !!this.stopping && abort.signal.aborted,
               settlements: context.failureSettlements,
             }),
           );
@@ -814,7 +826,7 @@ export class JobRepository {
           item.name === JobName.ImageEnrichmentPostprocess &&
           (data.cloudDescription || (Array.isArray(data.lockedIds) && data.lockedIds.length > 0))
         ) &&
-        REPEATABLE_JOBS.has(item.name) &&
+        (REPEATABLE_JOBS.has(item.name) || isRepeatableRequest(item)) &&
         !JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(item.name) &&
         !JOBS_NOT_RETRIED.has(item.name),
       sensitive: JOBS_WITH_SENSITIVE_DATA.has(item.name),
@@ -958,8 +970,11 @@ export class JobRepository {
    */
   async queueSelection(
     name: JobName,
-    selection: SelectQueryBuilder<any, any, { id: string }>,
+    selection:
+      | SelectQueryBuilder<any, any, { id: string }>
+      | ((after: string | null) => SelectQueryBuilder<any, any, { id: string }>),
     data: Record<string, unknown> = {},
+    pageSize = SELECTION_PAGE,
   ): Promise<{ runId: string; inserted: number }> {
     if (runAdmission.getStore()) throw new Error('Run admission supports queue/queueAll, not queueSelection');
     const context = queueExecution.getStore();
@@ -967,6 +982,7 @@ export class JobRepository {
     const producerRun = submitted ?? (await this.ensureProducerRun());
     const intent = this.intent({ name, data } as JobItem);
     let inserted = 0;
+    const selectPage = (after: string | null) => (typeof selection === 'function' ? selection(after) : selection);
     if (!context) {
       // Nothing would resume a partial selection: it is inserted in one transaction.
       return this.store.db.transaction().execute(async (tx) => {
@@ -976,7 +992,13 @@ export class JobRepository {
             values (${runId}::uuid, ${name}, '{}'::jsonb, true)`.execute(tx);
         }
         for (let after: string | null = null; ;) {
-          const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, SELECTION_PAGE, tx);
+          const page = await this.store.insertSelectionPage(
+            { ...intent, runId },
+            selectPage(after),
+            after,
+            pageSize,
+            tx,
+          );
           inserted += page.inserted;
           after = page.last;
           if (after === null) return { runId, inserted };
@@ -985,14 +1007,17 @@ export class JobRepository {
     }
     const runId = producerRun!;
     const cursors = context.claim.data._selectionCursor as
-      Record<string, { after: string | null; done: boolean }> | undefined;
-    if (cursors?.[name]?.done) return { runId, inserted };
-    let after = cursors?.[name]?.after ?? null;
+      Record<string, { after: string | null; done: boolean; inserted?: number }> | undefined;
+    const checkpoint = cursors?.[name];
+    inserted = checkpoint?.inserted ?? 0;
+    if (checkpoint?.done) return { runId, inserted };
+    let after = checkpoint?.after ?? null;
     do {
       const page = await this.fenced(context, async (tx) => {
-        const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, SELECTION_PAGE, tx);
+        const page = await this.store.insertSelectionPage({ ...intent, runId }, selectPage(after), after, pageSize, tx);
         await sql`update job set data = jsonb_set(data, '{_selectionCursor}', coalesce(data->'_selectionCursor', '{}'::jsonb)
-          || jsonb_build_object(${name}::text, jsonb_build_object('after', ${page.last}::text, 'done', ${page.last === null})))
+          || jsonb_build_object(${name}::text, jsonb_build_object('after', ${page.last}::text, 'done', ${page.last === null},
+            'inserted', ${inserted + page.inserted}::int)))
           where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(tx);
         return page;
       });
@@ -1139,6 +1164,20 @@ export class JobRepository {
     return this.queueAll([item]);
   }
 
+  /**
+   * FL-1337: queue work that belongs to no job run, even when a job of a run asks for it, such as a person's shared
+   * search by contents and the fixes it feeds. A run keeps one job row per item and stage (`job_run_stage`), so a
+   * second request inside the same run would be dropped silently and its findings would wait for ever. Outside a
+   * run, the work's own keys decide what collapses. It is not tied to the asking job's claim: it is safe to run
+   * twice. During a job's completion it is written in that completion's transaction.
+   */
+  async queueOutsideRun(items: JobItem[]): Promise<void> {
+    if (runAdmission.getStore()) throw new Error('Run admission cannot queue work outside its run');
+    const intents = queueExecution.exit(() => runSubmission.exit(() => items.map((item) => this.intent(item))));
+    const completion = queueExecution.getStore()?.buffering ? publicationTransaction.getStore() : undefined;
+    await this.store.enqueue(intents, completion);
+  }
+
   /** Held work (an import waiting for setup) is not waited for. */
   async waitForQueueCompletion(...queues: QueueName[]): Promise<void> {
     while ((await Promise.all(queues.map((queue) => this.store.hasUnfinishedWork(queue, false)))).some(Boolean)) {
@@ -1259,6 +1298,32 @@ export class JobRepository {
       }
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
+      }
+      case JobName.MediaHealthFixAsset: {
+        // FL-1337: one fix per photo at a time, so the feeds of one photo collapse while it is queued or
+        // running. A fix that puts itself back carries its own key: the store drops a job whose key
+        // matches a live row, and the live row is the fix that is queuing it.
+        // The shared search's feed has its own key too, so a fix queued meanwhile cannot swallow it.
+        const jobId = item.data.requeue
+          ? `fix-${item.data.id}/r${item.data.requeue}`
+          : item.data.searched
+            ? `fix-${item.data.id}/searched`
+            : `fix-${item.data.id}`;
+        return item.data.delay ? { jobId, delay: item.data.delay } : { jobId };
+      }
+      case JobName.MediaHealthLocateMissing: {
+        // FL-1337: one shared search per owner for the fixes waiting on it. It waits a little so a burst of
+        // them is one walk, and one asked for while a walk runs gets its pass after it. The walk carries on
+        // under no key, so a later request can never overwrite where it was.
+        return item.data.pending && !item.data.ids
+          ? {
+              delay: FIX_SEARCH_DELAY_MS,
+              deduplication: {
+                id: `${JobName.MediaHealthLocateMissing}:pending:${item.data.userId}`,
+                keepLastIfActive: true,
+              },
+            }
+          : null;
       }
       case JobName.AssetDetectDuplicates: {
         // FL-651: a recheck after each group mate's fingerprint is its own run item, so one queued

@@ -3,7 +3,7 @@ import { sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
-import type { Insertable, Kysely, Updateable } from 'kysely';
+import type { Insertable, Kysely, Transaction, Updateable } from 'kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
@@ -13,6 +13,54 @@ import { asUuid } from 'src/utils/database.js';
 @Injectable()
 export class SessionRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  /** First observed device establishes the baseline. A later device and its alert commit together. */
+  async observeKnownDevice(
+    userId: string,
+    fingerprintHash: Buffer,
+    prepare: () => Promise<((tx: Transaction<DB>) => Promise<void>) | undefined>,
+  ): Promise<boolean> {
+    if (!(await this.observeDevice(userId, fingerprintHash))) return false;
+    // Reading config and rendering mail must not hold the user row or require another pooled connection.
+    const publish = await prepare();
+    return this.observeDevice(userId, fingerprintHash, publish ?? (() => Promise.resolve()));
+  }
+
+  private async observeDevice(
+    userId: string,
+    fingerprintHash: Buffer,
+    publish?: (tx: Transaction<DB>) => Promise<void>,
+  ): Promise<boolean> {
+    return this.db.transaction().execute(async (db) => {
+      const user = await db
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', userId)
+        .where('deletedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!user) return false;
+      const known = await db
+        .updateTable('user_known_device')
+        .set({ lastSeenAt: sql`now()` })
+        .where('userId', '=', userId)
+        .where('fingerprintHash', '=', fingerprintHash)
+        .returning('userId')
+        .executeTakeFirst();
+      if (known) return false;
+      const previous = await db
+        .selectFrom('user_known_device')
+        .select('userId')
+        .where('userId', '=', userId)
+        .limit(1)
+        .executeTakeFirst();
+      if (previous && !publish) return true;
+
+      await db.insertInto('user_known_device').values({ userId, fingerprintHash }).execute();
+      if (previous) await publish?.(db);
+      return !!previous;
+    });
+  }
 
   cleanup() {
     return this.db

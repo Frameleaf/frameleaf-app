@@ -4,6 +4,7 @@ import { OnJob } from 'src/decorators.js';
 import { AssetVisibility, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { publishJobResult } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getDimensions } from 'src/utils/asset.util.js';
@@ -14,14 +15,18 @@ import { isOcrEnabled } from 'src/utils/misc.js';
 @Injectable()
 export class OcrService extends BaseService {
   @OnJob({ name: JobName.OcrQueueAll, queue: QueueName.Ocr })
-  async handleQueueOcr({ force }: JobOf<JobName.OcrQueueAll>): Promise<JobStatus> {
+  async handleQueueOcr({ force, includeSetAside }: JobOf<JobName.OcrQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isOcrEnabled(machineLearning)) {
       deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
-    await this.jobRepository.queueSelection(JobName.Ocr, this.assetJobRepository.selectionForOcrJob(force));
+    await this.jobRepository.queueSelection(
+      JobName.Ocr,
+      this.assetJobRepository.selectionForOcrJob(force),
+      ...processingSetAsideOverride(force, includeSetAside),
+    );
 
     return JobStatus.Success;
   }

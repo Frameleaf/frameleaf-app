@@ -83,6 +83,19 @@ describe('config visibility', () => {
     );
   });
 
+  it('should keep the FL-1337 Library care fixes on for a configuration that does not name them', () => {
+    const { autoRepair: _repair, askPhones: _phones, ...libraryCare } = defaults.libraryCare;
+    const parsed = AdminConfigSchema.safeParse({ ...defaults, libraryCare });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.libraryCare).toEqual(expect.objectContaining({ autoRepair: true, askPhones: true }));
+    // a stated choice is kept
+    expect(
+      AdminConfigSchema.safeParse({ ...defaults, libraryCare: { ...libraryCare, autoRepair: false, askPhones: false } })
+        .data?.libraryCare,
+    ).toEqual(expect.objectContaining({ autoRepair: false, askPhones: false }));
+  });
+
   it('should map the defaults onto the user and public schemas', () => {
     expect(UserConfigDto.schema.safeParse(mapUserConfig(defaults))).toEqual(expect.objectContaining({ success: true }));
     expect(PublicConfigDto.schema.safeParse(mapPublicConfig(defaults))).toEqual(

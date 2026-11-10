@@ -34,6 +34,7 @@ import {
   user_delete_audit,
   user_metadata_audit,
 } from 'src/schema/functions.js';
+import { AccountEventTable } from 'src/schema/tables/account-event.table.js';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.js';
@@ -70,6 +71,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import {
   AssetHealthCandidateTable,
   AssetHealthRunTable,
+  AssetHealthStepTable,
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
@@ -86,6 +88,7 @@ import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetOriginalTable } from 'src/schema/tables/asset-original.table.js';
 import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
+import { AssetProcessingFailureTable } from 'src/schema/tables/asset-processing-failure.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
@@ -257,6 +260,7 @@ import {
   TakeoutSourceTable,
 } from 'src/schema/tables/takeout.table.js';
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
+import { UserKnownDeviceTable } from 'src/schema/tables/user-known-device.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
 import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
@@ -341,6 +345,7 @@ export class ImmichDatabase {
     AssetViewTable,
     BookmarkTagTable,
     AssetSourceTable,
+    AccountEventTable,
     ActivityTable,
     AdminAuditEventTable,
     AlbumAssetTable,
@@ -362,6 +367,7 @@ export class ImmichDatabase {
     AssetMetadataTable,
     AssetMetadataAuditTable,
     AssetJobStatusTable,
+    AssetProcessingFailureTable,
     AssetKeyframeTable,
     AssetLockTable,
     LockedEncryptionTable,
@@ -375,6 +381,7 @@ export class ImmichDatabase {
     AssetHealthRunTable,
     AssetHealthTable,
     AssetHealthCandidateTable,
+    AssetHealthStepTable,
     AssetExifTable,
     AssetVideoTable,
     AssetVideoFingerprintTable,
@@ -490,6 +497,7 @@ export class ImmichDatabase {
     UserMetadataAuditTable,
     UserTable,
     UserTwoFactorTable,
+    UserKnownDeviceTable,
     UserRecoveryCodeTable,
     VersionHistoryTable,
     VideoMomentIndexTable,
@@ -581,6 +589,7 @@ export interface DB extends QueueDatabase {
   backup_reconciliation: BackupReconciliationTable;
   frameleaf_migrations: { timestamp: string; name: string };
 
+  account_event: AccountEventTable;
   activity: ActivityTable;
   admin_audit_event: AdminAuditEventTable;
 
@@ -608,9 +617,11 @@ export interface DB extends QueueDatabase {
   asset_health_run: AssetHealthRunTable;
   asset_health: AssetHealthTable;
   asset_health_candidate: AssetHealthCandidateTable;
+  asset_health_step: AssetHealthStepTable;
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
+  asset_processing_failure: AssetProcessingFailureTable;
   photo_location_scan: PhotoLocationScanTable;
   photo_location_estimate: PhotoLocationEstimateTable;
   photo_location_scan_item: PhotoLocationScanItemTable;
@@ -797,6 +808,7 @@ export interface DB extends QueueDatabase {
   user_metadata_audit: UserMetadataAuditTable;
   user_recovery_code: UserRecoveryCodeTable;
   user_two_factor: UserTwoFactorTable;
+  user_known_device: UserKnownDeviceTable;
 
   version_history: VersionHistoryTable;
 

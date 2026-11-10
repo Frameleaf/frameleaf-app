@@ -290,6 +290,8 @@ const libraryCareDefaults = {
   duplicateReview: true,
   incrementalEnrichment: true,
   manualMetadata: true,
+  autoRepair: true,
+  askPhones: true,
 };
 
 /**
@@ -860,6 +862,10 @@ const AdminConfigLibraryCareSchema = z
       'A full description rerun reprocesses only results that are missing, failed or out of date',
     ),
     manualMetadata: configBool.describe('A description rerun replaces only generated text and keeps manual text'),
+    // FL-1337: defaulted, so a stored configuration, a config file or an older client that does not name them
+    // keeps the shipped behaviour (both on).
+    autoRepair: configBool.default(true).describe('Repair damaged photos by themselves'),
+    askPhones: configBool.default(true).describe('Ask phones for missing photos'),
   })
   .meta({ id: 'AdminConfigLibraryCareDto' });
 
@@ -1242,6 +1248,7 @@ const AdminConfigSchemaWithVisibility = z
           .describe('Start time (HH:MM)'),
         databaseCleanup: configBool.describe('Database cleanup'),
         missingThumbnails: configBool.describe('Missing thumbnails'),
+        reprocessUnfinished: configBool.default(true).describe('Finish anything that did not process overnight'),
         clusterNewFaces: configBool.describe('Cluster new faces'),
         generateMemories: configBool.describe('Generate memories'),
         syncQuotaUsage: configBool.describe('Sync quota usage'),
@@ -1442,6 +1449,12 @@ const unwrap = (schema: z.ZodType): z.ZodType => {
   return schema instanceof z.ZodPipe ? (schema.def.in as z.ZodType) : schema;
 };
 
+const MetricsStatusSchema = z
+  .object({
+    enabled: z.boolean().describe('Whether the local metrics listener is configured to run'),
+  })
+  .meta({ id: 'MetricsStatusDto', readOnly: true });
+
 const visibleSchemas = new Map<z.ZodType, Map<ConfigVisibility, z.ZodType | undefined>>();
 
 const applyVisibility = (visibility: ConfigVisibility): z.ZodType | undefined => {
@@ -1486,6 +1499,10 @@ const applyVisibilityRecursive = (
     }
   }
 
+  if (visibility === Admin && schema === AdminConfigSchemaWithVisibility) {
+    shape.metrics = MetricsStatusSchema.optional();
+  }
+
   let visible: z.ZodType | undefined;
   if (Object.keys(shape).length > 0) {
     visible = z.object(shape).meta({
@@ -1526,7 +1543,9 @@ export const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
   return schema;
 };
 
-export const AdminConfigSchema = applyVisibility(Admin)! as z.ZodType<SystemConfig>;
+export const AdminConfigSchema = applyVisibility(Admin)! as z.ZodType<
+  SystemConfig & { metrics?: z.infer<typeof MetricsStatusSchema> }
+>;
 const UserConfigSchema = applyVisibility(User)! as z.ZodType<DeepPartial<SystemConfig>>;
 /** FL-158, FL-161: how a request reached this server, as the edge worker vouched for it. */
 export const FrameleafViaSchema = z
@@ -1878,6 +1897,7 @@ export const defaults = Object.freeze<SystemConfig>({
     generateMemories: true,
     syncQuotaUsage: true,
     missingThumbnails: true,
+    reprocessUnfinished: true,
     clusterNewFaces: true,
     stopTime: '06:00',
     days: [0, 1, 2, 3, 4, 5, 6],

@@ -19,6 +19,18 @@ vi.mock('node:child_process', async (original) => ({
     callback: (error: Error | undefined, stdout: string, stderr: string) => void,
   ) => callback(exec.error, '', ''),
 }));
+// a file that cannot be opened for reading now, though it was hashed a moment before (FL-1337)
+const unreadable = vi.hoisted(() => ({ path: undefined as string | undefined }));
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    open: (path: string, ...rest: unknown[]) =>
+      path === unreadable.path
+        ? Promise.reject(Object.assign(new Error('EIO: i/o error'), { code: 'EIO' }))
+        : (actual.open as (...args: unknown[]) => ReturnType<typeof actual.open>)(path, ...rest),
+  };
+});
 vi.mock('src/utils/raw-renderer.js', async (original) => ({
   ...(await original<typeof import('src/utils/raw-renderer.js')>()),
   renderRawWithLibRaw: vi.fn(),
@@ -143,12 +155,55 @@ describe(MediaIntegrityService.name, () => {
     expect(mocks.media.extract).not.toHaveBeenCalled();
   });
   it.each([
-    [Object.assign(new Error('private'), { killed: true }), 'timeout', 'decode_timeout'],
-    [Object.assign(new Error('private'), { code: 'ENOENT' }), 'transient', 'decoder_unavailable'],
-    [new Error('Invalid data found when processing input'), 'corrupt', 'decode_failed'],
-  ])('classifies ffmpeg failure %j', async (error, status, reason) => {
+    [Object.assign(new Error('private'), { killed: true }), { status: 'timeout', reason: 'decode_timeout' }],
+    [Object.assign(new Error('private'), { code: 'ENOENT' }), { status: 'transient', reason: 'decoder_unavailable' }],
+    [
+      new Error('Invalid data found when processing input'),
+      // FL-1337: a decode failure carries the decoder's words, for telling its cause
+      { status: 'corrupt', reason: 'decode_failed', message: 'Invalid data found when processing input' },
+    ],
+  ])('classifies ffmpeg failure %j', async (error, expected) => {
     exec.error = error;
-    expect(await sut.validate({ ...input, type: AssetType.Video, deep: true })).toEqual({ status, reason });
+    expect(await sut.validate({ ...input, type: AssetType.Video, deep: true })).toEqual(expected);
+  });
+  it('an unsupported-format message on a JPEG with junk in front is corrupt', async () => {
+    await writeFile(input.path, Buffer.concat([Buffer.alloc(300, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]));
+    mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
+    expect(await sut.validate({ ...input, deep: true })).toEqual({
+      status: 'corrupt',
+      reason: 'decode_failed',
+      message: 'Input buffer contains unsupported image format',
+    });
+  });
+  it('an unsupported-format message on a PSD with an embedded JPEG stays unsupported', async () => {
+    const psd = join(directory, 'original.psd');
+    await writeFile(psd, Buffer.concat([Buffer.alloc(128, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]));
+    mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
+    expect(await sut.validate({ ...input, path: psd, originalFileName: 'original.psd', deep: true })).toEqual({
+      status: 'unsupported',
+      reason: 'decode_unsupported',
+      message: 'Input buffer contains unsupported image format',
+    });
+  });
+  it('an unsupported-format message on a JPEG it could not read back is busy, never unsupported', async () => {
+    mocks.media.decodeImage.mockImplementation(() => {
+      unreadable.path = input.path;
+      return Promise.reject(new Error('Input buffer contains unsupported image format'));
+    });
+    try {
+      // "left as it is" would file a damaged JPEG away for good on one failed read
+      expect(await sut.validate({ ...input, deep: true })).toEqual({ status: 'transient', reason: 'io_failed' });
+    } finally {
+      unreadable.path = undefined;
+    }
+  });
+  it('an unsupported-format message on a file with no JPEG marker stays unsupported', async () => {
+    mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
+    expect(await sut.validate({ ...input, deep: true })).toEqual({
+      status: 'unsupported',
+      reason: 'decode_unsupported',
+      message: 'Input buffer contains unsupported image format',
+    });
   });
   it('decodes the full rendered RAW without thumbnail resizing', async () => {
     vi.mocked(renderRawWithLibRaw).mockResolvedValue(bytes);
@@ -204,7 +259,11 @@ describe(MediaIntegrityService.name, () => {
 
   it('reports malformed image', async () => {
     mocks.media.decodeImage.mockRejectedValue(new Error('premature end of JPEG'));
-    expect(await sut.validate({ ...input, deep: true })).toEqual({ status: 'corrupt', reason: 'decode_failed' });
+    expect(await sut.validate({ ...input, deep: true })).toEqual({
+      status: 'corrupt',
+      reason: 'decode_failed',
+      message: 'premature end of JPEG',
+    });
   });
   it('bounds a stalled operation', async () => {
     vi.useFakeTimers();

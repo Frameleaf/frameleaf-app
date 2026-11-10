@@ -23,5 +23,8 @@ describe('backup device route authority', () => {
     expect(
       getAuthenticatedOptions(reflector, BackupDeviceAdminController.prototype.listAllBackupDevices),
     ).toMatchObject({ permission: Permission.AdminUserRead, admin: true });
+    expect(getAuthenticatedOptions(reflector, BackupDeviceController.prototype.getBackupDeviceReceipt)).toMatchObject({
+      permission: Permission.AssetRead,
+    });
   });
 });

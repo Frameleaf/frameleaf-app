@@ -30,7 +30,11 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import {
     byUrgency,
+    fileProblemsDismissalId,
+    fileProblemsDismissed,
+    fixedWhen,
     growthPerDay,
+    olderFileProblemsDismissals,
     overviewLevel,
     roomLeft,
     sentence,
@@ -61,6 +65,7 @@
     ManualJobName,
     setAttentionDismissed,
     type AnalyticsReportResponseDto,
+    FileProblemTab,
     type AttentionResponseDto,
     type BackupDeviceDto,
     type BackupRestoreVerificationResponseDto,
@@ -74,10 +79,13 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
+    mdiAutoFix,
     mdiCellphone,
     mdiCheckCircleOutline,
     mdiChevronRight,
     mdiCloudOutline,
+    mdiFileCheckOutline,
+    mdiFileQuestionOutline,
     mdiHarddisk,
     mdiImageSearchOutline,
     mdiMovieOpenOutline,
@@ -156,6 +164,26 @@
   const checkOf = (kind: string) => attention?.checks.find((check) => check.kind === kind)?.state;
   const itemOf = (kind: string) => attention?.items.find((item) => item.kind === kind);
 
+  // FL-1338: what Frameleaf did to damaged and missing files, and what is left for the person.
+  const files = $derived(attention?.fileProblems);
+  const filesPage = (tab: FileProblemTab) => commandCenterUrl('care', 'files', { tab });
+  /** Shown for the seven days the server counts, until dismissed; never a warning. */
+  const done = $derived.by(() => {
+    if (!files || files.fixed <= 0 || !files.since) {
+      return null;
+    }
+    const latest = files.latest ?? files.since;
+    if (fileProblemsDismissed(dismissed, latest)) {
+      return null;
+    }
+    const when = fixedWhen(files.since, latest, overnight?.nights[0], say.now ?? new Date());
+    return {
+      id: fileProblemsDismissalId(latest),
+      count: files.fixed,
+      when: $t(`frameleaf_overview_files_when_${when}` as Translations),
+    };
+  });
+
   type Need = {
     id: string;
     icon: string;
@@ -206,6 +234,16 @@
         }),
         body: $t('frameleaf_overview_need_phone_body'),
         actions: [{ label: $t('frameleaf_overview_open_phones'), href: commandCenterUrl('backup', 'devices-backup') }],
+      });
+    }
+    if (files && files.needsYou > 0) {
+      found.push({
+        id: 'files',
+        icon: mdiFileQuestionOutline,
+        level: 'look',
+        title: $t('frameleaf_overview_files_need_title', { values: { count: files.needsYou } }),
+        body: $t('frameleaf_overview_files_need_body'),
+        actions: [{ label: $t('frameleaf_overview_files_see'), href: filesPage(FileProblemTab.Needs) }],
       });
     }
     if (aiState === 'unreachable') {
@@ -319,6 +357,12 @@
     if (behind > 0) {
       phrases.push({ wrong: true, text: $t('frameleaf_overview_says_phone_behind', { values: { count: behind } }) });
     }
+    if (files && files.needsYou > 0) {
+      phrases.push({
+        wrong: true,
+        text: $t('frameleaf_overview_files_need_title', { values: { count: files.needsYou } }),
+      });
+    }
     if (needs.some((need) => need.id === 'plan')) {
       phrases.push({ wrong: true, text: $t('frameleaf_overview_says_plan') });
     }
@@ -351,7 +395,7 @@
     const night = lastNight ? nightOutcome(lastNight.results) : null;
     const time = (iso: string) =>
       new Intl.DateTimeFormat($locale, { hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
-    return [
+    const all: (Check | false | undefined)[] = [
       {
         id: 'backup',
         icon: mdiShieldCheckOutline,
@@ -379,6 +423,29 @@
         status: disk ? $t('frameleaf_overview_free', { values: { size: size(disk.diskAvailableRaw) } }) : unread,
         note: disk ? $t('frameleaf_overview_full', { values: { percent: used } }) : undefined,
         href: commandCenterUrl('storage'),
+      },
+      files && {
+        id: 'files',
+        icon: mdiFileCheckOutline,
+        name: $t('frameleaf_overview_check_files'),
+        detail: $t('frameleaf_overview_check_files_detail'),
+        tone: files.needsYou > 0 ? 'warn' : 'good',
+        status:
+          files.needsYou > 0
+            ? $t('frameleaf_overview_files_missing_status', { values: { count: files.needsYou } })
+            : $t('frameleaf_overview_files_all_there'),
+        note:
+          files.fixed > 0 && files.since
+            ? $t('frameleaf_overview_files_fixed_note', {
+                values: {
+                  count: files.fixed,
+                  when: $t(
+                    `frameleaf_overview_files_when_${fixedWhen(files.since, files.latest ?? files.since, lastNight, say.now ?? new Date())}` as Translations,
+                  ),
+                },
+              })
+            : undefined,
+        href: filesPage(FileProblemTab.Needs),
       },
       {
         id: 'ai',
@@ -490,6 +557,7 @@
         href: commandCenterUrl('processing', 'computers'),
       },
     ];
+    return all.filter((check): check is Check => !!check);
   });
 
   // ---- storage ----
@@ -532,6 +600,16 @@
       said = $t('frameleaf_overview_said_dismissed');
     } catch {
       said = $t('frameleaf_overview_said_not_dismissed');
+      return;
+    }
+    // FL-1338: the Done-for-you row's older dismissals are covered by this one; taken back, they never push the
+    // other dismissals out of the server's list
+    for (const older of olderFileProblemsDismissals(attention.dismissed, id)) {
+      try {
+        attention = await setAttentionDismissed({ attentionDismissDto: { id: older, dismissed: false } });
+      } catch {
+        // harmless: the new dismissal still covers it, and the next one tries again
+      }
     }
   };
   const checkAgain = async () => {
@@ -572,8 +650,28 @@
           ><Icon icon={mdiRefresh} size="1em" aria-hidden />{$t('frameleaf_overview_check_again')}</Button
         >
       {/snippet}
-      {#if needs.length > 0}
+      {#if needs.length > 0 || done}
         <ul class="needs" aria-label={$t('frameleaf_overview_needs_label')}>
+          {#if done}
+            <li class="need is-done">
+              <span class="need-icon"><Icon icon={mdiAutoFix} size="1.375rem" aria-hidden /></span>
+              <div class="need-words">
+                <strong
+                  >{$t('frameleaf_overview_files_done_title', {
+                    values: { count: done.count, when: done.when },
+                  })}</strong
+                >
+                <span>{$t('frameleaf_overview_files_done_body')}</span>
+              </div>
+              <Pill tone="good">{$t('frameleaf_overview_files_done_pill')}</Pill>
+              <div class="need-buttons">
+                <a class="fl-control button" href={filesPage(FileProblemTab.Fixed)}
+                  >{$t('frameleaf_overview_files_review')}</a
+                >
+                <Button onclick={() => dismiss(done.id)}>{$t('frameleaf_overview_dismiss')}</Button>
+              </div>
+            </li>
+          {/if}
           {#each needs as need, index (need.id)}
             <li class="need" class:is-now={need.level === 'now'} class:is-look={need.level === 'look'}>
               <span class="need-icon"><Icon icon={need.icon} size="1.375rem" aria-hidden /></span>
@@ -719,6 +817,10 @@
     color: var(--fl-danger);
     background: color-mix(in srgb, var(--fl-danger) 14%, transparent);
   }
+  .is-done .need-icon {
+    color: var(--fl-accent);
+    background: color-mix(in srgb, var(--fl-accent) 14%, transparent);
+  }
   .is-look .need-icon {
     color: var(--fl-warning);
     background: color-mix(in srgb, var(--fl-warning) 16%, transparent);
@@ -782,7 +884,7 @@
     .need {
       grid-template-columns: 44px minmax(0, 1fr);
     }
-    .need > :global(.pill),
+    .need > :global(.kit-pill),
     .need-buttons {
       grid-column: 2;
       justify-content: flex-start;

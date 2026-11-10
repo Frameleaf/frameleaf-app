@@ -15,7 +15,7 @@ import {
   ItemShareResponseDto,
 } from 'src/dtos/item-share.dto.js';
 import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
-import { AssetVisibility } from 'src/enum.js';
+import { AccountEventAction, AssetVisibility } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { everyOwnersRules, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { resolveShareBaseUrl } from 'src/utils/public-url.js';
@@ -96,6 +96,13 @@ export class ItemShareService extends BaseService {
       counts.set(row.sharedWithId, (counts.get(row.sharedWithId) ?? 0) + 1);
     }
     for (const [userId, count] of counts) {
+      await this.recordAccountEvent({
+        userId: auth.user.id,
+        sessionId: auth.session?.id ?? null,
+        action: AccountEventAction.ItemShared,
+        subject: recipients.get(userId)?.name ?? 'Someone',
+        detail: String(count),
+      });
       try {
         await this.eventRepository.emit('ItemShare', {
           ownerId: auth.user.id,

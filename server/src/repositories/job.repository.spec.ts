@@ -57,6 +57,87 @@ describe(JobRepository.name, () => {
     expect(enqueue.mock.calls[1][0][0].options).toEqual({ jobId: 'album/user', delay: 3000 });
   });
 
+  it('keeps one fix per photo, and lets a fix put itself back beside its own live row (FL-1337)', async () => {
+    await sut.queue({ name: JobName.MediaHealthFixAsset, data: { id: 'asset', from: 'preview' } });
+    await sut.queue({ name: JobName.MediaHealthFixAsset, data: { id: 'asset', from: 'check', requeue: 0 } });
+    await sut.queue({
+      name: JobName.MediaHealthFixAsset,
+      data: { id: 'asset', from: 'check', requeue: 2, attempt: 2, delay: 1_800_000 },
+    });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      // every feed of one photo collapses onto the fix that is queued or running
+      { jobId: 'fix-asset' },
+      { jobId: 'fix-asset' },
+      // a fix that puts itself back gets a key of its own, and waits
+      { jobId: 'fix-asset/r2', delay: 1_800_000 },
+    ]);
+  });
+
+  it('keeps one shared search per owner for the fixes waiting on it, and feeds each fix under its own key (FL-1337)', async () => {
+    const managedSearch = { cursor: [{ path: '/data/library' }], matches: {} };
+    await sut.queue({ name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', pending: true } });
+    await sut.queue({ name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', pending: true } });
+    await sut.queue({ name: JobName.MediaHealthLocateMissing, data: { userId: 'other', pending: true } });
+    await sut.queue({
+      name: JobName.MediaHealthLocateMissing,
+      data: { userId: 'owner', pending: true, ids: ['health'], managedSearch },
+    });
+    await sut.queue({ name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', ids: ['health'] } });
+    await sut.queue({ name: JobName.MediaHealthFixAsset, data: { id: 'asset', from: 'check', searched: true } });
+    const shared = (owner: string) => ({
+      delay: 120_000,
+      deduplication: { id: `MediaHealthLocateMissing:pending:${owner}`, keepLastIfActive: true },
+    });
+    // a shared search's step may run again after a failure or a restart; the classic search may not
+    expect(enqueue.mock.calls.map(([items]) => items[0].safeToRetry)).toEqual([true, true, true, true, false, true]);
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      // two photos of one owner: one key, so the store keeps one waiting search, and one after a running walk
+      shared('owner'),
+      shared('owner'),
+      shared('other'),
+      // a walk carries on under no key, so no later request can overwrite where it was
+      undefined,
+      // the classic search is unchanged
+      undefined,
+      // the search's feed cannot be swallowed by a fix queued meanwhile
+      { jobId: 'fix-asset/searched' },
+    ]);
+  });
+
+  it('queues the shared search and its feeds outside the run of the job that asks (FL-1337 F8)', async () => {
+    const execution = context();
+    await queueExecution.run(execution, () =>
+      sut.queueOutsideRun([
+        { name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', pending: true } },
+        { name: JobName.MediaHealthFixAsset, data: { id: 'asset', from: 'check', searched: true } },
+      ]),
+    );
+
+    // no run, no item key and no parent: `job_run_stage` can never drop a second one in the same run
+    const [[intents, db]] = enqueue.mock.calls;
+    expect(intents).toHaveLength(2);
+    for (const intent of intents) {
+      expect(intent).toMatchObject({ runId: undefined, itemKey: undefined, rootItemKey: null, parentId: undefined });
+    }
+    // their own keys still collapse a burst
+    expect(intents.map(({ options }: { options: unknown }) => options)).toEqual([
+      {
+        delay: 120_000,
+        deduplication: { id: 'MediaHealthLocateMissing:pending:owner', keepLastIfActive: true },
+      },
+      { jobId: 'fix-asset/searched' },
+    ]);
+    // not held back as the asking job's follow-ups (which join its run), and in a transaction of its own
+    expect(execution.followups).toEqual([]);
+    expect(db).toBeUndefined();
+
+    // the same request through `queue` joins the asking job's run, one item per owner
+    const inRun = queueExecution.run(context(), () =>
+      sut['intent']({ name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', pending: true } }),
+    );
+    expect(inRun).toMatchObject({ runId: 'run', itemKey: expect.stringContaining('MediaHealthLocateMissing:pending') });
+  });
+
   it('deduplicates palette work per source revision and backfill cursor', async () => {
     await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev1' } });
     await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev2' } });
