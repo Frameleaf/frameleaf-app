@@ -32,9 +32,9 @@ For private identity/backup mounts, effective NAS ACL verification and existing-
 Both builders emit a complete `unraid/` catalog directory: root `LICENSE`,
 `ca_profile.xml`, setup `README.md` and rendered `templates/*.xml`. Publish its
 contents to the public `Frameleaf/unraid-apps` repository's `main` branch; keep
-packaging source here. Manager output contains only the Manager template; merge
-its generated files into the catalog without removing independently qualified
-manual templates. Direct-stack output supplies Server and ML. Never publish the
+packaging source here. Manager output contains only the Manager template;
+direct-stack output supplies the manual Server and ML templates. The catalog's
+**Publish catalog** workflow merges both from the newest signed releases. Never publish the
 `.xml.in` source files or substitute floating image tags.
 
 Before publication, run `node --test packaging/nas/manager.test.cjs
@@ -74,7 +74,7 @@ The [FL-199 record](https://heroit.atlassian.net/browse/FL-199), reviewed on 202
 | -------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Synology | Source and releases owned by private `Frameleaf/frameleaf-synology` | Package Center submission and accepted listing unverified               |
 | TrueNAS  | Community-train app source with pinned catalog-library renderer     | External catalog PR and accepted listing unverified                     |
-| Unraid   | Server and optional ML Community Apps XML templates                 | Community Apps Validate/Scan submission and accepted listing unverified |
+| Unraid   | Manager, Server and optional ML Community Apps XML templates        | Community Apps Validate/Scan submission and accepted listing unverified |
 | HexOS    | Manager Custom Install script and catalog copy                      | hexos-app-catalog pull request and accepted listing unverified          |
 
 Before submission, retain exact release/image digests and platform versions with receipts for fresh install, restart, upgrade, failed-upgrade recovery, uninstall with data retained, and backup restore. Qualify the supported offline import and recovery on sanitized production-shaped copies, including interrupted import/resume and content/access verification. Record the submission URL or ID and final listing URL separately for each platform after those gates pass.
