@@ -724,10 +724,16 @@ export class PersonService extends BaseService {
 
     const jobs: JobItem[] = [];
     for (const { ownerId, personGroupId } of changeFeaturePhoto) {
-      const assetFace = await this.personRepository.getRandomFace(personGroupId, ownerId);
+      const assetFace = await this.personRepository.getBestFace(personGroupId, ownerId);
 
       if (assetFace) {
-        await this.personRepository.update({ ownerId, personGroupId, faceAssetId: assetFace.id });
+        // FL-1383: chosen here, not by the owner, so a better face may replace it later
+        await this.personRepository.update({
+          ownerId,
+          personGroupId,
+          faceAssetId: assetFace.id,
+          isFeaturedFaceManual: false,
+        });
         jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
       } else {
         // No face qualifies (FL-795: e.g. every one left is archived and the owner leaves archived photos
@@ -858,6 +864,8 @@ export class PersonService extends BaseService {
         ownerId,
         personGroupId,
         faceAssetId: faceId,
+        // FL-1383: a featured photo the owner picked is theirs to keep (a bulk edit sends the current one back)
+        ...(faceId && faceId !== current.faceAssetId && { isFeaturedFaceManual: true }),
         name,
         birthDate,
         isHidden,
@@ -960,7 +968,40 @@ export class PersonService extends BaseService {
 
     this.logger.debug(`Deleted ${personGroups} empty person groups and ${clusterGroups} orphaned cluster groups`);
 
+    await this.refreshPoorMainPhotos();
+
     return JobStatus.Success;
+  }
+
+  /**
+   * FL-1383: a main photo that is sideways, cut off by the frame or tiny gives way to the person's best
+   * face when that one passes the same checks. One the owner picked is never replaced. Where nothing
+   * better exists a sideways face keeps its place and its thumbnail is made again, once, so the
+   * thumbnail job can turn it upright (thumbnails made from now on are turned as they are made).
+   */
+  private async refreshPoorMainPhotos() {
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleMainPhotoState);
+    const firstPass = !state?.uprightPassAt;
+    const people = await this.personRepository.getPeopleWithPoorMainPhoto();
+    const jobs: JobItem[] = [];
+    let replaced = 0;
+    for (const { ownerId, personGroupId, faceId, manual, sideways } of people) {
+      const best = manual ? undefined : await this.personRepository.getBestFace(personGroupId, ownerId);
+      if (best && !best.poor && best.id !== faceId) {
+        await this.personRepository.update({ ownerId, personGroupId, faceAssetId: best.id });
+        jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
+        replaced++;
+      } else if (sideways && firstPass) {
+        jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
+      }
+    }
+    await this.jobRepository.queueAll(jobs);
+    if (firstPass) {
+      await this.systemMetadataRepository.set(SystemMetadataKey.PeopleMainPhotoState, {
+        uprightPassAt: new Date().toISOString(),
+      });
+    }
+    this.logger.debug(`Replaced ${replaced} poor main photos of ${people.length}; ${jobs.length} thumbnails queued`);
   }
 
   @OnJob({ name: JobName.AssetDetectFacesQueueAll, queue: QueueName.FaceDetection })

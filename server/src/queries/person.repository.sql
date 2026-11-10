@@ -877,7 +877,7 @@ where
   ) in (($2, $3))
   and "asset_face"."deletedAt" is null
 
--- PersonRepository.getRandomFace
+-- PersonRepository.getBestFace
 select
   "asset_face".*
 from

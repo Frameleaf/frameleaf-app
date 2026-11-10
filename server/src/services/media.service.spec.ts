@@ -3255,6 +3255,81 @@ describe(MediaService.name, () => {
       });
     });
 
+    describe('a face that is sideways in its photo (FL-1383)', () => {
+      const sideways = { ...personThumbnailStub.newThumbnailMiddle, x1: 100, y1: 100, x2: 300, y2: 200 };
+      const uprightBox = { x1: 150, y1: 100, x2: 300, y2: 300 };
+      const sidewaysBox = { x1: 100, y1: 150, x2: 400, y2: 300 };
+      const generate = async () => {
+        const person = PersonFactory.create();
+        mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(sideways);
+        mocks.media.generateThumbnail.mockResolvedValue();
+        mocks.media.decodeImage.mockResolvedValue({
+          data: Buffer.from(''),
+          info: { width: 400, height: 500 } as OutputInfo,
+        });
+        await expect(
+          sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+        ).resolves.toBe(JobStatus.Success);
+        return mocks.media.generateThumbnail.mock.calls.at(-1)![1];
+      };
+
+      it('turns the thumbnail the way the face detector reads the face upright', async () => {
+        mocks.machineLearning.detectFaces
+          .mockResolvedValueOnce({
+            imageWidth: 500,
+            imageHeight: 500,
+            faces: [{ boundingBox: sidewaysBox, embedding: '[]', score: 0.7 }],
+          })
+          .mockResolvedValueOnce({
+            imageWidth: 500,
+            imageHeight: 500,
+            faces: [{ boundingBox: uprightBox, embedding: '[]', score: 0.85 }],
+          });
+
+        const thumbnail = await generate();
+
+        // the detector reads the face with room around it, a quarter turn each way
+        expect(mocks.machineLearning.detectFaces).toHaveBeenCalledTimes(2);
+        expect(mocks.media.generateThumbnail.mock.calls[0][1]).toMatchObject({
+          size: 500,
+          edits: [
+            { action: 'crop', parameters: { width: 300, height: 300 } },
+            { action: 'rotate', parameters: { angle: 90 } },
+          ],
+        });
+        expect(thumbnail).toMatchObject({
+          size: 250,
+          edits: [{ action: 'crop' }, { action: 'rotate', parameters: { angle: 270 } }],
+        });
+      });
+
+      it('leaves the thumbnail as it is when no turn reads as an upright face', async () => {
+        mocks.machineLearning.detectFaces.mockResolvedValue({ imageWidth: 500, imageHeight: 500, faces: [] });
+
+        expect((await generate()).edits).toEqual([expect.objectContaining({ action: 'crop' })]);
+      });
+
+      it('leaves the thumbnail as it is when the face detector cannot be reached', async () => {
+        mocks.machineLearning.detectFaces.mockRejectedValue(new Error('offline'));
+
+        expect((await generate()).edits).toEqual([expect.objectContaining({ action: 'crop' })]);
+      });
+
+      it('does not ask the face detector about an upright face', async () => {
+        mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
+        mocks.media.generateThumbnail.mockResolvedValue();
+        mocks.media.decodeImage.mockResolvedValue({
+          data: Buffer.from(''),
+          info: { width: 1000, height: 1000 } as OutputInfo,
+        });
+        const person = PersonFactory.create();
+
+        await sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId });
+
+        expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
+      });
+    });
+
     it('should generate a thumbnail without going negative', async () => {
       const person = PersonFactory.create();
 

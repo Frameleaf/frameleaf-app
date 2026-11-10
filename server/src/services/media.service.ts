@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ThumbnailOutput } from 'src/queue/sharp-operations.js';
 import type { AssetEditRepository, VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
@@ -18,7 +19,7 @@ import type {
   VideoInterfaces,
   VideoStreamInfo,
 } from 'src/types.js';
-import { FACE_THUMBNAIL_SIZE } from 'src/constants.js';
+import { FACE_THUMBNAIL_SIZE, FACE_UPRIGHT_PROBE_SIZE } from 'src/constants.js';
 import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -43,6 +44,7 @@ import {
   ImageFormat,
   JobName,
   JobStatus,
+  MlWorkload,
   PhysicalFileType,
   QueueName,
   RawExtractedFormat,
@@ -78,6 +80,7 @@ import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
+import { faceLooksSideways } from 'src/utils/face-quality.js';
 import { isBusy } from 'src/utils/file-problem.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
 import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
@@ -131,7 +134,8 @@ import {
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { batched, clamp } from 'src/utils/misc.js';
+import { batched, clamp, isFacialRecognitionEnabled } from 'src/utils/misc.js';
+import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
 import { RawRenderError, type RawRenderFailure, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
@@ -995,22 +999,25 @@ export class MediaService extends BaseService {
     const thumbnailPath = attemptOutputPath(StorageCore.getPersonThumbnailPath({ ownerId, personGroupId }));
     this.storageCore.ensureFolders(thumbnailPath);
 
-    const thumbnailOptions: GenerateThumbnailOptions = {
+    const dims = { old: { width: oldWidth, height: oldHeight }, new: { width: info.width, height: info.height } };
+    const baseOptions = {
       colorspace: image.colorspace,
       format: ImageFormat.Jpeg,
       raw: info,
       quality: image.thumbnail.quality,
       progressive: false,
       processInvalidImages: false,
+    };
+    // FL-1383: a face that is sideways in its photo (a scan, someone lying down) is turned upright
+    const turn = faceLooksSideways({ x1, y1, x2, y2 })
+      ? await this.getUprightTurn(decodedImage, baseOptions, this.getCrop(dims, { x1, y1, x2, y2 }, 2))
+      : 0;
+    const thumbnailOptions: GenerateThumbnailOptions = {
+      ...baseOptions,
       size: FACE_THUMBNAIL_SIZE,
       edits: [
-        {
-          action: AssetEditAction.Crop,
-          parameters: this.getCrop(
-            { old: { width: oldWidth, height: oldHeight }, new: { width: info.width, height: info.height } },
-            { x1, y1, x2, y2 },
-          ),
-        },
+        { action: AssetEditAction.Crop, parameters: this.getCrop(dims, { x1, y1, x2, y2 }) },
+        ...(turn ? [{ action: AssetEditAction.Rotate as const, parameters: { angle: turn } }] : []),
       ],
     };
 
@@ -1055,9 +1062,81 @@ export class MediaService extends BaseService {
     return JobStatus.Success;
   }
 
+  /**
+   * FL-1383: the quarter turn that stands a sideways face upright, or 0 to leave it. The face detector
+   * on this network reads the face turned each way, with room around it (it does not find a face that
+   * fills the frame): turned the right way the face is upright and scores highest. Measured with
+   * buffalo_l: upright 0.85, a quarter turn off 0.68 to 0.72 with a box 1.7 times wider than tall.
+   * Without a detector (faces turned off, or processed away from home) the thumbnail stays as it is.
+   */
+  private async getUprightTurn(
+    decodedImage: Buffer,
+    options: Omit<GenerateThumbnailOptions, 'size' | 'edits'>,
+    crop: CropParameters,
+  ): Promise<0 | 90 | 270> {
+    let folder: string | undefined;
+    try {
+      const { machineLearning } = await this.getConfig({ withCache: true });
+      if (!isFacialRecognitionEnabled(machineLearning)) {
+        return 0;
+      }
+      const destinationId = await homeMlDestinationId(this.mlDestinationRepository, MlWorkload.Face);
+      const selection = await selectMlDestination(
+        {
+          mlDestinationRepository: this.mlDestinationRepository,
+          machineLearningRepository: this.machineLearningRepository,
+        },
+        {
+          workload: MlWorkload.Face,
+          destinationId,
+          jobId: null,
+          jobName: JobName.PersonGenerateThumbnail,
+          homeOnly: true,
+        },
+      );
+      const { modelName, minScore } = machineLearning.facialRecognition;
+      folder = await fs.mkdtemp(path.join(tmpdir(), 'frameleaf-person-'));
+      let best: { turn: 0 | 90 | 270; score: number } = { turn: 0, score: 0 };
+      for (const turn of [90, 270] as const) {
+        const probePath = path.join(folder, `${turn}.jpeg`);
+        await this.mediaRepository.generateThumbnail(
+          decodedImage,
+          {
+            ...options,
+            size: FACE_UPRIGHT_PROBE_SIZE,
+            edits: [
+              { action: AssetEditAction.Crop, parameters: crop },
+              { action: AssetEditAction.Rotate, parameters: { angle: turn } },
+            ],
+          },
+          probePath,
+        );
+        const { faces } = await this.machineLearningRepository.detectFaces(selection, probePath, {
+          modelName,
+          minScore,
+        });
+        for (const { boundingBox, score } of faces) {
+          if (!faceLooksSideways(boundingBox) && score > best.score) {
+            best = { turn, score };
+          }
+        }
+      }
+      return best.turn;
+    } catch (error) {
+      this.logger.debug(`Person thumbnail left as it is, no upright check: ${(error as Error)?.message ?? error}`);
+      return 0;
+    } finally {
+      if (folder) {
+        await fs.rm(folder, { recursive: true, force: true });
+      }
+    }
+  }
+
+  /** The square around a face: 10% wider than the face for the thumbnail, `zoom` 2 leaves room around it. */
   private getCrop(
     dims: { old: ImageDimensions; new: ImageDimensions },
     { x1, y1, x2, y2 }: BoundingBox,
+    zoom = 1.1,
   ): CropParameters {
     // face bounding boxes can spill outside the image dimensions
     const clampedX1 = clamp(x1, 0, dims.old.width);
@@ -1074,8 +1153,7 @@ export class MediaService extends BaseService {
     const middleX = Math.round(widthScale * clampedX1 + halfWidth);
     const middleY = Math.round(heightScale * clampedY1 + halfHeight);
 
-    // zoom out 10%
-    const targetHalfSize = Math.floor(Math.max(halfWidth, halfHeight) * 1.1);
+    const targetHalfSize = Math.floor(Math.max(halfWidth, halfHeight) * zoom);
 
     // get the longest distance from the center of the image without overflowing
     const newHalfSize = Math.min(

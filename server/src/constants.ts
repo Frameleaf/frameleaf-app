@@ -175,6 +175,8 @@ export const excludePaths = [
 export const excludeRoutePatterns = ['/.well-known/oauth-protected-resource/*path'];
 
 export const FACE_THUMBNAIL_SIZE = 250;
+/** FL-1383: the size the face detector reads a person thumbnail's crop at to tell which way is up. */
+export const FACE_UPRIGHT_PROBE_SIZE = 500;
 
 type ModelInfo = { dimSize: number };
 /**

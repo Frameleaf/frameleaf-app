@@ -173,7 +173,7 @@ const releaseSharedSpacePersonCovers = async (db: Kysely<DB>, assetIds: string[]
 /**
  * The face that stands in for a person once their featured face is on a Locked photo: another of
  * their visible faces on a photo neither Locked nor trashed; faces on photos that are not sensitive
- * first (as `PersonRepository.getRandomFace` does), then Best Photos, then the newest. None when there
+ * first (as `PersonRepository.getBestFace` does), then Best Photos, then the newest. None when there
  * is no such face. An archived photo only when the owner includes archived photos in People (FL-795).
  */
 export const nextPersonFace = (eb: ExpressionBuilder<DB, 'person'>, scores: BestPhotoScoreTable) =>

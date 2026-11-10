@@ -463,10 +463,108 @@ describe(PersonRepository.name, () => {
       const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
       const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
 
-      await expect(sut.getRandomFace(person.personGroupId, user.id)).resolves.toBeUndefined();
+      await expect(sut.getBestFace(person.personGroupId, user.id)).resolves.toBeUndefined();
 
       await includeArchived(ctx.database, user.id, true);
-      await expect(sut.getRandomFace(person.personGroupId, user.id)).resolves.toMatchObject({ id: assetFace.id });
+      await expect(sut.getBestFace(person.personGroupId, user.id)).resolves.toMatchObject({ id: assetFace.id });
+    });
+
+    describe('the best face for a main photo (FL-1383)', () => {
+      // a 1000 x 1000 frame; `good` is upright, whole and large
+      const frame = { imageWidth: 1000, imageHeight: 1000 };
+      const good = { ...frame, boundingBoxX1: 400, boundingBoxY1: 300, boundingBoxX2: 550, boundingBoxY2: 500 };
+      const sideways = { ...frame, boundingBoxX1: 300, boundingBoxY1: 400, boundingBoxX2: 640, boundingBoxY2: 600 };
+      const cutOff = { ...frame, boundingBoxX1: 0, boundingBoxY1: 300, boundingBoxX2: 150, boundingBoxY2: 500 };
+      const tiny = { ...frame, boundingBoxX1: 400, boundingBoxY1: 300, boundingBoxX2: 430, boundingBoxY2: 340 };
+      const unit = (index: number, mix = 0) => {
+        const vector = Array.from({ length: 512 }, () => 0);
+        vector[index] = 1;
+        vector[index + 1] = mix;
+        return `[${vector}]`;
+      };
+      const seed = async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const { person } = await ctx.newPerson({ ownerId: user.id });
+        const face = async (box: object, embedding?: string) => {
+          const { asset } = await ctx.newAsset({ ownerId: user.id });
+          const { assetFace } = await ctx.newAssetFace({
+            assetId: asset.id,
+            personGroupId: person.personGroupId,
+            ...box,
+          });
+          if (embedding) {
+            await ctx.database.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+          }
+          return assetFace;
+        };
+        return { ctx, sut, user, person, face };
+      };
+
+      it('prefers an upright, whole, large face over a sideways, cut off or tiny one', async () => {
+        const { sut, user, person, face } = await seed();
+        await face(sideways);
+        await face(cutOff);
+        await face(tiny);
+        const best = await face(good);
+
+        await expect(sut.getBestFace(person.personGroupId, user.id)).resolves.toEqual({ id: best.id, poor: false });
+      });
+
+      it('says so when the best face there is still fails the checks', async () => {
+        const { sut, user, person, face } = await seed();
+        const only = await face(sideways);
+
+        await expect(sut.getBestFace(person.personGroupId, user.id)).resolves.toEqual({ id: only.id, poor: true });
+      });
+
+      it("picks the face closest to the person's typical look among the good ones", async () => {
+        const { sut, user, person, face } = await seed();
+        // four faces look alike; one (larger) looks like someone else
+        const stranger = await face({ ...good, boundingBoxX2: 700, boundingBoxY2: 700 }, unit(100));
+        await face(good, unit(0, 0.3));
+        await face(good, unit(0, -0.3));
+        await face(good, unit(0, 0.2));
+        const typical = await face(good, unit(0));
+
+        const best = await sut.getBestFace(person.personGroupId, user.id);
+        expect(best?.id).toBe(typical.id);
+        expect(best?.id).not.toBe(stranger.id);
+      });
+
+      it('lists the people whose main photo fails the checks, and whether the owner picked it', async () => {
+        const { ctx, sut, user, person, face } = await seed();
+        const featured = await face(sideways);
+        await ctx.get(PersonRepository).update({
+          ownerId: user.id,
+          personGroupId: person.personGroupId,
+          faceAssetId: featured.id,
+          isFeaturedFaceManual: true,
+        });
+        const { person: fine } = await ctx.newPerson({ ownerId: user.id });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        const { assetFace: fineFace } = await ctx.newAssetFace({
+          assetId: asset.id,
+          personGroupId: fine.personGroupId,
+          ...good,
+        });
+        await ctx.get(PersonRepository).update({
+          ownerId: user.id,
+          personGroupId: fine.personGroupId,
+          faceAssetId: fineFace.id,
+        });
+
+        const poor = await sut.getPeopleWithPoorMainPhoto();
+        expect(poor.filter(({ ownerId }) => ownerId === user.id)).toEqual([
+          {
+            ownerId: user.id,
+            personGroupId: person.personGroupId,
+            faceId: featured.id,
+            manual: true,
+            sideways: true,
+          },
+        ]);
+      });
     });
 
     it('keeps a cleared person without a thumbnail when only archived faces are left, unless archived are included', async () => {

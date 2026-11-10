@@ -302,6 +302,7 @@ export type Person = {
   birthDate: Date | null;
   color: string | null;
   faceAssetId: string | null;
+  isFeaturedFaceManual: boolean;
   isHidden: boolean;
   thumbnailPath: string;
 };

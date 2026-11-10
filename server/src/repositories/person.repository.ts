@@ -25,10 +25,27 @@ import {
   withFilePath,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { FACE_MIN_FRAME_SHARE, FACE_SIDEWAYS_RATIO } from 'src/utils/face-quality.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 import { archivedAllowedInPeople, isPeopleVisible } from 'src/utils/people-visibility.js';
+
+// FL-1383: a face's box as a main photo (see `face-quality.ts` for the measurements behind the numbers).
+const faceBoxWidth = sql<number>`(asset_face."boundingBoxX2" - asset_face."boundingBoxX1")`;
+const faceBoxHeight = sql<number>`(asset_face."boundingBoxY2" - asset_face."boundingBoxY1")`;
+const faceLooksSidewaysSql = sql<boolean>`(${faceBoxWidth} > ${sql.lit(FACE_SIDEWAYS_RATIO)} * ${faceBoxHeight})`;
+/** The face's longer side as a share of the frame's longer side. */
+const faceFrameShare = sql<number>`(greatest(${faceBoxWidth}, ${faceBoxHeight})::float8 / greatest(asset_face."imageWidth", asset_face."imageHeight", 1))`;
+/** Sideways, cut off by the frame, or tiny. */
+const faceIsPoorMainPhoto = sql<boolean>`(
+  ${faceLooksSidewaysSql}
+  or asset_face."boundingBoxX1" <= 0
+  or asset_face."boundingBoxY1" <= 0
+  or asset_face."boundingBoxX2" >= asset_face."imageWidth" - 1
+  or asset_face."boundingBoxY2" >= asset_face."imageHeight" - 1
+  or ${faceFrameShare} < ${sql.lit(FACE_MIN_FRAME_SHARE)}
+)`;
 
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
   withHidden: boolean;
@@ -1052,27 +1069,90 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .execute();
   }
+  /**
+   * FL-1383: the face that best stands for a person, or none when no face qualifies. In order: not
+   * sensitive, not a poor main photo (sideways, cut off by the frame or tiny, see `faceIsPoorMainPhoto`),
+   * a photo before a video frame, then the face closest to the person's typical look (the centre of their
+   * face embeddings), then the larger one. `poor` says the best there is still fails the box checks.
+   */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
-  getRandomFace(personGroupId: string, ownerId: string) {
-    return (
-      this.db
-        .selectFrom('asset_face')
-        .selectAll('asset_face')
-        // A Locked photo is never a face thumbnail (FL-53): the thumbnail is shown on the people page
-        // and wherever the person is listed, whatever the session.
-        .innerJoin('asset', (join) =>
-          join.onRef('asset.id', '=', 'asset_face.assetId').on((eb) => isNotLockedAsset(eb)),
-        )
-        // FL-795: nor an archived photo, unless the person's owner includes archived photos in People
-        .where(archivedAllowedInPeople(ownerId))
-        .where(libraryScopePredicate(LibraryScope.Personal))
-        .where('asset_face.personGroupId', '=', personGroupId)
-        .where('asset_face.deletedAt', 'is', null)
-        .where('asset_face.isVisible', 'is', true)
-        // Prefer a non-NSFW face for person thumbnails; NSFW-only people still get one.
-        .orderBy(sql`${nsfwAssetIdExists(sql.ref('asset_face.assetId'))} asc`)
-        .executeTakeFirst()
-    );
+  getBestFace(personGroupId: string, ownerId: string) {
+    // ponytail: the centre is read from 500 of the person's faces and the ranking from their 200 best
+    // boxes, so a person with 50,000 faces costs the same as one with 500; widen both if picks look off.
+    const centre = sql`(
+      select avg(sample.embedding) from (
+        select face_search.embedding
+        from face_search
+        inner join asset_face as member on member.id = face_search."faceId"
+        where member."personGroupId" = ${personGroupId}
+          and member."deletedAt" is null
+          and member."isVisible" is true
+        limit 500
+      ) as sample
+    )`;
+    return this.db
+      .with('candidate', (qb) =>
+        qb
+          .selectFrom('asset_face')
+          .selectAll('asset_face')
+          // A Locked photo is never a face thumbnail (FL-53): the thumbnail is shown on the people page
+          // and wherever the person is listed, whatever the session.
+          .innerJoin('asset', (join) =>
+            join.onRef('asset.id', '=', 'asset_face.assetId').on((eb) => isNotLockedAsset(eb)),
+          )
+          .select([
+            // Prefer a non-NSFW face for person thumbnails; NSFW-only people still get one.
+            nsfwAssetIdExists(sql.ref('asset_face.assetId')).as('nsfw'),
+            faceIsPoorMainPhoto.as('poor'),
+            faceLooksSidewaysSql.as('sideways'),
+            sql<boolean>`asset.type = ${sql.lit(AssetType.Image)}`.as('still'),
+            faceFrameShare.as('share'),
+          ])
+          // FL-795: nor an archived photo, unless the person's owner includes archived photos in People
+          .where(archivedAllowedInPeople(ownerId))
+          .where(libraryScopePredicate(LibraryScope.Personal))
+          .where('asset_face.personGroupId', '=', personGroupId)
+          .where('asset_face.deletedAt', 'is', null)
+          .where('asset_face.isVisible', 'is', true)
+          .orderBy(sql`${nsfwAssetIdExists(sql.ref('asset_face.assetId'))} asc`)
+          .orderBy(sql`${faceIsPoorMainPhoto} asc`)
+          .orderBy(sql`${faceLooksSidewaysSql} asc`)
+          .orderBy(sql`asset.type = ${sql.lit(AssetType.Image)} desc`)
+          .orderBy(sql`${faceFrameShare} desc`)
+          .limit(200),
+      )
+      .selectFrom('candidate')
+      .leftJoin('face_search', 'face_search.faceId', 'candidate.id')
+      .select(['candidate.id', 'candidate.poor'])
+      .orderBy('candidate.nsfw', 'asc')
+      .orderBy('candidate.poor', 'asc')
+      .orderBy('candidate.sideways', 'asc')
+      .orderBy('candidate.still', 'desc')
+      .orderBy(sql`face_search.embedding <=> ${centre} asc nulls last`)
+      .orderBy('candidate.share', 'desc')
+      .orderBy('candidate.id')
+      .limit(1)
+      .executeTakeFirst();
+  }
+  /**
+   * FL-1383: people whose main photo fails the box checks. `manual` is one the owner picked (it is never
+   * replaced); `sideways` is the one check a thumbnail can still put right, by turning the crop.
+   */
+  @GenerateSql()
+  getPeopleWithPoorMainPhoto() {
+    return this.db
+      .selectFrom('person')
+      .innerJoin('asset_face', 'asset_face.id', 'person.faceAssetId')
+      .select([
+        'person.ownerId',
+        'person.personGroupId',
+        'asset_face.id as faceId',
+        'person.isFeaturedFaceManual as manual',
+        faceLooksSidewaysSql.as('sideways'),
+      ])
+      .where('asset_face.deletedAt', 'is', null)
+      .where(faceIsPoorMainPhoto)
+      .execute();
   }
   /**
    * People with a face on one of `assetIds`, or on another photo of their stacks, who have a featured
