@@ -49,7 +49,7 @@ import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo 
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
 import { takeHandedToCare } from 'src/utils/library-care-handoff.js';
-import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
+import { LockedKeyUnavailableError, withPlainCopy } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
@@ -68,6 +68,11 @@ const rawBuffer = Buffer.from('raw image data');
 const extractedBuffer = Buffer.from('embedded image file');
 const renderedRawBuffer = Buffer.from('rendered raw image');
 const getFilterOption = (outputOptions: string[], option = '-vf') => outputOptions[outputOptions.indexOf(option) + 1];
+
+vi.mock('src/utils/locked-read.js', async (original) => {
+  const actual = await original<typeof import('src/utils/locked-read.js')>();
+  return { ...actual, withPlainCopy: vi.fn(actual.withPlainCopy) };
+});
 
 vi.mock('src/utils/raw-renderer.js', async (original) => ({
   ...(await original<typeof import('src/utils/raw-renderer.js')>()),
@@ -1954,6 +1959,22 @@ describe(MediaService.name, () => {
         data: { id: asset.id, from: 'preview', message },
       });
       expect(takeHandedToCare(asset.id)).toBe(true);
+    });
+
+    it('a failure after the hand-off, cleaning up an encrypted copy, leaves no note for a later skipped attempt', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.decodeImage.mockRejectedValue(new SharpOperationError('VipsJpeg: premature end of JPEG image'));
+      const cleanupFailure = new Error('could not delete the temporary copy');
+      // the real wrapper runs the job, then its cleanup throws
+      vi.mocked(withPlainCopy).mockImplementationOnce(async (path, run) => {
+        await run(path);
+        throw cleanupFailure;
+      });
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(cleanupFailure);
+
+      expect(takeHandedToCare(asset.id)).toBe(false);
     });
 
     it.each([

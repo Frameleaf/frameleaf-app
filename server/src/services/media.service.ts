@@ -77,7 +77,7 @@ import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { isBusy } from 'src/utils/file-problem.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
-import { noteHandedToCare } from 'src/utils/library-care-handoff.js';
+import { noteHandedToCare, takeHandedToCare } from 'src/utils/library-care-handoff.js';
 import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { DJI_SRT_HEAD_BYTES, getDjiSrtCandidates, parseDjiSrtColorMode } from 'src/utils/log-video-srt.js';
 import {
@@ -508,6 +508,9 @@ export class MediaService extends BaseService {
         ),
       );
     } catch (error) {
+      // FL-1337: the hand-off note covers only the attempt that returns Skipped. Cleaning up an encrypted
+      // temporary copy can still throw after the note was made; the attempt then fails and holds nothing back.
+      takeHandedToCare(asset.id);
       if (isDriveFullError(error)) {
         this.noteThumbnailDriveFull(error);
         deferJobUntilDependency('local-capacity');
