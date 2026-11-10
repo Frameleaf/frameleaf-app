@@ -1,3 +1,8 @@
+<script module lang="ts">
+  // The page swaps the switch to another spot when the mode changes; the new one takes the focus back.
+  let focusOnMount = false;
+</script>
+
 <script lang="ts">
   /**
    * FL-918: the two-way Library Assistant / Classic search switch from the approved mock
@@ -7,15 +12,47 @@
   import { t } from 'svelte-i18n';
 
   let { classic, onChange }: { classic: boolean; onChange: (classic: boolean) => void } = $props();
+  let group: HTMLDivElement | undefined = $state();
+
+  const choose = (next: boolean) => {
+    if (next === classic) {
+      return;
+    }
+    focusOnMount = !!group?.contains(document.activeElement);
+    onChange(next);
+  };
+
+  // A radio group: arrow keys move the choice, and only the chosen option is a Tab stop.
+  const onkeydown = (event: KeyboardEvent) => {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      choose(!classic);
+    }
+  };
+
+  $effect(() => {
+    void classic;
+    if (focusOnMount && group) {
+      focusOnMount = false;
+      group.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
+    }
+  });
 </script>
 
-<div class="frameleaf la-mode" role="radiogroup" aria-label={$t('frameleaf_assistant_mode')}>
+<div
+  class="frameleaf la-mode"
+  role="radiogroup"
+  aria-label={$t('frameleaf_assistant_mode')}
+  bind:this={group}
+  {onkeydown}
+>
   <button
     type="button"
     role="radio"
     aria-checked={!classic}
+    tabindex={classic ? -1 : 0}
     class:is-on={!classic}
-    onclick={() => classic && onChange(false)}
+    onclick={() => choose(false)}
   >
     {ASSISTANT_NAME}
   </button>
@@ -23,8 +60,9 @@
     type="button"
     role="radio"
     aria-checked={classic}
+    tabindex={classic ? 0 : -1}
     class:is-on={classic}
-    onclick={() => !classic && onChange(true)}
+    onclick={() => choose(true)}
   >
     {$t('frameleaf_assistant_classic')}
   </button>
