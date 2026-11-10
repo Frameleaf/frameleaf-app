@@ -6612,11 +6612,9 @@ describe(MediaHealthService.name, () => {
 
         const order = (mock: { mock: { invocationCallOrder: number[] } }) => mock.mock.invocationCallOrder[0];
         expect(mocks.job.cancelWaitingFixes).toHaveBeenCalledWith('asset-1');
-        // queued first, so nothing is superseded before its replacement exists
+        // the choice first, then its own fix, and only then are the waiting ones cancelled
+        expect(order(vi.mocked(mediaHealthRepository.settleFinding))).toBeLessThan(order(vi.mocked(mocks.job.queue)));
         expect(order(vi.mocked(mocks.job.queue))).toBeLessThan(order(vi.mocked(mocks.job.cancelWaitingFixes)));
-        expect(order(vi.mocked(mocks.job.cancelWaitingFixes))).toBeLessThan(
-          order(vi.mocked(mediaHealthRepository.settleFinding)),
-        );
       });
 
       it('leaves the waiting fixes as they are when its own fix cannot be queued (FL-1337)', async () => {
@@ -6626,7 +6624,25 @@ describe(MediaHealthService.name, () => {
         await expect(sut.tryFileProblemAgain(owner, 'health-1')).rejects.toThrow('queue unavailable');
 
         expect(mocks.job.cancelWaitingFixes).not.toHaveBeenCalled();
+      });
+
+      it('changes nothing when the problem was closed meanwhile (FL-1337)', async () => {
+        shows(needsYou());
+        vi.mocked(mediaHealthRepository.settleFinding).mockResolvedValueOnce(false);
+
+        await expect(sut.tryFileProblemAgain(owner, 'health-1')).rejects.toThrow('This photo changed meanwhile');
+
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        expect(mocks.job.cancelWaitingFixes).not.toHaveBeenCalled();
+      });
+
+      it('records nothing on a problem already resolved, and still tries again (FL-1337)', async () => {
+        shows(needsYou({ resolvedAt: new Date(), evidence: { fixState: 'repaired' } }));
+
+        await sut.tryFileProblemAgain(owner, 'health-1');
+
         expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+        expect(mocks.job.queue).toHaveBeenCalled();
       });
 
       it('lets an administrator try another account’s file again, and nothing else', async () => {

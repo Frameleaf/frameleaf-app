@@ -2681,17 +2681,26 @@ export class MediaHealthService {
     if (record.dismissedAt || record.assetDeletedAt) {
       throw new BadRequestException('This photo was dismissed or is in the Trash, so there is nothing to try again.');
     }
-    // The time of the choice is taken first, so this fix begins after it however the writes interleave. The new
-    // fix is queued before anything is superseded: a request that fails part way never leaves the photo with
-    // its waiting fixes cancelled and nothing in their place. Its own key (`fix-<id>`) is not among the waiting
-    // ones cancelled next, and a fix that carries on gives way only once `retriedAt` is written.
-    const retriedAt = new Date().toISOString();
+    // 1. The choice is recorded first, and only on a problem still open: one dismissed or settled meanwhile is
+    //    refused with nothing queued or cancelled. From here a fix that carries on (and any put-back a running
+    //    one makes later) gives way to this one.
+    // 2. Then this fix is queued, and only after that are the waiting fixes cancelled, so they are never
+    //    cancelled with nothing in their place. Its own key is not among the ones cancelled.
+    // A problem already resolved has no open finding for a fix to carry on from: nothing to record.
+    if (!record.resolvedAt) {
+      const recorded = await this.mediaHealthRepository.settleFinding({
+        healthId: record.id,
+        evidence: { retriedAt: new Date().toISOString() },
+      });
+      if (!recorded) {
+        throw new ConflictException('This photo changed meanwhile. Look at it again.');
+      }
+    }
     await this.jobRepository.queue({
       name: JobName.MediaHealthFixAsset,
       data: { id: record.assetId, from: 'person', attempt: 0, retry: randomUUID() },
     });
     await this.jobRepository.cancelWaitingFixes(record.assetId);
-    await this.mediaHealthRepository.settleFinding({ healthId: record.id, evidence: { retriedAt } });
     return this.getFileProblem(auth, id);
   }
 
