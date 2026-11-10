@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { MessageChannel, Worker, parentPort } from 'node:worker_threads';
 import type { ImportConfig, ImportDatabase } from 'src/immich-import/types.js';
+import type { RunFailureCause } from 'src/queue/run-failure-cause.js';
 import type { DB } from 'src/schema/index.js';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
@@ -31,6 +32,7 @@ import { retryLockContention } from 'src/queue/catalogue.js';
 import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/queue/configuration.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
+import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
 import { reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
@@ -773,8 +775,8 @@ export class JobRepository {
     });
   }
 
-  listRuns(take: number, skip: number) {
-    return this.store.listRuns(take, skip);
+  listRuns(take: number, skip: number, foldNightly = false) {
+    return this.store.listRuns(take, skip, foldNightly);
   }
 
   getRun(runId: string) {
@@ -783,6 +785,19 @@ export class JobRepository {
 
   listRunItems(runId: string, take: number, skip: number) {
     return this.store.listRunItems(runId, take, skip);
+  }
+
+  /** FL-1349: a run's left-over photos by cause, with samples the reader may see. Undefined for an unknown run. */
+  reviewRunFailures(runId: string, privacy: RunFailurePrivacy) {
+    return reviewRunFailures(this.store.db, runId, privacy);
+  }
+
+  retryRunFailures(runId: string, cause: RunFailureCause) {
+    return this.store.retryRunFailures(runId, cause);
+  }
+
+  stopRunFailures(runId: string, cause: RunFailureCause) {
+    return this.store.stopRunFailures(runId, cause);
   }
 
   private intent(item: JobItem): QueueIntent {

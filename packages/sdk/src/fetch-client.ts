@@ -10199,10 +10199,24 @@ export type JobRunResponseDto = {
     countsPhotos?: boolean;
     createdAt: string;
     delayed: number;
+    /** With foldNightly, on the newest nightly run: the previous nights, newest first */
+    earlierRuns?: {
+        createdAt: string;
+        finishedAt: string | null;
+        id: string;
+        /** Photos it left over */
+        leftOver: number;
+        total: number;
+    }[];
     enumerationDone: boolean;
     failed: number;
     /** Queues with failed or needs-attention jobs in this run */
     failedQueues?: QueueName[];
+    /** Photos left over (failed or needing attention) by cause, most telling first; stopped ones are left out. Absent when nothing failed */
+    failureCauses?: {
+        cause: JobRunFailureCause;
+        count: number;
+    }[];
     finishedAt: string | null;
     /** Selected items an import's first setup still holds back: until Library Care's file check ends, or while setup is paused */
     held?: number;
@@ -10210,9 +10224,24 @@ export type JobRunResponseDto = {
     kind: string;
     lastProgressAt: string | null;
     lastStage: string | null;
+    /** Photos that still need a look: the sum of failureCauses, present whenever it is. Cards use it rather than failed + needsAttention, which keep counting stopped photos and a live run's photos still being worked on */
+    leftOver?: number;
+    /** With foldNightly, on the newest nightly run: how long the same photos have been left over */
+    leftOverStreak?: {
+        /** Every night it could count back through left them all: it may be longer ("N or more nights") */
+        capped?: boolean;
+        /** Nights in a row, this one included, that left all of them over */
+        nights: number;
+        /** Photos this run left over (stopped ones aside) */
+        photos: number;
+    };
     needsAttention: number;
+    /** The overnight schedule's work */
+    nightly?: boolean;
     noDispatchBacklog: boolean;
     paused: number;
+    /** Paused queues that unstarted work of this run waits on; resuming them lets it carry on */
+    pausedQueues?: QueueName[];
     reasons: Reasons[];
     retrying: number;
     stageTotals: {
@@ -10230,6 +10259,8 @@ export type JobRunResponseDto = {
     };
     state: State4;
     total: number;
+    /** Names of up to three external libraries whose files work of this run waits for (can't be reached) */
+    unreachableLibraries?: string[];
     waiting: number;
 };
 export type MemoryHighlightResponseDto = {
@@ -10318,6 +10349,49 @@ export type RunningJobsResponseDto = {
 export type JobRunPageDto = {
     hasNextPage: boolean;
     items: JobRunResponseDto[];
+};
+export type JobRunFailureSampleDto = {
+    /** The photo or video */
+    assetId: string;
+    /** The name of its file */
+    fileName: string;
+    /** The name of the account whose library it is in */
+    ownerName: string;
+    /** The caller may see its picture: false on another account’s photo */
+    pictureAllowed: boolean;
+};
+export type JobRunFailureCauseDto = {
+    cause: JobRunFailureCause;
+    /** Photos of this cause that still need a look */
+    count: number;
+    /** For drive: up to three external libraries that can't be reached */
+    libraries: string[];
+    /** One raw error message, from a photo in the samples and a job that may show it; null when none may */
+    message: string | null;
+    /** Queues whose failed jobs these photos have (the per-photo lists) */
+    queues: QueueName[];
+    /** Of the photos needing a look, damaged files Library care already repaired */
+    repaired: number;
+    /** Up to six of the photos the caller may see: never another account’s Locked or hidden media */
+    samples: JobRunFailureSampleDto[];
+    /** Photos of this cause whose processing was stopped (Stop trying) */
+    stopped: number;
+};
+export type JobRunFailuresResponseDto = {
+    /** One per cause with photos, most telling first */
+    causes: JobRunFailureCauseDto[];
+    /** The counts are photos; when false they are tasks */
+    countsPhotos: boolean;
+    /** Photos left over, stopped ones included */
+    photos: number;
+};
+export type JobRunFailureActionDto = {
+    action: JobRunFailureAction;
+    cause: JobRunFailureCause;
+};
+export type JobRunFailureActionResponseDto = {
+    /** Photos tried again or stopped */
+    count: number;
 };
 export type JobRunItemResponseDto = {
     id: string;
@@ -20476,7 +20550,13 @@ export type IntegrityGetReportDto = {
 export type IntegrityReportDto = {
     "type": IntegrityReport;
 };
+export type JobRunItemSearchDto = {
+    skip?: number;
+    take?: number;
+};
 export type JobRunSearchDto = {
+    /** Show only the newest nightly run, with its earlier nights (Recent work); a nightly run with a newer one is left out */
+    foldNightly?: boolean;
     skip?: number;
     take?: number;
 };
@@ -29713,7 +29793,8 @@ export function getRunningJobs(opts?: Oazapfts.RequestOpts) {
 /**
  * List durable job runs
  */
-export function getJobRuns({ skip, take }: {
+export function getJobRuns({ foldNightly, skip, take }: {
+    foldNightly?: boolean;
     skip?: number;
     take?: number;
 }, opts?: Oazapfts.RequestOpts) {
@@ -29721,11 +29802,47 @@ export function getJobRuns({ skip, take }: {
         status: 200;
         data: JobRunPageDto;
     }>(`/jobs/runs${QS.query(QS.explode({
+        foldNightly,
         skip,
         take
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Review a job run's left-over photos
+ */
+export function getJobRunFailures({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: JobRunFailuresResponseDto;
+    } | {
+        status: 404;
+    }>(`/jobs/runs/${encodeURIComponent(id)}/failures`, {
+        ...opts
+    }));
+}
+/**
+ * Act on a job run's left-over photos
+ */
+export function actOnJobRunFailures({ id, jobRunFailureActionDto }: {
+    id: string;
+    jobRunFailureActionDto: JobRunFailureActionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: JobRunFailureActionResponseDto;
+    } | {
+        status: 400;
+    } | {
+        status: 404;
+    }>(`/jobs/runs/${encodeURIComponent(id)}/failures`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: jobRunFailureActionDto
+    })));
 }
 /**
  * Inspect selected job run items
@@ -41155,6 +41272,13 @@ export enum ManualJobName {
     IntegrityChecksumMismatchDeleteAll = "integrity-checksum-mismatch-delete-all",
     AnalyticsCollect = "analytics-collect"
 }
+export enum JobRunFailureCause {
+    Drive = "drive",
+    Missing = "missing",
+    Damaged = "damaged",
+    Unsupported = "unsupported",
+    Other = "other"
+}
 export enum Reasons {
     WorkerUnavailable = "worker_unavailable",
     NoDispatchBacklog = "no_dispatch_backlog",
@@ -41215,6 +41339,10 @@ export enum MemoryExportStatus {
     Failed = "failed",
     Cancelling = "cancelling",
     Cancelled = "cancelled"
+}
+export enum JobRunFailureAction {
+    Retry = "retry",
+    Stop = "stop"
 }
 export enum Outcome {
     Completed = "completed",
