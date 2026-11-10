@@ -10,6 +10,9 @@ import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { vitest } from 'vitest';
+import type { Transaction } from 'kysely';
+import type { DB } from 'src/schema/index.js';
+import type { AssetUploadPublication } from 'src/services/asset-media.service.js';
 import { AssetFile } from 'src/database.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
@@ -689,6 +692,187 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('uploadAsset', () => {
+    describe('guarded publication', () => {
+      const file = {
+        uuid: 'extracted-upload',
+        originalPath: '/data/upload/user1/extracted.jpeg',
+        checksum: Buffer.alloc(32, 1),
+        legacyChecksum: Buffer.alloc(20, 2),
+        originalName: 'restored.jpeg',
+        size: 42,
+      };
+      const transaction = {} as Transaction<DB>;
+      const physicalFile = { id: 'physical-original', path: '/data/library/shared.jpeg' };
+      const publish =
+        (locked: boolean): AssetUploadPublication =>
+        (create) =>
+          create(transaction, locked);
+
+      beforeEach(() => {
+        mocks.crypto.randomUUID.mockReturnValue('planned-asset');
+        mocks.asset.create.mockResolvedValue({
+          ...assetEntity,
+          id: 'planned-asset',
+          ownerId: authStub.user1.user.id,
+          originalPath: file.originalPath,
+        });
+        mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({ physicalFile, linked: true } as never);
+      });
+
+      it('finishes file preparation before the final privacy decision and publishes its receipt before effects', async () => {
+        const entered = Promise.withResolvers<void>();
+        const resume = Promise.withResolvers<{ path: string; identity: string }>();
+        const proof = { path: physicalFile.path, identity: 'stable-original' };
+        let locked = false;
+        let receiptCommitted = false;
+        mocks.physicalFile.proveStoredCopy.mockImplementationOnce(() => {
+          entered.resolve();
+          return resume.promise;
+        });
+        const publication = vi.fn<AssetUploadPublication>(async (create) => {
+          const asset = await create(transaction, locked);
+          expect(mocks.job.queue).not.toHaveBeenCalled();
+          expect(mocks.event.emit).not.toHaveBeenCalled();
+          receiptCommitted = true;
+          return asset;
+        });
+        mocks.event.emit.mockImplementation(() =>
+          tryPromise(() => {
+            expect(receiptCommitted).toBe(true);
+          }),
+        );
+        const uploading = sut.uploadAsset(authStub.user1, createDto, file, undefined, publication);
+        try {
+          await entered.promise;
+          expect(mocks.storage.utimes).toHaveBeenCalledTimes(1);
+          expect(publication).not.toHaveBeenCalled();
+          expect(mocks.asset.create).not.toHaveBeenCalled();
+          // The retained source became private while shared-file hashing was in flight.
+          locked = true;
+        } finally {
+          resume.resolve(proof);
+        }
+        await expect(uploading).resolves.toEqual({ id: 'planned-asset', status: AssetMediaStatus.CREATED });
+        expect(mocks.asset.create).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ id: 'planned-asset', visibility: AssetVisibility.Timeline }),
+          { reason: AssetLockReason.Marked, lockedBy: authStub.user1.user.id },
+          transaction,
+        );
+        expect(mocks.asset.upsertExif).toHaveBeenCalledExactlyOnceWith(
+          { exif: { assetId: 'planned-asset', fileSizeInByte: file.size }, lockedPropertiesBehavior: 'override' },
+          transaction,
+        );
+        expect(mocks.physicalFile.proveStoredCopy).toHaveBeenCalledTimes(1);
+        expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledExactlyOnceWith(
+          'planned-asset',
+          { checksum: file.checksum, sizeInBytes: file.size },
+          expect.objectContaining({ verify: expect.any(Function), identify: expect.any(Function) }),
+          { transaction, proof },
+        );
+        expect(mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2].untrash).toBeUndefined();
+        expect(mocks.storage.utimes).toHaveBeenCalledTimes(1);
+        expect(mocks.forkSchema.recordAssetChecksums).toHaveBeenCalledExactlyOnceWith({
+          assetId: 'planned-asset',
+          sha1: file.legacyChecksum,
+          sha256: file.checksum,
+          sizeInBytes: file.size,
+          path: physicalFile.path,
+          source: 'upload',
+        });
+        expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith(
+          'AssetCreate',
+          expect.objectContaining({
+            asset: expect.objectContaining({
+              originalPath: physicalFile.path,
+              physicalOriginalFileId: physicalFile.id,
+            }),
+            file,
+          }),
+        );
+        expect(mocks.job.queue.mock.calls.filter(([job]) => job.name === JobName.AssetExtractMetadata)).toHaveLength(1);
+      });
+
+      it.each([undefined, AssetVisibility.Locked])(
+        'keeps the final public decision without removing explicit %s privacy',
+        async (visibility) => {
+          await sut.uploadAsset(authStub.user1, { ...createDto, visibility }, file, undefined, publish(false));
+          expect(mocks.asset.create).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'planned-asset', visibility: AssetVisibility.Timeline }),
+            visibility ? { reason: AssetLockReason.Marked, lockedBy: authStub.user1.user.id } : undefined,
+            transaction,
+          );
+          expect(mocks.asset.unlock).not.toHaveBeenCalled();
+        },
+      );
+
+      it('keeps its extracted copy when adoption does not select a shared file', async () => {
+        mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({
+          physicalFile: { ...physicalFile, path: file.originalPath },
+          linked: false,
+        } as never);
+        await sut.uploadAsset(authStub.user1, createDto, file, undefined, publish(false));
+        expect(mocks.job.queue.mock.calls.some(([job]) => job.name === JobName.FileDelete)).toBe(false);
+        expect(mocks.physicalFile.proveStoredCopy).toHaveBeenCalledTimes(1);
+        expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not repair an existing public original before the guard and preserves checksum duplicate responses', async () => {
+        const repair = vi.spyOn(sut, 'restoreLostOriginal').mockResolvedValue({
+          id: 'appeared-during-preparation',
+          visible: true,
+          fileUsed: true,
+        });
+        mocks.asset.create.mockRejectedValue(
+          Object.assign(new Error('duplicate'), { constraint_name: ASSET_CHECKSUM_CONSTRAINT }),
+        );
+        mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('appeared-during-preparation');
+        await expect(sut.uploadAsset(authStub.user1, createDto, file, undefined, publish(true))).resolves.toEqual({
+          id: 'appeared-during-preparation',
+          status: AssetMediaStatus.DUPLICATE,
+        });
+        expect(repair).not.toHaveBeenCalled();
+        expect(mocks.physicalFile.linkUploadedOriginal).not.toHaveBeenCalled();
+        expect(mocks.event.emit).not.toHaveBeenCalled();
+        expect(mocks.asset.remove).not.toHaveBeenCalled();
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [file.originalPath, undefined] },
+        });
+      });
+
+      it('does not announce or charge an upload when its receipt transaction fails', async () => {
+        const publication: AssetUploadPublication = async (create) => {
+          await create(transaction, true);
+          throw new Error('receipt failed');
+        };
+        await expect(sut.uploadAsset(authStub.user1, createDto, file, undefined, publication)).rejects.toThrow(
+          'receipt failed',
+        );
+        expect(mocks.event.emit).not.toHaveBeenCalled();
+        expect(mocks.asset.remove).not.toHaveBeenCalled();
+        expect(mocks.job.queue.mock.calls.some(([job]) => job.name === JobName.AssetExtractMetadata)).toBe(false);
+      });
+
+      it.each(['sidecar', 'live-photo'] as const)(
+        'refuses unsupported guarded %s publication before creating anything',
+        async (kind) => {
+          const publication = vi.fn(publish(false));
+          await expect(
+            sut.uploadAsset(
+              authStub.user1,
+              { ...createDto, ...(kind === 'live-photo' && { livePhotoVideoId: 'motion' }) },
+              file,
+              kind === 'sidecar' ? file : undefined,
+              publication,
+            ),
+          ).rejects.toBeInstanceOf(BadRequestException);
+          expect(publication).not.toHaveBeenCalled();
+          expect(mocks.asset.create).not.toHaveBeenCalled();
+          expect(mocks.physicalFile.proveStoredCopy).not.toHaveBeenCalled();
+        },
+      );
+    });
+
     it('should throw an error if the quota is exceeded', async () => {
       const file = {
         uuid: 'random-uuid',

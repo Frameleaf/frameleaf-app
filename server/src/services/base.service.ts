@@ -25,6 +25,7 @@ import {
 import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AccountEventInsert, AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
@@ -137,6 +138,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   AccessRepository,
   ActivityRepository,
   AdminAuditRepository,
+  AccountEventRepository,
   AlbumRepository,
   AlbumSummaryRepository,
   AlbumUserRepository,
@@ -222,6 +224,7 @@ export class BaseService {
     protected accessRepository: AccessRepository,
     protected activityRepository: ActivityRepository,
     protected adminAuditRepository: AdminAuditRepository,
+    protected accountEventRepository: AccountEventRepository,
     protected albumRepository: AlbumRepository,
     protected albumSummaryRepository: AlbumSummaryRepository,
     protected albumUserRepository: AlbumUserRepository,
@@ -316,6 +319,7 @@ export class BaseService {
       ctx.accessRepository,
       ctx.activityRepository,
       ctx.adminAuditRepository,
+      ctx.accountEventRepository,
       ctx.albumRepository,
       ctx.albumSummaryRepository,
       ctx.albumUserRepository,
@@ -835,6 +839,18 @@ export class BaseService {
     } catch (error) {
       const actions = events.map(({ action }) => action).join(', ');
       this.logger.error(`Unable to record administrator activity (${actions}): ${error}`);
+    }
+  }
+
+  /**
+   * FL-808: one row of the account's own activity log. Names only: never a password, PIN, token,
+   * API key secret or file path. A failure to record never fails the change itself.
+   */
+  protected async recordAccountEvent(event: AccountEventInsert): Promise<void> {
+    try {
+      await this.accountEventRepository.create(event);
+    } catch (error) {
+      this.logger.error(`Unable to record account activity (${event.action}): ${error}`);
     }
   }
 
