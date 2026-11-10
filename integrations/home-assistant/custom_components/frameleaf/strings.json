@@ -1,0 +1,101 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This Frameleaf account is already added.",
+      "authorize_url_timeout": "Frameleaf took too long to answer.",
+      "cannot_connect": "Frameleaf could not be reached.",
+      "missing_configuration": "Frameleaf sign-in is not set up.",
+      "oauth_error": "Frameleaf sent back something Home Assistant did not understand.",
+      "oauth_failed": "Signing in to Frameleaf did not finish.",
+      "oauth_timeout": "Signing in to Frameleaf took too long.",
+      "oauth_unauthorized": "Frameleaf did not allow Home Assistant.",
+      "reauth_successful": "Signed in again.",
+      "registration_closed": "This Frameleaf server does not let new apps connect themselves. Ask its administrator to allow it, or sign in with an API key.",
+      "wrong_account": "That is a different Frameleaf account. Sign in with the account you added before."
+    },
+    "create_entry": {
+      "default": "Frameleaf is connected."
+    },
+    "error": {
+      "cannot_connect": "Frameleaf could not be reached at this address.",
+      "invalid_auth": "Frameleaf did not accept this API key."
+    },
+    "flow_title": "{name}",
+    "step": {
+      "api_key": {
+        "data": {
+          "api_key": "API key",
+          "events": "Send Frameleaf events to Home Assistant (administrators)"
+        },
+        "description": "Make a key in Frameleaf under Settings › API keys. An administrator's key also shows storage, Cloud Backup and things that need attention, and can start a library scan.",
+        "title": "Sign in with an API key"
+      },
+      "pick_implementation": {
+        "title": "Sign in to Frameleaf"
+      },
+      "reauth_confirm": {
+        "description": "Frameleaf no longer accepts this sign-in. It may have been removed under Connected apps or API keys.",
+        "title": "Sign in to Frameleaf again"
+      },
+      "user": {
+        "data": {
+          "auth_method": "How to sign in",
+          "url": "Frameleaf address"
+        },
+        "description": "Type the address you use to open Frameleaf, such as http://frameleaf.local:2283.",
+        "title": "Connect Frameleaf"
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "scan_library": {
+        "name": "Look for new files"
+      }
+    },
+    "image": {
+      "picture": {
+        "name": "Picture"
+      }
+    },
+    "sensor": {
+      "cloud_backup": {
+        "name": "Cloud Backup",
+        "state": {
+          "backed_up": "Backed up",
+          "cancelled": "Stopped",
+          "failed": "Failed",
+          "not_set_up": "Not set up",
+          "running": "Backing up",
+          "waiting": "Waiting"
+        }
+      },
+      "last_phone_backup": {
+        "name": "Last phone backup"
+      },
+      "needs_attention": {
+        "name": "Things to look at"
+      },
+      "photos": {
+        "name": "Photos"
+      },
+      "storage_used": {
+        "name": "Storage used"
+      },
+      "storage_used_percent": {
+        "name": "Storage used (percent)"
+      },
+      "videos": {
+        "name": "Videos"
+      }
+    }
+  },
+  "selector": {
+    "auth_method": {
+      "options": {
+        "api_key": "Use an API key",
+        "oauth": "Sign in through Frameleaf (recommended: see your library, nothing more)"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["webhook"],
+  "documentation": "https://frameleaf.app/help/home-assistant",
+  "domain": "frameleaf",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Frameleaf/frameleaf-app/issues",
+  "name": "Frameleaf",
+  "requirements": [],
+  "version": "0.1.0",
+  "zeroconf": ["_frameleaf._tcp.local."]
+}
