@@ -57,7 +57,9 @@ const MAX_OUTPUT_BYTES = 1024 ** 3;
 export const runConverter = (command: string, args: string[], signal?: AbortSignal, maxBytes = MAX_OUTPUT_BYTES) =>
   new Promise<void>((resolve, reject) => {
     const blocks = String(Math.ceil(maxBytes / 512));
-    const child = spawn('sh', ['-c', 'ulimit -f "$0" 2>/dev/null; exec "$@"', blocks, command, ...args], { stdio: 'ignore' });
+    const child = spawn('sh', ['-c', 'ulimit -f "$0" 2>/dev/null; exec "$@"', blocks, command, ...args], {
+      stdio: 'ignore',
+    });
     const lifetime = superviseMediaProcess(child, { signal });
     let failure: Error | undefined;
     child.once('error', (error) => {
