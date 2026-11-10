@@ -141,6 +141,7 @@ describe('/server', () => {
       expect(body).toEqual({
         smartSearch: false,
         askSearch: false,
+        assistant: true,
         configFile: false,
         duplicateDetection: false,
         facialRecognition: false,

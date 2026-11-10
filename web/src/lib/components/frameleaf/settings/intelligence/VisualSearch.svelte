@@ -5,7 +5,8 @@
    * quality" is the model slider over the published search models (`machineLearning.clip.modelName`);
    * a model saved outside them selects no stop and stays until one replaces it, and the name itself
    * is under Advanced. "Ask
-   * about your photos" is `localFeatures.askSearch`.
+   * about your photos" is `localFeatures.askSearch`; the Library Assistant (FL-885) is
+   * `localFeatures.assistant`.
    *
    * What the app does today is said, not what the prototype hoped for: a new search model empties
    * the old search results when it is saved, and the photos are read again only when that work is
@@ -34,6 +35,7 @@
   } from '$lib/components/frameleaf/settings/intelligence/presets';
   import ServerModelSlider from '$lib/components/frameleaf/settings/intelligence/ServerModelSlider.svelte';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
+  import { ASSISTANT_NAME } from '$lib/frameleaf/assistant';
   import { aboutTime, rereadSeconds, saveAndRedo } from '$lib/frameleaf/library-progress';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -57,6 +59,7 @@
   const ml = $derived(settingsDraft.draft.machineLearning);
   const saved = $derived(settingsDraft.baseline.machineLearning);
   const askSearch = $derived(settingsDraft.draft.localFeatures?.askSearch);
+  const assistant = $derived(settingsDraft.draft.localFeatures?.assistant);
 
   const on = $derived(ml.enabled && ml.clip.enabled);
   const waiting = $derived(workWaiting(queueManager.queues, FEATURE_WORK['smart-search']));
@@ -215,6 +218,43 @@
             value={askSearch.maxResults}
             disabled={disabled || !askSearch.enabled}
             onChange={(value) => (askSearch.maxResults = value)}
+          />
+        </Row>
+      </Advanced>
+    </Section>
+  {/if}
+
+  {#if assistant}
+    <Section title={ASSISTANT_NAME}>
+      <Row
+        label={$t('frameleaf_intel_assistant', { values: { name: ASSISTANT_NAME } })}
+        help={$t('frameleaf_intel_assistant_help')}
+      >
+        <Switch
+          label={$t('frameleaf_intel_assistant', { values: { name: ASSISTANT_NAME } })}
+          checked={assistant.enabled}
+          held={disabled}
+          onChange={(value) => (assistant.enabled = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_intel_assistant_planner')} help={$t('frameleaf_intel_assistant_planner_help')}>
+        <Switch
+          label={$t('frameleaf_intel_assistant_planner')}
+          checked={assistant.planner}
+          held={disabled || !assistant.enabled}
+          onChange={(value) => (assistant.planner = value)}
+        />
+      </Row>
+      <Advanced summary={$t('frameleaf_intel_ask_advanced')}>
+        <Row label={$t('frameleaf_intel_ask_most')} help={$t('frameleaf_intel_assistant_most_help')}>
+          <Amount
+            label={$t('frameleaf_intel_ask_most')}
+            unit={$t('frameleaf_intel_unit_photos')}
+            min={1}
+            max={500}
+            value={assistant.maxResults}
+            disabled={disabled || !assistant.enabled}
+            onChange={(value) => (assistant.maxResults = value)}
           />
         </Row>
       </Advanced>

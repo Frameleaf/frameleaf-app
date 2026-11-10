@@ -67,6 +67,13 @@ describe('oauth-apps', () => {
       expect(scopePermissions(['library:download', 'nope'])).toEqual([Permission.AssetDownload]);
       expect(scopePermissions(['toString'])).toEqual([]);
     });
+
+    it('lets an app that sees the library count it, without reading other accounts (FL-866)', () => {
+      const permissions = scopePermissions(['library:read']);
+      expect(permissions).toContain(Permission.AssetStatistics);
+      expect(permissions).not.toContain(Permission.UserRead);
+      expect(permissions).not.toContain(Permission.ServerStatistics);
+    });
   });
 
   describe('checkRegisteredRedirectUri', () => {
