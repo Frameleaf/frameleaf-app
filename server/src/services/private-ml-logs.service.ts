@@ -36,44 +36,10 @@ export class PrivateMlLogsService {
     if (this.busy) return;
     this.busy = true;
     try {
-      const endpoint = this.ml
-        .getLocalUrls()
-        .map((url) => URL.parse(url))
-        .find(
-          (url) =>
-            url?.protocol === 'http:' &&
-            !url.username &&
-            !url.password &&
-            ['frameleaf-machine-learning', 'immich-machine-learning', '127.0.0.1', '[::1]', 'localhost'].includes(
-              url.hostname,
-            ),
-        );
-      if (!endpoint) return;
-      const url = new URL('logs', endpoint.origin);
-      url.searchParams.set('since', this.since);
-      const token = process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim();
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(3000),
-        redirect: 'error',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!response.ok || !response.body) return;
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let bytes = 0;
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          bytes += value.byteLength;
-          if (bytes > 64 * 1024 ** 2) return;
-          chunks.push(value);
-        }
-      } finally {
-        await reader.cancel();
-      }
+      const body = await this.ml.readBundledWorkerLogs(this.since);
+      if (!body) return;
       const fresh = new Map<string, PrivateLogInput>();
-      for (const line of Buffer.concat(chunks).toString('utf8').split('\n').slice(0, 5000)) {
+      for (const line of body.split('\n').slice(0, 5000)) {
         if (!line) continue;
         try {
           const row = JSON.parse(line) as PrivateLogInput & { id?: string };

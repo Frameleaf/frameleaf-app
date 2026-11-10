@@ -1,9 +1,12 @@
 import json
 import logging
 import re
+import sqlite3
 from collections import deque
+from contextlib import closing
 from datetime import datetime, timezone
 from ipaddress import IPv6Address, ip_address
+from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
@@ -45,11 +48,29 @@ def local_log_reader(host: str | None) -> bool:
     return address.is_loopback or (address.is_private and not address.is_unspecified and not address.is_link_local)
 
 
+def initialize_worker_log_spool(path: Path) -> None:
+    with closing(sqlite3.connect(path)) as database:
+        database.execute("PRAGMA journal_mode = WAL")
+        database.execute("CREATE TABLE IF NOT EXISTS log (id INTEGER PRIMARY KEY, at TEXT NOT NULL, row TEXT NOT NULL)")
+        database.commit()
+
+
 class WorkerLogs(logging.Handler):
-    def __init__(self) -> None:
+    def __init__(self, shared_path: Path | None = None) -> None:
         super().__init__()
         self.rows: deque[tuple[str, str]] = deque(maxlen=5000)
         self.rows_lock = Lock()
+        self.database = None
+        if shared_path is not None:
+            self.database = sqlite3.connect(shared_path, timeout=0.1, check_same_thread=False)
+            self.database.execute("PRAGMA synchronous = NORMAL")
+
+    def close(self) -> None:
+        with self.rows_lock:
+            if self.database is not None:
+                self.database.close()
+                self.database = None
+        super().close()
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -70,8 +91,23 @@ class WorkerLogs(logging.Handler):
         except Exception:
             return
         with self.rows_lock:
-            self.rows.append((at, row))
+            if self.database is None:
+                self.rows.append((at, row))
+            else:
+                try:
+                    with self.database:
+                        result = self.database.execute("INSERT INTO log (at, row) VALUES (?, ?)", (at, row))
+                        if result.lastrowid is not None:
+                            self.database.execute("DELETE FROM log WHERE id <= ?", (result.lastrowid - 5000,))
+                except sqlite3.Error:
+                    # A busy log spool must never fail an inference request.
+                    return
 
     def recent(self, since: str) -> str:
         with self.rows_lock:
-            return "".join(f"{row}\n" for at, row in self.rows if at >= since)
+            if self.database is None:
+                return "".join(f"{row}\n" for at, row in self.rows if at >= since)
+            return "".join(
+                f"{row}\n"
+                for (row,) in self.database.execute("SELECT row FROM log WHERE at >= ? ORDER BY id", (since,))
+            )

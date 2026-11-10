@@ -681,6 +681,34 @@ export class MachineLearningRepository implements RestorationInference {
     return [...this.config.urls];
   }
 
+  /** Only the bundled or loopback worker can supply diagnostics for this server's log. */
+  async readBundledWorkerLogs(since: string): Promise<string | undefined> {
+    const endpoint = this.getLocalUrls()
+      .map((url) => URL.parse(url))
+      .find(
+        (url) =>
+          url?.protocol === 'http:' &&
+          !url.username &&
+          !url.password &&
+          ['frameleaf-machine-learning', 'immich-machine-learning', '127.0.0.1', '[::1]', 'localhost'].includes(
+            url.hostname,
+          ),
+      );
+    if (!endpoint) return;
+    const url = new URL('logs', endpoint.origin);
+    url.searchParams.set('since', since);
+    const { response, body } = await fetchJobText(
+      url,
+      {
+        redirect: 'error',
+        headers: this.authHeaders({ url: endpoint.origin, authToken: process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim() }),
+      },
+      3000,
+      64 * 1024 ** 2,
+    );
+    return response.ok ? body : undefined;
+  }
+
   /** Semantic proposals are instance-local only, independent of Cloud destinations and routing. */
   async semanticMaskLocal(canvas: Buffer, target: 'subject' | 'sky', signal?: AbortSignal): Promise<Buffer> {
     if (!this.config.enabled) throw new Error('Local machine learning is disabled');

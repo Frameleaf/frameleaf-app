@@ -19,9 +19,17 @@ export const privateLogStore = (days: number, mediaLocation?: string) =>
 
 export const startPrivateLogs = (worker: PrivateLogWorker, days: number, mediaLocation?: string) => {
   const store = privateLogStore(days, mediaLocation);
-  const timer = setInterval(() => void flushPrivateLogs(), 500).unref();
+  const sweep = () => (worker === 'api' ? store.prune() : store.prune(worker)).catch(() => {});
+  let nextSweep = Date.now() + 3_600_000;
+  const timer = setInterval(() => {
+    void flushPrivateLogs();
+    if (worker === 'api' && Date.now() >= nextSweep) {
+      nextSweep = Date.now() + 3_600_000;
+      void sweep();
+    }
+  }, 500).unref();
   current = { worker, store, rows: [], timer };
-  void store.prune(worker).catch(() => {});
+  void sweep();
 };
 
 const flushPrivateLogs = async () => {

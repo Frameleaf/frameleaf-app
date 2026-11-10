@@ -347,7 +347,8 @@ if not _expected_token:
     )
 
 app.add_middleware(BearerAuthMiddleware, expected_token=_expected_token)
-worker_logs = WorkerLogs()
+worker_log_path = os.environ.get("FRAMELEAF_INTERNAL_ML_LOG_SPOOL")
+worker_logs = WorkerLogs(Path(worker_log_path) if worker_log_path else None)
 log.addHandler(worker_logs)
 
 
