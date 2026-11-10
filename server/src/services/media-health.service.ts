@@ -2248,7 +2248,7 @@ export class MediaHealthService {
 
   /**
    * What is wrong with the file, in plain words (design §2a): from the decoder's words and the bytes. A file the
-   * check calls unsupported (a format it does not decode, such as a PSD, some RAWs or an audio file) is not
+   * check calls unsupported (a format it does not decode, such as an InDesign file, some RAWs or an audio file) is not
    * supported rather than unreadable when nothing else is wrong with it (F5). Never a JPEG: one without a start
    * marker that won't decode is damaged.
    */

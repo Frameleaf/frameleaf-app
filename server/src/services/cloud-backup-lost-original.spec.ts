@@ -211,6 +211,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
       {} as never,
       {} as never,
       mocks.lockedEncryption as never,
+      {} as never,
     );
     sut.keyAskMs = 0;
   });

@@ -1,5 +1,6 @@
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import sharp from 'sharp';
 import { Colorspace } from 'src/enum.js';
 import { SharpOperations } from 'src/queue/sharp-operations.js';
@@ -34,6 +35,20 @@ describe('still ladder: the libvips rungs (FL-1356)', () => {
   it('finds the JPEG behind junk at the start of the file', async () => {
     const decoded = await sut.decodeImage(fixture('jpeg/junk-before-soi.jpg'), options);
     expect(decoded).toMatchObject({ rung: 'lenient', info: { width: 320, height: 240 } });
+  });
+
+  it('does not take the preview inside a JPEG whose own start is damaged for the picture', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'frameleaf-still-rungs-'));
+    try {
+      // the start marker is overwritten; the first one left is the preview inside the Exif header
+      const input = join(directory, 'damaged-start.jpg');
+      const preview = await readFile(fixture('jpeg/baseline.jpg'));
+      const header = Buffer.concat([Buffer.from([0, 0, 0xff, 0xe1, 0, 0x40]), Buffer.from('Exif\0\0II*\0', 'latin1')]);
+      await writeFile(input, Buffer.concat([header, preview]));
+      await expect(sut.decodeImage(input, options)).rejects.toThrow();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('does not take a picture embedded in some other kind of file for the file itself', async () => {

@@ -56,6 +56,7 @@
     getAnalyticsReport,
     getAttention,
     getBackupRestoreVerification,
+    getCloudBackupStatus,
     getMlWorkloadRoutes,
     getOvernight,
     getRenderWorkerCompatibility,
@@ -69,6 +70,7 @@
     type AttentionResponseDto,
     type BackupDeviceDto,
     type BackupRestoreVerificationResponseDto,
+    type CloudBackupStatusResponseDto,
     type MlDestinationResponseDto,
     type MlWorkloadRouteDto,
     type OvernightResponseDto,
@@ -104,6 +106,8 @@
   let storage = $state<ServerStorageResponseDto | null>(null);
   let about = $state<ServerAboutResponseDto | null>(null);
   let restore = $state<BackupRestoreVerificationResponseDto | null>(null);
+  // FL-900: the restore drill (FL-879) is read first; the manual record (FL-71) stays the fallback
+  let cloudBackup = $state<CloudBackupStatusResponseDto | null>(null);
   let compatibility = $state<RenderWorkerCompatibilityResponseDto | null>(null);
   let ml = $state<{ destinations: MlDestinationResponseDto[]; routes: MlWorkloadRouteDto[] } | null>(null);
   let overnight = $state<OvernightResponseDto | null>(null);
@@ -127,6 +131,7 @@
       getMlWorkloadRoutes(),
       getOvernight(),
       listAllBackupDevices({ limit: 200 }),
+      getCloudBackupStatus(),
     ]);
     attention = settled(results[0]);
     report = settled(results[1]);
@@ -139,6 +144,7 @@
     ml = destinations && routes ? { destinations, routes: routes.routes } : null;
     overnight = settled(results[8]);
     phones = settled(results[9])?.devices ?? null;
+    cloudBackup = settled(results[10]);
     failed = !attention && !storage;
     loading = false;
   };
@@ -213,8 +219,26 @@
         actions: [action],
       });
     }
+    // FL-900: the last restore drill failed: the backup could not be proven to restore.
+    const drill = cloudBackup?.drillNeedsAttention ? cloudBackup.lastDrill : null;
+    if (drill) {
+      found.push({
+        id: 'restore-drill',
+        icon: mdiShieldCheckOutline,
+        level: 'now',
+        title: $t('frameleaf_overview_need_drill'),
+        body: $t('frameleaf_overview_need_drill_body'),
+        actions: [
+          {
+            label: $t('frameleaf_overview_see_drill_report'),
+            href: commandCenterUrl('backups', 'restore', { drill: drill.id }),
+          },
+        ],
+      });
+    }
     // A backup that was never tried: only once there is one, and only when nothing else is wrong with it.
-    if (restore && !restore.metadataVerifiedAt && checkOf('backup') === 'ok') {
+    // A passing drill records the test too, so this reads the drill first and the manual record after.
+    if (!drill && restore && !restore.metadataVerifiedAt && checkOf('backup') === 'ok') {
       found.push({
         id: 'restore-test',
         icon: mdiShieldCheckOutline,
@@ -388,6 +412,9 @@
     }
     if (needs.some((need) => need.id === 'plan')) {
       phrases.push({ wrong: true, text: $t('frameleaf_overview_says_plan') });
+    }
+    if (needs.some((need) => need.id === 'restore-drill')) {
+      phrases.push({ wrong: true, text: $t('frameleaf_overview_says_drill_failed') });
     }
     if (needs.some((need) => need.id === 'restore-test')) {
       phrases.push({ wrong: true, text: $t('frameleaf_overview_says_restore_untried') });

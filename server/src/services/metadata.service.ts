@@ -46,6 +46,7 @@ import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { captureDetails } from 'src/utils/capture-details.js';
 import { mergeTimeZone } from 'src/utils/date.js';
+import { isFireworksPng } from 'src/utils/design-preview.js';
 import { DJI_SRT_READ_BYTES, getDjiSrtCandidates, parseDjiSrtLocation } from 'src/utils/dji-srt.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { boxIou, fractionBox, normalizedBox } from 'src/utils/face-anchor.js';
@@ -467,7 +468,13 @@ export class MetadataService extends BaseService {
     });
 
     let imageEncoding;
-    if (asset.type === AssetType.Image && !mimeTypes.isRaw(asset.originalFileName)) {
+    if (mimeTypes.isDesign(asset.originalFileName)) {
+      // FL-1358: a design file has no encoding to inspect; a paged one says how many pages it holds.
+      const pages = Number(exifTags.PageCount);
+      if (Number.isSafeInteger(pages) && pages > 0) {
+        imageEncoding = { ...unknownImageEncoding(), pages };
+      }
+    } else if (asset.type === AssetType.Image && !mimeTypes.isRaw(asset.originalFileName)) {
       try {
         imageEncoding = ImageEncodingSchema.parse({
           ...(await this.mediaRepository.inspectImageEncoding(plainOriginal)),
@@ -484,6 +491,13 @@ export class MetadataService extends BaseService {
               : 'inspection-unavailable';
         imageEncoding = { ...unknownImageEncoding(), inspectionStatus: 'failed' as const, fallbackReason: code };
         this.logger.warn(`Image encoding inspection unavailable: ${code}`);
+      }
+      // FL-1358: a Fireworks PNG shows as its flat picture; Details names it so its owner knows it holds more.
+      if (
+        asset.originalFileName.toLowerCase().endsWith('.png') &&
+        (await isFireworksPng(plainOriginal).catch(() => false))
+      ) {
+        imageEncoding = { ...imageEncoding, variant: 'fireworks-png' };
       }
     }
 

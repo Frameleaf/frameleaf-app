@@ -834,7 +834,10 @@ export class AssetJobRepository {
             );
           }
           if (encodingBackfill) {
-            const raw = Object.keys(mimeTypes.raw).map((extension) => sql.lit(`%${extension}`));
+            // Neither sensor data nor a design file (FL-1358) has an encoding to inspect.
+            const raw = Object.keys({ ...mimeTypes.raw, ...mimeTypes.design }).map((extension) =>
+              sql.lit(`%${extension}`),
+            );
             conditions.push(
               eb.and([
                 eb('asset.type', '=', sql.lit(AssetType.Image)),
