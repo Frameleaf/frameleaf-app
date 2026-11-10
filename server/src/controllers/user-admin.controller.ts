@@ -206,6 +206,19 @@ export class UserAdminController {
     return this.service.resetTwoFactor(auth, id);
   }
 
+  @Delete(':id/passkeys')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Remove all passkeys of a user',
+    description:
+      'Remove every passkey of someone who lost a device and can’t sign in to remove it. Sessions they started are signed out. Recorded in the account history.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  removeUserPasskeysAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.removePasskeys(auth, id);
+  }
+
   @Get(':id/statistics')
   @Authenticated({ permission: Permission.AdminUserRead, admin: true })
   @Endpoint({

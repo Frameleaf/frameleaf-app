@@ -3,6 +3,7 @@ import request from 'supertest';
 import { AuthController } from 'src/controllers/auth.controller.js';
 import { LoginResponseDto } from 'src/dtos/auth.dto.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { PasskeyService } from 'src/services/passkey.service.js';
 import { errorDto } from 'test/medium/responses.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
@@ -10,14 +11,19 @@ import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.
 describe(AuthController.name, () => {
   let ctx: ControllerContext;
   const service = mockBaseService(AuthService);
+  const passkeyService = mockBaseService(PasskeyService);
 
   beforeAll(async () => {
-    ctx = await controllerSetup(AuthController, [{ provide: AuthService, useValue: service }]);
+    ctx = await controllerSetup(AuthController, [
+      { provide: AuthService, useValue: service },
+      { provide: PasskeyService, useValue: passkeyService },
+    ]);
     return () => ctx.close();
   });
 
   beforeEach(() => {
     service.resetAllMocks();
+    passkeyService.resetAllMocks();
     ctx.reset();
   });
 

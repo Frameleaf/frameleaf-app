@@ -59,6 +59,7 @@ import {
 } from 'src/enum.js';
 import { toAccountEventVia, toIpPrefix } from 'src/repositories/account-event.repository.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
+import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
@@ -257,6 +258,10 @@ const frameleafRedirectUri = (mobileRedirectUri: string): string => {
 export class AuthService extends BaseService {
   @Inject(SignInSecurityService)
   private signInSecurity!: SignInSecurityService;
+
+  /** FL-836: whether a session was started with a passkey (accepted through remote access). */
+  @Inject(PasskeyRepository)
+  private passkeyRepository!: PasskeyRepository;
 
   /** FL-721: the Locked encryption PIN hooks (spec §4.1, §4.3, §7.5). */
   @Inject(LockedEncryptionService)
@@ -1031,6 +1036,10 @@ export class AuthService extends BaseService {
       if (await this.frameleafAccountRepository.getSession(auth.session.id)) {
         return;
       }
+      // FL-836: a passkey sign-in is accepted away from home like a Frameleaf one (owner, 2026-11-07)
+      if (await this.passkeyRepository.isPasskeySession(auth.session.id)) {
+        return;
+      }
       const config = await this.getConfig({ withCache: true });
       if (config.frameleafCloud.remoteAccess.allowPasswordOverRelay) {
         return;
@@ -1663,7 +1672,8 @@ export class AuthService extends BaseService {
     return url;
   }
 
-  async getAuthStatus(auth: AuthDto): Promise<AuthStatusResponseDto> {
+  /** FL-836: the passkey fields are added by the controller (they depend on the request's address). */
+  async getAuthStatus(auth: AuthDto): Promise<Omit<AuthStatusResponseDto, 'passkeysAvailable' | 'hasPasskeys'>> {
     const user = await this.userRepository.getForPinCode(auth.user.id);
     if (!user) {
       throw new UnauthorizedException();
