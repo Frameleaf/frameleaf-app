@@ -484,6 +484,68 @@ describe('/albums', () => {
     });
   });
 
+  // FL-809: the named people in an album, for its people chips.
+  describe('GET /albums/:id/people', () => {
+    let viewerAlbum: AlbumResponseDto;
+
+    beforeAll(async () => {
+      viewerAlbum = user1Albums[3];
+      const jamie = await utils.createPerson(user1.accessToken, { name: 'Jamie' });
+      await utils.createFace({ assetId: user1Asset1.id, personGroupId: jamie.id });
+    });
+
+    it('lists the people the owner named', async () => {
+      const { status, body } = await request(app)
+        .get(`/albums/${viewerAlbum.id}/people`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual([{ id: expect.any(String), name: 'Jamie', count: 1, updatedAt: expect.any(String) }]);
+    });
+
+    it('answers a viewer member with the names they gave, none here', async () => {
+      const { status, body } = await request(app)
+        .get(`/albums/${viewerAlbum.id}/people`)
+        .set('Authorization', `Bearer ${user2.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual([]);
+    });
+
+    it('refuses someone who is not a member', async () => {
+      const { status } = await request(app)
+        .get(`/albums/${viewerAlbum.id}/people`)
+        .set('Authorization', `Bearer ${user4.accessToken}`);
+
+      expect(status).toBe(400);
+    });
+
+    it('never names anyone to a shared link that hides metadata', async () => {
+      const link = await utils.createSharedLink(user1.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: viewerAlbum.id,
+        showMetadata: false,
+      });
+
+      const { status } = await request(app).get(`/albums/${viewerAlbum.id}/people?key=${link.key}`);
+
+      expect(status).toBe(403);
+    });
+
+    it('names people to a shared link that shows metadata', async () => {
+      const link = await utils.createSharedLink(user1.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: viewerAlbum.id,
+        showMetadata: true,
+      });
+
+      const { status, body } = await request(app).get(`/albums/${viewerAlbum.id}/people?key=${link.key}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual([expect.objectContaining({ name: 'Jamie', count: 1 })]);
+    });
+  });
+
   describe('GET /albums/statistics', () => {
     it('should return total count of albums the user has access to', async () => {
       const { status, body } = await request(app)

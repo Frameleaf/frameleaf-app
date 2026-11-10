@@ -3,6 +3,7 @@
   import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { page } from '$app/state';
   import MobileApps from '$lib/components/frameleaf/settings/utilities/MobileApps.svelte';
+  import Phones from '$lib/components/frameleaf/settings/utilities/Phones.svelte';
   import WorkflowsPanel from '$lib/components/frameleaf/WorkflowsPanel.svelte';
   import DuplicateUtility from '$lib/components/frameleaf/DuplicateUtility.svelte';
   import LargeFilesUtility from '$lib/components/frameleaf/LargeFilesUtility.svelte';
@@ -259,6 +260,7 @@
       'workflowQuery',
       'workflowName',
       'from',
+      'phone',
     ]) {
       url.searchParams.delete(key);
     }
@@ -363,6 +365,7 @@
           />
         {/key}
       {:else if data.tool === 'downloads'}<MobileApps />
+      {:else if data.tool === 'phones'}<Phones />
       {:else if data.tool === 'icloud'}<ICloudSyncPanel initial={data.initial} />
       {:else if data.tool === 'missing-media' || data.tool === 'corrupt-media'}
         <LibraryCareHealth

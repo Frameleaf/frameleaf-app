@@ -10,6 +10,7 @@ const link = (patch: Partial<SharedLinkResponseDto> = {}): SharedLinkResponseDto
   key: 'key',
   slug: null,
   url: null,
+  directUrl: null,
   type: SharedLinkType.Album,
   userId: 'owner-1',
   assets: [],

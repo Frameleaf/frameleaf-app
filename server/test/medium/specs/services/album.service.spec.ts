@@ -2,7 +2,14 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AlbumKind, AlbumUserRole, AssetLockReason, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  AssetLockReason,
+  AssetMetadataKey,
+  AssetVisibility,
+  UserMetadataKey,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -392,6 +399,97 @@ describe(AlbumService.name, () => {
       await expect(
         sut.getMapMarkers(auth, album.id, { withPartners: false, withSharedAlbums: false }).then(ids),
       ).resolves.toEqual([own.id]);
+    });
+  });
+
+  describe('getPeople (FL-809)', () => {
+    it('lists the named people in an album, most often first, without Locked, trashed or hidden ones', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const { person: jamie } = await ctx.newPerson({ ownerId: owner.id, name: 'Jamie' });
+      const { person: emma } = await ctx.newPerson({ ownerId: owner.id, name: 'Emma' });
+      const { person: locky } = await ctx.newPerson({ ownerId: owner.id, name: 'Locky' });
+      const { person: trashy } = await ctx.newPerson({ ownerId: owner.id, name: 'Trashy' });
+      const { person: hidden } = await ctx.newPerson({ ownerId: owner.id, name: 'Hidden', isHidden: true });
+      const { person: unnamed } = await ctx.newPerson({ ownerId: owner.id, name: '' });
+      const { person: outside } = await ctx.newPerson({ ownerId: owner.id, name: 'Outside' });
+
+      const { asset: both } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: jamieOnly } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { asset: trashed } = await ctx.newAsset({ ownerId: owner.id, deletedAt: new Date() });
+      const { asset: notInAlbum } = await ctx.newAsset({ ownerId: owner.id });
+      const faces: Array<[string, string]> = [
+        [both.id, jamie.personGroupId],
+        [both.id, emma.personGroupId],
+        [both.id, hidden.personGroupId],
+        [both.id, unnamed.personGroupId],
+        [jamieOnly.id, jamie.personGroupId],
+        [locked.id, locky.personGroupId],
+        [trashed.id, trashy.personGroupId],
+        [notInAlbum.id, outside.personGroupId],
+      ];
+      for (const [assetId, personGroupId] of faces) {
+        await ctx.newAssetFace({ assetId, personGroupId });
+      }
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [both.id, jamieOnly.id, locked.id, trashed.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+      // A member sees the names they gave the same faces.
+      await ctx.newPerson({ ownerId: member.id, personGroupId: jamie.personGroupId, name: 'Jamie R.' });
+
+      const ownerPeople = await sut.getPeople(factory.auth({ user: { id: owner.id } }), album.id);
+      expect(ownerPeople.map(({ name, count }) => ({ name, count }))).toEqual([
+        { name: 'Jamie', count: 2 },
+        { name: 'Emma', count: 1 },
+      ]);
+      expect(ownerPeople[0].id).toBe(jamie.personGroupId);
+
+      const memberPeople = await sut.getPeople(factory.auth({ user: { id: member.id } }), album.id);
+      expect(memberPeople.map(({ name, count }) => ({ name, count }))).toEqual([{ name: 'Jamie R.', count: 2 }]);
+
+      await expect(sut.getPeople(factory.auth({ user: { id: stranger.id } }), album.id)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it("leaves out people whose only items match the owner's Locked rules, when every owner's rules apply", async () => {
+      const { ctx } = setup();
+      const people = ctx.get(PersonRepository);
+      const { user } = await ctx.newUser();
+      const { person: jamie } = await ctx.newPerson({ ownerId: user.id, name: 'Jamie' });
+      const { person: secret } = await ctx.newPerson({ ownerId: user.id, name: 'Secret' });
+      const { asset: open } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: ruled } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFace({ assetId: open.id, personGroupId: jamie.personGroupId });
+      await ctx.newAssetFace({ assetId: ruled.id, personGroupId: secret.personGroupId });
+      const { album } = await ctx.newAlbum({ ownerId: user.id }, [open.id, ruled.id]);
+      // The owner marked Secret Locked (FL-446): items showing them leave every view but the owner's own.
+      const value = { privacy: { suppression: { personIds: [secret.personGroupId] } } };
+      await defaultDatabase
+        .insertInto('user_metadata')
+        .values({ userId: user.id, key: UserMetadataKey.Preferences, value } as never)
+        .onConflict((oc) => oc.columns(['userId', 'key']).doUpdateSet({ value } as never))
+        .execute();
+
+      // What a shared link reads: the link owner's id, with every owner's rules applied.
+      const viaLink = await people.getAlbumPeople(album.id, user.id, { othersRulesViewerId: null });
+      expect(viaLink.map(({ name }) => name)).toEqual(['Jamie']);
+      // The owner's own session is left to their own rules, as on their album page.
+      const asOwner = await people.getAlbumPeople(album.id, user.id, { othersRulesViewerId: user.id });
+      expect(asOwner.map(({ name }) => name).toSorted()).toEqual(['Jamie', 'Secret']);
+    });
+
+    it('shows no people for an album where nobody is named', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: '' });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      const { album } = await ctx.newAlbum({ ownerId: user.id }, [asset.id]);
+
+      await expect(sut.getPeople(factory.auth({ user: { id: user.id } }), album.id)).resolves.toEqual([]);
     });
   });
 

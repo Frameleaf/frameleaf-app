@@ -1,5 +1,6 @@
 import type { UtilitiesSummaryResponseDto } from '@frameleaf/sdk';
 import {
+  mdiCellphone,
   mdiCloudOutline,
   mdiCompare,
   mdiDevices,
@@ -23,7 +24,8 @@ export type UtilityId =
   | 'missing-media'
   | 'corrupt-media'
   | 'workflows'
-  | 'downloads';
+  | 'downloads'
+  | 'phones';
 export type UtilityTool = {
   id: UtilityId;
   group: UtilityGroup;
@@ -31,6 +33,8 @@ export type UtilityTool = {
   titleKey: Translations;
   descriptionKey: Translations;
   adminOnly?: boolean;
+  /** Opened from another tool, not listed in the directory (Phones opens from Mobile apps). */
+  unlisted?: boolean;
 };
 export const UTILITY_TOOLS: UtilityTool[] = [
   {
@@ -99,6 +103,15 @@ export const UTILITY_TOOLS: UtilityTool[] = [
     titleKey: 'library_care_tool_downloads',
     descriptionKey: 'library_care_tool_downloads_description',
   },
+  {
+    // FL-792: each phone's backup receipt, opened from Mobile apps › Your phones.
+    id: 'phones',
+    group: 'connect',
+    icon: mdiCellphone,
+    titleKey: 'frameleaf_phones_label',
+    descriptionKey: 'frameleaf_phones_page_description',
+    unlisted: true,
+  },
 ];
 
 /** What the Utilities summary says about one tool: how many are waiting, and whether that needs a look. */
@@ -122,7 +135,8 @@ export const utilityStates = (summary: UtilitiesSummaryResponseDto): Partial<Rec
   return states;
 };
 
-export const utilityToolsFor = (isAdmin: boolean) => UTILITY_TOOLS.filter((tool) => isAdmin || !tool.adminOnly);
+export const utilityToolsFor = (isAdmin: boolean) =>
+  UTILITY_TOOLS.filter((tool) => !tool.unlisted && (isAdmin || !tool.adminOnly));
 /**
  * The repair tools the Library care area lists beside health, repairs and duplicates
  * (`CARE_TOOLS` in CommandCenter.jsx): Library Care is the hub for fixing things. Listed in the

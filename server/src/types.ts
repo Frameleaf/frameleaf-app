@@ -513,6 +513,13 @@ export interface IMediaHealthFixAssetJob extends IEntityJob {
    * search and the backups are, straight to what is wrong with the file.
    */
   stage?: 'backups' | 'treat';
+  /**
+   * When this fix began its work (ISO time), carried by every put-back. A Keep as it is or a Try again since
+   * then settles a fix that is carrying on (FL-1337).
+   */
+  startedAt?: string;
+  /** A person's Try again, one id per request: its fix's put-backs are keyed by it (FL-1337). */
+  retry?: string;
 }
 
 export interface INightlyJob extends IBaseJob {
@@ -1745,6 +1752,8 @@ export type UserPreferences = {
     minimumFaces: number;
     /** ACCOUNT-P2: in a Space shared with me, suggest who is who from the people I have named */
     suggestInSpaces: boolean;
+    /** FL-795: archived photos appear on person pages and count in People (off: timeline photos only) */
+    includeArchived: boolean;
   };
   ratings: {
     enabled: boolean;

@@ -13727,6 +13727,77 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/albums/{id}/people": {
+      "get": {
+        "description": "The named people who appear in an album, most often first, with how many of its items show each (at most 50). Hidden people, unnamed faces, and items that are Locked or in the trash are left out. A shared link gets them only when it shows metadata.",
+        "operationId": "getAlbumPeople",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlbumPersonResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the people in an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
     "/albums/{id}/suggestions": {
       "get": {
         "description": "Photos from your library that look like they belong to this album's trip: ones taken during it, and ones with no trustworthy date (with a suggested date). Needs permission to add to the album. Nothing is changed.",
@@ -51111,6 +51182,134 @@
         "x-immich-state": "Stable"
       }
     },
+    "/shared-links/direct/key/{key}.jpg": {
+      "get": {
+        "description": "Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.",
+        "operationId": "getSharedLinkDirectImageByKey",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "View the image of a single-photo shared link, by its key",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/shared-links/direct/s/{slug}.jpg": {
+      "get": {
+        "description": "Serve the photo of a shared link to exactly one photo as an image file, for embedding in other sites. Only for links with no password, downloads allowed and no expiry passed; any other link answers 404. The location is always removed.",
+        "operationId": "getSharedLinkDirectImageBySlug",
+        "parameters": [
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+            }
+          },
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "View the image of a single-photo shared link, by its slug",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
     "/shared-links/login": {
       "post": {
         "description": "Login to a password protected shared link",
@@ -72335,6 +72534,39 @@
         "required": [
           "albumIds",
           "parentId"
+        ],
+        "type": "object"
+      },
+      "AlbumPersonResponseDto": {
+        "description": "A named person who appears in an album, with how many of its items show them",
+        "properties": {
+          "count": {
+            "description": "Number of album items showing this person",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Person ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Person name",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update date, for the thumbnail cache",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "id",
+          "name",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -115613,6 +115845,16 @@
             "description": "Whether people are enabled",
             "type": "boolean"
           },
+          "includeArchived": {
+            "description": "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.4.0",
+                "state": "Added"
+              }
+            ]
+          },
           "minimumFaces": {
             "description": "People face threshold",
             "maximum": 9007199254740991,
@@ -115636,6 +115878,7 @@
         },
         "required": [
           "enabled",
+          "includeArchived",
           "sidebarWeb",
           "suggestInSpaces"
         ],
@@ -115690,6 +115933,16 @@
           "enabled": {
             "description": "Whether people are enabled",
             "type": "boolean"
+          },
+          "includeArchived": {
+            "description": "Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.4.0",
+                "state": "Added"
+              }
+            ]
           },
           "minimumFaces": {
             "description": "People face threshold",
@@ -144478,6 +144731,22 @@
         ],
         "type": "object"
       },
+      "SharedLinkDirectImageDto": {
+        "properties": {
+          "size": {
+            "$ref": "#/components/schemas/SharedLinkDirectImageSize"
+          }
+        },
+        "type": "object"
+      },
+      "SharedLinkDirectImageSize": {
+        "description": "Image size: preview (default) or fullsize",
+        "enum": [
+          "preview",
+          "fullsize"
+        ],
+        "type": "string"
+      },
       "SharedLinkEditDto": {
         "properties": {
           "allowDownload": {
@@ -144591,6 +144860,17 @@
             "nullable": true,
             "type": "string"
           },
+          "directUrl": {
+            "description": "FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root: /api/shared-links/direct/s/<slug>.jpg for a link with a slug, /api/shared-links/direct/key/<key>.jpg otherwise.",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.4.0",
+                "state": "Added"
+              }
+            ]
+          },
           "expiresAt": {
             "description": "Expiration date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -144650,6 +144930,7 @@
           "coverAssetIds",
           "createdAt",
           "description",
+          "directUrl",
           "expiresAt",
           "id",
           "key",

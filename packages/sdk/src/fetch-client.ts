@@ -4022,6 +4022,8 @@ export type MemoriesResponse = {
 export type PeopleResponse = {
     /** Whether people are enabled */
     enabled: boolean;
+    /** Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice */
+    includeArchived: boolean;
     /** People face threshold */
     minimumFaces?: number;
     /** Whether people appear in web sidebar */
@@ -4175,6 +4177,8 @@ export type MemoriesUpdate = {
 export type PeopleUpdate = {
     /** Whether people are enabled */
     enabled?: boolean;
+    /** Whether archived photos appear on person pages and count in People. Off by default: People shows only photos on the timeline. Pages and counts follow each viewer's own choice, partners included; clients apply it on the person page by naming no visibility. The featured photo picked automatically for a person follows the person owner's choice */
+    includeArchived?: boolean;
     /** People face threshold */
     minimumFaces?: number;
     /** Whether people appear in web sidebar */
@@ -5318,6 +5322,16 @@ export type AlbumMergePreviewResponseDto = {
     winnerId: string;
     /** The album that stays is shared, by people, a public link or a shared space, who will see both */
     winnerShared: boolean;
+};
+export type AlbumPersonResponseDto = {
+    /** Number of album items showing this person */
+    count: number;
+    /** Person ID */
+    id: string;
+    /** Person name */
+    name: string;
+    /** Last update date, for the thumbnail cache */
+    updatedAt: string;
 };
 export type AlbumSuggestionReasonDto = {
     /** The album photo it matches, for same-scene, near-identical and same-outfit */
@@ -16566,6 +16580,8 @@ export type SharedLinkResponseDto = {
     createdAt: string;
     /** Link description */
     description: string | null;
+    /** FL-788: an address that serves the link's photo as an image file, for embedding in forums and websites. Set only for a link to exactly one photo with downloads allowed, no password and no expiry passed; null otherwise. On the server's external domain when one is set, otherwise a path from the server's root: /api/shared-links/direct/s/<slug>.jpg for a link with a slug, /api/shared-links/direct/key/<key>.jpg otherwise. */
+    directUrl: string | null;
     /** Expiration date */
     expiresAt: string | null;
     /** Shared link ID */
@@ -20685,6 +20701,9 @@ export type SearchSuggestionRequestDto = {
     /** Filter by state/province */
     state?: string;
     "type": SearchSuggestionType;
+};
+export type SharedLinkDirectImageDto = {
+    size?: SharedLinkDirectImageSize;
 };
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
@@ -25044,6 +25063,24 @@ export function getAlbumMergePreview({ id, otherId }: {
         status: 200;
         data: AlbumMergePreviewResponseDto;
     }>(`/albums/${encodeURIComponent(id)}/merge/${encodeURIComponent(otherId)}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve the people in an album
+ */
+export function getAlbumPeople({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumPersonResponseDto[];
+    }>(`/albums/${encodeURIComponent(id)}/people${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
         ...opts
     }));
 }
@@ -34274,6 +34311,38 @@ export function createSharedLink({ sharedLinkCreateDto }: {
     })));
 }
 /**
+ * View the image of a single-photo shared link, by its key
+ */
+export function getSharedLinkDirectImageByKey({ key, size }: {
+    key: string;
+    size?: SharedLinkDirectImageSize;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-links/direct/key/${encodeURIComponent(key)}.jpg${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * View the image of a single-photo shared link, by its slug
+ */
+export function getSharedLinkDirectImageBySlug({ size, slug }: {
+    size?: SharedLinkDirectImageSize;
+    slug: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-links/direct/s/${encodeURIComponent(slug)}.jpg${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Shared link login
  */
 export function sharedLinkLogin({ key, slug, sharedLinkLoginDto }: {
@@ -42035,6 +42104,10 @@ export enum ReleaseType {
 export enum SharedLinkType {
     Album = "ALBUM",
     Individual = "INDIVIDUAL"
+}
+export enum SharedLinkDirectImageSize {
+    Preview = "preview",
+    Fullsize = "fullsize"
 }
 export enum AssetIdErrorReason {
     Duplicate = "duplicate",

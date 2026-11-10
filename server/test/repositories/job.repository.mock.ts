@@ -80,6 +80,8 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     forgetRunReads: vitest.fn(),
     waitForQueueCompletion: vitest.fn(),
     removeJob: vitest.fn(),
+    cancelWaitingFixes: vitest.fn().mockResolvedValue(undefined),
+    isOtherFixRunning: vitest.fn().mockResolvedValue(false),
     getQueueName: vitest.fn(),
     getRun: vitest.fn().mockResolvedValue(undefined),
     getRunStageProgress: vitest.fn().mockResolvedValue([]),

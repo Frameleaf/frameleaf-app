@@ -1143,6 +1143,12 @@ export class SqlQueueStore {
     this.forgetRunReads();
   }
 
+  /** Cancel every queued job whose `options.jobId` starts with `prefix`. */
+  async cancelQueuedWithPrefix(queue: string, prefix: string) {
+    await this.cancel(queue, ['pending', 'waiting'], sql`and starts_with(j."externalId", ${prefix})`);
+    this.forgetRunReads();
+  }
+
   private async cancel(queue: string, states: QueueState[], about: RawBuilder<unknown>) {
     // Keep dependency history. Clearing hides payloads and cancels pending work.
     await this.db.transaction().execute(async (tx) => {
