@@ -267,6 +267,74 @@ describe(AssetJobRepository.name, () => {
     await expect(selection().where('asset.id', '=', needsYou.id).executeTakeFirst()).resolves.toBeUndefined();
   });
 
+  it('leaves photos whose original Library care has open as missing out of the overnight metadata read and video encode (FL-1347)', async () => {
+    const db = await isolatedDatabase();
+    const { ctx, sut } = setup(db);
+    const { user } = await ctx.newUser();
+    const make = async (type: AssetType, extracted: boolean) => {
+      const { asset } = await ctx.newAsset({ ownerId: user.id, type });
+      if (extracted) {
+        await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+        await ctx.newExif({ assetId: asset.id, exifImageWidth: 100 });
+      }
+      return asset;
+    };
+    const finding = async (
+      asset: { id: string; originalPath: string },
+      category: MediaHealthCategory,
+      state: { evidence?: Record<string, unknown>; resolvedAt?: Date; dismissedAt?: Date } = {},
+    ) => {
+      await db
+        .insertInto('asset_health')
+        .values({
+          assetId: asset.id,
+          category,
+          status:
+            category === MediaHealthCategory.Missing ? MediaHealthStatus.Missing : MediaHealthStatus.CorruptConfirmed,
+          severity: MediaHealthSeverity.Critical,
+          originalPath: asset.originalPath,
+          originalFileName: 'file',
+          evidence: state.evidence ?? {},
+          resolution: {},
+          checkedAt: new Date(),
+          resolvedAt: state.resolvedAt ?? null,
+          dismissedAt: state.dismissedAt ?? null,
+        })
+        .execute();
+    };
+    const arrange = async (type: AssetType, extracted: boolean) => {
+      const plain = await make(type, extracted);
+      const missing = await make(type, extracted);
+      const keptMissing = await make(type, extracted);
+      const foundAgain = await make(type, extracted);
+      const dismissed = await make(type, extracted);
+      // a damaged original is still there to read
+      const damaged = await make(type, extracted);
+      await finding(missing, MediaHealthCategory.Missing, { evidence: { fixState: 'missing' } });
+      await finding(keptMissing, MediaHealthCategory.Missing, { evidence: { fixState: 'left-as-is' } });
+      await finding(foundAgain, MediaHealthCategory.Missing, { resolvedAt: new Date() });
+      await finding(dismissed, MediaHealthCategory.Missing, { dismissedAt: new Date() });
+      await finding(damaged, MediaHealthCategory.Corrupt, { evidence: { fixState: 'cant-repair' } });
+      return { expected: [plain.id, foundAgain.id, dismissed.id, damaged.id].sort(), missing };
+    };
+    const unread = await arrange(AssetType.Image, false);
+    const unencoded = await arrange(AssetType.Video, true);
+
+    const selection = (name: JobName.AssetExtractMetadata | JobName.AssetEncodeVideo, queue: QueueName) =>
+      sut.selectionForUnfinished(name, { queue, fullsizeEnabled: false, videoPolicy: 'current-policy' });
+    const ids = async (name: JobName.AssetExtractMetadata | JobName.AssetEncodeVideo, queue: QueueName) =>
+      (await selection(name, queue).execute()).map(({ id }) => id).sort();
+
+    await expect(ids(JobName.AssetExtractMetadata, QueueName.MetadataExtraction)).resolves.toEqual(unread.expected);
+    await expect(ids(JobName.AssetEncodeVideo, QueueName.VideoConversion)).resolves.toEqual(unencoded.expected);
+    // the check after an overnight metadata read asks about one photo with the same selection
+    await expect(
+      selection(JobName.AssetExtractMetadata, QueueName.MetadataExtraction)
+        .where('asset.id', '=', unread.missing.id)
+        .executeTakeFirst(),
+    ).resolves.toBeUndefined();
+  });
+
   it('backfills only uninspected non-RAW images through the existing metadata selection', async () => {
     const { ctx, sut } = setup(await isolatedDatabase());
     const { user } = await ctx.newUser();

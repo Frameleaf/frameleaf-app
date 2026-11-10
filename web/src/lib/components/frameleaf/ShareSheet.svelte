@@ -67,6 +67,7 @@
     assetIds,
     assets,
     onClosed,
+    onlyPreview,
   }: {
     open?: boolean;
     assetIds: string[];
@@ -74,6 +75,12 @@
     assets?: ShareItem[];
     /** Called once the sheet has closed. */
     onClosed?: () => void;
+    /**
+     * FL-1347: the viewer's check before Download and Send a copy, which need the original: for a photo whose
+     * original is missing it says only a preview is left (and where to see what happened) and answers true, and the
+     * sheet then neither downloads nor sends.
+     */
+    onlyPreview?: () => boolean;
   } = $props();
 
   /* A public link is made in the sheet itself: the form takes the place of the people list, and
@@ -336,6 +343,9 @@
 
   const download = () => {
     open = false;
+    if (onlyPreview?.()) {
+      return;
+    }
     if (single?.originalFileName) {
       // As it is shown (owner, 2026-10-16): the version on screen, which is the original when unedited
       downloadAssetFile({ id: single.id, filename: single.originalFileName, edited: true, size: single.size });
@@ -346,6 +356,9 @@
 
   const sendCopy = () => {
     open = false;
+    if (onlyPreview?.()) {
+      return;
+    }
     void sendCopiesWithFeedback(assetIds);
   };
 </script>

@@ -77,6 +77,7 @@ import { executionSignal, operationExecution } from 'src/utils/execution-signal.
 import { keyEscrowBlobSchema, managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
 import { FrameleafCloudError, ed25519Thumbprint, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
+import { retainFile } from 'src/utils/media-health-roots.js';
 import {
   OperationClaimLostError,
   OperationDeadlineError,
@@ -91,6 +92,10 @@ vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation:
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>();
   return { ...original, link: vi.fn(original.link) };
+});
+vi.mock('src/utils/media-health-roots.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('src/utils/media-health-roots.js')>();
+  return { ...original, retainFile: vi.fn(original.retainFile) };
 });
 vi.mock('src/utils/cloud-backup-key-channel.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/cloud-backup-key-channel.js')>()),
@@ -2896,6 +2901,100 @@ describe(CloudBackupService.name, () => {
       expect(store.claim).toHaveBeenCalledOnce();
     });
 
+    describe('current licence coverage (FL-542)', () => {
+      it('resolves only the active accounts named by Cloud, without provisioning or rotating', async () => {
+        selection.listAccounts.mockResolvedValue([
+          { id: 'owner-1', name: 'Administrator', email: 'admin@example.test', deletedAt: null },
+          { id: 'owner-2', name: 'Member', email: 'member@example.test', deletedAt: null },
+          { id: 'deleted', name: 'Deleted', email: 'deleted@example.test', deletedAt: new Date() },
+        ]);
+        cloudBackup.metadata.mockResolvedValue({
+          ...grant,
+          coverage: {
+            scope: 'users',
+            userFingerprints: [
+              backupUserFingerprint(INSTANCE_ID, 'owner-2'),
+              backupUserFingerprint(INSTANCE_ID, 'deleted'),
+            ],
+          },
+        });
+        expect(await sut.getLicenceCoverage()).toEqual({
+          scope: 'users',
+          accounts: [{ userId: 'owner-2', name: 'Member' }],
+        });
+        expect(cloudBackup.grant).not.toHaveBeenCalled();
+        expect(cloudBackup.rotate).not.toHaveBeenCalled();
+        expect(selection.getLatestCoverageReport).not.toHaveBeenCalled();
+      });
+
+      it.each(['all', 'none'] as const)(
+        'returns the current %s scope without reading account details',
+        async (scope) => {
+          cloudBackup.metadata.mockResolvedValue({ ...grant, coverage: { scope } });
+          expect(await sut.getLicenceCoverage()).toEqual({ scope, accounts: [] });
+          expect(selection.listAccounts).not.toHaveBeenCalled();
+        },
+      );
+
+      it('reports unknown before a grant exists and when Cloud cannot be reached', async () => {
+        cloudBackup.metadata.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('offline'));
+        expect(await sut.getLicenceCoverage()).toEqual({ scope: 'unknown', accounts: [] });
+        expect(await sut.getLicenceCoverage()).toEqual({ scope: 'unknown', accounts: [] });
+      });
+
+      it('reports unknown without asking Cloud for an unlinked or clone-suspected server', async () => {
+        metadata[SystemMetadataKey.FrameleafCloudLink] = { status: 'unlinked', cloudUrl, instanceId: INSTANCE_ID };
+        expect(await sut.getLicenceCoverage()).toEqual({ scope: 'unknown', accounts: [] });
+        metadata[SystemMetadataKey.FrameleafCloudLink] = {
+          status: 'linked',
+          cloudUrl,
+          instanceId: INSTANCE_ID,
+          heartbeat: { cloneSuspected: true },
+        };
+        expect(await sut.getLicenceCoverage()).toEqual({ scope: 'unknown', accounts: [] });
+        expect(cloudBackup.metadata).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        { accountId: 'another-account', linkedAt: '2026-11-09T00:00:00Z' },
+        { heartbeat: { cloneSuspected: true } },
+      ])('drops coverage when the same instance binding changes: %j', async (change) => {
+        cloudBackup.metadata.mockImplementationOnce(() => {
+          metadata[SystemMetadataKey.FrameleafCloudLink] = {
+            status: 'linked',
+            cloudUrl,
+            instanceId: INSTANCE_ID,
+            ...change,
+          };
+          return Promise.resolve({ ...grant, coverage: { scope: 'all' as const } });
+        });
+        expect(await sut.getLicenceCoverage()).toEqual({ scope: 'unknown', accounts: [] });
+      });
+
+      it('drops member names when the server unlinks during account lookup', async () => {
+        cloudBackup.metadata.mockResolvedValue({
+          ...grant,
+          coverage: {
+            scope: 'users',
+            userFingerprints: [backupUserFingerprint(INSTANCE_ID, 'owner-2')],
+          },
+        });
+        selection.listAccounts.mockImplementationOnce(() => {
+          metadata[SystemMetadataKey.FrameleafCloudLink] = { status: 'unlinked', cloudUrl, instanceId: INSTANCE_ID };
+          return Promise.resolve([{ id: 'owner-2', name: 'Member', email: 'member@example.test', deletedAt: null }]);
+        });
+        expect(await sut.getLicenceCoverage()).toEqual({ scope: 'unknown', accounts: [] });
+      });
+
+      it('drops a response when the server unlinks while it is being checked', async () => {
+        cloudBackup.metadata.mockImplementationOnce(() => {
+          metadata[SystemMetadataKey.FrameleafCloudLink] = { status: 'unlinked', cloudUrl, instanceId: INSTANCE_ID };
+          return Promise.resolve({ ...grant, coverage: { scope: 'all' as const } });
+        });
+        expect(await sut.getLicenceCoverage()).toEqual({ scope: 'unknown', accounts: [] });
+      });
+    });
+
     it('rotates the key at the start of every run and never keeps it', async () => {
       await sut.run(managedOperation(), 'claim-1');
 
@@ -4538,6 +4637,8 @@ describe(CloudBackupService.name, () => {
 
     beforeEach(() => {
       vi.mocked(link).mockResolvedValue(undefined);
+      // FL-1347: a restore places each file with `retainFile`; on these mostly pretend files, its link stands for it
+      vi.mocked(retainFile).mockImplementation((from, to) => link(from, to));
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
       metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
       keys.read.mockResolvedValue(keyFileOf());
@@ -4549,7 +4650,13 @@ describe(CloudBackupService.name, () => {
       );
     });
 
-    afterEach(() => vi.mocked(link).mockReset());
+    afterEach(async () => {
+      vi.mocked(link).mockReset();
+      const { retainFile: actual } = await vi.importActual<typeof import('src/utils/media-health-roots.js')>(
+        'src/utils/media-health-roots.js',
+      );
+      vi.mocked(retainFile).mockImplementation(actual);
+    });
 
     it('queues a restore under the bucket lock, named without the item, only from a kept backup', async () => {
       await expect(
