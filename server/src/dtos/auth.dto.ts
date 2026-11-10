@@ -263,6 +263,10 @@ const AuthStatusResponseSchema = z
     pinExpiresAt: z.string().optional().describe('PIN expiration date'),
     twoFactorEnabled: z.boolean().describe('FL-793: two-step sign-in is on'),
     recoveryCodesRemaining: z.int().min(0).describe('FL-793: unused recovery codes (0 when two-step sign-in is off)'),
+    passkeysAvailable: z
+      .boolean()
+      .describe('FL-836: passkeys can be added and used at the address this request was sent to'),
+    hasPasskeys: z.boolean().describe('FL-836: the account has at least one passkey'),
   })
   .meta({ id: 'AuthStatusResponseDto' });
 

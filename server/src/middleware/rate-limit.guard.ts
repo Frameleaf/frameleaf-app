@@ -116,6 +116,22 @@ export const RATE_LIMITS = Object.freeze({
     principal: 'credential',
     principalLimit: 10,
   },
+  /**
+   * FL-836: starting and finishing adding a passkey (`auth/passkeys/register*`), which may take the
+   * password: 30 per address and 10 per session in ten minutes, like two-step sign-in changes.
+   */
+  passkeyChange: {
+    bucket: 'passkey-change',
+    limit: 30,
+    windowSeconds: 10 * MINUTE,
+    principal: 'credential',
+    principalLimit: 10,
+  },
+  /**
+   * FL-836: `POST auth/passkeys/login/options`, asked each time the sign-in page opens on a secure
+   * address. The sign-in itself (`auth/passkeys/login`) counts toward `login`.
+   */
+  passkeyLoginOptions: { bucket: 'passkey-login-options', limit: 60, windowSeconds: 10 * MINUTE },
   /** The administrator's own provider: `POST oauth/callback` and `POST oauth/link`. */
   oauthCallback: {
     bucket: 'oauth-callback',

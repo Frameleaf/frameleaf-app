@@ -100,6 +100,7 @@ import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PhotoLocationsRepository } from 'src/repositories/photo-locations.repository.js';
@@ -249,6 +250,7 @@ export const repositories = [
   MoveRepository,
   NotificationRepository,
   OAuthRepository,
+  PasskeyRepository,
   OcrRepository,
   ClassificationRepository,
   ClusterGroupRepository,

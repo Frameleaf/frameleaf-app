@@ -90,7 +90,8 @@
             tone: 'good' as const,
             icon: mdiShieldCheckOutline,
             title: $t('frameleaf_privacy_hero_ok'),
-            body: $t('frameleaf_privacy_hero_ok_body'),
+            // FL-859: the "is my account safe" hero counts a passkey as protection
+            body: $t(auth?.hasPasskeys ? 'frameleaf_privacy_hero_ok_passkey_body' : 'frameleaf_privacy_hero_ok_body'),
           },
   );
 
@@ -103,6 +104,12 @@
           return fallback;
         }
         const password = auth.password;
+        // FL-859: a passkey is a way in too (FL-767 prototype: "Passkey, password and Frameleaf account")
+        if (auth.hasPasskeys) {
+          return $t(
+            frameleaf?.linked ? 'frameleaf_privacy_ways_passkey_password_frameleaf' : 'frameleaf_privacy_ways_passkey_password',
+          );
+        }
         return frameleaf?.linked
           ? $t(password ? 'frameleaf_privacy_ways_password_frameleaf' : 'frameleaf_privacy_ways_frameleaf')
           : $t(password ? 'frameleaf_privacy_ways_password' : 'frameleaf_privacy_password_none', {
@@ -157,7 +164,7 @@
         if (!auth) {
           return 'off';
         }
-        return auth.password || frameleaf?.linked ? 'good' : 'warn';
+        return auth.password || auth.hasPasskeys || frameleaf?.linked ? 'good' : 'warn';
       }
       case 'authorized-devices': {
         return sessions ? (idle.length > 0 ? 'warn' : 'good') : 'off';

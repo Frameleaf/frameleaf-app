@@ -12,7 +12,7 @@ import { isHomeAddress, isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { SIGN_IN_SECURITY_URL, signInNetwork } from 'src/utils/sign-in-security.js';
 
-type BackoffKind = 'password' | 'two-factor' | 'shared-link';
+type BackoffKind = 'password' | 'two-factor' | 'passkey' | 'shared-link';
 type AlertUser = Pick<UserAdmin, 'id' | 'email' | 'metadata'>;
 const SIGN_IN_FAILURE_TITLE = 'Someone tried to sign in to your account';
 const SIGN_IN_FAILURE_DESCRIPTION =

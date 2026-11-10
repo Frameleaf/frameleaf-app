@@ -31,12 +31,16 @@ import { ApiTag, AuthCookie, AuthType, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails, RemoteSignInExempt } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
+import { PasskeyService } from 'src/services/passkey.service.js';
 import { respondWithCookie, respondWithoutCookie } from 'src/utils/response.js';
 
 @ApiTags(ApiTag.Authentication)
 @Controller('auth')
 export class AuthController {
-  constructor(private service: AuthService) {}
+  constructor(
+    private service: AuthService,
+    private passkeyService: PasskeyService,
+  ) {}
 
   @Post('login')
   @Endpoint({
@@ -268,8 +272,17 @@ export class AuthController {
       'Get information about the current session, including whether the user has a password, and if the session can access locked assets.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getAuthStatus(@Auth() auth: AuthDto): Promise<AuthStatusResponseDto> {
-    return this.service.getAuthStatus(auth);
+  async getAuthStatus(
+    @Req() req: Request,
+    @Auth() auth: AuthDto,
+    @GetLoginDetails() details: LoginDetails,
+  ): Promise<AuthStatusResponseDto> {
+    // FL-836: whether passkeys work at this address, and whether the account has any
+    const [status, passkeys] = await Promise.all([
+      this.service.getAuthStatus(auth),
+      this.passkeyService.getStatus(auth, req.headers, details.isSecure),
+    ]);
+    return { ...status, ...passkeys };
   }
 
   @Post('pin-code')

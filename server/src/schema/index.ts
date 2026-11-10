@@ -263,6 +263,7 @@ import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
 import { UserKnownDeviceTable } from 'src/schema/tables/user-known-device.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
+import { AuthChallengeTable, SessionPasskeyTable, UserPasskeyTable } from 'src/schema/tables/user-passkey.table.js';
 import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
@@ -499,6 +500,9 @@ export class ImmichDatabase {
     UserTwoFactorTable,
     UserKnownDeviceTable,
     UserRecoveryCodeTable,
+    UserPasskeyTable,
+    AuthChallengeTable,
+    SessionPasskeyTable,
     VersionHistoryTable,
     VideoMomentIndexTable,
     VideoMomentFrameTable,
@@ -809,6 +813,9 @@ export interface DB extends QueueDatabase {
   user_recovery_code: UserRecoveryCodeTable;
   user_two_factor: UserTwoFactorTable;
   user_known_device: UserKnownDeviceTable;
+  user_passkey: UserPasskeyTable;
+  auth_challenge: AuthChallengeTable;
+  session_passkey: SessionPasskeyTable;
 
   version_history: VersionHistoryTable;
 

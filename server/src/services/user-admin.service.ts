@@ -34,6 +34,7 @@ import {
   UserStatus,
 } from 'src/enum.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
+import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
@@ -55,6 +56,8 @@ const accountEvent = (
 type AccountEvent = ReturnType<typeof accountEvent>;
 /** FL-793: the `account-updated` detail for an administrator's two-step sign-in reset. */
 export const TWO_FACTOR_RESET_DETAIL = 'two-factor-reset';
+/** FL-836: the `account-updated` detail for an administrator's removal of every passkey. */
+export const PASSKEYS_REMOVED_DETAIL = 'passkeys-removed';
 type Preferences = ReturnType<typeof getPreferences>;
 
 /** The default page size of an account's history (FL-76). */
@@ -68,6 +71,10 @@ export class UserAdminService extends BaseService {
   /** FL-721: an administrator can't clear or change the PIN of someone with Locked encryption on. */
   @Inject(LockedEncryptionService)
   private lockedEncryption!: LockedEncryptionService;
+
+  /** FL-836: an administrator removes someone's passkeys. */
+  @Inject(PasskeyRepository)
+  private passkeyRepository!: PasskeyRepository;
 
   /** FL-721 (spec §10): the admin user response shows whether Locked encryption is on, nothing else. */
   private async mapAdmin(user: UserAdmin): Promise<UserAdminResponseDto> {
@@ -256,6 +263,10 @@ export class UserAdminService extends BaseService {
     }
 
     await this.recordAdminEvents(this.getUpdateEvents(auth, user, updatedUser, dto));
+    // FL-836 (FL-767 design): a password reset also removes their passkeys, so only the new password gets in
+    if (dto.password) {
+      await this.removeAllPasskeys(auth, updatedUser);
+    }
 
     return this.mapAdmin(updatedUser);
   }
@@ -425,6 +436,38 @@ export class UserAdminService extends BaseService {
   }
 
   /**
+   * FL-836: remove every passkey of an account, for someone who lost a device and can't sign in to
+   * remove its passkey. The sessions those passkeys started are signed out. Recorded in the account's
+   * history (and its own activity log) only when there were any.
+   */
+  async removePasskeys(auth: AuthDto, id: string): Promise<void> {
+    const user = await this.findOrFail(id, { withDeleted: true });
+    await this.removeAllPasskeys(auth, user);
+  }
+
+  private async removeAllPasskeys(auth: AuthDto, user: { id: string; name: string }) {
+    const { count, sessionIds } = await this.passkeyRepository.deleteAll(user.id);
+    for (const sessionId of sessionIds) {
+      await this.eventRepository.emit('SessionDelete', { sessionId });
+    }
+    if (count === 0) {
+      return;
+    }
+    await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.AccountUpdated, PASSKEYS_REMOVED_DETAIL)]);
+    await this.recordAccountEvent({
+      userId: user.id,
+      action: AccountEventAction.PasskeysRemovedByAdmin,
+      subject: user.name,
+      detail: String(count),
+      // not the administrator's device
+      deviceType: null,
+      deviceOS: null,
+      via: null,
+      ipPrefix: null,
+    });
+  }
+
+  /**
    * FL-76: the account's administrator history, newest first, for the account detail's Activity
    * tab. Admin-only (`AdminUserRead`). It names what was changed, never a password, PIN or photo.
    */
@@ -458,7 +501,11 @@ export class UserAdminService extends BaseService {
     if (pinCode === undefined) {
       throw new NotFoundException('User not found');
     }
-    return { pinCode, twoFactorEnabled: !!(await this.userRepository.getTwoFactor(id))?.enabledAt };
+    return {
+      pinCode,
+      twoFactorEnabled: !!(await this.userRepository.getTwoFactor(id))?.enabledAt,
+      passkeys: await this.passkeyRepository.countByUser(id),
+    };
   }
 
   async getStatistics(auth: AuthDto, id: string, dto: AssetStatsDto): Promise<AssetStatsResponseDto> {

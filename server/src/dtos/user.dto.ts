@@ -211,6 +211,7 @@ const UserAdminPinCodeStateResponseSchema = z
   .object({
     pinCode: z.boolean().describe('Whether the account has a PIN set'),
     twoFactorEnabled: z.boolean().describe('FL-793: whether the account has two-step sign-in on'),
+    passkeys: z.int().min(0).describe('FL-836: how many passkeys the account has'),
   })
   .meta({ id: 'UserAdminPinCodeStateResponseDto' });
 
