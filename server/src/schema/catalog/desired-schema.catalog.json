@@ -3,6 +3,290 @@
   "schemaName": "public",
   "tables": [
     {
+      "name": "asset_metadata_audit",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "asset_metadata_audit",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_metadata_audit",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "key",
+          "tableName": "asset_metadata_audit",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "asset_metadata_audit",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_metadata_audit_key_idx",
+          "definition": "CREATE INDEX asset_metadata_audit_key_idx ON public.asset_metadata_audit USING btree (key)",
+          "tableName": "asset_metadata_audit",
+          "columnNames": [
+            "key"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_metadata_audit_assetId_idx",
+          "definition": "CREATE INDEX \"asset_metadata_audit_assetId_idx\" ON public.asset_metadata_audit USING btree (\"assetId\")",
+          "tableName": "asset_metadata_audit",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_metadata_audit_deletedAt_idx",
+          "definition": "CREATE INDEX \"asset_metadata_audit_deletedAt_idx\" ON public.asset_metadata_audit USING btree (\"deletedAt\")",
+          "tableName": "asset_metadata_audit",
+          "columnNames": [
+            "deletedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_metadata_audit_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "asset_metadata_audit",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_ocr_audit",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "asset_ocr_audit",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_ocr_audit",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "asset_ocr_audit",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_ocr_audit_assetId_idx",
+          "definition": "CREATE INDEX \"asset_ocr_audit_assetId_idx\" ON public.asset_ocr_audit USING btree (\"assetId\")",
+          "tableName": "asset_ocr_audit",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_ocr_audit_deletedAt_idx",
+          "definition": "CREATE INDEX \"asset_ocr_audit_deletedAt_idx\" ON public.asset_ocr_audit USING btree (\"deletedAt\")",
+          "tableName": "asset_ocr_audit",
+          "columnNames": [
+            "deletedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_ocr_audit_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "asset_ocr_audit",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_origin",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_origin",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_origin",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "following",
+          "tableName": "asset_origin",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "overriddenFields",
+          "tableName": "asset_origin",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::text[]",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_origin",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "partnerSharedById",
+          "tableName": "asset_origin",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "rootOwnerId",
+          "tableName": "asset_origin",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sourceAssetId",
+          "tableName": "asset_origin",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_origin_source_idx",
+          "definition": "CREATE INDEX asset_origin_source_idx ON public.asset_origin USING btree (\"sourceAssetId\") WHERE following",
+          "tableName": "asset_origin",
+          "columnNames": [
+            "sourceAssetId"
+          ],
+          "using": "btree",
+          "where": "following",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_origin_partner_idx",
+          "definition": "CREATE INDEX asset_origin_partner_idx ON public.asset_origin USING btree (\"partnerSharedById\", \"ownerId\")",
+          "tableName": "asset_origin",
+          "columnNames": [
+            "partnerSharedById",
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_origin_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_origin",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
       "name": "album_audit",
       "columns": [
         {
@@ -1543,290 +1827,6 @@
           "tableName": "asset_face_audit",
           "columnNames": [
             "id"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "asset_metadata_audit",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "asset_metadata_audit",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_metadata_audit",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "key",
-          "tableName": "asset_metadata_audit",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "asset_metadata_audit",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_metadata_audit_key_idx",
-          "definition": "CREATE INDEX asset_metadata_audit_key_idx ON public.asset_metadata_audit USING btree (key)",
-          "tableName": "asset_metadata_audit",
-          "columnNames": [
-            "key"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_metadata_audit_assetId_idx",
-          "definition": "CREATE INDEX \"asset_metadata_audit_assetId_idx\" ON public.asset_metadata_audit USING btree (\"assetId\")",
-          "tableName": "asset_metadata_audit",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_metadata_audit_deletedAt_idx",
-          "definition": "CREATE INDEX \"asset_metadata_audit_deletedAt_idx\" ON public.asset_metadata_audit USING btree (\"deletedAt\")",
-          "tableName": "asset_metadata_audit",
-          "columnNames": [
-            "deletedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_metadata_audit_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "asset_metadata_audit",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "asset_ocr_audit",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "asset_ocr_audit",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_ocr_audit",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "asset_ocr_audit",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_ocr_audit_assetId_idx",
-          "definition": "CREATE INDEX \"asset_ocr_audit_assetId_idx\" ON public.asset_ocr_audit USING btree (\"assetId\")",
-          "tableName": "asset_ocr_audit",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_ocr_audit_deletedAt_idx",
-          "definition": "CREATE INDEX \"asset_ocr_audit_deletedAt_idx\" ON public.asset_ocr_audit USING btree (\"deletedAt\")",
-          "tableName": "asset_ocr_audit",
-          "columnNames": [
-            "deletedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_ocr_audit_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "asset_ocr_audit",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "asset_origin",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_origin",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "asset_origin",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "following",
-          "tableName": "asset_origin",
-          "nullable": false,
-          "isArray": false,
-          "default": "true",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "overriddenFields",
-          "tableName": "asset_origin",
-          "nullable": false,
-          "isArray": true,
-          "default": "'{}'::text[]",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "asset_origin",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "partnerSharedById",
-          "tableName": "asset_origin",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "rootOwnerId",
-          "tableName": "asset_origin",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sourceAssetId",
-          "tableName": "asset_origin",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_origin_source_idx",
-          "definition": "CREATE INDEX asset_origin_source_idx ON public.asset_origin USING btree (\"sourceAssetId\") WHERE following",
-          "tableName": "asset_origin",
-          "columnNames": [
-            "sourceAssetId"
-          ],
-          "using": "btree",
-          "where": "following",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_origin_partner_idx",
-          "definition": "CREATE INDEX asset_origin_partner_idx ON public.asset_origin USING btree (\"partnerSharedById\", \"ownerId\")",
-          "tableName": "asset_origin",
-          "columnNames": [
-            "partnerSharedById",
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_origin_pkey",
-          "definition": "PRIMARY KEY (\"assetId\")",
-          "tableName": "asset_origin",
-          "columnNames": [
-            "assetId"
           ],
           "synchronize": true
         }
@@ -23673,87 +23673,6 @@
           "name": "asset_integrity_verification_assetId_fkey",
           "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
           "tableName": "asset_integrity_verification",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "asset_job_status",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_job_status",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "facesRecognizedAt",
-          "tableName": "asset_job_status",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "metadataExtractedAt",
-          "tableName": "asset_job_status",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "duplicatesDetectedAt",
-          "tableName": "asset_job_status",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "ocrAt",
-          "tableName": "asset_job_status",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_job_status_pkey",
-          "definition": "PRIMARY KEY (\"assetId\")",
-          "tableName": "asset_job_status",
-          "columnNames": [
-            "assetId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_job_status_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset_job_status",
           "columnNames": [
             "assetId"
           ],
@@ -48297,6 +48216,96 @@
             "ownerId"
           ],
           "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_job_status",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_job_status",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "facesRecognizedAt",
+          "tableName": "asset_job_status",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "metadataExtractedAt",
+          "tableName": "asset_job_status",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "duplicatesDetectedAt",
+          "tableName": "asset_job_status",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "ocrAt",
+          "tableName": "asset_job_status",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "transcodeSkippedFor",
+          "tableName": "asset_job_status",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_job_status_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_job_status",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_job_status_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_job_status",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
           "referenceColumnNames": [
             "id"
           ],
