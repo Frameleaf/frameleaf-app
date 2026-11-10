@@ -7307,8 +7307,6 @@
   "frameleaf_eagle_field_map": "What each Eagle detail becomes",
   "frameleaf_eagle_folder_icons": "Folder icons",
   "frameleaf_eagle_folder_icons_reason": "Eagle’s icons have no match, so these collections get the plain folder. Their colours come over.",
-  "frameleaf_eagle_fonts": "Fonts",
-  "frameleaf_eagle_fonts_reason": "Boards holds pictures, videos and design files. Keep fonts in Eagle or your font app.",
   "frameleaf_eagle_hide": "Hide",
   "frameleaf_eagle_import_count": "Import {count, plural, one {# item} other {# items}}",
   "frameleaf_eagle_import_open": "Import from Eagle…",

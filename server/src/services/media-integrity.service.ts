@@ -10,6 +10,7 @@ import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
+import { hasFontSignature } from 'src/utils/font-file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
@@ -278,6 +279,14 @@ export class MediaIntegrityService {
     signal: AbortSignal,
     touch: () => void,
   ): Promise<Exclude<MediaIntegrityResult, { status: 'healthy' }> | undefined> {
+    if (mimeTypes.isFont(input.originalFileName)) {
+      // FL-1359: a font is whole when its bytes are the ones stored and it is still the type its name says.
+      // Nothing is drawn here: what a text renderer makes of a font is never a verdict on the file.
+      const head = await this.storageRepository.readFile(input.path, { buffer: Buffer.alloc(8), length: 8 });
+      return hasFontSignature(head, input.originalFileName)
+        ? undefined
+        : { status: 'unsupported', reason: 'media_type_unsupported' };
+    }
     if (input.type === AssetType.Video) {
       return this.checkVideo(input, signal, touch);
     }

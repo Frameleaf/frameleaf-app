@@ -168,7 +168,23 @@ const sidecar: Record<string, string[]> = {
   '.xmp': ['application/xml', 'text/xml'],
 };
 
-const types = { ...image, ...video, ...sidecar };
+/**
+ * FL-1359: fonts are Boards items. They are deliberately not part of `isAsset`: only an upload into
+ * Boards takes one, so no library scan, import or duplicate check treats a font as a photo or video.
+ */
+const font: Record<string, string[]> = {
+  '.dfont': ['application/x-dfont'],
+  '.otc': ['font/collection'],
+  '.otf': ['font/otf'],
+  '.pfa': ['application/x-font-type1'],
+  '.pfb': ['application/x-font-type1'],
+  '.ttc': ['font/collection'],
+  '.ttf': ['font/ttf'],
+  '.woff': ['font/woff'],
+  '.woff2': ['font/woff2'],
+};
+
+const types = { ...image, ...video, ...sidecar, ...font };
 
 const isType = (filename: string, r: Record<string, string[]>) =>
   Object.hasOwn(r, getFilenameExtension(filename).toLowerCase());
@@ -182,6 +198,7 @@ export const mimeTypes = {
   sidecar,
   video,
   raw,
+  font,
   webUnsupportedImage,
 
   isAsset: (filename: string) => {
@@ -196,6 +213,7 @@ export const mimeTypes = {
   isProfile: (filename: string) => isType(filename, profile),
   isSidecar: (filename: string) => isType(filename, sidecar),
   isVideo: (filename: string) => isType(filename, video),
+  isFont: (filename: string) => isType(filename, font),
   canBeTransparent: (filename: string) =>
     transparentCapableExtensions.has(getFilenameExtension(filename).toLowerCase()),
   isRaw: (filename: string) => isType(filename, raw),

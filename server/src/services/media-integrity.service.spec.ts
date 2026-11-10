@@ -66,6 +66,26 @@ describe(MediaIntegrityService.name, () => {
       hash.mockRestore();
     }
   });
+  describe('fonts (FL-1359)', () => {
+    const font = async (head: string) => {
+      const path = join(directory, 'Lodge.ttf');
+      await writeFile(path, Buffer.concat([Buffer.from(head, 'hex'), Buffer.alloc(64, 7)]));
+      return { path, originalFileName: 'Lodge.ttf', type: AssetType.Other, deep: true };
+    };
+
+    it('a font whose bytes are stored and still start as a font is healthy, with nothing drawn', async () => {
+      await expect(sut.validate(await font('00010000'))).resolves.toMatchObject({ status: 'healthy' });
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
+
+    it('a file that only has a font’s name is not something Frameleaf can check, never damage', async () => {
+      await expect(sut.validate(await font('4d5a9000'))).resolves.toMatchObject({
+        status: 'unsupported',
+        reason: 'media_type_unsupported',
+      });
+    });
+  });
+
   it('returns real dual hashes and identity', async () => {
     expect(await sut.validate(input)).toMatchObject({
       status: 'healthy',

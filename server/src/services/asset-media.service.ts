@@ -64,6 +64,7 @@ import {
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { hasFontSignature } from 'src/utils/font-file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   OriginalAsset,
@@ -263,6 +264,10 @@ export class AssetMediaService extends BaseService {
         if (mimeTypes.isAsset(filename)) {
           return true;
         }
+        // FL-1359: a font is a Boards item only. `libraryScope` must come before the file in the form.
+        if (mimeTypes.isFont(filename) && body.libraryScope === LibraryScope.Design) {
+          return true;
+        }
         break;
       }
 
@@ -330,6 +335,13 @@ export class AssetMediaService extends BaseService {
 
     requireUploadsNotPaused(auth);
     this.requireQuota(auth, file.size);
+    if (mimeTypes.isFont(file.originalPath)) {
+      // FL-1359: fonts live in Boards only, and the file must be the font type its name says.
+      const head = await this.storageRepository.readFile(file.originalPath, { buffer: Buffer.alloc(8), length: 8 });
+      if (dto.libraryScope !== LibraryScope.Design || !hasFontSignature(head, file.originalPath)) {
+        throw new BadRequestException(`Unsupported file type ${dto.filename || file.originalName}`);
+      }
+    }
 
     return {
       asset: {

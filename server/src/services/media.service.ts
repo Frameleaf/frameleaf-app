@@ -127,6 +127,8 @@ import {
   validateVideoMaster,
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.js';
+import { FONT_PARSE_LIMIT, fontFactsFromName, readFontFacts } from 'src/utils/font-file.js';
+import { FONT_SPECIMEN } from 'src/utils/font-specimen.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
@@ -648,6 +650,8 @@ export class MediaService extends BaseService {
 
         throw error;
       }
+    } else if (mimeTypes.isFont(asset.originalFileName)) {
+      generated = await this.generateFontThumbnails(asset, config);
     } else {
       this.logger.warn(`Skipping thumbnail generation for asset ${id}: ${asset.type} is not an image or video`);
       return JobStatus.Skipped;
@@ -3689,6 +3693,76 @@ export class MediaService extends BaseService {
         `Asset ${assetId} has transparency but the configured format is ${format} which does not support it, consider using a format that does, such as ${ImageFormat.Webp}`,
       );
     }
+  }
+
+  /**
+   * FL-1359: a font in Boards. Its facts are read once and kept, and its thumbnail and preview are a
+   * specimen picture set in the font. A font that cannot be read or drawn keeps its name and gets a
+   * plain tile: it is never reported as damaged, and the job never fails on what the file holds.
+   */
+  private async generateFontThumbnails(asset: ThumbnailAsset, { image }: SystemConfig) {
+    const name = asset.originalFileName;
+    let facts = fontFactsFromName(name);
+    let sample = facts.family;
+    let readable = false;
+    try {
+      const { size } = await this.storageRepository.stat(asset.originalPath);
+      if (size <= FONT_PARSE_LIMIT) {
+        readable = true;
+        if (/\.pf[ab]$/i.test(name)) {
+          // Type 1: ExifTool reads its header
+          const tags = (await this.metadataRepository.readTags(asset.originalPath)) as Record<string, unknown>;
+          const text = (key: string) => (typeof tags[key] === 'string' ? (tags[key] as string).slice(0, 300) : '');
+          const weight = text('Weight');
+          facts = fontFactsFromName(text('FamilyName') || text('FullName') || text('FontName') || name, {
+            style: weight || 'Regular',
+            italic: Number(tags.ItalicAngle) !== 0 && Number.isFinite(Number(tags.ItalicAngle)),
+          });
+          facts.license = text('Notice') || text('Copyright') || null;
+          sample = 'Aa Bb Cc\nHandgloves 0123';
+        } else {
+          ({ facts, sample } = readFontFacts(await this.storageRepository.readFile(asset.originalPath), name));
+        }
+      }
+    } catch (error) {
+      executionSignal()?.throwIfAborted();
+      this.logger.warn(`Font ${asset.id} could not be read, keeping its name only: ${error}`);
+    }
+    await this.assetRepository.upsertFont(asset.id, facts);
+
+    const files = ([AssetFileType.Preview, AssetFileType.Thumbnail] as const).map((fileType) => {
+      const { format, quality, size } = fileType === AssetFileType.Preview ? image.preview : image.thumbnail;
+      const file = this.getImageFile(asset, {
+        fileType,
+        format,
+        isEdited: false,
+        isProgressive: false,
+        isTransparent: false,
+      });
+      assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: file.path });
+      return { file, output: { path: file.path, size, format, quality } };
+    });
+    this.storageCore.ensureFolders(files[0].file.path);
+    const outputs = files.map(({ output }) => output);
+    let thumbhash: Buffer;
+    try {
+      if (!readable) throw new Error('The font file was not read');
+      thumbhash = await this.mediaRepository.renderFontSpecimen(
+        asset.originalPath,
+        { family: facts.family, text: sample },
+        outputs,
+      );
+    } catch (error) {
+      executionSignal()?.throwIfAborted();
+      this.logger.warn(`Font ${asset.id} gets a plain tile: its specimen could not be drawn: ${error}`);
+      thumbhash = await this.mediaRepository.renderFontSpecimen(
+        null,
+        { family: facts.family, text: facts.family },
+        outputs,
+      );
+    }
+    // The asset's size is its specimen picture's: a font has no size of its own.
+    return { files: files.map(({ file }) => file), thumbhash, fullsizeDimensions: FONT_SPECIMEN };
   }
 
   private getImageFile(

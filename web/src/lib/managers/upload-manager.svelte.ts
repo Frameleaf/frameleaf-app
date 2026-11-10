@@ -4,7 +4,7 @@ import { uploadAssetsStore } from '$lib/stores/upload';
 import { cancelUploadRequests } from '$lib/utils';
 
 class UploadManager {
-  mediaTypes = $state<ServerMediaTypesResponseDto>({ image: [], sidecar: [], video: [] });
+  mediaTypes = $state<ServerMediaTypesResponseDto>({ image: [], sidecar: [], video: [], font: [] });
 
   constructor() {
     eventManager.on({
@@ -28,6 +28,11 @@ class UploadManager {
 
   getExtensions() {
     return [...this.mediaTypes.image, ...this.mediaTypes.video];
+  }
+
+  /** FL-1359: Boards also takes fonts. An older server lists none. */
+  getBoardsExtensions() {
+    return [...this.getExtensions(), ...(this.mediaTypes.font ?? [])];
   }
 }
 

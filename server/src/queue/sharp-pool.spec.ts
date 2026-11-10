@@ -310,6 +310,15 @@ describe('bounded native image process pool', () => {
     expect(observations[1]).toEqual(expect.objectContaining({ outcome: 'cancelled' }));
   }, 20_000);
 
+  it('never reuses a child that opened a font (FL-1359)', async () => {
+    const value = pool({ idleChildMs: 60_000 });
+    await value.run('renderFontSpecimen', ['/fonts/a.ttf', { family: 'A', text: 'Aa' }, []]);
+    await once(children[0], 'close');
+    const next = await value.run('getImageMetadata', ['ok']);
+    expect(children).toHaveLength(2);
+    expect(next.width).toBe(children[1].pid);
+  });
+
   it('retires idle children and rejects rather than silently resizing over-limit input', async () => {
     const value = pool({ idleChildMs: 20, maxBytes: 8 });
     await expect(value.run('getImageMetadata', [Buffer.alloc(9)])).rejects.toThrow('input buffer is too large');

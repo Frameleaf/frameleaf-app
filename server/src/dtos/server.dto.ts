@@ -249,6 +249,7 @@ const ServerMediaTypesResponseSchema = z
     video: z.array(z.string()).describe('Supported video MIME types'),
     image: z.array(z.string()).describe('Supported image MIME types'),
     sidecar: z.array(z.string()).describe('Supported sidecar MIME types'),
+    font: z.array(z.string()).describe('Font file extensions an upload into Boards (libraryScope=design) accepts'),
   })
   .meta({ id: 'ServerMediaTypesResponseDto' });
 

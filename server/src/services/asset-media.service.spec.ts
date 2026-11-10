@@ -232,6 +232,42 @@ describe(AssetMediaService.name, () => {
     },
   );
 
+  describe('fonts (FL-1359)', () => {
+    const font = {
+      ...fileStub.livePhotoStill,
+      originalPath: '/data/upload/user/aa/bb/file.ttf',
+      originalName: 'Lodge.ttf',
+    };
+    const sfnt = Buffer.from('0001000000120100', 'hex');
+
+    it('publishes a real font in Boards as an "other" item', async () => {
+      mocks.storage.readFile.mockResolvedValue(sfnt);
+      const prepared = await sut.prepareUploadAsset(
+        authStub.user1,
+        { ...createDto, filename: 'Lodge.ttf', libraryScope: LibraryScope.Design },
+        font,
+      );
+      expect(prepared.asset).toMatchObject({ type: AssetType.Other, libraryScope: LibraryScope.Design });
+    });
+
+    it('refuses a file that only has a font’s name', async () => {
+      mocks.storage.readFile.mockResolvedValue(Buffer.from('MZ\u0090\u0000\u0003\u0000\u0000\u0000', 'latin1'));
+      await expect(
+        sut.prepareUploadAsset(authStub.user1, { ...createDto, libraryScope: LibraryScope.Design }, font),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it.each([LibraryScope.Personal, LibraryScope.Both, undefined])(
+      'refuses a font in %s scope',
+      async (libraryScope) => {
+        mocks.storage.readFile.mockResolvedValue(sfnt);
+        await expect(
+          sut.prepareUploadAsset(authStub.user1, { ...createDto, libraryScope }, font),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      },
+    );
+  });
+
   describe('getUploadAssetIdByChecksum', () => {
     it('should return if checksum is undefined', async () => {
       await expect(sut.getUploadAssetIdByChecksum(authStub.admin)).resolves.toBe(undefined);
@@ -324,6 +360,26 @@ describe(AssetMediaService.name, () => {
         BadRequestException,
       );
       expect(sut.canUploadFile(uploadFile.filename(UploadFieldName.ASSET_DATA, pathFilename, body))).toEqual(true);
+    });
+
+    it.each(['.ttf', '.otf', '.ttc', '.otc', '.woff', '.woff2', '.dfont', '.pfb', '.pfa'])(
+      'takes a %s font into Boards only (FL-1359)',
+      (extension) => {
+        const request = (body: Record<string, unknown>) =>
+          uploadFile.filename(UploadFieldName.ASSET_DATA, `Lodge${extension}`, body);
+        expect(sut.canUploadFile(request({ libraryScope: 'design' }))).toEqual(true);
+        for (const body of [{}, { libraryScope: 'personal' }, { libraryScope: 'both' }]) {
+          expect(() => sut.canUploadFile(request(body))).toThrowError(BadRequestException);
+        }
+      },
+    );
+
+    it('refuses a font as a sidecar or a profile picture (FL-1359)', () => {
+      for (const fieldName of [UploadFieldName.SIDECAR_DATA, UploadFieldName.PROFILE_DATA]) {
+        expect(() =>
+          sut.canUploadFile(uploadFile.filename(fieldName, 'Lodge.ttf', { libraryScope: 'design' })),
+        ).toThrowError(BadRequestException);
+      }
     });
 
     it('refuses a photo or video while new uploads are paused, but not a profile picture (FL-538)', () => {

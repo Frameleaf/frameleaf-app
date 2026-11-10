@@ -83,6 +83,7 @@ import {
 } from 'src/schema/tables/asset-local-effect.table.js';
 import { AssetLockTable } from 'src/schema/tables/asset-lock.table.js';
 import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.table.js';
+import { AssetFontTable } from 'src/schema/tables/asset-font.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
@@ -338,6 +339,7 @@ export class ImmichDatabase {
     BackupReconciliationTable,
     AssetPaletteTable,
     AssetPaletteSwatchTable,
+    AssetFontTable,
     AssetAnnotationTable,
     CaptureReceiptTable,
     BrowserExtensionSignInCodeTable,
@@ -638,6 +640,7 @@ export interface DB extends QueueDatabase {
   asset_location_insight: AssetLocationInsightTable;
   asset_palette: AssetPaletteTable;
   asset_palette_swatch: AssetPaletteSwatchTable;
+  asset_font: AssetFontTable;
   asset_annotation: AssetAnnotationTable;
   capture_receipt: CaptureReceiptTable;
   browser_extension_sign_in_code: BrowserExtensionSignInCodeTable;

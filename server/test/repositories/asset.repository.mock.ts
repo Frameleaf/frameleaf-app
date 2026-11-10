@@ -27,6 +27,8 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getVideoStreamsForDecode: vitest.fn().mockResolvedValue([]),
     getVideoColor: vitest.fn(),
     getById: vitest.fn(),
+    getFont: vitest.fn(),
+    upsertFont: vitest.fn(),
     getByChecksum: vitest.fn(),
     getByChecksums: vitest.fn(),
     getUploadAssetIdByChecksum: vitest.fn(),

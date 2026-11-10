@@ -486,19 +486,23 @@ export class AssetJobRepository {
   }
 
   private assetsWithPreviews() {
-    return this.db
-      .selectFrom('asset')
-      .where('asset.visibility', '!=', AssetVisibility.Hidden)
-      .where('asset.deletedAt', 'is', null)
-      .innerJoin('asset_job_status as job_status', 'assetId', 'asset.id')
-      .where((eb) =>
-        eb.exists((qb) =>
-          qb
-            .selectFrom('asset_file')
-            .whereRef('assetId', '=', 'asset.id')
-            .where('asset_file.type', '=', AssetFileType.Preview),
-        ),
-      );
+    return (
+      this.db
+        .selectFrom('asset')
+        // FL-1359: a font's preview is its specimen; search, faces, text reading and captions are for pictures
+        .where('asset.type', '!=', sql.lit(AssetType.Other))
+        .where('asset.visibility', '!=', AssetVisibility.Hidden)
+        .where('asset.deletedAt', 'is', null)
+        .innerJoin('asset_job_status as job_status', 'assetId', 'asset.id')
+        .where((eb) =>
+          eb.exists((qb) =>
+            qb
+              .selectFrom('asset_file')
+              .whereRef('assetId', '=', 'asset.id')
+              .where('asset_file.type', '=', AssetFileType.Preview),
+          ),
+        )
+    );
   }
 
   @GenerateSql({ params: [], stream: true })
@@ -966,6 +970,7 @@ export class AssetJobRepository {
           .where('asset_job_status.ocrAt', 'is', null),
       )
       .where('asset.deletedAt', 'is', null)
+      .where('asset.type', '!=', sql.lit(AssetType.Other))
       .where('asset.visibility', '!=', AssetVisibility.Hidden);
   }
 

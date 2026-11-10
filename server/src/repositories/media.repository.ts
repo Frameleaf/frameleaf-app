@@ -286,6 +286,12 @@ export class MediaRepository {
     }
   }
 
+  /** FL-1359: a font's specimen picture, capped at one minute. The child that drew it is not used again. */
+  renderFontSpecimen(...args: SharpArguments<'renderFontSpecimen'>): Promise<Buffer> {
+    const signals = [executionSignal(), AbortSignal.timeout(60_000)].filter((signal) => !!signal);
+    return sharpProcessPool.run('renderFontSpecimen', args, AbortSignal.any(signals));
+  }
+
   async generateThumbnail(input: string | Buffer, options: GenerateThumbnailOptions, output: string): Promise<void> {
     return sharpProcessPool.run('generateThumbnail', [input, options, output]);
   }
