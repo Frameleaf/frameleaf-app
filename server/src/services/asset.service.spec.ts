@@ -28,7 +28,6 @@ import { AssetStats, RemovedAsset } from 'src/repositories/asset.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
-import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
 import { tryPromise } from 'src/utils/promise.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -399,10 +398,9 @@ describe(AssetService.name, () => {
           id: 'finding-1',
           category: MediaHealthCategory.Missing,
         });
-        // `BaseService.create` passes the BaseService repositories and what its builder holds (FL-1347): a workflow
-        // holds Locked encryption for the AssetService it builds, but not the flag's repository
-        const workflow = BaseService.create(WorkflowExecutionService, sut);
-        const built = BaseService.create(AssetService, workflow);
+        // `BaseService.create` passes the BaseService repositories and only the dependencies named for hand-built
+        // services (FL-1347): never the flag's repository, even from a builder that holds one
+        const built = BaseService.create(AssetService, sut);
 
         await expect(built.get(auth, asset.id)).resolves.toMatchObject({ fileProblem: null });
         expect(mocks.mediaHealth.getOpenFileProblem).not.toHaveBeenCalled();

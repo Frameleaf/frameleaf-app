@@ -2,10 +2,11 @@ import { PROPERTY_DEPS_METADATA } from '@nestjs/common/constants.js';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { AlbumCleanupService } from 'src/services/album-cleanup.service.js';
 import { AlbumDateHealService } from 'src/services/album-date-heal.service.js';
 import { AssetService } from 'src/services/asset.service.js';
-import { BaseService } from 'src/services/base.service.js';
+import { BaseService, HAND_BUILT_DEPENDENCIES } from 'src/services/base.service.js';
 import { services } from 'src/services/index.js';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
 import { newTestService } from 'test/utils.js';
@@ -79,10 +80,10 @@ describe('services built by hand', () => {
       expect(Builder, `${builder} is a registered service`).toBeDefined();
       expect(Target, `${target} is a registered service`).toBeDefined();
       const held = new Set(propertyDependencies(Builder!).map(({ type }) => type));
-      const missing = propertyDependencies(Target!)
-        .filter(({ key, type }) => required(Target!, key) && !held.has(type))
-        .map(({ key }) => key);
-      expect(missing).toEqual([]);
+      const needed = propertyDependencies(Target!).filter(({ key }) => required(Target!, key));
+      expect(needed.filter(({ type }) => !held.has(type)).map(({ key }) => key)).toEqual([]);
+      // and each is one `BaseService.create` copies
+      expect(needed.filter(({ type }) => !HAND_BUILT_DEPENDENCIES.includes(type)).map(({ key }) => key)).toEqual([]);
     },
   );
 
@@ -97,5 +98,18 @@ describe('services built by hand', () => {
       expect(built[key]).toBeDefined();
       expect(built[key]).toBe((sut as unknown as Record<string, unknown>)[from!.key]);
     }
+  });
+
+  it('leave the file problem flag off, even when the builder holds its repository', () => {
+    // an AssetService Nest made holds both Locked encryption and the flag's repository
+    const { sut } = newTestService(AssetService);
+    const holder = sut as unknown as Record<string, unknown>;
+    expect(holder.mediaHealthRepository).toBeDefined();
+
+    const built = BaseService.create(AssetService, sut) as unknown as Record<string, unknown>;
+
+    expect(built.mediaHealthRepository).toBeUndefined();
+    expect(built.lockedEncryption).toBe(holder.lockedEncryption);
+    expect(HAND_BUILT_DEPENDENCIES).not.toContain(MediaHealthRepository);
   });
 });

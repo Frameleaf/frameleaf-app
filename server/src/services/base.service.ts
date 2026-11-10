@@ -106,6 +106,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
 import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
@@ -215,6 +216,13 @@ export const BASE_SERVICE_DEPENDENCIES = [
   WebsocketRepository,
   WorkflowRepository,
 ] as const;
+
+/**
+ * FL-1347: the property-injected dependencies a service built with `BaseService.create` takes from the service that
+ * builds it. Only these are copied: an optional one left out of this list (the viewer's file problem flag) stays
+ * absent on a hand-built service, whatever its builder holds.
+ */
+export const HAND_BUILT_DEPENDENCIES: readonly unknown[] = [LockedEncryptionService];
 
 /** The dependencies Nest sets on a service's properties (`@Inject` on a property), with the token of each. */
 const propertyDependencies = (Service: object): Array<{ key: string; type: unknown }> =>
@@ -405,9 +413,12 @@ export class BaseService {
     service.logger.setContext(BaseService.name);
 
     // FL-1347: Nest also sets a service's property-injected dependencies (Locked encryption, FL-721). One built here
-    // gets each from the service that builds it, which Nest gave the same instance.
+    // gets each named in HAND_BUILT_DEPENDENCIES from the service that builds it, which Nest gave the same instance.
     const held = propertyDependencies(ctx.constructor);
     for (const { key, type } of propertyDependencies(Service)) {
+      if (!HAND_BUILT_DEPENDENCIES.includes(type)) {
+        continue;
+      }
       const from = held.find((dependency) => dependency.type === type);
       const value = from && (ctx as unknown as Record<string, unknown>)[from.key];
       if (value !== undefined) {
