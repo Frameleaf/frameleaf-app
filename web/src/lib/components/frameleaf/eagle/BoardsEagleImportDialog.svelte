@@ -168,7 +168,9 @@
   let controller: AbortController | undefined;
   let now = $state(Date.now());
 
-  let supported = $state<ReadonlySet<string>>(session?.supported ?? supportedExtensions(uploadManager.getBoardsExtensions()));
+  let supported = $state<ReadonlySet<string>>(
+    session?.supported ?? supportedExtensions(uploadManager.getBoardsExtensions()),
+  );
 
   // An import the tab left part-way, so the first step can say to choose that library again.
   if (!run && ownerId) {
