@@ -133,7 +133,7 @@ describe('Server logs (FL-893)', () => {
   it('adds an older page above the lines in time order when asked', async () => {
     const full = Array.from({ length: 60 }, (_, index) =>
       line(100 + index, { at: `2026-11-10T10:${String(index).padStart(2, '0')}:00.000Z`, message: `Line ${index}` }),
-    ).toReversed();
+    ).reverse();
     vi.mocked(listServerLogs)
       .mockResolvedValueOnce({ entries: full, nextCursor: 'cursor-1' })
       .mockResolvedValueOnce({
