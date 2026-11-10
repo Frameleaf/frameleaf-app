@@ -133,6 +133,7 @@
   const load = async () => {
     loading = true;
     void loadReport();
+    const read = reportRead;
     const results = await Promise.allSettled([
       getAttention(),
       getStorage(),
@@ -144,6 +145,10 @@
       getOvernight(),
       listAllBackupDevices({ limit: 200 }),
     ]);
+    // an older load that answers late never replaces a newer one's readings
+    if (read !== reportRead) {
+      return;
+    }
     attention = settled(results[0]);
     storage = settled(results[1]);
     about = settled(results[2]);

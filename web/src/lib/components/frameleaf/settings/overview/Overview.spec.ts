@@ -109,7 +109,9 @@ describe('Overview (FL-363)', () => {
     expect(await screen.findByRole('heading', { name: 'Everything is working' })).toBeInTheDocument();
     expect(screen.getByText('40 GB free')).toBeInTheDocument();
     expect(screen.queryByText('Count now')).not.toBeInTheDocument();
+    expect(screen.queryByText(/so far\./)).not.toBeInTheDocument();
     arrive(analyticsReportFixture());
+    expect(await screen.findByText(/so far\./)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('status', { busy: true })).not.toBeInTheDocument());
   });
 
