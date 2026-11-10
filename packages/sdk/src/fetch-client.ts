@@ -11518,6 +11518,8 @@ export type PersonRecapDto = {
     year: number;
 };
 export type OnThisDayDto = {
+    /** Cities the items the viewer can see were taken in, the one with the most items first */
+    places?: string[];
     /** Year for on this day memory */
     year: number;
 };

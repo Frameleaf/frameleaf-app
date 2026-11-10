@@ -269,7 +269,8 @@ describe(MemoryService.name, () => {
       await expect(sut.create(auth, dto)).resolves.toEqual({
         id: expect.any(String),
         type: dto.type,
-        data: dto.data,
+        // FL-1394: an on this day memory carries the cities of its items, and this one has no items
+        data: { ...dto.data, places: [] },
         createdAt: expect.any(Date),
         updatedAt: expect.any(Date),
         isSaved: false,
@@ -286,18 +287,28 @@ describe(MemoryService.name, () => {
       const { user } = await ctx.newUser();
       const { asset: asset1 } = await ctx.newAsset({ ownerId: user.id });
       const { asset: asset2 } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: asset3 } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset1.id, city: 'Banff' });
+      await ctx.newExif({ assetId: asset2.id, city: 'Jasper' });
+      await ctx.newExif({ assetId: asset3.id, city: 'Jasper' });
       const auth = factory.auth({ user });
       const dto = {
         type: MemoryType.OnThisDay,
         data: { year: 2021 },
         memoryAt: new Date(2021),
-        assetIds: [asset1.id, asset2.id],
+        assetIds: [asset1.id, asset2.id, asset3.id],
       };
 
       await expect(sut.create(auth, dto)).resolves.toEqual(
         expect.objectContaining({
           id: expect.any(String),
-          assets: [expect.objectContaining({ id: asset1.id }), expect.objectContaining({ id: asset2.id })],
+          // FL-1394: the cities its items were taken in, read with the items, the one with the most first
+          data: { year: 2021, places: ['Jasper', 'Banff'] },
+          assets: [
+            expect.objectContaining({ id: asset1.id }),
+            expect.objectContaining({ id: asset2.id }),
+            expect.objectContaining({ id: asset3.id }),
+          ],
         }),
       );
     });

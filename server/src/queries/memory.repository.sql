@@ -368,7 +368,15 @@ select
     from
       (
         select
-          "asset".*
+          "asset".*,
+          (
+            select
+              "asset_exif"."city"
+            from
+              "asset_exif"
+            where
+              "asset_exif"."assetId" = "asset"."id"
+          ) as "city"
         from
           "asset"
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
@@ -638,7 +646,15 @@ select
     from
       (
         select
-          "asset".*
+          "asset".*,
+          (
+            select
+              "asset_exif"."city"
+            from
+              "asset_exif"
+            where
+              "asset_exif"."assetId" = "asset"."id"
+          ) as "city"
         from
           "asset"
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
@@ -916,7 +932,15 @@ select
     from
       (
         select
-          "asset".*
+          "asset".*,
+          (
+            select
+              "asset_exif"."city"
+            from
+              "asset_exif"
+            where
+              "asset_exif"."assetId" = "asset"."id"
+          ) as "city"
         from
           "asset"
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
@@ -1187,7 +1211,15 @@ select
     from
       (
         select
-          "asset".*
+          "asset".*,
+          (
+            select
+              "asset_exif"."city"
+            from
+              "asset_exif"
+            where
+              "asset_exif"."assetId" = "asset"."id"
+          ) as "city"
         from
           "asset"
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
@@ -1462,7 +1494,15 @@ select
     from
       (
         select
-          "asset".*
+          "asset".*,
+          (
+            select
+              "asset_exif"."city"
+            from
+              "asset_exif"
+            where
+              "asset_exif"."assetId" = "asset"."id"
+          ) as "city"
         from
           "asset"
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
@@ -1651,7 +1691,15 @@ select
     from
       (
         select
-          "asset".*
+          "asset".*,
+          (
+            select
+              "asset_exif"."city"
+            from
+              "asset_exif"
+            where
+              "asset_exif"."assetId" = "asset"."id"
+          ) as "city"
         from
           "asset"
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"

@@ -127,6 +127,31 @@ describe(MemoryService.name, () => {
       await expect(sut.search(factory.auth(), {})).resolves.toEqual([]);
     });
 
+    // FL-1394: a client titles the memory "One year ago in Jasper" from these
+    // The places come from the items the repository returns for this session and from nowhere else, so
+    // an item the session is not given (a Locked one, while locked) cannot name a place.
+    it('names the cities of the items an on this day memory is given, most items first', async () => {
+      const [userId] = newUuids();
+      const taken = (city: string | null) => ({
+        ...getForMemory(MemoryFactory.from({ ownerId: userId }).asset(AssetFactory.create()).build()).assets[0],
+        city,
+      });
+      const memory = getForMemory(MemoryFactory.create({ ownerId: userId }));
+      const assets = [taken('Banff'), taken('Jasper'), taken(' Jasper '), taken(''), taken(null)];
+      mocks.memory.search.mockResolvedValue([
+        { ...memory, assets },
+        { ...memory, id: newUuid(), assets: [taken(null)] },
+        { ...memory, id: newUuid(), type: MemoryType.YearInReview, data: { kind: 'year_in_review' }, assets },
+      ]);
+
+      const found = await sut.search(factory.auth({ user: { id: userId } }), {});
+      expect(found.map(({ data }) => data)).toEqual([
+        { year: 2024, places: ['Jasper', 'Banff'] },
+        { year: 2024, places: [] },
+        { kind: 'year_in_review' },
+      ]);
+    });
+
     it('should map empty result', async () => {
       mocks.memory.search.mockResolvedValue([]);
       await expect(sut.search(factory.auth(), {})).resolves.toEqual([]);
