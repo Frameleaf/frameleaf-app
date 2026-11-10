@@ -116,6 +116,14 @@ from
 where
   "asset"."deletedAt" is null
   and "asset"."visibility" != 'hidden'
+  and exists (
+    select
+      "assetId"
+    from
+      "asset_exif"
+    where
+      "asset_exif"."assetId" = "asset"."id"
+  )
   and (
     not exists (
       select
