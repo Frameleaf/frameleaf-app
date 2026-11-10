@@ -179,10 +179,15 @@ describe('Overview (FL-363)', () => {
       results: {},
     };
     const withFiles = (
-      fileProblems: { fixed: number; needsYou: number; since: string | null },
+      fileProblems: { fixed: number; needsYou: number; since: string | null; latest: string | null },
       dismissed: string[] = [],
     ) => sdk.getAttention.mockResolvedValue({ ...healthy, fileProblems, dismissed });
-    const lastNight = { fixed: 287, needsYou: 0, since: '2026-10-20T06:30:00.000Z' };
+    const lastNight = {
+      fixed: 287,
+      needsYou: 0,
+      since: '2026-10-20T06:30:00.000Z',
+      latest: '2026-10-20T07:05:00.000Z',
+    };
 
     beforeEach(() => {
       sdk.getAttention.mockResolvedValue(healthy);
@@ -206,12 +211,12 @@ describe('Overview (FL-363)', () => {
     });
 
     it('says today, or this week, when the fixes were not in the last night', async () => {
-      withFiles({ fixed: 3, needsYou: 0, since: '2026-10-20T14:00:00.000Z' });
+      withFiles({ fixed: 3, needsYou: 0, since: '2026-10-20T14:00:00.000Z', latest: '2026-10-20T15:00:00.000Z' });
       const view = render(Overview);
       expect(await screen.findByText('Frameleaf fixed 3 photos today')).toBeInTheDocument();
       view.unmount();
 
-      withFiles({ fixed: 1, needsYou: 0, since: '2026-10-15T14:00:00.000Z' });
+      withFiles({ fixed: 1, needsYou: 0, since: '2026-10-15T14:00:00.000Z', latest: '2026-10-15T14:00:00.000Z' });
       render(Overview);
       expect(await screen.findByText('Frameleaf fixed 1 photo this week')).toBeInTheDocument();
     });
@@ -236,19 +241,40 @@ describe('Overview (FL-363)', () => {
       await fireEvent.click(within(row).getByRole('button', { name: 'Dismiss' }));
 
       expect(sdk.setAttentionDismissed).toHaveBeenCalledWith({
-        attentionDismissDto: { id: `fileproblems:${Date.parse(lastNight.since)}`, dismissed: true },
+        attentionDismissDto: { id: `fileproblems:${Date.parse(lastNight.latest)}`, dismissed: true },
       });
       await waitFor(() => expect(screen.queryByText('Frameleaf fixed 287 photos last night')).not.toBeInTheDocument());
       view.unmount();
 
-      withFiles(lastNight, [`fileproblems:${Date.parse(lastNight.since)}`]);
+      withFiles(lastNight, [`fileproblems:${Date.parse(lastNight.latest)}`]);
       render(Overview);
       expect(await screen.findByText('All there')).toBeInTheDocument();
       expect(screen.queryByText('Frameleaf fixed 287 photos last night')).not.toBeInTheDocument();
     });
 
+    it('says last night only when the first and the newest fix were both in it', async () => {
+      // the first fix was in last night's run, the newest after it: not "last night"
+      withFiles({ ...lastNight, latest: '2026-10-20T14:00:00.000Z' });
+      render(Overview);
+      expect(await screen.findByText('Frameleaf fixed 287 photos today')).toBeInTheDocument();
+    });
+
+    it('stays dismissed as the week rolls, and shows again when a newer fix lands', async () => {
+      const dismissedAt = `fileproblems:${Date.parse(lastNight.latest)}`;
+      // the oldest fix aged out: since moved on, latest did not
+      withFiles({ ...lastNight, fixed: 12, since: '2026-10-20T06:50:00.000Z' }, [dismissedAt]);
+      const view = render(Overview);
+      expect(await screen.findByText('All there')).toBeInTheDocument();
+      expect(screen.queryByText(/Frameleaf fixed/)).not.toBeInTheDocument();
+      view.unmount();
+
+      withFiles({ ...lastNight, fixed: 290, latest: '2026-10-20T14:00:00.000Z' }, [dismissedAt]);
+      render(Overview);
+      expect(await screen.findByText('Frameleaf fixed 290 photos today')).toBeInTheDocument();
+    });
+
     it('adds a need, and says it in the status, when files need the person', async () => {
-      withFiles({ fixed: 287, needsYou: 13, since: lastNight.since });
+      withFiles({ ...lastNight, needsYou: 13 });
       render(Overview);
 
       expect(await screen.findByText('13 photos are missing or can’t be repaired')).toBeInTheDocument();

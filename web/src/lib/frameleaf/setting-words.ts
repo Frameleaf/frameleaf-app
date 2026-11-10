@@ -134,6 +134,8 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'storageTemplate.template': { label: 'frameleaf_layout_pattern' },
   // Library care › File checks › When a check finds a problem (FL-1337)
   'libraryCare.autoRepair': { label: 'frameleaf_care_fc_when_problem_repair_name' },
+  // Library care › Damaged and missing files › What Frameleaf does by itself
+  'libraryCare.askPhones': { label: 'frameleaf_files_auto_phones_name' },
   // Access & security › Sign in with Frameleaf
   'frameleafCloud.signIn.showOnLocalLogin': { label: 'frameleaf_signin_offer_home' },
   'frameleafCloud.signIn.buttonText': { label: 'frameleaf_signin_words' },

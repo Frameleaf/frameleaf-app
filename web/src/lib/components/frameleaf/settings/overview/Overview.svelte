@@ -31,6 +31,7 @@
   import {
     byUrgency,
     fileProblemsDismissalId,
+    fileProblemsDismissed,
     fixedWhen,
     growthPerDay,
     overviewLevel,
@@ -170,12 +171,16 @@
     if (!files || files.fixed <= 0 || !files.since) {
       return null;
     }
-    const id = fileProblemsDismissalId(files.since);
-    if (dismissed.has(id)) {
+    const latest = files.latest ?? files.since;
+    if (fileProblemsDismissed(dismissed, latest)) {
       return null;
     }
-    const when = fixedWhen(files.since, overnight?.nights[0], say.now ?? new Date());
-    return { id, count: files.fixed, when: $t(`frameleaf_overview_files_when_${when}` as Translations) };
+    const when = fixedWhen(files.since, latest, overnight?.nights[0], say.now ?? new Date());
+    return {
+      id: fileProblemsDismissalId(latest),
+      count: files.fixed,
+      when: $t(`frameleaf_overview_files_when_${when}` as Translations),
+    };
   });
 
   type Need = {
@@ -434,7 +439,7 @@
                 values: {
                   count: files.fixed,
                   when: $t(
-                    `frameleaf_overview_files_when_${fixedWhen(files.since, lastNight, say.now ?? new Date())}` as Translations,
+                    `frameleaf_overview_files_when_${fixedWhen(files.since, files.latest ?? files.since, lastNight, say.now ?? new Date())}` as Translations,
                   ),
                 },
               })
@@ -868,7 +873,7 @@
     .need {
       grid-template-columns: 44px minmax(0, 1fr);
     }
-    .need > :global(.pill),
+    .need > :global(.kit-pill),
     .need-buttons {
       grid-column: 2;
       justify-content: flex-start;

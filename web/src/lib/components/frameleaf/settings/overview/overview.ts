@@ -82,26 +82,45 @@ export const statusPhrases = (phrases: readonly { wrong: boolean; text: string }
   return (wrong.length > 0 ? wrong : phrases).map((phrase) => phrase.text);
 };
 
-/** FL-1338: how long ago Frameleaf's file fixes started, in the words the Overview uses. */
+/** FL-1338: how long ago Frameleaf's file fixes were made, in the words the Overview uses. */
 export type FixedWhen = 'last_night' | 'today' | 'week';
 
 /**
- * "last night" when the earliest fix of the week was made during the last overnight run, "today" when it
- * was made on today's date where the reader is, else "this week" (the server counts the last seven days).
+ * "last night" when the first and the newest fix of the week were both made during the last overnight run,
+ * "today" when both were made on today's date where the reader is, else "this week" (the server counts seven days).
  */
 export const fixedWhen = (
   since: string,
+  latest: string,
   night: { startedAt: string; finishedAt: string } | undefined,
   now: Date,
 ): FixedWhen => {
-  const at = new Date(since).getTime();
-  if (night && at >= new Date(night.startedAt).getTime() && at <= new Date(night.finishedAt).getTime()) {
-    return 'last_night';
+  const times = [since, latest].map((iso) => new Date(iso));
+  if (night) {
+    const from = new Date(night.startedAt).getTime();
+    const to = new Date(night.finishedAt).getTime();
+    if (times.every((time) => time.getTime() >= from && time.getTime() <= to)) {
+      return 'last_night';
+    }
   }
   // The reader's own calendar day: the browser's time zone, as the rest of the Overview reads dates.
   const day = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-  return day(new Date(since)) === day(now) ? 'today' : 'week';
+  return times.every((time) => day(time) === day(now)) ? 'today' : 'week';
 };
 
-/** The server keeps a dismissal under a lower-case id; this one names one stretch of fixes by when it began. */
-export const fileProblemsDismissalId = (since: string) => `fileproblems:${new Date(since).getTime()}`;
+const DISMISSED_FIXES = 'fileproblems:';
+
+/** What a dismissal of the Done-for-you row is kept under: the newest fix it covered (lower case, as the server requires). */
+export const fileProblemsDismissalId = (latest: string) => `${DISMISSED_FIXES}${new Date(latest).getTime()}`;
+
+/** Whether the row is dismissed: no fix is newer than the newest one dismissed, however the week rolls. */
+export const fileProblemsDismissed = (dismissed: Iterable<string>, latest: string) => {
+  const at = new Date(latest).getTime();
+  return [...dismissed].some((id) => {
+    if (!id.startsWith(DISMISSED_FIXES)) {
+      return false;
+    }
+    const covered = Number(id.slice(DISMISSED_FIXES.length));
+    return Number.isFinite(covered) && at <= covered;
+  });
+};
