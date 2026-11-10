@@ -1303,10 +1303,12 @@ describe(MediaHealthService.name, () => {
           originalFileName: 'missing.jpg',
         }),
       );
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+      // its details and previews are read again outside any run, which may already hold this photo's (11b)
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
         { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } },
         { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
       ]);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
     });
 
@@ -3941,7 +3943,7 @@ describe(MediaHealthService.name, () => {
       expect(input.originalPath).toContain('.library-care');
       expect(input.sha1.toString('hex')).toBe(checksum);
       expect(input.expectedOriginalPath).toBe(damaged);
-      expect(mocks.job.queueAll).toHaveBeenCalled();
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalled();
     });
 
     it('records the reviewed repair as the automatic one does, so it is fixed and can be undone (FL-1337)', async () => {
@@ -4300,7 +4302,7 @@ describe(MediaHealthService.name, () => {
       });
       expect(fixState()).toEqual({ fixState: 'part-saved', partSaved: true });
       // previews are made again, as after an upload, so the follow-up work runs too
-      expect(mocks.job.queueAll).toHaveBeenCalledWith(
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith(
         expect.arrayContaining([{ name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } }]),
       );
     });
@@ -4567,7 +4569,7 @@ describe(MediaHealthService.name, () => {
         expect.objectContaining({ status: MediaHealthStatus.Relinked }),
       );
       expect(fixState()).toMatchObject({ fixState: 'found-again', searchPending: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith(
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith(
         expect.arrayContaining([{ name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } }]),
       );
     });
@@ -4627,7 +4629,7 @@ describe(MediaHealthService.name, () => {
         expect.objectContaining({ healthId: 'health-1', status: MediaHealthStatus.Relinked }),
       );
       // the asset is unchanged: its previews are made again from the file that is back
-      expect(mocks.job.queueAll).toHaveBeenCalledWith(
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith(
         expect.arrayContaining([{ name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } }]),
       );
     });
@@ -4835,10 +4837,10 @@ describe(MediaHealthService.name, () => {
       expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
       expect(written()).toEqual([]);
       // its thumbnail job ended when it was handed over: its previews are made again, failing as a job if they can't
-      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
-        name: JobName.AssetGenerateThumbnails,
-        data: { id: 'asset-1', source: 'upload', afterCare: true },
-      });
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledExactlyOnceWith([
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload', afterCare: true } },
+      ]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
     it('never trusts a preview’s words: a photo that opens is not damaged, whatever the preview said (F1)', async () => {
@@ -4853,10 +4855,10 @@ describe(MediaHealthService.name, () => {
       expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
       expect(written()).toEqual([]);
       expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
-      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
-        name: JobName.AssetGenerateThumbnails,
-        data: { id: 'asset-1', source: 'upload', afterCare: true },
-      });
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledExactlyOnceWith([
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload', afterCare: true } },
+      ]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
     it('settles a problem whose file is fine now with no fix state left on it', async () => {
@@ -4916,11 +4918,15 @@ describe(MediaHealthService.name, () => {
 
     it('records nothing for a busy preview that opens on the next try', async () => {
       await cutShort();
+      // the image worker is busy when the fix looks at the file itself
+      decoderSays({ status: 'transient', reason: 'validation_busy' });
 
       await sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'Sharp child closed (SIGSEGV)' });
-      const retry = vi.mocked(mocks.job.queue).mock.calls[0][0].data;
+      const [retry] = vi.mocked(mocks.job.queue).mock.calls.map(([item]) => item);
+      expect(retry).toMatchObject({ name: JobName.MediaHealthFixAsset, data: { attempt: 1, message: undefined } });
       // the file opens and is the one Frameleaf stored
-      await expect(sut.handleFixAsset(retry as never)).resolves.toBe(JobStatus.Skipped);
+      decoderSays({ status: 'healthy' });
+      await expect(sut.handleFixAsset(retry.data as never)).resolves.toBe(JobStatus.Skipped);
 
       expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
       expect(written()).toEqual([]);
@@ -4942,10 +4948,9 @@ describe(MediaHealthService.name, () => {
       expect(written()).toEqual([]);
 
       // it opens, so a photo without previews gets them made again while the search runs (F1)
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.AssetGenerateThumbnails,
-        data: { id: 'asset-1', source: 'upload', afterCare: true },
-      });
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload', afterCare: true } },
+      ]);
 
       // the shared search found no copy, and Cloud Backup has none: the person decides
       recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { searchPending: true }));
@@ -5654,8 +5659,8 @@ describe(MediaHealthService.name, () => {
         await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
         expect(result).toMatchObject({ fixState: 'cant-repair', canAct: true });
         expect(mocks.job.queue).not.toHaveBeenCalled();
-        // its details and previews are read again from the file it uses now, as after a relink
-        expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        // its details and previews are read again from the file it uses now, as after a relink, outside any run
+        expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
           { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } },
           { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
         ]);
@@ -5882,7 +5887,7 @@ describe(MediaHealthService.name, () => {
 
         await expect(readFile(repaired, 'utf8')).resolves.toBe('the repaired file');
         await expect(readFile(damaged, 'utf8')).resolves.toBe('the damaged file');
-        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
       });
 
       it('undoes a repair after Folder layout moved the repaired file, by its checksum (F9)', async () => {
@@ -6017,7 +6022,7 @@ describe(MediaHealthService.name, () => {
           message: otherOpen,
           status: 409,
         });
-        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+        expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
       });
 
       it('has nothing to undo on a problem that is not fixed', async () => {

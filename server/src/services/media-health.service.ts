@@ -2130,10 +2130,10 @@ export class MediaHealthService {
    */
   private async remakeLostPreviews(job: FixJob, asset: MediaHealthAsset): Promise<void> {
     if (job.from === 'preview' || !asset.previewPath || !asset.thumbnailPath) {
-      await this.jobRepository.queue({
-        name: JobName.AssetGenerateThumbnails,
-        data: { id: asset.id, source: 'upload', afterCare: true },
-      });
+      // outside the run, which already holds the thumbnail job that handed this photo over (Task 11b)
+      await this.jobRepository.queueOutsideRun([
+        { name: JobName.AssetGenerateThumbnails, data: { id: asset.id, source: 'upload', afterCare: true } },
+      ]);
     }
   }
 
@@ -5030,8 +5030,14 @@ export class MediaHealthService {
     return matches ? digests : undefined;
   }
 
+  /**
+   * The photo's file changed (a repair, a put-back, a restore, a relink or an Undo): its details and previews are
+   * read again from the file it uses now. Outside any run (Task 11b): a run the fix is a job of (an import, an
+   * administrator's Generate thumbnails) already holds this photo's finished thumbnail job, made from the old file,
+   * and would drop the request as done.
+   */
   private async queueRelinkJobs(assetId: string): Promise<void> {
-    await this.jobRepository.queueAll([
+    await this.jobRepository.queueOutsideRun([
       { name: JobName.SidecarCheck, data: { id: assetId, source: 'upload' } },
       { name: JobName.AssetGenerateThumbnails, data: { id: assetId, source: 'upload' } },
     ]);
