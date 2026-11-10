@@ -1422,6 +1422,19 @@ describe(MediaHealthRepository.name, () => {
       await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeUndefined();
     });
 
+    it('never flags a photo as damaged because it could not be checked (FL-1353)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      // a 50 GB video whose check timed out three times: still listed, but it is not damage
+      const unchecked = await arrangeProblem(sut, asset, {
+        category: MediaHealthCategory.Corrupt,
+        evidence: { fixState: 'couldnt-check' },
+      });
+      await expect(sut.getOpenFileProblem(asset.id)).resolves.toBeUndefined();
+      await expect(listed(sut, 'needs', user.id)).resolves.toContain(unchecked.id);
+    });
+
     it('counts what was fixed in the last 7 days, from the earliest to the newest, and what needs the reader', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

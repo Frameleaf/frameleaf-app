@@ -219,7 +219,9 @@ export class IntegrityRepository {
         SELECT h."assetId"::text AS key
         FROM public.asset_health h JOIN public.asset a ON a.id = h."assetId"
         WHERE h.category = 'corrupt' AND h.status IN ('corrupt_confirmed', 'corrupt_suspect', 'trash_queued')
-          AND a."deletedAt" IS NULL AND (h.evidence->>'fixState') IS DISTINCT FROM 'left-as-is'
+          AND a."deletedAt" IS NULL
+          -- FL-1353: a file that could not be checked is not counted as damaged
+          AND coalesce(h.evidence->>'fixState', '') NOT IN ('left-as-is', 'couldnt-check')
       )
       SELECT
         (SELECT count(*)::int FROM missing) AS missing,
@@ -259,6 +261,7 @@ export class IntegrityRepository {
         UNION
         SELECT h."assetId" FROM public.asset_health h WHERE h.category = ${kind === 'missing' ? 'missing' : 'corrupt'}
           AND h.status = ANY (${statuses}::text[])
+          AND coalesce(h.evidence->>'fixState', '') <> 'couldnt-check'
       ) ids JOIN public.asset a ON a.id = ids."assetId"
       WHERE a."deletedAt" IS NULL
       ORDER BY ids."assetId"

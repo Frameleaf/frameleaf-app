@@ -1813,12 +1813,14 @@ export class MediaHealthRepository {
   /**
    * The problem the viewer flags on one photo (FL-1337): the open one in Needs you, the missing one when both a
    * missing and a damaged record are open (Review Focus 5). Closed records, fixed ones and ones kept as they are
-   * never flag. Access to the photo is decided by the caller.
+   * never flag. Nor does a file that could not be checked (FL-1353): it stays in the list under its own name,
+   * but "Damaged file" on the photo would be a verdict nobody reached. Access is decided by the caller.
    */
   async getOpenFileProblem(assetId: string): Promise<{ id: string; category: MediaHealthCategory } | undefined> {
     return this.fileProblems({})
       .where('asset_health.assetId', '=', asUuid(assetId))
       .where(this.inFileProblemTab('needs'))
+      .where(sql<boolean>`(asset_health.evidence->>'fixState') IS DISTINCT FROM 'couldnt-check'`)
       .select(['asset_health.id', 'asset_health.category'])
       .orderBy(sql`asset_health.category = 'missing'`, 'desc')
       .orderBy('asset_health.updatedAt', 'desc')
