@@ -1,22 +1,24 @@
+import { type LockedFileKind, isLockedFile } from '@frameleaf/locked-crypto';
 import { Injectable } from '@nestjs/common';
 import { type Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, normalize } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import type { LockedFileKind } from '@frameleaf/locked-crypto';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { PhysicalFileType, StorageFolder } from 'src/enum.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
-import { filePathLockKey, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { countPathReferences, filePathLockKey, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid } from 'src/utils/database.js';
 import { releaseDerivedResults } from 'src/utils/derivative-locks.js';
+import { LOCKED_TEMP_NAME } from 'src/utils/locked-backup.js';
 import { encryptsFilesOf } from 'src/utils/locked-encryption-set.js';
+import { LIBRARY_CARE_FOLDER, isPathWithin, resolveInsideRoot } from 'src/utils/media-health-roots.js';
 
 /** One stored file of an asset, as the seal and unseal jobs see it (spec §6). */
 export interface LockedFileRef {
@@ -60,6 +62,19 @@ const kindOfFileType = sql<LockedFileKind>`case f.type
   else 'other' end`;
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+/** A path inside a Library care folder (FL-1364): the copies Library care makes of a photo live only there. */
+const libraryCareSegment = `/${LIBRARY_CARE_FOLDER}/`;
+
+/** FL-1364: the registry table of the files Library care keeps of a photo. */
+export const LIBRARY_CARE_TABLE = 'asset_health';
+
+/** FL-1364: an unrecorded plain Library care entry is left alone this long after it last changed (a fix may be writing it). */
+export const LIBRARY_CARE_SETTLE_MS = 60 * 60_000;
+
+/** FL-1364: the photo's Library care folder, as `MediaHealthService.libraryCarePath` builds it. */
+export const libraryCareFolderOf = (ownerId: string, assetId: string) =>
+  join(dirname(StorageCore.getNestedPath(StorageFolder.Upload, ownerId, assetId)), LIBRARY_CARE_FOLDER);
 
 const sha256Of = async (path: string) => {
   const hash = createHash('sha256');
@@ -129,6 +144,13 @@ export class LockedFileRepository {
    * the Studio HDR intermediate; restoration outputs; video-moment frames; and the cached Studio
    * timeline media (filmstrip sprites and indexes, waveforms). A Live Photo's motion part is its own
    * asset, locked with the photo, so its files are listed under that asset.
+   *
+   * FL-1364: also the files Library care keeps of the photo (`asset_health`, optional: a kept file may be
+   * gone or on a drive that isn't there): the damaged or changed file a fix kept (`evidence.retainedPath`),
+   * the files its Undo steps would put back (`undo.previousPath`, `undo.retainedPath`), and a copy a fix
+   * made inside a Library care folder that the photo no longer uses (`undo.originalPath`, after an Undo).
+   * They are sealed and opened in place, so the paths those records hold stay right. A kept path that
+   * another asset reads as its original or a generated file is that asset's, and is left out.
    */
   @GenerateSql({ params: [DummyValue.UUID] })
   async filesOf(assetId: string): Promise<LockedFileRef[]> {
@@ -212,8 +234,148 @@ export class LockedFileRepository {
       for (const path of await this.timelineFiles(ownerId, assetId)) {
         add({ path, kind: 'other', table: 'studio_timeline', optional: true });
       }
+      for (const path of await this.keptFiles(assetId, ownerId, seen)) {
+        add({ path, kind: 'other', table: LIBRARY_CARE_TABLE, optional: true });
+      }
     }
     return files;
+  }
+
+  /**
+   * FL-1364: the paths Library care's records name as files it kept of the photo: the damaged or changed
+   * file a fix kept (`evidence.retainedPath`), what its Undo steps would put back (`undo.previousPath`,
+   * `undo.retainedPath`), and a copy a fix made in a Library care folder (`undo.originalPath`). Unchecked:
+   * `keptFiles` decides which are the photo's.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async recordedKeptPaths(assetId: string): Promise<string[]> {
+    const { rows } = await sql<{ path: string }>`
+      select distinct kept.path
+      from public.asset_health h
+      cross join lateral (
+        select h.evidence->>'retainedPath'
+        union all
+        select p.path from public.asset_health_step s
+        cross join lateral (
+          values (s.undo->>'previousPath'), (s.undo->>'retainedPath'),
+            (case when strpos(s.undo->>'originalPath', ${libraryCareSegment}) > 0 then s.undo->>'originalPath' end)
+        ) as p(path)
+        where s."healthId" = h.id and jsonb_typeof(s.undo) = 'object'
+      ) as kept(path)
+      where h."assetId" = ${asUuid(assetId)} and kept.path is not null
+      order by kept.path
+    `.execute(this.db);
+    return rows.map(({ path }) => path);
+  }
+
+  /**
+   * FL-1364: the files Library care keeps of the photo that are its own to seal and open: the recorded
+   * ones (`recordedKeptPaths`) and every entry of the photo's Library care folder named after it
+   * (`<assetId>-…`: a restored file an Undo moved aside, a repaired copy a fix left unreferenced, a
+   * crash-left `.partial`). An unrecorded plain entry that changed within `LIBRARY_CARE_SETTLE_MS` may
+   * still be being written by a fix, and waits for a later sweep.
+   *
+   * A path is kept only when it is written in normal form, inside the owner's own upload or library
+   * folder, a regular file that is not a link and resolves inside that folder, and no other row of any
+   * kind names it (`keptPathsTaken`). Anything else is never sealed or opened.
+   */
+  private async keptFiles(assetId: string, ownerId: string, listed: ReadonlySet<string>): Promise<string[]> {
+    const candidates = new Set(await this.recordedKeptPaths(assetId));
+    const folder = libraryCareFolderOf(ownerId, assetId);
+    let entries: string[] = [];
+    try {
+      entries = await fs.readdir(folder);
+    } catch {
+      // no Library care folder, or its drive is away: nothing of it this time
+    }
+    const settledBefore = Date.now() - LIBRARY_CARE_SETTLE_MS;
+    for (const name of entries) {
+      const path = join(folder, name);
+      if (!name.startsWith(`${assetId}-`) || LOCKED_TEMP_NAME.test(name) || candidates.has(path)) {
+        continue;
+      }
+      const stats = await fs.lstat(path).catch((): undefined => undefined);
+      if (!stats?.isFile()) {
+        continue;
+      }
+      if (stats.mtimeMs <= settledBefore || (await isLockedFile(path).catch(() => false))) {
+        candidates.add(path);
+      }
+    }
+
+    if ([...candidates].every((path) => listed.has(path))) {
+      return [];
+    }
+    const roots = await this.ownerRoots(ownerId);
+    const confined: string[] = [];
+    for (const path of candidates) {
+      if (listed.has(path) || !isAbsolute(path) || normalize(path) !== path) {
+        continue;
+      }
+      const root = roots.find((root) => isPathWithin(root, path));
+      if (root && (await resolveInsideRoot(root, path))) {
+        confined.push(path);
+      }
+    }
+    if (confined.length === 0) {
+      return [];
+    }
+    const taken = await this.db.transaction().execute((trx) => this.keptPathsTaken(assetId, confined, trx));
+    return confined.filter((path) => !taken.has(path));
+  }
+
+  /** The owner's own folders: their upload folder and their library folder (by storage label). */
+  private async ownerRoots(ownerId: string): Promise<string[]> {
+    const user = await this.db
+      .selectFrom('user')
+      .select('storageLabel')
+      .where('id', '=', asUuid(ownerId))
+      .executeTakeFirst();
+    return [
+      StorageCore.getFolderLocation(StorageFolder.Upload, ownerId),
+      StorageCore.getLibraryFolder({ id: ownerId, storageLabel: user?.storageLabel ?? null }),
+    ];
+  }
+
+  /**
+   * FL-1364: of these kept paths of the asset, the ones something else names, so they are not the
+   * asset's to seal: every reference `countPathReferences` counts (this asset's own are already in the
+   * registry and never asked about), a physical file record another asset uses or that names another
+   * canonical asset, an upload's final path or part, and another asset's Library care records. On the
+   * path lock's own transaction when it holds one (the re-check before a rename).
+   */
+  async keptPathsTaken(assetId: string, paths: string[], trx: Kysely<DB>): Promise<Set<string>> {
+    const taken = new Set<string>();
+    if (paths.length === 0) {
+      return taken;
+    }
+    const id = asUuid(assetId);
+    const { rows } = await sql<{ path: string }>`
+      select p.path from unnest(${paths}::text[]) as p(path)
+      where exists (
+          select 1 from public.physical_file pf where pf.path = p.path and (
+            (pf."canonicalAssetId" is not null and pf."canonicalAssetId" <> ${id})
+            or exists (select 1 from public.asset a where a."physicalOriginalFileId" = pf.id and a.id <> ${id})
+            or exists (select 1 from public.asset_original o where o."physicalFileId" = pf.id and o."assetId" <> ${id})
+          ))
+        or exists (select 1 from public.asset_upload_resource r where r."finalPath" = p.path)
+        or exists (select 1 from public.asset_upload_part part where part.path = p.path)
+        or exists (
+          select 1 from public.asset_health h where h."assetId" <> ${id} and (
+            h.evidence->>'retainedPath' = p.path
+            or exists (select 1 from public.asset_health_step s where s."healthId" = h.id
+              and p.path in (s.undo->>'previousPath', s.undo->>'retainedPath', s.undo->>'originalPath'))
+          ))
+    `.execute(trx);
+    for (const { path } of rows) {
+      taken.add(path);
+    }
+    for (const path of paths) {
+      if (!taken.has(path) && (await countPathReferences(trx as Transaction<DB>, path)) > 0) {
+        taken.add(path);
+      }
+    }
+    return taken;
   }
 
   /**

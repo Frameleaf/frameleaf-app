@@ -1,14 +1,21 @@
 import { CurrentPlugin } from '@extism/extism';
 import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { Mocked, vitest } from 'vitest';
+import type { FrameleafEventOccurrence } from 'src/utils/workflow-event.js';
 import { JobName, JobStatus, WorkflowResult, WorkflowRunErrorCode, WorkflowType } from 'src/enum.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { WorkflowExecutionService, getAutomaticRetryExecutionId } from 'src/services/workflow-execution.service.js';
+import { sendWebhook } from 'src/utils/public-fetch.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+vitest.mock('src/utils/public-fetch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('src/utils/public-fetch.js')>();
+  return { ...actual, sendWebhook: vitest.fn(actual.sendWebhook) };
+});
 
 describe(WorkflowExecutionService.name, () => {
   let sut: WorkflowExecutionService;
@@ -1214,4 +1221,237 @@ it('isolates an impossible imported schedule and still visits pending batches', 
   mocks.workflow.syncSchedule.mockResolvedValue();
   await expect(sut.runWorkflowPass()).resolves.toBeUndefined();
   expect(mocks.workflow.pendingBatches).toHaveBeenCalled();
+});
+
+describe('Frameleaf events (FL-819)', () => {
+  let sut: WorkflowExecutionService;
+  let mocks: ServiceMocks;
+  const ownerId = newUuid();
+  const workflowId = newUuid();
+  const stepId = newUuid();
+  const lockedPhoto = newUuid();
+  const event: FrameleafEventOccurrence = {
+    trigger: WorkflowTrigger.CloudBackupFailed,
+    ownerId,
+    deliveryId: 'cloud-backup:run-1:failed',
+    occurredAt: '2026-11-10T03:12:00.000Z',
+    subject: { kind: 'cloud-backup', id: 'run-1', name: 'Cloud Backup' },
+    detail: { uploaded: 3, alreadyBackedUp: 10, missing: 0, bytesUploaded: 1024, error: '/photos/secret.jpg' },
+  };
+  const webhookStep = {
+    id: stepId,
+    config: { url: 'https://hooks.example.test/backup', secret: 'shh-secret' },
+    order: 0,
+    pluginId: newUuid(),
+    pluginName: 'immich-plugin-core',
+    pluginEnabled: true,
+    methodName: 'webhook',
+    types: [WorkflowType.AssetV1, WorkflowType.EventV1],
+    hostFunctions: true,
+    allowedHosts: ['*'],
+  };
+  const workflow = {
+    id: workflowId,
+    ownerId,
+    name: 'Tell Home Assistant',
+    logging: true,
+    trigger: WorkflowTrigger.CloudBackupFailed,
+    steps: [webhookStep],
+    definition: {
+      version: 1,
+      trigger: WorkflowTrigger.CloudBackupFailed,
+      extra: {},
+      steps: [
+        { id: stepId, method: 'immich-plugin-core#webhook', config: webhookStep.config, enabled: true, extra: {} },
+      ],
+    },
+  };
+
+  beforeEach(() => {
+    ({ sut, mocks } = newTestService(WorkflowExecutionService));
+    (sut as unknown as { getConfig: () => Promise<unknown> }).getConfig = vitest
+      .fn()
+      .mockResolvedValue({ server: { automationsLocalNetwork: false } });
+    mocks.user.get.mockResolvedValue({ id: ownerId, isAdmin: true } as never);
+    mocks.workflow.isWorkflowEligible.mockImplementation((id) => Promise.resolve(id !== lockedPhoto));
+    mocks.workflow.search.mockResolvedValue([workflow] as never);
+    mocks.workflow.getForWorkflowRun.mockResolvedValue(workflow as never);
+    mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
+    mocks.workflow.completeStep.mockResolvedValue();
+    mocks.workflow.log.mockResolvedValue(newUuid());
+    mocks.plugin.getForValidation.mockResolvedValue([
+      {
+        id: newUuid(),
+        name: 'webhook',
+        pluginName: 'immich-plugin-core',
+        types: [WorkflowType.AssetV1, WorkflowType.EventV1],
+        schema: null,
+      },
+    ]);
+    mocks.crypto.signJwt.mockReturnValue('token');
+  });
+
+  describe('dispatch', () => {
+    it("queues one run per workflow of the event's owner, with ids fixed by the occurrence", async () => {
+      await expect(sut.handleEventDispatch({ event })).resolves.toBe(JobStatus.Success);
+      await sut.handleEventDispatch({ event });
+      expect(mocks.workflow.search).toHaveBeenCalledWith({
+        userId: ownerId,
+        trigger: WorkflowTrigger.CloudBackupFailed,
+        enabled: true,
+      });
+      const [first] = mocks.job.queueAll.mock.calls[0]![0];
+      const [second] = mocks.job.queueAll.mock.calls[1]![0];
+      expect(first).toMatchObject({ name: JobName.WorkflowEventTrigger, data: { workflowId, event } });
+      expect(second.data).toEqual(first.data);
+    });
+
+    it('runs nothing for an account that is no longer an administrator', async () => {
+      mocks.user.get.mockResolvedValue({ id: ownerId, isAdmin: false } as never);
+      await expect(sut.handleEventDispatch({ event })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.workflow.search).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing about a Locked, hidden or sensitive photo', async () => {
+      await expect(sut.handleEventDispatch({ event: { ...event, privacyAssetIds: [lockedPhoto] } })).resolves.toBe(
+        JobStatus.Skipped,
+      );
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('runs', () => {
+    const job = { workflowId, event, runId: newUuid(), executionId: newUuid() };
+
+    it('sends only the listed fields of the event, through the guarded sender, and records the run', async () => {
+      mocks.plugin.callMethod.mockResolvedValue({});
+      await sut.handleEventTrigger(job);
+      const [, payload, context] = mocks.plugin.callMethod.mock.calls[0]!;
+      expect(payload).toMatchObject({
+        type: WorkflowType.EventV1,
+        trigger: WorkflowTrigger.CloudBackupFailed,
+        config: webhookStep.config,
+        data: {
+          event: 'cloud.backup.failed',
+          deliveryId: event.deliveryId,
+          subject: event.subject,
+          detail: { uploaded: 3, alreadyBackedUp: 10, missing: 0, bytesUploaded: 1024 },
+        },
+      });
+      expect(JSON.stringify((payload as { data: unknown }).data)).not.toContain('secret.jpg');
+      expect(context).toMatchObject({ event: { deliveryId: event.deliveryId, allowHomeNetwork: false } });
+      expect(mocks.workflow.completeStep).toHaveBeenCalledWith(
+        expect.objectContaining({ executionId: job.executionId, stepId }),
+      );
+      expect(mocks.workflow.log).toHaveBeenCalledWith(
+        expect.objectContaining({ workflowId, runId: job.runId, result: WorkflowResult.Completed }),
+      );
+    });
+
+    it('never runs a photo run for a workflow that now starts on an event', async () => {
+      mocks.workflow.getForWorkflowRun.mockResolvedValue(workflow as never);
+      await expect(
+        sut.handleAssetTrigger({ workflowId, assetId: newUuid(), runId: newUuid(), executionId: newUuid() }),
+      ).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+    });
+
+    it("never runs another account's workflow", async () => {
+      mocks.workflow.getForWorkflowRun.mockResolvedValue({ ...workflow, ownerId: newUuid() } as never);
+      await expect(sut.handleEventTrigger(job)).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+    });
+
+    it('skips a step an interrupted run already sent', async () => {
+      mocks.workflow.getCompletedSteps.mockResolvedValue(new Map([[stepId, { halted: false }]]));
+      await sut.handleEventTrigger(job);
+      expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+    });
+
+    it('retries a failed delivery once from that step, without the secret in run history', async () => {
+      mocks.plugin.callMethod.mockRejectedValue(new Error('refused shh-secret'));
+      await expect(sut.handleEventTrigger(job)).resolves.toBe(JobStatus.Failed);
+      expect(mocks.workflow.log).toHaveBeenCalledWith(
+        expect.objectContaining({ result: WorkflowResult.Error, errorCode: WorkflowRunErrorCode.StepFailed }),
+      );
+      expect(JSON.stringify(mocks.workflow.log.mock.calls)).not.toContain('shh-secret');
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.WorkflowEventTrigger,
+        data: expect.objectContaining({
+          attempt: 1,
+          fromStepId: stepId,
+          executionId: getAutomaticRetryExecutionId(job.executionId),
+        }),
+      });
+
+      mocks.job.queue.mockClear();
+      await sut.handleEventTrigger({ ...job, attempt: 1, fromStepId: stepId });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('signed messages', () => {
+    const send = async (
+      context: Record<string, unknown>,
+      options: Record<string, unknown>,
+      url = 'https://hooks.example.test/x',
+    ) => {
+      mocks.crypto.verifyJwt.mockReturnValue({ userId: ownerId });
+      mocks.plugin.getForLoad.mockResolvedValue([
+        {
+          id: newUuid(),
+          name: 'test-plugin',
+          version: '1.0.0',
+          wasmBytes: Buffer.from('test'),
+          methods: [{ name: 'webhook', hostFunctions: true }],
+        },
+      ]);
+      await sut.onPluginLoad();
+      const functions = mocks.plugin.load.mock.calls[0]![1].functions!;
+      const store = vitest.fn().mockReturnValue(1n);
+      const plugin = {
+        hostContext: () => context,
+        read: () => ({ json: () => ({ authToken: 'token', args: [url, options] }) }),
+        store,
+      } as unknown as CurrentPlugin;
+      await functions.httpRequest!(plugin, 0n);
+      return JSON.parse(store.mock.calls.at(-1)![0]);
+    };
+
+    it('signs the timestamp, delivery id and exact body, and sends it under the event rules', async () => {
+      const sendMock = vitest.mocked(sendWebhook).mockResolvedValueOnce({ ok: true, status: 200, body: 'ok' });
+      (sut as unknown as { getConfig: () => Promise<unknown> }).getConfig = vitest
+        .fn()
+        .mockResolvedValue({ server: { automationsLocalNetwork: false } });
+      const body = '{"type":"AssetV1"}';
+      expect(
+        await send(
+          { allowedHosts: ['*'], deliveryId: 'run-1:0:step-1' },
+          { method: 'POST', body, signingSecret: 'shh-secret', headers: { a: 'b', 'X-Frameleaf-Signature': 'forged' } },
+        ),
+      ).toMatchObject({ success: true });
+      const [address, message, rules] = sendMock.mock.calls[0]!;
+      expect(address).toBe('https://hooks.example.test/x');
+      // a signed asset message is never sent over plain http to a private address or redirected
+      expect(rules).toEqual({ allowHomeNetwork: false });
+      const timestamp = message.headers.get('x-frameleaf-timestamp')!;
+      expect(message.headers.get('x-frameleaf-delivery')).toBe('run-1:0:step-1');
+      const expected = createHmac('sha256', 'shh-secret').update(`${timestamp}.run-1:0:step-1.${body}`).digest('hex');
+      expect(message.headers.get('x-frameleaf-signature')).toBe(`sha256=${expected}`);
+      expect(message.headers.get('a')).toBe('b');
+      expect(JSON.stringify(message.headers.entries().toArray())).not.toContain('shh-secret');
+    });
+
+    it('refuses a private address for an event unless the administrator allows the home network', async () => {
+      const fetchMock = vitest.spyOn(globalThis, 'fetch');
+      const result = await send(
+        { allowedHosts: ['*'], event: { deliveryId: 'd', allowHomeNetwork: false } },
+        { method: 'POST', body: '{}' },
+        'https://192.168.1.20/api/webhook/x',
+      );
+      expect(result).toMatchObject({ success: false });
+      expect(result.message).toContain('not an address automations can reach');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 });

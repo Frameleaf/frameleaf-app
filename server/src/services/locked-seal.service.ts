@@ -28,10 +28,12 @@ import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import {
+  LIBRARY_CARE_TABLE,
   LOCKED_PATH_BUSY,
   type LockedFileRef,
   LockedFileRepository,
   type LockedSealState,
+  libraryCareFolderOf,
   syncDirectory,
 } from 'src/repositories/locked-file.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
@@ -65,6 +67,12 @@ const HEADER_CONCURRENCY = 16;
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === 'ENOENT';
 
+/** Registry tables whose files another asset may come to read in plain form, checked again before the rename (M1). */
+const READER_CHECKED_TABLES: ReadonlySet<string> = new Set(['asset', 'asset_file']);
+
+/** FL-1364: a file Library care kept of the photo. A failure on one never stops the photo's other files. */
+const isKeptFile = (ref: LockedFileRef) => ref.table === LIBRARY_CARE_TABLE;
+
 const sha256Of = async (path: string) => {
   const hash = createHash('sha256');
   await pipeline(createReadStream(path), hash);
@@ -90,15 +98,27 @@ const meantToBeUnsealed = (state: LockedSealState | undefined): state is LockedS
   !state.partnerCopy &&
   (!state.locked || !!state.pendingUnlockAt || state.status === null || state.status === 'decrypting');
 
-/** A file as the sweep reads it: `damaged` starts with `FLLK` but has no readable header (never re-wrapped). */
+/**
+ * A file as the sweep reads it: `damaged` starts with `FLLK` but has no readable header (never re-wrapped).
+ * `unreadable` (FL-1364, Library care's kept files only): it couldn't be read this time (permissions, an
+ * I/O error); it holds nothing up, like a missing optional file, and a later sweep tries it again.
+ */
 type FileState =
-  | { ref: LockedFileRef; state: 'missing' | 'plain' | 'damaged' }
+  | { ref: LockedFileRef; state: 'missing' | 'plain' | 'damaged' | 'unreadable' }
   | { ref: LockedFileRef; state: 'sealed'; keyIds: Buffer[] };
 
-/** Whether these files stop turning off or an unlock from finishing: one is sealed, damaged or missing. */
-const blocksFinish = (files: FileState[]) =>
+/**
+ * Whether these files stop turning off or an unlock from finishing: one is sealed, damaged or missing.
+ * `turningOff` (FL-1364): a kept file that couldn't be read may be sealed, so turning off (which can delete
+ * the key that opens it) waits for it too; an unlock alone doesn't.
+ */
+const blocksFinish = (files: FileState[], turningOff = false) =>
   files.some(
-    (file) => file.state === 'sealed' || file.state === 'damaged' || (file.state === 'missing' && !file.ref.optional),
+    (file) =>
+      file.state === 'sealed' ||
+      file.state === 'damaged' ||
+      (file.state === 'missing' && !file.ref.optional) ||
+      (turningOff && file.state === 'unreadable'),
   );
 
 const syncFile = async (path: string) => {
@@ -239,6 +259,13 @@ export class LockedSealService {
       names.add(basename(path));
       folders.set(dirname(path), names);
     };
+    // FL-1364: a Library care folder's entries named after one item (`<assetId>-…`) are that item's kept files
+    const carePrefixes = new Map<string, string[]>();
+    const addCare = (ownerId: string, assetId: string) => {
+      const folder = libraryCareFolderOf(ownerId, assetId);
+      carePrefixes.set(folder, [...(carePrefixes.get(folder) ?? []), `${assetId}-`]);
+      folders.set(folder, folders.get(folder) ?? new Set<string>());
+    };
     for (const userId of await this.lockedEncryptionRepository.getAllUserIds()) {
       for (const asset of await this.lockedEncryptionRepository.getLockedAssets(userId)) {
         // a read-only or external library's folders are not Frameleaf's to clean
@@ -248,11 +275,15 @@ export class LockedSealService {
         for (const { path } of await this.lockedFileRepository.filesOf(asset.id)) {
           add(path);
         }
+        addCare(userId, asset.id);
       }
       // FL-721: an item that left Locked after a job stopped mid-write is no longer listed above, and
       // nothing writes beside it any more; a leftover there would hold up its backup for good
       for (const path of await this.lockedEncryptionRepository.getUnlockedFilePaths(userId)) {
         add(path);
+      }
+      for (const assetId of await this.lockedEncryptionRepository.getUnlockedCareAssetIds(userId)) {
+        addCare(userId, assetId);
       }
     }
     for (const [folder, names] of folders) {
@@ -267,7 +298,10 @@ export class LockedSealService {
       }
       for (const entry of entries) {
         const match = STALE_TEMP.exec(entry);
-        if (!match || !names.has(match[1])) {
+        if (
+          !match ||
+          !(names.has(match[1]) || carePrefixes.get(folder)?.some((prefix) => match[1].startsWith(prefix)))
+        ) {
           continue;
         }
         try {
@@ -397,23 +431,50 @@ export class LockedSealService {
       try {
         sealed = await isLockedFile(ref.path);
       } catch (error) {
+        if (isMissing(error) && ref.optional) {
+          continue;
+        }
+        if (isKeptFile(ref)) {
+          this.keptFileSkipped(state.id, 'read', error);
+          continue;
+        }
         if (!isMissing(error)) {
           throw error;
-        }
-        if (ref.optional) {
-          continue;
         }
         return 'moved';
       }
       if (sealed) {
         continue;
       }
-      const outcome = await this.sealFile(state, ref, recipients);
+      let outcome: Pass;
+      try {
+        outcome = await this.sealFile(state, ref, recipients);
+      } catch (error) {
+        if (!isKeptFile(ref)) {
+          throw error;
+        }
+        // FL-1364: the file is left as it was (replaceFile removed its temporary file); the photo's other
+        // files go on, and the sweep, which still finds this one plain, tries it again
+        this.keptFileSkipped(state.id, 'encrypt', error);
+        continue;
+      }
+      if (outcome === 'moved' && isKeptFile(ref)) {
+        // gone since the registry looked: nothing to seal
+        continue;
+      }
       if (outcome !== 'done') {
         return outcome;
       }
     }
     return 'done';
+  }
+
+  /** FL-1364: a kept Library care file couldn't be handled this time; logged without its path. */
+  private keptFileSkipped(assetId: string, action: 'read' | 'encrypt' | 'decrypt', error: unknown) {
+    const { name, code } = error as NodeJS.ErrnoException;
+    this.logger.warn(
+      `Could not ${action} a file Library care kept of Locked item ${assetId} (${code ?? name}); a later sweep tries again`,
+    );
   }
 
   private sealFile(state: LockedSealState, ref: LockedFileRef, recipients: Recipient[]): Promise<Pass> {
@@ -426,9 +487,14 @@ export class LockedSealService {
     };
     // M1: an upload or dedupe may have linked another asset to this file after the un-share looked; checked
     // again on the lock's own connection right before the rename. The next sweep un-shares it first.
-    const othersRead =
-      ref.table === 'asset' || ref.table === 'asset_file'
-        ? async (trx: Kysely<DB>) => (await this.lockedFileRepository.plainReaders(state.id, path, trx)).length > 0
+    // FL-1364: a kept Library care file is checked as the registry checked it: still not a link, and named
+    // by nothing else
+    const othersRead = READER_CHECKED_TABLES.has(ref.table)
+      ? async (trx: Kysely<DB>) => (await this.lockedFileRepository.plainReaders(state.id, path, trx)).length > 0
+      : isKeptFile(ref)
+        ? async (trx: Kysely<DB>) =>
+            (await fs.lstat(path)).isSymbolicLink() ||
+            (await this.lockedFileRepository.keptPathsTaken(state.id, [path], trx)).size > 0
         : undefined;
     return this.replaceFile(
       state,
@@ -570,7 +636,18 @@ export class LockedSealService {
     }
     try {
       for (const ref of sealed) {
-        const result = await this.unsealFile(state, ref, privateKey);
+        let result: Pass;
+        try {
+          result = await this.unsealFile(state, ref, privateKey);
+        } catch (error) {
+          if (!isKeptFile(ref)) {
+            throw error;
+          }
+          // FL-1364: still sealed, so the item waits on its way out of Locked; its other files go on
+          this.keptFileSkipped(state.id, 'decrypt', error);
+          outcome = 'stopped';
+          continue;
+        }
         if (result === 'stopped' || result === 'moved') {
           outcome = 'stopped';
         } else if (result === 'busy' && outcome === 'done') {
@@ -773,7 +850,7 @@ export class LockedSealService {
       const sealedFiles = files.filter((file) => file.state === 'sealed' || file.state === 'damaged');
       const anyPlain = files.some((file) => file.state === 'plain');
       if (turningOff || asset.pendingUnlockAt) {
-        if (blocksFinish(files)) {
+        if (blocksFinish(files, turningOff)) {
           // sealed, or missing and so perhaps sealed (C2): turning off and the unlock wait
           sealedLeft++;
           if (keyLoaded && sealedFiles.length > 0) {
@@ -787,6 +864,9 @@ export class LockedSealService {
       if (anyPlain) {
         plainLeft++;
         seal.push(asset.id);
+      } else if (files.some((file) => file.state === 'unreadable')) {
+        // FL-1364: a kept file that couldn't be read is tried again, without holding up turning on
+        seal.push(asset.id);
       } else if (
         wanted &&
         sealedFiles.some((file) => file.state === 'sealed' && !this.sameRecipients(file.keyIds, wanted))
@@ -795,6 +875,22 @@ export class LockedSealService {
           rewrap.push(asset.id);
         } else {
           rewrapWaits = true;
+        }
+      }
+    }
+
+    // FL-1364: an item that left Locked while a file Library care kept of it was away (an optional file
+    // holds nothing up) can still have that file sealed: it is opened again once the key is loaded, and
+    // turning off waits for it, so the key that opens it is never dropped first
+    const unlockedCare =
+      keyLoaded || turningOff ? await this.lockedEncryptionRepository.getUnlockedCareAssetIds(userId) : [];
+    for (const id of unlockedCare) {
+      if (await this.hasSealedKeptFile(id, turningOff)) {
+        if (turningOff) {
+          sealedLeft++;
+        }
+        if (keyLoaded) {
+          unseal.push(id);
         }
       }
     }
@@ -841,9 +937,18 @@ export class LockedSealService {
         }
         if (
           asset.pendingUnlockAt ||
-          blocksFinish(await this.fileStates(await this.lockedFileRepository.filesOf(asset.id)))
+          blocksFinish(await this.fileStates(await this.lockedFileRepository.filesOf(asset.id)), true)
         ) {
           this.logger.log(`Turning off Locked encryption for user ${userId} waits: item ${asset.id} isn't plain yet`);
+          return false;
+        }
+      }
+      // FL-1364: nor while a file Library care kept of an item already out of Locked is still sealed
+      for (const id of await this.lockedEncryptionRepository.getUnlockedCareAssetIds(userId)) {
+        if (await this.hasSealedKeptFile(id, true)) {
+          this.logger.log(
+            `Turning off Locked encryption for user ${userId} waits: a file kept of item ${id} is sealed or unreadable`,
+          );
           return false;
         }
       }
@@ -941,6 +1046,9 @@ export class LockedSealService {
       if (isMissing(error)) {
         return { ref, state: 'missing' };
       }
+      if (isKeptFile(ref)) {
+        return { ref, state: 'unreadable' };
+      }
       throw error;
     }
     try {
@@ -950,8 +1058,23 @@ export class LockedSealService {
         this.logger.warn('A Locked file has a damaged header; it is left as it is');
         return { ref, state: 'damaged' };
       }
+      if (isKeptFile(ref)) {
+        return { ref, state: 'unreadable' };
+      }
       throw error;
     }
+  }
+
+  /**
+   * FL-1364: whether a file Library care kept of the item is sealed. A damaged header is left alone here:
+   * an item out of Locked never waits on a kept file nobody can open. With `orUnreadable` (turning off), a
+   * kept file that couldn't be read counts too: it may be sealed, and the key may be about to go.
+   */
+  private async hasSealedKeptFile(assetId: string, orUnreadable = false): Promise<boolean> {
+    const kept = (await this.lockedFileRepository.filesOf(assetId)).filter((ref) => isKeptFile(ref));
+    return (await this.fileStates(kept)).some(
+      (file) => file.state === 'sealed' || (orUnreadable && file.state === 'unreadable'),
+    );
   }
 
   private async fileStates(refs: LockedFileRef[]): Promise<FileState[]> {

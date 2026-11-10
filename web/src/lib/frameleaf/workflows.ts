@@ -6,6 +6,7 @@ import type {
   WorkflowSourceDto,
   WorkflowScheduleDto,
   WorkflowStepDto,
+  WorkflowEventTriggerResponseDto,
   WorkflowTriggerResponseDto,
   WorkflowUpdateDto,
 } from '@frameleaf/sdk';
@@ -513,10 +514,13 @@ export function workflowProblems(
   draft: Pick<WorkflowDraft, 'trigger' | 'steps' | 'source' | 'schedule'>,
   methods: PluginMethodResponseDto[],
   triggers: WorkflowTriggerResponseDto[],
+  eventTriggers: WorkflowEventTriggerResponseDto[] = [],
 ): WorkflowProblem[] {
   const problems: WorkflowProblem[] = [];
   const trigger = triggers.find((item) => item.trigger === draft.trigger);
-  if (!trigger) {
+  // FL-819: a Frameleaf event feeds only a step that sends it on, the webhook
+  const event = eventTriggers.some((item) => item.trigger === draft.trigger);
+  if (!trigger && !event) {
     problems.push({ message: 'This trigger is unavailable.' });
   }
   if (
@@ -541,6 +545,12 @@ export function workflowProblems(
     }
     if (trigger && method.types.every((type) => !trigger.types.includes(type))) {
       problems.push({ step: index, message: `${label}: this method cannot run for this trigger.` });
+    }
+    if (event && !method.frameleafEvents) {
+      problems.push({
+        step: index,
+        message: `${label}: Frameleaf events can only send to a web address. Use “Trigger Webhook”.`,
+      });
     }
     // a stored credential is on the server even though the draft does not hold it
     let config: unknown = step.config ?? {};
@@ -576,8 +586,9 @@ export function previewWorkflow(
   draft: Pick<WorkflowDraft, 'trigger' | 'steps' | 'source' | 'schedule'>,
   methods: PluginMethodResponseDto[],
   triggers: WorkflowTriggerResponseDto[],
+  eventTriggers: WorkflowEventTriggerResponseDto[] = [],
 ): { problems: WorkflowProblem[]; steps: WorkflowPreviewStep[] } {
-  const problems = workflowProblems(draft, methods, triggers);
+  const problems = workflowProblems(draft, methods, triggers, eventTriggers);
   if (problems.length > 0) {
     return { problems, steps: [] };
   }
@@ -620,3 +631,44 @@ export const exportFileName = (name: string | null) =>
       .replaceAll(/\s+/g, '-')
       .toLowerCase() || 'frameleaf-workflow'
   }.json`;
+
+/**
+ * FL-819: what the web address receives when a Frameleaf event happens, with sample values, so Check can
+ * show it instead of counting photos. The shape is the webhook step's message; the values are made up.
+ */
+export const sampleEventMessage = (trigger: string, event: string) => {
+  const samples: Record<string, { subject: Record<string, string>; detail: Record<string, string | number> }> = {
+    StudioExportCompleted: {
+      subject: { kind: 'studio-export', name: 'Summer in the Rockies' },
+      detail: { projectId: '5c7e…', format: 'video/mp4' },
+    },
+    CloudBackupCompleted: {
+      subject: { kind: 'cloud-backup', name: 'Cloud Backup' },
+      detail: { uploaded: 214, alreadyBackedUp: 48_212, missing: 0, bytesUploaded: 1_288_490_188 },
+    },
+    CloudBackupFailed: {
+      subject: { kind: 'cloud-backup', name: 'Cloud Backup' },
+      detail: { uploaded: 12, alreadyBackedUp: 48_212, missing: 0, bytesUploaded: 52_428_800 },
+    },
+    ClientsGalleryApproved: {
+      subject: { kind: 'clients-gallery', name: 'Engagement, Lake Louise' },
+      detail: { chosen: 42, round: 1 },
+    },
+    CloudJobCompleted: {
+      subject: { kind: 'cloud-job', name: 'Restoration' },
+      detail: { job: 'restoration', stage: 'full' },
+    },
+  };
+  const sample = samples[trigger] ?? { subject: { kind: 'event', name: '' }, detail: {} };
+  return {
+    type: 'EventV1',
+    trigger,
+    data: {
+      event,
+      deliveryId: '…',
+      occurredAt: '2026-11-10T09:41:00.000Z',
+      subject: { kind: sample.subject.kind, id: '…', name: sample.subject.name },
+      detail: sample.detail,
+    },
+  };
+};

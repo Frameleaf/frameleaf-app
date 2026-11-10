@@ -155,3 +155,186 @@ export const fetchPublic = async (
   }
   throw new PublicFetchError('Too many redirects');
 };
+
+/*
+ * FL-819: the webhook step of a workflow that runs on a Frameleaf event. Its address is typed by the
+ * owner, so it gets the same protection as a typed link, with two differences: it never follows a
+ * redirect (a signed message goes only where it was addressed), and an administrator can let it reach
+ * devices at home ("Allow automations to call devices on my network"), such as Home Assistant.
+ * Loopback, link-local (where cloud metadata services answer) and other reserved addresses stay out
+ * of reach even then.
+ */
+const subnets = (ranges: ReadonlyArray<readonly [string, number, 'ipv4' | 'ipv6']>) => {
+  const list = new BlockList();
+  for (const [network, prefix, family] of ranges) {
+    list.addSubnet(network, prefix, family);
+  }
+  return list;
+};
+
+const homeNetwork = subnets([
+  ['10.0.0.0', 8, 'ipv4'],
+  ['100.64.0.0', 10, 'ipv4'],
+  ['172.16.0.0', 12, 'ipv4'],
+  ['192.168.0.0', 16, 'ipv4'],
+  ['fc00::', 7, 'ipv6'],
+]);
+
+/** `::ffff:a.b.c.d` (either spelling) as `a.b.c.d`; any other address as it is. */
+const unmapped = (address: string): string => {
+  const dotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  if (dotted) {
+    return dotted[1];
+  }
+  const hex = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/i.exec(address);
+  if (hex) {
+    const [high, low] = [Number.parseInt(hex[1], 16), Number.parseInt(hex[2], 16)];
+    return [high >> 8, high & 255, low >> 8, low & 255].join('.');
+  }
+  return address;
+};
+
+/** Cloud metadata services that sit inside private ranges (Alibaba, AWS over IPv6): never reachable. */
+const metadataAddresses = subnets([
+  ['100.100.100.200', 32, 'ipv4'],
+  ['fd00:ec2::254', 128, 'ipv6'],
+]);
+
+/** Whether an automation may send to `address`: anywhere public, a home address only when allowed. */
+export const isWebhookAddressAllowed = (address: string, allowHomeNetwork: boolean): boolean => {
+  const plain = unmapped(address);
+  const family = isIP(plain);
+  if (family !== 0 && metadataAddresses.check(plain, family === 4 ? 'ipv4' : 'ipv6')) {
+    return false;
+  }
+  if (isPublicAddress(address)) {
+    return true;
+  }
+  return allowHomeNetwork && family !== 0 && homeNetwork.check(plain, family === 4 ? 'ipv4' : 'ipv6');
+};
+
+const webhookLookup =
+  (allowHomeNetwork: boolean) => (hostname: string, options: { all?: boolean }, callback: LookupCallback) => {
+    dnsLookup(hostname, { all: true }, (error, addresses) => {
+      if (error) {
+        return callback(error, []);
+      }
+      if (
+        addresses.length === 0 ||
+        addresses.some(({ address }) => !isWebhookAddressAllowed(address, allowHomeNetwork))
+      ) {
+        return callback(new PublicFetchError(`${hostname} is not an address automations can reach`), []);
+      }
+      if (options.all) {
+        return callback(null, addresses);
+      }
+      callback(null, addresses[0].address, addresses[0].family);
+    });
+  };
+
+const webhookAgents = {
+  public: new Agent({
+    connect: { lookup: webhookLookup(false) as never },
+    headersTimeout: 10_000,
+    bodyTimeout: 10_000,
+  }),
+  home: new Agent({ connect: { lookup: webhookLookup(true) as never }, headersTimeout: 10_000, bodyTimeout: 10_000 }),
+};
+
+/** Names cloud providers give their metadata services; refused before any lookup. */
+const METADATA_HOSTS = new Set([
+  'metadata',
+  'metadata.google.internal',
+  'metadata.goog',
+  'instance-data',
+  'instance-data.ec2.internal',
+]);
+
+const WEBHOOK_REQUEST_BYTES = 256_000;
+const WEBHOOK_RESPONSE_BYTES = 64_000;
+
+/** A home-network address or name: a private address, a single-label name or a .local/.lan/.internal/.home.arpa name. */
+const isHomeDestination = (host: string): boolean => {
+  const plain = unmapped(host);
+  const family = isIP(plain);
+  if (family !== 0) {
+    return homeNetwork.check(plain, family === 4 ? 'ipv4' : 'ipv6');
+  }
+  return !host.includes('.') || /\.(local|internal|lan|home\.arpa)$/i.test(host);
+};
+
+const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
+  const url = new URL(value);
+  // plain http only reaches the home network; anywhere else the message is sent encrypted
+  const protocols = allowHomeNetwork ? ['http:', 'https:'] : ['https:'];
+  if (!protocols.includes(url.protocol) || url.username || url.password) {
+    throw new PublicFetchError(
+      allowHomeNetwork
+        ? 'Automations send to http or https addresses without a user name or password'
+        : 'Automations send to https addresses without a user name or password',
+    );
+  }
+  const host = url.hostname.replaceAll(/^\[|\]$/g, '');
+  if (url.protocol === 'http:' && !isHomeDestination(host)) {
+    // anything sent over plain http can be read on the way, so outside the home it goes encrypted
+    throw new PublicFetchError(
+      'Plain http only reaches devices on your network; use an https address for anything else',
+    );
+  }
+  if (isIP(host) && !isWebhookAddressAllowed(host, allowHomeNetwork)) {
+    throw new PublicFetchError(`${host} is not an address automations can reach`);
+  }
+  if (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    METADATA_HOSTS.has(host.toLowerCase().replace(/\.$/, ''))
+  ) {
+    throw new PublicFetchError(`${host} is not an address automations can reach`);
+  }
+  if (!allowHomeNetwork && !isIP(host) && (!host.includes('.') || /\.(local|internal|lan|home\.arpa)$/i.test(host))) {
+    throw new PublicFetchError(`${host} is on your network; an administrator can allow automations to reach it`);
+  }
+  return url;
+};
+
+export type WebhookResponse = { ok: boolean; status: number; body: string };
+
+/** Sends one automation message: no redirects, bounded in size and time, never to a private address. */
+export const sendWebhook = async (
+  address: string,
+  { method = 'POST', headers, body = '' }: { method?: string; headers: Headers; body?: string },
+  { allowHomeNetwork }: { allowHomeNetwork: boolean },
+): Promise<WebhookResponse> => {
+  const url = checkWebhookUrl(address, allowHomeNetwork);
+  if (!['POST', 'PUT'].includes(method.toUpperCase())) {
+    throw new PublicFetchError('Automations send with POST or PUT');
+  }
+  if (Buffer.byteLength(body, 'utf8') > WEBHOOK_REQUEST_BYTES) {
+    throw new PublicFetchError('The message is too large to send');
+  }
+  const response = await fetch(url, {
+    dispatcher: allowHomeNetwork ? webhookAgents.home : webhookAgents.public,
+    method: method.toUpperCase(),
+    redirect: 'manual',
+    signal: AbortSignal.timeout(15_000),
+    headers: Object.fromEntries(headers.entries()),
+    body,
+  });
+  if (response.status >= 300 && response.status < 400) {
+    await response.body?.cancel();
+    return { ok: false, status: response.status, body: '' };
+  }
+  const chunks: Buffer[] = [];
+  if (response.body) {
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.byteLength;
+      if (size > WEBHOOK_RESPONSE_BYTES) {
+        // what the receiver says is not needed; stop reading it
+        break;
+      }
+      chunks.push(Buffer.from(chunk));
+    }
+  }
+  return { ok: response.ok, status: response.status, body: Buffer.concat(chunks).toString('utf8') };
+};

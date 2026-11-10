@@ -5,7 +5,7 @@ import { pluginManager } from '$lib/managers/plugin-manager.svelte';
 beforeEach(() => {
   vi.resetAllMocks();
   eventManager.emit('AuthLogout');
-  sdkMock.getWorkflowDiscovery.mockResolvedValue({ triggers: [], templates: [] });
+  sdkMock.getWorkflowDiscovery.mockResolvedValue({ triggers: [], templates: [], eventTriggers: [] });
   sdkMock.getWorkflowTriggers.mockResolvedValue([]);
   sdkMock.searchPluginTemplates.mockResolvedValue([]);
 });
@@ -20,6 +20,17 @@ it('loads modern discovery, including scheduled templates', async () => {
   expect(pluginManager.triggers).toEqual([{ trigger: 'Schedule', types: ['AssetV1'] }]);
   expect(pluginManager.templates).toEqual([{ key: 'sample#schedule', trigger: 'Schedule' }]);
   expect(sdkMock.getWorkflowTriggers).not.toHaveBeenCalled();
+});
+
+it('keeps the Frameleaf events an administrator is offered (FL-819)', async () => {
+  sdkMock.searchPluginMethods.mockResolvedValue([]);
+  sdkMock.getWorkflowDiscovery.mockResolvedValue({
+    triggers: [],
+    templates: [],
+    eventTriggers: [{ trigger: 'CloudBackupFailed', event: 'cloud.backup.failed' }],
+  });
+  await pluginManager.ready();
+  expect(pluginManager.eventTriggers).toEqual([{ trigger: 'CloudBackupFailed', event: 'cloud.backup.failed' }]);
 });
 
 it.each([404, 405])('falls back to legacy discovery only for an unavailable endpoint (%s)', async (status) => {

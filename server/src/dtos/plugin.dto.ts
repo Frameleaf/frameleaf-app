@@ -23,6 +23,9 @@ const PluginMethodResponseSchema = z
     title: z.string().describe('Title'),
     description: z.string().describe('Description'),
     types: z.array(WorkflowTypeSchema).describe('Workflow types'),
+    frameleafEvents: z
+      .boolean()
+      .describe('Whether the method can run on Frameleaf events, such as a finished Studio export (FL-819)'),
     uiHints: z.array(z.string()).describe('Ui hints'),
     // TODO fix this
     schema: z.object().optional(),
@@ -166,7 +169,9 @@ export const mapMethod = (method: PluginMethod): PluginMethodResponseDto => {
     allowedHosts: method.allowedHosts ?? [],
     uiHints: method.uiHints,
     description: method.description,
-    types: method.types,
+    // FL-819: `EventV1` is not in the published enum; it is reported as `frameleafEvents`
+    types: method.types.filter((type) => type !== WorkflowType.EventV1),
+    frameleafEvents: method.types.includes(WorkflowType.EventV1),
     schema: method.schema as any,
   };
 };

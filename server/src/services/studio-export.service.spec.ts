@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -2316,9 +2317,36 @@ describe(StudioExportService.name, () => {
           }),
         },
       });
+      // FL-819: the owner's workflows that start on a finished export, queued with it; gated on the result
+      expect(jobs.queueInTransaction).toHaveBeenCalledWith(tx, {
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: expect.objectContaining({
+            trigger: WorkflowTrigger.StudioExportCompleted,
+            ownerId: OWNER,
+            deliveryId: `studio-export:${VERSION}`,
+            subject: { kind: 'studio-export', id: VERSION, name: 'Lake trip' },
+            privacyAssetIds: ['asset-new'],
+          }),
+        },
+      });
       expect(events.emit).not.toHaveBeenCalled();
       expect(jobs.queueInTransaction.mock.invocationCallOrder[0]).toBeLessThan(
         operations.complete.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('announces no export of Locked or sensitive media to workflows (FL-819)', async () => {
+      const tx = { isTransaction: true };
+      repository.publish.mockImplementation((_input, _metadata, notification) =>
+        tryPromise(() =>
+          notification!(tx as never, { ...published().version, privacy: { lockReason: 'source' } }, 'Lake trip'),
+        ).then(() => published()),
+      );
+      await sut.run(job());
+      expect(jobs.queueInTransaction).not.toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ name: JobName.WorkflowEventDispatch }),
       );
     });
 

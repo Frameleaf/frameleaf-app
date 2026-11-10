@@ -1430,6 +1430,15 @@ const AdminConfigSchemaWithVisibility = z
             'Advertise this server on the local network (DNS-SD `_frameleaf._tcp`) so apps on the same Wi-Fi can find it without typing an address. Turning this off does not require additional sign-in steps or block direct connections - it only stops the broadcast. While on, any device on this network can see that a Frameleaf server exists here and its display name.',
           )
           .meta({ visibility: Admin }),
+        // FL-819: off by default. A workflow that sends a Frameleaf event to a web address may then also
+        // send it to a device at home (Home Assistant on its own address); loopback and link-local
+        // addresses stay out of reach. Defaulted, so an older client that does not name it keeps it off.
+        automationsLocalNetwork: configBool
+          .default(false)
+          .describe(
+            'Let automations send Frameleaf events to devices on this network, such as Home Assistant. Off: they only reach public https addresses',
+          )
+          .meta({ visibility: Admin }),
       })
       .meta({ id: 'AdminConfigServerDto' }),
     user: z
@@ -1975,6 +1984,7 @@ export const defaults = Object.freeze<SystemConfig>({
     timeZone: '',
     publicUsers: true,
     lanDiscovery: true,
+    automationsLocalNetwork: false,
   },
   notifications: {
     smtp: {
