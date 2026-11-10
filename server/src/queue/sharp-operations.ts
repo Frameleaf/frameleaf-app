@@ -25,6 +25,7 @@ import { extractPalette } from '../utils/asset-palette.js';
 import { applyDevelopCleanup } from '../utils/develop-cleanup.js';
 import { perspectiveFor, warpPerspective } from '../utils/develop-perspective.js';
 import { developRenderArtifacts, isActiveMask, planDevelopGeometry } from '../utils/develop-recipe.js';
+import { FONT_SPECIMEN } from '../utils/font-specimen.js';
 import { JPEG_EOI, type JpegRepairResult, jpegRepairCandidates } from '../utils/jpeg-repair.js';
 import { HASH_GRID } from '../utils/video-fingerprint.js';
 
@@ -80,6 +81,9 @@ const JPEG_NAME = /\.(?:jpe?g|jpe|jfif?|jif|pjpe?g|pjp|jps|mpo|insp)$/i;
 const JPEG_START = Buffer.from([0xff, 0xd8, 0xff]);
 
 /** Pure native image operations. Production callers execute these only in sharp-worker. */
+/** FL-1359: the words on a font's specimen picture are fitted inside this margin. */
+const FONT_SPECIMEN_MARGIN = 140;
+
 export class SharpOperations {
   constructor(
     private readonly maxPixels = 200_000_000,
@@ -996,6 +1000,56 @@ export class SharpOperations {
 
   private toRawInfo(info: { width: number; height: number; channels: number }): RawImageInfo {
     return { width: info.width, height: info.height, channels: info.channels as RawImageInfo['channels'] };
+  }
+
+  /**
+   * FL-1359: the specimen picture of a font in Boards, written as its thumbnail and preview. The words
+   * are set in the font file itself; with no file (it could not be opened) they are set in the standard
+   * font, so a font always has a tile. The picture is a fixed size, whatever the font asks for.
+   * Returns the thumbhash.
+   */
+  async renderFontSpecimen(
+    fontPath: string | null,
+    spec: { family: string; text: string },
+    outputs: { path: string; size: number; format: 'jpeg' | 'webp'; quality: number }[],
+  ): Promise<Buffer> {
+    const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    const words = sharp({
+      text: {
+        text: escape(spec.text.slice(0, 200)),
+        ...(fontPath && {
+          fontfile: fontPath,
+          // The trailing comma ends the family name, so a name that ends in a number or a style word
+          // ("Source Serif 4", "Inter Variable") is not read as a size or a style.
+          font: `${spec.family.replaceAll(/[,\\@#:=]/g, ' ').slice(0, 200)},`,
+        }),
+        width: FONT_SPECIMEN.width - 2 * FONT_SPECIMEN_MARGIN,
+        height: FONT_SPECIMEN.height - 2 * FONT_SPECIMEN_MARGIN,
+        align: 'centre',
+        rgba: true,
+      },
+    });
+    const picture = await sharp({
+      create: { width: FONT_SPECIMEN.width, height: FONT_SPECIMEN.height, channels: 3, background: '#ffffff' },
+    })
+      .composite([{ input: await words.png().toBuffer(), gravity: 'centre' }])
+      .png()
+      .toBuffer();
+    this.progress();
+    for (const { path, size, format, quality } of outputs) {
+      await sharp(picture)
+        .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+        .toFormat(format, { quality, chromaSubsampling: '4:4:4' })
+        .toFile(path);
+      this.progress();
+    }
+    const { rgbaToThumbHash } = await import('thumbhash');
+    const { data, info } = await sharp(picture)
+      .resize(100, 100, { fit: 'inside' })
+      .raw()
+      .ensureAlpha()
+      .toBuffer({ resolveWithObject: true });
+    return Buffer.from(rgbaToThumbHash(info.width, info.height, data));
   }
 
   async generateThumbhash(input: string | Buffer, options: GenerateThumbhashOptions): Promise<Buffer> {

@@ -92,7 +92,7 @@ export const FIXTURE_ITEMS: FixtureItem[] = [
   },
   { id: 'I5', name: 'loose', ext: 'webp', tags: ['warm'], url: 'https://gallery.example.test/loose' },
   { id: 'I6', name: 'already', ext: 'png', folders: ['F2', 'GONE'], annotation: 'From Eagle', star: 2 },
-  { id: 'I7', name: 'Lodge Serif', ext: 'otf', folders: ['F3'], tags: ['typography'] },
+  { id: 'I7', name: 'Lodge Mark', ext: 'blend', folders: ['F3'], tags: ['typography'] },
   { id: 'I8', name: 'fire-crackle', ext: 'mp3' },
   { id: 'I9', name: 'old-draft', ext: 'png', isDeleted: true },
   { id: 'I10', name: 'missing', ext: 'jpg', folders: ['F7'], noFile: true },

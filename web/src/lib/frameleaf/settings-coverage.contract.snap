@@ -1277,6 +1277,9 @@
   "preferences.savedSearches": {
     "type": "array"
   },
+  "preferences.search.classic": {
+    "type": "boolean"
+  },
   "preferences.search.includeArchived": {
     "type": "boolean"
   },

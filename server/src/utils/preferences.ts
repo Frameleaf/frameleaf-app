@@ -185,6 +185,7 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     // for. Applied by the client (it sends the visibility); search with no visibility is unchanged.
     search: {
       includeArchived: false,
+      classic: false,
     },
     purchase: {
       showSupportBadge: true,

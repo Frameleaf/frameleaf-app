@@ -11,7 +11,7 @@
 //            (FL-1358); a rendering that comes out one flat colour is a failure
 //   raw      MediaRepository.renderRaw, the RAW ladder (FL-1355)            libraw | darktable | preview
 //   video    MediaRepository.probe, then ffmpeg decodes the first frame     ffmpeg
-//   font     libvips text with the font file (no server entry point yet)    specimen
+//   font     facts read, then the specimen picture set in the font file    specimen
 //
 // Two optional facts: `pages` (what libvips counts in a PDF or Illustrator file) and `fireworks` (whether a
 // PNG carries Fireworks' editable data).
@@ -29,10 +29,10 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { availableParallelism } from 'node:os';
-import { join, resolve } from 'node:path';
+import { availableParallelism, tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -58,6 +58,7 @@ const { MediaRepository } = await load('repositories/media.repository.js');
 const { StorageRepository } = await load('repositories/storage.repository.js');
 const { CryptoRepository } = await load('repositories/crypto.repository.js');
 const { MediaIntegrityService } = await load('services/media-integrity.service.js');
+const { SharpOperations } = await load('queue/sharp-operations.js');
 const { DesignPreviewUnavailableError, isFireworksPng } = await load('utils/design-preview.js');
 
 const logger = LoggingRepository.create();
@@ -139,11 +140,20 @@ const decoders = {
     return { rung: 'ffmpeg', width: stream.width, height: stream.height, codec: stream.codecName };
   },
   async font(file) {
-    // ponytail: proves libvips can open the font file; swap for the specimen renderer when FL-1359 adds it.
-    const { info } = await sharp({ text: { text: 'Aa', fontfile: file, dpi: 144 } })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    assert.ok(info.width > 0 && info.height > 0);
+    // FL-1359: the product's own path. The facts are read, then the specimen is set in the font file.
+    // through the server's own entry point: the facts are read in a process of their own
+    const { facts, sample } = await media.readFontFacts(file, basename(file));
+    const folder = mkdtempSync(join(tmpdir(), 'font-specimen-'));
+    try {
+      const output = join(folder, 'preview.jpeg');
+      await new SharpOperations().renderFontSpecimen(file, { family: facts.family, text: sample }, [
+        { path: output, size: 1440, format: 'jpeg', quality: 80 },
+      ]);
+      const { width, height } = await sharp(output).metadata();
+      assert.deepEqual([width, height], [1440, 1080]);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
     return { rung: 'specimen' };
   },
 };

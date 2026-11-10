@@ -18,6 +18,7 @@
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
   import { fallbackLocale, locales } from '$lib/constants';
+  import { ASSISTANT_NAME } from '$lib/frameleaf/assistant';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import {
     DEFAULT_LIBRARY_LAYOUT,
@@ -27,6 +28,7 @@
   } from '$lib/frameleaf/library-session';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import {
     alwaysLoadOriginalFile,
     alwaysLoadOriginalVideo,
@@ -83,6 +85,7 @@
   const albums = createOwnPreferencesDraft([
     'albums.defaultAssetOrder',
     'search.includeArchived',
+    'search.classic',
     'trash.reuploadUntil',
   ]);
 
@@ -206,6 +209,19 @@
           onChange={(value) => albums.set('search.includeArchived', value)}
         />
       </Row>
+      {#if featureFlagsManager.value.assistant}
+        <!-- FL-918: the same choice as the Library Assistant / Classic search switch on the search page. -->
+        <Row
+          label={$t('frameleaf_prefs_look_classic_search')}
+          help={$t('frameleaf_prefs_look_classic_search_help', { values: { name: ASSISTANT_NAME } })}
+        >
+          <Switch
+            label={$t('frameleaf_prefs_look_classic_search')}
+            checked={albums.draft['search.classic']}
+            onChange={(value) => albums.set('search.classic', value)}
+          />
+        </Row>
+      {/if}
     </Section>
 
     <Section title={$t('frameleaf_prefs_look_media')}>

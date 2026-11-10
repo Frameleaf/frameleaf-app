@@ -9,6 +9,7 @@ import type { JobItem, JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import { AssetFontResponseDto } from 'src/dtos/asset-font.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
@@ -67,11 +68,13 @@ import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone, withDateTimeOffset } from 'src/utils/date.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
+import { fontFactsFromName, isBrowserFont } from 'src/utils/font-file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, isLockedRow } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
@@ -1353,6 +1356,31 @@ export class AssetService extends BaseService {
   async getMetadata(auth: AuthDto, id: string): Promise<AssetMetadataResponseDto[]> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
     return this.assetRepository.getMetadata(id);
+  }
+
+  /** FL-1359: what a font in Boards says about itself. Until the file has been read, its name stands in. */
+  async getFont(auth: AuthDto, id: string): Promise<AssetFontResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
+    const row = await this.assetRepository.getFont(id);
+    if (!row || !mimeTypes.isFont(row.originalFileName)) {
+      throw new NotFoundException('This item is not a font');
+    }
+    const from = row.font ?? fontFactsFromName(row.originalFileName);
+    const facts = {
+      family: from.family,
+      style: from.style,
+      weight: from.weight,
+      italic: from.italic,
+      glyphCount: from.glyphCount,
+      axes: from.axes,
+      instances: from.instances,
+      features: from.features,
+      scripts: from.scripts,
+      license: from.license,
+      licenseUrl: from.licenseUrl,
+      faces: from.faces,
+    };
+    return { ...facts, browserLoadable: isBrowserFont(row.originalFileName), ready: !!row.font };
   }
 
   /** Year in Review groundwork: the viewer opened this asset. Shared-link visitors are not counted. */

@@ -102,7 +102,8 @@ describe('Eagle import from a folder the server can open', () => {
       depth: 2,
       sources: 1,
     });
-    expect(plan.unsupported).toEqual([{ name: 'i5.otf', reason: 'font' }]);
+    // a server from before FL-1359 takes no fonts: the font is listed, not dropped
+    expect(plan.unsupported).toEqual([{ name: 'i5.otf', reason: 'other' }]);
   });
 
   it('starts on the server and follows it to the report, which adds up', async () => {

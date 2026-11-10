@@ -23,6 +23,8 @@
   import SpokenWordsResults from '$lib/components/frameleaf/SpokenWordsResults.svelte';
   import VideoMomentResults from '$lib/components/frameleaf/VideoMomentResults.svelte';
   import SearchChip from '$lib/components/frameleaf/SearchChip.svelte';
+  import AssistantModeSwitch from '$lib/components/frameleaf/AssistantModeSwitch.svelte';
+  import AssistantSearch from '$lib/components/frameleaf/AssistantSearch.svelte';
   import SearchAsk from '$lib/components/frameleaf/SearchAsk.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import {
@@ -76,6 +78,7 @@
     type AssetResponseDto,
     isHttpError,
     ImageEnrichmentFilter,
+    updateMyPreferences,
     SearchOrderField,
     type MetadataSearchDto,
     type SmartSearchDto,
@@ -105,6 +108,7 @@
   const isLoading = $derived(searchSession.loading);
   let askQuery = $state('');
   const askResponse = $derived(searchSession.askResponse);
+  const assistantResponse = $derived(searchSession.assistantResponse);
   /**
    * DISCOVERY-P5: the results scroll inside the app frame (the layout's page area), not the window.
    * Where they were is kept, so coming back from an item lands on the same row.
@@ -165,6 +169,35 @@
   const askProblem = $derived<SearchAskProblem | undefined>(
     canUseAskSearch ? (askFailed ? 'failed' : undefined) : 'disabled',
   );
+  /**
+   * FL-918: the Library Assistant answers questions on servers that offer it (an older server has no
+   * `assistant` feature and keeps Ask). Classic search is one tap away and remembered for the person
+   * (Settings › Look & playback); the switch takes effect at once while the preference saves.
+   */
+  let assistantTurnedOff = $state(false);
+  let classicChoice = $state<boolean>();
+  const classicSearch = $derived(classicChoice ?? !!authManager.preferences?.search?.classic);
+  const showAssistant = $derived(
+    featureFlagsManager.value.search && !!featureFlagsManager.value.assistant && !assistantTurnedOff,
+  );
+  const useAssistant = $derived(showAssistant && !classicSearch);
+  /** Saves run one after another, in the order the switch was pressed, so an older choice never lands last. */
+  let classicSaves: Promise<void> = Promise.resolve();
+  const setClassicSearch = (classic: boolean) => {
+    classicChoice = classic;
+    const isCurrent = authManager.captureSession();
+    classicSaves = classicSaves.then(async () => {
+      try {
+        const preferences = await updateMyPreferences({ userPreferencesUpdateDto: { search: { classic } } });
+        if (isCurrent()) {
+          authManager.setPreferences(preferences);
+        }
+      } catch (error) {
+        handleError(error, $t('frameleaf_assistant_switch_failed'));
+      }
+    });
+    return classicSaves;
+  };
   const isAskLoading = $derived(!hasSearchQuery && searchSession.loading);
   /** The results could not be loaded: the page says so with a retry, never "No matches". */
   let loadFailed = $state(false);
@@ -177,7 +210,7 @@
   // With Ask unavailable there is nothing on the empty search page to type into, so the search
   // palette opens by itself, and the page keeps a way back into it.
   onMount(() => {
-    if (!hasSearchQuery && !showAskSearch && searchLocation.kind !== 'rejected') {
+    if (!hasSearchQuery && !showAskSearch && !useAssistant && searchLocation.kind !== 'rejected') {
       void tick().then(openSearchPalette);
     }
   });
@@ -219,10 +252,15 @@
       return { kind: smart ? 'smart' : 'metadata', terms: ordered };
     }
     const query = askSearchQuery.trim();
+    if (query && useAssistant) {
+      return { kind: 'assistant', query };
+    }
     return query && canUseAskSearch ? { kind: 'ask', query } : null;
   });
 
   const activeSearchKey = $derived(JSON.stringify(activeSearch));
+  /** The question last taken from the address: a mode switch keeps what the person has typed since. */
+  let addressQuestion: string | undefined;
   $effect(() => {
     // Asset-only route navigation and equivalent query objects retain the collection and draft.
     const key = activeSearchKey;
@@ -231,9 +269,10 @@
       searchSession.reset(query);
       askFailed = false;
       loadFailed = false;
-      if (query?.kind === 'ask') {
+      if ((query?.kind === 'ask' || query?.kind === 'assistant') && query.query !== addressQuestion) {
         askQuery = query.query;
       }
+      addressQuestion = query?.kind === 'ask' || query?.kind === 'assistant' ? query.query : undefined;
       handlePromiseError(loadNextPage());
     });
   });
@@ -442,7 +481,8 @@
 
   // eslint-disable-next-line svelte/valid-prop-names-in-kit-pages
   export const loadNextPage = async () => {
-    const asking = activeSearch?.kind === 'ask';
+    const asking = activeSearch?.kind === 'ask' || activeSearch?.kind === 'assistant';
+    const assisting = activeSearch?.kind === 'assistant';
     try {
       await searchSession.loadNextPage({ language: $lang });
     } catch (error) {
@@ -454,6 +494,11 @@
         } else {
           handleError(error, $t('loading_search_results_failed'));
         }
+        return;
+      }
+      // FL-918: an administrator turned the assistant off meanwhile; the page goes back to Ask.
+      if (assisting && isHttpError(error) && error.status === 400 && /turned off/i.test(error.data?.message ?? '')) {
+        assistantTurnedOff = true;
         return;
       }
       // FL-31: Ask shows its own error state; a server that has Ask turned off answers 400.
@@ -574,7 +619,7 @@
       return;
     }
     askFailed = false;
-    searchSession.reset({ kind: 'ask', query });
+    searchSession.reset({ kind: useAssistant ? 'assistant' : 'ask', query });
     handlePromiseError(loadNextPage());
   }
 
@@ -734,7 +779,7 @@
     url.searchParams.set(ASK_QUERY_PARAMETER, normalizedQuery);
 
     if (url.href === page.url.href) {
-      searchSession.reset({ kind: 'ask', query: normalizedQuery });
+      searchSession.reset({ kind: useAssistant ? 'assistant' : 'ask', query: normalizedQuery });
       await loadNextPage();
       return;
     }
@@ -901,9 +946,28 @@
       {/if}
       {#if discoveryQuery?.mode === 'speech'}
         <SpokenWordsResults query={discoveryQuery} />
+      {:else if !hasSearchQuery && useAssistant}
+        <!-- FL-918: the Library Assistant search beta (AssistantSearch.svelte, prototype FL-799). -->
+        <div class="mt-16 flex w-full flex-col px-4 pb-16 sm:px-6">
+          <AssistantSearch
+            bind:query={askQuery}
+            response={assistantResponse}
+            loading={isAskLoading}
+            problem={askFailed ? 'failed' : undefined}
+            onAsk={(query) => handlePromiseError(updateAskSearchUrl(query))}
+            onRetry={retryAsk}
+            onClassic={() => handlePromiseError(setClassicSearch(true))}
+            onOpen={(asset) => void navigateToAsset(asset)}
+          />
+        </div>
       {:else if !hasSearchQuery && showAskSearch}
         <!-- FL-31: Ask about your photos, in the search palette's language (SearchAsk.svelte). -->
         <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-2 sm:px-6">
+          {#if showAssistant}
+            <div class="flex justify-end">
+              <AssistantModeSwitch classic onChange={(classic) => handlePromiseError(setClassicSearch(classic))} />
+            </div>
+          {/if}
           <SearchAsk
             bind:query={askQuery}
             response={askResponse}
@@ -976,6 +1040,9 @@
       {:else if !hasSearchQuery && !showAskSearch && searchLocation.kind !== 'rejected'}
         <!-- Never a blank page: without Ask, the way in is the search palette itself. -->
         <div class="frameleaf search-state" data-theme={appTheme}>
+          {#if showAssistant}
+            <AssistantModeSwitch classic onChange={(classic) => handlePromiseError(setClassicSearch(classic))} />
+          {/if}
           <EmptyState
             icon={mdiMagnify}
             title={$t('frameleaf_search_title')}

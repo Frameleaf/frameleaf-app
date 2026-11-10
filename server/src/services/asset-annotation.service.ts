@@ -58,6 +58,11 @@ export class AssetAnnotationService {
     if (!isAnnotatable(asset)) {
       throw new BadRequestException('Annotations are for pictures in Boards');
     }
+    // FL-1359: text may only be set in a font the owner can see
+    const fontIds = [...new Set(dto.items.flatMap(({ style }) => (style?.fontAssetId ? [style.fontAssetId] : [])))];
+    if (fontIds.length > 0) {
+      await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: fontIds });
+    }
     const stored = await this.annotations.replace(id, dto.items, dto.sourceRevision);
     if (stored === 'conflict') {
       // the picture changed after these positions were read: never stamp them as fitting the new one

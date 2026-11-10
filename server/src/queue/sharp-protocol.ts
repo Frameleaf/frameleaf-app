@@ -21,6 +21,7 @@ export const SHARP_OPERATIONS = [
   'renderDevelopGeometry',
   'encodeDevelopOutput',
   'generateThumbhash',
+  'renderFontSpecimen',
   'normalizeDevelopArtifact',
   'decodeDevelopArtifact',
   'getImageMetadata',

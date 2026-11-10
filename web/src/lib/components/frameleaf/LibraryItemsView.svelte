@@ -9,6 +9,7 @@
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import BoardsGrid from '$lib/components/frameleaf/BoardsGrid.svelte';
   import { boardsView } from '$lib/frameleaf/boards-view.svelte';
+  import { isFontName } from '$lib/frameleaf/boards-fonts';
   import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
   import { THUMBNAIL_SIZE_MAX, THUMBNAIL_SIZE_MIN, THUMBNAIL_SIZE_STEP } from '$lib/frameleaf/library-grid';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
@@ -73,6 +74,7 @@
     mdiFolderPlusOutline,
     mdiImageOutline,
     mdiImport,
+    mdiFormatFont,
     mdiLinkVariant,
     mdiLinkVariantPlus,
     mdiMagnify,
@@ -510,30 +512,48 @@
     session.setQuery({ ...session.query, text: '', filter });
   };
   /* ---- Boards' toolbar (prototype ProWorkspace.jsx `.pro-toolbar`) ---- */
-  type BoardsType = 'all' | 'image' | 'video' | 'link';
+  type BoardsType = 'all' | 'image' | 'video' | 'link' | 'font';
   const BOARDS_TYPES: {
     id: BoardsType;
     labelKey:
-      'frameleaf_boards_all_items' | 'frameleaf_boards_images' | 'frameleaf_boards_videos' | 'frameleaf_boards_links';
+      | 'frameleaf_boards_all_items'
+      | 'frameleaf_boards_images'
+      | 'frameleaf_boards_videos'
+      | 'frameleaf_boards_links'
+      | 'frameleaf_boards_fonts';
     icon: string;
   }[] = [
     { id: 'all', labelKey: 'frameleaf_boards_all_items', icon: mdiViewDashboardOutline },
     { id: 'image', labelKey: 'frameleaf_boards_images', icon: mdiImageOutline },
     { id: 'video', labelKey: 'frameleaf_boards_videos', icon: mdiVideoOutline },
     { id: 'link', labelKey: 'frameleaf_boards_links', icon: mdiLinkVariant },
+    // FL-1359: fonts are the items that are neither pictures nor videos.
+    { id: 'font', labelKey: 'frameleaf_boards_fonts', icon: mdiFormatFont },
   ];
   const typeChoice = $derived.by((): BoardsType => {
     if (effectiveKinds?.includes(LibraryItemSearchKind.Bookmark)) {
       return 'link';
     }
     const type = (session.query.filter.type as { eq?: string } | undefined)?.eq;
-    return type === AssetTypeEnum.Image ? 'image' : type === AssetTypeEnum.Video ? 'video' : 'all';
+    return type === AssetTypeEnum.Image
+      ? 'image'
+      : type === AssetTypeEnum.Video
+        ? 'video'
+        : type === AssetTypeEnum.Other
+          ? 'font'
+          : 'all';
   });
   const setType = (choice: BoardsType) => {
     const next = withFilterCondition(
       session.query,
       'type',
-      choice === 'image' ? { eq: AssetTypeEnum.Image } : choice === 'video' ? { eq: AssetTypeEnum.Video } : undefined,
+      choice === 'image'
+        ? { eq: AssetTypeEnum.Image }
+        : choice === 'video'
+          ? { eq: AssetTypeEnum.Video }
+          : choice === 'font'
+            ? { eq: AssetTypeEnum.Other }
+            : undefined,
     );
     const nextKinds = choice === 'link' ? [LibraryItemSearchKind.Bookmark] : undefined;
     if (onKindsChange) {
@@ -1309,6 +1329,14 @@
         onChange={reload}
       />
     </div>
+  {:else if inspectorOpen && selectedAsset && isBoards && isFontName(selectedAsset.originalFileName) && !selectedAsset.isImage && !selectedAsset.isVideo}
+    <!-- FL-1359: a font opens in its own viewer, with Details inside it. -->
+    {#await import('$lib/components/frameleaf/FontViewer.svelte') then { default: FontViewer }}<FontViewer
+        asset={selectedAsset}
+        onClose={closeDetails}
+        onTrash={trashOne}
+        onChooseColor={chooseColor}
+      />{/await}
   {:else if inspectorOpen && selectedAsset}
     <div class="fl-items-panel">
       <LibraryWorkInspector

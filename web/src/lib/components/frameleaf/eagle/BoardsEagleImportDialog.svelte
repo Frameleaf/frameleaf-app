@@ -168,7 +168,9 @@
   let controller: AbortController | undefined;
   let now = $state(Date.now());
 
-  let supported = $state<ReadonlySet<string>>(session?.supported ?? supportedExtensions(uploadManager.getExtensions()));
+  let supported = $state<ReadonlySet<string>>(
+    session?.supported ?? supportedExtensions(uploadManager.getBoardsExtensions()),
+  );
 
   // An import the tab left part-way, so the first step can say to choose that library again.
   if (!run && ownerId) {
@@ -249,7 +251,7 @@
     if (next === 'server' && !serverLibraries) {
       void loadServerLibraries();
     } else if (next === 'computer') {
-      supported = supportedExtensions(uploadManager.getExtensions());
+      supported = supportedExtensions(uploadManager.getBoardsExtensions());
     }
   };
 
@@ -601,7 +603,6 @@
   const WIDE_STEPS: Step[] = ['summary', 'report', 'stopped'];
   const wide = $derived(WIDE_STEPS.includes(step));
 
-  const fonts = $derived(plan?.unsupported.filter(({ reason }) => reason === 'font').map(({ name }) => name) ?? []);
   const soundAnd3d = $derived(
     plan?.unsupported
       .filter(({ reason }) => reason === 'sound' || reason === 'model')
@@ -651,11 +652,6 @@
 {#snippet leftOut()}
   {#if plan}
     <ul class="named-lists">
-      {#if fonts.length > 0}<EagleNamedList
-          title={$t('frameleaf_eagle_fonts')}
-          names={fonts}
-          reason={$t('frameleaf_eagle_fonts_reason')}
-        />{/if}
       {#if soundAnd3d.length > 0}<EagleNamedList
           title={$t('frameleaf_eagle_sound_3d')}
           names={soundAnd3d}

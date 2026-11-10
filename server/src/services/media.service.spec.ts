@@ -6,6 +6,7 @@ import {
   PostgresQueryCompiler,
   ShallowDehydrateObject,
 } from 'kysely';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -49,6 +50,7 @@ import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo 
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
+import { readFontFacts } from 'src/utils/font-file.js';
 import { LockedKeyUnavailableError, withPlainCopy } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -580,6 +582,95 @@ describe(MediaService.name, () => {
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
       expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    describe('fonts (FL-1359)', () => {
+      const font = (originalFileName = 'Anton.ttf') => {
+        const asset = AssetFactory.from({ type: AssetType.Other, originalFileName }).exif().build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.storage.stat.mockResolvedValue({ size: 42_000 } as never);
+        return asset;
+      };
+
+      it('keeps the font’s facts and makes its thumbnail and preview a specimen set in the font', async () => {
+        const asset = font();
+        mocks.media.readFontFacts.mockResolvedValue(
+          readFontFacts(readFileSync('resources/studio-fonts/anton-latin-400-normal.ttf'), 'Anton.ttf'),
+        );
+
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.asset.upsertFont).toHaveBeenCalledWith(
+          asset.id,
+          expect.objectContaining({ family: 'Anton', style: 'Regular', weight: 400, scripts: ['latin'] }),
+        );
+        expect(mocks.media.renderFontSpecimen).toHaveBeenCalledExactlyOnceWith(
+          asset.originalPath,
+          { family: 'Anton', text: expect.stringContaining('Aa') },
+          [
+            expect.objectContaining({ path: expect.stringContaining('_preview'), size: 1440 }),
+            expect.objectContaining({ path: expect.stringContaining('_thumbnail'), size: 250 }),
+          ],
+        );
+        expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({ assetId: asset.id, type: AssetFileType.Preview }),
+            expect.objectContaining({ assetId: asset.id, type: AssetFileType.Thumbnail }),
+          ]),
+        );
+      });
+
+      it('gives a font that cannot be read or drawn a plain tile with its name, and never fails', async () => {
+        const asset = font('Lodge Serif.otf');
+        mocks.media.readFontFacts.mockRejectedValue(new Error('Command failed: the font reader ran out of time'));
+        mocks.media.renderFontSpecimen.mockRejectedValueOnce(new Error('Sharp child closed (SIGSEGV)'));
+
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.asset.upsertFont).toHaveBeenCalledWith(
+          asset.id,
+          expect.objectContaining({ family: 'Lodge Serif', glyphCount: 0 }),
+        );
+        expect(mocks.media.renderFontSpecimen).toHaveBeenLastCalledWith(
+          null,
+          { family: 'Lodge Serif', text: 'Lodge Serif' },
+          expect.any(Array),
+        );
+        expect(mocks.job.queue).not.toHaveBeenCalledWith(
+          expect.objectContaining({ name: JobName.MediaHealthFixAsset }),
+        );
+      });
+
+      it('does not read a font larger than the limit into memory', async () => {
+        const asset = font();
+        mocks.storage.stat.mockResolvedValue({ size: 300 * 1024 * 1024 } as never);
+
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.readFontFacts).not.toHaveBeenCalled();
+        expect(mocks.media.renderFontSpecimen).toHaveBeenCalledExactlyOnceWith(
+          null,
+          expect.anything(),
+          expect.any(Array),
+        );
+      });
+
+      it('reads a Type 1 font’s name with ExifTool', async () => {
+        const asset = font('lodge.pfb');
+        mocks.metadata.readTags.mockResolvedValue({ FamilyName: 'Lodge', Weight: 'Bold', ItalicAngle: 0 } as never);
+
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.asset.upsertFont).toHaveBeenCalledWith(
+          asset.id,
+          expect.objectContaining({ family: 'Lodge', style: 'Bold', italic: false }),
+        );
+        expect(mocks.media.renderFontSpecimen).toHaveBeenCalledWith(
+          asset.originalPath,
+          expect.objectContaining({ family: 'Lodge' }),
+          expect.any(Array),
+        );
+      });
     });
 
     it('should skip video thumbnail generation if no video stream', async () => {

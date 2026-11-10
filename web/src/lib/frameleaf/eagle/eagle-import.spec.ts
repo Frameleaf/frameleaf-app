@@ -123,7 +123,7 @@ describe('the check before importing', () => {
       leftOut: 5,
       trash: ['old-draft.png'],
       unsupported: [
-        { name: 'Lodge Serif.otf', reason: 'font' },
+        { name: 'Lodge Mark.blend', reason: 'model' },
         { name: 'fire-crackle.mp3', reason: 'sound' },
       ],
       missing: ['I11.info', 'missing.jpg'],
@@ -153,6 +153,20 @@ describe('the check before importing', () => {
   it('counts annotations once they can be written', () => {
     const plan = planEagleImport(library, { annotations: true });
     expect(plan).toMatchObject({ annotations: 1, areaCommentsWaiting: 0 });
+  });
+
+  it('brings fonts over, as Boards items (FL-1359)', () => {
+    const font = { ...library.items.find(({ id }) => id === 'I5')!, id: 'F1', name: 'Lodge Serif', ext: 'otf' };
+    const before = planEagleImport(library);
+    const plan = planEagleImport({ ...library, items: [...library.items, font] });
+    expect(plan.coming).toBe(before.coming + 1);
+    expect(plan.unsupported).toEqual(before.unsupported);
+    // a server from before fonts lists it, by name
+    const old = planEagleImport(
+      { ...library, items: [...library.items, font] },
+      { supported: supportedExtensions(['.jpg', '.png', '.webp', '.mp4']) },
+    );
+    expect(old.unsupported).toContainEqual({ name: 'Lodge Serif.otf', reason: 'other' });
   });
 
   it('lists a type the server does not take, instead of dropping it', () => {

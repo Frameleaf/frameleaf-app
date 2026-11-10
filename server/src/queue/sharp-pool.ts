@@ -452,6 +452,12 @@ export class SharpProcessPool {
       task.progress(1); // A completed operation is advancing work, unlike an IPC keepalive.
       task.resolve(message.value);
     }
+    if (task.operation === 'renderFontSpecimen') {
+      // FL-1359: a child that opened someone's font file is not used again. The font stays registered
+      // with its text renderer, and the file is untrusted input to a native font parser.
+      this.retire(slot, new Error('Sharp child retired after a font'));
+      return this.dispatch();
+    }
     slot.child.unref();
     slot.child.channel?.unref();
     slot.idle = setTimeout(() => this.retire(slot, new Error('Sharp idle child retired')), this.options.idleChildMs);

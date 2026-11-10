@@ -103,6 +103,31 @@ describe('Boards annotations', () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
+    describe('text in a font from Boards (FL-1359)', () => {
+      const fontId = '6f9f0c1e-8f0c-4b1e-9d1e-2f0a3b4c5d6e';
+      const styled = [
+        {
+          id: 't1',
+          kind: 'text' as const,
+          geometry: { x: 0.1, y: 0.2 },
+          text: 'Hello',
+          style: { fontAssetId: fontId },
+        },
+      ];
+      const save = () => service.replace(owner, 'asset', { version: 1, sourceRevision: 'rev-1', items: styled });
+
+      it('saves a style whose font the owner can see', async () => {
+        mocks.access.asset.checkOwnerAccess.mockImplementation((_user, ids) => Promise.resolve(new Set(ids)));
+        annotations.replace.mockResolvedValue({ sourceRevision: 'rev-1', items: styled, updatedAt });
+        await expect(save()).resolves.toMatchObject({ items: styled });
+      });
+
+      it('refuses a font the owner cannot see, and saves nothing', async () => {
+        await expect(save()).rejects.toBeInstanceOf(BadRequestException);
+        expect(annotations.replace).not.toHaveBeenCalled();
+      });
+    });
+
     it('removes the document when the list is emptied', async () => {
       await expect(
         service.replace(owner, 'asset', { version: 1, sourceRevision: 'rev-1', items: [] }),

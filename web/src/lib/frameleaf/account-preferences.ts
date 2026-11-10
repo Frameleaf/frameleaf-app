@@ -59,6 +59,8 @@ export type AccountPreferencesDraft = {
   'download.includeSidecar': boolean;
   /** ACCOUNT-P3: searches that name no visibility include archived photos. */
   'search.includeArchived': boolean;
+  /** FL-918: search questions go to classic search instead of the Library Assistant. */
+  'search.classic': boolean;
   /** ACCOUNT-P2: a shared Space suggests which of my named people appear in it. */
   'people.suggestInSpaces': boolean;
   'purchase.showSupportBadge': boolean;
@@ -174,6 +176,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'download.includeEmbeddedVideos': false,
   'download.includeSidecar': true,
   'search.includeArchived': false,
+  'search.classic': false,
   'people.suggestInSpaces': false,
   'purchase.showSupportBadge': true,
   'purchase.hideBuyButtonUntil': new Date(2022, 1, 12).toISOString(),
@@ -209,6 +212,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'download.includeEmbeddedVideos': preferences.download.includeEmbeddedVideos,
   'download.includeSidecar': preferences.download.includeSidecar,
   'search.includeArchived': preferences.search.includeArchived,
+  'search.classic': preferences.search.classic ?? false,
   'people.suggestInSpaces': preferences.people.suggestInSpaces,
   'purchase.showSupportBadge': preferences.purchase.showSupportBadge,
   'purchase.hideBuyButtonUntil': preferences.purchase.hideBuyButtonUntil,

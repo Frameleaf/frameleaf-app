@@ -15,6 +15,8 @@
    * item is in with "Add to…", its source, file facts and the owner's "Show in Photos too" switch.
    * For a picture there it also shows its annotations (FL-652): drawn over the preview, an
    * Annotations section under the name, and "View large" opening the Boards viewer to annotate.
+   * Inside the font viewer (`font`, FL-1359) it is that viewer's Details: the font's own facts first,
+   * and no preview, colours or "Show in Photos too" (a font stays in Boards).
    */
   import BrokenAsset from '$lib/components/assets/BrokenAsset.svelte';
   import AssetPalette from '$lib/components/frameleaf/AssetPalette.svelte';
@@ -42,13 +44,14 @@
     LibraryScope,
     LibraryViewScope,
     updateAsset,
+    type AssetFontResponseDto,
     type AssetResponseDto,
     type ColorFilter,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiArrowExpand, mdiClose, mdiDownload, mdiMapMarker, mdiPlay, mdiTrashCanOutline } from '@mdi/js';
   import { downloadAssetFile } from '$lib/utils/asset-utils';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   type Props = {
     /** The selected item, when it is in the view. */
@@ -62,9 +65,15 @@
     boards?: boolean;
     /** Boards' "Move to trash" at the foot of Details (prototype `.pro-inspector-actions`); the owner's only. */
     onTrash?: (asset: TimelineAsset) => void;
+    /** Set by the font viewer: the font's facts (null while they load). The viewer has its own close and download. */
+    font?: AssetFontResponseDto | null;
   };
 
-  let { asset, selectedCount = 0, onOpen, onClose, onChooseColor, boards = false, onTrash }: Props = $props();
+  let { asset, selectedCount = 0, onOpen, onClose, onChooseColor, boards = false, onTrash, font }: Props = $props();
+  const fontMode = $derived(font !== undefined);
+  const weightAxis = $derived(font?.axes.find((axis) => axis.tag === 'wght'));
+  /** The licence link a font file carries is shown only when it is a web address. */
+  const licenceLink = $derived(font?.licenseUrl && /^https?:\/\//i.test(font.licenseUrl) ? font.licenseUrl : null);
   /** The item whose preview could not be loaded; another item tries its own. */
   let previewFailed = $state<string | null>(null);
 
@@ -213,19 +222,19 @@
 {#snippet boardsActions(item: AssetResponseDto)}
   <!-- Prototype `.pro-inspector-actions`: Download original, and the owner's Move to trash. -->
   <div class="actions">
-    <button
-      type="button"
-      class="action"
-      onclick={() =>
-        void downloadAssetFile({
-          id: item.id,
-          filename: item.originalFileName,
-          edited: false,
-          size: item.exifInfo?.fileSizeInByte ?? undefined,
-        })}
-    >
-      <Icon icon={mdiDownload} size="18" aria-hidden />{$t('download_original')}
-    </button>
+    {#if !fontMode}<button
+        type="button"
+        class="action"
+        onclick={() =>
+          void downloadAssetFile({
+            id: item.id,
+            filename: item.originalFileName,
+            edited: false,
+            size: item.exifInfo?.fileSizeInByte ?? undefined,
+          })}
+      >
+        <Icon icon={mdiDownload} size="18" aria-hidden />{$t('download_original')}
+      </button>{/if}
     {#if isOwner && onTrash && asset}
       {@const shown = asset}
       <button type="button" class="action danger" onclick={() => onTrash(shown)}>
@@ -247,9 +256,56 @@
         />{/await}
     </section>
   {/if}
-  <section class="part" class:first={!annotations}>
-    <AssetPalette assetId={item.id} canRetry={isOwner} onChoose={onChooseColor} limit={5} />
-  </section>
+  {#if font}
+    <section class="part first" aria-labelledby={`${tabId}-font`}>
+      <h3 id={`${tabId}-font`}>{$t('frameleaf_boards_font')}</h3>
+      <dl class="facts">
+        <dt>{$t('frameleaf_boards_font_family')}</dt>
+        <dd>{font.family}</dd>
+        <dt>{$t('frameleaf_boards_font_style')}</dt>
+        <dd>{font.style}</dd>
+        {#if weightAxis}
+          <dt>{$t('frameleaf_boards_font_weight')}</dt>
+          <dd>{$t('frameleaf_boards_font_weight_range', { values: { min: weightAxis.min, max: weightAxis.max } })}</dd>
+        {:else if font.weight}
+          <dt>{$t('frameleaf_boards_font_weight')}</dt>
+          <dd>{font.weight}</dd>
+        {/if}
+        {#if font.glyphCount > 0}
+          <dt>{$t('frameleaf_boards_font_glyphs')}</dt>
+          <dd>{font.glyphCount.toLocaleString($locale ?? undefined)}</dd>
+        {/if}
+        {#if font.scripts.length > 0}
+          <dt>{$t('frameleaf_boards_font_scripts')}</dt>
+          <dd>
+            {font.scripts.map((script) => $t('frameleaf_boards_font_script', { values: { script } })).join(', ')}
+          </dd>
+        {/if}
+        {#if font.license || licenceLink}
+          <dt>{$t('frameleaf_boards_font_licence')}</dt>
+          <dd class="licence">
+            {#if font.license}<span>{font.license.length > 240 ? `${font.license.slice(0, 240)}…` : font.license}</span
+              >{/if}
+            {#if licenceLink}<a href={licenceLink} target="_blank" rel="noreferrer noopener">{licenceLink}</a>{/if}
+          </dd>
+        {/if}
+      </dl>
+    </section>
+    {#if font.faces.length > 1}
+      <section class="part" aria-labelledby={`${tabId}-faces`}>
+        <h3 id={`${tabId}-faces`}>
+          {$t('frameleaf_boards_font_faces', { values: { count: font.faces.length } })}
+        </h3>
+        <ul class="faces">
+          {#each font.faces as face, index (index)}<li>{face.family} {face.style}</li>{/each}
+        </ul>
+      </section>
+    {/if}
+  {:else if !fontMode}
+    <section class="part" class:first={!annotations}>
+      <AssetPalette assetId={item.id} canRetry={isOwner} onChoose={onChooseColor} limit={5} />
+    </section>
+  {/if}
   {#if canRate}
     <section class="part" aria-labelledby={`${tabId}-rating`}>
       <h3 id={`${tabId}-rating`}>{$t('frameleaf_boards_rating')}</h3>
@@ -311,7 +367,7 @@
       {/if}
     </dl>
   </section>
-  {#if isOwner}
+  {#if isOwner && !fontMode}
     <section class="part">
       {#await import('$lib/components/frameleaf/BoardsScopeSwitch.svelte') then { default: BoardsScopeSwitch }}<BoardsScopeSwitch
           assetId={item.id}
@@ -337,7 +393,9 @@
     <span id="fl-work-inspector-title"
       >{boardsMode ? $t('frameleaf_boards_details') : $t('frameleaf_work_inspector_title')}</span
     >
-    {#if boardsMode}
+    {#if fontMode}
+      <!-- The font viewer's bar closes it. -->
+    {:else if boardsMode}
       <!-- Prototype `.pro-inspector-head`: a bordered square icon button at the app's 44px control height. -->
       <IconButton variant="default" label={$t('frameleaf_work_inspector_close')} onclick={onClose}>
         <Icon icon={mdiClose} size="18" aria-hidden />
@@ -350,7 +408,9 @@
   </div>
 
   {#if asset}
-    {#if annotations && detail}
+    {#if fontMode}
+      <!-- The specimen is the viewer's stage. -->
+    {:else if annotations && detail}
       {@const current = annotations}
       <figure class="preview annotated">
         {#await import('$lib/components/frameleaf/BoardsAnnotatedImage.svelte')}
@@ -401,7 +461,8 @@
         {/if}
       </button>
     {/if}
-    <h2>{detail?.originalFileName ?? ' '}</h2>
+    <h2>{font?.family ?? detail?.originalFileName ?? ' '}</h2>
+    {#if font && detail}<p class="muted file-name">{detail.originalFileName}</p>{/if}
     {#if detail && selectedCount > 1}
       <p class="muted" aria-live="polite">
         {$t('frameleaf_work_inspector_selected', { values: { count: selectedCount } })}
@@ -744,6 +805,29 @@
   }
   .muted {
     color: var(--fl-muted);
+  }
+  .file-name {
+    margin: 0 0 16px;
+    overflow-wrap: anywhere;
+    font-size: var(--fl-font-small);
+  }
+  .licence {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-wrap: anywhere;
+  }
+  .licence a {
+    color: var(--fl-accent);
+  }
+  .faces {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--fl-font-small);
   }
   .empty {
     margin-top: 1rem;

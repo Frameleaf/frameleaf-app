@@ -452,6 +452,17 @@ where
 limit
   $2
 
+-- AssetRepository.getFont
+select
+  "asset"."originalFileName",
+  "asset"."type",
+  to_jsonb(asset_font) as "font"
+from
+  "asset"
+  left join "asset_font" on "asset_font"."assetId" = "asset"."id"
+where
+  "asset"."id" = $1::uuid
+
 -- AssetRepository.getById
 select
   "asset".*,

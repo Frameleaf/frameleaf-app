@@ -39,15 +39,21 @@ export const BOARDS_EXTENSIONS: ReadonlySet<string> = new Set([
   'mp4',
   'mov',
   'webm',
+  // FL-1359: fonts are Boards items
+  'ttf',
+  'otf',
+  'ttc',
+  'otc',
+  'woff',
+  'woff2',
+  'dfont',
+  'pfb',
+  'pfa',
 ]);
 export const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set(['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv']);
 
-export type UnsupportedReason = 'font' | 'sound' | 'model' | 'other';
+export type UnsupportedReason = 'sound' | 'model' | 'other';
 const UNSUPPORTED_REASON: Readonly<Record<string, UnsupportedReason>> = {
-  otf: 'font',
-  ttf: 'font',
-  woff: 'font',
-  woff2: 'font',
   mp3: 'sound',
   wav: 'sound',
   aac: 'sound',

@@ -15646,6 +15646,269 @@
       "synchronize": true
     },
     {
+      "name": "person",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "person",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "personGroupId",
+          "tableName": "person",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "person",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "person",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "name",
+          "tableName": "person",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "thumbnailPath",
+          "tableName": "person",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isHidden",
+          "tableName": "person",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "date",
+          "primary": false,
+          "name": "birthDate",
+          "tableName": "person",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "faceAssetId",
+          "tableName": "person",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isFavorite",
+          "tableName": "person",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "color",
+          "tableName": "person",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "person",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "person_updateId_idx",
+          "definition": "CREATE INDEX \"person_updateId_idx\" ON public.person USING btree (\"updateId\")",
+          "tableName": "person",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "person_personGroupId_idx",
+          "definition": "CREATE INDEX \"person_personGroupId_idx\" ON public.person USING btree (\"personGroupId\")",
+          "tableName": "person",
+          "columnNames": [
+            "personGroupId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "person_faceAssetId_idx",
+          "definition": "CREATE INDEX \"person_faceAssetId_idx\" ON public.person USING btree (\"faceAssetId\")",
+          "tableName": "person",
+          "columnNames": [
+            "faceAssetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "idx_person_name_trigram",
+          "definition": "CREATE INDEX idx_person_name_trigram ON public.person USING gin (f_unaccent((name)::text) gin_trgm_ops)",
+          "tableName": "person",
+          "expression": "f_unaccent((name)::text)",
+          "using": "gin",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "person_delete_audit",
+          "definition": "CREATE TRIGGER person_delete_audit AFTER DELETE ON public.person REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() <= 1)) EXECUTE FUNCTION person_delete_audit()",
+          "tableName": "person",
+          "functionName": "person_delete_audit",
+          "referencingOldTableAs": "old",
+          "when": "(pg_trigger_depth() <= 1)",
+          "synchronize": true,
+          "actions": [
+            "delete"
+          ],
+          "timing": "after",
+          "scope": "statement"
+        },
+        {
+          "name": "person_updatedAt",
+          "definition": "CREATE TRIGGER \"person_updatedAt\" BEFORE UPDATE ON public.person FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "person",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "person_birthDate_chk",
+          "definition": "CHECK ((\"birthDate\" <= CURRENT_DATE))",
+          "tableName": "person",
+          "expression": "((\"birthDate\" <= CURRENT_DATE))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "person_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", \"personGroupId\")",
+          "tableName": "person",
+          "columnNames": [
+            "ownerId",
+            "personGroupId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_faceAssetId_fkey",
+          "definition": "FOREIGN KEY (\"faceAssetId\") REFERENCES asset_face(id) ON DELETE SET NULL",
+          "tableName": "person",
+          "columnNames": [
+            "faceAssetId"
+          ],
+          "referenceTableName": "asset_face",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_personGroupId_fkey",
+          "definition": "FOREIGN KEY (\"personGroupId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person",
+          "columnNames": [
+            "personGroupId"
+          ],
+          "referenceTableName": "person_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
       "name": "person_group",
       "columns": [
         {
@@ -49820,316 +50083,144 @@
       "synchronize": true
     },
     {
-      "name": "person",
+      "name": "asset_font",
       "columns": [
         {
           "type": "uuid",
           "primary": false,
-          "name": "ownerId",
-          "tableName": "person",
+          "name": "assetId",
+          "tableName": "asset_font",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "text",
           "primary": false,
-          "name": "personGroupId",
-          "tableName": "person",
+          "name": "family",
+          "tableName": "asset_font",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "timestamp with time zone",
+          "type": "text",
           "primary": false,
-          "name": "createdAt",
-          "tableName": "person",
+          "name": "style",
+          "tableName": "asset_font",
           "nullable": false,
           "isArray": false,
-          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "weight",
+          "tableName": "asset_font",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "italic",
+          "tableName": "asset_font",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "glyphCount",
+          "tableName": "asset_font",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "axes",
+          "tableName": "asset_font",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "instances",
+          "tableName": "asset_font",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "features",
+          "tableName": "asset_font",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "scripts",
+          "tableName": "asset_font",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "license",
+          "tableName": "asset_font",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "licenseUrl",
+          "tableName": "asset_font",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "faces",
+          "tableName": "asset_font",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
           "name": "updatedAt",
-          "tableName": "person",
+          "tableName": "asset_font",
           "nullable": false,
           "isArray": false,
           "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "name",
-          "tableName": "person",
-          "nullable": false,
-          "isArray": false,
-          "default": "''::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "thumbnailPath",
-          "tableName": "person",
-          "nullable": false,
-          "isArray": false,
-          "default": "''::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isHidden",
-          "tableName": "person",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "date",
-          "primary": false,
-          "name": "birthDate",
-          "tableName": "person",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "faceAssetId",
-          "tableName": "person",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isFavorite",
-          "tableName": "person",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "color",
-          "tableName": "person",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "person",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isFeaturedFaceManual",
-          "tableName": "person",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "person_updateId_idx",
-          "definition": "CREATE INDEX \"person_updateId_idx\" ON public.person USING btree (\"updateId\")",
-          "tableName": "person",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "person_personGroupId_idx",
-          "definition": "CREATE INDEX \"person_personGroupId_idx\" ON public.person USING btree (\"personGroupId\")",
-          "tableName": "person",
-          "columnNames": [
-            "personGroupId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "person_faceAssetId_idx",
-          "definition": "CREATE INDEX \"person_faceAssetId_idx\" ON public.person USING btree (\"faceAssetId\")",
-          "tableName": "person",
-          "columnNames": [
-            "faceAssetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "idx_person_name_trigram",
-          "definition": "CREATE INDEX idx_person_name_trigram ON public.person USING gin (f_unaccent((name)::text) gin_trgm_ops)",
-          "tableName": "person",
-          "expression": "f_unaccent((name)::text)",
-          "using": "gin",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "person_delete_audit",
-          "definition": "CREATE TRIGGER person_delete_audit AFTER DELETE ON public.person REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() <= 1)) EXECUTE FUNCTION person_delete_audit()",
-          "tableName": "person",
-          "functionName": "person_delete_audit",
-          "referencingOldTableAs": "old",
-          "when": "(pg_trigger_depth() <= 1)",
-          "synchronize": true,
-          "actions": [
-            "delete"
-          ],
-          "timing": "after",
-          "scope": "statement"
-        },
-        {
-          "name": "person_updatedAt",
-          "definition": "CREATE TRIGGER \"person_updatedAt\" BEFORE UPDATE ON public.person FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "person",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "person_birthDate_chk",
-          "definition": "CHECK ((\"birthDate\" <= CURRENT_DATE))",
-          "tableName": "person",
-          "expression": "((\"birthDate\" <= CURRENT_DATE))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "person_pkey",
-          "definition": "PRIMARY KEY (\"ownerId\", \"personGroupId\")",
-          "tableName": "person",
-          "columnNames": [
-            "ownerId",
-            "personGroupId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_faceAssetId_fkey",
-          "definition": "FOREIGN KEY (\"faceAssetId\") REFERENCES asset_face(id) ON DELETE SET NULL",
-          "tableName": "person",
-          "columnNames": [
-            "faceAssetId"
-          ],
-          "referenceTableName": "asset_face",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_personGroupId_fkey",
-          "definition": "FOREIGN KEY (\"personGroupId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person",
-          "columnNames": [
-            "personGroupId"
-          ],
-          "referenceTableName": "person_group",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "person_merge_candidate",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "person_merge_candidate",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "personId",
-          "tableName": "person_merge_candidate",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "suggestionId",
-          "tableName": "person_merge_candidate",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "real",
-          "primary": false,
-          "name": "distance",
-          "tableName": "person_merge_candidate",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 24,
           "synchronize": true
         }
       ],
@@ -50138,57 +50229,23 @@
       "constraints": [
         {
           "type": "primary-key",
-          "name": "person_merge_candidate_pkey",
-          "definition": "PRIMARY KEY (\"ownerId\", \"personId\", \"suggestionId\")",
-          "tableName": "person_merge_candidate",
+          "name": "asset_font_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_font",
           "columnNames": [
-            "ownerId",
-            "personId",
-            "suggestionId"
+            "assetId"
           ],
           "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "person_merge_candidate_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person_merge_candidate",
+          "name": "asset_font_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_font",
           "columnNames": [
-            "ownerId"
+            "assetId"
           ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_merge_candidate_personId_fkey",
-          "definition": "FOREIGN KEY (\"personId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person_merge_candidate",
-          "columnNames": [
-            "personId"
-          ],
-          "referenceTableName": "person_group",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_merge_candidate_suggestionId_fkey",
-          "definition": "FOREIGN KEY (\"suggestionId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person_merge_candidate",
-          "columnNames": [
-            "suggestionId"
-          ],
-          "referenceTableName": "person_group",
+          "referenceTableName": "asset",
           "referenceColumnNames": [
             "id"
           ],
