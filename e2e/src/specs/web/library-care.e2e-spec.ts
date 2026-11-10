@@ -259,8 +259,13 @@ test.describe('Library Care', () => {
     // FL-366: File checks has one switch per check, named for what it finds.
     await page.goto('/user-settings?area=care&section=integrity-checks');
     for (const name of ['Missing files', 'Damaged files', 'Stray files']) {
-      await expect(page.getByRole('switch', { name: `Look for ${name}` })).toBeVisible();
+      await expect(page.getByRole('switch', { name: `Look for ${name}`, exact: true })).toBeVisible();
     }
+    // FL-1338: When there's a problem shows that missing files are always looked for, with a switch that stays on.
+    const alwaysLooks = page.getByRole('switch', { name: 'Look for missing files', exact: true });
+    await expect(alwaysLooks).toBeVisible();
+    await expect(alwaysLooks).toBeDisabled();
+    await expect(alwaysLooks).toBeChecked();
     // Things to fix keeps a switch on the two kinds of suggestion that can be turned off.
     await page.goto('/user-settings?area=care&section=repair');
     for (const name of ['Live Photos to reconnect', 'RAW files to match']) {
