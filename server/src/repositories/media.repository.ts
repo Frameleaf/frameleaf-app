@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
 import { camelCase, upperFirst } from 'lodash-es';
@@ -46,6 +46,7 @@ import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { renderDarktable } from 'src/utils/darktable-renderer.js';
 import {
   DESIGN_PREVIEW_TAGS,
   DesignPreviewUnavailableError,
@@ -59,7 +60,7 @@ import { ContainerLogSignals, readContainerLogSignals } from 'src/utils/log-vide
 import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, type RawRenderOptions, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { stillConverters } from 'src/utils/still-converters.js';
 
 const probe = (input: string, options: string[], signal = executionSignal()): Promise<FfprobeData> => {
@@ -222,6 +223,9 @@ export class MediaRepository {
       { tag: 'JpgFromRaw', format: RawExtractedFormat.Jpeg },
       { tag: 'PreviewJXL', format: RawExtractedFormat.Jxl },
       { tag: 'PreviewImage', format: RawExtractedFormat.Jpeg },
+      // FL-1355: small, but a picture; callers that need a size check it.
+      { tag: 'OtherImage', format: RawExtractedFormat.Jpeg },
+      { tag: 'ThumbnailImage', format: RawExtractedFormat.Jpeg },
     ]) {
       try {
         const buffer = await exiftool.extractBinaryTagToBuffer(tag, input);
@@ -232,6 +236,66 @@ export class MediaRepository {
       }
     }
     return null;
+  }
+
+  private developerTurn: Promise<void> = Promise.resolve();
+
+  /**
+   * FL-1355: the RAW ladder, the one place a RAW original becomes a picture. LibRaw renders the sensor; a
+   * camera or compression it cannot read goes to darktable's decoder; failing that, the picture the camera
+   * stored inside the file is used. Only when no rung gives a picture does the first failure come back,
+   * marked `ladderExhausted`. Cancellation and an unreadable file are not the decoder's to work around.
+   */
+  async renderRaw(
+    input: string,
+    { signal, developer = true, ...options }: RawRenderOptions & { signal?: AbortSignal; developer?: boolean } = {},
+  ): Promise<{ rung: 'libraw' | 'darktable' | 'preview'; buffer: Buffer; failure?: RawRenderError }> {
+    let failure: RawRenderError;
+    try {
+      return { rung: 'libraw', buffer: await renderRawWithLibRaw(input, signal, options) };
+    } catch (error) {
+      // A full drive is the server's to sort out and try again, not a reason to settle for a lower rung.
+      if (
+        !(error instanceof RawRenderError) ||
+        error.reason === 'cancelled' ||
+        error.reason === 'io' ||
+        error.code === 'ENOSPC' ||
+        error.code === 'EDQUOT'
+      ) {
+        throw error;
+      }
+      failure = error;
+    }
+    // Out of time or memory in LibRaw would be the same, slower, in a full-resolution development.
+    if (developer && failure.reason !== 'timeout' && failure.reason !== 'resource_limit') {
+      // The engine renders one file at a time in a process, so the ladder's own calls take turns.
+      const turn = this.developerTurn.then(() =>
+        renderDarktable(input, { version: 2, renderer: 'darktable/5.6.1' }, signal),
+      );
+      this.developerTurn = turn.then(() => {}).catch(() => {});
+      try {
+        return { rung: 'darktable', buffer: await turn, failure };
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (error instanceof ServiceUnavailableException) {
+          // Someone is developing a photo right now. That says nothing about this file: try again later,
+          // without settling for a lower rung or calling the file unsupported.
+          throw new RawRenderError('resource_limit', 'ERR_RAW_DEVELOPER_BUSY', error);
+        }
+        const { code, message } = error as NodeJS.ErrnoException;
+        if (code === 'ENOSPC' || code === 'EDQUOT' || /no space left/i.test(message ?? '')) {
+          throw error; // a full drive is retried, as above
+        }
+        this.logger.debug(`RAW development engine could not render either: ${error}`);
+      }
+    }
+    const embedded = await this.extract(input);
+    signal?.throwIfAborted();
+    if (embedded) {
+      return { rung: 'preview', buffer: embedded.buffer, failure };
+    }
+    failure.ladderExhausted = true;
+    throw failure;
   }
 
   /** FL-1358: the picture a design file carries: its container's preview, else one ExifTool finds inside. */

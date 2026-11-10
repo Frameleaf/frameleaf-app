@@ -12,6 +12,9 @@ export const processingFailureSteps = [
   JobName.Ocr,
 ] as const;
 
+/** FL-1355: not a job. The row says a RAW preview is the camera's own, or missing (asset-job.repository `setRawRung`). */
+export const RAW_RUNG_STEP = 'RawSensorRender';
+
 export const isProcessingFailureStep = (name: string): name is (typeof processingFailureSteps)[number] =>
   (processingFailureSteps as readonly string[]).includes(name);
 
