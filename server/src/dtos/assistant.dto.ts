@@ -31,7 +31,7 @@ const AssistantAskSchema = z
   .object({
     query: z.string().trim().min(1).max(1000).describe('The question, as the person typed it'),
     size: z.int().min(1).max(500).optional().describe('Most results to return'),
-    language: z.string().min(1).max(16).optional().describe('Language of the question'),
+    language: z.string().max(16).optional().describe('Language of the question'),
   })
   .meta({ id: 'AssistantAskDto' });
 
