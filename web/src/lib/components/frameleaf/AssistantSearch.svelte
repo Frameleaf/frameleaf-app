@@ -173,7 +173,7 @@
       <Icon icon={mdiImageSearchOutline} size="34" aria-hidden="true" />
       <h3>{$t('frameleaf_assistant_none_title')}</h3>
       <p>{response.summary}</p>
-      {#each response.warnings as warning (warning)}
+      {#each response.warnings as warning, index (index)}
         <p>{warning}</p>
       {/each}
       <p>{$t('frameleaf_assistant_none_hint')}</p>
@@ -188,7 +188,7 @@
       <Icon icon={mdiCheckCircleOutline} size="18" aria-hidden="true" />
       {response.summary}
     </p>
-    {#each response.warnings as warning (warning)}
+    {#each response.warnings as warning, index (index)}
       <p class="la-route">{warning}</p>
     {/each}
     <ul class="la-grid" aria-label={$t('frameleaf_assistant_results')}>

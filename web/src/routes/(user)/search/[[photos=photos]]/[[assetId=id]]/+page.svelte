@@ -181,17 +181,22 @@
     featureFlagsManager.value.search && !!featureFlagsManager.value.assistant && !assistantTurnedOff,
   );
   const useAssistant = $derived(showAssistant && !classicSearch);
-  const setClassicSearch = async (classic: boolean) => {
+  /** Saves run one after another, in the order the switch was pressed, so an older choice never lands last. */
+  let classicSaves: Promise<void> = Promise.resolve();
+  const setClassicSearch = (classic: boolean) => {
     classicChoice = classic;
     const isCurrent = authManager.captureSession();
-    try {
-      const preferences = await updateMyPreferences({ userPreferencesUpdateDto: { search: { classic } } });
-      if (isCurrent()) {
-        authManager.setPreferences(preferences);
+    classicSaves = classicSaves.then(async () => {
+      try {
+        const preferences = await updateMyPreferences({ userPreferencesUpdateDto: { search: { classic } } });
+        if (isCurrent()) {
+          authManager.setPreferences(preferences);
+        }
+      } catch (error) {
+        handleError(error, $t('frameleaf_assistant_switch_failed'));
       }
-    } catch (error) {
-      handleError(error, $t('frameleaf_assistant_switch_failed'));
-    }
+    });
+    return classicSaves;
   };
   const isAskLoading = $derived(!hasSearchQuery && searchSession.loading);
   /** The results could not be loaded: the page says so with a retry, never "No matches". */
@@ -254,6 +259,8 @@
   });
 
   const activeSearchKey = $derived(JSON.stringify(activeSearch));
+  /** The question last taken from the address: a mode switch keeps what the person has typed since. */
+  let addressQuestion: string | undefined;
   $effect(() => {
     // Asset-only route navigation and equivalent query objects retain the collection and draft.
     const key = activeSearchKey;
@@ -262,9 +269,10 @@
       searchSession.reset(query);
       askFailed = false;
       loadFailed = false;
-      if (query?.kind === 'ask' || query?.kind === 'assistant') {
+      if ((query?.kind === 'ask' || query?.kind === 'assistant') && query.query !== addressQuestion) {
         askQuery = query.query;
       }
+      addressQuestion = query?.kind === 'ask' || query?.kind === 'assistant' ? query.query : undefined;
       handlePromiseError(loadNextPage());
     });
   });
