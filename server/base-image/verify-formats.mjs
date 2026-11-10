@@ -5,14 +5,18 @@
 // points the server itself uses, and the result is compared with what the manifest expects:
 //
 //   kind     decode entry point                                             rungs
-//   still    MediaRepository.decodeImage, strict then lenient               strict | lenient
-//   design   the same as still (ImageMagick behind libvips today)           strict | lenient
+//   still    MediaRepository.decodeImage: the still ladder (FL-1356)        strict | lenient | djpeg | jxrlib |
+//                                                                           magick | ffmpeg | embedded
+//   design   the same as still (ImageMagick behind libvips today)           as still
 //   raw      renderRawWithLibRaw, then a full 16-bit decode of its TIFF     libraw
 //   video    MediaRepository.probe, then ffmpeg decodes the first frame     ffmpeg
 //   font     libvips text with the font file (no server entry point yet)    specimen
 //
 // `integrity` is MediaIntegrityService.validate({ deep: true }) said in the product's words:
 //   healthy | cut-short (service: corrupt) | unsupported | couldnt-check (transient, timeout)
+//
+// `matches: "<fixture>"` also compares the decoded picture, shrunk to 8x8, with that fixture's (same root):
+// a wrong colour conversion, a dark 12-bit read or a turned picture decodes at the right size and still fails.
 //
 // A fixture whose fix has not landed carries `expectedFailure: "<why, and which story fixes it>"`.
 // with `failsOn`, the keys that differ today. It must fail on exactly those keys: once it passes, or
@@ -58,14 +62,25 @@ const run = promisify(execFile);
 const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
 
 const decoders = {
-  async still(file) {
-    try {
-      const { info } = await media.decodeImage(file, { colorspace: 'srgb', processInvalidImages: false });
-      return { rung: 'strict', width: info.width, height: info.height };
-    } catch {
-      const { info } = await media.decodeImage(file, { colorspace: 'srgb', processInvalidImages: true });
-      return { rung: 'lenient', width: info.width, height: info.height };
+  async still(file, { matches } = {}) {
+    const decode = (path) => media.decodeImage(path, { colorspace: 'srgb', processInvalidImages: false });
+    const { data, info, rung } = await decode(file);
+    const decoded = { rung, width: info.width, height: info.height };
+    if (matches) {
+      const small = (pixels) =>
+        sharp(pixels.data, {
+          raw: { width: pixels.info.width, height: pixels.info.height, channels: pixels.info.channels },
+        })
+          .resize(8, 8, { fit: 'fill' })
+          .removeAlpha()
+          .raw()
+          .toBuffer();
+      const [actual, wanted] = await Promise.all([small({ data, info }), decode(matches).then(small)]);
+      const difference = actual.reduce((sum, value, index) => sum + Math.abs(value - wanted[index]), 0) / actual.length;
+      // A CMYK original read through a generic profile sits about 15 away; inverted or dark is 70 and more.
+      decoded.matches = difference < 24 ? true : `no (differs by ${difference.toFixed(1)} of 255)`;
     }
+    return decoded;
   },
   async raw(file) {
     // The checks verify-raw.mjs makes: LibRaw from /usr/local, real 16-bit TIFF bytes with a profile,
@@ -146,7 +161,7 @@ for (const fixture of manifest.fixtures) {
 
   let decoded, error;
   try {
-    decoded = await decoders[kind](path);
+    decoded = await decoders[kind](path, { matches: expected.matches && resolve(roots[root], expected.matches) });
   } catch (caught) {
     error = caught;
   }
@@ -163,7 +178,7 @@ for (const fixture of manifest.fixtures) {
       JSON.stringify({ file, root, kind, ...actual, detail: [result.reason, error?.message.split('\n')[0]] }),
     );
   }
-  const mismatches = Object.keys(expected).filter((key) => expected[key] !== actual[key]);
+  const mismatches = Object.keys(expected).filter((key) => (key === 'matches' ? true : expected[key]) !== actual[key]);
   const detail = [
     result.status === 'healthy' ? '' : `integrity: ${result.status}/${result.reason}`,
     error ? `decode: ${String(error.message).split('\n')[0]}` : '',
