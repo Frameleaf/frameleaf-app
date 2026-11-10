@@ -1675,11 +1675,12 @@ export class PreservationWorkerService {
       const rows = await this.repository.findByChecksum(context.ownerId, entry.original.sha256, entry.original.sha1);
       // A work page may predate a source deletion. Check retained privacy after matching: if the
       // original disappeared before this lookup, its removal transaction has already retained it.
-      const locked =
+      const retained = async () =>
         item.locked ||
         entry.locked ||
         !!sidecar?.lock ||
-        (await this.repository.lockedRestoreItemIds(context.restore.id, [item.id])).length > 0;
+        (await this.repository.retainedRestoreItemIds(context.restore.id, [item.id])).length > 0;
+      let locked = await retained();
       const live = rows.find((row) => !row.deletedAt);
       if (live) {
         assetId = live.id;
@@ -1704,6 +1705,7 @@ export class PreservationWorkerService {
           sha256: entry.original.sha256,
           bytes: entry.original.bytes,
         });
+        locked ||= await retained();
         const response = await this.assetMedia.uploadAsset(
           context.auth,
           {
@@ -1727,6 +1729,8 @@ export class PreservationWorkerService {
             originalName: entry.originalFileName,
             size: entry.original.bytes,
           },
+          undefined,
+          (create) => this.repository.publishRestoreAsset(context.restore.id, item.id, context.ownerId, locked, create),
         );
         if (response.status === AssetMediaStatus.DUPLICATE && /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(response.id)) {
           throw new PreservationPackageError(
@@ -1741,6 +1745,7 @@ export class PreservationWorkerService {
       await this.repository.updateRestoreItem(item.id, { assetId, match: created ? 'new' : 'existing' });
       // A Locked-rule match has a private entry but no explicit lock in its sidecar. Preserve that
       // boundary even when the destination already has the bytes and does not have the source rule.
+      locked ||= await retained();
       if (locked && !sidecar?.lock && !(await this.repository.getLock(assetId))) {
         await this.lock(context, assetId, 'marked');
       }

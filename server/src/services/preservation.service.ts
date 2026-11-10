@@ -845,7 +845,10 @@ export class PreservationService {
     if (found.origin !== 'export' || found.removedAt || (found.status !== 'ready' && found.status !== 'incomplete')) {
       throw new BadRequestException('This package is not ready to download');
     }
-    if (!this.isUnlocked(auth) && (found.includeLocked || (await this.repository.hasLockedItems(found.id)))) {
+    if (
+      !this.isUnlocked(auth) &&
+      (found.includeLocked || (await this.repository.restrictedPackageIds([found.id])).has(found.id))
+    ) {
       // A package made with Locked items, by the owner's own choice, says why. One whose items were
       // locked after it was written gets the ordinary answer: a locked session learns nothing of them.
       if (found.includeLocked) {
@@ -947,7 +950,7 @@ export class PreservationService {
           : String(item.sizeBytes),
       includeLocked: item.includeLocked,
       includeMetadata: item.includeMetadata,
-      scopeDescription: asText(asRecord(item.scope).description),
+      scopeDescription: restricted ? null : asText(asRecord(item.scope).description),
       createdAt: asIso(item.createdAt)!,
       updatedAt: asIso(item.updatedAt)!,
       expiresAt: asIso(item.expiresAt),

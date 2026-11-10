@@ -179,7 +179,8 @@ describe(PreservationWorkerService.name, () => {
       updateRestoreItem: vi.fn(),
       getLibraryState: vi.fn().mockResolvedValue(library()),
       getLock: vi.fn(),
-      lockedRestoreItemIds: vi.fn().mockResolvedValue([]),
+      retainedRestoreItemIds: vi.fn().mockResolvedValue([]),
+      publishRestoreAsset: vi.fn(),
       getEditRecipe: vi.fn().mockResolvedValue([]),
       setLockReason: vi.fn(),
       getFaces: vi.fn().mockResolvedValue([]),
@@ -944,6 +945,8 @@ describe(PreservationWorkerService.name, () => {
         expect.anything(),
         expect.objectContaining({ visibility: AssetVisibility.Locked, filename: 'lake.jpg' }),
         expect.objectContaining({ checksum: Buffer.from(sha256, 'hex'), legacyChecksum: Buffer.from(sha1, 'hex') }),
+        undefined,
+        expect.any(Function),
       );
       expect(repository.setLockReason).toHaveBeenCalledWith(created, 'detected');
       // The owner's description is restored; the generated one stays provenance.
@@ -1050,7 +1053,7 @@ describe(PreservationWorkerService.name, () => {
     it('rechecks retained privacy before recreating an original from a stale work page', async () => {
       const created = newUuid();
       const item = restoreItemOf();
-      repository.lockedRestoreItemIds.mockResolvedValue([item.id]);
+      repository.retainedRestoreItemIds.mockResolvedValue([item.id]);
       assetMedia.uploadAsset.mockResolvedValue({ id: created, status: AssetMediaStatus.CREATED });
 
       expect(await worker().restoreItem(contextOf(), item)).toBe('restored');
@@ -1058,8 +1061,48 @@ describe(PreservationWorkerService.name, () => {
         expect.anything(),
         expect.objectContaining({ visibility: AssetVisibility.Locked }),
         expect.anything(),
+        undefined,
+        expect.any(Function),
       );
-      expect(repository.lockedRestoreItemIds).toHaveBeenCalledWith(expect.any(String), [item.id]);
+      expect(repository.retainedRestoreItemIds).toHaveBeenCalledWith(expect.any(String), [item.id]);
+    });
+
+    it.each(['extraction', 'upload'] as const)('guards publication after privacy changes during %s', async (phase) => {
+      const created = newUuid();
+      const item = restoreItemOf();
+      files.extractVerified.mockImplementation(() => {
+        if (phase === 'extraction') repository.retainedRestoreItemIds.mockResolvedValue([item.id]);
+        return Promise.resolve();
+      });
+      const create = vi.fn().mockResolvedValue({ id: created });
+      repository.publishRestoreAsset.mockImplementation((_restoreId, _itemId, _ownerId, _locked, publish) =>
+        publish({}, true),
+      );
+      assetMedia.uploadAsset.mockImplementation(async (_auth, _dto, _file, _sidecar, publish) => {
+        repository.retainedRestoreItemIds.mockResolvedValue([item.id]);
+        await publish(create);
+        return { id: created, status: AssetMediaStatus.CREATED };
+      });
+
+      expect(await worker().restoreItem(contextOf(), item)).toBe('restored');
+      expect(assetMedia.uploadAsset).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          visibility: phase === 'extraction' ? AssetVisibility.Locked : AssetVisibility.Timeline,
+        }),
+        expect.anything(),
+        undefined,
+        expect.any(Function),
+      );
+      expect(repository.publishRestoreAsset).toHaveBeenCalledWith(
+        expect.any(String),
+        item.id,
+        ownerId,
+        phase === 'extraction',
+        create,
+      );
+      expect(create).toHaveBeenCalledWith({}, true);
+      expect(assets.update).toHaveBeenCalledWith(expect.anything(), created, { visibility: AssetVisibility.Locked });
     });
 
     it('locks a matched original the package says is Locked, and never unlocks one', async () => {
@@ -1101,6 +1144,8 @@ describe(PreservationWorkerService.name, () => {
         expect.anything(),
         expect.objectContaining({ libraryScope: 'design' }),
         expect.anything(),
+        undefined,
+        expect.any(Function),
       );
     });
 

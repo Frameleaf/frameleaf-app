@@ -282,6 +282,9 @@ describe('preservation respects current owner Locked rules (FL-1344)', () => {
     await setLockedRules(owner.id, rules);
     const hiddenIds = items.filter((item) => privateIds.includes(item.sourceAssetId)).map((item) => item.id);
     expect(new Set(await sut.lockedRestoreItemIds(restore.id, itemIds))).toEqual(new Set(hiddenIds));
+    // Destination-only rules hide the review, without turning a public archive into an explicit lock.
+    expect(await sut.retainedRestoreItemIds(restore.id, itemIds)).toEqual([]);
+    expect((await sut.restoreWork(restore.id, null, 100, 3)).every((item) => !item.locked)).toBe(true);
     await expect(sut.restrictedPackageIds([packageId])).resolves.toEqual(new Set([packageId]));
     const ordinary = await sut.listRestoreItems(restore.id, { take: 100, skip: 0, excludeLocked: true });
     expect(ordinary.total).toBe(4);

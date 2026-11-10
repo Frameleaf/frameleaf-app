@@ -305,6 +305,7 @@ describe(PreservationService.name, () => {
     it('withholds package-wide totals and job progress when current rules hide a packaged item', async () => {
       const found = packageOf({
         sizeBytes: 5000,
+        scope: { description: 'A private person and place' },
         verification: { status: 'verified', checked: 3, ok: 3 },
       });
       const operation = operationOf({
@@ -319,12 +320,13 @@ describe(PreservationService.name, () => {
       repository.countItems.mockResolvedValue(new Map([[found.id, { states: { copied: 1 }, locked: 0, bytes: 10 }]]));
 
       const ordinary = await sut.getPackage(owner, found.id);
-      expect(ordinary).toMatchObject({ sizeBytes: null, manifest: null, verification: null });
+      expect(ordinary).toMatchObject({ sizeBytes: null, manifest: null, verification: null, scopeDescription: null });
       expect(ordinary.counts).toMatchObject({ copied: 1, total: 1, locked: 0 });
       expect(ordinary.operation).toMatchObject({ progress: 0, processedUnits: '0', totalUnits: null });
 
       const revealed = await sut.getPackage(unlocked, found.id);
       expect(revealed.sizeBytes).toBe('5000');
+      expect(revealed.scopeDescription).toBe('A private person and place');
       expect(revealed.manifest).not.toBeNull();
       expect(revealed.verification).toMatchObject({ checked: 3, ok: 3 });
       expect(revealed.operation).toMatchObject({ progress: 100, processedUnits: '3', totalUnits: '3' });
@@ -432,14 +434,16 @@ describe(PreservationService.name, () => {
     });
 
     it('does not tell a locked session that items were locked after the package was written', async () => {
-      repository.getPackage.mockResolvedValue(packageOf());
-      repository.hasLockedItems.mockResolvedValue(true);
+      const found = packageOf();
+      repository.getPackage.mockResolvedValue(found);
+      repository.restrictedPackageIds.mockResolvedValue(new Set([found.id]));
       const refusal = sut.downloadPackage(owner, newUuidV7());
       await expect(refusal).rejects.toBeInstanceOf(BadRequestException);
       await expect(refusal).rejects.toThrow('This package is not ready to download');
       expect(storage.createZipStream).not.toHaveBeenCalled();
       await expect(sut.downloadManifest(owner, newUuidV7())).rejects.toThrow('This package is not ready to download');
       expect(storage.createReadStream).not.toHaveBeenCalled();
+      expect(repository.restrictedPackageIds).toHaveBeenCalledWith([found.id]);
     });
 
     it('refuses a package that is not written yet or came from elsewhere', async () => {
