@@ -29,6 +29,7 @@ const WorkflowTriggerResponseSchema = z
 const WorkflowSearchSchema = z
   .object({
     id: z.uuidv4().optional().describe('Workflow ID'),
+    // FL-819: Frameleaf event triggers are WorkflowTrigger values too, so the enum already covers them
     trigger: WorkflowTriggerSchema.optional().describe('Workflow trigger type'),
     name: z.string().optional().describe('Workflow name'),
     description: z.string().optional().describe('Workflow description'),
@@ -193,6 +194,18 @@ export class WorkflowDiscoveryResponseDto extends createZodDto(
     .object({
       triggers: z.array(WorkflowTriggerResponseSchema),
       templates: z.array(PluginTemplateResponseSchema),
+      eventTriggers: z
+        .array(
+          z
+            .object({
+              trigger: z.string().describe('Trigger to store on a workflow, for example CloudBackupFailed'),
+              event: z.string().describe('Event name the webhook step sends, for example cloud.backup.failed'),
+            })
+            .meta({ id: 'WorkflowEventTriggerResponseDto' }),
+        )
+        .describe(
+          'Frameleaf events a workflow can start on (FL-819); they feed only the webhook step. Listed to administrators only',
+        ),
     })
     .meta({ id: 'WorkflowDiscoveryResponseDto' }),
 ) {}

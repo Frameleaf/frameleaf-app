@@ -70,8 +70,8 @@ export class WorkflowController {
       'Includes change-driven and scheduled automation. Legacy discovery endpoints retain their original trigger values.',
     history: HistoryBuilder.v3(),
   })
-  getWorkflowDiscovery(): Promise<WorkflowDiscoveryResponseDto> {
-    return this.service.discovery();
+  getWorkflowDiscovery(@Auth() auth: AuthDto): Promise<WorkflowDiscoveryResponseDto> {
+    return this.service.discovery(auth);
   }
 
   @Get('automation/capabilities')

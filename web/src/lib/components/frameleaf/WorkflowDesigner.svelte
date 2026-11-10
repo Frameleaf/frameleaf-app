@@ -33,6 +33,7 @@
     schemaDefaults,
     WORKFLOW_LIMITS,
     previewWorkflow,
+    sampleEventMessage,
     workflowProblems,
     type WorkflowDraft,
     type WorkflowDraftStep,
@@ -56,6 +57,7 @@
     WorkflowRunErrorCode,
     type PluginMethodResponseDto,
     type PluginTemplateResponseDto,
+    type WorkflowEventTriggerResponseDto,
     type WorkflowLogEntryDto,
     type WorkflowResponseDto,
     type WorkflowTriggerResponseDto,
@@ -71,6 +73,7 @@
     initial,
     methods,
     triggers,
+    eventTriggers = [],
     templates,
     onSaved,
     onDeleted,
@@ -81,6 +84,8 @@
     initial: WorkflowDraft;
     methods: PluginMethodResponseDto[];
     triggers: WorkflowTriggerResponseDto[];
+    /** FL-819: Frameleaf events, offered to administrators; they only feed the webhook step. */
+    eventTriggers?: WorkflowEventTriggerResponseDto[];
     templates: PluginTemplateResponseDto[];
     onSaved: (workflow: WorkflowResponseDto) => void;
     onDeleted: (id: string) => void;
@@ -123,9 +128,10 @@
     };
   });
   const checkPreview = async () => {
-    validation = previewWorkflow(draft, methods, triggers);
+    validation = previewWorkflow(draft, methods, triggers, eventTriggers);
     matches = null;
-    if (!capabilities || validation.problems.length > 0) {
+    // an event has no photos to count: Check shows the message the web address receives instead
+    if (!capabilities || validation.problems.length > 0 || eventTrigger) {
       return;
     }
     const generation = ++previewGeneration;
@@ -191,7 +197,7 @@
   let saving = $state(false);
 
   const document = $derived(JSON.stringify(draftToDocument(draft), null, 2));
-  const problems = $derived(workflowProblems(draft, methods, triggers));
+  const problems = $derived(workflowProblems(draft, methods, triggers, eventTriggers));
   const persistError = $derived(
     draft.enabled && problems.length > 0
       ? $t('frameleaf_workflows.pause_before_saving', { values: { problem: problems[0].message } })
@@ -204,7 +210,10 @@
   );
   const definition = $derived(selected ? findMethod(methods, selected.method) : undefined);
   const jsonPending = $derived(tab === 'json' && raw !== document);
-  const knownTrigger = $derived(triggers.some((item) => item.trigger === draft.trigger));
+  const eventTrigger = $derived(eventTriggers.find((item) => item.trigger === draft.trigger));
+  const knownTrigger = $derived(triggers.some((item) => item.trigger === draft.trigger) || !!eventTrigger);
+  /** FL-819: the steps a trigger can feed; a Frameleaf event only sends to a web address. */
+  const offeredMethods = $derived(eventTrigger ? methods.filter((item) => item.frameleafEvents) : methods);
   const triggerLabel = (trigger: string) => {
     const key = `frameleaf_workflows.trigger_${trigger}`;
     const label = $t(key as Translations);
@@ -478,12 +487,18 @@
             value={draft.trigger}
             onchange={(event) => {
               const trigger = event.currentTarget.value;
+              const isEvent = eventTriggers.some((item) => item.trigger === trigger);
               update({
                 ...draft,
                 trigger,
                 ...(['Schedule', 'AssetChanged'].includes(trigger) && { source: draft.source ?? { filter: {} } }),
                 ...(trigger === 'Schedule' && { schedule: draft.schedule ?? { cron: '0 9 * * *' } }),
+                // an event is not about photos: it has no matching conditions and no schedule
+                ...(isEvent && { source: null, schedule: null }),
               });
+              if (offeredMethods.every((item) => item.key !== method)) {
+                method = offeredMethods[0]?.key ?? '';
+              }
             }}
           >
             {#if !knownTrigger}
@@ -491,9 +506,22 @@
                 {$t('frameleaf_workflows.trigger_unavailable', { values: { trigger: draft.trigger } })}
               </option>
             {/if}
-            {#each triggers as item (item.trigger)}
-              <option value={item.trigger}>{triggerLabel(item.trigger)}</option>
-            {/each}
+            {#if eventTriggers.length > 0}
+              <optgroup label={$t('frameleaf_workflows.trigger_group_photos')}>
+                {#each triggers as item (item.trigger)}
+                  <option value={item.trigger}>{triggerLabel(item.trigger)}</option>
+                {/each}
+              </optgroup>
+              <optgroup label={$t('frameleaf_workflows.trigger_group_events')}>
+                {#each eventTriggers as item (item.trigger)}
+                  <option value={item.trigger}>{triggerLabel(item.trigger)}</option>
+                {/each}
+              </optgroup>
+            {:else}
+              {#each triggers as item (item.trigger)}
+                <option value={item.trigger}>{triggerLabel(item.trigger)}</option>
+              {/each}
+            {/if}
           </select>
         </label>
         <label class="wd-field wd-description">
@@ -505,7 +533,7 @@
         </label>
       </div>
 
-      {#if capabilities}
+      {#if capabilities && !eventTrigger}
         <WorkflowAutomation
           {draft}
           timezone={capabilities.timezone}
@@ -606,7 +634,7 @@
           <label class="wd-field">
             {$t('frameleaf_workflows.available_method')}
             <select bind:value={method}>
-              {#each methods as item (item.key)}
+              {#each offeredMethods as item (item.key)}
                 <option value={item.key}>{item.title}</option>
               {/each}
             </select>
@@ -731,7 +759,24 @@
                 </li>
               {/each}
             </ol>
-            <p>{$t('frameleaf_workflows.preview_run_needs')}</p>
+            {#if eventTrigger}
+              <!-- FL-778 prototype EventPayload: there are no photos to count, so Check shows the message. -->
+              <div class="wd-event">
+                <p>
+                  {$t('frameleaf_workflows.event_check', { values: { event: triggerLabel(eventTrigger.trigger) } })}
+                </p>
+                <pre aria-label={$t('frameleaf_workflows.event_sample_label')}>{JSON.stringify(
+                    sampleEventMessage(eventTrigger.trigger, eventTrigger.event),
+                    null,
+                    2,
+                  )}</pre>
+                <p class="wd-message">{$t('frameleaf_workflows.event_privacy')}</p>
+                <p class="wd-message">{$t('frameleaf_workflows.event_signing')}</p>
+                <p class="wd-message">{$t('frameleaf_workflows.event_home_network')}</p>
+              </div>
+            {:else}
+              <p>{$t('frameleaf_workflows.preview_run_needs')}</p>
+            {/if}
           {/if}
         </div>
       {/if}

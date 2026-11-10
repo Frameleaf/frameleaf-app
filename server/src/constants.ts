@@ -47,6 +47,8 @@ export const JOBS_NOT_RETRIED: ReadonlySet<JobName> = new Set([
   // stalled run skips the steps it completed, but only while those are kept; a failed record retried
   // from the Job manager later would run completed steps again
   JobName.WorkflowAssetTrigger,
+  // FL-819: the same, for a run on a Frameleaf event
+  JobName.WorkflowEventTrigger,
   // FL-228: a notice is news of the moment; one retried later from the Job manager would be stale
   JobName.PushDeliver,
 ]);
@@ -70,6 +72,7 @@ export const JOBS_NOT_RETRIED: ReadonlySet<JobName> = new Set([
  */
 const JOBS_SAFE_TO_RERUN_AFTER_STOP: ReadonlySet<JobName> = new Set([
   JobName.WorkflowAssetTrigger,
+  JobName.WorkflowEventTrigger,
   JobName.StorageTemplateMigrationSingle,
 ]);
 

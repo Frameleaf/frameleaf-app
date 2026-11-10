@@ -1390,6 +1390,13 @@ export class JobRepository {
         // FL-179: one job per execution, so a replayed run that queues its automatic retry again adds none
         return item.data.executionId ? { jobId: `workflow-${item.data.executionId}` } : null;
       }
+      case JobName.WorkflowEventTrigger: {
+        // FL-819: the execution id comes from the workflow and the event, so a repeated event adds no run
+        return { jobId: `workflow-${item.data.executionId}` };
+      }
+      case JobName.WorkflowEventDispatch: {
+        return { deduplication: { id: `${JobName.WorkflowEventDispatch}:${item.data.event.deliveryId}` } };
+      }
       case JobName.PhotographyWorkflowRender: {
         return {
           delay: item.data.delay ?? 0,

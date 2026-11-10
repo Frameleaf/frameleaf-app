@@ -1,3 +1,4 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import {
   BadRequestException,
   ConflictException,
@@ -2316,6 +2317,7 @@ export class CloudMlJobService {
       );
       if (outcome === 'completed') {
         await this.removeJobFiles(snapshot);
+        await this.queueJobCompleted(operation, snapshot);
       }
       return outcome;
     }
@@ -2433,8 +2435,40 @@ export class CloudMlJobService {
       await queueLockedSealOf({ lockedFile: this.lockedFileRepository, job: this.jobRepository, logger: this.logger }, [
         snapshot.assetId,
       ]);
+      await this.queueJobCompleted(operation, snapshot);
     }
     return outcome;
+  }
+
+  /**
+   * FL-819: workflows that start when a Frameleaf Cloud job finishes. The message says what kind of job
+   * it was; never which photo. While that photo is Locked, hidden or sensitive nothing is sent at all.
+   * Never fails the job.
+   */
+  private async queueJobCompleted(operation: MediaOperation, snapshot: JobRun['snapshot']) {
+    const names: Record<string, string> = {
+      restoration: 'Restoration',
+      'smooth-motion': 'Smooth motion',
+      transcription: 'Captions',
+    };
+    try {
+      await this.jobRepository.queue({
+        name: JobName.WorkflowEventDispatch,
+        data: {
+          event: {
+            trigger: WorkflowTrigger.CloudJobCompleted,
+            ownerId: operation.ownerId,
+            deliveryId: `cloud-job:${operation.id}`,
+            occurredAt: new Date().toISOString(),
+            subject: { kind: 'cloud-job', id: operation.id, name: names[snapshot.purpose] ?? snapshot.purpose },
+            detail: { job: snapshot.purpose, stage: snapshot.stage },
+            privacyAssetIds: snapshot.assetId ? [snapshot.assetId] : [],
+          },
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Could not start the workflows for Frameleaf Cloud job ${operation.id}: ${error}`);
+    }
   }
 
   /**

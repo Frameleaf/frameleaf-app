@@ -71755,6 +71755,10 @@
       },
       "AdminConfigServerDto": {
         "properties": {
+          "automationsLocalNetwork": {
+            "description": "Let automations send Frameleaf events to devices on this network, such as Home Assistant. Off: they only reach public https addresses",
+            "type": "boolean"
+          },
           "externalDomain": {
             "description": "External domain",
             "type": "string"
@@ -135553,6 +135557,10 @@
             "description": "Description",
             "type": "string"
           },
+          "frameleafEvents": {
+            "description": "Whether the method can run on Frameleaf events, such as a finished Studio export (FL-819)",
+            "type": "boolean"
+          },
           "hostFunctions": {
             "type": "boolean"
           },
@@ -135590,6 +135598,7 @@
         "required": [
           "allowedHosts",
           "description",
+          "frameleafEvents",
           "hostFunctions",
           "key",
           "name",
@@ -165132,6 +165141,13 @@
       },
       "WorkflowDiscoveryResponseDto": {
         "properties": {
+          "eventTriggers": {
+            "description": "Frameleaf events a workflow can start on (FL-819); they feed only the webhook step. Listed to administrators only",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowEventTriggerResponseDto"
+            },
+            "type": "array"
+          },
           "templates": {
             "items": {
               "$ref": "#/components/schemas/PluginTemplateResponseDto"
@@ -165146,8 +165162,26 @@
           }
         },
         "required": [
+          "eventTriggers",
           "templates",
           "triggers"
+        ],
+        "type": "object"
+      },
+      "WorkflowEventTriggerResponseDto": {
+        "properties": {
+          "event": {
+            "description": "Event name the webhook step sends, for example cloud.backup.failed",
+            "type": "string"
+          },
+          "trigger": {
+            "description": "Trigger to store on a workflow, for example CloudBackupFailed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "trigger"
         ],
         "type": "object"
       },
