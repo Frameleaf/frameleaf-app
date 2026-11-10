@@ -126,7 +126,7 @@
     acting = run.id;
     notice = '';
     try {
-      for (const name of new Set(run.pausedQueues ?? [])) {
+      for (const name of new Set(run.pausedQueues)) {
         await handleResumeQueue({ name });
       }
     } catch (error) {

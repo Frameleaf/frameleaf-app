@@ -1,8 +1,10 @@
 import type { DurableJobReason, DurableJobRun } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
-import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
 import { isRunSettled, runStateKey } from '$lib/frameleaf/durable-runs';
 import { leftOver } from '$lib/frameleaf/run-failures';
+
+/** The kit Pill's tones (`Pill.svelte` `KitTone`; plain tsc can't read a type out of a .svelte module). */
+type KitTone = 'good' | 'warn' | 'bad' | 'off';
 
 /**
  * A run's one state and its one reason (FL-1349): the status pill, its tone, the sentence under it (or none), and
@@ -113,7 +115,7 @@ export const runHeadline = (run: DurableJobRun): Headline => {
       action: null,
     };
   }
-  if (ML_WAITS.some(has)) {
+  if (ML_WAITS.some((reason) => has(reason))) {
     return {
       status: 'frameleaf_job_runs_status_waiting_ml',
       tone: 'warn',

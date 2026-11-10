@@ -114,7 +114,7 @@ describe('review what failed (FL-1349)', () => {
     const images = [...document.querySelectorAll('img')];
     expect(images).toHaveLength(1);
     expect(images[0].getAttribute('src')).toContain('mine-1');
-    expect(document.body.innerHTML).not.toContain('theirs-1');
+    expect(document.body.getHTML()).not.toContain('theirs-1');
     expect(screen.getByText('IMG_3310.PNG')).toBeInTheDocument();
     expect(screen.getByText('Only Jamie sees this photo and can undo or replace it.')).toBeInTheDocument();
     expect(screen.getByText('and 9 more')).toBeInTheDocument();
