@@ -84,7 +84,7 @@ test('combines the source, the search and what to show, and clears them together
 test('downloads the chosen span of logs as a zip', async ({ context, page }) => {
   await open(context, page);
   await context.route('**/api/admin/logs/download*', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/zip', body: Buffer.from('PK\u0005\u0006') }),
+    route.fulfill({ status: 200, contentType: 'application/zip', body: Buffer.from('PK\u{5}\u{6}') }),
   );
   await page.getByRole('button', { name: 'Download…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Download the logs' });

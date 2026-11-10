@@ -563,7 +563,7 @@
             <ol class="lines" aria-label={$t('frameleaf_logs_lines')} style:height="{total}px">
               {#each drawn as { line, top } (line.id)}
                 {@const level = levelWord(line.level)}
-                <li class="is-{level.tone}" style:transform="translateY({top}px)" use:measure={line.id}>
+                <li data-tone={level.tone} style:transform="translateY({top}px)" use:measure={line.id}>
                   <button type="button" onclick={() => void open(line)}>
                     <time datetime={line.at}>{time(line.at)}</time>
                     <Pill tone={level.tone}>{$t(level.word)}</Pill>
@@ -582,7 +582,7 @@
   <Section title={$t('frameleaf_logs_reading')}>
     <Facts
       columns={4}
-      rows={LOG_SOURCES.map(([id, word]) => ({ label: $t(word), value: $t(`${word}_body` as typeof word) }))}
+      rows={LOG_SOURCES.map(([, word]) => ({ label: $t(word), value: $t(`${word}_body` as typeof word) }))}
     />
     <Advanced>
       <p class="hint">{$t('frameleaf_logs_advanced')}</p>
@@ -740,10 +740,10 @@
     right: 0;
     border-bottom: 1px solid var(--fl-border);
   }
-  .lines li.is-bad {
+  .lines li[data-tone='bad'] {
     background: color-mix(in srgb, var(--fl-danger) 12%, transparent);
   }
-  .lines li.is-warn {
+  .lines li[data-tone='warn'] {
     background: color-mix(in srgb, var(--fl-warning) 12%, transparent);
   }
   .lines button {
