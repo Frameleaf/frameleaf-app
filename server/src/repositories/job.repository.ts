@@ -1228,6 +1228,30 @@ export class JobRepository {
     return this.store.cancelQueued(this.getQueueName(name), jobID);
   }
 
+  /**
+   * FL-1337: a person's Try again supersedes the fix of a photo that put itself back to wait (`fix-<id>/rN`) and
+   * the shared search's feed for it (`fix-<id>/searched`): they are cancelled while they wait. A running one is
+   * left to settle; the per-photo guard (`isOtherFixRunning`) holds Try again back until it has.
+   */
+  cancelWaitingFixes(assetId: string): Promise<void> {
+    return this.store.cancelQueuedWithPrefix(this.getQueueName(JobName.MediaHealthFixAsset), `fix-${assetId}/`);
+  }
+
+  /**
+   * FL-1337: whether a fix of this photo other than the calling job's is running, and started first (by start time,
+   * then id, so of two that start together exactly one waits). One fix runs per photo at a time.
+   */
+  async isOtherFixRunning(assetId: string): Promise<boolean> {
+    const own = queueExecution.getStore()?.claim.id ?? null;
+    const { rows } = await sql`select 1 from job j
+      where j.queue = ${this.getQueueName(JobName.MediaHealthFixAsset)} and j.name = ${JobName.MediaHealthFixAsset}
+        and j.state = 'active' and j.data->>'id' = ${assetId}
+        and (${own}::uuid is null or (j."startedAt", j.id) < (
+          select coalesce(o."startedAt", now()), o.id from job o where o.id = ${own}::uuid))
+      limit 1`.execute(this.store.db);
+    return rows.length > 0;
+  }
+
   async dispatchImportedWork(config?: ImportConfig): Promise<string> {
     const runId = await transferImportedWork(
       this.store.db,
@@ -1309,6 +1333,11 @@ export class JobRepository {
           : item.data.searched
             ? `fix-${item.data.id}/searched`
             : `fix-${item.data.id}`;
+        if (item.data.from === 'person' && !item.data.requeue && !item.data.searched) {
+          // A person's Try again is never dropped for a feed already queued: it takes that waiting job's place,
+          // or runs once the one that is running settles.
+          return { jobId, deduplication: { id: jobId, keepLastIfActive: true } };
+        }
         return item.data.delay ? { jobId, delay: item.data.delay } : { jobId };
       }
       case JobName.MediaHealthLocateMissing: {

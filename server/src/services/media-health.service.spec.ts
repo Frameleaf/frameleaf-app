@@ -4556,6 +4556,105 @@ describe(MediaHealthService.name, () => {
       expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
     });
 
+    describe('a fix that carries on re-checks the choices made since it began (FL-1337)', () => {
+      const began = '2026-11-10T10:00:00.000Z';
+      const before = '2026-11-10T09:00:00.000Z';
+      const after = '2026-11-10T11:00:00.000Z';
+      const carryingOn = [
+        { name: 'a busy retry', data: { attempt: 1 } },
+        { name: 'the treatment stage', data: { stage: 'treat' } },
+        { name: 'the backups stage', data: { stage: 'backups', searched: true } },
+        { name: 'a fix that waited for a drive after it began', data: {} },
+      ];
+
+      it.each(carryingOn)('leaves the owner’s later Keep as it is in $name', async ({ data }) => {
+        await cutShort();
+        decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+        recorded(
+          finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, {
+            fixState: 'left-as-is',
+            keptAt: after,
+          }),
+        );
+
+        await expect(
+          sut.handleFixAsset({ id: 'asset-1', from: 'preview', startedAt: began, ...data } as never),
+        ).resolves.toBe(JobStatus.Skipped);
+
+        expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+        expect(stepsWritten()).toEqual([]);
+        expect(fixState()).toBeUndefined();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('leaves a fix a later Try again superseded as it is, even one from before these times were kept', async () => {
+        await cutShort();
+        decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+        recorded(
+          finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, {
+            fixState: 'cant-repair',
+            retriedAt: after,
+          }),
+        );
+
+        await expect(
+          sut.handleFixAsset({ id: 'asset-1', from: 'check', stage: 'treat', startedAt: began }),
+        ).resolves.toBe(JobStatus.Skipped);
+        await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check', attempt: 2 })).resolves.toBe(JobStatus.Skipped);
+        expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+      });
+
+      it('carries on a Try again of a photo kept as it is before it began', async () => {
+        await cutShort();
+        decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+        recorded(
+          finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, {
+            fixState: 'left-as-is',
+            keptAt: before,
+            retriedAt: before,
+          }),
+        );
+
+        await expect(
+          sut.handleFixAsset({ id: 'asset-1', from: 'person', stage: 'treat', startedAt: began }),
+        ).resolves.toBe(JobStatus.Success);
+        expect(mocks.media.repairJpeg).toHaveBeenCalled();
+      });
+
+      it('records when it began, and every put-back carries that time', async () => {
+        await cutShort();
+        decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+        // the image worker crashes on each repair: the fix puts itself back to try again
+        vi.mocked(mocks.media.repairJpeg).mockRejectedValue(new Error('Sharp child closed (SIGSEGV)'));
+
+        await sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'VipsJpeg: Premature end of JPEG file' });
+
+        const queued = vi.mocked(mocks.job.queue).mock.calls.at(-1)![0].data as Record<string, unknown>;
+        expect(queued).toMatchObject({ attempt: 1, stage: 'treat', startedAt: expect.any(String) });
+        const startedAt = queued.startedAt as string;
+        recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed));
+        await sut.handleFixAsset(queued as never);
+        expect(vi.mocked(mocks.job.queue).mock.calls.at(-1)![0].data).toMatchObject({ attempt: 2, startedAt });
+      });
+
+      it('waits while another fix of the photo runs, looking at nothing (one per photo)', async () => {
+        await cutShort();
+        vi.mocked(mocks.job.isOtherFixRunning).mockResolvedValueOnce(true);
+
+        await expect(sut.handleFixAsset({ id: 'asset-1', from: 'person', attempt: 0 })).resolves.toBe(
+          JobStatus.Success,
+        );
+
+        expect(mocks.job.isOtherFixRunning).toHaveBeenCalledWith('asset-1');
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.MediaHealthFixAsset,
+          data: { id: 'asset-1', from: 'person', attempt: 0, delay: 60_000, requeue: 1 },
+        });
+        expect(mediaHealthRepository.getFindingsForAsset).not.toHaveBeenCalled();
+        expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+      });
+    });
+
     it('leaves a Photoshop file as it is', async () => {
       await original(join(root, 'Album-cover.psd'), Buffer.concat([Buffer.from('8BPS'), Buffer.alloc(2048, 3)]));
       decoderSays({
@@ -6446,7 +6545,8 @@ describe(MediaHealthService.name, () => {
 
         expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
           healthId: 'health-1',
-          evidence: { fixState: 'left-as-is' },
+          // the time of the choice: a fix that put itself back before it leaves the photo as it is
+          evidence: { fixState: 'left-as-is', keptAt: expect.any(String) },
           steps: [{ step: 'kept-as-is', outcome: 'info' }],
         });
       });
@@ -6470,8 +6570,25 @@ describe(MediaHealthService.name, () => {
           name: JobName.MediaHealthFixAsset,
           data: { id: 'asset-1', from: 'person', attempt: 0 },
         });
-        expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+        // only the time of the choice is recorded; the decline and the fix state stay as they are
+        expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
+          healthId: 'health-1',
+          evidence: { retriedAt: expect.any(String) },
+        });
         expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+      });
+
+      it('supersedes the fixes of the photo that wait, before queuing its own (FL-1337)', async () => {
+        shows(needsYou());
+
+        await sut.tryFileProblemAgain(owner, 'health-1');
+
+        const order = (mock: { mock: { invocationCallOrder: number[] } }) => mock.mock.invocationCallOrder[0];
+        expect(mocks.job.cancelWaitingFixes).toHaveBeenCalledWith('asset-1');
+        expect(order(vi.mocked(mediaHealthRepository.settleFinding))).toBeLessThan(
+          order(vi.mocked(mocks.job.cancelWaitingFixes)),
+        );
+        expect(order(vi.mocked(mocks.job.cancelWaitingFixes))).toBeLessThan(order(vi.mocked(mocks.job.queue)));
       });
 
       it('lets an administrator try another account’s file again, and nothing else', async () => {

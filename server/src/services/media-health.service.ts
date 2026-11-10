@@ -121,6 +121,7 @@ import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import {
   BUSY_RETRY_DELAYS_MS,
+  FIX_RUNNING_WAIT_MS,
   FIX_WAIT_MS,
   MAX_BACKUP_WAITS,
   MAX_DRIVE_WAITS,
@@ -1518,6 +1519,10 @@ export class MediaHealthService {
     if (!asset || asset.deletedAt) {
       return JobStatus.Skipped;
     }
+    if (await this.jobRepository.isOtherFixRunning(asset.id)) {
+      // one fix per photo at a time: a Try again (or a fix carrying on) waits for the one running to settle
+      return this.putFixBack(job, { delay: FIX_RUNNING_WAIT_MS });
+    }
     if (!(await this.canReach(asset.originalPath))) {
       // Review Focus 1: on an unplugged drive every file looks lost. Wait for it, recording nothing.
       return this.waitForDrive(job, asset);
@@ -1535,22 +1540,28 @@ export class MediaHealthService {
     ) {
       return JobStatus.Skipped;
     }
+    // from here the fix has begun: a Keep or a Try again after this settles it when it carries on
+    const started: FixJob = { ...job, startedAt: job.startedAt ?? new Date().toISOString() };
     const settings = await this.careSettings();
-    return exists ? this.fixDamaged(job, asset, open, settings) : this.fixMissing(job, asset, open, settings);
+    return exists ? this.fixDamaged(started, asset, open, settings) : this.fixMissing(started, asset, open, settings);
   }
 
   /**
    * A feed the fix leaves alone (FL-1337): a check, preview or import asking about a problem a fix already
    * settled (apart from "couldn't check", which may be tried again), or the shared search's feed for a
-   * finding already decided. A person's Try again, and a fix carrying on, always run. A fix that only waited
+   * finding already decided. A person's Try again always runs. A fix carrying on (after it began, a busy
+   * retry or a later stage) is left alone once the owner chose Keep as it is, or someone chose Try again,
+   * after it began: the later choice wins, and Try again starts a fix of its own. A fix that only waited
    * for a drive has done nothing yet, so it is still the feed that asked (F1): a problem settled meanwhile,
    * or a person's Keep, is left as it is.
    */
   private isSettledFeed(job: FixJob, finding?: MediaHealthFinding): boolean {
-    if (job.stage || (job.attempt ?? 0) > 0) {
-      return false;
-    }
     const evidence = (finding?.evidence ?? {}) as Record<string, unknown>;
+    if (job.startedAt || job.stage || (job.attempt ?? 0) > 0) {
+      // a fix from before these times were kept began before every choice it can see
+      const began = job.startedAt ?? '';
+      return [evidence.keptAt, evidence.retriedAt].some((at) => typeof at === 'string' && at > began);
+    }
     if (job.searched) {
       return !evidence.searchPending;
     }
@@ -2640,9 +2651,14 @@ export class MediaHealthService {
     }
     // open, so a later check keeps the person's choice; it no longer waits for the shared search
     const waiting = !!(record.evidence as Record<string, unknown> | null)?.searchPending;
+    // `keptAt`: a fix that put itself back before this choice leaves it as it is when it carries on
     const kept = await this.mediaHealthRepository.settleFinding({
       healthId: record.id,
-      evidence: { fixState: 'left-as-is' satisfies FixState, ...(waiting && { searchPending: false }) },
+      evidence: {
+        fixState: 'left-as-is' satisfies FixState,
+        keptAt: new Date().toISOString(),
+        ...(waiting && { searchPending: false }),
+      },
       steps: [{ step: 'kept-as-is', outcome: 'info' }],
     });
     if (!kept) {
@@ -2654,12 +2670,20 @@ export class MediaHealthService {
   /**
    * Try again: the fix starts from the beginning, for the owner or an administrator. A repair someone undid
    * stays declined, so it is never redone by itself; its owner repairs it with Repair….
+   *
+   * It supersedes every fix of the photo before it: `retriedAt` leaves one that carries on as it is, the
+   * waiting ones are cancelled, a queued feed is replaced by this one, and it waits for one that is running.
    */
   async tryFileProblemAgain(auth: AuthDto, id: string): Promise<FileProblemDto> {
     const record = await this.fileProblemFor(auth, id);
     if (record.dismissedAt || record.assetDeletedAt) {
       throw new BadRequestException('This photo was dismissed or is in the Trash, so there is nothing to try again.');
     }
+    await this.mediaHealthRepository.settleFinding({
+      healthId: record.id,
+      evidence: { retriedAt: new Date().toISOString() },
+    });
+    await this.jobRepository.cancelWaitingFixes(record.assetId);
     await this.jobRepository.queue({
       name: JobName.MediaHealthFixAsset,
       data: { id: record.assetId, from: 'person', attempt: 0 },
