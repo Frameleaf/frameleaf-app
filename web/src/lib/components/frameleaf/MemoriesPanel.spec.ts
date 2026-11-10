@@ -95,10 +95,10 @@ describe('MemoriesPanel', () => {
     localDateTime: '2020-09-24T10:00:00.000Z',
   });
   // an "on this day" memory shown for one calendar day (the server's window, UTC here)
-  const onDay = (id: string, day: string, year: number) =>
+  const onDay = (id: string, day: string, year: number, places?: string[]) =>
     ({
       ...memory(id, [asset(`${id}-asset`)]),
-      data: { year },
+      data: { year, places },
       showAt: `${day}T00:00:00.000Z`,
       hideAt: `${day}T23:59:59.999Z`,
     }) as unknown as MemoryResponseDto;
@@ -107,7 +107,7 @@ describe('MemoriesPanel', () => {
   it('shows Today, Upcoming and Earlier with the template badges', () => {
     vi.useFakeTimers({ now: new Date(2026, 8, 25, 12), toFake: ['Date'] });
     memoryManager.memories = [
-      onDay('today', '2026-09-25', 2025),
+      onDay('today', '2026-09-25', 2025, ['Jasper', 'Banff']),
       onDay('soon', '2026-09-28', 2024),
       onDay('yesterday', '2026-09-24', 2023),
     ];
@@ -115,9 +115,12 @@ describe('MemoriesPanel', () => {
     render(MemoriesPanel);
 
     const today = screen.getByRole('region', { name: 'Today' });
-    expect(within(today).getByText('On this day')).toBeInTheDocument();
-    expect(within(today).getByText('One year ago · September 25, 2025')).toBeInTheDocument();
+    // FL-1394 (B8): the title says how long ago and where; the line under it is the day and the places
+    expect(within(today).getByText('One year ago in Jasper')).toBeInTheDocument();
+    expect(within(today).getByText('September 25, 2025 · Jasper and 1 more')).toBeInTheDocument();
     const upcoming = screen.getByRole('region', { name: 'Upcoming' });
+    expect(within(upcoming).getByText('2 years ago')).toBeInTheDocument();
+    expect(within(upcoming).getByText('September 28, 2024')).toBeInTheDocument();
     expect(within(upcoming).getByText('Next 14 days')).toBeInTheDocument();
     expect(within(upcoming).getByText('In 3 days')).toBeInTheDocument();
     const earlier = screen.getByRole('region', { name: 'Earlier' });
@@ -125,16 +128,32 @@ describe('MemoriesPanel', () => {
     expect(screen.getByText('September 25, 2026 · days worth revisiting from your library')).toBeInTheDocument();
   });
 
-  it('shows the quiet card with the next memory when nothing is for today', () => {
+  // FL-1394 (B8): an empty day is one quiet line, with no photo borrowed from another day.
+  it('says nothing is for today in one line, with the next memory by its title and no photo', () => {
     vi.useFakeTimers({ now: new Date(2026, 8, 25, 12), toFake: ['Date'] });
-    memoryManager.memories = [onDay('soon', '2026-09-26', 2024)];
+    memoryManager.memories = [onDay('soon', '2026-09-26', 2024, ['Jasper']), onDay('later', '2026-09-30', 2025)];
 
     render(MemoriesPanel);
 
+    const today = screen.getByRole('region', { name: 'Today' });
+    expect(within(today).getByText('Nothing from this day yet')).toBeInTheDocument();
+    expect(within(today).getByText('Your next memory arrives tomorrow: 2 years ago in Jasper.')).toBeInTheDocument();
+    expect(within(today).queryByRole('img')).not.toBeInTheDocument();
+    expect(today.querySelector('img')).toBeNull();
+  });
+
+  it('counts the days to the next memory, and says when memories appear if none is coming', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 8, 25, 12), toFake: ['Date'] });
+    memoryManager.memories = [onDay('later', '2026-09-30', 2025)];
+
+    const { unmount } = render(MemoriesPanel);
+    expect(screen.getByText('Your next memory arrives in 5 days: One year ago.')).toBeInTheDocument();
+    unmount();
+
+    memoryManager.memories = [];
+    render(MemoriesPanel);
     expect(screen.getByText('Nothing from this day yet')).toBeInTheDocument();
-    expect(
-      screen.getByText('Your next memory arrives tomorrow: 2 years ago · September 26, 2024.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Memories appear here on the anniversary of your photos and videos.')).toBeInTheDocument();
   });
 
   // MI-1: Hide memory replaces deletion, and Restore brings it back from Hidden memories.
@@ -146,7 +165,7 @@ describe('MemoriesPanel', () => {
 
     render(MemoriesPanel);
 
-    await fireEvent.click(screen.getByRole('button', { name: /More actions for On this day/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /More actions for 6 years ago/ }));
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Hide memory' }));
     await vi.waitFor(() => expect(memoryManager.hidden).toHaveLength(1));
     expect(updateMemory).toHaveBeenCalledWith({ id: 'old', memoryUpdateDto: { isHidden: true } });
@@ -172,7 +191,7 @@ describe('MemoriesPanel', () => {
     const { container } = render(MemoriesPanel);
 
     expect(container.querySelectorAll('.lm-badge-kind')).toHaveLength(1);
-    await fireEvent.click(screen.getByRole('button', { name: /More actions for On this day/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /More actions for 6 years ago/ }));
     expect(screen.queryByRole('menuitem', { name: 'Save as album' })).not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: /More actions for A day at Disneyland Park/ }));
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Save as album' }));

@@ -46,7 +46,7 @@
    * The Frameleaf People library (FL-37), ported from `PeopleLibrary` in
    * design/frameleaf/template/src/People.jsx:651-979: the one-row header (title and summary line,
    * then "Find a person", the Name / Photo count / Recently seen sort, the Show hidden switch and
-   * "Show and hide people"), per-card
+   * "Choose who appears"), per-card
    * counts, the merge-suggestion banner (FL-57), inline rename, and the Frameleaf merge and
    * date-of-birth dialogs. Sorting and searching run over the whole list, so every page of
    * people is read up front rather than on scroll.
@@ -471,7 +471,8 @@
         </FrameleafButton>
         <FrameleafButton onclick={() => goto('/people/manage')}>
           <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('frameleaf_people_show_and_hide')}
+          <!-- FL-1394 (S1): was "Show and hide people", which read like "Show hidden" beside it. -->
+          {$t('frameleaf_people_choose_who_appears')}
         </FrameleafButton>
       </div>
     </header>

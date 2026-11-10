@@ -288,11 +288,34 @@ describe('memory stories', () => {
       expect(sections.earlier).toEqual([]);
     });
 
+    // FL-1394 (B8): "On this day" was the same on every card; the title says how long ago and where.
+    it('titles an on this day memory by how long ago it was and where', () => {
+      const headline = (data: Record<string, unknown>) =>
+        memoryHeadline(dated('o', MemoryType.OnThisDay, data, '2026-09-25'), { t, locale: 'en', today: '2026-09-25' });
+
+      expect(headline({ year: 2025, places: ['Jasper'] })).toEqual({
+        title: 'One year ago in Jasper',
+        subtitle: 'September 25, 2025 · Jasper',
+      });
+      expect(headline({ year: 2023, places: ['Jasper', 'Banff', 'Hinton'] })).toEqual({
+        title: '3 years ago in Jasper',
+        subtitle: 'September 25, 2023 · Jasper and 2 more',
+      });
+      // no place on the photos, or a server that does not send places yet
+      expect(headline({ year: 2025, places: [] })).toEqual({ title: 'One year ago', subtitle: 'September 25, 2025' });
+      expect(headline({ year: 2025 })).toEqual({ title: 'One year ago', subtitle: 'September 25, 2025' });
+      // with no year to count from, the day is all there is to say
+      expect(headline({ places: ['Jasper'] })).toEqual({
+        title: 'On this day',
+        subtitle: 'September 25, 2026 · Jasper',
+      });
+    });
+
     it('titles each kind as the template does, and the owner title wins', () => {
       const onThisDay = dated('o', MemoryType.OnThisDay, { year: 2025 }, '2026-09-25');
       expect(memoryHeadline(onThisDay, { t, locale: 'en', today: '2026-09-25' })).toEqual({
-        title: 'On this day',
-        subtitle: 'One year ago · September 25, 2025',
+        title: 'One year ago',
+        subtitle: 'September 25, 2025',
       });
       expect(memoryHeadline(birthday('b', '2026-09-26', 4), { t, locale: 'en' })).toEqual({
         title: "Biscuit's birthday",

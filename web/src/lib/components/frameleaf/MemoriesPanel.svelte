@@ -8,7 +8,7 @@
    *   viewer's own local date (Memories.jsx:260-360): a birthday by the local date in its data, an "on
    *   this day" memory by its show window; trips, highlights and recaps are Earlier. Upcoming cards read
    *   "Tomorrow" / "In N days", recently passed ones "Yesterday" / "N days ago".
-   * - With nothing for today, a quiet card names the day and when the next memory arrives.
+   * - With nothing for today, one quiet row says so and when the next memory arrives (FL-1394).
    * - Each card's menu: Play, Favorite or Remove from favorites, then show less of its person or pet,
    *   its day or its kind (not in the prototype; composed as more menu items, like its menu), then
    *   Hide memory. Hiding replaces deletion (MI-1): hidden memories wait under "Hidden memories",
@@ -143,7 +143,6 @@
 
   const coverOf = (memory: MemoryResponseDto | undefined) =>
     memory?.assets.find((asset) => asset.visibility !== AssetVisibility.Locked);
-  const quietCover = $derived(coverOf(sections.earlier[0]?.memory ?? sections.upcoming[0]?.memory));
 
   let status = $state('');
   let settingsOpen = $state(false);
@@ -512,35 +511,21 @@
         <Skeleton variant="block" height="20rem" />
       </div>
     {:else}
-      <div class="fm-quiet">
-        {#if quietCover}
-          <img
-            src={getAssetMediaUrl({ id: quietCover.id, size: AssetMediaSize.Preview })}
-            alt=""
-            loading="lazy"
-            draggable="false"
-          />
-        {/if}
-        <span class="fm-shade" aria-hidden="true"></span>
-        <span class="fm-card-copy">
-          <span class="fm-overline">
-            <Icon icon={mdiCalendarTodayOutline} size="14" aria-hidden="true" />
-            {longToday}
-          </span>
-          <strong>{$t('frameleaf_memories_nothing_today')}</strong>
-          <small>
-            {#if nextUp}
-              {$t('frameleaf_memories_next_arrives', {
-                values: { count: nextUp.inDays ?? 1, subtitle: $memoryHeadline(nextUp.memory).subtitle },
-              })}
-            {:else if preferences.onlyFavorites}
-              {$t('frameleaf_memories_quiet_favorites')}
-            {:else}
-              {$t('frameleaf_memories_quiet_description')}
-            {/if}
-          </small>
-        </span>
-      </div>
+      <!-- FL-1394 (B8): a day with nothing to show is one quiet row, not a banner over another day's photo. -->
+      <p class="fm-quiet">
+        <strong>{$t('frameleaf_memories_nothing_today')}</strong>
+        <small>
+          {#if nextUp}
+            {$t('frameleaf_memories_next_arrives', {
+              values: { count: nextUp.inDays ?? 1, title: $memoryHeadline(nextUp.memory).title },
+            })}
+          {:else if preferences.onlyFavorites}
+            {$t('frameleaf_memories_quiet_favorites')}
+          {:else}
+            {$t('frameleaf_memories_quiet_description')}
+          {/if}
+        </small>
+      </p>
     {/if}
   </section>
 
@@ -855,8 +840,7 @@
     background: var(--fl-raised);
     border-radius: var(--fl-radius-card);
   }
-  .fm-card-main > :global(.fm-cover),
-  .fm-quiet > img {
+  .fm-card-main > :global(.fm-cover) {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -896,8 +880,7 @@
     flex-direction: column;
     gap: 0.25rem;
   }
-  .fm-card.hero .fm-card-copy,
-  .fm-quiet .fm-card-copy {
+  .fm-card.hero .fm-card-copy {
     inset-inline: 1.5rem;
     inset-block-end: 1.375rem;
   }
@@ -970,25 +953,26 @@
     border: 0;
     border-block-start: 1px solid var(--fl-border);
   }
+  /* review-1110.css "B8": no photo and no overline, only the line and its border. */
   .fm-quiet {
-    position: relative;
-    min-height: 13.75rem;
-    overflow: hidden;
-    color: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0.875rem 1.125rem;
+    color: var(--fl-text);
     background: var(--fl-panel);
     border-radius: var(--fl-radius-card);
-  }
-  .fm-quiet > img {
-    filter: saturate(0.6) brightness(0.8);
-  }
-  .fm-quiet .fm-card-copy {
-    max-width: 60ch;
+    box-shadow: inset 0 0 0 1px var(--fl-border);
   }
   .fm-quiet strong {
-    font-size: 1.375rem;
-    letter-spacing: -0.02em;
+    font-size: var(--fl-font-callout);
+    font-weight: 600;
+    line-height: 1.25;
   }
   .fm-quiet small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
     line-height: 1.5;
   }
 

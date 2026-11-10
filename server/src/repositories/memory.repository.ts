@@ -114,6 +114,9 @@ const withoutPrivateOnlyMemories = (eb: ExpressionBuilder<DB, 'memory'>, options
     ),
   ]);
 };
+/** FL-1394: the city each item was taken in, which names an "on this day" memory ("One year ago in Jasper"). */
+const memoryAssetCity = (eb: ExpressionBuilder<DB, 'asset'>) =>
+  eb.selectFrom('asset_exif').select('asset_exif.city').whereRef('asset_exif.assetId', '=', 'asset.id').as('city');
 const withMemoryAssetFilters = <O>(
   qb: SelectQueryBuilder<DB, 'asset' | 'memory_asset', O>,
   options: MemoryPrivacyOptions,
@@ -314,6 +317,7 @@ export class MemoryRepository implements IBulkAsset {
           eb
             .selectFrom('asset')
             .selectAll('asset')
+            .select(memoryAssetCity)
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .where(isTimelineVisible('asset', options.revealLockedOwnerId))
@@ -699,6 +703,7 @@ export class MemoryRepository implements IBulkAsset {
           eb
             .selectFrom('asset')
             .selectAll('asset')
+            .select(memoryAssetCity)
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .orderBy('asset.fileCreatedAt', 'asc')

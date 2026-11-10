@@ -136,7 +136,8 @@ export const getForPartner = (
 
 export const getForMemory = (memory: ReturnType<MemoryFactory['build']>) => ({
   ...memory,
-  assets: memory.assets.map((asset) => getDehydrated(asset)),
+  // the repository reads each item's city beside it (FL-1394)
+  assets: memory.assets.map((asset) => ({ ...getDehydrated(asset), city: null as string | null })),
 });
 
 export const getForMetadataExtraction = (
