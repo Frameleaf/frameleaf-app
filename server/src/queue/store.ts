@@ -318,7 +318,7 @@ export class SqlQueueStore {
     const {
       rows: [page],
     } = await sql<{ selected: number; inserted: number; last: string | null }>`with page as materialized (
-        select s.id, to_jsonb(s) "row" from (${selection}) s where ${after === null} or s.id > ${after}
+        select s.id, to_jsonb(s) "row" from (${selection}) s ${after === null ? sql`` : sql`where s.id > ${after}`}
         order by s.id limit ${limit}
       ), inserted as (
         insert into job(id, queue, name, data, "dedupKey", "safeToRetry", sensitive, "deadlineMs", "availableAt",

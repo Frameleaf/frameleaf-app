@@ -48,6 +48,7 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     label: 'frameleaf_bgwork_capacity',
     values: ($t, value) => (value === 0 ? $t('frameleaf_bgwork_capacity_automatic') : undefined),
   },
+  'nightlyTasks.reprocessUnfinished': { label: 'frameleaf_overnight_reprocess_unfinished' },
   // People & sharing
   'server.publicUsers': { label: 'frameleaf_sharing_find_label' },
   // Server & updates › Server name & welcome

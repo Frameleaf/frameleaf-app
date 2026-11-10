@@ -677,6 +677,7 @@ export enum SystemMetadataKey {
   ApiKeyLastUsed = 'api-key-last-used',
   /** FL-363: the overnight run in progress, and the last few nights' results. */
   OvernightSequence = 'overnight-sequence',
+  ProcessingReconcileLastRun = 'processing-reconcile-last-run',
   /** FL-363: the Overview items an administrator dismissed, so they stop counting as needing attention. */
   OverviewDismissed = 'overview-dismissed',
   /**

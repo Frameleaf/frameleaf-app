@@ -39,6 +39,7 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { publishJobResult } from 'src/queue/context.js';
 import { BaseService } from 'src/services/base.service.js';
 
 /** The tasks that can run on one photo or video, and the job each queues for it. */
@@ -61,6 +62,7 @@ import {
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
 import { overnightCron } from 'src/utils/overnight.js';
+import { unfinishedProcessing } from 'src/utils/unfinished-processing.js';
 
 /** FL-71: the machine-learning workload whose routed destination runs a queue's jobs. */
 const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
@@ -246,7 +248,10 @@ export class QueueService extends BaseService {
 
   async getAllLegacy(auth: AuthDto): Promise<QueuesResponseLegacyDto> {
     const responses = await this.getAll(auth);
-    return mapQueuesLegacy(responses);
+    const queues = mapQueuesLegacy(responses);
+    const summary = await this.systemMetadataRepository.get(SystemMetadataKey.ProcessingReconcileLastRun);
+    if (summary) queues[QueueName.BackgroundTask].processingReconcileLastRun = summary;
+    return queues;
   }
 
   get(auth: AuthDto, name: QueueName): Promise<QueueResponseDto> {
@@ -639,5 +644,31 @@ export class QueueService extends BaseService {
     jobs.push({ name: JobName.PushBackupStaleCheck });
 
     await this.jobRepository.queueAll(jobs);
+    if (config.nightlyTasks.reprocessUnfinished) {
+      await this.reconcileUnfinished(config);
+    }
+  }
+
+  /** Let the existing processing queues apply their usual privacy and overnight holds. */
+  private async reconcileUnfinished(config: SystemConfig) {
+    const { selections, options } = unfinishedProcessing(config);
+    const counts = { metadata: 0, thumbnails: 0, video: 0, search: 0, faces: 0, text: 0 };
+    for (const step of Object.keys(selections) as Array<keyof typeof selections>) {
+      const [name, enabled] = selections[step];
+      if (enabled) {
+        const queue = this.jobRepository.getQueueName(name);
+        const selection = (after: string | null) =>
+          this.assetJobRepository.selectionForUnfinished(name, { ...options, queue, after });
+        const data = step === 'metadata' || step === 'thumbnails' ? { reconcileUnfinished: true } : {};
+        const { inserted } = await this.jobRepository.queueSelection(name, selection, data, 1000);
+        counts[step] = inserted;
+      }
+    }
+    await publishJobResult(() =>
+      this.systemMetadataRepository.set(SystemMetadataKey.ProcessingReconcileLastRun, {
+        ...counts,
+        completedAt: new Date().toISOString(),
+      }),
+    );
   }
 }

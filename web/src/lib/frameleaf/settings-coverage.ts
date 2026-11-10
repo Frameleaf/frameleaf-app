@@ -1123,6 +1123,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: "'missingThumbnails'",
   },
   {
+    pattern: 'nightlyTasks.reprocessUnfinished',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.reprocessUnfinished',
+  },
+  {
     pattern: 'nightlyTasks.startTime',
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',

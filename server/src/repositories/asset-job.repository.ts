@@ -4,7 +4,16 @@ import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetMetadataKey,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  JobName,
+  LibraryScope,
+  QueueName,
+} from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -49,10 +58,51 @@ const keepsOwnCopyThumbnails = sql<boolean>`EXISTS (
     AND copy_file.path <> source_file.path
 )`;
 
+type ReconciledJob =
+  | JobName.AssetExtractMetadata
+  | JobName.AssetGenerateThumbnails
+  | JobName.AssetEncodeVideo
+  | JobName.SmartSearch
+  | JobName.AssetDetectFaces
+  | JobName.Ocr;
+
 @Injectable()
 export class AssetJobRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
     this.db = publicationDatabase(this.db);
+  }
+
+  /** Select only inputs each normal processor can use, with no other live job for the same step. */
+  selectionForUnfinished(
+    name: ReconciledJob,
+    options: { queue: QueueName; fullsizeEnabled: boolean; videoPolicy: string; after?: string | null },
+  ) {
+    const selection = {
+      [JobName.AssetExtractMetadata]: () => this.selectionForMetadataExtraction(false, false, true),
+      [JobName.AssetGenerateThumbnails]: () =>
+        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }),
+      [JobName.AssetEncodeVideo]: () =>
+        this.selectionForVideoConversion(false)
+          .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+          .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+          .where('asset_job_status.metadataExtractedAt', 'is not', null)
+          .where(sql<boolean>`"asset_job_status"."transcodeSkippedFor" is distinct from
+            (encode(asset.checksum, 'hex') || ':' || ${options.videoPolicy})`),
+      [JobName.SmartSearch]: () => this.selectionForEncodeClip(false),
+      [JobName.AssetDetectFaces]: () => this.selectionForDetectFacesJob(false).clearOrderBy(),
+      [JobName.Ocr]: () => this.assetsWithPreviews().select('asset.id').where('job_status.ocrAt', 'is', null),
+    }[name]();
+
+    // Earlier pages only enqueue IDs below this cursor. Keep those rows out of the live-job lookup.
+    const subject = sql`lower(job.data->>'id') collate "C"`;
+    const liveRange = options.after ? sql`and ${subject} > ${options.after}` : sql``;
+    // Keep this indexed lookup correlated even before PostgreSQL has analyzed a newly filled job table.
+    return selection.where(sql<boolean>`asset.status = 'active' and not asset."isOffline" and not exists (
+        select 1 from job
+        where job.queue = ${options.queue} and job.name = ${name} and job.state in ('pending', 'waiting', 'active')
+          and ${subject} = asset.id::text ${liveRange}
+        offset 0
+      )`);
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -122,8 +172,11 @@ export class AssetJobRepository {
       .$if(!!options.force, (qb) => qb.where(rendersOwnThumbnails))
       .$if(!options.force, (qb) =>
         qb
-          // If there aren't any entries, metadata extraction hasn't run yet which is required for thumbnails
+          // A status row can exist before metadata extraction, for example on a partner copy.
           .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+          .where(({ exists, selectFrom }) =>
+            exists(selectFrom('asset_exif').select('assetId').whereRef('asset_exif.assetId', '=', 'asset.id')),
+          )
           .where(({ and, eb, exists, not, or, selectFrom }) => {
             const file = (type: AssetFileType) =>
               selectFrom('asset_file').whereRef('assetId', '=', 'asset.id').where('type', '=', sql.lit(type));
@@ -602,7 +655,7 @@ export class AssetJobRepository {
     return this.selectionForMetadataExtraction(force).stream();
   }
 
-  selectionForMetadataExtraction(force?: boolean, encodingBackfill = false) {
+  selectionForMetadataExtraction(force?: boolean, encodingBackfill = false, verifyExif = false) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
@@ -612,6 +665,11 @@ export class AssetJobRepository {
             eb('asset_job_status.metadataExtractedAt', 'is', null),
             eb('asset_job_status.assetId', 'is', null),
           ];
+          if (verifyExif) {
+            conditions.push(
+              eb.not(eb.exists(eb.selectFrom('asset_exif').select('assetId').whereRef('assetId', '=', 'asset.id'))),
+            );
+          }
           if (encodingBackfill) {
             const raw = Object.keys(mimeTypes.raw).map((extension) => sql.lit(`%${extension}`));
             conditions.push(

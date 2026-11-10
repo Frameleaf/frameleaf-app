@@ -10,11 +10,26 @@ const QueueStatusLegacySchema = z
   })
   .meta({ id: 'QueueStatusLegacyDto' });
 
+const ProcessingReconcileSummarySchema = z
+  .object({
+    completedAt: z.iso.datetime(),
+    metadata: z.int().nonnegative(),
+    thumbnails: z.int().nonnegative(),
+    video: z.int().nonnegative(),
+    search: z.int().nonnegative(),
+    faces: z.int().nonnegative(),
+    text: z.int().nonnegative(),
+  })
+  .meta({ id: 'ProcessingReconcileSummary' });
+
+export type ProcessingReconcileSummary = z.infer<typeof ProcessingReconcileSummarySchema>;
+
 const QueueResponseLegacySchema = z
   .object({
     runId: z.uuid().optional().describe('Durable run created by a batch start'),
     queueStatus: QueueStatusLegacySchema,
     jobCounts: QueueStatisticsSchema,
+    processingReconcileLastRun: ProcessingReconcileSummarySchema.optional(),
   })
   .meta({ id: 'QueueResponseLegacyDto' });
 

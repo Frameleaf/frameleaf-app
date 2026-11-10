@@ -2013,6 +2013,8 @@ export type AdminConfigNightlyTasksDto = {
     missingThumbnails: boolean;
     /** Heavy background work (beyond thumbnails) waits for the overnight window */
     quietHours?: boolean;
+    /** Finish anything that did not process overnight */
+    reprocessUnfinished?: boolean;
     /** Start time (HH:MM) */
     startTime: string;
     /** When each step runs: every night, once a week, or only when started */
@@ -9760,6 +9762,15 @@ export type ItemShareReceivedResponseDto = {
     /** The address of this list, as sent in share notifications */
     link: string | null;
 };
+export type ProcessingReconcileSummary = {
+    completedAt: string;
+    faces: number;
+    metadata: number;
+    search: number;
+    text: number;
+    thumbnails: number;
+    video: number;
+};
 export type QueueStatusLegacyDto = {
     /** Whether the queue is currently active (has running jobs) */
     isActive: boolean;
@@ -9768,6 +9779,7 @@ export type QueueStatusLegacyDto = {
 };
 export type QueueResponseLegacyDto = {
     jobCounts: QueueStatisticsDto;
+    processingReconcileLastRun?: ProcessingReconcileSummary;
     queueStatus: QueueStatusLegacyDto;
     /** Durable run created by a batch start */
     runId?: string;
