@@ -13,6 +13,8 @@ const raw = {
   '.dng': ['image/dng', 'image/x-adobe-dng'],
   '.erf': ['image/erf', 'image/x-epson-erf'],
   '.fff': ['image/fff', 'image/x-hasselblad-fff'],
+  // FL-1355: GoPro. LibRaw does not read it without the Adobe DNG SDK; the second decoder (darktable) does.
+  '.gpr': ['image/gpr', 'image/x-gopro-gpr'],
   '.iiq': ['image/iiq', 'image/x-phaseone-iiq'],
   '.k25': ['image/k25', 'image/x-kodak-k25'],
   '.kdc': ['image/kdc', 'image/x-kodak-kdc'],

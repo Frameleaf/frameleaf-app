@@ -298,17 +298,18 @@ export class MediaIntegrityService {
   }
 
   /**
-   * What a RAW original is checked by: its sensor data, or, for a camera or compression no open decoder
-   * reads, the picture the camera stored inside the file. The checksum has already shown the bytes are
+   * What a RAW original is checked by: its sensor data as LibRaw reads it, or, for a camera or compression
+   * LibRaw does not read, whatever the rest of the RAW ladder can show of it. The checksum has already shown the bytes are
    * the ones stored; a decoder that cannot read them is not a fault in the file.
    */
   private async rawCheckSource(path: string, signal: AbortSignal): Promise<Buffer> {
     try {
       return await renderRawWithLibRaw(path, signal, { halfSize: true });
     } catch (error) {
-      // The camera's picture is read into memory and cannot be larger than the file that holds it, so a
-      // file over the image worker's byte limit is not asked for one. A file that has gone meanwhile is the
-      // outer check's to name, with the decoder's answer kept.
+      // No decoder here reads this sensor. The rest of the RAW ladder (the second decoder, then the camera's
+      // own picture) says whether the file still gives a picture. What it returns is held in memory and the
+      // camera's picture cannot be larger than the file that holds it, so a file over the image worker's byte
+      // limit is not asked. A file that has gone meanwhile is the outer check's to name.
       const size =
         error instanceof RawRenderError && error.reason === 'unsupported'
           ? await this.storageRepository
@@ -316,12 +317,14 @@ export class MediaIntegrityService {
               .then((file) => file.size)
               .catch(() => null)
           : null;
-      const preview =
-        size !== null && size <= sharpConfiguration().maxBytes ? await this.mediaRepository.extract(path) : null;
-      if (!preview) {
+      const picture =
+        size !== null && size <= sharpConfiguration().maxBytes
+          ? await this.mediaRepository.renderRaw(path, { signal, halfSize: true }).catch(() => null)
+          : null;
+      if (!picture) {
         throw error;
       }
-      return preview.buffer;
+      return picture.buffer;
     }
   }
 

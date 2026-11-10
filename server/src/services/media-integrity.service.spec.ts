@@ -394,7 +394,7 @@ describe(MediaIntegrityService.name, () => {
   it("checks the camera's own picture when no decoder reads the sensor (FL-1355)", async () => {
     const preview = Buffer.from('camera preview');
     vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED'));
-    mocks.media.extract.mockResolvedValueOnce({ buffer: preview, format: 'jpeg' } as never);
+    mocks.media.renderRaw.mockResolvedValueOnce({ rung: 'preview', buffer: preview });
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toMatchObject({
       status: 'healthy',
     });
@@ -402,7 +402,7 @@ describe(MediaIntegrityService.name, () => {
   });
   it("does not read the camera's picture out of a file over the image worker's byte limit (FL-1355)", async () => {
     vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED'));
-    mocks.media.extract.mockClear();
+    mocks.media.renderRaw.mockClear();
     const storage = new StorageRepository(mocks.logger as never);
     const stat = storage.stat.bind(storage);
     let calls = 0;
@@ -418,7 +418,7 @@ describe(MediaIntegrityService.name, () => {
       status: 'unsupported',
       reason: 'raw_decode_unsupported',
     });
-    expect(mocks.media.extract).not.toHaveBeenCalled();
+    expect(mocks.media.renderRaw).not.toHaveBeenCalled();
   });
   it('decodes a half-size sensor render of a RAW (FL-1355)', async () => {
     vi.mocked(renderRawWithLibRaw).mockResolvedValue(bytes);
@@ -447,10 +447,10 @@ describe(MediaIntegrityService.name, () => {
     ['decode_failed', 'ERR_RAW_DECODE', 'transient', 'decode_unverified'],
   ] as const)('maps typed RAW %s without confirming corruption', async (failure, code, status, reason) => {
     vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError(failure, code));
-    mocks.media.extract.mockClear();
+    mocks.media.renderRaw.mockReset().mockRejectedValue(new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED'));
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toEqual({ status, reason });
-    // only "no decoder reads this" looks for the camera's picture; running out of time or memory proves nothing
-    expect(mocks.media.extract).toHaveBeenCalledTimes(failure === 'unsupported' ? 1 : 0);
+    // only "no decoder reads this" goes down the ladder; running out of time or memory proves nothing
+    expect(mocks.media.renderRaw).toHaveBeenCalledTimes(failure === 'unsupported' ? 1 : 0);
     expect(mocks.media.decodeImage).not.toHaveBeenCalled();
   });
 

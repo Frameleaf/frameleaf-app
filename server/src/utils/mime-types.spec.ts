@@ -59,6 +59,7 @@ describe('mimeTypes', () => {
     { mimetype: 'image/erf', extension: '.erf' },
     { mimetype: 'image/fff', extension: '.fff' },
     { mimetype: 'image/gif', extension: '.gif' },
+    { mimetype: 'image/gpr', extension: '.gpr' },
     { mimetype: 'image/heic', extension: '.heic' },
     { mimetype: 'image/heic-sequence', extension: '.heics' },
     { mimetype: 'image/heif', extension: '.heif' },
@@ -104,6 +105,7 @@ describe('mimeTypes', () => {
     { mimetype: 'image/x-canon-crw', extension: '.crw' },
     { mimetype: 'image/x-epson-erf', extension: '.erf' },
     { mimetype: 'image/x-fuji-raf', extension: '.raf' },
+    { mimetype: 'image/x-gopro-gpr', extension: '.gpr' },
     { mimetype: 'image/x-hasselblad-3fr', extension: '.3fr' },
     { mimetype: 'image/x-hasselblad-fff', extension: '.fff' },
     { mimetype: 'image/x-kodak-dcr', extension: '.dcr' },
@@ -391,7 +393,7 @@ describe('mimeTypes', () => {
     });
 
     // Not decodable by the bundled libvips/ImageMagick/ExifTool/ffmpeg, so not offered (see the FL-1286 PR).
-    it.each(['a.gpr', 'a.braw', 'a.r3d', 'a.crm', 'a.ogg', 'a.mjpeg', 'a.y4m'])('does not accept %s', (filename) => {
+    it.each(['a.braw', 'a.r3d', 'a.crm', 'a.ogg', 'a.mjpeg', 'a.y4m'])('does not accept %s', (filename) => {
       expect(mimeTypes.isAsset(filename)).toBe(false);
       expect(mimeTypes.assetType(filename)).toBe(AssetType.Other);
     });

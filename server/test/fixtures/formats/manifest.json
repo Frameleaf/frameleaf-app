@@ -94,7 +94,7 @@
     {"file": "formats/raw/Canon/EOS_R5_RAW_45MP.CR3", "root": "test-assets", "kind": "raw", "decodes": true, "rung": "libraw", "width": 8191, "height": 5463, "integrity": "healthy"},
     {"file": "formats/raw/Fujifilm/GFX100S_14bit_compressed.RAF", "root": "test-assets", "kind": "raw", "decodes": true, "rung": "libraw", "width": 11662, "height": 8746, "integrity": "healthy"},
     {"file": "formats/raw/Fujifilm/X-T5_compressed.RAF", "root": "test-assets", "kind": "raw", "decodes": true, "rung": "libraw", "width": 7752, "height": 5178, "integrity": "healthy"},
-    {"file": "formats/raw/GoPro/HERO9_Black.GPR", "root": "test-assets", "kind": "raw", "decodes": true, "integrity": "healthy", "rung": "libraw", "expectedFailure": "LibRaw reads GoPro GPR only with the Adobe DNG SDK, which waits on a licence check, and this file holds no camera preview to fall back to. FL-1355.", "failsOn": ["decodes", "rung", "integrity"]},
+    {"file": "formats/raw/GoPro/HERO9_Black.GPR", "root": "test-assets", "kind": "raw", "decodes": true, "rung": "darktable", "integrity": "healthy"},
     {"file": "formats/raw/Nikon/Z9/Z9_14bit_lossless.NEF", "root": "test-assets", "kind": "raw", "decodes": true, "rung": "libraw", "width": 8280, "height": 5520, "integrity": "healthy"},
     {"file": "formats/raw/Nikon/Z9/Z9_high_efficiency_star.NEF", "root": "test-assets", "kind": "raw", "decodes": true, "rung": "libraw", "width": 8280, "height": 5520, "integrity": "healthy"},
     {"file": "formats/raw/Panasonic/DC-S5M2.RW2", "root": "test-assets", "kind": "raw", "decodes": true, "rung": "libraw", "width": 6008, "height": 4008, "integrity": "healthy"},
