@@ -32,6 +32,7 @@
   import {
     deleteUserSessionAdmin,
     getUserPinCodeStateAdmin,
+    removeUserPasskeysAdmin,
     sendUserPasswordLinkAdmin,
     type SessionResponseDto,
     type UserAdminResponseDto,
@@ -82,16 +83,20 @@
 
   /** Whether the account has a PIN; undefined until the server says (or when it could not). */
   let hasPin = $state<boolean | undefined>();
+  /** FL-859: how many passkeys the account has; undefined until the server says. */
+  let passkeys = $state<number | undefined>();
   let pinReload = $state(0);
   $effect(() => {
     const id = user.id;
     void pinReload;
     let cancelled = false;
     hasPin = undefined;
+    passkeys = undefined;
     getUserPinCodeStateAdmin({ id })
-      .then(({ pinCode }) => {
+      .then((state) => {
         if (!cancelled) {
-          hasPin = pinCode;
+          hasPin = state.pinCode;
+          passkeys = state.passkeys;
         }
       })
       .catch(() => {
@@ -105,6 +110,34 @@
   const changePin = async (mode: 'set' | 'clear') => {
     await modalManager.show(AccountPinDialog, { user, mode, hasPin: hasPin === true });
     pinReload++;
+  };
+
+  /**
+   * FL-859 (FL-767 prototype, People.jsx): remove every passkey of someone who lost a device and can't
+   * sign in to remove its passkey. Noted in their account history with your name.
+   */
+  let removingPasskeys = $state(false);
+  const removePasskeys = async () => {
+    const count = passkeys ?? 0;
+    const confirmed = await confirmFrameleaf({
+      title: $t('frameleaf_users_passkeys_remove_title', { values: { name: user.name } }),
+      prompt: $t('frameleaf_users_passkeys_remove_confirm', { values: { name: user.name, count } }),
+      confirmText: $t('frameleaf_users_passkeys_remove_all'),
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    removingPasskeys = true;
+    try {
+      await removeUserPasskeysAdmin({ id: user.id });
+      passkeys = 0;
+      toastManager.primary($t('frameleaf_users_passkeys_removed', { values: { name: user.name } }));
+    } catch (error) {
+      handleError(error, $t('frameleaf_users_passkeys_remove_failed'));
+    } finally {
+      removingPasskeys = false;
+    }
   };
 
   const lastSeen = (session: SessionResponseDto) =>
@@ -222,6 +255,21 @@
     <Button disabled={!live || hasPin === false || user.lockedEncryption} onclick={() => changePin('clear')}>
       {$t('frameleaf_users_pin_clear_open')}
     </Button>
+  </Row>
+
+  <Row
+    label={$t('frameleaf_users_passkeys_title')}
+    help={passkeys === undefined
+      ? ''
+      : passkeys > 0
+        ? $t('frameleaf_users_passkeys_some', { values: { name: user.name, count: passkeys } })
+        : $t('frameleaf_users_passkeys_none', { values: { name: user.name } })}
+  >
+    {#if passkeys}
+      <Button disabled={!live || removingPasskeys} onclick={() => void removePasskeys()}
+        >{$t('frameleaf_users_passkeys_remove_open')}</Button
+      >
+    {/if}
   </Row>
 
   <Row label={$t('frameleaf_users_devices_title')} help={devicesHelp}>

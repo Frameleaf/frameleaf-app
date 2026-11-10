@@ -26,6 +26,7 @@ import {
   mdiFileCheckOutline,
   mdiFileDocumentOutline,
   mdiFolderOutline,
+  mdiFingerprint,
   mdiFormTextboxPassword,
   mdiImageAlbum,
   mdiImageEditOutline,
@@ -274,6 +275,13 @@ export const USER_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_how_title',
     descriptionKey: 'frameleaf_how_description',
     icon: mdiFormTextboxPassword,
+  },
+  // FL-859: passkeys, opened from How you sign in (FL-767 prototype `Passkeys.jsx`).
+  {
+    key: 'passkeys',
+    titleKey: 'frameleaf_passkey_title',
+    descriptionKey: 'frameleaf_passkey_subtitle',
+    icon: mdiFingerprint,
   },
   {
     key: 'user-pin-code-settings',

@@ -177,17 +177,17 @@ describe(UserAdminController.name, () => {
   describe('GET /admin/users/:id/pin-code (FL-76)', () => {
     it('returns whether the account has a PIN', async () => {
       const id = factory.uuid();
-      service.getPinCodeState.mockResolvedValue({ pinCode: true, twoFactorEnabled: false });
+      service.getPinCodeState.mockResolvedValue({ pinCode: true, twoFactorEnabled: false, passkeys: 0 });
 
       const { status, body } = await request(ctx.getHttpServer()).get(`/admin/users/${id}/pin-code`);
 
       expect(status).toBe(200);
-      expect(body).toEqual({ pinCode: true, twoFactorEnabled: false });
+      expect(body).toEqual({ pinCode: true, twoFactorEnabled: false, passkeys: 0 });
       expect(service.getPinCodeState).toHaveBeenCalledWith(undefined, id);
     });
 
     it('asks for an administrator with adminUser.read', async () => {
-      service.getPinCodeState.mockResolvedValue({ pinCode: false, twoFactorEnabled: false });
+      service.getPinCodeState.mockResolvedValue({ pinCode: false, twoFactorEnabled: false, passkeys: 0 });
       await request(ctx.getHttpServer()).get(`/admin/users/${factory.uuid()}/pin-code`);
 
       expect(ctx.authenticate).toHaveBeenCalledWith(
