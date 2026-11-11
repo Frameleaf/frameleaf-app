@@ -536,7 +536,11 @@ describe(SearchService.name, () => {
     describe('close matches (FL-1393)', () => {
       const ranked = (...distances: number[]) => ({
         hasNextPage: false,
-        items: distances.map((searchDistance) => ({ ...getForAsset(AssetFactory.create()), searchDistance })),
+        items: distances.map((distance) => ({
+          ...getForAsset(AssetFactory.create()),
+          searchDistance: distance,
+          visualDistance: distance,
+        })),
       });
 
       it('counts the leading results that are close, against what an unrelated photo scores', async () => {
@@ -547,7 +551,19 @@ describe(SearchService.name, () => {
 
         expect(assets.closeMatches).toBe(3);
         expect(assets.items).toHaveLength(5);
-        expect(mocks.search.getUnrelatedSearchDistance).toHaveBeenCalledWith('[1, 2, 3]', [authStub.user1.user.id]);
+        expect(mocks.search.getUnrelatedSearchDistance).toHaveBeenCalledWith(
+          '[1, 2, 3]',
+          [authStub.user1.user.id],
+          undefined,
+        );
+
+        // a search of the design library is measured against the design library
+        await sut.searchSmart(authStub.user1, { filter: {}, query: 'lake', libraryScope: LibraryScope.Design });
+        expect(mocks.search.getUnrelatedSearchDistance).toHaveBeenLastCalledWith(
+          '[1, 2, 3]',
+          [authStub.user1.user.id],
+          LibraryScope.Design,
+        );
       });
 
       it('leaves the count out when the library cannot say what an unrelated photo scores', async () => {

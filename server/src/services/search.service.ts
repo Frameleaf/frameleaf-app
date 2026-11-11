@@ -421,7 +421,8 @@ export class SearchService extends BaseService {
       {
         nextPage: hasNextPage ? (page + 1).toString() : null,
         // only a first page starts at the best result
-        closeMatches: page === 1 ? await this.closeMatches(dto, embedding, userIds, items) : undefined,
+        closeMatches:
+          page === 1 ? await this.closeMatches(dto, embedding, userIds, items, dto.libraryScope) : undefined,
       },
     );
   }
@@ -609,7 +610,7 @@ export class SearchService extends BaseService {
     return this.mapResponse(
       items,
       { auth },
-      { closeMatches: await this.closeMatches(dto, embedding, scope.userIds, items) },
+      { closeMatches: await this.closeMatches(dto, embedding, scope.userIds, items, filter.libraryScope) },
     );
   }
 
@@ -621,14 +622,19 @@ export class SearchService extends BaseService {
     dto: SmartSearchDto,
     embedding: string,
     userIds: string[],
-    items: { searchDistance: number }[],
+    items: { searchDistance: number; visualDistance: number }[],
+    libraryScope?: LibraryViewScope,
   ): Promise<number | undefined> {
     if (!dto.query || items.length === 0) {
       return undefined;
     }
-    const unrelated = await this.searchRepository.getUnrelatedSearchDistance(embedding, userIds);
+    // measured against the library the search looked in
+    const unrelated = await this.searchRepository.getUnrelatedSearchDistance(embedding, userIds, libraryScope);
     return countCloseMatches(
-      items.map(({ searchDistance }) => Number(searchDistance)),
+      items.map(({ searchDistance, visualDistance }) => ({
+        searchDistance: Number(searchDistance),
+        visualDistance: Number(visualDistance),
+      })),
       unrelated,
     );
   }

@@ -245,13 +245,14 @@ select
       ),
       0
     )
-  ) as "searchDistance"
+  ) as "searchDistance",
+  (smart_search.embedding <=> $5) as "visualDistance"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
-  "asset"."libraryScope" in ($5, $6)
+  "asset"."libraryScope" in ($6, $7)
   and not exists (
     select
       1
@@ -260,18 +261,18 @@ where
     where
       asset_lock."assetId" = "asset"."id"
   )
-  and "asset"."fileCreatedAt" >= $7
-  and "asset_exif"."lensModel" = $8
-  and "asset"."ownerId" = any ($9::uuid[])
-  and "asset"."isFavorite" = $10
+  and "asset"."fileCreatedAt" >= $8
+  and "asset_exif"."lensModel" = $9
+  and "asset"."ownerId" = any ($10::uuid[])
+  and "asset"."isFavorite" = $11
   and "asset"."deletedAt" is null
 order by
   "searchDistance",
   "asset"."id" asc
 limit
-  $11
-offset
   $12
+offset
+  $13
 commit
 
 -- SearchRepository.getUnrelatedSearchDistance
@@ -295,15 +296,16 @@ with
             asset_lock."assetId" = "asset"."id"
         )
       )
+      and "asset"."libraryScope" in ($2, $3)
     order by
       "asset"."checksum"
     limit
-      $2
+      $4
   )
 select
   percentile_cont(0.9) within group (
     order by
-      smart_search.embedding <=> $3
+      smart_search.embedding <=> $5
   ) as "unrelated",
   count(*) as "count"
 from
@@ -5191,17 +5193,18 @@ select
       ),
       0
     )
-  ) as "searchDistance"
+  ) as "searchDistance",
+  (smart_search.embedding <=> $5) as "visualDistance"
 from
   "asset"
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
-  "asset"."libraryScope" in ($5, $6)
+  "asset"."libraryScope" in ($6, $7)
   and (
-    "asset"."ownerId" = any ($7::uuid[])
+    "asset"."ownerId" = any ($8::uuid[])
     and (
-      "asset"."ownerId" = $8::uuid
+      "asset"."ownerId" = $9::uuid
       or (
         "asset"."deletedAt" is null
         and "asset"."visibility" in ('timeline', 'hidden')
@@ -5217,10 +5220,10 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $9::uuid
+    or "asset"."ownerId" = $10::uuid
   )
   and (
-    "asset"."ownerId" = $10::uuid
+    "asset"."ownerId" = $11::uuid
     or "asset"."deletedAt" is null
   )
   and true
@@ -5228,9 +5231,9 @@ order by
   "searchDistance",
   "asset"."id" asc
 limit
-  $11
-offset
   $12
+offset
+  $13
 commit
 
 -- SearchRepository.searchSmartV3 (with-filter)
@@ -5291,17 +5294,18 @@ select
       ),
       0
     )
-  ) as "searchDistance"
+  ) as "searchDistance",
+  (smart_search.embedding <=> $5) as "visualDistance"
 from
   "asset"
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
-  "asset"."libraryScope" in ($5, $6)
+  "asset"."libraryScope" in ($6, $7)
   and (
-    "asset"."ownerId" = any ($7::uuid[])
+    "asset"."ownerId" = any ($8::uuid[])
     and (
-      "asset"."ownerId" = $8::uuid
+      "asset"."ownerId" = $9::uuid
       or (
         "asset"."deletedAt" is null
         and "asset"."visibility" in ('timeline', 'hidden')
@@ -5317,23 +5321,23 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $9::uuid
+    or "asset"."ownerId" = $10::uuid
   )
   and (
-    "asset"."ownerId" = $10::uuid
+    "asset"."ownerId" = $11::uuid
     or "asset"."deletedAt" is null
   )
   and (
-    "asset"."fileCreatedAt" < $11
-    and "asset"."fileCreatedAt" >= $12
+    "asset"."fileCreatedAt" < $12
+    and "asset"."fileCreatedAt" >= $13
   )
 order by
   "searchDistance",
   "asset"."id" asc
 limit
-  $13
-offset
   $14
+offset
+  $15
 commit
 
 -- SearchRepository.searchSmartV3 (cursor-offset)
@@ -5394,17 +5398,18 @@ select
       ),
       0
     )
-  ) as "searchDistance"
+  ) as "searchDistance",
+  (smart_search.embedding <=> $5) as "visualDistance"
 from
   "asset"
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
-  "asset"."libraryScope" in ($5, $6)
+  "asset"."libraryScope" in ($6, $7)
   and (
-    "asset"."ownerId" = any ($7::uuid[])
+    "asset"."ownerId" = any ($8::uuid[])
     and (
-      "asset"."ownerId" = $8::uuid
+      "asset"."ownerId" = $9::uuid
       or (
         "asset"."deletedAt" is null
         and "asset"."visibility" in ('timeline', 'hidden')
@@ -5420,10 +5425,10 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $9::uuid
+    or "asset"."ownerId" = $10::uuid
   )
   and (
-    "asset"."ownerId" = $10::uuid
+    "asset"."ownerId" = $11::uuid
     or "asset"."deletedAt" is null
   )
   and true
@@ -5431,9 +5436,9 @@ order by
   "searchDistance",
   "asset"."id" asc
 limit
-  $11
-offset
   $12
+offset
+  $13
 commit
 
 -- SearchRepository.searchStatisticsV3 (baseline)

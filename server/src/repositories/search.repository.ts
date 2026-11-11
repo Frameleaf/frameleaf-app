@@ -511,6 +511,7 @@ export class SearchRepository {
         .selectAll('asset')
         .select(isLocked('asset').as('isLocked'))
         .select(this.smartSearchOrder(options).as('searchDistance'))
+        .select(this.visualDistance(options.embedding).as('visualDistance'))
         .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
         .orderBy(sql.ref('searchDistance'))
         .orderBy('asset.id', 'asc')
@@ -528,7 +529,11 @@ export class SearchRepository {
    * for (a holiday of lakes, searched for "lake") still has unrelated photos to measure against.
    */
   @GenerateSql({ params: [DummyValue.VECTOR, [DummyValue.UUID]] })
-  async getUnrelatedSearchDistance(embedding: string, userIds: string[]): Promise<number | null> {
+  async getUnrelatedSearchDistance(
+    embedding: string,
+    userIds: string[],
+    libraryScope: LibraryViewScope = LibraryScope.Personal,
+  ): Promise<number | null> {
     const { unrelated, count } = await this.db
       // Materialized, so only the sampled photos' embeddings are read.
       .with(
@@ -541,6 +546,8 @@ export class SearchRepository {
             .where('asset.deletedAt', 'is', null)
             // Only what a plain search shows: nothing archived, hidden or Locked is measured.
             .where(isTimelineVisible('asset'))
+            // the library the search looked in, so a design library never moves a photo search's line
+            .where(libraryScopePredicate(libraryScope))
             .orderBy('asset.checksum')
             .limit(UNRELATED_DISTANCE_SAMPLE),
       )
@@ -996,6 +1003,7 @@ export class SearchRepository {
         .select(columns.searchAsset)
         .select(isLocked('asset').as('isLocked'))
         .select(this.smartSearchOrder(options).as('searchDistance'))
+        .select(this.visualDistance(options.embedding).as('visualDistance'))
         .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
         .orderBy(sql.ref('searchDistance'))
         .orderBy('asset.id', 'asc')
@@ -1285,6 +1293,11 @@ export class SearchRepository {
     };
   }
 
+  /** How far a photo looks from the search, before any bonus for its own words. */
+  private visualDistance(embedding: string) {
+    return sql<number>`(smart_search.embedding <=> ${embedding})`;
+  }
+
   private smartSearchOrder(options: { embedding: string; query?: string }) {
     const text = options.query?.trim();
     const fusionText = text ? tokenizeForSearch(text).join(' ') : null;
@@ -1295,7 +1308,7 @@ export class SearchRepository {
     // clashing with conditional joins inside searchAssetBuilder.
     // <=> returns [0, 2]; (1 - <->>>) returns [0, 1] when the sidecar row
     // exists, NULL otherwise.
-    const visualDistance = sql`(smart_search.embedding <=> ${options.embedding})`;
+    const visualDistance = this.visualDistance(options.embedding);
     // Visual distance minus a capped bonus for a close description match (see
     // DESCRIPTION_MATCH_MAX_DISTANCE). No description embedding yet means no
     // bonus.
