@@ -50288,6 +50288,787 @@
       "synchronize": true
     },
     {
+      "name": "media_import_item",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "media_import_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "importId",
+          "tableName": "media_import_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "media_import_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "sourceKey",
+          "tableName": "media_import_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "entry",
+          "tableName": "media_import_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "state",
+          "tableName": "media_import_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "'discovered'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "media_import_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "uploadId",
+          "tableName": "media_import_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "suppression",
+          "tableName": "media_import_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "error",
+          "tableName": "media_import_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "bytes",
+          "tableName": "media_import_item",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 53,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "media_import_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "media_import_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "media_import_item_importId_idx",
+          "definition": "CREATE INDEX \"media_import_item_importId_idx\" ON public.media_import_item USING btree (\"importId\")",
+          "tableName": "media_import_item",
+          "columnNames": [
+            "importId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "media_import_item_assetId_idx",
+          "definition": "CREATE INDEX \"media_import_item_assetId_idx\" ON public.media_import_item USING btree (\"assetId\")",
+          "tableName": "media_import_item",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "media_import_item_ownerId_sourceKey_idx",
+          "definition": "CREATE INDEX \"media_import_item_ownerId_sourceKey_idx\" ON public.media_import_item USING btree (\"ownerId\", \"sourceKey\")",
+          "tableName": "media_import_item",
+          "columnNames": [
+            "ownerId",
+            "sourceKey"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "media_import_item_ownerId_idx",
+          "definition": "CREATE INDEX \"media_import_item_ownerId_idx\" ON public.media_import_item USING btree (\"ownerId\")",
+          "tableName": "media_import_item",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "media_import_item_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "media_import_item",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "media_import_item_importId_sourceKey_key",
+          "definition": "UNIQUE (\"importId\", \"sourceKey\")",
+          "tableName": "media_import_item",
+          "columnNames": [
+            "importId",
+            "sourceKey"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "media_import_item_importId_fkey",
+          "definition": "FOREIGN KEY (\"importId\") REFERENCES media_import(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "media_import_item",
+          "columnNames": [
+            "importId"
+          ],
+          "referenceTableName": "media_import",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "media_import_item_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "media_import_item",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "browser_extension_sign_in_code",
+      "columns": [
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "codeHash",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "codeChallenge",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "redirectUri",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "client",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "installationId",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "serverId",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "accessGrant",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "default": "'capture'::character varying",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "browser_extension_sign_in_code_expiresAt_idx",
+          "definition": "CREATE INDEX \"browser_extension_sign_in_code_expiresAt_idx\" ON public.browser_extension_sign_in_code USING btree (\"expiresAt\")",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "browser_extension_sign_in_code_userId_idx",
+          "definition": "CREATE INDEX \"browser_extension_sign_in_code_userId_idx\" ON public.browser_extension_sign_in_code USING btree (\"userId\")",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "userId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "browser_extension_sign_in_code_sessionId_idx",
+          "definition": "CREATE INDEX \"browser_extension_sign_in_code_sessionId_idx\" ON public.browser_extension_sign_in_code USING btree (\"sessionId\")",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "sessionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "browser_extension_sign_in_code_client_check",
+          "definition": "CHECK (((client)::text = ANY (ARRAY[('chrome'::character varying)::text, ('edge'::character varying)::text])))",
+          "tableName": "browser_extension_sign_in_code",
+          "expression": "(((client)::text = ANY (ARRAY[('chrome'::character varying)::text, ('edge'::character varying)::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "browser_extension_sign_in_code_hash_check",
+          "definition": "CHECK ((octet_length(\"codeHash\") = 32))",
+          "tableName": "browser_extension_sign_in_code",
+          "expression": "((octet_length(\"codeHash\") = 32))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "browser_extension_sign_in_code_pkey",
+          "definition": "PRIMARY KEY (\"codeHash\")",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "codeHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "browser_extension_sign_in_code_sessionId_fkey",
+          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "sessionId"
+          ],
+          "referenceTableName": "session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "browser_extension_sign_in_code_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "browser_extension_sign_in_code_grant_check",
+          "definition": "CHECK (((\"accessGrant\")::text = ANY ((ARRAY['capture'::character varying, 'media'::character varying])::text[])))",
+          "tableName": "browser_extension_sign_in_code",
+          "expression": "(((\"accessGrant\")::text = ANY ((ARRAY['capture'::character varying, 'media'::character varying])::text[])))",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "media_creator",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "media_creator",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "media_creator",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "provider",
+          "tableName": "media_creator",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "creatorId",
+          "tableName": "media_creator",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "name",
+          "tableName": "media_creator",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "handle",
+          "tableName": "media_creator",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "about",
+          "tableName": "media_creator",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "url",
+          "tableName": "media_creator",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "avatarUrl",
+          "tableName": "media_creator",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "avatarPath",
+          "tableName": "media_creator",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "bannerUrl",
+          "tableName": "media_creator",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "bannerPath",
+          "tableName": "media_creator",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "media_creator",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "seenAt",
+          "tableName": "media_creator",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "media_creator",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "media_creator",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "media_creator_albumId_idx",
+          "definition": "CREATE INDEX \"media_creator_albumId_idx\" ON public.media_creator USING btree (\"albumId\")",
+          "tableName": "media_creator",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "media_creator_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "media_creator",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "media_creator_ownerId_provider_creatorId_key",
+          "definition": "UNIQUE (\"ownerId\", provider, \"creatorId\")",
+          "tableName": "media_creator",
+          "columnNames": [
+            "ownerId",
+            "provider",
+            "creatorId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "media_creator_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "media_creator",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "media_creator_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "media_creator",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "media_watch",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "media_watch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "media_watch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "watched",
+          "tableName": "media_watch",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "position",
+          "tableName": "media_watch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 53,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "media_watch",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "media_watch_assetId_idx",
+          "definition": "CREATE INDEX \"media_watch_assetId_idx\" ON public.media_watch USING btree (\"assetId\")",
+          "tableName": "media_watch",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "media_watch_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", \"assetId\")",
+          "tableName": "media_watch",
+          "columnNames": [
+            "ownerId",
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "media_watch_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "media_watch",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "media_watch_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "media_watch",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
       "name": "media_subscription",
       "columns": [
         {
@@ -50526,6 +51307,35 @@
           "isArray": false,
           "default": "now()",
           "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "mediaCreatorId",
+          "tableName": "media_subscription",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "saves",
+          "tableName": "media_subscription",
+          "nullable": false,
+          "isArray": false,
+          "default": "'{}'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "quality",
+          "tableName": "media_subscription",
+          "nullable": false,
+          "isArray": false,
+          "default": "'best'::character varying",
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -50535,6 +51345,17 @@
           "tableName": "media_subscription",
           "columnNames": [
             "connectionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "media_subscription_mediaCreatorId_idx",
+          "definition": "CREATE INDEX \"media_subscription_mediaCreatorId_idx\" ON public.media_subscription USING btree (\"mediaCreatorId\")",
+          "tableName": "media_subscription",
+          "columnNames": [
+            "mediaCreatorId"
           ],
           "using": "btree",
           "unique": false,
@@ -50639,6 +51460,22 @@
             "connectionId"
           ],
           "referenceTableName": "media_connection",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "media_subscription_mediaCreatorId_fkey",
+          "definition": "FOREIGN KEY (\"mediaCreatorId\") REFERENCES media_creator(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "media_subscription",
+          "columnNames": [
+            "mediaCreatorId"
+          ],
+          "referenceTableName": "media_creator",
           "referenceColumnNames": [
             "id"
           ],
@@ -50896,6 +51733,25 @@
           "isArray": false,
           "default": "now()",
           "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "mediaCreatorId",
+          "tableName": "media_import",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "quality",
+          "tableName": "media_import",
+          "nullable": false,
+          "isArray": false,
+          "default": "'best'::character varying",
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -50917,6 +51773,17 @@
           "columnNames": [
             "ownerId",
             "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "media_import_mediaCreatorId_idx",
+          "definition": "CREATE INDEX \"media_import_mediaCreatorId_idx\" ON public.media_import USING btree (\"mediaCreatorId\")",
+          "tableName": "media_import",
+          "columnNames": [
+            "mediaCreatorId"
           ],
           "using": "btree",
           "unique": false,
@@ -51053,237 +51920,21 @@
           "onUpdate": "CASCADE",
           "onDelete": "SET NULL",
           "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "media_import_item",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "media_import_item",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "importId",
-          "tableName": "media_import_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "media_import_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "sourceKey",
-          "tableName": "media_import_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "entry",
-          "tableName": "media_import_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "state",
-          "tableName": "media_import_item",
-          "nullable": false,
-          "isArray": false,
-          "default": "'discovered'::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "media_import_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "uploadId",
-          "tableName": "media_import_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "suppression",
-          "tableName": "media_import_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "error",
-          "tableName": "media_import_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "bytes",
-          "tableName": "media_import_item",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 53,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "media_import_item",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "media_import_item",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "media_import_item_importId_idx",
-          "definition": "CREATE INDEX \"media_import_item_importId_idx\" ON public.media_import_item USING btree (\"importId\")",
-          "tableName": "media_import_item",
-          "columnNames": [
-            "importId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "media_import_item_assetId_idx",
-          "definition": "CREATE INDEX \"media_import_item_assetId_idx\" ON public.media_import_item USING btree (\"assetId\")",
-          "tableName": "media_import_item",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "media_import_item_ownerId_sourceKey_idx",
-          "definition": "CREATE INDEX \"media_import_item_ownerId_sourceKey_idx\" ON public.media_import_item USING btree (\"ownerId\", \"sourceKey\")",
-          "tableName": "media_import_item",
-          "columnNames": [
-            "ownerId",
-            "sourceKey"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "media_import_item_ownerId_idx",
-          "definition": "CREATE INDEX \"media_import_item_ownerId_idx\" ON public.media_import_item USING btree (\"ownerId\")",
-          "tableName": "media_import_item",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "media_import_item_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "media_import_item",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "media_import_item_importId_sourceKey_key",
-          "definition": "UNIQUE (\"importId\", \"sourceKey\")",
-          "tableName": "media_import_item",
-          "columnNames": [
-            "importId",
-            "sourceKey"
-          ],
-          "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "media_import_item_importId_fkey",
-          "definition": "FOREIGN KEY (\"importId\") REFERENCES media_import(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "media_import_item",
+          "name": "media_import_mediaCreatorId_fkey",
+          "definition": "FOREIGN KEY (\"mediaCreatorId\") REFERENCES media_creator(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "media_import",
           "columnNames": [
-            "importId"
+            "mediaCreatorId"
           ],
-          "referenceTableName": "media_import",
+          "referenceTableName": "media_creator",
           "referenceColumnNames": [
             "id"
           ],
           "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "media_import_item_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "media_import_item",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
+          "onDelete": "SET NULL",
           "synchronize": true
         }
       ],
@@ -51455,9 +52106,85 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "mediaCreatorId",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "section",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "tags",
+          "tableName": "asset_source",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "playlistId",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "playlistTitle",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "duration",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "posterPath",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
+        {
+          "name": "asset_source_mediaCreatorId_idx",
+          "definition": "CREATE INDEX \"asset_source_mediaCreatorId_idx\" ON public.asset_source USING btree (\"mediaCreatorId\")",
+          "tableName": "asset_source",
+          "columnNames": [
+            "mediaCreatorId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
         {
           "name": "asset_source_assetId_idx",
           "definition": "CREATE INDEX \"asset_source_assetId_idx\" ON public.asset_source USING btree (\"assetId\")",
@@ -51515,216 +52242,21 @@
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
           "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "browser_extension_sign_in_code",
-      "columns": [
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "codeHash",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sessionId",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "codeChallenge",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "redirectUri",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "client",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "installationId",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "serverId",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "expiresAt",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "accessGrant",
-          "tableName": "browser_extension_sign_in_code",
-          "nullable": false,
-          "isArray": false,
-          "default": "'capture'::character varying",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "browser_extension_sign_in_code_expiresAt_idx",
-          "definition": "CREATE INDEX \"browser_extension_sign_in_code_expiresAt_idx\" ON public.browser_extension_sign_in_code USING btree (\"expiresAt\")",
-          "tableName": "browser_extension_sign_in_code",
-          "columnNames": [
-            "expiresAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "browser_extension_sign_in_code_userId_idx",
-          "definition": "CREATE INDEX \"browser_extension_sign_in_code_userId_idx\" ON public.browser_extension_sign_in_code USING btree (\"userId\")",
-          "tableName": "browser_extension_sign_in_code",
-          "columnNames": [
-            "userId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "browser_extension_sign_in_code_sessionId_idx",
-          "definition": "CREATE INDEX \"browser_extension_sign_in_code_sessionId_idx\" ON public.browser_extension_sign_in_code USING btree (\"sessionId\")",
-          "tableName": "browser_extension_sign_in_code",
-          "columnNames": [
-            "sessionId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "browser_extension_sign_in_code_client_check",
-          "definition": "CHECK (((client)::text = ANY (ARRAY[('chrome'::character varying)::text, ('edge'::character varying)::text])))",
-          "tableName": "browser_extension_sign_in_code",
-          "expression": "(((client)::text = ANY (ARRAY[('chrome'::character varying)::text, ('edge'::character varying)::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "browser_extension_sign_in_code_hash_check",
-          "definition": "CHECK ((octet_length(\"codeHash\") = 32))",
-          "tableName": "browser_extension_sign_in_code",
-          "expression": "((octet_length(\"codeHash\") = 32))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "browser_extension_sign_in_code_pkey",
-          "definition": "PRIMARY KEY (\"codeHash\")",
-          "tableName": "browser_extension_sign_in_code",
-          "columnNames": [
-            "codeHash"
-          ],
-          "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "browser_extension_sign_in_code_sessionId_fkey",
-          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "browser_extension_sign_in_code",
+          "name": "asset_source_mediaCreatorId_fkey",
+          "definition": "FOREIGN KEY (\"mediaCreatorId\") REFERENCES media_creator(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "asset_source",
           "columnNames": [
-            "sessionId"
+            "mediaCreatorId"
           ],
-          "referenceTableName": "session",
+          "referenceTableName": "media_creator",
           "referenceColumnNames": [
             "id"
           ],
           "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "browser_extension_sign_in_code_userId_fkey",
-          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "browser_extension_sign_in_code",
-          "columnNames": [
-            "userId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "browser_extension_sign_in_code_grant_check",
-          "definition": "CHECK (((\"accessGrant\")::text = ANY ((ARRAY['capture'::character varying, 'media'::character varying])::text[])))",
-          "tableName": "browser_extension_sign_in_code",
-          "expression": "(((\"accessGrant\")::text = ANY ((ARRAY['capture'::character varying, 'media'::character varying])::text[])))",
+          "onDelete": "SET NULL",
           "synchronize": true
         }
       ],

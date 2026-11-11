@@ -97,7 +97,7 @@ export const MediaEntrySchema = z
     tags: z.array(z.string()),
     playlistId: z.string().nullable(),
     playlistTitle: z.string().nullable(),
-    duration: z.number().nullable(),
+    duration: z.number().meta({ format: 'double' }).nullable(),
     state: z
       .enum(['discovered', 'downloading', 'assembling', 'importing', 'saved', 'skipped', 'failed'])
       .meta({ id: 'MediaImportItemState' }),
@@ -349,7 +349,7 @@ export const MediaCreatorItemSchema = z
     tags: z.array(z.string()),
     publishedAt: z.string().nullable(),
     savedAt: z.string(),
-    duration: z.number().nullable().describe('Seconds'),
+    duration: z.number().meta({ format: 'double' }).nullable().describe('Seconds'),
     postId: z.string().nullable().describe('Attachments of one post share it'),
     playlistId: z.string().nullable(),
     playlistTitle: z.string().nullable(),
@@ -357,7 +357,7 @@ export const MediaCreatorItemSchema = z
     savedBy: z.enum(['subscription', 'download']).meta({ id: 'MediaSavedBy' }),
     hasPoster: z.boolean(),
     watched: z.boolean(),
-    position: z.number().nonnegative().describe('Seconds'),
+    position: z.number().meta({ format: 'double' }).nonnegative().describe('Seconds'),
   })
   .meta({ id: 'MediaCreatorItemResponse' });
 export class MediaCreatorItemsDto extends createZodDto(
@@ -372,12 +372,17 @@ export class MediaWatchUpdateDto extends createZodDto(
   z
     .object({
       watched: z.boolean(),
-      position: z.number().min(0).max(10_000_000).default(0).describe('Seconds'),
+      position: z.number().meta({ format: 'double' }).min(0).max(10_000_000).default(0).describe('Seconds'),
     })
     .strict(),
 ) {}
 export class MediaWatchResponseDto extends createZodDto(
   z
-    .object({ assetId: z.uuid(), watched: z.boolean(), position: z.number().nonnegative(), updatedAt: z.string() })
+    .object({
+      assetId: z.uuid(),
+      watched: z.boolean(),
+      position: z.number().meta({ format: 'double' }).nonnegative(),
+      updatedAt: z.string(),
+    })
     .meta({ id: 'MediaWatchResponseDto' }),
 ) {}
