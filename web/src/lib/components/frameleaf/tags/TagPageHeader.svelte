@@ -394,7 +394,7 @@
     white-space: nowrap;
   }
   .action {
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     padding: 0 var(--fl-space-3);
     font: inherit;
     color: var(--fl-text);

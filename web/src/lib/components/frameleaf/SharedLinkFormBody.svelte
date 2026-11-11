@@ -1036,7 +1036,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 44px;
+    min-width: var(--fl-control-height);
   }
   .slf-created {
     display: flex;

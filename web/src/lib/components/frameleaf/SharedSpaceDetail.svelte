@@ -1009,7 +1009,7 @@
   }
   .action {
     padding: 0 var(--fl-space-3);
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     font: inherit;
     color: var(--fl-text);
     background: var(--fl-raised);

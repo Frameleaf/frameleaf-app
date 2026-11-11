@@ -666,6 +666,44 @@ test.describe('Timeline', () => {
       await expect(actions.getByRole('button', { name: 'Compare selected items' })).toHaveCount(0);
     });
 
+    // FL-1390: with a mouse a control is drawn 36px tall and what is pressed is still 44px. The 4px
+    // above and below the drawn box belong to the button; the next pixel out does not.
+    test('a toolbar button is drawn 36px tall inside a 44px click area', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      expect(await page.evaluate(() => matchMedia('(pointer: fine)').matches)).toBe(true);
+      const toolbar = page.getByTestId('frameleaf-results-toolbar');
+      const button = toolbar.getByRole('button', { name: 'View', exact: true });
+      await expect(button).toBeVisible();
+      const hit = await button.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const x = box.left + box.width / 2;
+        const at = (y: number) => {
+          const found = document.elementFromPoint(x, y);
+          return found === element || element.contains(found);
+        };
+        return {
+          height: Math.round(box.height),
+          inside: at(box.top + box.height / 2),
+          above: at(box.top - 3.5),
+          below: at(box.bottom + 3.5),
+          beyondAbove: at(box.top - 5),
+          beyondBelow: at(box.bottom + 5),
+        };
+      });
+      expect(hit).toEqual({
+        height: 36,
+        inside: true,
+        above: true,
+        below: true,
+        beyondAbove: false,
+        beyondBelow: false,
+      });
+      // A press 3px above the drawn box still opens the View menu.
+      const box = (await button.boundingBox())!;
+      await page.mouse.click(box.x + box.width / 2, box.y - 3);
+      await expect(toolbar.getByRole('switch', { name: 'Show information panel' })).toBeVisible();
+    });
+
     test('Browse sorts by file name through the flat order, and List shows rows (S-15)', async ({ page }) => {
       await pageUtils.openPhotosPage(page);
       await timelineUtils.setLayout(page, 'Browse');

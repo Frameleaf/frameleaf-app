@@ -168,7 +168,7 @@
     align-items: center;
     gap: var(--fl-space-2);
     padding: 0 var(--fl-space-3);
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     white-space: nowrap;
     font: inherit;
     color: var(--fl-text);

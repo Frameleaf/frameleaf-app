@@ -1108,7 +1108,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
   }
   .fl-dr-intro p {
     flex: 1;
@@ -1279,7 +1279,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     margin-bottom: 10px;
   }
   .fl-dr-heading > div:first-child {

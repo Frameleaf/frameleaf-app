@@ -393,6 +393,8 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    /* The full target, as the top bar's other buttons are. */
+    min-height: var(--fl-control-target);
     padding: 0.25rem 0.5rem;
     border: 0;
     border-radius: var(--fl-radius-control);

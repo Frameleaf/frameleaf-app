@@ -358,8 +358,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 44px;
-    min-height: 44px;
+    min-width: var(--fl-control-height);
+    min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: transparent;
     border: 1px solid transparent;
@@ -380,7 +380,7 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0 var(--fl-space-3) 0 9px;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
@@ -404,7 +404,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     padding: 0 0.25rem;
     border: 0;
     background: none;
@@ -578,8 +578,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 44px;
-    min-height: 44px;
+    min-width: var(--fl-control-height);
+    min-height: var(--fl-control-height);
     color: var(--fl-accent-text);
     background: var(--fl-accent);
     border: 1px solid var(--fl-accent);

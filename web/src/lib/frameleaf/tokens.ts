@@ -66,10 +66,20 @@ export const EXIT_DURATION = {
   dock: 200,
 } as const;
 
-/** Control heights in px: the 44px floor, 48px for touch, 34px for opt-in compact desktop controls. */
+/**
+ * Control sizes in px (tokens.css `--fl-control-*`). `default` is the drawn height, `pointer` the
+ * drawn height with a mouse, `touch` the height on touch, and `target` the click area on every
+ * device. `compact` is for opt-in compact desktop controls. `tab`, `chip` and `navRow` are the
+ * heights of layout tabs, filter chips and navigation rows with a mouse.
+ */
 export const CONTROL_HEIGHT = {
+  chip: 32,
   compact: 34,
   default: 44,
+  navRow: 31,
+  pointer: 36,
+  tab: 38,
+  target: 44,
   touch: 48,
 } as const;
 

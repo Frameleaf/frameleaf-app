@@ -75,6 +75,15 @@
       background var(--fl-motion-fast) var(--fl-ease),
       color var(--fl-motion-fast) var(--fl-ease);
   }
+  /*
+   * FL-1390: with a mouse the track is the control height, so a segment is that less the track's
+   * padding and border (28px, the prototype's segment); what is pressed is still the 44px target.
+   */
+  @media (pointer: fine) {
+    button {
+      min-height: calc(var(--fl-control-height) - 0.375rem - 2px);
+    }
+  }
   button:hover:not(:disabled) {
     color: var(--fl-text);
   }

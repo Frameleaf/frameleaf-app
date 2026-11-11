@@ -110,9 +110,15 @@ capsules, `-4` sheets and dialogs. Nothing else casts a shadow, and no shadow is
 **Layers** (`--fl-z-*`): sticky 10, rail 20, popover 30, dock 35, scrim 40, modal 50, toast 60,
 menu 70, tooltip 90.
 
-**Controls**: 44px (`--fl-control-height`), 48px for touch (`--fl-control-height-touch`). The 34px
-compact height (`--fl-control-height-compact`, with `--fl-radius-control-compact`) is opt-in for
-desktop pointer layouts only.
+**Controls**: `--fl-control-height` is the height a control is drawn at: 44px, and 36px with a
+mouse (`pointer: fine`). Touch is 48px (`--fl-control-height-touch`). What is pressed is 44px on
+every device (`--fl-control-target`): with a mouse a `.button` or `.fl-control` owns an unseen
+strip above and below its box that makes up the difference, so mark a new control `fl-control`
+and size anything that must stay a full target (a lone arrow, a top-bar button) with
+`--fl-control-target`. Rows that touch each other (menus, lists) get no strip. With a mouse,
+layout tabs are 38px (`--fl-tab-height`), filter chips 32px (`--fl-chip-height`) and navigation
+rows 31px (`--fl-nav-row-height`). The 34px compact height (`--fl-control-height-compact`, with
+`--fl-radius-control-compact`) is opt-in for desktop pointer layouts only.
 
 ### Materials
 
@@ -127,7 +133,7 @@ element).
 `var(--fl-*)` works everywhere. The classes in `base.css` need a scope:
 
 - `.frameleaf` (the shell, `<Theme>`, every dialog and toast): everything, including the element
-  baseline (buttons, fields, headings) and the 44px floor.
+  baseline (buttons, fields, headings) and the height floor.
 - `.fl-scope` (the page area of the signed-in layout carries it): the classes only (`button`,
   `sr-only`, `muted` and every `fl-*`), and the primitives. No element already on a page is
   restyled. Inside it, the focus ring and height floor reach `.button`, `.fl-press` and
@@ -249,8 +255,9 @@ colour utilities.
   at least 3:1.
 - **Keyboard**: every pointer action has a keyboard path. Dialogs and menus return focus to what
   opened them; `Dialog` and `Menu` do this for you.
-- **Touch**: 44px targets, 48px on coarse pointers. The token sheet enforces it for `button`,
-  `input`, `select` and `summary`; links styled as buttons need `min-height: var(--fl-control-height)`.
+- **Targets**: 44px to press, 48px tall on coarse pointers; with a mouse the box is 36px and the
+  target is still 44px (see Controls). The token sheet sets the height floor for `button`, `input`,
+  `select` and `summary`; links styled as buttons need `min-height: var(--fl-control-height)`.
 - **Announcements**: results that arrive later use `role="status"` (polite) or `role="alert"`
   (errors). `InlineError`, `EmptyState`, `Spinner` and `Toast` do this.
 - **Motion and transparency**: Reduce Motion, Increase Contrast and Reduce Transparency are

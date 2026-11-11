@@ -924,7 +924,7 @@
     align-items: center;
     justify-content: center;
     gap: var(--fl-space-2);
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     padding: 0 var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);

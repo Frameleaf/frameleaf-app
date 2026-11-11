@@ -775,7 +775,7 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0 0.75rem;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

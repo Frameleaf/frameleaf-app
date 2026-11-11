@@ -11,7 +11,8 @@ const insideViewport = async (control: Locator, width: number, height: number) =
   expect(bounds!.y).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(height);
-  expect(bounds!.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 38);
+  // A phone-width editor keeps 44px controls; with a mouse a control is drawn 36px tall (FL-1390).
+  expect(bounds!.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 36);
 };
 
 test.describe('Shared editor Save and Cancel reachability (FL-144)', () => {

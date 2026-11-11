@@ -294,7 +294,7 @@
   }
   .name-field button {
     flex-shrink: 0;
-    min-width: 44px;
+    min-width: var(--fl-control-height);
     padding: 0.375rem 0.5rem;
     font-size: var(--fl-font-small);
     color: var(--fl-text);

@@ -337,7 +337,7 @@
   the top bar does not draw a second one beside it. The listeners above stay mounted either way.
 -->
 {#if !isSettings}
-  <button type="button" class="search-entry" data-testid="search-entry" onclick={openEntry}>
+  <button type="button" class="search-entry fl-control" data-testid="search-entry" onclick={openEntry}>
     <Icon icon={mdiMagnify} size="1.25em" aria-hidden={true} />
     <span class="label">{currentQuery.text || $t('frameleaf_search_title')}</span>
     <!-- S-25 / CC-7 (App.jsx:2374 "⌘ K"): the hint names the platform's own modifier. -->

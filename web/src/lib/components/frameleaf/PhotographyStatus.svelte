@@ -162,7 +162,7 @@
     opacity: 1;
   }
   .phs-retry {
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     padding: 0 8px;
     border: 0;
     background: transparent;

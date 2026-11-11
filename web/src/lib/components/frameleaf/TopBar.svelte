@@ -814,9 +814,21 @@
     min-width: 36px;
     padding: 0 8px;
   }
+  /*
+   * FL-1390: the bar's buttons are their click area, the full 44px target, with the 34px box drawn
+   * inside it. The height floor is the drawn height (36px with a mouse), so the target is set here.
+   * The phone bar sizes its own buttons above.
+   */
+  @media (min-width: 48rem) {
+    .fl-topbar-button,
+    .fl-locked-toggle,
+    .fl-notif-bell {
+      min-height: var(--fl-control-target);
+    }
+  }
   /* styles.css `.topbar > .button`: bordered, on the raised surface. The drawn box is the
-     prototype's 34px; the button itself keeps the 44px target floor (tokens.css), as the Locked
-     control beside it does. */
+     prototype's 34px; the button itself is the 44px target (--fl-control-target), as the Locked
+     control beside it is. */
   .fl-topbar-button {
     position: relative;
     isolation: isolate;

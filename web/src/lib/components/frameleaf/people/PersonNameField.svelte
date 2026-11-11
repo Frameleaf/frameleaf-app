@@ -213,8 +213,8 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    min-width: 44px;
-    min-height: 44px;
+    min-width: var(--fl-control-height);
+    min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

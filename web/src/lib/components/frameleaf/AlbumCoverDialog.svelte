@@ -204,7 +204,7 @@
   }
   .buttons button {
     padding: 0 1rem;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

@@ -42,8 +42,9 @@
  * utility (bg-primary on an @frameleaf/ui Button, `hidden`, `mb-4`, `text-sm`) still wins over
  * it, and every selector is wrapped in :where() so the baseline also carries zero
  * specificity inside that layer. A component's own scoped styles always win over it, and so
- * do the 44px/48px control floors in tokens.css. The prototype's 34px `.button` height is
- * therefore not ported; hit targets stay at the token floor.
+ * do the control floors in tokens.css (44px, 36px with a mouse, 48px on touch). The prototype's
+ * 34px `.button` height is therefore not ported; the token floor is the drawn height, and with a
+ * mouse the click area stays 44px (`fl-control`, below).
  */
 @layer frameleaf-base {
   :where(.frameleaf *, .frameleaf *::before, .frameleaf *::after) {
@@ -301,7 +302,7 @@
 
   /*
    * A link drawn as a button (`<a class="button">`: Open ›, Overnight schedule, See the failed task)
-   * is as tall as the `<button>`s beside it. tokens.css gives every `<button>` the 44px floor (48px
+   * is as tall as the `<button>`s beside it. tokens.css gives every `<button>` the height floor (48px
    * on touch) but no `<a>`, which left these 35px in the same row. Zero specificity in this layer,
    * so a surface that sizes its own `.button` keeps that size.
    */
@@ -312,6 +313,32 @@
   @media (pointer: coarse) {
     :where(.frameleaf a.button) {
       min-height: var(--fl-control-height-touch);
+    }
+  }
+
+  /*
+   * FL-1390: with a mouse a control is drawn at --fl-control-height (36px) and pressed over
+   * --fl-control-target (44px), the pattern of the top bar's buttons. The control stays the size it
+   * is drawn; an unseen strip above and below it belongs to it, so a press or a hover up to 4px
+   * outside the box still reaches the control. The strip sits behind the control's own content
+   * (`z-index: -1` inside the control's own stacking context), so what is pressed inside the box is
+   * unchanged. It takes what the box is short of the target and nothing when the box is already
+   * that tall. Only `.button` and `.fl-control` get one: a row of a menu or a list touches the
+   * rows beside it, and a strip there would take presses meant for its neighbour. Zero specificity,
+   * so a component that positions its control, or draws its own `::after`, keeps that.
+   */
+  @media (pointer: fine) {
+    :where(.frameleaf .button, .fl-scope .button, .frameleaf .fl-control, .fl-scope .fl-control) {
+      position: relative;
+      isolation: isolate;
+    }
+
+    :where(.frameleaf .button, .fl-scope .button, .frameleaf .fl-control, .fl-scope .fl-control)::after {
+      content: '';
+      position: absolute;
+      z-index: -1;
+      inset-block: min(0px, calc((100% - var(--fl-control-target)) / 2));
+      inset-inline: 0;
     }
   }
 
