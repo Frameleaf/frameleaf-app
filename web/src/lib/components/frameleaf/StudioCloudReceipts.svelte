@@ -8,6 +8,7 @@
     mediaOperationStage,
   } from '$lib/frameleaf/activity';
   import { cloudCostFacts } from '$lib/frameleaf/cloud-jobs';
+  import { Route } from '$lib/route';
   import { MediaOperationKind, searchMediaOperations, type MediaOperationDto } from '@frameleaf/sdk';
   import { onDestroy, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
@@ -110,11 +111,15 @@
                 </div>
               {/each}
             </dl>
+            {#if stage === 'done' && receipt.resultAssetId}
+              <a href={Route.viewAsset({ id: receipt.resultAssetId })}>{$t('frameleaf_activity_open_result')}</a>
+            {/if}
           </li>
         {/each}
       </ul>
     {/if}
     <div class="actions">
+      <a href={Route.activity()}>{$t('frameleaf_activity_open')}</a>
       <Button disabled={busy} onclick={() => void load(0)}>{$t('frameleaf_studio_receipts_refresh')}</Button>
       {#if more}
         <Button disabled={busy} onclick={() => void load(skip)}>{$t('frameleaf_studio_receipts_older')}</Button>

@@ -9,6 +9,7 @@ import {
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { Route } from '$lib/route';
 import StudioCloudReceipts from './StudioCloudReceipts.svelte';
 
 const receipt = (id: string, projectId: string, label: string, withheld = false): MediaOperationDto =>
@@ -42,7 +43,10 @@ describe('Studio Cloud receipts', () => {
         total: 4,
       })
       .mockResolvedValueOnce({
-        items: [receipt('first', 'p1', 'Lake morning'), receipt('second', 'p1', 'Lake evening')],
+        items: [
+          { ...receipt('first', 'p1', 'Lake morning'), resultAssetId: 'restored-photo' },
+          receipt('second', 'p1', 'Lake evening'),
+        ],
         total: 4,
       });
     render(StudioCloudReceipts, { open: true, projectId: 'p1' });
@@ -56,6 +60,10 @@ describe('Studio Cloud receipts', () => {
     expect(await screen.findByText('Lake morning')).toBeInTheDocument();
     expect(screen.getByText('Lake evening')).toBeInTheDocument();
     expect(screen.getAllByText('frameleaf_activity_cloud_settled')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'frameleaf_activity_open_result' })).toHaveAttribute(
+      'href',
+      Route.viewAsset({ id: 'restored-photo' }),
+    );
     expect(sdkMock.searchMediaOperations).toHaveBeenLastCalledWith(
       { kind: MediaOperationKind.CloudMlJob, includeDismissed: true, take: 50, skip: 2 },
       { signal: expect.any(AbortSignal) },
