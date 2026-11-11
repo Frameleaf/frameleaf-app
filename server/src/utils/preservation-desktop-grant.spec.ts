@@ -1,4 +1,4 @@
-import { localDesktopCopyHost, PreservationDesktopGrants } from 'src/utils/preservation-desktop-grant.js';
+import { PreservationDesktopGrants, localDesktopCopyHost } from 'src/utils/preservation-desktop-grant.js';
 
 describe(PreservationDesktopGrants.name, () => {
   it('accepts only the literal loopback host from a direct loopback peer', () => {
