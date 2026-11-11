@@ -178,16 +178,21 @@
 
   /** "Check again": a new look now. Choices made against the old suggestions go with them. */
   const checkAgain = async () => {
+    if (phase !== 'review') {
+      return;
+    }
     stop();
+    // The looking state replaces the review at once, so Apply cannot be started while this is being asked for.
+    phase = 'unready';
     try {
       await checkAlbumCleanup();
     } catch (error) {
+      phase = 'review';
       handleError(error, $t('frameleaf_album_cleanup_check_failed'));
       return;
     }
     staleAt = computedAt;
     reset();
-    phase = 'unready';
     await load();
   };
 

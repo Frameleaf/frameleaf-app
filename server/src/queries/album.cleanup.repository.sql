@@ -102,6 +102,15 @@ select
           album_audit
         where
           album_audit."userId" = $2
+      ),
+      (
+        select
+          max(removed."deletedAt")
+        from
+          album_asset_audit removed
+          inner join album_user viewer on viewer."albumId" = removed."albumId"
+        where
+          viewer."userId" = $3
       )
     ) > (
       select
@@ -109,8 +118,8 @@ select
       from
         album_cleanup_snapshot snapshot
       where
-        snapshot."userId" = $3
-        and snapshot.variant = $4
+        snapshot."userId" = $4
+        and snapshot.variant = $5
     ),
     false
   ) as "changed"

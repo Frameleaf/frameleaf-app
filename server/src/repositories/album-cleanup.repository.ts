@@ -110,8 +110,8 @@ export class AlbumCleanupRepository {
 
   /**
    * FL-1404: whether anything on a person's Albums page changed after their scan began. Every write to an album
-   * moves its `updatedAt`, and an album that is deleted or left leaves an audit row behind. Compared in the
-   * database, where both sides keep their microseconds.
+   * moves its `updatedAt` (adding photos included), and an album that is deleted or left, or a photo taken out of
+   * one, leaves an audit row behind. Compared in the database, where both sides keep their microseconds.
    */
   @GenerateSql({ params: [DummyValue.UUID, AlbumCleanupVariant.Ordinary] })
   async hasChangedSinceScan(userId: string, variant: AlbumCleanupVariant): Promise<boolean> {
@@ -125,7 +125,13 @@ export class AlbumCleanupRepository {
               inner join album_user viewer on viewer."albumId" = album.id
               where viewer."userId" = ${userId}
             ),
-            (select max(album_audit."deletedAt") from album_audit where album_audit."userId" = ${userId})
+            (select max(album_audit."deletedAt") from album_audit where album_audit."userId" = ${userId}),
+            (
+              select max(removed."deletedAt")
+              from album_asset_audit removed
+              inner join album_user viewer on viewer."albumId" = removed."albumId"
+              where viewer."userId" = ${userId}
+            )
           ) > (
             select snapshot."computedAt"
             from album_cleanup_snapshot snapshot

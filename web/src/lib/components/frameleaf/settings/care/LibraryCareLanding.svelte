@@ -205,6 +205,21 @@
   let lastRun = $state<AlbumChangeRunResponseDto | null>(null);
   let undoingCleanup = $state(false);
 
+  /** FL-1404: while a scan runs the card says so, then reads the status again. Bounded, as the Albums banner is. */
+  const CLEANUP_POLL_MS = 5000;
+  const CLEANUP_POLLS = 12;
+  let cleanupPolls = 0;
+  $effect(() => {
+    if (!cleanup?.checking || cleanupPolls >= CLEANUP_POLLS) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      cleanupPolls += 1;
+      void readCleanup();
+    }, CLEANUP_POLL_MS);
+    return () => clearTimeout(timer);
+  });
+
   const readCleanup = async () => {
     try {
       const [status, latest] = await Promise.all([getAlbumCleanupStatus(), getLatestAlbumChangeRun()]);

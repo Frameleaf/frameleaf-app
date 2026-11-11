@@ -278,6 +278,23 @@ describe(AlbumCleanupService.name, () => {
       expect(jobs.queue).toHaveBeenLastCalledWith(scan);
     });
 
+    it('scans again after a photo is taken out of an album', async () => {
+      const { sut, ctx } = setup();
+      const jobs = ctx.getMock(JobRepository);
+      const { user } = await ctx.newUser();
+      const { album, assetIds } = await albumOf(ctx, user.id, 'Trip', 3);
+      await sut.handleScan({ userId: user.id });
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ checking: false });
+
+      // Not the cover, so the album's own row does not change.
+      const { albumThumbnailAssetId } = await albumRow(ctx.database, album.id);
+      const removed = assetIds.find((id) => id !== albumThumbnailAssetId)!;
+      await ctx.get(AlbumRepository).removeAssetIds(album.id, [removed]);
+
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ checking: true });
+      expect(jobs.queue).toHaveBeenCalledExactlyOnceWith({ name: 'AlbumCleanupScan', data: { userId: user.id } });
+    });
+
     it('says a scan is waiting rather than asking for another', async () => {
       const { sut, ctx } = setup();
       const jobs = ctx.getMock(JobRepository);

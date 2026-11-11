@@ -166,12 +166,23 @@ describe(AlbumCleanupReview.name, () => {
       expect(screen.queryByText('frameleaf_album_cleanup_intro')).not.toBeInTheDocument();
     });
 
+    it('takes Apply away while Check again is being asked for', async () => {
+      let answer: () => void = () => {};
+      sdkMock.checkAlbumCleanup.mockReturnValueOnce(new Promise<never>((resolve) => (answer = resolve as () => void)));
+      render(AlbumCleanupReview);
+      await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_album_cleanup_check_again' }));
+
+      expect(await screen.findByText('frameleaf_album_cleanup_scanning')).toBeInTheDocument();
+      expect(screen.queryByText('frameleaf_album_cleanup_apply')).not.toBeInTheDocument();
+      answer();
+    });
+
     it('keeps the suggestions on screen when a new look cannot be started', async () => {
       sdkMock.checkAlbumCleanup.mockRejectedValueOnce(new Error('offline'));
       render(AlbumCleanupReview);
       await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_album_cleanup_check_again' }));
       await waitFor(() => expect(sdkMock.checkAlbumCleanup).toHaveBeenCalledOnce());
-      expect(screen.getByText('frameleaf_album_cleanup_intro')).toBeInTheDocument();
+      expect(await screen.findByText('frameleaf_album_cleanup_intro')).toBeInTheDocument();
     });
   });
 

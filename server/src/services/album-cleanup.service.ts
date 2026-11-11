@@ -204,11 +204,12 @@ export class AlbumCleanupService extends BaseService {
   }
 
   async getStatus(auth: AuthDto): Promise<AlbumCleanupStatusResponseDto> {
+    const waiting = await this.isScanWaiting(auth);
     const [snapshot, latest] = await Promise.all([
       this.albumCleanupRepository.getSnapshotSummary(auth.user.id, variantOf(auth)),
       this.albumCleanupRepository.getLatestApply(auth.user.id),
     ]);
-    const checking = await this.scanWhenStale(auth, snapshot?.computedAt);
+    const checking = waiting || (await this.scanWhenStale(auth, snapshot?.computedAt));
 
     let status = latest?.status;
     if (latest && status === AlbumChangeRunStatus.Running && (await this.failIfAbandoned(latest))) {
@@ -232,10 +233,11 @@ export class AlbumCleanupService extends BaseService {
   }
 
   async getSnapshot(auth: AuthDto): Promise<AlbumCleanupSnapshotResponseDto> {
+    const waiting = await this.isScanWaiting(auth);
     const stored = await this.albumCleanupRepository.getSnapshot(auth.user.id, variantOf(auth));
     // A snapshot from before the facts changed shape is treated as missing, so a fresh scan replaces it.
     const snapshot = stored && hasCurrentAlbumFacts(stored.facts.albums) ? stored : undefined;
-    const checking = await this.scanWhenStale(auth, snapshot?.computedAt);
+    const checking = waiting || (await this.scanWhenStale(auth, snapshot?.computedAt));
     if (!snapshot) {
       return { ready: false, checking, computedAt: null, suggestionCount: 0, facts: null };
     }
@@ -246,6 +248,14 @@ export class AlbumCleanupService extends BaseService {
       suggestionCount: snapshot.suggestionCount,
       facts: snapshot.facts,
     };
+  }
+
+  /**
+   * Whether a scan is waiting or running. Asked before the result is read: a scan that ends in between then
+   * answers "checking" with its new result, never "done" with the old one.
+   */
+  private isScanWaiting(auth: AuthDto): Promise<boolean> {
+    return this.jobRepository.hasDedupJob(QueueName.BackgroundTask, albumCleanupScanKey(auth.user.id));
   }
 
   /** "Check again": a new scan now, however recent the last one. */
@@ -265,13 +275,10 @@ export class AlbumCleanupService extends BaseService {
   /**
    * FL-1404: asks for a scan when there is none, when it is a day old, or when an album was created, changed or
    * deleted since it ran. A scan that ran once and was never repeated told a library of 57 new albums that it had
-   * nothing to tidy. Returns whether a scan is waiting or running, so nobody is told so while one is.
+   * nothing to tidy. Returns whether it asked, so nobody is told there is nothing to do while a scan is on its way.
    */
   private async scanWhenStale(auth: AuthDto, computedAt: Date | undefined): Promise<boolean> {
     const userId = auth.user.id;
-    if (await this.jobRepository.hasDedupJob(QueueName.BackgroundTask, albumCleanupScanKey(userId))) {
-      return true;
-    }
     const recent = !!computedAt && Date.now() - new Date(computedAt).getTime() <= CLEANUP_SCAN_STALE_HOURS * 3_600_000;
     if (recent && !(await this.albumCleanupRepository.hasChangedSinceScan(userId, variantOf(auth)))) {
       return false;
