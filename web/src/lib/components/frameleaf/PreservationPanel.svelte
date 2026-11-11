@@ -82,6 +82,9 @@
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
   /** A read on its way when the panel went must not schedule another. */
   let destroyed = false;
+  let desktopCopy = $state(false);
+  let desktopCopyBusy = $state(false);
+  let desktopGrant: AbortController | null = null;
 
   const isAdmin = $derived(!!authManager.user?.isAdmin);
   const openRestores = $derived(
@@ -102,6 +105,70 @@
     new Date(value).toLocaleString($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' });
   const downloadHref = (item: PreservationPackageDto, what: 'download' | 'manifest') =>
     `${getBaseUrl()}/preservation/packages/${item.id}/${what}`;
+  const desktopCopyPath = '/__frameleaf_desktop_copy';
+  const canCopyInDesktop = (item: PreservationPackageDto) =>
+    desktopCopy &&
+    !item.lockedContent &&
+    item.status === PreservationPackageStatus.Ready &&
+    item.manifest?.complete &&
+    item.manifest.exported > 0 &&
+    item.verification?.status === PreservationVerificationStatus.Verified;
+
+  const copyInDesktop = async (item: PreservationPackageDto) => {
+    if (!canCopyInDesktop(item) || desktopCopyBusy) {
+      return;
+    }
+    desktopCopyBusy = true;
+    const controller = new AbortController();
+    const sessionCurrent = authManager.captureSession();
+    desktopGrant = controller;
+    try {
+      const response = await fetch(`${getBaseUrl()}/preservation/packages/${item.id}/desktop-copy-grant`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      const grant = response.ok ? await response.json() : null;
+      if (typeof grant?.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(grant.token)) {
+        throw new Error('Desktop copy unavailable');
+      }
+      if (controller.signal.aborted || !sessionCurrent()) {
+        desktopCopyBusy = false;
+        return;
+      }
+      window.location.assign(`${desktopCopyPath}/${item.id}#${grant.token}`);
+    } catch (error) {
+      desktopCopyBusy = false;
+      if (!controller.signal.aborted) {
+        handleError(error, $t('frameleaf_preservation_desktop_copy_error'));
+      }
+    } finally {
+      desktopGrant = null;
+    }
+  };
+
+  const cancelDesktopCopy = () => {
+    if (desktopGrant) {
+      desktopGrant.abort();
+    } else {
+      window.location.assign(`${desktopCopyPath}/cancel`);
+    }
+  };
+
+  const desktopCopyState = (event: Event) => {
+    if (!(event instanceof CustomEvent)) {
+      return;
+    }
+    desktopCopyBusy = false;
+    if (event.detail === 'saved') {
+      toastManager.info($t('frameleaf_preservation_desktop_copy_saved'));
+    } else if (event.detail === 'unsupported') {
+      toastManager.danger($t('frameleaf_preservation_desktop_copy_unsupported'));
+    } else if (event.detail === 'failed') {
+      toastManager.danger($t('frameleaf_preservation_desktop_copy_error'));
+    }
+  };
 
   /** The Badge tones of `packageState` as the kit's four. */
   const kitTone = (tone: string): KitTone =>
@@ -301,8 +368,18 @@
     restoreOpen = true;
   };
 
-  onMount(() => void load());
+  onMount(() => {
+    desktopCopy = Reflect.get(window, '__FRAMELEAF_LOCAL_COPY__') === true;
+    if (desktopCopy) {
+      window.addEventListener('frameleaf-local-copy-state', desktopCopyState);
+    }
+    void load();
+  });
   onDestroy(() => {
+    desktopGrant?.abort();
+    if (desktopCopy) {
+      window.removeEventListener('frameleaf-local-copy-state', desktopCopyState);
+    }
     destroyed = true;
     clearTimeout(pollTimer);
   });
@@ -478,6 +555,18 @@
         <a class="fl-control button primary" href={downloadHref(managing, 'download')} download
           >{$t('frameleaf_preservation_download')}</a
         >
+        {#if canCopyInDesktop(managing)}
+          <Button disabled={desktopCopyBusy} onclick={() => copyInDesktop(managing!)}>
+            {$t('frameleaf_preservation_desktop_copy')}
+          </Button>
+        {/if}
+      </Row>
+    {/if}
+    {#if desktopCopyBusy}
+      <Row label={$t('frameleaf_preservation_desktop_copy_working')}>
+        <Button onclick={cancelDesktopCopy}>
+          {$t('cancel')}
+        </Button>
       </Row>
     {/if}
     {#if managing.status !== PreservationPackageStatus.Removed}

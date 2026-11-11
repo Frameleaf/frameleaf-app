@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { basename } from 'node:path';
+import { Readable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
@@ -40,9 +41,11 @@ import {
   PreservationSelection,
 } from 'src/repositories/preservation.repository.js';
 import { ReadStreamResponse, StorageRepository } from 'src/repositories/storage.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
+import { PreservationDesktopGrants } from 'src/utils/preservation-desktop-grant.js';
 import {
   PRESERVATION_CONFLICT_FIELDS,
   PRESERVATION_DESTINATION,
@@ -128,12 +131,15 @@ const oneOf = <T extends string>(values: readonly T[], value: unknown, fallback:
  */
 @Injectable()
 export class PreservationService {
+  private readonly desktopGrants = new PreservationDesktopGrants();
+  private readonly desktopStreams = new Map<string, Set<Readable>>();
   constructor(
     private logger: LoggingRepository,
     private repository: PreservationRepository,
     private files: PreservationFileRepository,
     private operations: MediaOperationRepository,
     private storage: StorageRepository,
+    private sessions: SessionRepository,
   ) {
     this.logger.setContext(PreservationService.name);
   }
@@ -355,6 +361,105 @@ export class PreservationService {
    */
   async downloadPackage(auth: AuthDto, id: string): Promise<ReadStreamResponse> {
     const found = await this.findDownloadable(auth, id);
+    return this.streamPackage(found);
+  }
+
+  async grantDesktopCopy(auth: AuthDto, id: string, host: string) {
+    if (!auth.session || auth.apiKey || auth.oauthApp || auth.sharedLink) {
+      throw new NotFoundException('Desktop copy unavailable');
+    }
+    const found = await this.findPackage(auth, id);
+    await this.requireDesktopCopy(found);
+    const token = this.desktopGrants.issue(auth.user.id, auth.session.id, id, host);
+    if (!token) {
+      throw new ConflictException('Too many pending Desktop copy requests');
+    }
+    return { token };
+  }
+
+  async redeemDesktopCopy(id: string, host: string, token: string | undefined): Promise<ReadStreamResponse> {
+    const grant = this.desktopGrants.take(token, id, host);
+    if (!grant || !(await this.sessions.isActiveForOwner(grant.sessionId, grant.ownerId))) {
+      throw new NotFoundException('Desktop copy unavailable');
+    }
+    const found = await this.repository.getPackage(id, grant.ownerId);
+    if (!found) {
+      throw new NotFoundException('Desktop copy unavailable');
+    }
+    await this.requireDesktopCopy(found);
+    const source = await this.files.openPackage(found.format, found.path);
+    let manifest: Buffer;
+    try {
+      manifest = await source.readDocument(PRESERVATION_MANIFEST_ENTRY, PRESERVATION_MAX_MANIFEST_BYTES);
+    } finally {
+      await source.close();
+    }
+    const size = Buffer.alloc(4);
+    size.writeUInt32BE(manifest.length);
+    const archive = await this.streamPackage(found);
+    const stream = Readable.from(
+      (async function* () {
+        try {
+          yield size;
+          yield manifest;
+          yield* archive.stream;
+        } finally {
+          archive.stream.destroy();
+        }
+      })(),
+      { objectMode: false },
+    );
+    const active = this.desktopStreams.get(grant.sessionId) ?? new Set<Readable>();
+    active.add(stream);
+    this.desktopStreams.set(grant.sessionId, active);
+    // SessionDelete can arrive before Nest attaches its response error handler.
+    stream.on('error', () => undefined);
+    stream.once('close', () => {
+      archive.stream.destroy();
+      active.delete(stream);
+      if (active.size === 0) {
+        this.desktopStreams.delete(grant.sessionId);
+      }
+    });
+    // A session deleted while the archive was being assembled must not escape cancellation.
+    try {
+      if (!(await this.sessions.isActiveForOwner(grant.sessionId, grant.ownerId)) || stream.destroyed) {
+        throw new NotFoundException('Desktop copy unavailable');
+      }
+    } catch (error) {
+      stream.destroy();
+      throw error;
+    }
+    return { stream, type: 'application/octet-stream' };
+  }
+
+  @OnEvent({ name: 'SessionDelete' })
+  onDesktopSessionDelete({ sessionId }: ArgOf<'SessionDelete'>) {
+    this.desktopGrants.revokeSession(sessionId);
+    for (const stream of this.desktopStreams.get(sessionId) ?? []) {
+      stream.destroy(new Error('Desktop copy authorization ended'));
+    }
+  }
+
+  private async requireDesktopCopy(found: PreservationPackage) {
+    const manifest = asRecord(found.manifest);
+    if (
+      found.origin !== 'export' ||
+      found.format !== 'directory' ||
+      found.removedAt ||
+      found.status !== 'ready' ||
+      found.includeLocked ||
+      manifest.packageId !== found.id ||
+      manifest.complete !== true ||
+      asInt(asRecord(manifest.counts).exported) === 0 ||
+      asRecord(found.verification).status !== 'verified' ||
+      (await this.repository.restrictedPackageIds([found.id])).has(found.id)
+    ) {
+      throw new NotFoundException('Desktop copy unavailable');
+    }
+  }
+
+  private async streamPackage(found: PreservationPackage): Promise<ReadStreamResponse> {
     const zip = this.storage.createZipStream();
     const root = found.path;
     zip.addFile(`${root}/${PRESERVATION_MANIFEST_ENTRY}`, PRESERVATION_MANIFEST_ENTRY);

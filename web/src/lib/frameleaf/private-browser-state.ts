@@ -60,6 +60,13 @@ const storageOrUndefined = (read: () => Storage) => {
 
 export const clearPrivateBrowserState = () => {
   privateStateGeneration++;
+  if (typeof window !== 'undefined' && Reflect.get(window, '__FRAMELEAF_LOCAL_COPY__') === true) {
+    try {
+      window.location.assign('/__frameleaf_desktop_copy/cancel');
+    } catch {
+      // A blocked navigation must never interrupt sign-out.
+    }
+  }
   pruneExpiredOAuthRequests();
   for (const store of [storageOrUndefined(() => localStorage), storageOrUndefined(() => sessionStorage)]) {
     try {
