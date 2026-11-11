@@ -132,7 +132,7 @@ describe('durable Boards media imports', () => {
       two = await setup();
     await expect(one.repo.get(two.auth.user.id, one.preview.id)).rejects.toThrow('unavailable');
     await expect(one.repo.create(two.auth, one.dto)).rejects.toThrow('unavailable');
-    const connection = await one.repo.createConnection({
+    const connection = await one.repo.addSiteConnection({
       id: randomUUID(),
       ownerId: one.auth.user.id,
       provider: 'fixture',
@@ -196,7 +196,7 @@ describe('durable Boards media imports', () => {
   });
   it('disconnects retained access and fences already-claimed work', async () => {
     const { repo, auth, dto, preview } = await setup();
-    const connection = await repo.createConnection({
+    const connection = await repo.addSiteConnection({
       id: randomUUID(),
       ownerId: auth.user.id,
       provider: 'fixture',

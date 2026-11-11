@@ -156,7 +156,7 @@ export class MediaImportService {
     const id = randomUUID();
     const encryptedSession = await this.sessions.encrypt(auth.user.id, id, dto.session);
     return this.connectionResponse(
-      await this.repository.createConnection({
+      await this.repository.addSiteConnection({
         id,
         ownerId: auth.user.id,
         provider: dto.provider,

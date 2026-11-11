@@ -136,7 +136,7 @@ export class MediaImportRepository {
       .orderBy('createdAt', 'desc')
       .execute();
   }
-  createConnection(input: {
+  addSiteConnection(input: {
     id: string;
     ownerId: string;
     provider: string;
