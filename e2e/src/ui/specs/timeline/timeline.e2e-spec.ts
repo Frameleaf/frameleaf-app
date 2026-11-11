@@ -1128,17 +1128,38 @@ test.describe('Timeline', () => {
       });
     });
 
-    test('Work offers a file-name toggle remembered on this device', async ({ page }) => {
+    test('Work has no file-name button: the View menu holds it, per layout, with the account (FL-1398)', async ({
+      page,
+    }) => {
       await pageUtils.openPhotosPage(page);
       await timelineUtils.setLayout(page, 'Work');
-      const show = page.getByRole('button', { name: 'Show file names' });
-      await expect(show).toHaveAttribute('aria-pressed', 'false');
-      await show.click();
-      await expect(page.getByRole('button', { name: 'Hide file names' })).toHaveAttribute('aria-pressed', 'true');
-      await page.reload();
-      await expect(page.getByRole('button', { name: 'Hide file names' })).toHaveAttribute('aria-pressed', 'true');
-      await timelineUtils.setLayout(page, 'Browse');
       await expect(page.getByRole('button', { name: /file names/ })).toHaveCount(0);
+
+      const toolbar = page.getByTestId('frameleaf-results-toolbar');
+      await toolbar.getByRole('button', { name: 'View', exact: true }).click();
+      const menu = page.getByTestId('frameleaf-view-menu');
+      await expect(menu.getByRole('switch', { name: 'Time taken' })).toBeChecked();
+      const saved = page.waitForRequest(
+        (request) => request.method() === 'PUT' && request.url().includes('/users/me/preferences'),
+      );
+      await menu.getByRole('switch', { name: 'File name' }).check();
+      expect((await saved).postDataJSON()).toEqual({ libraryView: { workNames: true } });
+
+      // The menu stays open while its switches are used; Browse keeps its own choice, a bare grid.
+      await expect(menu).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(menu).toBeHidden();
+      await timelineUtils.setLayout(page, 'Browse');
+      await toolbar.getByRole('button', { name: 'View', exact: true }).click();
+      await expect(menu.getByRole('switch', { name: 'File name' })).not.toBeChecked();
+      await expect(menu.getByRole('switch', { name: 'Time taken' })).not.toBeChecked();
+
+      // A chevron row opens a second page, and its first row goes back.
+      await menu.getByRole('button', { name: /^Group by/ }).click();
+      await menu.getByRole('menuitemradio', { name: 'Month' }).click();
+      await expect(page.getByTestId('frameleaf-group').first()).toBeVisible();
+      await menu.getByRole('button', { name: /Group by$/ }).click();
+      await expect(menu.getByRole('button', { name: /^Group by/ })).toContainText('Month');
     });
   });
 
