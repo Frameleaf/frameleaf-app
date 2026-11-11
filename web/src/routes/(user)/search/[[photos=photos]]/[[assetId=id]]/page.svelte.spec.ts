@@ -445,6 +445,8 @@ describe('Library Assistant on a rejected link', () => {
   it('keeps the warning and allows a round trip through Classic when smart search is off', async () => {
     addMessages('dev', en);
     flags.assistant = true;
+    authManager.setUser({ id: 'user-1' } as never);
+    authManager.setPreferences(preferencesFactory.build());
     state.url = new URL('http://localhost/search?dq=damaged');
     vi.mocked(updateMyPreferences).mockImplementation(async ({ userPreferencesUpdateDto }) =>
       preferencesFactory.build({ search: { classic: userPreferencesUpdateDto.search?.classic } }),
