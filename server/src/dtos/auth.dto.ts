@@ -72,7 +72,9 @@ export const capabilitiesField = z
   .array(z.string().max(64))
   .max(16)
   .optional()
-  .describe('What this client can do; "verification" means it can answer verification_required (default: none)');
+  .describe(
+    'What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.',
+  );
 
 /** Unified sign-in, Contract B: this client reads `status` ("done" or "next") in the login answers. */
 const stepsField = z

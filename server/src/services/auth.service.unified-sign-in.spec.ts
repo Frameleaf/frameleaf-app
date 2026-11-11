@@ -75,6 +75,8 @@ describe('AuthService unified sign-in rule', () => {
     mocks.user.getTwoFactor.mockResolvedValue(undefined);
     mocks.user.useTwoFactorStep.mockResolvedValue(true);
     mocks.session.raiseSignIn.mockResolvedValue();
+    // the Frameleaf sign-in's live tag (unlinking removes it)
+    mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
     config();
   });
 
@@ -130,6 +132,12 @@ describe('AuthService unified sign-in rule', () => {
         sut.stepUp(other, { transaction: transaction as string, code: '123456' }, capable),
       ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(mocks.session.raiseSignIn).not.toHaveBeenCalled();
+    });
+
+    it('refuses a Frameleaf session whose tag was removed by unlinking', async () => {
+      signIn = basicFrameleaf();
+      mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+      expect(await refusal(sut.authenticate(request('relay')))).toMatchObject({ code: 'frameleaf_sign_in_required' });
     });
 
     it('asks a Verified sign-in for nothing, administrator routes included', async () => {

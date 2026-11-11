@@ -1234,7 +1234,16 @@ export class AuthService extends BaseService {
       }
       return;
     }
-    const record = auth.session.signIn ?? undefined;
+    let record = auth.session.signIn ?? undefined;
+    // a Frameleaf sign-in counts away from home only while its live tag exists (unlinking removes the tag
+    // and keeps the session)
+    if (
+      away &&
+      record?.source === 'frameleaf' &&
+      !(await this.frameleafAccountRepository.getSession(auth.session.id))
+    ) {
+      record = { ...record, source: 'local' };
+    }
     const { frameleafCloud, signInPolicy } = await this.getConfig({ withCache: true });
     // the authenticator matters only after a Basic Frameleaf sign-in: look it up only then
     const hasAuthenticator =
