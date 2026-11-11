@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -1550,6 +1551,38 @@ describe(AssetMediaService.name, () => {
         }
         await expect(stat(response.path)).rejects.toMatchObject({ code: 'ENOENT' });
       } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
+    });
+
+    it('holds a document review slot until its PDF is released', async () => {
+      const folder = await mkdtemp(join(tmpdir(), 'office-review-test-'));
+      try {
+        const originalPath = join(folder, 'report.bin');
+        const pdf = join(folder, 'preview.pdf');
+        await writeFile(originalPath, 'original');
+        await writeFile(pdf, '%PDF-1.7');
+        const asset = AssetFactory.from({
+          originalPath,
+          originalFileName: 'Report.docx',
+          type: AssetType.Other,
+        }).build();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginal.mockResolvedValue(asset);
+        withOfficePreview.mockImplementation((_input, _name, save) => save(pdf));
+        const open = () => sut.downloadOriginal(authStub.admin, asset.id, { format: 'document-pdf' });
+
+        const first = await open();
+        const second = await open();
+        await expect(open()).rejects.toBeInstanceOf(ServiceUnavailableException);
+        await first.release?.();
+        await first.release?.();
+        const third = await open();
+        await expect(open()).rejects.toBeInstanceOf(ServiceUnavailableException);
+        await second.release?.();
+        await third.release?.();
+      } finally {
+        withOfficePreview.mockReset();
         await rm(folder, { recursive: true, force: true });
       }
     });

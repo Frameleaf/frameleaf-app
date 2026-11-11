@@ -77,6 +77,9 @@ import {
 import { getPreferences, isTrashReuploadOpen } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
 
+/** How long a finished document PDF may hold a review slot while it downloads. */
+const DOCUMENT_REVIEW_HOLD = 2 * 60 * 1000;
+
 export interface AssetMediaRedirectResponse {
   targetSize: AssetMediaSize | 'original';
 }
@@ -624,48 +627,61 @@ export class AssetMediaService extends BaseService {
       throw new ServiceUnavailableException('Document previews are busy. Try again shortly.');
     }
 
+    // A slot is held until the PDF is released after delivery, or for at most DOCUMENT_REVIEW_HOLD, so
+    // stalled downloads cannot keep finished PDFs piling up in temporary storage.
     this.activeDocumentReviews++;
-    try {
-      const directory = await makeWorkDir('document-review', await isLockedPath(originalPath));
-      const release = () => rm(directory, { recursive: true, force: true });
-      try {
-        const output = path.join(directory, 'review.pdf');
-        const rendered = await withPlainCopy(
-          originalPath,
-          (source) =>
-            withOfficePreview(
-              source,
-              originalFileName,
-              async (pdf) => {
-                await copyFile(pdf, output);
-                return true;
-              },
-              { allPages: true, signal },
-            ),
-          { viewerId: lockedViewerOf(auth) },
-        );
-        if (!rendered) {
-          throw new NotFoundException('Document preview is unavailable');
-        }
-        signal?.throwIfAborted();
-        await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
-        const current = await this.assetRepository.getForOriginal(id, false);
-        if (current.ownerId !== ownerId || current.originalPath !== originalPath) {
-          throw new ConflictException('This document changed during preview');
-        }
-        return new FileDownloadResponse({
-          path: output,
-          release,
-          contentType: 'application/pdf',
-          fileName: `${getFileNameWithoutExtension(originalFileName)}.pdf`,
-          cacheControl: CacheControl.PrivateWithoutCache,
-        });
-      } catch (error) {
-        await release();
-        throw error;
+    let directory: string | undefined;
+    let timer: NodeJS.Timeout | undefined;
+    let released = false;
+    const release = async () => {
+      if (released) {
+        return;
       }
-    } finally {
+      released = true;
+      clearTimeout(timer);
       this.activeDocumentReviews--;
+      if (directory) {
+        await rm(directory, { recursive: true, force: true });
+      }
+    };
+    try {
+      directory = await makeWorkDir('document-review', await isLockedPath(originalPath));
+      const output = path.join(directory, 'review.pdf');
+      const rendered = await withPlainCopy(
+        originalPath,
+        (source) =>
+          withOfficePreview(
+            source,
+            originalFileName,
+            async (pdf) => {
+              await copyFile(pdf, output);
+              return true;
+            },
+            { allPages: true, signal },
+          ),
+        { viewerId: lockedViewerOf(auth) },
+      );
+      if (!rendered) {
+        throw new NotFoundException('Document preview is unavailable');
+      }
+      signal?.throwIfAborted();
+      await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+      const current = await this.assetRepository.getForOriginal(id, false);
+      if (current.ownerId !== ownerId || current.originalPath !== originalPath) {
+        throw new ConflictException('This document changed during preview');
+      }
+      timer = setTimeout(() => void release(), DOCUMENT_REVIEW_HOLD);
+      timer.unref();
+      return new FileDownloadResponse({
+        path: output,
+        release,
+        contentType: 'application/pdf',
+        fileName: `${getFileNameWithoutExtension(originalFileName)}.pdf`,
+        cacheControl: CacheControl.PrivateWithoutCache,
+      });
+    } catch (error) {
+      await release();
+      throw error;
     }
   }
 

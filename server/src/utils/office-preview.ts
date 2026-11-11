@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { copyFile, lstat, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { copyFile, lstat, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { executionSignal } from 'src/utils/execution-signal.js';
+import { makeWorkDirFor } from 'src/utils/locked-read.js';
 import { ConverterExitError, runConverter } from 'src/utils/still-converters.js';
 
 const filters: Readonly<Record<string, string>> = {
@@ -59,7 +59,8 @@ export async function withOfficePreview<T>(
   }
   const signal = options.signal ?? executionSignal();
   signal?.throwIfAborted();
-  const directory = await mkdtemp(join(tmpdir(), 'frameleaf-office-'));
+  // A plain copy of a Locked original stays in the Locked temporary folder (tmpfs), never on disk.
+  const directory = await makeWorkDirFor(source, 'office');
   const profile = join(directory, 'profile');
   const profileUrl = pathToFileURL(profile).href;
   try {

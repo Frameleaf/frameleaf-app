@@ -77,6 +77,12 @@
   const licenceLink = $derived(font?.licenseUrl && /^https?:\/\//i.test(font.licenseUrl) ? font.licenseUrl : null);
   /** The item whose preview could not be loaded; another item tries its own. */
   let previewFailed = $state<string | null>(null);
+  // A failed preview is retried when the selection or its thumbnail changes.
+  const previewKey = $derived(asset ? `${asset.id}:${asset.thumbhash ?? ''}` : null);
+  $effect(() => {
+    void previewKey;
+    previewFailed = null;
+  });
 
   let tab = $state<'info' | 'people'>('info');
   const tabId = $props.id();
@@ -419,7 +425,7 @@
           aria-label={detail.originalFileName}
           src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Original, edited: false })}
         ></audio>
-      {:else if asset.thumbhash && previewFailed !== asset.id}
+      {:else if asset.thumbhash && previewFailed !== previewKey}
         <a
           class="preview"
           href={/\.(?:docx?|html|key|numbers|pages|potx|pptx?|txt|xlsx?)$/i.test(
@@ -434,7 +440,7 @@
           <img
             src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash })}
             alt=""
-            onerror={() => (previewFailed = asset.id)}
+            onerror={() => (previewFailed = previewKey)}
           />
         </a>
       {/if}
@@ -474,13 +480,13 @@
         aria-label={$t('frameleaf_work_inspector_open')}
         onclick={() => onOpen(asset)}
       >
-        {#if detail && previewFailed === asset.id}
+        {#if detail && previewFailed === previewKey}
           <!-- No preview yet (a RAW file before its thumbnail exists): the grid's quiet placeholder. -->
           <BrokenAsset class="preview-missing" hideMessage />
         {:else if detail}<img
             src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
             alt=""
-            onerror={() => (previewFailed = asset.id)}
+            onerror={() => (previewFailed = previewKey)}
           />
           {#if asset.isVideo}
             <span class="play" aria-hidden="true"><Icon icon={mdiPlay} size="38" /></span>
