@@ -816,6 +816,30 @@ describe(FrameleafAuthService.name, () => {
         expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
       });
 
+      it('keeps the exchange token’s issue time in the pending sign-in, so a logout after it is always seen', async () => {
+        const token = await mint({ jti: 'j13', claims: basicClaims });
+        const { iat } = JSON.parse(Buffer.from(token.split('.', 2)[1]!, 'base64url').toString()) as { iat: number };
+        const { transaction } = await refusal(sut.exchangeToken({ token }, capable));
+        const pending = JSON.parse(Buffer.from(transaction.split('.', 1)[0]!, 'base64url').toString()) as {
+          iat: number;
+          exp: number;
+        };
+        expect(pending.iat).toBeLessThanOrEqual(iat);
+        expect(pending.exp).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) + 590);
+
+        // logged out at Cloud after the refusal: the step-up's revocation check uses that issue time and refuses
+        mocks.frameleafAccount.isSignInRevoked.mockImplementation(({ issuedAt }) =>
+          Promise.resolve(issuedAt.getTime() <= iat * 1000),
+        );
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({
+          status: 403,
+        });
+        expect(mocks.frameleafAccount.isSignInRevoked).toHaveBeenLastCalledWith(
+          expect.objectContaining({ issuedAt: new Date(pending.iat * 1000) }),
+        );
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      });
+
       it('fences the link write itself with the proved password', async () => {
         const { transaction } = await refusal(
           sut.exchangeToken({ token: await mint({ jti: 'j11', claims: basicClaims }) }, capable),

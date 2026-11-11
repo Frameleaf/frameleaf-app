@@ -865,7 +865,10 @@ export class AuthService extends BaseService {
     // accepted. Recorded first: an exchange that tags its session after the lookup below sees this
     // record and ends that session. When it cannot be recorded the sessions still end, and the logout
     // then fails so Frameleaf Cloud delivers it again.
-    const seconds = FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS + 2 * FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
+    // unified sign-in: also for as long as a pending step-up (`verification_required`) can still be completed
+    const seconds =
+      Math.max(FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS, VERIFICATION_TRANSACTION_SECONDS) +
+      2 * FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
     let revocationError: unknown;
     try {
       await this.frameleafAccountRepository.revokeSignIns(

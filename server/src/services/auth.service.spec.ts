@@ -619,9 +619,10 @@ describe(AuthService.name, () => {
           expect.any(Date),
         );
         const [, until] = mocks.frameleafAccount.revokeSignIns.mock.calls[0];
-        // as long as an exchange token minted before now could still be accepted
-        expect(until.getTime()).toBeGreaterThanOrEqual(Date.now() + 2 * 60 * 1000);
-        expect(until.getTime()).toBeLessThanOrEqual(Date.now() + 3 * 60 * 1000);
+        // as long as an exchange token minted before now could still be accepted, and as long as a pending
+        // step-up (verification_required, 10 minutes) could still be completed
+        expect(until.getTime()).toBeGreaterThanOrEqual(Date.now() + 10 * 60 * 1000);
+        expect(until.getTime()).toBeLessThanOrEqual(Date.now() + 11 * 60 * 1000);
       });
 
       it('records the revocation before it looks for sessions, and fails when it cannot (FL-230)', async () => {

@@ -272,7 +272,15 @@ export class FrameleafAuthService extends BaseService {
           }
         };
         await checkRevocation();
-        return this.signIn(profile, loginDetails, { sid, bearerToken: idToken }, undefined, checkRevocation);
+        return this.signIn(
+          profile,
+          loginDetails,
+          { sid, bearerToken: idToken },
+          undefined,
+          checkRevocation,
+          undefined,
+          issuedAt,
+        );
       }),
     );
   }
@@ -293,6 +301,7 @@ export class FrameleafAuthService extends BaseService {
     profile: OAuthProfile,
     sid: string | undefined,
     need: { needPassword: boolean; needAuthenticator: boolean },
+    issuedAt: Date,
   ) {
     const claims = Object.fromEntries(PENDING_CLAIMS.flatMap((key) => (key in profile ? [[key, profile[key]]] : [])));
     const methods: VerificationMethod[] = ['frameleaf'];
@@ -312,7 +321,8 @@ export class FrameleafAuthService extends BaseService {
       needPassword: need.needPassword,
       needAuthenticator: need.needAuthenticator,
       auth: authority,
-      iat: now,
+      // when Cloud issued the sign-in, not now: a back-channel logout in between is always seen by the step-up
+      iat: Math.floor(issuedAt.getTime() / 1000),
       exp: now + VERIFICATION_TRANSACTION_SECONDS,
     };
     return verificationRequired(methods, await signToken(this.verificationMac(), pending, userId));
@@ -372,6 +382,7 @@ export class FrameleafAuthService extends BaseService {
           // the proof belongs to this account, and to its password as checked: a changed password or an email
           // that moved to another account in the meantime gets no session
           { methods: proved, userId: user.id, passwordHash },
+          issuedAt,
         );
       }),
     );
@@ -490,6 +501,9 @@ export class FrameleafAuthService extends BaseService {
               throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
             }
           },
+          undefined,
+          // a pending sign-in keeps the exchange token's issue time, so a logout after it is always seen
+          new Date((iat - tolerance) * 1000),
         );
       }),
     );
@@ -508,6 +522,8 @@ export class FrameleafAuthService extends BaseService {
       new BadRequestException(message),
     afterTag?: (sessionId: string) => Promise<void>,
     proof?: { methods: string[]; userId: string; passwordHash?: string },
+    /** When Cloud issued this sign-in (for revocation checks on a pending step-up); default: now. */
+    issuedAt = new Date(),
   ) {
     const { sid } = oauth;
     const { signInPolicy } = await this.getConfig({ withCache: true });
@@ -527,7 +543,7 @@ export class FrameleafAuthService extends BaseService {
       const needAuthenticator =
         enrolled && !cloudVerified && !proved.includes('totp') && !proved.includes('recovery_code');
       if (needPassword || needAuthenticator) {
-        throw await this.verificationRefusal(user.id, profile, sid, { needPassword, needAuthenticator });
+        throw await this.verificationRefusal(user.id, profile, sid, { needPassword, needAuthenticator }, issuedAt);
       }
     };
     const email = profile.email?.trim().toLowerCase();
