@@ -32,9 +32,11 @@
     query: string;
     /** The results already on the page: a video among them needs no lookup for its date and place. */
     assets?: AssetResponseDto[];
+    /** FL-1457 (N2): how many videos the strip shows, so a page with no photo results can point at them. */
+    found?: number;
   };
 
-  let { query, assets = [] }: Props = $props();
+  let { query, assets = [], found = $bindable(0) }: Props = $props();
 
   let hits = $state<VideoMomentSearchHitDto[]>([]);
   let requested = '';
@@ -65,6 +67,9 @@
   });
 
   const videos = $derived(momentsByVideo(hits));
+  $effect(() => {
+    found = videos.length;
+  });
 
   /** Videos that are not among the results on the page, looked up once for their date and place. */
   let lookedUp = $state<Record<string, AssetResponseDto>>({});

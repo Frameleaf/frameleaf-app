@@ -553,6 +553,13 @@
   const contextChips = $derived(
     discoveryQuery ? discoveryContextChips(discoveryQuery).filter((chip) => !(titleText && chip.key === 'text')) : [],
   );
+  /**
+   * FL-1457 (N4): a search by meaning that fell back to text says so with a chip ("All text: lake"), which explains
+   * the Filter badge's count of the words and removes them as Clear search does.
+   */
+  const textFallbackChip = $derived(
+    searchSession.textFallback && titleText ? `${$t('frameleaf_search_mode_all_text')}: ${titleText}` : '',
+  );
   /** An old-style link's own fields, each a chip, again without the words in the title. */
   const legacyKeys = $derived(
     discoveryQuery ? [] : getObjectKeys(terms).filter((key) => key !== 'filter' && !(titleText && key === 'query')),
@@ -627,6 +634,14 @@
     }
     void navigateToAsset(asset);
   };
+  /**
+   * FL-1457 (FL-1391 B1, LibraryView `tabsInToolbar`): with 960px of results area the layout tabs sit in the toolbar,
+   * where each tab's tooltip says what it is for; a narrower one keeps them on their own row with the hint.
+   */
+  const TABS_IN_TOOLBAR = 960;
+  let pageWidth = $state(0);
+  let gridWidth = $state(0);
+  const tabsInToolbar = $derived((showInfoPanel && gridWidth ? gridWidth : pageWidth) >= TABS_IN_TOOLBAR);
   /** The Library's Filter badge: the search text and every condition, as the chips show them. */
   const unappliedFields = $derived(['text', ...activeFilterFields(librarySession.query)]);
 
@@ -664,6 +679,18 @@
   const noMatches = $derived(
     hasSearchQuery && discoveryQuery?.mode !== 'speech' && !isLoading && !loadFailed && searchResultAssets.length === 0,
   );
+  /**
+   * FL-1457 (prototype EmptyState.jsx, "Search, no matches"): words ask for fewer words, and for clearing the filters
+   * only when the page has some; a search of filters alone keeps the Library's words.
+   */
+  const emptyMessageKey = $derived(
+    titleText
+      ? contextChips.length + filterChips.length + legacyKeys.length > 0
+        ? 'frameleaf_search_empty_fewer_words_or_filters'
+        : 'frameleaf_search_empty_fewer_words'
+      : 'frameleaf_library_empty_filtered_message',
+  );
+  let momentsFound = $state(0);
   const emptyClear = $derived({ label: $t('frameleaf_library_empty_filtered_clear'), onClick: clearSearch });
   const emptySecondary = $derived(
     widerQuery
@@ -858,7 +885,7 @@
   on a phone, the tab bar. The Frameleaf selection bar floats over the results.
 -->
 <UserPageLayout use={[followScroll]}>
-  <div class="search-page">
+  <div class="search-page" bind:clientWidth={pageWidth}>
     {#if hasSearchQuery}
       <!--
         Owner 2026-11-05 (prototype App.jsx): a search is the Library narrowed by it, not a page of
@@ -877,14 +904,14 @@
         {/if}
       </header>
       <!-- FL-707 P2/12 (LibraryView `.fl-library-layouts`): the layout tabs and what each is for. -->
-      {#if !noMatches}
+      {#if !noMatches && !tabsInToolbar}
         <div class="frameleaf search-layouts" data-theme={appTheme}>
           <p class="search-layout-hint">{$t(LAYOUT_HINTS[librarySession.layout])}</p>
           <LibraryLayoutSwitch session={librarySession} />
         </div>
       {/if}
       <!-- Prototype `.active-filter-bar`; the Library's chips (FilterChip); an old-style link keeps the palette's SearchChip. -->
-      {#if contextChips.length + filterChips.length + legacyKeys.length > 0}
+      {#if contextChips.length + filterChips.length + legacyKeys.length > 0 || textFallbackChip}
         <section
           id="search-chips"
           class="frameleaf search-chips"
@@ -892,6 +919,13 @@
           aria-label={$t('frameleaf_search_active_filters')}
         >
           <div class="search-chip-list">
+            {#if textFallbackChip}
+              <FilterChip
+                label={textFallbackChip}
+                removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: textFallbackChip } })}
+                onRemove={clearSearchText}
+              />
+            {/if}
             {#if discoveryQuery}
               <!-- FL-48: the similar-photo reference and the space are chips of their own, and so are the
                  words of a spoken-words search; other words are the page's title (FL-1393). -->
@@ -982,6 +1016,7 @@
             onMoreActions={() => (moreActionsOpen = true)}
             count={hasMore || isLoading || loadFailed ? null : searchResultAssets.length}
             leading={hasMore ? loadedCount : undefined}
+            start={tabsInToolbar ? toolbarTabs : undefined}
           >
             {#if discoveryQuery && discoveryQuery.mode !== 'speech'}
               <button type="button" class="search-tool" onclick={() => (saving = true)}>
@@ -1003,6 +1038,10 @@
         {$t('frameleaf_search_results_more')}
         <small>{$t('frameleaf_search_results_looser', { values: { count: split?.rest.length ?? 0 } })}</small>
       </h2>
+    {/snippet}
+
+    {#snippet toolbarTabs()}
+      <LibraryLayoutSwitch session={librarySession} />
     {/snippet}
 
     {#snippet loadedCount()}
@@ -1028,7 +1067,7 @@
       {/if}
       {#if typeof terms.query === 'string' && terms.query.trim()}
         <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
-        <VideoMomentResults query={terms.query} assets={searchResultAssets} />
+        <VideoMomentResults query={terms.query} assets={searchResultAssets} bind:found={momentsFound} />
       {/if}
       {#if discoveryQuery?.mode === 'speech'}
         <SpokenWordsResults query={discoveryQuery} />
@@ -1077,7 +1116,7 @@
         </div>
       {:else if hasSearchQuery && searchResultAssets.length > 0}
         <div class="search-body">
-          <div class="search-grid">
+          <div class="search-grid" bind:clientWidth={gridWidth}>
             <ResultsView
               assets={timelineAssets}
               sections={split
@@ -1117,6 +1156,11 @@
             onRetry={retrySearch}
           />
         </div>
+      {:else if hasSearchQuery && !isLoading && momentsFound > 0 && typeof terms.query === 'string' && terms.query.trim()}
+        <!-- FL-1457 (N2): only moments in videos matched; the strip above stays, with one quiet line under it. -->
+        <p class="frameleaf search-moments-only" data-theme={appTheme} role="status">
+          {$t('frameleaf_search_moments_only', { values: { query: titleText, count: momentsFound } })}
+        </p>
       {:else if hasSearchQuery && !isLoading}
         <!-- The Library's filtered empty state (App.jsx "No matching media"), with the way out of the
              album or space the search started in, or past its filters, when there is one. -->
@@ -1126,7 +1170,7 @@
           <EmptyState
             icon={mdiImageSearchOutline}
             title={$t('frameleaf_library_empty_filtered_title')}
-            message={$t('frameleaf_library_empty_filtered_message')}
+            message={$t(emptyMessageKey)}
             action={emptySecondary ?? emptyClear}
             secondaryAction={emptySecondary ? emptyClear : undefined}
           />
@@ -1433,6 +1477,13 @@
   /* The grid starts under the band, at the photo gutter. */
   .search-content {
     padding-top: var(--fl-space-half);
+  }
+  /* FL-1457 (N2, review-1111.css `.fl1456-quiet`): one muted line, 12px under the moments strip. */
+  .search-moments-only {
+    margin: var(--fl-space-3) 0 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    background: transparent;
   }
   /* LibraryView `.fl-library-body`: the results, and Work's information panel beside them. */
   .search-body {
