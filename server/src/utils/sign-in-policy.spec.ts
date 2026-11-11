@@ -72,6 +72,19 @@ describe('at home', () => {
   });
 });
 
+describe('after unlinking (no live Frameleaf tag)', () => {
+  it('is neither a Frameleaf sign-in nor a password one away from home, legacy included', () => {
+    const unlinked = record({ legacy: true });
+    expect(code({ record: unlinked, frameleafTagged: false, allowPasswordOverRelay: true })).toBe(
+      'frameleaf_sign_in_required',
+    );
+  });
+  it('never turns a Cloud passkey into a local one', () => {
+    const cloudPasskey = record({ methods: ['passkey'], level: 'verified' });
+    expect(code({ record: cloudPasskey, frameleafTagged: false })).toBe('frameleaf_sign_in_required');
+  });
+});
+
 describe('older sessions', () => {
   const legacy = record({ legacy: true });
   it('keep today’s rights, including administrator access away from home', () => {

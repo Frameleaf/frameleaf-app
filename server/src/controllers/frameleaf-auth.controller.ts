@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
-import { ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiExtraModels, ApiResponse, ApiTags, getSchemaPath } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
@@ -16,6 +16,7 @@ import {
   FrameleafStepUpDto,
   FrameleafTokenExchangeDto,
   FrameleafTokenExchangeErrorDto,
+  VerificationRequiredResponseDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { ApiTag, AuthCookie, AuthType, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
@@ -71,6 +72,12 @@ export class FrameleafAuthController {
       'Exchanges the authorization code, requires a verified email, links or creates the account Frameleaf Cloud authorized, and signs in with a session Frameleaf Cloud can end.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
+  @ApiResponse({
+    status: 403,
+    type: VerificationRequiredResponseDto,
+    description:
+      'verification_required (a client that declared the verification capability): more is needed, with the methods and transaction that complete it',
+  })
   async callback(
     @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
@@ -105,10 +112,17 @@ export class FrameleafAuthController {
     description:
       'frameleaf_exchange_invalid, frameleaf_exchange_wrong_audience, frameleaf_exchange_expired or frameleaf_exchange_replayed',
   })
+  @ApiExtraModels(FrameleafTokenExchangeErrorDto, VerificationRequiredResponseDto)
   @ApiResponse({
     status: 403,
-    type: FrameleafTokenExchangeErrorDto,
-    description: 'frameleaf_exchange_no_access: the account has no access to this server, or it was removed',
+    description:
+      'frameleaf_exchange_no_access: the account has no access to this server, or it was removed; or verification_required (a client that declared the verification capability): more is needed, with the methods and transaction that complete it',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(FrameleafTokenExchangeErrorDto) },
+        { $ref: getSchemaPath(VerificationRequiredResponseDto) },
+      ],
+    },
   })
   async exchange(
     @Res({ passthrough: true }) res: Response,

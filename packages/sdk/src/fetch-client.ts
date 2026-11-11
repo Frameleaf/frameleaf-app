@@ -12479,6 +12479,20 @@ export type OAuthCallbackDto = {
     /** OAuth callback URL */
     url: string;
 };
+export type VerificationRequiredResponseDto = {
+    /** The level that would do: urn:frameleaf:acr:verified */
+    acr: string;
+    code: Code;
+    error: string;
+    /** How recent the sign-in must be, in seconds; null when any time will do */
+    maxAge: number | null;
+    message: string;
+    /** What would complete it: frameleaf (Cloud's step-up, then a new exchange), totp or recovery_code (the local authenticator), password (the local password, for a first link) */
+    methods: VerificationMethod[];
+    statusCode: number;
+    /** Send it to POST /auth/step-up (a session) or POST /oauth/frameleaf/step-up (a sign-in), 10 minutes */
+    transaction: string;
+};
 export type FrameleafTokenExchangeDto = {
     /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
     capabilities?: string[];
@@ -32626,6 +32640,9 @@ export function finishFrameleafSignIn({ oAuthCallbackDto }: {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: LoginResponseDto;
+    } | {
+        status: 403;
+        data: VerificationRequiredResponseDto;
     }>("/oauth/frameleaf/callback", oazapfts.json({
         ...opts,
         method: "POST",
@@ -32649,7 +32666,7 @@ export function exchangeFrameleafToken({ frameleafTokenExchangeDto }: {
         data: FrameleafTokenExchangeErrorDto;
     } | {
         status: 403;
-        data: FrameleafTokenExchangeErrorDto;
+        data: FrameleafTokenExchangeErrorDto | VerificationRequiredResponseDto;
     }>("/oauth/frameleaf/exchange", oazapfts.json({
         ...opts,
         method: "POST",
@@ -43041,6 +43058,15 @@ export enum RestorationModelState {
     NoGpu = "no-gpu",
     GpuUnqualified = "gpu-unqualified",
     InsufficientVram = "insufficient-vram"
+}
+export enum Code {
+    VerificationRequired = "verification_required"
+}
+export enum VerificationMethod {
+    Frameleaf = "frameleaf",
+    Totp = "totp",
+    RecoveryCode = "recovery_code",
+    Password = "password"
 }
 export enum FrameleafTokenExchangeErrorCode {
     FrameleafExchangeNotLinked = "frameleaf_exchange_not_linked",

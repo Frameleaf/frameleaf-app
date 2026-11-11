@@ -74,10 +74,9 @@ export class MaintenanceController {
     if (dto.action === MaintenanceAction.End) {
       return;
     }
-    if (dto.action === MaintenanceAction.RestoreDatabase) {
-      // restoring a backup replaces the whole database: confirmed recently
-      await this.authService.requireConfirmedRecently(auth, dto.confirmation, loginDetails);
-    }
+    // maintenance can lead to restoring a backup, which replaces the whole database: confirmed recently before
+    // any maintenance authority is issued (Start and SelectDatabaseRestore included)
+    await this.authService.requireConfirmedRecently(auth, dto.confirmation, loginDetails);
 
     // the confirmation is checked above and never stored with the maintenance action
     const { confirmation: _confirmation, ...action } = dto;

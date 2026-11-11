@@ -68,7 +68,7 @@ import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { DecimalSize } from 'src/utils/bytes.js';
-import { CONFIRMATION_REQUIRED, sessionIsConfirmedRecently } from 'src/utils/confirmed-recently.js';
+import { CONFIRMATION_REQUIRED, sessionIsConfirmedRecently, signInIsRecent } from 'src/utils/confirmed-recently.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { mailSealKey, openMailSecret, sealMailSecret } from 'src/utils/frameleaf-mail.js';
 import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
@@ -433,7 +433,8 @@ export class AuthService extends BaseService {
     }
     const signIn = auth.session.signIn;
     const { signInPolicy } = await this.getConfig({ withCache: true });
-    if (!signIn || (signIn.legacy && !signInPolicy.applyToOlderApps)) {
+    // an older session (no record, or one marked legacy) keeps today's rights until "Apply to older apps too"
+    if ((!signIn || signIn.legacy) && !signInPolicy.applyToOlderApps) {
       return;
     }
     if (await sessionIsConfirmedRecently(auth.session, (id) => this.frameleafAccountRepository.getSession(id))) {
@@ -666,6 +667,14 @@ export class AuthService extends BaseService {
   private async requireAccountPassword(userId: string, password: string | undefined, session?: AuthSession) {
     if (password === undefined) {
       if (await sessionIsConfirmedRecently(session, (id) => this.frameleafAccountRepository.getSession(id))) {
+        return;
+      }
+      // an account with no password here (it signs in with the administrator's own provider) has nothing to type:
+      // a sign-in from the last 10 minutes is its confirmation, so it can still set up Two-Step Verification
+      if (
+        signInIsRecent(session?.signIn ? { ...session.signIn, source: 'frameleaf' } : undefined) &&
+        !(await this.userRepository.getForChangePassword(userId)).password
+      ) {
         return;
       }
       throw new ForbiddenException({
@@ -1237,38 +1246,33 @@ export class AuthService extends BaseService {
       }
       return;
     }
+    const { frameleafCloud, signInPolicy } = await this.getConfig({ withCache: true });
+    const sessionId = auth.session.id;
+    let tagged: boolean | undefined;
+    const hasTag = async () => (tagged ??= !!(await this.frameleafAccountRepository.getSession(sessionId)));
     let record = auth.session.signIn ?? undefined;
-    // a Frameleaf sign-in counts away from home only while its live tag exists (unlinking removes the tag
-    // and keeps the session)
-    if (
-      away &&
-      record?.source === 'frameleaf' &&
-      !(await this.frameleafAccountRepository.getSession(auth.session.id))
-    ) {
-      // nothing Cloud vouched for counts any more, a Cloud passkey included: never a local passkey
-      record = { ...record, source: 'local', methods: [], level: 'basic' };
-    }
-    if (!away && !record) {
-      // a session with no record is legacy, and a legacy session at home keeps today's rights: nothing to judge
-      return;
-    }
-    if (away && !record) {
-      // a session with no record (made outside createSession) is judged as before: legacy, by its Frameleaf tag
-      // or its passkey link
-      const tagged = !!(await this.frameleafAccountRepository.getSession(auth.session.id));
-      const passkey = !tagged && (await this.passkeyRepository.isPasskeySession(auth.session.id));
+    if (!record) {
+      // a session with no record (made outside createSession) is an older session: at home it keeps today's
+      // rights unless "Apply to older apps too" is on; otherwise it is judged by its Frameleaf tag or passkey link
+      if (!away && !signInPolicy.applyToOlderApps) {
+        return;
+      }
+      const frameleaf = await hasTag();
+      const passkey = !frameleaf && (await this.passkeyRepository.isPasskeySession(sessionId));
       record = {
-        source: tagged ? 'frameleaf' : 'local',
+        source: frameleaf ? 'frameleaf' : 'local',
         methods: passkey ? ['passkey'] : [],
         level: passkey ? 'verified' : 'basic',
         legacy: true,
       };
     }
-    const { frameleafCloud, signInPolicy } = await this.getConfig({ withCache: true });
+    // a Frameleaf sign-in counts away from home only while its live tag exists (unlinking removes the tag and keeps
+    // the session); without it nothing Cloud vouched for counts, and it is not a password sign-in either
+    const frameleafTagged = !away || record.source !== 'frameleaf' || (await hasTag());
     // the authenticator matters only for a Basic sign-in from Frameleaf, or when everyone needs two steps:
     // look it up only then
     const hasAuthenticator =
-      record?.level === 'basic' && (record.source === 'frameleaf' || signInPolicy.require === 'everyone')
+      record.level === 'basic' && (record.source === 'frameleaf' || signInPolicy.require === 'everyone')
         ? !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt
         : false;
     const decision = evaluateSession({
@@ -1280,6 +1284,7 @@ export class AuthService extends BaseService {
       applyToOlderApps: !!signInPolicy.applyToOlderApps,
       allowPasswordOverRelay: frameleafCloud.remoteAccess.allowPasswordOverRelay,
       hasAuthenticator,
+      frameleafTagged,
     });
     if (decision.ok) {
       return;

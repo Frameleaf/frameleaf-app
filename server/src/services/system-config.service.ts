@@ -460,6 +460,12 @@ export class SystemConfigService extends BaseService {
     if (current.signInPolicy.require === 'everyone') {
       return;
     }
+    // password sign-in must stay on: a local authenticator or passkey is no way back in without it
+    if (!incoming.passwordLogin?.enabled) {
+      throw new BadRequestException(
+        'Everyone, everywhere needs password sign-in on, so you can still sign in to this server without Frameleaf.',
+      );
+    }
     const authenticator = (await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt;
     if (!authenticator && (await this.passkeyRepository.countByUser(auth.user.id)) === 0) {
       throw new BadRequestException(

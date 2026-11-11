@@ -26,6 +26,11 @@ export type PolicyInput = {
   allowPasswordOverRelay: boolean;
   /** The person has a local authenticator switched on. */
   hasAuthenticator: boolean;
+  /**
+   * A Frameleaf sign-in's live tag still exists (unlinking removes it and keeps the session). Without it the
+   * session is neither a Frameleaf sign-in nor a password one. Default: tagged.
+   */
+  frameleafTagged?: boolean;
 };
 
 export type PolicyDecision =
@@ -42,12 +47,15 @@ const usedAuthenticator = (methods: readonly string[]) => methods.includes('totp
 export const evaluateSession = (input: PolicyInput): PolicyDecision => {
   const { record, away } = input;
   const legacy = !record || (record.legacy && !input.applyToOlderApps);
-  const passkey = !!record?.methods.includes('passkey');
-  const frameleaf = record?.source === 'frameleaf';
+  const local = !record || record.source === 'local';
+  // a passkey counts only when it is this server's own; a Cloud passkey counts as the Frameleaf sign-in it was
+  const passkey = local && !!record?.methods.includes('passkey');
+  const untagged = record?.source === 'frameleaf' && input.frameleafTagged === false;
+  const frameleaf = record?.source === 'frameleaf' && !untagged;
 
   if (away) {
     // a password away from home is accepted only when the owner allowed it, and then only with the authenticator
-    const password = input.allowPasswordOverRelay && (legacy || usedAuthenticator(record?.methods ?? []));
+    const password = local && input.allowPasswordOverRelay && (legacy || usedAuthenticator(record?.methods ?? []));
     if (!frameleaf && !passkey && !password) {
       return { ok: false, code: 'frameleaf_sign_in_required' };
     }

@@ -89,6 +89,26 @@ const FrameleafTokenExchangeSchema = z
   })
   .meta({ id: 'FrameleafTokenExchangeDto' });
 
+/** Unified sign-in, Contract A.2: the 403 a sign-in or request answers when it needs more than it reached. */
+const VerificationRequiredResponseSchema = z
+  .object({
+    message: z.string(),
+    error: z.string(),
+    statusCode: z.int(),
+    code: z.literal('verification_required'),
+    acr: z.string().describe('The level that would do: urn:frameleaf:acr:verified'),
+    maxAge: z.int().nullable().describe('How recent the sign-in must be, in seconds; null when any time will do'),
+    methods: z
+      .array(z.enum(['frameleaf', 'totp', 'recovery_code', 'password']).meta({ id: 'VerificationMethod' }))
+      .describe(
+        "What would complete it: frameleaf (Cloud's step-up, then a new exchange), totp or recovery_code (the local authenticator), password (the local password, for a first link)",
+      ),
+    transaction: z
+      .string()
+      .describe('Send it to POST /auth/step-up (a session) or POST /oauth/frameleaf/step-up (a sign-in), 10 minutes'),
+  })
+  .meta({ id: 'VerificationRequiredResponseDto' });
+
 /** Unified sign-in: the local proof a `verification_required` from the exchange or callback asked for. */
 const FrameleafStepUpSchema = z
   .object({
@@ -118,6 +138,7 @@ export class FrameleafAccountLinkResponseDto extends createZodDto(FrameleafAccou
 export class FrameleafHandoffResponseDto extends createZodDto(FrameleafHandoffResponseSchema) {}
 export class FrameleafHandoffCreateDto extends createZodDto(FrameleafHandoffCreateSchema) {}
 export class FrameleafHandoffRedeemDto extends createZodDto(FrameleafHandoffRedeemSchema) {}
+export class VerificationRequiredResponseDto extends createZodDto(VerificationRequiredResponseSchema) {}
 export class FrameleafStepUpDto extends createZodDto(FrameleafStepUpSchema) {}
 export class FrameleafTokenExchangeDto extends createZodDto(FrameleafTokenExchangeSchema) {}
 export class FrameleafTokenExchangeErrorDto extends createZodDto(FrameleafTokenExchangeErrorSchema) {}

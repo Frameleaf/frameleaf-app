@@ -90,6 +90,37 @@ describe('SessionService', () => {
         undefined,
         record,
       );
+      expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
+    });
+
+    it('gives a child of a Frameleaf session the same Frameleaf tag', async () => {
+      const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
+      const authTime = new Date('2026-11-11T10:00:00Z');
+      mocks.session.getSignIn.mockResolvedValue({
+        methods: ['email_code'],
+        level: 'basic',
+        source: 'frameleaf',
+        legacy: false,
+        authTime,
+      });
+      mocks.session.create.mockResolvedValue({ ...SessionFactory.create(), id: 'child-session' });
+      mocks.frameleafAccount.getSession.mockResolvedValue({
+        sessionId: 'parent-session',
+        userId: auth.user.id,
+        sid: 'fl-sid',
+        sub: 'fl-sub',
+        authTime,
+      } as never);
+
+      await sut.create(auth, {});
+
+      expect(mocks.frameleafAccount.tagSession).toHaveBeenCalledWith({
+        sessionId: 'child-session',
+        userId: auth.user.id,
+        sid: 'fl-sid',
+        sub: 'fl-sub',
+        authTime,
+      });
     });
   });
 

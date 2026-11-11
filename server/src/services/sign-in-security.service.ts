@@ -49,7 +49,8 @@ export class SignInSecurityService extends BaseService {
         JSON.stringify([kind, principal, rateLimitAddress(details.securityClientIp ?? details.clientIp)]),
       );
       const keys = [`sign-in-backoff:${hash}`];
-      if (kind === 'password') {
+      // two-step codes (sign-in and step-up) count per account too, whatever address they come from
+      if (kind === 'password' || kind === 'two-factor') {
         // FL-850: a password guesser behind a trusted proxy can send a new forwarded address with every try, so
         // wrong passwords for one account also count from every address. This wait holds back only further
         // passwords for that account: passkeys and Frameleaf sign-in are never behind it. Both locks are held on

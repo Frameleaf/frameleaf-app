@@ -763,6 +763,19 @@ describe(FrameleafAuthService.name, () => {
         expect(mocks.session.create).not.toHaveBeenCalled();
       });
 
+      it('links nothing when the password changed after it was proved', async () => {
+        const { transaction } = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j10', claims: basicClaims }) }, capable),
+        );
+        // checked against bcrypt-hash, then changed before the link is written
+        mocks.user.getForChangePassword
+          .mockResolvedValueOnce({ id: existing.id, password: 'bcrypt-hash' })
+          .mockResolvedValue({ id: existing.id, password: 'new-hash' });
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({ status: 401 });
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      });
+
       it('lets an older client link by email match as today, even when the account has an authenticator', async () => {
         await enrol();
         await sut.exchangeToken({ token: await mint({ jti: 'j9', claims: basicClaims }) }, loginDetails);

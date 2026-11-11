@@ -220,6 +220,15 @@ describe('AuthService unified sign-in rule', () => {
   });
 
   describe('older apps', () => {
+    it('judge a session with no record by the owner’s policy once "Apply to older apps too" is on', async () => {
+      signIn = null;
+      await expect(sut.authenticate(request(null))).resolves.toMatchObject({ user });
+      config({ signInPolicy: { require: 'everyone', applyToOlderApps: true } });
+      mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+      mocks.passkey.isPasskeySession.mockResolvedValue(false);
+      expect(await refusal(sut.authenticate(request(null)))).toMatchObject({ code: 'two_factor_setup_required' });
+    });
+
     it('keep today’s rights until the owner turns on "Apply to older apps too"', async () => {
       who = admin;
       enrol();
@@ -341,6 +350,26 @@ describe('AuthService unified sign-in rule', () => {
         { password: 'password', code: totpCode(secret, totpStep(new Date())) },
         capable,
       );
+    });
+
+    it('asks a session with no record to confirm once "Apply to older apps too" is on', async () => {
+      const auth = AuthFactory.from(user).session({ id: 'session-1' }).build();
+      await expect(sut.requireConfirmedRecently(auth, undefined, capable)).resolves.toBeUndefined();
+      config({ signInPolicy: { applyToOlderApps: true } });
+      expect(await refusal(sut.requireConfirmedRecently(auth, undefined, capable))).toMatchObject({
+        code: 'confirmation_required',
+      });
+    });
+
+    it('lets an account with no password set up two-step within 10 minutes of any sign-in', async () => {
+      mocks.user.getForChangePassword.mockResolvedValue({ id: user.id, password: '' });
+      const oauth = { source: 'local' as const, methods: [], level: 'basic' as const, legacy: false };
+      await expect(sut.setupTwoFactor(sessionAuth({ ...oauth, authTime: new Date() }), {})).resolves.toMatchObject({
+        secret: expect.any(String),
+      });
+      expect(
+        await refusal(sut.setupTwoFactor(sessionAuth({ ...oauth, authTime: new Date(Date.now() - 11 * 60_000) }), {})),
+      ).toMatchObject({ code: 'confirmation_required' });
     });
 
     it('lets two-step changes skip the password within 10 minutes of a Frameleaf sign-in', async () => {

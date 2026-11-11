@@ -65,6 +65,20 @@ export class SessionService extends BaseService {
       undefined,
       parent ?? undefined,
     );
+    // ...and stays a Frameleaf sign-in where its parent is one: the same tag (sid, sub, auth time), so a
+    // back-channel logout, unlinking or access removal ends both
+    if (parent?.source === 'frameleaf') {
+      const tag = await this.frameleafAccountRepository.getSession(auth.session.id);
+      if (tag) {
+        await this.frameleafAccountRepository.tagSession({
+          sessionId: session.id,
+          userId: tag.userId,
+          sid: tag.sid,
+          sub: tag.sub,
+          authTime: tag.authTime,
+        });
+      }
+    }
 
     return { ...mapSession(session), token };
   }

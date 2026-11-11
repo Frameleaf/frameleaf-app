@@ -40327,6 +40327,16 @@
               }
             },
             "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationRequiredResponseDto"
+                }
+              }
+            },
+            "description": "verification_required (a client that declared the verification capability): more is needed, with the methods and transaction that complete it"
           }
         },
         "summary": "Finish Sign in with Frameleaf",
@@ -40396,11 +40406,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FrameleafTokenExchangeErrorDto"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FrameleafTokenExchangeErrorDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VerificationRequiredResponseDto"
+                    }
+                  ]
                 }
               }
             },
-            "description": "frameleaf_exchange_no_access: the account has no access to this server, or it was removed"
+            "description": "frameleaf_exchange_no_access: the account has no access to this server, or it was removed; or verification_required (a client that declared the verification capability): more is needed, with the methods and transaction that complete it"
           }
         },
         "summary": "Sign in with a Frameleaf account token",
@@ -168884,6 +168901,69 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "VerificationMethod": {
+        "enum": [
+          "frameleaf",
+          "totp",
+          "recovery_code",
+          "password"
+        ],
+        "type": "string"
+      },
+      "VerificationRequiredResponseDto": {
+        "properties": {
+          "acr": {
+            "description": "The level that would do: urn:frameleaf:acr:verified",
+            "type": "string"
+          },
+          "code": {
+            "enum": [
+              "verification_required"
+            ],
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "maxAge": {
+            "description": "How recent the sign-in must be, in seconds; null when any time will do",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "methods": {
+            "description": "What would complete it: frameleaf (Cloud's step-up, then a new exchange), totp or recovery_code (the local authenticator), password (the local password, for a first link)",
+            "items": {
+              "$ref": "#/components/schemas/VerificationMethod"
+            },
+            "type": "array"
+          },
+          "statusCode": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "transaction": {
+            "description": "Send it to POST /auth/step-up (a session) or POST /oauth/frameleaf/step-up (a sign-in), 10 minutes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "acr",
+          "code",
+          "error",
+          "maxAge",
+          "message",
+          "methods",
+          "statusCode",
+          "transaction"
+        ],
         "type": "object"
       },
       "VersionCheckFrequency": {

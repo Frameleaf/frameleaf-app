@@ -580,6 +580,13 @@ export class FrameleafAuthService extends BaseService {
           throw refuse('conflict', 'This account is already linked to another Frameleaf account');
         }
         requireProvedAccount(existing);
+        // the password proved must still be this account's before anything is linked
+        if (
+          proof?.passwordHash &&
+          (await this.userRepository.getForChangePassword(existing.id)).password !== proof.passwordHash
+        ) {
+          throw new UnauthorizedException('This sign-in expired. Sign in with Frameleaf again.');
+        }
         user = existing;
         // the first link to an existing account needs proof: a Verified Frameleaf sign-in, or the local password
         // (an older client links as today)

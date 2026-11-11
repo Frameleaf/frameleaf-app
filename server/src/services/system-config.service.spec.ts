@@ -1049,6 +1049,15 @@ describe(SystemConfigService.name, () => {
         expect(configWrites()).toHaveLength(0);
       });
 
+      it('refuses it when the same save turns password sign-in off', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+        mocks.user.getTwoFactor.mockResolvedValue({ enabledAt: new Date() } as never);
+        const dto = { ...everyone(), passwordLogin: { enabled: false } };
+
+        await expect(sut.updateAdminConfig(dto, authStub.admin)).rejects.toThrow('password sign-in on');
+        expect(configWrites()).toHaveLength(0);
+      });
+
       it.each([
         ['a local authenticator', { enabledAt: new Date() }, 0],
         ['a local passkey', undefined, 1],

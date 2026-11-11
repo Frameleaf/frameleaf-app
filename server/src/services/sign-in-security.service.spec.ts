@@ -86,6 +86,14 @@ describe(SignInSecurityService.name, () => {
     await expect(wrongPassword('two-factor', 'owner-id', '198.51.100.77')).resolves.toBe('checked');
   });
 
+  it('holds back an account’s two-step codes after repeated failures from any address (sign-in and step-up)', async () => {
+    for (let guess = 0; guess < 5; guess++) {
+      await expect(wrongPassword('two-factor', 'owner-id', `203.0.113.${guess}`)).resolves.toBe('checked');
+    }
+    await expect(wrongPassword('two-factor', 'owner-id', '198.51.100.77')).rejects.toMatchObject({ status: 429 });
+    await expect(wrongPassword('two-factor', 'someone-id', '198.51.100.77')).resolves.toBe('checked');
+  });
+
   it('clears the account’s count when its password is right', async () => {
     for (let guess = 0; guess < 4; guess++) {
       await wrongPassword('password', 'owner@example.com', `203.0.113.${guess}`);
