@@ -21,7 +21,7 @@
   type Props = {
     /** Items these results show, when known. */
     count: number | null;
-    /** More of these results are still to load, so the count reads "250+ items" as the toolbar's does. */
+    /** More of these results are still to load, so a count above zero reads "250+ items" as the toolbar's does. */
     more?: boolean;
     /** Items in the whole scope (library, person, partner) before any filter, when known. */
     total?: number | null;
@@ -63,7 +63,7 @@
       <!-- Keyed on the text, so a new count fades in rather than snapping. -->
       {#key `${count}/${total}/${more}`}
         <span class="fl-reveal">
-          {more && count !== null
+          {more && count
             ? $t('frameleaf_search_results_count', { values: { count, more: 'yes' } })
             : filtered
               ? $t('frameleaf_status_items_of', { values: { count, total } })

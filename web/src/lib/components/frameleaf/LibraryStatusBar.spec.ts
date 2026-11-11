@@ -30,6 +30,12 @@ describe('LibraryStatusBar', () => {
     expect(screen.getByTestId('library-status-bar')).toHaveTextContent('250+ items');
   });
 
+  it('says "0 items", not "0+ items", while the first results are still on their way', () => {
+    render(LibraryStatusBar, { count: 0, more: true, saved: true });
+
+    expect(screen.getByTestId('library-status-bar')).toHaveTextContent('0 items');
+  });
+
   it('leaves the count out until it is known', () => {
     render(LibraryStatusBar, { count: null, total: null, saved: true });
 
