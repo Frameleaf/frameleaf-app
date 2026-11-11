@@ -20,7 +20,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   SELECT s."id",
     CASE WHEN f."sessionId" IS NULL AND p."sessionId" IS NOT NULL THEN ARRAY['passkey']::character varying[] ELSE '{}'::character varying[] END,
     CASE WHEN f."sessionId" IS NULL AND p."sessionId" IS NOT NULL THEN 'verified' ELSE 'basic' END,
-    s."createdAt",
+    COALESCE(f."authTime", s."createdAt"),
     CASE WHEN f."sessionId" IS NOT NULL THEN 'frameleaf' ELSE 'local' END,
     true
   FROM "session" s
