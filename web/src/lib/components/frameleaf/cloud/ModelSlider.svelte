@@ -86,6 +86,16 @@
   const id = $props.id();
   const ICONS: Record<Band, string> = { cpu: mdiChip, gpu: mdiExpansionCard, cloud: mdiCloudOutline, none: mdiCancel };
 
+  const modelName = (entry: PositionState, short = false) => {
+    if (entry.item.id === 'render-software@1') {
+      return $t(short ? 'frameleaf_model_render_software_short' : 'frameleaf_model_render_software');
+    }
+    if (entry.item.id === 'render-hardware@1') {
+      return $t(short ? 'frameleaf_model_render_hardware_short' : 'frameleaf_model_render_hardware');
+    }
+    return short ? entry.item.short : entry.item.name;
+  };
+
   const reasonText = (entry: PositionState) =>
     entry.reasons.map((reason) => $t(reason.key as Translations, { values: reason.values })).join(' ');
 
@@ -203,7 +213,7 @@
         class:is-disabled={entry.disabled}
         title={entry.disabled
           ? entry.reasonText
-          : `${tiered ? `${tierOf(index)} · ` : ''}${entry.item.name} · ${stopLabel(entry)}`}
+          : `${tiered ? `${tierOf(index)} · ` : ''}${modelName(entry)} · ${stopLabel(entry)}`}
       >
         <input
           type="radio"
@@ -222,10 +232,10 @@
         {/if}
         <span class="ms-stop-name" aria-hidden="true">
           <Icon icon={ICONS[entry.band]} size="14" />
-          <span>{entry.item.short}</span>
+          <span>{modelName(entry, true)}</span>
         </span>
         <span class="sr-only">
-          {tiered ? `${tierOf(index)}, ` : ''}{entry.item.name}: {stopLabel(entry)}{entry.disabled
+          {tiered ? `${tierOf(index)}, ` : ''}{modelName(entry)}: {stopLabel(entry)}{entry.disabled
             ? `. ${$t('frameleaf_model_unavailable_prefix')} ${entry.reasonText}`
             : ''}
         </span>
@@ -247,7 +257,7 @@
     >
       <Icon icon={ICONS[selected.band]} size="16" aria-hidden={true} />
       <span>
-        <strong>{tiered ? `${tierOf(selectedIndex)} · ` : ''}{selected.item.name}</strong> · {stopLabel(selected)}
+        <strong>{tiered ? `${tierOf(selectedIndex)} · ` : ''}{modelName(selected)}</strong> · {stopLabel(selected)}
         <small>
           {noteOf(selected)}
           {detail(selected)}

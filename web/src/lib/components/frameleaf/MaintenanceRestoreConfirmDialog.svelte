@@ -66,7 +66,7 @@
       : $t('admin.frameleaf_maintenance_restore_summary_plain', { values: { date, size } });
   });
 
-  const CONFIRM_WORD = 'RESTORE';
+  const CONFIRM_WORD = $derived($t('admin.frameleaf_maintenance_restore_confirm_phrase').toUpperCase());
 
   $effect(() => {
     if (open) {
@@ -124,7 +124,7 @@
       {$t('admin.frameleaf_maintenance_restore_backup_first')}
     </label>
     <label class="confirm-field" for={confirmId}>
-      {$t('admin.frameleaf_maintenance_restore_confirm_type_label')}
+      {$t('admin.frameleaf_maintenance_restore_confirm_type_label', { values: { phrase: CONFIRM_WORD } })}
       <input
         id={confirmId}
         type="text"

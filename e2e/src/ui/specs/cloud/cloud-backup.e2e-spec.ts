@@ -82,7 +82,8 @@ test.describe('Frameleaf Cloud backup setup', () => {
     expect(setup?.body).toMatchObject({
       target: 'byo-s3',
       keyMode: 'own-memory',
-      acknowledgement: 'I understand',
+      // the server's own token, whatever language the phrase was typed in (FL-1437)
+      acknowledgement: 'i understand',
       s3: { endpoint: 'https://s3.eu-central-2.storage.example', bucket: 'family-backup' },
     });
     // the complete recovery file, with the client roots every backup is encrypted under

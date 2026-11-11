@@ -829,7 +829,7 @@ export class CloudMlService extends BaseService {
           removed > 0
             ? `The cloud processing destination${removed === 1 ? '' : 's'} ${names} ${removed === 1 ? 'was' : 'were'} removed: Frameleaf Cloud replaces the previous cloud processing service.`
             : 'Frameleaf Cloud replaces the previous cloud processing service.',
-          'The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.',
+          'The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.',
         ].join(' '),
       },
     ];

@@ -1,5 +1,6 @@
 import z from 'zod';
 import type { UserPreferences } from 'src/types.js';
+import translations from 'src/utils/notification-translations.json' with { type: 'json' };
 
 /** Origin-only descriptors. These never enter NotificationDto or the encrypted push wire payload. */
 const name = z.string();
@@ -112,8 +113,9 @@ export type NotificationCatalogs = Record<
   { version: number; messages: Partial<Record<TemplateKey, NotificationText>> }
 >;
 
-/** Add exact locale catalogs only after FC-109 decisions and FC-110 source-version signoff. */
+/** Exact locale catalogs share the English version-1 source and stay on the origin server. */
 export const NOTIFICATION_CATALOGS: NotificationCatalogs = {
+  ...translations,
   en: {
     version: 1,
     messages: {
@@ -213,15 +215,15 @@ export const NOTIFICATION_CATALOGS: NotificationCatalogs = {
       // FL-406: the remaining system notices (FL-329 residue)
       'cloud-ml-migration': {
         title: 'Cloud processing moved to Frameleaf Cloud',
-        body: 'Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.',
+        body: 'Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.',
       },
       'cloud-ml-migration-removed-one': {
         title: 'Cloud processing moved to Frameleaf Cloud',
-        body: 'The cloud processing destination {names} was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.',
+        body: 'The cloud processing destination {names} was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.',
       },
       'cloud-ml-migration-removed-many': {
         title: 'Cloud processing moved to Frameleaf Cloud',
-        body: 'The cloud processing destinations {names} were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.',
+        body: 'The cloud processing destinations {names} were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.',
       },
       'cloud-ml-migration-jobs-one': {
         title: 'Cloud processing moved to Frameleaf Cloud',

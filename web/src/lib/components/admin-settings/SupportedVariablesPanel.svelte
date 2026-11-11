@@ -19,8 +19,16 @@
       <div>
         <Text fontWeight="medium" size="tiny" color="primary" class="mb-1">{$t('filetype')}</Text>
         <ul>
-          <li>{`{{filetype}}`} - VID or IMG</li>
-          <li>{`{{filetypefull}}`} - VIDEO or IMAGE</li>
+          <li>
+            {`{{filetype}}`} - {$t('admin.storage_template_filetype_example', {
+              values: { video: 'VID', image: 'IMG' },
+            })}
+          </li>
+          <li>
+            {`{{filetypefull}}`} - {$t('admin.storage_template_filetype_full_example', {
+              values: { video: 'VIDEO', image: 'IMAGE' },
+            })}
+          </li>
         </ul>
       </div>
 
@@ -36,13 +44,17 @@
       <div>
         <Text fontWeight="medium" size="tiny" color="primary" class="mb-1">{$t('album')}</Text>
         <ul>
-          <li>{`{{album}}`} - Album Name</li>
+          <li>{`{{album}}`} - {$t('album_name')}</li>
           <li>
-            {`{{album-startDate-x}}`} - Album Start Date and Time (e.g. album-startDate-yy).
+            {`{{album-startDate-x}}`} - {$t('admin.storage_template_album_start_date', {
+              values: { example: 'album-startDate-yy' },
+            })}
             {$t('admin.storage_template_date_time_sample', { values: { date: '2021-12-31T05:32:41.750' } })}
           </li>
           <li>
-            {`{{album-endDate-x}}`} - Album End Date and Time (e.g. album-endDate-MM).
+            {`{{album-endDate-x}}`} - {$t('admin.storage_template_album_end_date', {
+              values: { example: 'album-endDate-MM' },
+            })}
             {$t('admin.storage_template_date_time_sample', { values: { date: '2023-05-06T09:15:17.100' } })}
           </li>
         </ul>
@@ -50,8 +62,8 @@
       <div>
         <Text fontWeight="medium" size="tiny" color="primary" class="mb-1">{$t('other')}</Text>
         <ul>
-          <li>{`{{assetId}}`} - Asset ID</li>
-          <li>{`{{assetIdShort}}`} - Asset ID (last 12 characters)</li>
+          <li>{`{{assetId}}`} - {$t('admin.storage_template_asset_id')}</li>
+          <li>{`{{assetIdShort}}`} - {$t('admin.storage_template_asset_id_short')}</li>
         </ul>
       </div>
     </div>

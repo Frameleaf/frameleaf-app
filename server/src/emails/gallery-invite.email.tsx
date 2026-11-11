@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { GalleryInviteEmailProps } from 'src/repositories/email.repository.js';
 
@@ -15,42 +16,47 @@ export const GalleryInviteEmail = ({
   link,
   expiresAt,
   showBranding,
-}: GalleryInviteEmailProps) =>
-  reminder ? (
+}: GalleryInviteEmailProps) => {
+  const t = useEmailText();
+  return reminder ? (
     // The reminder cannot carry the private link (only its fingerprint is kept), so it points to the invitation.
-    <ImmichLayout baseUrl={baseUrl} showBranding={showBranding} preview={`A reminder about ${galleryTitle}.`}>
-      <Text className="m-0">Hi {recipientName},</Text>
+    <ImmichLayout
+      baseUrl={baseUrl}
+      showBranding={showBranding}
+      preview={t('gallery_reminder_preview', { galleryTitle })}
+    >
+      <Text className="m-0">{t('greeting_client', { name: recipientName })}</Text>
       <Text>
-        {reminder === 'selection'
-          ? `${studioName} is looking forward to your favourites from ${galleryTitle}. Your selection is due ${expiresAt ?? 'soon'}.`
-          : reminder === 'payment'
-            ? `Your order from ${galleryTitle} is waiting for payment, so ${studioName} can finish your photographs.`
-            : `Your gallery ${galleryTitle} closes ${expiresAt ?? 'soon'}. Download or choose anything you want before then.`}
+        {t(
+          reminder === 'selection'
+            ? 'gallery_selection_body'
+            : reminder === 'payment'
+              ? 'gallery_payment_body'
+              : 'gallery_expiry_body',
+          { studioName, galleryTitle, expiresAt: expiresAt ?? t('soon') },
+        )}
       </Text>
-      <Text>Open the gallery from the link in the invitation {studioName} sent you.</Text>
+      <Text>{t('gallery_reminder_link', { studioName })}</Text>
     </ImmichLayout>
   ) : (
     <ImmichLayout
       baseUrl={baseUrl}
       showBranding={showBranding}
-      preview={`${studioName} shared ${galleryTitle} with you.`}
+      preview={t('gallery_invite_preview', { studioName, galleryTitle })}
     >
-      <Text className="m-0">Hi {recipientName},</Text>
+      <Text className="m-0">{t('greeting_client', { name: recipientName })}</Text>
       <Text>
-        {studioName} shared <strong>{galleryTitle}</strong> with you. Open your gallery to see the photographs and
-        choose your favourites.
+        <EmailMessage id="gallery_invite_body" values={{ studioName, galleryTitle: <strong>{galleryTitle}</strong> }} />
       </Text>
       {welcomeMessage ? <Text style={{ whiteSpace: 'pre-wrap' }}>{welcomeMessage}</Text> : null}
       <Section className="flex justify-center my-6">
-        <ImmichButton href={link}>Open your gallery</ImmichButton>
+        <ImmichButton href={link}>{t('open_gallery')}</ImmichButton>
       </Section>
-      {expiresAt ? <Text className="text-xs">This link works until {expiresAt}.</Text> : null}
-      <Text className="text-xs">
-        The link is yours alone; anyone who has it can open the gallery. If {studioName} gave it a password, they will
-        tell you it separately.
-      </Text>
+      {expiresAt ? <Text className="text-xs">{t('gallery_link_expiry', { expiresAt })}</Text> : null}
+      <Text className="text-xs">{t('gallery_link_privacy', { studioName })}</Text>
     </ImmichLayout>
   );
+};
 
 GalleryInviteEmail.PreviewProps = {
   baseUrl: 'https://photos.example.com',

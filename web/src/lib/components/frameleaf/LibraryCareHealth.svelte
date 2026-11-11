@@ -99,6 +99,7 @@
   import { page } from '$app/state';
 
   const DELETE_CONFIRM_TEXT = 'MOVE CORRUPT MEDIA TO TRASH';
+  const deleteConfirmation = $derived($t('library_care_delete_confirm_phrase'));
   /** Teal and blue carry status, per the September 22 revision; danger is kept for loss. */
   const BADGE_TONE = {
     danger: 'danger',
@@ -1033,7 +1034,7 @@
       </div>
       {#if current.action === 'trash'}
         <label class="confirm">
-          {$t('library_care_type_confirm', { values: { phrase: DELETE_CONFIRM_TEXT } })}
+          {$t('library_care_type_confirm', { values: { phrase: deleteConfirmation } })}
           <input autocomplete="off" bind:value={confirmation} />
           <small>{$t('library_care_trash_identity')}</small>
         </label>
@@ -1045,7 +1046,7 @@
         <Button onclick={() => (reviewOpen = false)}>{$t('cancel')}</Button>
         <Button
           variant="primary"
-          disabled={busy || (current.action === 'trash' && confirmation !== DELETE_CONFIRM_TEXT)}
+          disabled={busy || (current.action === 'trash' && confirmation !== deleteConfirmation)}
           onclick={applyReview}
         >
           {$t('library_care_confirm_items', { values: { count: current.rows.length } })}

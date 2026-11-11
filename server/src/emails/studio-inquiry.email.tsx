@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { StudioInquiryEmailProps } from 'src/repositories/email.repository.js';
 
@@ -16,46 +17,46 @@ export const StudioInquiryEmail = ({
   message,
   link,
   showBranding,
-}: StudioInquiryEmailProps) => (
-  <ImmichLayout
-    baseUrl={baseUrl}
-    showBranding={showBranding}
-    preview={kind === 'gallery-link' ? `${email} asked for their gallery link.` : `New inquiry from ${name}.`}
-  >
-    {kind === 'gallery-link' ? (
-      <Text className="m-0">
-        Someone at <strong>{email}</strong> asked {studioName}'s website for their gallery link. If they are your
-        client, send them their link again from Clients.
-      </Text>
-    ) : (
-      <>
+}: StudioInquiryEmailProps) => {
+  const t = useEmailText();
+  return (
+    <ImmichLayout
+      baseUrl={baseUrl}
+      showBranding={showBranding}
+      preview={t(kind === 'gallery-link' ? 'inquiry_gallery_preview' : 'inquiry_preview', { email, name })}
+    >
+      {kind === 'gallery-link' ? (
         <Text className="m-0">
-          <strong>{name}</strong> sent an inquiry from {studioName}'s website.
+          <EmailMessage id="inquiry_gallery_body" values={{ email: <strong>{email}</strong>, studioName }} />
         </Text>
-        <Text>
-          Email: <Link href={`mailto:${email}`}>{email}</Link>
-          <br />
-          Planning: {type || 'Not said'}
-          {date ? (
-            <>
-              <br />
-              Date: {date}
-            </>
-          ) : null}
-        </Text>
-        <Text style={{ whiteSpace: 'pre-wrap' }}>{message}</Text>
-        <Text className="text-xs">
-          To answer, write to {email}. This email comes from your server, so replying to it does not reach {name}.
-        </Text>
-      </>
-    )}
-    {link ? (
-      <Section className="flex justify-center my-6">
-        <ImmichButton href={link}>Open Clients</ImmichButton>
-      </Section>
-    ) : null}
-  </ImmichLayout>
-);
+      ) : (
+        <>
+          <Text className="m-0">
+            <EmailMessage id="inquiry_body" values={{ name: <strong>{name}</strong>, studioName }} />
+          </Text>
+          <Text>
+            <EmailMessage id="inquiry_email" values={{ email: <Link href={`mailto:${email}`}>{email}</Link> }} />
+            <br />
+            {t('inquiry_planning', { type: type || t('not_said') })}
+            {date ? (
+              <>
+                <br />
+                {t('inquiry_date', { date })}
+              </>
+            ) : null}
+          </Text>
+          <Text style={{ whiteSpace: 'pre-wrap' }}>{message}</Text>
+          <Text className="text-xs">{t('inquiry_reply', { email, name })}</Text>
+        </>
+      )}
+      {link ? (
+        <Section className="flex justify-center my-6">
+          <ImmichButton href={link}>{t('open_clients')}</ImmichButton>
+        </Section>
+      ) : null}
+    </ImmichLayout>
+  );
+};
 
 StudioInquiryEmail.PreviewProps = {
   baseUrl: 'https://photos.example.com',

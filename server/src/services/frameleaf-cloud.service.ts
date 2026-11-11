@@ -38,6 +38,7 @@ import {
   FrameleafSetupLinkResponseDto,
 } from 'src/dtos/frameleaf-server-setup.dto.js';
 import { readBuddyRecovery } from 'src/edge/buddy-recovery.js';
+import { emailText } from 'src/emails/components/email-locale.js';
 import {
   AdminAuditAction,
   DatabaseLock,
@@ -137,6 +138,7 @@ import {
 } from 'src/utils/frameleaf-remote-access.js';
 import { type SetupClient, setupRefusal, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { localeOf } from 'src/utils/preferences.js';
 
 /** FL-292: the single-use link token the Frameleaf app hands a new server (as FRAMELEAF_LINK_TOKEN takes). */
 /** FL-708: the only hosts a password link may reach over plain HTTP (a cloud on this machine, in tests). */
@@ -1295,9 +1297,11 @@ export class FrameleafCloudService extends BaseService {
       throw new BadRequestException('Email and a public address are needed to send a reminder');
     }
     const { templates } = await this.getConfig({ withCache: true });
+    const locale = localeOf(user.metadata);
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.FRAMELEAF_SIGN_IN_REMINDER,
       data: {
+        locale,
         baseUrl: base,
         displayName: user.name,
         senderName: auth.user.name,
@@ -1308,7 +1312,7 @@ export class FrameleafCloudService extends BaseService {
     });
     await this.jobRepository.queue({
       name: JobName.SendMail,
-      data: { to: user.email, subject: 'Link your Frameleaf account to sign in away from home', html, text },
+      data: { to: user.email, subject: emailText(locale, 'sign_in_reminder_subject'), html, text },
     });
   }
 
@@ -2519,7 +2523,7 @@ export class FrameleafCloudService extends BaseService {
     needed: { until: string },
   ): Promise<{ result: 'rotated' | 'key-retired' | 'retry'; retryAfterMs: number }> {
     try {
-      const candidate = await this.resolveCandidate(cloudUrl, link, () => this.hoursUntil(needed.until));
+      const candidate = await this.resolveCandidate(cloudUrl, link, (now) => this.hoursUntil(needed.until, now));
       if (candidate === 'unknown') {
         return { result: 'retry', retryAfterMs: 0 };
       }
@@ -2569,8 +2573,9 @@ export class FrameleafCloudService extends BaseService {
     }
   }
 
-  private hoursUntil(until: string) {
-    return Math.max(0, (Date.parse(until) - Date.now()) / (60 * 60 * 1000));
+  /** Hours from `now` to `until`; pass the `now` the deadline is later stamped from, so it lands exactly on `until`. */
+  private hoursUntil(until: string, now = Date.now()) {
+    return Math.max(0, (Date.parse(until) - now) / (60 * 60 * 1000));
   }
 
   /**
@@ -2693,7 +2698,7 @@ export class FrameleafCloudService extends BaseService {
         throw new Error('The identity key changed while this rotation was being prepared; it is tried again later');
       }
       const now = Date.now();
-      const retireHours = recovery ? this.hoursUntil(recovery.until) : KEY_RETIRE_HOURS;
+      const retireHours = recovery ? this.hoursUntil(recovery.until, now) : KEY_RETIRE_HOURS;
       const rotated = await this.instanceIdentityRepository.rotate(
         identity,
         async (newJwk, signWithCurrent) => {
@@ -2734,7 +2739,7 @@ export class FrameleafCloudService extends BaseService {
   private async resolveCandidate(
     cloudUrl: string,
     link: FrameleafCloudLink,
-    retireHours: () => number,
+    retireHours: (now: number) => number,
   ): Promise<'none' | 'accepted' | 'refused' | 'unknown'> {
     const instanceId = link.instanceId;
     if (!instanceId) {
@@ -2780,7 +2785,8 @@ export class FrameleafCloudService extends BaseService {
         return 'refused';
       }
       this.frameleafCloudRepository.forget();
-      const promoted = await this.instanceIdentityRepository.promoteCandidate(identity, retireHours());
+      const now = Date.now();
+      const promoted = await this.instanceIdentityRepository.promoteCandidate(identity, retireHours(now), now);
       await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, promoted);
       this.logger.log('Frameleaf Cloud holds the new identity key after all; the key rotation is finished');
       return 'accepted';

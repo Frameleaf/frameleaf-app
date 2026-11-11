@@ -380,12 +380,12 @@ export function isFlipped(orientation?: string | null) {
 
 export function getFileSize(asset: AssetResponseDto, maxPrecision = 4): string {
   const size = asset.exifInfo?.fileSizeInByte || 0;
-  return size > 0 ? getByteUnitString(size, undefined, maxPrecision) : 'Invalid Data';
+  return size > 0 ? getByteUnitString(size, undefined, maxPrecision) : get(t)('invalid_data');
 }
 
 export function getAssetResolution(asset: AssetResponseDto): string {
   if (!asset.width || !asset.height) {
-    return 'Invalid Data';
+    return get(t)('invalid_data');
   }
 
   return `${asset.width} x ${asset.height}`;

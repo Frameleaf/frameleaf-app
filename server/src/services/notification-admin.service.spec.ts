@@ -61,7 +61,7 @@ describe(NotificationService.name, () => {
       await expect(sut.sendTestEmail('', smtpTransport.notifications.smtp)).resolves.not.toThrow();
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
+        data: { locale: 'en', baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
       });
       expect(mocks.email.sendEmail).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -81,7 +81,12 @@ describe(NotificationService.name, () => {
       await expect(sut.sendTestEmail('', smtpTransport.notifications.smtp)).resolves.not.toThrow();
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: 'https://photos.example.com', displayName: userStub.admin.name, showBranding: true },
+        data: {
+          locale: 'en',
+          baseUrl: 'https://photos.example.com',
+          displayName: userStub.admin.name,
+          showBranding: true,
+        },
       });
       expect(mocks.email.sendEmail).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -121,7 +126,12 @@ describe(NotificationService.name, () => {
 
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: 'https://photos.example.com', displayName: userStub.admin.name, showBranding: true },
+        data: {
+          locale: 'en',
+          baseUrl: 'https://photos.example.com',
+          displayName: userStub.admin.name,
+          showBranding: true,
+        },
       });
     });
 
@@ -152,7 +162,7 @@ describe(NotificationService.name, () => {
 
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
+        data: { locale: 'en', baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
       });
     });
 
@@ -182,7 +192,7 @@ describe(NotificationService.name, () => {
 
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
+        data: { locale: 'en', baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
       });
     });
 
@@ -197,7 +207,7 @@ describe(NotificationService.name, () => {
       ).resolves.not.toThrow();
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
+        data: { locale: 'en', baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
       });
       expect(mocks.email.sendEmail).toHaveBeenCalledWith(
         expect.objectContaining({

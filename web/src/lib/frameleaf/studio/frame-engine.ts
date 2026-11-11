@@ -1,3 +1,5 @@
+import { t } from 'svelte-i18n';
+import { get } from 'svelte/store';
 /**
  * The Freecut editor as a Studio engine module (FL-88, FL-92).
  *
@@ -136,7 +138,7 @@ export interface StudioFrameFactory {
 export const createStudioFrameElement: StudioFrameFactory = (parent, src, hidden) => {
   const frame = document.createElement('iframe');
   frame.src = src;
-  frame.title = hidden ? 'Frameleaf Studio commands' : 'Frameleaf Studio editor';
+  frame.title = get(t)(hidden ? 'frameleaf_studio_commands_frame' : 'frameleaf_studio_editor_frame');
   frame.referrerPolicy = 'same-origin';
   // Media playback and full-screen preview are the editor's own; nothing else is delegated.
   frame.allow = 'autoplay; fullscreen';

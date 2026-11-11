@@ -2,8 +2,8 @@ import { toPlainText } from '@react-email/render';
 import * as React from 'react';
 import { Img, Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
-import { NO_LINK_ALBUM } from 'src/emails/components/no-link.js';
 import { AlbumUpdateEmailProps } from 'src/repositories/email.repository.js';
 import { replaceTemplateTags } from 'src/utils/replace-template-tags.js';
 
@@ -16,6 +16,7 @@ export const AlbumUpdateEmail = ({
   customTemplate,
   showBranding,
 }: AlbumUpdateEmailProps) => {
+  const t = useEmailText();
   const usableTemplateVariables = {
     albumName,
     recipientName,
@@ -28,12 +29,11 @@ export const AlbumUpdateEmail = ({
   ) : (
     <>
       <Text className="m-0">
-        Hey <strong>{recipientName}</strong>!
+        <EmailMessage id="greeting" values={{ name: <strong>{recipientName}</strong> }} />
       </Text>
 
       <Text>
-        New media has been added to <strong>{albumName}</strong>.
-        <br /> Check it out!
+        <EmailMessage id="album_update_body" values={{ albumName: <strong>{albumName}</strong>, lineBreak: <br /> }} />
       </Text>
     </>
   );
@@ -42,7 +42,7 @@ export const AlbumUpdateEmail = ({
     <ImmichLayout
       baseUrl={baseUrl}
       showBranding={showBranding}
-      preview={customTemplate ? toPlainText(emailContent.toString()) : 'New media has been added to a shared album.'}
+      preview={customTemplate ? toPlainText(emailContent.toString()) : t('album_update_preview')}
     >
       {customTemplate && (
         <Text className="m-0">
@@ -67,17 +67,17 @@ export const AlbumUpdateEmail = ({
       {baseUrl ? (
         <>
           <Section className="flex justify-center my-6">
-            <ImmichButton href={`${baseUrl}/albums/${albumId}`}>View Album</ImmichButton>
+            <ImmichButton href={`${baseUrl}/albums/${albumId}`}>{t('view_album')}</ImmichButton>
           </Section>
 
           <Text className="text-xs">
-            If you cannot click the button use the link below to view the album.
+            {t('album_link_help')}
             <br />
             <Link href={`${baseUrl}/albums/${albumId}`}>{`${baseUrl}/albums/${albumId}`}</Link>
           </Text>
         </>
       ) : (
-        <Text>{NO_LINK_ALBUM}</Text>
+        <Text>{t('no_link_album')}</Text>
       )}
     </ImmichLayout>
   );

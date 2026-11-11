@@ -5,6 +5,7 @@ import React, { createElement } from 'react';
 import type { EmailImageAttachment } from 'src/types.js';
 import { AlbumInviteEmail } from 'src/emails/album-invite.email.js';
 import { AlbumUpdateEmail } from 'src/emails/album-update.email.js';
+import { EmailLocaleContext, emailLocale } from 'src/emails/components/email-locale.js';
 import { GalleryInviteEmail } from 'src/emails/gallery-invite.email.js';
 import { ItemShareEmail } from 'src/emails/item-share.email.js';
 import { NewSignInEmail } from 'src/emails/new-sign-in.email.js';
@@ -92,6 +93,8 @@ export enum EmailTemplate {
 }
 
 interface BaseEmailProps {
+  /** Recipient's exact notification locale; unknown recipients use English. */
+  locale?: string;
   /**
    * FL-190: this server's public address. Absent when the server has none; the email then carries
    * no link and asks the recipient to open Frameleaf on their server.
@@ -270,7 +273,11 @@ export class EmailRepository {
   }
 
   async renderEmail(request: EmailRenderRequest): Promise<{ html: string; text: string }> {
-    const component = this.render(request);
+    const component = createElement(
+      EmailLocaleContext.Provider,
+      { value: emailLocale(request.data.locale) },
+      this.render(request),
+    );
     const html = await render(component, { pretty: false });
     const text = toPlainText(html);
     return { html, text };

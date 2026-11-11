@@ -35,6 +35,7 @@
     previewWorkflow,
     sampleEventMessage,
     workflowProblems,
+    workflowIssueMessage,
     type WorkflowDraft,
     type WorkflowDraftStep,
   } from '$lib/frameleaf/workflows';
@@ -718,7 +719,7 @@
           <p>
             {$t(matchCountKey(matches), { values: { count: matches.count } })}
           </p>
-          {#each matches.issues as issue, index (index)}<p>{issue.message}</p>{/each}
+          {#each matches.issues as issue, index (index)}<p>{workflowIssueMessage(issue, problems)}</p>{/each}
           {#if matches.exampleAssetIds.length > 0}
             <ul class="wd-matches" aria-label={$t('frameleaf_workflows.matches_label')}>
               {#each matches.exampleAssetIds as id, index (id)}<li>
