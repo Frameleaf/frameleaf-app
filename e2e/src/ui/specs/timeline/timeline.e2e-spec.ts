@@ -149,7 +149,12 @@ test.describe('Timeline', () => {
    * FL-143: land in a month with the month above it held back, then let that month load. Nothing on
    * screen may move; once that stretch has been scrolled away, the month above ends in a full row.
    */
-  const expectNothingMovesWhenTheMonthAboveLoads = async (page: Page, open: () => Promise<void>) => {
+  const expectNothingMovesWhenTheMonthAboveLoads = async (
+    page: Page,
+    open: () => Promise<void>,
+    // FL-1457: Browse has no year scrubber, so it lands on the month another way (a deep link).
+    land: (target: string) => Promise<void> = (target) => scrubberUtils.clickMonth(page, target),
+  ) => {
     // The month the scrubber lands on, deep enough that the month above it is not loaded from the
     // top of the library, and the month above it, whose bucket is held back until released.
     const index = yearMonths.findIndex(
@@ -177,11 +182,11 @@ test.describe('Timeline', () => {
     // instead of waiting.
     await page.clock.install();
     await open();
-    await scrubberUtils.clickMonth(page, target);
+    await land(target);
     await expect
       .poll(() => thumbnailUtils.someInViewport(page, (assetId) => getYearMonth(assets, assetId) === target))
       .toBe(true);
-    // The scrubber lands inside the month; move up until the month above comes near enough to load.
+    // Landing puts us inside the month; move up until the month above comes near enough to load.
     for (let step = 0; step < 60 && !requested; step++) {
       await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, -200));
       await page.waitForTimeout(100);
@@ -1164,10 +1169,17 @@ test.describe('Timeline', () => {
     });
 
     test('Browse: a month loading above what is on screen does not move it', async ({ page }) => {
-      await expectNothingMovesWhenTheMonthAboveLoads(page, async () => {
-        await pageUtils.openPhotosPage(page);
-        await expect(timelineUtils.layoutButton(page, 'Browse')).toHaveAttribute('aria-pressed', 'true');
-      });
+      await expectNothingMovesWhenTheMonthAboveLoads(
+        page,
+        async () => {
+          await pageUtils.openPhotosPage(page);
+          await expect(timelineUtils.layoutButton(page, 'Browse')).toHaveAttribute('aria-pressed', 'true');
+        },
+        async (target) => {
+          await pageUtils.deepLinkPhotosPage(page, assetsInMonth(target)[0].id);
+          await expect(timelineUtils.layoutButton(page, 'Browse')).toHaveAttribute('aria-pressed', 'true');
+        },
+      );
     });
 
     test('Work has no file-name button: the View menu holds it, per layout, with the account (FL-1398)', async ({
@@ -1291,6 +1303,8 @@ test.describe('Timeline', () => {
     test('Open /photos, random click scrubber 20x', async ({ page }) => {
       test.slow();
       await pageUtils.openPhotosPage(page);
+      // FL-1457: the year scrubber is Timeline's alone; Browse, the default layout, has none.
+      await timelineUtils.setLayout(page, 'Timeline');
       const rng = new SeededRandom(6637);
       const selectedMonths = selectRandomMultiple(yearMonths, 20, rng);
       for (const month of selectedMonths) {
@@ -1337,6 +1351,7 @@ test.describe('Timeline', () => {
     test('Deep link to last photo, drag scrubber to scroll up', async ({ page }) => {
       const lastAsset = assets.at(-1)!;
       await pageUtils.deepLinkPhotosPage(page, lastAsset.id);
+      await timelineUtils.setLayout(page, 'Timeline');
       const track = (await scrubberUtils.slider(page).boundingBox())!;
       const x = track.x + track.width / 2;
       await page.mouse.move(x, track.y + track.height - 1);
@@ -1349,6 +1364,7 @@ test.describe('Timeline', () => {
 
     test('Deep link to first bucket, drag scrubber to scroll down', async ({ page }) => {
       await pageUtils.deepLinkPhotosPage(page, assets[0].id);
+      await timelineUtils.setLayout(page, 'Timeline');
       const track = (await scrubberUtils.slider(page).boundingBox())!;
       const x = track.x + track.width / 2;
       await page.mouse.move(x, track.y + 1);
@@ -1360,6 +1376,7 @@ test.describe('Timeline', () => {
 
     test('Buckets cancel on scroll', async ({ page }) => {
       await pageUtils.openPhotosPage(page);
+      await timelineUtils.setLayout(page, 'Timeline');
       testContext.slowBucket = true;
       const failedUris: string[] = [];
       page.on('requestfailed', (request) => {

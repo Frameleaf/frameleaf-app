@@ -195,9 +195,9 @@
   const coarsePointer = $derived(mediaQueryManager.pointerCoarse);
   /**
    * On touch and on narrow screens the scrubber is the prototype's thin line in a slim column
-   * (timeline-library.css, 700px), and only Timeline has one: Browse and Work keep the whole width
-   * for the photos (UI review 2026-11-10, A6). A page with no Timeline to switch to keeps it
-   * (`keepThinScrubber`).
+   * (timeline-library.css, 700px). Only Timeline has one, at any width (UI review 2026-11-10, A6; FL-1457: the
+   * prototype's Browse and Work grids have none): they keep the whole width for the photos. A page with no Timeline
+   * to switch to keeps it (`keepThinScrubber`).
    */
   const thinScrubber = $derived(coarsePointer || maxMd);
   const isEmpty = $derived(timelineManager.isInitialized && timelineManager.months.length === 0);
@@ -461,7 +461,7 @@
     timelineManager.months.length > 0 &&
       !timelineManager.ordered &&
       !hideScrubber &&
-      (!thinScrubber || showDayHeaders || keepThinScrubber),
+      (showDayHeaders || keepThinScrubber),
   );
   /**
    * The rows' scrubber only where there is something to scrub through: photos that fit on one
