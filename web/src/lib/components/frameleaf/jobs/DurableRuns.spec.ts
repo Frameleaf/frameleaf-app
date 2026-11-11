@@ -236,7 +236,15 @@ describe('recent work', () => {
     sdkMock.listDurableJobRuns.mockResolvedValue({
       items: [],
       hasNextPage: false,
-      fileCheck: { running: true, startedAt: '2026-11-11T02:35:39.000Z', finishedAt: null, checked: 0, total: 0 },
+      fileCheck: {
+        running: true,
+        startedAt: '2026-11-11T02:35:39.000Z',
+        finishedAt: null,
+        checked: 0,
+        total: 0,
+        damaged: 0,
+        missing: 0,
+      },
     });
     render(DurableRuns);
     const card = within((await screen.findByText('Checking files for damage')).closest('li')!);
@@ -258,12 +266,37 @@ describe('recent work', () => {
         finishedAt: '2026-11-11T02:57:03.000Z',
         checked: 16_074,
         total: 16_074,
+        damaged: 660,
+        missing: 0,
       },
     });
     render(DurableRuns);
     const card = within((await screen.findByText('Checking files for damage')).closest('li')!);
     expect(card.getByText('Finished')).toBeInTheDocument();
     expect(card.getByText('16,074 of 16,074 files')).toBeInTheDocument();
+    expect(card.getByText('Found 660 damaged files.')).toBeInTheDocument();
+  });
+  it('a finished check that found damage shows under Failed, not Done (FL-1430)', async () => {
+    const page = {
+      items: [],
+      hasNextPage: false,
+      fileCheck: {
+        running: false,
+        startedAt: '2026-11-11T02:10:15.000Z',
+        finishedAt: '2026-11-11T02:30:21.000Z',
+        checked: 1,
+        total: 1,
+        damaged: 1,
+        missing: 0,
+      },
+    };
+    sdkMock.listDurableJobRuns.mockResolvedValue(page);
+    const failed = render(DurableRuns, { filter: 'failed' });
+    expect(await screen.findByText('Checking files for damage')).toBeInTheDocument();
+    failed.unmount();
+    render(DurableRuns, { filter: 'done' });
+    await waitFor(() => expect(sdkMock.listDurableJobRuns).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Checking files for damage')).not.toBeInTheDocument();
   });
   it('counts tasks when the work is not about photos', async () => {
     sdkMock.listDurableJobRuns.mockResolvedValue({

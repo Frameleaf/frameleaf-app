@@ -22,6 +22,7 @@
   import { isRunSettled, matchesRunFilter, runTitleKey, settledItems } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
+  import { fileCheckView } from '$lib/frameleaf/file-check';
   import { CAUSE_VIEW, knowsCauses, leftOver, runCauses } from '$lib/frameleaf/run-failures';
   import { runHeadline } from '$lib/frameleaf/run-headline';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -212,16 +213,13 @@
       {$t('frameleaf_job_runs_empty')}
     </p>{/if}
   <ol>
-    {#if fileCheck && (filter === 'all' || (filter === 'running') === fileCheck.running)}
+    {#if fileCheck && (filter === 'all' || filter === fileCheckView(fileCheck).bucket)}
       {@const check = fileCheck}
-      <li class="run" data-tone="good">
+      {@const view = fileCheckView(check)}
+      <li class="run" data-tone={view.tone}>
         <div class="head">
           <strong>{$t('frameleaf_job_runs_file_check')}</strong>
-          <span class="status">
-            <Pill tone="good"
-              >{$t(check.running ? 'frameleaf_job_runs_state_running' : 'frameleaf_job_runs_status_finished')}</Pill
-            >
-          </span>
+          <span class="status"><Pill tone={view.tone}>{$t(view.status)}</Pill></span>
         </div>
         {#if check.total > 0}
           <p class="far">
@@ -232,6 +230,9 @@
               <span style:width="{Math.min(100, Math.max(1, (check.checked / check.total) * 100))}%"></span>
             </span>
           {/if}
+        {/if}
+        {#if view.found}
+          <div class="why"><p>{$t(view.found.key, { values: view.found.values })}</p></div>
         {/if}
         <div class="foot">
           <time datetime={check.finishedAt ?? check.startedAt}>
