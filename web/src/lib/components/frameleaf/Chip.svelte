@@ -87,7 +87,7 @@
   }
   button::after {
     position: absolute;
-    inset: calc((1.5rem - var(--fl-control-height)) / 2);
+    inset: calc((1.5rem - var(--fl-control-target)) / 2);
     content: '';
   }
   button:hover {

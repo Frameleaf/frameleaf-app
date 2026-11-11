@@ -164,8 +164,8 @@
           placeholder={$t('frameleaf_pets_add_a_name')}
           aria-label={$t('frameleaf_pets_name')}
         />
-        <button type="submit">{$t('done')}</button>
-        <button type="button" onclick={() => onCancelRename()}>{$t('cancel')}</button>
+        <button type="submit" class="fl-control">{$t('done')}</button>
+        <button type="button" class="fl-control" onclick={() => onCancelRename()}>{$t('cancel')}</button>
       </form>
     {:else}
       <button type="button" class="name" class:unnamed={!pet.name} onclick={onStartRename}>
@@ -294,7 +294,7 @@
   }
   .name-field button {
     flex-shrink: 0;
-    min-width: 44px;
+    min-width: var(--fl-control-height);
     padding: 0.375rem 0.5rem;
     font-size: var(--fl-font-small);
     color: var(--fl-text);

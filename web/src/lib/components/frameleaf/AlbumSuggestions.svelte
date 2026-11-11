@@ -942,7 +942,7 @@
     background: var(--fl-raised);
     font-size: 12px;
   }
-  /* Each checkbox sits in the 44px control box (tokens.css), so the rows need no gap of their own. */
+  /* Each checkbox sits in the control-height box (tokens.css), so the rows need no gap of their own. */
   .choices {
     display: grid;
     font-size: 13px;

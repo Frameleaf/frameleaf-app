@@ -524,7 +524,7 @@
     <div class="count" bind:this={countRow}>
       <span aria-live="polite">{$t('selected_count', { values: { count: shownCount } })}</span>
       {#if onSelectAllMatching && total !== null && total > count}
-        <button type="button" class="text" onclick={onSelectAllMatching}>
+        <button type="button" class="text fl-control" onclick={onSelectAllMatching}>
           {$t('frameleaf_selection_select_all_matching', { values: { total } })}
         </button>
       {/if}
@@ -532,12 +532,12 @@
         <span class="snapshot">{$t('frameleaf_selection_snapshot')}</span>
       {/if}
       {#if undoLabel && onUndo}
-        <button type="button" class="text" onclick={onUndo}>{$t('undo')}: {undoLabel}</button>
+        <button type="button" class="text fl-control" onclick={onUndo}>{$t('undo')}: {undoLabel}</button>
       {/if}
       <!-- T-20 (SelectionBar.jsx:204-212): reads "Deselect", named "Deselect all". -->
       <button
         type="button"
-        class="clear"
+        class="clear fl-control"
         onclick={onClear}
         aria-label={$t('frameleaf_selection_deselect_all')}
         title={$t('frameleaf_selection_deselect_hint')}
@@ -551,7 +551,7 @@
       {#each primary as action (action.id)}
         <button
           type="button"
-          class="action"
+          class="action fl-control"
           class:is-danger={action.danger}
           class:icon-only={leading.length > 0}
           class:is-labelled={LABELLED.has(action.id)}
@@ -569,7 +569,7 @@
       {#each leading as action (action.id)}
         <button
           type="button"
-          class="action is-leading"
+          class="action is-leading fl-control"
           title={action.disabled && action.disabledReason ? action.disabledReason : action.label}
           aria-label={action.label}
           aria-disabled={action.disabled && action.disabledReason ? 'true' : undefined}
@@ -591,7 +591,7 @@
           <button
             bind:this={moreButton}
             type="button"
-            class="action"
+            class="action fl-control"
             class:icon-only={leading.length > 0}
             title={$t('frameleaf_selection_more_actions')}
             aria-label={$t('frameleaf_selection_more_actions')}

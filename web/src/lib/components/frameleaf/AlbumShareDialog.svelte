@@ -387,7 +387,7 @@
               </label>
               <button
                 type="button"
-                class="primary"
+                class="primary fl-control"
                 disabled={busy || chosen.length === 0}
                 onclick={() => void invite()}
               >
@@ -432,7 +432,7 @@
               </label>
               <button
                 type="button"
-                class="remove icon"
+                class="remove icon fl-control"
                 disabled={busy}
                 aria-label={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
                 title={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
@@ -444,7 +444,7 @@
             {#if self && member.role !== AlbumUserRole.Owner}
               <button
                 type="button"
-                class="remove"
+                class="remove fl-control"
                 onclick={() => {
                   open = false;
                   onLeave();
@@ -469,7 +469,7 @@
             {#if isOwner}
               <button
                 type="button"
-                class="remove icon"
+                class="remove icon fl-control"
                 disabled={busy}
                 aria-label={$t('frameleaf_spaces_withdraw_for', { values: { name: member.user.name } })}
                 title={$t('frameleaf_spaces_withdraw_for', { values: { name: member.user.name } })}
@@ -508,7 +508,7 @@
                 />
                 <button
                   type="button"
-                  class="remove icon"
+                  class="remove icon fl-control"
                   aria-label={$t('frameleaf_album_links_edit', { values: { address } })}
                   title={$t('edit')}
                   onclick={() => (editing = { open: true, link })}
@@ -517,7 +517,7 @@
                 </button>
                 <button
                   type="button"
-                  class="remove icon"
+                  class="remove icon fl-control"
                   aria-label={$t('frameleaf_album_links_delete', { values: { address } })}
                   title={$t('delete')}
                   onclick={() => void deleteLink(link)}
@@ -529,12 +529,12 @@
           </ul>
         {/if}
         <div class="links">
-          <button type="button" onclick={() => (linkFormOpen = true)}>
+          <button type="button" class="fl-control" onclick={() => (linkFormOpen = true)}>
             <span aria-hidden="true"><Icon icon={mdiLinkVariant} size={ICON_SIZE.lg} /></span>
             {links.length > 0 ? $t('frameleaf_album_links_create_another') : $t('create_link')}
           </button>
           {#if links.length > 0}
-            <a class="manage" href={Route.sharedLinks()}>{$t('frameleaf_album_links_all')}</a>
+            <a class="manage fl-control" href={Route.sharedLinks()}>{$t('frameleaf_album_links_all')}</a>
           {/if}
         </div>
       </section>
@@ -775,7 +775,7 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0 0.75rem;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

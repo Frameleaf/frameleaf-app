@@ -301,7 +301,7 @@
     align-items: center;
     justify-content: center;
     aspect-ratio: 1;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     min-width: 0;
     border: 1px solid transparent;
     border-radius: var(--fl-radius);

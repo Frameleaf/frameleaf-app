@@ -816,7 +816,7 @@
         <!-- After the view switch, beside New (FL-1411): the prototype's order with the app's Select added. -->
         <button
           type="button"
-          class="select-toggle"
+          class="select-toggle fl-control"
           aria-pressed={selecting}
           aria-label={selecting ? $t('done') : $t('select')}
           onclick={() => (selecting ? stopSelecting() : (selecting = true))}
@@ -855,6 +855,7 @@
       {#each albumDirectoryFilters as filter, index (filter)}
         <button
           type="button"
+          class="fl-control"
           role="tab"
           aria-selected={view.filter === filter}
           tabindex={view.filter === filter ? 0 : -1}
@@ -1283,6 +1284,17 @@
     outline: var(--fl-focus-ring);
     outline-offset: var(--fl-focus-offset);
   }
+  /* FL-1390: with a mouse the capsule is the control height, as Sort, Select and New beside it are. */
+  @media (pointer: fine) {
+    .search {
+      min-height: var(--fl-control-height);
+    }
+    .search input {
+      align-self: stretch;
+      min-height: 0;
+      padding-block: 0;
+    }
+  }
   /* The prototype's segmented pill (collections.css .al-view): raised track, the chosen view lifted. */
   /* 44px overall like every control beside it (48 on touch): the track's 3px inset plus 38px segments. */
   .view {
@@ -1297,7 +1309,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 38px;
+    /* The track is the control height: its buttons are that less its 3px padding either side. */
+    min-height: calc(var(--fl-control-height) - 6px);
     padding: 0 0.625rem;
     border: 0;
     border-radius: var(--fl-radius-pill);
@@ -1339,6 +1352,21 @@
   .filters button[aria-selected='true'] {
     background: var(--fl-text);
     color: var(--fl-canvas);
+  }
+  /*
+   * FL-1390: with a mouse a filter chip is the prototype's 32px (collections.css `.al-filters button`).
+   * On a narrow window the row scrolls sideways and would clip the chips' 44px click area, so 6px above
+   * and below the chips are inside the row; the margins keep the row where it was.
+   */
+  @media (pointer: fine) {
+    .filters button {
+      min-height: var(--fl-chip-height);
+    }
+    .filters {
+      --fl-chip-reach: calc((var(--fl-control-target) - var(--fl-chip-height)) / 2);
+      padding-block: var(--fl-chip-reach);
+      margin-block: calc(-1 * var(--fl-chip-reach)) calc(var(--fl-space-5) - var(--fl-chip-reach));
+    }
   }
   .menu-separator {
     height: 1px;
@@ -1538,6 +1566,8 @@
     .filters {
       flex-wrap: nowrap;
       overflow-x: auto;
+      /* FL-1390: a chip's click area reaches past it; it must not make the row scroll up and down. */
+      overflow-y: hidden;
       scrollbar-width: none;
     }
     .grid {
