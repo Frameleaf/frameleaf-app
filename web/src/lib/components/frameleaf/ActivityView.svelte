@@ -33,6 +33,7 @@
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import {
     activityWorkStatus,
+    stuckWorkRows,
     buildBackgroundWorkCards,
     buildWorkFeatureRows,
     leftOverRuns,
@@ -239,7 +240,9 @@
         return {
           warn: true,
           icon: mdiAlertCircleOutline,
-          title: $t('frameleaf_activity_work_attention', { values: { count: counts.failed + leftOverCount } }),
+          title: $t('frameleaf_activity_work_attention', {
+            values: { count: counts.failed + leftOverCount + stuckWorkRows(features).length },
+          }),
           body: $t('frameleaf_activity_work_attention_body'),
         };
       }

@@ -468,6 +468,9 @@ describe('activityWorkStatus (FL-1388)', () => {
     ['working', [queue(QueueName.SmartSearch, { unavailable: true }), ...working], 0, 0],
     // Paused says why nothing moves; a failure keeps its card either way.
     ['paused', paused, 1, 0],
+    // FL-1457: a feature that waits for another step is not "working": it needs a look, even beside moving work.
+    ['attention', [queue(QueueName.FaceDetection, { state: 'blocked', waiting: 5, total: 5 })], 0, 0],
+    ['attention', [queue(QueueName.FaceDetection, { state: 'blocked', waiting: 5, total: 5 }), ...working], 0, 0],
   ] as const)('says %s', (expected, queues, needsLook, jobs) => {
     expect(activityWorkStatus({ rows: rowsOf([...queues]), needsLook, jobs })).toBe(expected);
   });
