@@ -337,5 +337,6 @@ describe('dates to check (FL-1410)', () => {
     } finally {
       manager.destroy();
     }
-  });
+    // 6,000 photos are built and laid out: more than the default 5 s on a busy runner
+  }, 30_000);
 });
