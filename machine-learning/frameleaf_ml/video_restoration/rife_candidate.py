@@ -75,9 +75,14 @@ def interpolate(model: ort.InferenceSession, left: np.ndarray, right: np.ndarray
     height, width, _ = left.shape
     pair = np.concatenate((left, right), axis=2).transpose(2, 0, 1)[None].astype(np.float32) / 255
     (output,) = model.run(["output"], {"input": pair, "timestep": np.array(phase, dtype=np.float32)})
-    if output.dtype != np.float32 or output.shape != (1, 3, height, width) or not np.isfinite(output).all():
+    if (
+        not isinstance(output, np.ndarray)
+        or output.dtype != np.float32
+        or output.shape != (1, 3, height, width)
+        or not np.isfinite(output).all()
+    ):
         raise ValueError("RIFE candidate produced an invalid frame")
-    return np.rint(np.clip(output[0].transpose(1, 2, 0), 0, 1) * 255).astype(np.uint8)
+    return np.asarray(np.rint(np.clip(output[0].transpose(1, 2, 0), 0, 1) * 255), dtype=np.uint8)
 
 
 def run(model_path: Path, source: Path, output: Path, factor: int) -> None:
