@@ -904,7 +904,9 @@ describe('LibraryView', () => {
         await setupLibrary({
           options: { visibility: AssetVisibility.Timeline, bbox: '-116.3,51.0,-115.5,51.5' } as never,
         });
-        expect(await screen.findByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
+        // The loaded, empty result: before it loads the toolbar shows whatever the rule says.
+        await screen.findByTestId('frameleaf-library-empty');
+        expect(screen.getByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
       } finally {
         libraryView.reset();
       }
