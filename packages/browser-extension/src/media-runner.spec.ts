@@ -286,12 +286,12 @@ describe('media receipts in the saving list (FL-1427)', () => {
     await queue.requestMediaCancel(sent.id, binding);
     await runner.syncMediaReceipts(binding, 'key', live, library);
     expect(library.cancelDownload).toHaveBeenCalledWith(binding, 'key', REMOTE);
-    expect((await queue.listMediaReceipts(binding))[0]).toEqual(
-      expect.objectContaining({ id: sent.id, state: 'cancelled' }),
+    // found by id: two receipts made in the same millisecond have no fixed order in the list
+    const after = (await queue.listMediaReceipts(binding)).find(
+      ({ id }) => id === sent.id,
     );
-    expect((await queue.listMediaReceipts(binding))[0]).not.toHaveProperty(
-      'cancelRequested',
-    );
+    expect(after).toEqual(expect.objectContaining({ state: 'cancelled' }));
+    expect(after).not.toHaveProperty('cancelRequested');
   });
 
   it('a Cancel always ends, even for a subscription or with the Library out of reach', async () => {
