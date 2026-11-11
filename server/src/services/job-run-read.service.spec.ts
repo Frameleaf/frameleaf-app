@@ -152,6 +152,8 @@ describe('durable run read service', () => {
       finishedAt: null,
       checked: 0,
       total: 0,
+      damaged: 0,
+      missing: 0,
     });
     const first = await sut.getRuns(JobRunSearchDto.schema.parse({ foldNightly: 'true' }));
     expect(first.fileCheck).toEqual({
@@ -160,6 +162,8 @@ describe('durable run read service', () => {
       finishedAt: null,
       checked: 0,
       total: 0,
+      damaged: 0,
+      missing: 0,
     });
     expect(JobRunPageDto.schema.parse(first)).toEqual(first);
     expect(

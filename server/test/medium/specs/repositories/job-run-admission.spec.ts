@@ -502,6 +502,11 @@ describe('atomic initial run admission', () => {
     const { rows } = await sql<{ data: Record<string, unknown> }>`select data from job
       where queue = ${queue} and name = ${JobName.AssetEncodeVideoQueueAll}`.execute(db);
     expect(rows.map(({ data }) => data._night)).toEqual([undefined]);
+    // a job queued again outside the night with the old data (a copy of the night's) carries no night
+    await jobs.queue({ name: JobName.LibraryScanRun, data: { _night: night } } as never);
+    const { rows: copied } = await sql<{ data: Record<string, unknown> }>`select data from job
+      where queue = ${queue} and name = ${JobName.LibraryScanRun}`.execute(db);
+    expect(copied.map(({ data }) => data._night)).toEqual([undefined]);
   });
 
   it('preserves caller-owned explicit run IDs outside createRun admission', async () => {

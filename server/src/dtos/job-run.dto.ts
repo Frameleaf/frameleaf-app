@@ -196,6 +196,8 @@ export class JobRunPageDto extends createZodDto(
           finishedAt: z.iso.datetime().nullable().describe('When the last one finished; null while any still runs'),
           checked: z.int().min(0).describe('Files checked so far; while a check runs this is often still 0'),
           total: z.int().min(0).describe('Files to check; 0 when not known yet'),
+          damaged: z.int().min(0).describe('Files the finished checks found damaged'),
+          missing: z.int().min(0).describe('Files the finished checks found missing'),
         })
         .optional()
         .describe(

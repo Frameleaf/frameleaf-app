@@ -8,12 +8,14 @@ import {
   MediaHealthStatus,
   QueueName,
 } from 'src/enum.js';
+import { listRecentWork } from 'src/queue/recent-work.js';
 import { type RunFailureInput, failureCauseSql, runFailureCause } from 'src/queue/run-failure-cause.js';
 import { reviewRunFailures } from 'src/queue/run-failures.js';
 import { getRun, listRuns, runFailureGroupsQuery, summarizeRunFailures } from 'src/queue/run-query.js';
 import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -125,9 +127,14 @@ describe('summarizeRunFailures', () => {
     // FL-1430: counting out the photos newer runs left over again probes each newer run by its own index
     const { rows: superseding } = await sql<{
       'QUERY PLAN': unknown;
-    }>`explain (format json) ${runFailureGroupsQuery({ runs: [{ id, countsPhotos: true }], supersede: true })}`.execute(
-      db,
-    );
+    }>`explain (format json) ${runFailureGroupsQuery({
+      runs: [{ id, countsPhotos: true }],
+      // the nearest newer runs, as Recent work passes them
+      supersede: (
+        await sql<{ id: string; createdAt: Date }>`select id, "createdAt" from job_run where id <> ${id}::uuid
+          order by "createdAt", id limit 25`.execute(db)
+      ).rows,
+    })}`.execute(db);
     // job_run itself (its primary key) is read too; what matters is how job is read
     const supersedingReads = jobReads(superseding[0]['QUERY PLAN']).filter(({ index }) => index !== 'job_run_pkey');
     expect(supersedingReads.map(({ type }) => type)).not.toContain('Seq Scan');
@@ -275,15 +282,21 @@ describe('summarizeRunFailures', () => {
     await failedJob(id, other.id, JobName.AssetExtractMetadata, 'Timed out');
     expect(await finishRuns(db, 10)).toBe(1);
     expect(await getRun(db, id)).toMatchObject({ failureCauses: [{ cause: 'other', count: 2 }], leftOver: 2 });
+    const plainBefore = JSON.stringify(await listRuns(db, 25, 0));
 
     await finding(asset.id, MediaHealthCategory.Corrupt);
-    expect(await getRun(db, id)).toMatchObject({
+    const [card] = await listRecentWork(db, 25, 0);
+    expect(card).toMatchObject({
+      id,
       failureCauses: [
         { cause: 'damaged', count: 1 },
         { cause: 'other', count: 1 },
       ],
       leftOver: 2,
     });
+    // Activity's plain list (and a run read alone) is what it was: the stored causes, nothing read live
+    expect(JSON.stringify(await listRuns(db, 25, 0))).toBe(plainBefore);
+    expect(await getRun(db, id)).toMatchObject({ failureCauses: [{ cause: 'other', count: 2 }] });
     const review = (await reviewRunFailures(database, id, {}))!;
     expect(review.causes.map(({ cause, count }) => ({ cause, count }))).toEqual([
       { cause: 'damaged', count: 1 },
@@ -291,36 +304,116 @@ describe('summarizeRunFailures', () => {
     ]);
   });
 
-  it('a photo newer work left over again is counted on that work only (FL-1430)', async () => {
+  it('a photo newer work left over again at the same step is counted on that work only (FL-1430)', async () => {
     const ctx = setup();
     const { user } = await ctx.newUser();
     const { asset: again } = await ctx.newAsset({ ownerId: user.id });
     const { asset: once } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: otherStep } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: stoppedLater } = await ctx.newAsset({ ownerId: user.id });
     const first = await run();
     await failedJob(first, again.id, JobName.AssetExtractMetadata, 'Timed out');
     await failedJob(first, once.id, JobName.AssetExtractMetadata, 'Timed out');
     const second = await run();
     await failedJob(second, again.id, JobName.AssetExtractMetadata, 'Timed out');
+    await failedJob(second, otherStep.id, JobName.AssetExtractMetadata, 'Timed out');
+    await failedJob(second, stoppedLater.id, JobName.AssetExtractMetadata, 'Timed out');
     const newest = await run();
     await failedJob(newest, again.id, JobName.AssetExtractMetadata, 'Timed out');
+    // a different step, and a failure stopped there, take nothing over
+    await failedJob(newest, otherStep.id, JobName.AssetGenerateThumbnails, 'Timed out');
+    await failedJob(newest, stoppedLater.id, JobName.AssetExtractMetadata, 'Timed out');
+    expect(await finishRuns(db, 10)).toBe(3);
+    await sql`insert into asset_processing_failure("assetId", step, attempts, "lastError", "lastFailedAt", "dismissedAt")
+      values (${stoppedLater.id}::uuid, ${JobName.AssetExtractMetadata}, 1, 'unreadable', now(), now())`.execute(db);
+
+    const page = await listRecentWork(db, 25, 0);
+    const card = (id: string) => page.find((read) => read.id === id)!;
+    expect(card(newest)).toMatchObject({ leftOver: 2, failureCauses: [{ cause: 'other', count: 2 }] });
+    expect(card(first)).toMatchObject({ leftOver: 1, failureCauses: [{ cause: 'other', count: 1 }] });
+    // its photo left over again is the newest's; the one failing another step there is still its own
+    expect(card(second)).toMatchObject({ leftOver: 1, failureCauses: [{ cause: 'other', count: 1 }] });
+
+    // the review says where they went, and acting on it leaves them to the newer work
+    const review = (await reviewRunFailures(database, second, {}, true))!;
+    expect(review).toMatchObject({ superseded: 1, causes: [expect.objectContaining({ count: 1, superseded: 1 })] });
+    const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
+    expect(await jobs.actOnRunFailures(second, 'other', 'retry', true)).toBe(1);
+    const { rows: putBack } = await sql<{ root: string }>`select "rootItemKey" root from job
+      where "runId" = ${second}::uuid and state = 'pending'`.execute(db);
+    expect(putBack).toEqual([{ root: otherStep.id }]);
+    // the run alone, as other callers read it, keeps all its photos
+    expect((await reviewRunFailures(database, first, {}))!.causes[0]).toMatchObject({ count: 2, superseded: 0 });
+  });
+
+  it('only work with a card of its own takes photos over: not an earlier night (FL-1430)', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const marked = async (startedAt: string) => {
+      const id = await run('library_scan');
+      await sql`update job_run set selection = ${JSON.stringify({ night: { startedAt, manual: false } })}::text::jsonb
+        where id = ${id}::uuid`.execute(db);
+      return id;
+    };
+    const manual = await run();
+    await failedJob(manual, asset.id, JobName.AssetExtractMetadata, 'Timed out');
+    const earlierNight = await marked('2026-11-11T02:33:00.000Z');
+    await failedJob(earlierNight, asset.id, JobName.AssetExtractMetadata, 'Timed out');
+    const newestNight = await marked('2026-11-12T02:33:00.000Z');
+    await failedJob(newestNight, randomUUID(), JobName.AssetExtractMetadata, null, { state: 'completed' });
     expect(await finishRuns(db, 10)).toBe(3);
 
-    const page = await listRuns(db, 25, 0, true);
-    const card = (id: string) => page.find((read) => read.id === id)!;
-    expect(card(newest)).toMatchObject({ leftOver: 1, failureCauses: [{ cause: 'other', count: 1 }] });
-    expect(card(first)).toMatchObject({ leftOver: 1, failureCauses: [{ cause: 'other', count: 1 }] });
-    // every photo it left over is counted on newer work: nothing needs a look here
-    expect(card(second)).toMatchObject({ leftOver: 0, failureCauses: [], state: 'completed_with_errors' });
+    const page = await listRecentWork(db, 25, 0);
+    // the earlier night is only a row under the newest night's card: the manual scan keeps its photo
+    expect(page.map(({ id }) => id).toSorted()).toEqual([manual, newestNight].toSorted());
+    expect(page.find(({ id }) => id === manual)).toMatchObject({ leftOver: 1 });
+    expect((await reviewRunFailures(database, manual, {}, true))!.superseded).toBe(0);
+  });
 
-    // its review says where they went, and acting on it leaves them to the newer work
-    const review = (await reviewRunFailures(database, second, {}, true))!;
-    expect(review).toMatchObject({ superseded: 1, causes: [expect.objectContaining({ count: 0, superseded: 1 })] });
-    expect(review.causes[0].samples).toEqual([]);
-    const store = new SqlQueueStore(database);
-    expect(await store.retryRunFailures(second, 'other', true)).toBe(0);
-    // the run alone, as other callers read it, still has its photo
-    expect(await getRun(db, second)).toMatchObject({ leftOver: 1 });
-    expect((await reviewRunFailures(database, second, {}))!.causes[0]).toMatchObject({ count: 1, superseded: 0 });
+  it("a night card's actions act on every run of the night that left the photo over (FL-1430)", async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const night = { startedAt: '2026-11-12T02:33:00.000Z', manual: false };
+    const opened = async (kind: string) => {
+      const id = await run(kind);
+      await sql`update job_run set selection = ${JSON.stringify({ night })}::text::jsonb where id = ${id}::uuid`.execute(
+        db,
+      );
+      return id;
+    };
+    const metadata = await opened(JobName.AssetExtractMetadata);
+    await failedJob(metadata, asset.id, JobName.AssetExtractMetadata, 'unsupported file format');
+    const thumbnails = await opened(JobName.AssetGenerateThumbnails);
+    await failedJob(thumbnails, asset.id, JobName.AssetGenerateThumbnails, 'Timed out');
+    expect(await finishRuns(db, 10)).toBe(2);
+    const [card] = await listRecentWork(db, 25, 0);
+    // one photo, under its most telling cause over the whole night
+    expect(card).toMatchObject({ nightly: true, leftOver: 1, failureCauses: [{ cause: 'unsupported', count: 1 }] });
+    const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
+
+    // Stop trying: both steps are stopped, so nightly reprocessing picks neither
+    expect(await jobs.actOnRunFailures(card.id, 'unsupported', 'stop', true)).toBe(1);
+    const { rows: stopped } = await sql<{ step: string }>`select step from asset_processing_failure
+      where "assetId" = ${asset.id}::uuid and "dismissedAt" is not null order by step`.execute(db);
+    expect(stopped.map(({ step }) => step)).toEqual(
+      [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails].toSorted(),
+    );
+
+    // Try again (on a fresh night): both tasks go back
+    await sql`delete from asset_processing_failure where "assetId" = ${asset.id}::uuid`.execute(db);
+    await sql`update job set error = 'Timed out' where "runId" = ${metadata}::uuid`.execute(db);
+    await sql`update job_run set summary = null, "finishedAt" = null where id in (${metadata}::uuid, ${thumbnails}::uuid)`.execute(
+      db,
+    );
+    expect(await finishRuns(db, 10)).toBe(2);
+    expect(await jobs.actOnRunFailures(card.id, 'other', 'retry', true)).toBe(1);
+    const { rows: back } = await sql<{ name: string }>`select name from job where "rootItemKey" = ${asset.id}
+      and state = 'pending' order by name`.execute(db);
+    expect(back.map(({ name }) => name)).toEqual(
+      [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails].toSorted(),
+    );
   });
 
   it('classifies in SQL exactly as the TypeScript mirror does', async () => {

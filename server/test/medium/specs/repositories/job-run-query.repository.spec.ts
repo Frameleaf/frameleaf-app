@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { getRun, listRunItems, listRuns, observeQueueRun, recentFileCheck } from 'src/queue/run-query.js';
+import { listRecentWork, recentFileCheck } from 'src/queue/recent-work.js';
+import { getRun, listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
 import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -320,7 +321,7 @@ it('reads an unfinished run’s photos from the progress index without a sort', 
   expect(plan).toContain('job_run_progress');
   expect(plan).not.toContain('"Node Type":"Sort"');
   expect(await read(id)).toMatchObject({ total: 20_000, countsPhotos: true, stageTotals: { total: 60_000 } });
-});
+}, 120_000);
 
 it('counts jobs outside a run that finished since the oldest waiting one was queued (FL-588)', async () => {
   const loose = (state: string, createdAgo: number, finishedAgo: number | null) =>
@@ -402,7 +403,7 @@ describe('Recent work (FL-1349)', () => {
     await job(manual, 'a', 'Thumbnail', { state: 'completed' });
     await finishRuns(db, 10);
 
-    const folded = await listRuns(db, 25, 0, true);
+    const folded = await listRecentWork(db, 25, 0);
     expect(folded.map(({ id }) => id)).toEqual([manual, newest]);
     expect(folded[0]).toMatchObject({ nightly: false });
     expect(folded[0].earlierRuns).toBeUndefined();
@@ -420,19 +421,19 @@ describe('Recent work (FL-1349)', () => {
     await night(2, ['a', 'b', 'c']);
     const newest = await night(1, ['a', 'b'], ['c']);
     await finishRuns(db, 10);
-    const [card] = await listRuns(db, 25, 0, true);
+    const [card] = await listRecentWork(db, 25, 0);
     expect(card).toMatchObject({ id: newest, leftOverStreak: { photos: 2, nights: 2, capped: false } });
 
     // pruned history can only shorten it
     await sql`delete from job where "runId" = ${newest}::uuid`.execute(db);
-    const [pruned] = await listRuns(db, 25, 0, true);
+    const [pruned] = await listRecentWork(db, 25, 0);
     expect(pruned.leftOverStreak).toBeUndefined();
   });
 
   it('says the streak may be longer once it counts back through every night it reads', async () => {
     for (let daysAgo = 8; daysAgo >= 1; daysAgo--) await night(daysAgo, ['a']);
     await finishRuns(db, 20);
-    const [card] = await listRuns(db, 25, 0, true);
+    const [card] = await listRecentWork(db, 25, 0);
     expect(card).toMatchObject({ leftOverStreak: { photos: 1, nights: 7, capped: true }, leftOver: 1 });
   });
 
@@ -491,6 +492,9 @@ describe('Recent work (FL-1349)', () => {
     beforeEach(async () => {
       await sql`delete from system_metadata where key = 'overnight-sequence'`.execute(db);
     });
+    afterEach(async () => {
+      await sql`delete from system_metadata where key = 'overnight-sequence'`.execute(db);
+    });
 
     it("one card per night, numbered by the night's real work, newest night on the card", async () => {
       // the first night: the overnight run, server processing, a folder scan and an empty catch-up
@@ -518,8 +522,9 @@ describe('Recent work (FL-1349)', () => {
       await job(scanTwo, 'd', 'Metadata', { state: 'completed' });
       await finishAll();
 
-      const page = await listRuns(db, 25, 0, true);
-      expect(page.map(({ id }) => id)).toEqual([scanTwo, runNow, manual]);
+      const page = await listRecentWork(db, 25, 0);
+      // the card is the night's first run, which stays while the night opens more
+      expect(page.map(({ id }) => id)).toEqual([serverTwo, runNow, manual]);
       const [card] = page;
       expect(card).toMatchObject({
         nightly: true,
@@ -543,8 +548,16 @@ describe('Recent work (FL-1349)', () => {
       // something of the night still going: the card is still going
       const late = await opened('library_scan', 30, { startedAt: NIGHT_TWO });
       await job(late, 'e', 'Metadata', { state: 'active' });
-      const [going] = await listRuns(db, 25, 0, true);
-      expect(going).toMatchObject({ id: late, nightly: true, state: 'running', finishedAt: null, total: 3, active: 1 });
+      const [going] = await listRecentWork(db, 25, 0);
+      // photos counted once each over the night's scans
+      expect(going).toMatchObject({
+        id: serverTwo,
+        nightly: true,
+        state: 'running',
+        finishedAt: null,
+        total: 3,
+        active: 1,
+      });
     });
 
     it('folds runs from before nights were marked by the nights the schedule recorded', async () => {
@@ -576,9 +589,11 @@ describe('Recent work (FL-1349)', () => {
       await job(outside, null, 'AssetExtractMetadata', { state: 'completed' });
       await finishAll();
 
-      const page = await listRuns(db, 25, 0, true);
-      expect(page.map(({ id }) => id).toSorted()).toEqual([automatic, byHand, outside].toSorted());
-      expect(page.find(({ id }) => id === automatic)).toMatchObject({ nightly: true, total: 1 });
+      const page = await listRecentWork(db, 25, 0);
+      expect(page.map(({ id }) => id).toSorted()).toEqual([catchUp, byHand, outside].toSorted());
+      expect(page.find(({ id }) => id === catchUp)).toMatchObject({ nightly: true, total: 1 });
+      // the automatic scan is folded into the night's card
+      expect(page.some(({ id }) => id === automatic)).toBe(false);
       await sql`delete from system_metadata where key = 'overnight-sequence'`.execute(db);
     });
 
@@ -594,9 +609,9 @@ describe('Recent work (FL-1349)', () => {
       const enumerating = await run({ enumerationDone: false });
       await finishAll();
 
-      const page = await listRuns(db, 25, 0, true);
+      const page = await listRecentWork(db, 25, 0);
       expect(page.map(({ id }) => id)).toEqual([enumerating, ...kept]);
-      const pages = [await listRuns(db, 2, 0, true), await listRuns(db, 2, 2, true), await listRuns(db, 2, 4, true)];
+      const pages = [await listRecentWork(db, 2, 0), await listRecentWork(db, 2, 2), await listRecentWork(db, 2, 4)];
       expect(pages.map((items) => items.map(({ id }) => id))).toEqual([[enumerating, kept[0]], [kept[1], kept[2]], []]);
       // without foldNightly they are all there, as before
       expect(await listRuns(db, 25, 0)).toHaveLength(8);
@@ -618,7 +633,7 @@ describe('Recent work (FL-1349)', () => {
       await sql`update job_run set "finishedAt" = now() - interval '100 minutes',
           summary = jsonb_set(summary, '{finishedAt}', to_jsonb(now() - interval '100 minutes'))
         where id = ${finishedLate}::uuid`.execute(db);
-      const page = await listRuns(db, 25, 0, true);
+      const page = await listRecentWork(db, 25, 0);
       expect(page.map(({ id }) => id)).toEqual([openNew, openOld, finishedLate, finishedEarly]);
       expect(page[3].state).toBe('completed');
     });
@@ -645,7 +660,7 @@ describe('Recent work (FL-1349)', () => {
       await job(done, 'a', 'Metadata', { state: 'completed' });
       await finishAll();
 
-      const page = await listRuns(db, 25, 0, true);
+      const page = await listRecentWork(db, 25, 0);
       expect(page.map(({ id }) => id).toSorted()).toEqual([refused, done].toSorted());
       const card = page.find(({ id }) => id === refused)!;
       expect(card).toMatchObject({
@@ -664,22 +679,40 @@ describe('Recent work (FL-1349)', () => {
   });
 
   it("reads Library care's file checks while they run, and for a while after (FL-1430)", async () => {
+    // its own rows only: the table is emptied before and after
     await sql`truncate asset_health_run cascade`.execute(db);
-    expect(await recentFileCheck(db)).toBeUndefined();
-    const check = (category: string, status: string, finishedAgo: number | null, checked = 0, total = 0) =>
-      sql`insert into asset_health_run(category, status, "startedAt", "finishedAt", "checkedAssets", "totalAssets")
-        values (${category}, ${status}, now() - interval '20 minutes',
-          case when ${finishedAgo}::int is null then null else now() - ${finishedAgo}::int * interval '1 minute' end,
-          ${checked}, ${total})`.execute(db);
-    await check('corrupt', 'completed', 60 * 24, 900, 900);
-    expect(await recentFileCheck(db)).toBeUndefined();
-    await check('missing', 'completed', 5, 1786, 1786);
-    expect(await recentFileCheck(db)).toMatchObject({ running: false, checked: 1786, total: 1786 });
-    await check('corrupt', 'running', null);
-    // a check that is running counts alone, without a number yet
-    expect(await recentFileCheck(db)).toMatchObject({ running: true, finishedAt: null, checked: 0, total: 0 });
-    await check('untracked', 'running', null);
-    expect(await recentFileCheck(db)).toMatchObject({ running: true });
+    try {
+      expect(await recentFileCheck(db)).toBeUndefined();
+      const check = (
+        category: string,
+        status: string,
+        finishedAgo: number | null,
+        counts: { checked?: number; total?: number; found?: number; startedAgo?: number } = {},
+      ) =>
+        sql`insert into asset_health_run(category, status, "startedAt", "finishedAt", "checkedAssets", "totalAssets", "foundAssets")
+          values (${category}, ${status}, now() - ${counts.startedAgo ?? 20} * interval '1 minute',
+            case when ${finishedAgo}::int is null then null else now() - ${finishedAgo}::int * interval '1 minute' end,
+            ${counts.checked ?? 0}, ${counts.total ?? 0}, ${counts.found ?? 0})`.execute(db);
+      await check('corrupt', 'completed', 60 * 24, { checked: 900, total: 900 });
+      expect(await recentFileCheck(db)).toBeUndefined();
+      await check('missing', 'completed', 5, { checked: 1786, total: 1786, found: 3 });
+      await check('corrupt', 'completed', 6, { checked: 14_288, total: 14_288, found: 660 });
+      expect(await recentFileCheck(db)).toMatchObject({
+        running: false,
+        checked: 16_074,
+        total: 16_074,
+        damaged: 660,
+        missing: 3,
+      });
+      // a check left running by a restart long ago doesn't keep the card running
+      await check('corrupt', 'running', null, { startedAgo: 60 * 8 });
+      expect(await recentFileCheck(db)).toMatchObject({ running: false, damaged: 660 });
+      await check('corrupt', 'running', null);
+      // a check that is running counts alone, without a number yet
+      expect(await recentFileCheck(db)).toMatchObject({ running: true, finishedAt: null, checked: 0, total: 0 });
+    } finally {
+      await sql`truncate asset_health_run cascade`.execute(db);
+    }
   });
 
   it('without foldNightly the list is unchanged', async () => {

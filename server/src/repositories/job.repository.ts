@@ -32,8 +32,10 @@ import { retryLockContention } from 'src/queue/catalogue.js';
 import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/queue/configuration.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
+import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
+import { causeRank } from 'src/queue/run-failure-cause.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
-import { nightOf, recentFileCheck, reportedQueueJobs } from 'src/queue/run-query.js';
+import { failureRoots, needsLook, reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -804,24 +806,33 @@ export class JobRepository {
    * night, leaving photos newer work left over again to that work. Undefined for an unknown run.
    */
   async actOnRunFailures(runId: string, cause: RunFailureCause, action: 'retry' | 'stop', foldNightly = false) {
-    const runs = foldNightly ? await nightOf(this.store.db, runId) : [runId];
-    if (!runs) return;
-    let count: number | undefined;
-    for (const id of runs) {
-      const done =
-        action === 'retry'
-          ? await this.store.retryRunFailures(id, cause, foldNightly)
-          : await this.store.stopRunFailures(id, cause, foldNightly);
-      if (done !== undefined) count = (count ?? 0) + done;
+    if (!foldNightly) {
+      return action === 'retry' ? this.store.retryRunFailures(runId, cause) : this.store.stopRunFailures(runId, cause);
     }
-    return count;
+    // FL-1430: the photos the card shows for this cause, worked out once over the whole night (or the run), then
+    // tried again or stopped in every run that left them over: every failed step of a photo goes, and the count is
+    // what the card said
+    const found = await recentWorkScope(this.store.db, runId);
+    if (!found) return;
+    const roots = (await failureRoots(this.store.db, found.scope)).filter(
+      (root) => needsLook(root) && root.rank === causeRank(cause),
+    );
+    for (const run of found.scope.runs) {
+      const only = roots.filter((root) => root.runIds.includes(run.id)).map(({ root }) => root);
+      if (only.length === 0) continue;
+      if (action === 'retry') await this.store.retryRunFailures(run.id, cause, only);
+      else await this.store.stopRunFailures(run.id, cause, only);
+    }
+    return roots.length;
   }
 
   private intent(item: JobItem): QueueIntent {
     const context = queueExecution.getStore();
     const runId = runSubmission.getStore() ?? context?.claim.runId ?? undefined;
-    const causal = inheritWorkflowCausation((item.data ?? {}) as Record<string, unknown>);
-    // FL-1430: work the overnight schedule queues carries its night, for the run it opens when it runs
+    // FL-1430: work the overnight schedule queues carries its night, for the run it opens when it runs; a job copied or
+    // queued again outside the night carries none
+    const { [NIGHT_DATA_KEY]: _copied, ...own } = (item.data ?? {}) as Record<string, unknown>;
+    const causal = inheritWorkflowCausation(own);
     const night = nightWork.getStore();
     const data = night ? { ...causal, [NIGHT_DATA_KEY]: night } : causal;
     const queue = this.getQueueName(item.name);

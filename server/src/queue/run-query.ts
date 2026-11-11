@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { createHash } from 'node:crypto';
-import { JobName, MediaOperationKind, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { JobName, QueueName } from 'src/enum.js';
 import {
   NIGHTLY_RUN_KINDS,
   RUN_FAILURE_CAUSES,
@@ -141,7 +141,7 @@ export type RunSummary = {
 
 type HoldReason = 'setup' | 'paused' | 'parked';
 type Holds = Record<string, HoldReason>;
-type Header = {
+export type Header = {
   id: string;
   kind: string;
   createdAt: Date;
@@ -156,7 +156,7 @@ type Header = {
   refused?: boolean;
 };
 /** Queue switches and worker liveness, read once for every run on a page. */
-type Surroundings = { paused: Set<string>; closed: Set<string>; workerAvailable: boolean };
+export type Surroundings = { paused: Set<string>; closed: Set<string>; workerAvailable: boolean };
 /** A run's counts before they are turned into a state and reasons. */
 export type RunAggregate = {
   counts: RunCounts;
@@ -179,8 +179,8 @@ export type RunAggregate = {
 };
 
 const LIVE = new Set(['pending', 'waiting', 'active']);
-const zero = (): RunCounts => Object.fromEntries(['total', ...RUN_OUTCOMES].map((key) => [key, 0])) as RunCounts;
-const add = (counts: RunCounts, outcome: RunOutcome, n: number) => {
+export const zero = (): RunCounts => Object.fromEntries(['total', ...RUN_OUTCOMES].map((key) => [key, 0])) as RunCounts;
+export const add = (counts: RunCounts, outcome: RunOutcome, n: number) => {
   counts[outcome] += n;
   counts.total += n;
 };
@@ -222,7 +222,7 @@ const PRIORITY: Record<RunOutcome, number> = {
   cancelled: 2,
   completed: 1,
 };
-const STATE_TOP = sql<number>`max(case when state = 'active' then 10 when state in ('pending','waiting') then 8
+export const STATE_TOP = sql<number>`max(case when state = 'active' then 10 when state in ('pending','waiting') then 8
   when state = 'needs_attention' then 4 when state in ('failed','blocked') then 3 when state = 'cancelled' then 2 else 1 end)`;
 const TOP_OUTCOME: Record<number, RunOutcome> = {
   10: 'active',
@@ -437,7 +437,7 @@ export async function aggregateRun(
 }
 
 /** The aggregate a finished run's summary stands for. */
-const fromSummary = (summary: RunSummary): RunAggregate => ({
+export const fromSummary = (summary: RunSummary): RunAggregate => ({
   counts: summary.counts,
   stageTotals: summary.stageTotals,
   countsPhotos: summary.countsPhotos ?? true,
@@ -513,16 +513,18 @@ async function importActivated(db: Kysely<any>, kind: string) {
 }
 
 /**
- * How a run is read. `supersede` (Recent work): photos a newer run left over again are counted there, not here.
- * `causes` false: the caller counts the causes itself (a folded night counts them over all its runs at once).
+ * How a run is read. Activity (no options): as FL-1349 read it, a finished run from its stored summary. Recent work
+ * (`live`): a run's left-over photos are read as they are now, newer work in `live.supersede` taking over the ones it
+ * left over again; `causes` false: the caller counts them itself (a folded night, over all its runs at once).
  */
-type ReadOptions = { supersede?: boolean; causes?: boolean };
+export type ReadOptions = { live?: { supersede: FailureScope['supersede'] }; causes?: boolean };
 
-/** Nothing was found to count: the run's history is pruned (or never had failed photos). */
-const foundNothing = (groups: RunFailureGroup[]) =>
-  groups.every((group) => group.count + group.stopped + group.superseded === 0);
-
-async function toRead(db: Kysely<any>, run: Header, around: Surroundings, options: ReadOptions = {}): Promise<RunRead> {
+export async function toRead(
+  db: Kysely<any>,
+  run: Header,
+  around: Surroundings,
+  options: ReadOptions = {},
+): Promise<RunRead> {
   const finished = run.summarized && !!run.summary;
   const aggregate = finished ? fromSummary(run.summary!) : await aggregateRun(db, run, around);
   const context = { enumerationDone: run.enumerationDone, workerAvailable: around.workerAvailable };
@@ -535,14 +537,16 @@ async function toRead(db: Kysely<any>, run: Header, around: Surroundings, option
   const canRelease = aggregate.heldReasons.size > 0 && (await importActivated(db, run.kind));
   const failures = aggregate.stageTotals.failed + aggregate.stageTotals.needsAttention;
   let failureCauses = finished ? aggregate.failureCauses : undefined;
-  if (options.causes !== false && failures > 0) {
+  if (options.live && options.causes !== false && failures > 0) {
     // FL-1430: a finished run's causes are read as they are now (Library care may have found its photos damaged
     // since), as its review sheet reads them; one whose history is pruned keeps the causes it stored
-    const groups = await summarizeRunFailures(db, {
+    const roots = await failureRoots(db, {
       runs: [{ id: run.id, countsPhotos: aggregate.countsPhotos, settled: !finished }],
-      supersede: options.supersede,
+      supersede: options.live.supersede,
     });
-    failureCauses = finished && foundNothing(groups) ? aggregate.failureCauses : causeCounts(groups);
+    failureCauses = finished && roots.length === 0 ? aggregate.failureCauses : causeCounts(groupRoots(roots));
+  } else if (!options.live && !finished && failures > 0) {
+    failureCauses = causeCounts(await summarizeRunFailures(db, run.id, aggregate.countsPhotos, true));
   }
   // FL-1430: a scan refused because its folder is empty or gone couldn't reach its drive
   const unreachableLibraries = run.refused
@@ -640,12 +644,13 @@ const failedTasks = (runId: string) => sql`select ${failedColumns} from job j
 
 /**
  * FL-1430: whose left-over photos are counted. One run, or a folded night's runs together (a photo left over by two
- * of them counts once); `settled` leaves out a live run's photos that still have a live task. `supersede`: a photo a
- * newer run (one of the next `SUPERSEDING_RUNS` with failures, outside the scope) left over again is counted there.
+ * of them counts once); `settled` leaves out a live run's photos that still have a live task. `supersede` (Recent
+ * work): the runs with a card of their own, newer than the scope, that take over a photo they left over again at the
+ * same step (a stopped failure takes nothing over). Without it, nothing is taken over.
  */
 export type FailureScope = {
   runs: Array<{ id: string; countsPhotos: boolean; settled?: boolean }>;
-  supersede?: boolean;
+  supersede?: Array<{ id: string; createdAt: Date }>;
 };
 /** How many newer runs (with failures, nearest first) are probed for a photo left over again. */
 export const SUPERSEDING_RUNS = 25;
@@ -653,16 +658,16 @@ const scopeOf = (scope: string | FailureScope, countsPhotos: boolean, settled: b
   typeof scope === 'string' ? { runs: [{ id: scope, countsPhotos, settled }] } : scope;
 
 /**
- * The runs newer than a scope's oldest run that left something over (or are still open), nearest first. Only
- * `job_run` is read; each is then probed through its own progress index.
+ * FL-1430: the (photo, step, run) pairs of `failed` that a newer run of `newer` left over again at the same step, not
+ * stopped there. Probed once per pair, each newer run through its own progress index.
  */
-const newerRuns = (ids: string[]) => sql`newer as materialized (
-    select n.id, n."createdAt" from job_run n
-    where n."createdAt" > (select min(s."createdAt") from job_run s where s.id = any(${ids}::uuid[]))
-      and n.id <> all(${ids}::uuid[])
-      and (n."finishedAt" is null or coalesce((n.summary->'stageTotals'->>'failed')::int, 0)
-        + coalesce((n.summary->'stageTotals'->>'needsAttention')::int, 0) > 0)
-    order by n."createdAt", n.id limit ${SUPERSEDING_RUNS}),`;
+const SUPERSEDING = sql`pairs as materialized (select distinct f.root, f.name, f."runId" from failed f where f.rooted),
+  superseding as materialized (select p.root, p.name, p."runId" from pairs p join job_run fr on fr.id = p."runId"
+    where exists (select 1 from newer n join job s on s."runId" = n.id and s."rootItemKey" = p.root and s.name = p.name
+        and (s.state in ('failed','needs_attention')) is true
+      left join asset_processing_failure d on d."assetId" = case when pg_input_is_valid(s.data->>'id', 'uuid')
+        then (s.data->>'id')::uuid end and d.step = s.name
+      where n."createdAt" > fr."createdAt" and d."dismissedAt" is null)),`;
 
 /**
  * FL-1349: each failed or needs-attention task of a run with its photo's cause. Read from the run's progress index
@@ -671,22 +676,18 @@ const newerRuns = (ids: string[]) => sql`newer as materialized (
  * (`run-failure-cause.ts`), from the tasks not stopped; a photo whose every failed task was stopped is `stopped`.
  * Without photos (`countsPhotos` false) each task is its own item. `settled` leaves out photos that still have a live
  * task (a live run's left-over count never runs ahead of its photos' outcomes). FL-1430: a `FailureScope` reads
- * several runs, and with `supersede` marks the photos a newer run left over again (one indexed probe per newer run).
+ * several runs; with `supersede` a photo whose every failed task (stopped ones aside) newer work took over is
+ * `photoSuperseded`, and its cause is ranked from the tasks still its own.
  */
 export const runFailureTasks = (scope: string | FailureScope, countsPhotos = true, settled = false) => {
-  const { runs, supersede = false } = scopeOf(scope, countsPhotos, settled);
-  const ids = runs.map(({ id }) => id);
+  const { runs, supersede } = scopeOf(scope, countsPhotos, settled);
   const failed = sql.join(
     runs.map(
       (run) => sql`(${run.countsPhotos ? failedPhotoTasks(run.id, run.settled ?? false) : failedTasks(run.id)})`,
     ),
     sql` union all `,
   );
-  const superseded = supersede
-    ? sql`f.rooted and exists (select 1 from newer n join job_run fr on fr.id = f."runId"
-        where n."createdAt" > fr."createdAt" and exists (select 1 from job s where s."runId" = n.id
-          and s."rootItemKey" = f.root and (s.state in ('failed','needs_attention')) is true))`
-    : sql`false`;
+  const probes = supersede !== undefined && supersede.length > 0;
   return sql<{
     root: string;
     rooted: boolean;
@@ -706,7 +707,12 @@ export const runFailureTasks = (scope: string | FailureScope, countsPhotos = tru
     photoRank: number;
     photoStopped: boolean;
     photoSuperseded: boolean;
-  }>`with ${supersede ? newerRuns(ids) : sql``} failed as (${failed}), tasks as (
+  }>`with ${
+    probes
+      ? sql`newer as materialized (select * from unnest(${supersede.map(({ id }) => id)}::uuid[],
+          ${supersede.map(({ createdAt }) => createdAt.toISOString())}::timestamptz[]) n(id, "createdAt")),`
+      : sql``
+  } failed as (${failed}), ${probes ? SUPERSEDING : sql``} tasks as (
     select f.*, a."libraryId", ${failureCauseRank({
       asset: sql`a.id is not null`,
       error: sql`f.error`,
@@ -714,7 +720,12 @@ export const runFailureTasks = (scope: string | FailureScope, countsPhotos = tru
       offline: sql`a."isOffline"`,
       finding: sql`h.finding`,
     })} rank,
-      coalesce(p."dismissedAt" is not null, false) stopped, coalesce(c.fixed, false) fixed, ${superseded} superseded
+      coalesce(p."dismissedAt" is not null, false) stopped, coalesce(c.fixed, false) fixed,
+      ${
+        probes
+          ? sql`exists (select 1 from superseding x where x.root = f.root and x.name = f.name and x."runId" = f."runId")`
+          : sql`false`
+      } superseded
     from failed f
     left join asset a on a.id = f."assetId"
     -- an open finding; a damaged file Library care already fixed still reads as damaged ("repaired N of these")
@@ -726,8 +737,10 @@ export const runFailureTasks = (scope: string | FailureScope, countsPhotos = tru
       where c."assetId" = a.id and c.category = 'corrupt') c on true
     left join asset_processing_failure p on p."assetId" = f."subjectId" and p.step = f.name
   )
-  select t.*, coalesce(min(rank) filter (where not stopped) over photo, min(rank) over photo) "photoRank",
-    bool_and(stopped) over photo "photoStopped", bool_or(superseded) over photo "photoSuperseded"
+  select t.*, coalesce(min(rank) filter (where not stopped and not superseded) over photo,
+      min(rank) filter (where not stopped) over photo, min(rank) over photo) "photoRank",
+    bool_and(stopped) over photo "photoStopped",
+    not bool_and(stopped) over photo and bool_and(stopped or superseded) over photo "photoSuperseded"
   from tasks t window photo as (partition by root)`;
 };
 
@@ -759,6 +772,66 @@ export async function summarizeRunFailures(
   return rows;
 }
 
+/** FL-1430: one left-over photo (in a run that counts tasks, one failed task) of a scope, with what Recent work shows. */
+export type FailureRoot = {
+  root: string;
+  rooted: boolean;
+  assetId: string | null;
+  runIds: string[];
+  rank: number;
+  stopped: boolean;
+  superseded: boolean;
+  fixed: boolean;
+  queues: string[];
+  library: string | null;
+  message: string | null;
+};
+
+/**
+ * FL-1430: a scope's left-over photos, one row each, read once per request: the card's causes (`groupRoots`), the
+ * review's samples and message, the streak's photos and an action's photos all come from the same rows.
+ */
+export async function failureRoots(db: Kysely<any>, scope: FailureScope): Promise<FailureRoot[]> {
+  if (scope.runs.length === 0) return [];
+  const { rows } = await sql<FailureRoot>`select t.root, bool_or(t.rooted) rooted, t."assetId",
+      array_agg(distinct t."runId") "runIds", min(t."photoRank") rank, bool_and(t."photoStopped") stopped,
+      bool_and(t."photoSuperseded") superseded, bool_or(t.fixed) fixed,
+      array_agg(distinct t.queue order by t.queue) queues, min(l.name) library,
+      (array_agg(t.error order by t."jobId") filter (where not t.sensitive and t.error is not null
+        and t.rank = t."photoRank"))[1] message
+    from (${runFailureTasks(scope)}) t left join library l on l.id = t."libraryId"
+    group by t.root, t."assetId"`.execute(db);
+  return rows;
+}
+
+/** A photo that still needs a look on this card: neither stopped nor taken over by newer work. */
+export const needsLook = (root: FailureRoot) => !root.stopped && !root.superseded;
+
+/** `failureRoots` grouped by cause, as `runFailureGroupsQuery` groups them, causes in order. */
+export const groupRoots = (roots: FailureRoot[]): RunFailureGroup[] => {
+  const groups: RunFailureGroup[] = [];
+  for (const [index, cause] of RUN_FAILURE_CAUSES.entries()) {
+    const of = roots.filter((root) => root.rank === index + 1);
+    if (of.length === 0) continue;
+    const counted = of.filter((root) => needsLook(root));
+    groups.push({
+      cause,
+      count: counted.length,
+      stopped: of.filter((root) => root.stopped).length,
+      repaired: cause === 'damaged' ? counted.filter((root) => root.fixed).length : 0,
+      superseded: of.filter((root) => root.superseded && !root.stopped).length,
+      queues: [...new Set(of.flatMap((root) => root.queues))].toSorted((a, b) => a.localeCompare(b)),
+      libraries:
+        cause === 'drive'
+          ? [...new Set(of.flatMap((root) => (root.library ? [root.library] : [])))]
+              .toSorted((a, b) => a.localeCompare(b))
+              .slice(0, 3)
+          : [],
+    });
+  }
+  return groups;
+};
+
 /** Whether a run works on photos (`RunRead.countsPhotos`): any of its jobs has a root, from the progress index. */
 export async function runCountsPhotos(db: Kysely<any>, runId: string): Promise<boolean | undefined> {
   const {
@@ -769,16 +842,9 @@ export async function runCountsPhotos(db: Kysely<any>, runId: string): Promise<b
 }
 
 /** The photos (roots) of one cause that still need a look; in a run that counts tasks, the failed jobs' ids. */
-export async function runFailureRoots(
-  db: Kysely<any>,
-  runId: string,
-  cause: RunFailureCause,
-  countsPhotos = true,
-  supersede = false,
-) {
-  const scope = { runs: [{ id: runId, countsPhotos }], supersede };
-  const { rows } = await sql<{ root: string }>`select t.root from (${runFailureTasks(scope)}) t
-    where t."photoRank" = ${causeRank(cause)}::int and not t."photoStopped" and not t."photoSuperseded"
+export async function runFailureRoots(db: Kysely<any>, runId: string, cause: RunFailureCause, countsPhotos = true) {
+  const { rows } = await sql<{ root: string }>`select t.root from (${runFailureTasks(runId, countsPhotos)}) t
+    where t."photoRank" = ${causeRank(cause)}::int and not t."photoStopped"
     group by t.root`.execute(db);
   return rows.map(({ root }) => root);
 }
@@ -796,340 +862,28 @@ export const causeCounts = (groups: RunFailureGroup[]): RunFailureCauseCount[] =
   groups.filter((group) => group.count > 0).map(({ cause, count }) => ({ cause, count }));
 
 /** A stored summary is the run's counts while it was taken at the run's current `finishedAt`. */
-const SUMMARIZED = sql<boolean>`coalesce(r."finishedAt" is not null and r.summary->>'complete' = 'true'
+export const SUMMARIZED = sql<boolean>`coalesce(r."finishedAt" is not null and r.summary->>'complete' = 'true'
   and (r.summary->>'finishedAt')::timestamptz = r."finishedAt", false)`;
 
-/** FL-1430: the refusals that say a scan's folder is empty or can't be reached (`LibraryScanRefusal`). */
-const SOURCE_REFUSALS = ['library_source_empty', 'library_source_unavailable'];
-
-/** A run `r` with a folder scan's operation `o` (same id) and library `l` (by primary keys). */
-const RUN_SOURCE = sql`job_run r
-  left join media_operation o on r.kind = ${MediaOperationKind.LibraryScan} and o.id = r.id
-  left join library l on r.kind = ${MediaOperationKind.LibraryScan} and l."deletedAt" is null
-    and l.id = case when pg_input_is_valid(r.selection->>'libraryId', 'uuid') then (r.selection->>'libraryId')::uuid end`;
-const HEADER_COLUMNS = sql`r.id, r.kind, r."createdAt", r."finishedAt", r."enumerationDone", r.selection->'holds' holds,
-  r.summary, ${SUMMARIZED} summarized, l.name "libraryName",
-  coalesce(o.status = 'failed' and o."errorCode" = any(${SOURCE_REFUSALS}::text[]), false) refused`;
-
 const headers = (where: ReturnType<typeof sql>, take: number, skip: number, unfinishedFirst = true) => sql<Header>`
-  select ${HEADER_COLUMNS} from ${RUN_SOURCE} ${where}
+  select r.id, r.kind, r."createdAt", r."finishedAt", r."enumerationDone", r.selection->'holds' holds, r.summary,
+    ${SUMMARIZED} summarized
+  from job_run r ${where}
   order by ${unfinishedFirst ? sql`r."finishedAt" is not null,` : sql``} r."createdAt" desc, r.id desc
   limit ${take} offset ${skip}`;
-
-/** How many earlier nights a folded card lists, and counts its streak back through. */
-export const EARLIER_RUNS = 6;
-
-/**
- * FL-1430: the kinds a night opens runs of: the overnight run itself, the nightly reprocessing of unfinished photos
- * (`reconcileUnfinished`, one run per step) and missing thumbnails. With automatic folder scans, they are what a run
- * from before nights were marked is folded by, when it was opened inside one of the nights the schedule recorded.
- */
-const NIGHT_KINDS = [
-  JobName.OvernightSequence,
-  JobName.AssetExtractMetadata,
-  JobName.AssetGenerateThumbnails,
-  JobName.AssetEncodeVideo,
-  JobName.SmartSearch,
-  JobName.AssetDetectFaces,
-  JobName.Ocr,
-  JobName.AssetGenerateThumbnailsQueueAll,
-];
-
-/**
- * The scheduled nights the overnight schedule recorded (its last `OVERNIGHT_NIGHTS_KEPT` and the one going) that no
- * run was marked with: nights from before runs carried their night.
- */
-const UNMARKED_NIGHTS = sql`select n->>'startedAt' key, (n->>'startedAt')::timestamptz s,
-    coalesce((n->>'finishedAt')::timestamptz, 'infinity') f
-  from system_metadata m cross join lateral jsonb_array_elements(
-    case when jsonb_typeof(m.value->'nights') = 'array' then m.value->'nights' else '[]' end
-    || case when jsonb_typeof(m.value->'run') = 'object' then jsonb_build_array(m.value->'run') else '[]' end) n
-  where m.key = ${SystemMetadataKey.OvernightSequence} and n->>'manual' = 'false'
-    and not exists (select 1 from job_run k where k.selection->'night'->>'startedAt' = n->>'startedAt')`;
-
-/**
- * FL-1430: the night a run belongs to in Recent work, or null. A marked run: its scheduled night (a Run now night
- * stays apart). An unmarked one: the recorded night it was opened in, for a night's kind or an automatic folder scan;
- * else an overnight run is a night of its own, as FL-1349 folded them.
- */
-const NIGHT_KEY = sql<string | null>`case when jsonb_typeof(r.selection->'night') = 'object'
-    then case when r.selection->'night'->>'manual' = 'false' then r.selection->'night'->>'startedAt' end
-  else coalesce(
-    (select w.key from nights w where r."createdAt" between w.s and w.f
-      and (r.kind = any(${NIGHT_KINDS}::text[])
-        or (r.kind = ${MediaOperationKind.LibraryScan} and o.snapshot->>'trigger' = 'automatic'))
-      order by w.s desc limit 1),
-    case when r.kind = any(${NIGHTLY_RUN_KINDS}::text[]) then 'run:' || r.id::text end) end`;
-
-/** Every run's header with its night (`night`); `job_run` is small, one row per piece of work. */
-const KEYED = sql`nights as materialized (${UNMARKED_NIGHTS}),
-  keyed as materialized (select ${HEADER_COLUMNS}, ${NIGHT_KEY} night from ${RUN_SOURCE})`;
-
-/** An empty run: finished with no task at all. A refused scan is not empty: it says why. */
-const EMPTY = sql`(k.summarized and coalesce((k.summary->'stageTotals'->>'total')::int, 1) = 0 and not k.refused)`;
-
-type KeyedHeader = Header & { night: string | null };
-type NightGroup = { key: string; runs: KeyedHeader[] };
 
 /**
  * Activity's runs, unfinished first. A finished run reads its stored summary; an unfinished one is counted from its
  * jobs (`aggregateRun`), one run at a time. The store shares a costly read between pollers (`costReusedRead`).
- * `foldNightly` (Recent work, FL-1430): each night's runs are one card, the newest night's, with the nights before it;
- * a finished run with no work at all is left out; work still going comes first (newest started first), then finished
- * work by when it finished; a photo a newer run left over again is counted on that run's card only.
+ * Recent work (`foldNightly`) reads through `listRecentWork` (`recent-work.ts`) instead.
  */
-export async function listRuns(db: Kysely<any>, take: number, skip: number, foldNightly = false): Promise<RunRead[]> {
-  if (!foldNightly) {
-    const { rows } = await headers(sql``, take, skip).execute(db);
-    if (rows.length === 0) return [];
-    const around = await readSurroundings(db);
-    const runs: RunRead[] = [];
-    for (const row of rows) runs.push(await toRead(db, row, around));
-    return runs;
-  }
-  const { rows } = await sql<KeyedHeader>`with ${KEYED},
-    groups as (select night, min("createdAt") "createdAt",
-        case when bool_and("finishedAt" is not null) then max("finishedAt") end "finishedAt",
-        (array_agg(id order by "createdAt" desc, id desc))[1] id
-      from keyed where night is not null group by night),
-    entries as (
-      select k.id, null::text night, k."createdAt", k."finishedAt" from keyed k where k.night is null and not ${EMPTY}
-      union all (select id, night, "createdAt", "finishedAt" from groups order by "createdAt" desc, night desc limit 1)
-    )
-    select k.*, e.night from entries e join keyed k on k.id = e.id
-    order by e."finishedAt" is not null, case when e."finishedAt" is null then e."createdAt" end desc,
-      e."finishedAt" desc, e.id desc
-    limit ${take} offset ${skip}`.execute(db);
+export async function listRuns(db: Kysely<any>, take: number, skip: number): Promise<RunRead[]> {
+  const { rows } = await headers(sql``, take, skip).execute(db);
   if (rows.length === 0) return [];
   const around = await readSurroundings(db);
   const runs: RunRead[] = [];
-  for (const row of rows) {
-    runs.push(
-      row.night
-        ? await nightCard(db, await nightGroups(db), around)
-        : await toRead(db, row, around, { supersede: true }),
-    );
-  }
+  for (const row of rows) runs.push(await toRead(db, row, around));
   return runs;
-}
-
-/** The newest `EARLIER_RUNS + 1` nights, newest first, each with its runs (newest first). */
-async function nightGroups(db: Kysely<any>): Promise<NightGroup[]> {
-  const { rows } = await sql<KeyedHeader>`with ${KEYED},
-    groups as (select night, min("createdAt") started from keyed where night is not null
-      group by night order by started desc, night desc limit ${EARLIER_RUNS + 1})
-    select k.* from keyed k join groups g on g.night = k.night
-    order by g.started desc, g.night desc, k."createdAt" desc, k.id desc`.execute(db);
-  const groups: NightGroup[] = [];
-  for (const row of rows) {
-    const last = groups.at(-1);
-    if (last?.key === row.night) last.runs.push(row);
-    else groups.push({ key: row.night!, runs: [row] });
-  }
-  return groups;
-}
-
-/** FL-1430: the runs of the night `runId` belongs to in Recent work, or just that run; undefined for an unknown run. */
-export async function nightOf(db: Kysely<any>, runId: string): Promise<string[] | undefined> {
-  const { rows } = await sql<{ id: string; own: boolean }>`with ${KEYED}
-    select k.id, k.id = ${runId}::uuid own from keyed k
-    where k.id = ${runId}::uuid or k.night = (select night from keyed where id = ${runId}::uuid)
-    order by k."createdAt" desc, k.id desc`.execute(db);
-  return rows.some(({ own }) => own) ? rows.map(({ id }) => id) : undefined;
-}
-
-const SETTLED_STATES = new Set<RunState>(['completed', 'completed_with_errors', 'cancelled', 'needs_attention']);
-/** A folded night's state: anything still going wins over finished, the most pressing first. */
-const NIGHT_STATES: RunState[] = [
-  'running',
-  'retrying',
-  'waiting',
-  'delayed',
-  'blocked',
-  'paused',
-  'unavailable',
-  'needs_attention',
-  'completed_with_errors',
-  'cancelled',
-  'completed',
-];
-const sumCounts = (counts: RunCounts[]) => {
-  const sum = zero();
-  for (const one of counts) for (const key of ['total', ...RUN_OUTCOMES] as const) sum[key] += one[key];
-  return sum;
-};
-const union = <T>(lists: T[][]) => [...new Set(lists.flat())];
-
-/** The causes a night's runs stored when they finished, added up: its history is pruned. */
-const storedCauses = (runs: Header[]) => {
-  const counts = new Map<RunFailureCause, number>();
-  for (const run of runs) {
-    for (const { cause, count } of (run.summarized && run.summary?.failureCauses) || []) {
-      counts.set(cause, (counts.get(cause) ?? 0) + count);
-    }
-  }
-  return RUN_FAILURE_CAUSES.flatMap((cause) => (counts.get(cause) ? [{ cause, count: counts.get(cause)! }] : []));
-};
-
-/**
- * FL-1430: one card for the newest night: its runs' work added up (photos when any run counts photos, the others'
- * tasks then left out), one state, the left-over photos by cause over all its runs at once, the earlier nights and
- * the left-over streak.
- */
-async function nightCard(db: Kysely<any>, groups: NightGroup[], around: Surroundings): Promise<RunRead> {
-  const [night, ...earlier] = groups;
-  const reads: RunRead[] = [];
-  for (const run of night.runs) reads.push(await toRead(db, run, around, { causes: false }));
-  const photoRuns = reads.filter((read) => read.countsPhotos);
-  const counted = photoRuns.length > 0 ? photoRuns : reads;
-  const counts = sumCounts(counted);
-  const state = NIGHT_STATES.find((candidate) => reads.some((read) => read.state === candidate)) ?? 'completed';
-  const settled = SETTLED_STATES.has(state);
-  const latest = reads
-    .filter((read) => read.lastProgressAt)
-    .toSorted((a, b) => b.lastProgressAt!.getTime() - a.lastProgressAt!.getTime())[0];
-  const failing = night.runs.filter(
-    (_, index) => reads[index].stageTotals.failed + reads[index].stageTotals.needsAttention > 0,
-  );
-  const scope: FailureScope = {
-    runs: failing.map((run) => ({
-      id: run.id,
-      countsPhotos: reads[night.runs.indexOf(run)].countsPhotos,
-      settled: !(run.summarized && run.summary),
-    })),
-    supersede: true,
-  };
-  let failureCauses: RunFailureCauseCount[] | undefined;
-  let roots: string[] = [];
-  if (failing.length > 0) {
-    const groupsFound = await summarizeRunFailures(db, scope);
-    failureCauses = foundNothing(groupsFound) ? storedCauses(failing) : causeCounts(groupsFound);
-    const photoScope = { ...scope, runs: scope.runs.filter((run) => run.countsPhotos) };
-    if (photoScope.runs.length > 0) {
-      const { rows } = await sql<{ root: string }>`select t.root from (${runFailureTasks(photoScope)}) t
-        where not t."photoStopped" and not t."photoSuperseded" group by t.root`.execute(db);
-      roots = rows.map(({ root }) => root);
-    }
-  }
-  const finishedAt = settled
-    ? (reads
-        .map((read) => read.finishedAt)
-        .filter((at): at is Date => at !== null)
-        .toSorted((a, b) => b.getTime() - a.getTime())[0] ?? null)
-    : null;
-  const { earlierRuns, leftOverStreak } = await earlierNights(db, earlier, roots, around);
-  return {
-    ...counts,
-    id: night.runs[0].id,
-    kind: JobName.OvernightSequence,
-    createdAt: reads.map((read) => read.createdAt).toSorted((a, b) => a.getTime() - b.getTime())[0],
-    finishedAt,
-    enumerationDone: reads.every((read) => read.enumerationDone),
-    stageTotals: sumCounts(reads.map((read) => read.stageTotals)),
-    state,
-    lastProgressAt: latest?.lastProgressAt ?? null,
-    lastStage: latest?.lastStage ?? null,
-    reasons: union(reads.map((read) => read.reasons)),
-    noDispatchBacklog: reads.some((read) => read.noDispatchBacklog),
-    held: reads.reduce((sum, read) => sum + read.held, 0),
-    canRelease: reads.some((read) => read.canRelease),
-    countsPhotos: photoRuns.length > 0,
-    failedQueues: union(reads.map((read) => read.failedQueues)).toSorted((a, b) => a.localeCompare(b)),
-    ...(failureCauses && {
-      failureCauses,
-      leftOver: failureCauses.reduce((sum, { count }) => sum + count, 0),
-    }),
-    nightly: true,
-    pausedQueues: union(reads.map((read) => read.pausedQueues)).toSorted((a, b) => a.localeCompare(b)),
-    ...(reads.some((read) => read.unreachableLibraries?.length) && {
-      unreachableLibraries: union(reads.map((read) => read.unreachableLibraries ?? [])).slice(0, 3),
-    }),
-    earlierRuns,
-    ...leftOverStreak,
-  };
-}
-
-/** The nights before a folded card's, and on how many nights in a row its left-over photos (`roots`) were left over. */
-async function earlierNights(db: Kysely<any>, earlier: NightGroup[], roots: string[], around: Surroundings) {
-  const earlierRuns: RunEarlier[] = [];
-  for (const night of earlier) {
-    const aggregates: RunAggregate[] = [];
-    for (const run of night.runs) {
-      aggregates.push(run.summarized && run.summary ? fromSummary(run.summary) : await aggregateRun(db, run, around));
-    }
-    const photos = aggregates.filter((aggregate) => aggregate.countsPhotos);
-    const counted = photos.length > 0 ? photos : aggregates;
-    earlierRuns.push({
-      id: night.runs[0].id,
-      createdAt: night.runs.map((run) => run.createdAt).toSorted((a, b) => a.getTime() - b.getTime())[0],
-      finishedAt: night.runs.every((run) => run.summarized)
-        ? night.runs.map((run) => run.finishedAt!).toSorted((a, b) => b.getTime() - a.getTime())[0]
-        : null,
-      total: counted.reduce((sum, aggregate) => sum + aggregate.counts.total, 0),
-      leftOver: counted.reduce(
-        (sum, aggregate) =>
-          sum +
-          (aggregate.failureCauses
-            ? aggregate.failureCauses.reduce((all, { count }) => all + count, 0)
-            : aggregate.counts.failed + aggregate.counts.needsAttention),
-        0,
-      ),
-    });
-  }
-  // N: this night's left-over photos, stopped ones aside; K: back from this night while each earlier one left all N.
-  let nights = 1;
-  if (roots.length > 0) {
-    for (const night of earlier) {
-      const {
-        rows: [probe],
-      } = await sql<{ all: boolean }>`select not exists (select 1 from unnest(${roots}::text[]) r(root)
-          where not exists (select 1 from job j where j."runId" = any(${night.runs.map(({ id }) => id)}::uuid[])
-            and j."rootItemKey" = r.root and j.state in ('failed','needs_attention'))) "all"`.execute(db);
-      if (!probe.all) break;
-      nights++;
-    }
-  }
-  // the probe reached the last night it may read and that one matched too: there may be more
-  const capped = earlier.length === EARLIER_RUNS && nights === EARLIER_RUNS + 1;
-  return {
-    earlierRuns,
-    leftOverStreak: roots.length > 0 ? { leftOverStreak: { photos: roots.length, nights, capped } } : {},
-  };
-}
-
-/** FL-1430: Library care's file checks for missing and damaged files, as one piece of work. */
-export type RecentFileCheck = {
-  running: boolean;
-  startedAt: Date;
-  finishedAt: Date | null;
-  checked: number;
-  total: number;
-};
-/** How long a finished file check stays in Recent work. */
-const FILE_CHECK_SHOWN = '12 hours';
-
-/**
- * FL-1430: the file checks (Library care's missing and corrupt checks, one row per account and kind) still running,
- * or else those that finished in the last `FILE_CHECK_SHOWN`, added up. `asset_health_run` is small: a few rows a night.
- * ponytail: a running check writes its counts only when it ends, so while it runs `total` is usually 0.
- */
-export async function recentFileCheck(db: Kysely<any>): Promise<RecentFileCheck | undefined> {
-  const {
-    rows: [row],
-  } = await sql<RecentFileCheck & { n: number }>`with picked as (
-      select * from asset_health_run where category in ('missing','corrupt') and status = 'running'
-      union all
-      select * from asset_health_run where category in ('missing','corrupt') and status <> 'running'
-        and "finishedAt" > now() - ${FILE_CHECK_SHOWN}::interval
-        and not exists (select 1 from asset_health_run where category in ('missing','corrupt') and status = 'running')
-    ) select count(*)::int n, bool_or(status = 'running') running, min("startedAt") "startedAt",
-      case when bool_or(status = 'running') then null else max("finishedAt") end "finishedAt",
-      coalesce(sum("checkedAssets"), 0)::int checked, coalesce(sum("totalAssets"), 0)::int total from picked`.execute(
-    db,
-  );
-  if (!row || row.n === 0) return;
-  const { n: _, ...check } = row;
-  return check;
 }
 
 export async function getRun(db: Kysely<any>, runId: string): Promise<RunRead | undefined> {

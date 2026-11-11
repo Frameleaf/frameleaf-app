@@ -10512,8 +10512,12 @@ export type JobRunPageDto = {
     fileCheck?: {
         /** Files checked so far; while a check runs this is often still 0 */
         checked: number;
+        /** Files the finished checks found damaged */
+        damaged: number;
         /** When the last one finished; null while any still runs */
         finishedAt: string | null;
+        /** Files the finished checks found missing */
+        missing: number;
         /** Some of the checks are still going */
         running: boolean;
         startedAt: string;

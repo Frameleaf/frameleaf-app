@@ -19,12 +19,21 @@ const isMark = (value: unknown): value is NightMark =>
   typeof (value as NightMark).startedAt === 'string' &&
   typeof (value as NightMark).manual === 'boolean';
 
-/** The night of the work being done now: the overnight schedule's own, or the one the running job was queued with. */
+/** A job carries its night only while it runs within this long of the night's start (not a retry days later). */
+const CARRIED_FOR_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * The night of the work being done now: the overnight schedule's own, or the one the running job was queued with, if
+ * this attempt started while that night was recent.
+ */
 export const currentNight = (): NightMark | undefined => {
   const own = nightWork.getStore();
   if (own) return own;
-  const carried = queueExecution.getStore()?.claim.data?.[NIGHT_DATA_KEY];
-  return isMark(carried) ? { startedAt: carried.startedAt, manual: carried.manual } : undefined;
+  const claim = queueExecution.getStore()?.claim;
+  const carried = claim?.data?.[NIGHT_DATA_KEY];
+  if (!isMark(carried)) return;
+  const since = (claim?.startedAt ? new Date(claim.startedAt).getTime() : Date.now()) - Date.parse(carried.startedAt);
+  return since >= 0 && since <= CARRIED_FOR_MS ? { startedAt: carried.startedAt, manual: carried.manual } : undefined;
 };
 
 /** A new run's selection, with the night that opens it (`job_run.selection.night`). */
