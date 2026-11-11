@@ -123,4 +123,22 @@ describe('VideoMomentResults (FL-1393)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByTestId('search-moments')).toBeInTheDocument();
   });
+
+  // FL-1457: a request that never answers gives up, so the search page is not held waiting for good.
+  it('asks with a time limit, and reports no videos when it runs out', async () => {
+    sdkMock.searchVideoMoments.mockRejectedValueOnce(new DOMException('The operation timed out.', 'TimeoutError'));
+    let found: number | undefined = -1;
+    render(VideoMomentResults, {
+      query: 'lake',
+      get found() {
+        return found;
+      },
+      set found(value) {
+        found = value;
+      },
+    });
+
+    await waitFor(() => expect(found).toBe(0));
+    expect(sdkMock.searchVideoMoments.mock.calls[0][1]).toEqual({ signal: expect.any(AbortSignal) });
+  });
 });

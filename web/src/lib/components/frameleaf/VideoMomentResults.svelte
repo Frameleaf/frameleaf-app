@@ -45,11 +45,19 @@
   let searching = $state(false);
   /** The latest request: only its answer counts, even when an earlier one for the same words arrives later. */
   let latest = 0;
+  /**
+   * FL-1457: the search page waits for the moments before calling a search empty, so a stalled request gives up and
+   * counts as no moments rather than holding the page blank.
+   */
+  const MOMENTS_TIMEOUT_MS = 10_000;
 
   const search = async (text: string, request: number) => {
     try {
       // The server's own default: enough frames that a video's count is not cut short by its neighbours.
-      const response = await searchVideoMoments({ videoMomentSearchDto: { query: text, limit: 24 } });
+      const response = await searchVideoMoments(
+        { videoMomentSearchDto: { query: text, limit: 24 } },
+        { signal: AbortSignal.timeout(MOMENTS_TIMEOUT_MS) },
+      );
       if (request === latest) {
         hits = response.hits;
       }
