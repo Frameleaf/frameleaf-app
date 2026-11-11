@@ -1012,6 +1012,41 @@ describe(RestorationWorkerService.name, () => {
       );
     });
 
+    it.each([true, false])('requires an exact reviewed RIFE fingerprint on full render (%s)', async (exact) => {
+      const name = 'rife-onnx-candidate';
+      const fingerprint = 'a'.repeat(64);
+      const version = `0123456789ab+${exact ? fingerprint : fingerprint.slice(0, 12)}`;
+      restorations.get.mockResolvedValue(
+        row({ status: AssetRestorationStatus.Accepted, mode: AssetRestorationMode.SmoothMotion, upscale: 4 }),
+      );
+      mocks.storage.stat.mockResolvedValue({ size: 1024 } as never);
+      mocks.crypto.hashFile.mockResolvedValue(Buffer.from('chunk'));
+      restore.mockImplementation((_selection, _input, options) =>
+        Promise.resolve({
+          outputPath: options.outputPath,
+          width: 1920,
+          height: 1080,
+          modelName: name,
+          modelVersion: version,
+        }),
+      );
+      await sut.run(
+        operation({ kind: MediaOperationKind.Restoration, snapshot: { ...smooth('full'), model: { name, version } } }),
+        CLAIM,
+      );
+      if (exact) {
+        expect(restore).toHaveBeenCalledTimes(3);
+        expect(restore.mock.calls.every((call) => call[2].modelFingerprint === fingerprint)).toBe(true);
+      } else {
+        expect(restore).not.toHaveBeenCalled();
+        expect(operations.fail).toHaveBeenCalledWith(
+          OPERATION_ID,
+          CLAIM,
+          expect.objectContaining({ errorCode: RestorationErrorCode.ModelChanged }),
+        );
+      }
+    });
+
     it('gives every chunk but the last the next chunk’s first frame as context, so no join is left out', async () => {
       restorations.get.mockResolvedValue(
         row({ status: AssetRestorationStatus.Accepted, mode: AssetRestorationMode.SmoothMotion, upscale: 4 }),

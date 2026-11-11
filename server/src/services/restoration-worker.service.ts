@@ -52,6 +52,7 @@ import { chunkClipOutputOptions, previewClipOutputOptions, strippedStillFormat }
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { MlDestinationNotFoundError, MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import {
+  LOCAL_RIFE_CANDIDATE_ID,
   RESTORATION_OPERATION_KINDS,
   RESTORATION_PREVIEW_EDGE,
   RESTORATION_PREVIEW_SECONDS,
@@ -65,6 +66,7 @@ import {
   cappedOutputSize,
   isFullRegion,
   isReviewedModel,
+  localRifeFingerprint,
   parseRestorationSnapshot,
   planRestorationChunks,
   previewExpiryAfterReady,
@@ -1306,11 +1308,20 @@ export class RestorationWorkerService {
     cap: { width: number; height: number },
     trailingContextFrame = false,
   ) {
+    const modelId = ctx.snapshot.modelId ?? ctx.snapshot.model?.name ?? null;
+    const fingerprint =
+      ctx.snapshot.stage === 'full' && modelId === LOCAL_RIFE_CANDIDATE_ID
+        ? localRifeFingerprint(ctx.snapshot.model?.version)
+        : null;
+    if (ctx.snapshot.stage === 'full' && modelId === LOCAL_RIFE_CANDIDATE_ID && !fingerprint) {
+      throw new RestorationFailure(RestorationErrorCode.ModelChanged, 'Request a new Smooth motion preview');
+    }
     return {
       mode: ctx.snapshot.mode,
       // FL-423: the model the person chose for the preview; a full render names the model its reviewed
       // preview ran, so the worker runs exactly that one or refuses (never another)
-      modelId: ctx.snapshot.modelId ?? ctx.snapshot.model?.name ?? null,
+      modelId,
+      ...(fingerprint && { modelFingerprint: fingerprint }),
       upscale: ctx.snapshot.upscale,
       keepGrain: ctx.snapshot.keepGrain,
       // FL-162 Smooth motion: frames per source frame, and whether the chunk carries the next one's first frame

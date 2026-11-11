@@ -631,10 +631,17 @@ export type RestorationInferenceInput =
   | { kind: 'image'; path: string; width: number; height: number }
   | { kind: 'video'; path: string; width: number; height: number; durationSeconds: number };
 
+export const LOCAL_RIFE_CANDIDATE_ID = 'rife-onnx-candidate';
+
+/** Legacy model versions carry a digest prefix. This candidate keeps the complete reviewed digest. */
+export const localRifeFingerprint = (version: string | null | undefined): string | null =>
+  /^[a-f0-9]{12}\+([a-f0-9]{64})$/.exec(version ?? '')?.[1] ?? null;
+
 export type RestorationInferenceOptions = {
   mode: AssetRestorationMode;
   /** FL-423: the worker's model to run, exactly; null or absent, the worker's own model for the mode. */
   modelId?: string | null;
+  modelFingerprint?: string;
   upscale: 1 | 2 | 4;
   keepGrain: boolean;
   /** Smooth motion (FL-162): frames per source frame. Absent for a restoration. */

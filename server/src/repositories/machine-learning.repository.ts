@@ -54,6 +54,7 @@ import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
 import {
+  LOCAL_RIFE_CANDIDATE_ID,
   RestorationInference,
   RestorationInferenceInput,
   RestorationInferenceOptions,
@@ -2406,6 +2407,7 @@ export class MachineLearningRepository implements RestorationInference {
       mode: options.mode,
       // FL-423: the chosen model, which the worker runs exactly or refuses; left out, the worker chooses
       ...(options.modelId && { modelId: options.modelId }),
+      ...(options.modelFingerprint && { modelFingerprint: options.modelFingerprint }),
       kind: input.kind,
       scale: options.upscale,
       maxWidth: Math.min(options.maxWidth, RESTORATION_MAX_OUTPUT_EDGE),
@@ -2522,8 +2524,10 @@ export class MachineLearningRepository implements RestorationInference {
         width: result.output.width,
         height: result.output.height,
         modelName: result.model.id,
-        // The pinned revision plus the start of the fingerprint over it and every weight hash.
-        modelVersion: `${result.model.revision.slice(0, 12)}+${result.model.fingerprint.slice(0, 12)}`,
+        // Keep legacy version strings compatible with existing previews.
+        modelVersion: `${result.model.revision.slice(0, 12)}+${
+          result.model.id === LOCAL_RIFE_CANDIDATE_ID ? result.model.fingerprint : result.model.fingerprint.slice(0, 12)
+        }`,
       };
     } catch (error) {
       if (response?.body && !response.bodyUsed) {
