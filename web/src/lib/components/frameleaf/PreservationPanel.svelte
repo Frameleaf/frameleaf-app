@@ -200,7 +200,7 @@
   let openedRequest: string | null = null;
 
   $effect(() => {
-    if (requestedPackage === openedRequest || !packages.some((item) => item.id === requestedPackage)) {
+    if (requestedPackage === openedRequest || packages.every((item) => item.id !== requestedPackage)) {
       return;
     }
     openedRequest = requestedPackage;
