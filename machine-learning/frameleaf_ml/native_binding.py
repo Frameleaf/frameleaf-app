@@ -22,6 +22,8 @@ class NativeBinding:
         from . import main
 
         entries = await main.run(self.check, self.spec.entries, self.spec.fixture_kind)
+        if not any(entries):
+            return
         for group in entries:
             for entry in group:
                 model = await main.model_cache.get(
@@ -49,6 +51,7 @@ class NativeBinding:
         report = orjson.loads(read(report_path))
         if (
             not isinstance(report, dict)
+            or report.get("engine", "onnx") != spec.engine
             or spec.provider != provider
             or report.get("provider") != provider
             or report.get("state") not in {"ready-cpu", "ready-mixed", "ready-accelerator"}
@@ -57,6 +60,13 @@ class NativeBinding:
             or report.get("modelKey") != spec.model_key
             or not isinstance(report.get("runtimeFingerprint"), str)
             or not re.fullmatch(r"[a-f0-9]{64}", report["runtimeFingerprint"])
+        ):
+            raise ValueError("native_binding_report_invalid")
+        if spec.engine == "qwen-gguf" and (
+            report.get("protocolVersion") != spec.protocol_version
+            or report.get("state") != "ready-cpu"
+            or report.get("fixtureSha256") != spec.fixture_sha256
+            or report.get("preprocessingSha256") != spec.preprocessing_sha256
         ):
             raise ValueError("native_binding_report_invalid")
         binding = cls(spec, cache, report["runtimeFingerprint"])
@@ -71,6 +81,9 @@ class NativeBinding:
             == orjson.dumps(self.spec.entries, option=orjson.OPT_SORT_KEYS)
         )
 
+    def qwen(self, entries: Any, kind: str) -> "NativeBinding | None":
+        return self if self.spec.engine == "qwen-gguf" and self.matches(entries, kind) else None
+
     def check(self, entries: Any, kind: str) -> InferenceEntries:
         if not self.matches(entries, kind):
             raise ValueError("native_request_binding_mismatch")
@@ -79,11 +92,19 @@ class NativeBinding:
             raise ValueError("native_runtime_or_driver_changed")
         if facts["availableMemoryBytes"] < self.spec.min_memory_bytes:
             raise ValueError("native_memory_insufficient")
-        if preprocessing_identity() != self.spec.preprocessing_sha256:
+        preprocessing = (
+            preprocessing_identity("qwen-gguf") if self.spec.engine == "qwen-gguf" else preprocessing_identity()
+        )
+        if preprocessing != self.spec.preprocessing_sha256:
             raise ValueError("native_preprocessing_changed")
         if self.cache.is_symlink():
             raise ValueError("native_cache_directory_invalid")
         try:
+            if self.spec.engine == "qwen-gguf":
+                from .native_qwen import verify_qwen
+
+                verify_qwen(self.spec, self.cache)
+                return [], []
             verified_entries, models = verify_models(self.spec, self.cache)
             from .native_device import model_bindings
             from .native_ort import current_policy
@@ -125,6 +146,12 @@ class NativeBindingSet:
         return cls(
             [NativeBinding.load(spec, report, cache, provider) for spec, report in zip(specs, reports, strict=True)]
         )
+
+    def qwen(self, entries: Any, kind: str) -> NativeBinding | None:
+        for binding in self.bindings:
+            if binding.qwen(entries, kind) is not None:
+                return binding
+        return None
 
     def check(self, entries: Any, kind: str) -> InferenceEntries:
         for binding in self.bindings:

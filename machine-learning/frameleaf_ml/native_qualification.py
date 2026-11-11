@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path, PurePosixPath
 from threading import Timer
 from time import perf_counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import onnx
 import orjson
@@ -80,6 +80,7 @@ class ModelBindingSpec(Contract):
 
 
 class QualificationSpec(ModelBindingSpec):
+    engine: Literal["onnx", "qwen-gguf"] = "onnx"
     provider: str
     fixture_file: str
     fixture_kind: str = Field(pattern=r"^(image|text)$")
@@ -94,11 +95,13 @@ class QualificationSpec(ModelBindingSpec):
         return safe_relative(value)
 
 
-def preprocessing_identity() -> str:
+def preprocessing_identity(engine: str = "onnx") -> str:
     root = Path(__file__).parent
     files = sorted((root / "models").rglob("*.py")) + [
         root / name for name in ("main.py", "schemas.py", "config.py", "producer_binding.py")
     ]
+    if engine == "qwen-gguf":
+        files.extend(root / name for name in ("native_qwen.py", "native_binding.py", "native_runtime.py"))
     digest = hashlib.sha256()
     for path in files:
         digest.update(path.relative_to(root).as_posix().encode() + b"\0" + path.read_bytes())
@@ -165,6 +168,8 @@ async def qualify(
     *,
     observer: DeviceObserver | None = None,
 ) -> dict[str, Any]:
+    if spec.engine != "onnx":
+        raise ValueError("native_engine_qualification_not_supported")
     if "frameleaf_ml.main" in sys.modules:
         raise RuntimeError("native_qualification_requires_fresh_process")
     from frameleaf_ml.config import settings

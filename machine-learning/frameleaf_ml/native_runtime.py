@@ -135,7 +135,16 @@ def create_native_app(binding: "NativeBinding | NativeBindingSet | None") -> Fas
             value = orjson.loads(entries)
             kind = "image" if image is not None else "text"
             selected = await main.run(binding.check, value, kind)
-            response: JSONResponse = await main.predict(entries=selected, image=image, text=text, mask=None)
+            from .native_binding import NativeBinding, NativeBindingSet
+
+            qwen = binding.qwen(value, kind) if isinstance(binding, (NativeBinding, NativeBindingSet)) else None
+            if qwen is not None:
+                from .native_qwen import predict_qwen
+
+                assert image is not None
+                response = JSONResponse(await predict_qwen(qwen.cache, image))
+            else:
+                response = await main.predict(entries=selected, image=image, text=text, mask=None)
             # Recheck before publishing; changed bytes or drivers invalidate the whole result.
             await main.run(binding.check, value, kind)
             if len(response.body) > 4 * 1024 * 1024:
