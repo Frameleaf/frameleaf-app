@@ -96,7 +96,11 @@ library from Manager to generate the service templates.
    It is read-only by default. Manager already controls Docker through its
    socket, so mapping `/mnt` gives it nothing new; the Frameleaf server only sees
    the folders you choose. An install from an earlier template keeps its own
-   folder mappings and location variables and works as before.
+   folder mappings and location variables and works as before. To use
+   **External folders** on one, edit the Manager container, add a Path with
+   Container Path and Host Path both `/mnt` and Access Mode **Read Only -
+   Slave**, and Apply. Manager's Services page shows the same steps. Where
+   Frameleaf keeps photos, database and backups does not change.
 4. Apply the container configuration and open the WebUI. Manager initially
    generates a self-signed certificate, so expect a browser warning. For a
    trusted HTTPS connection, provision a certificate and key matching the
