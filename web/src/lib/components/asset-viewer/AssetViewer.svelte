@@ -1740,6 +1740,8 @@
         canNavigateCollection={!!(nextAsset || previousAsset)}
         canShowFilmstrip={filmstripAssets.length > 1}
         {position}
+        fullscreen={isFullScreen}
+        onToggleFullscreen={phoneOneBar ? () => handlePromiseError(toggleFullscreen()) : undefined}
       />
     </div>
   {/if}

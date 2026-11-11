@@ -26,6 +26,7 @@
   import type { ClassValue } from 'svelte/elements';
   import { motionFade } from '$lib/frameleaf/motion';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
+  import { cantShowPhoto, isGettingReady, thumbnailFailures } from '$lib/frameleaf/thumbnail-state.svelte';
   import ImageThumbnail from './ImageThumbnail.svelte';
   import VideoThumbnail from './VideoThumbnail.svelte';
   interface Props {
@@ -177,11 +178,17 @@
         widthStyle="{width}px"
         heightStyle="{height}px"
         curve={selected}
+        pending={isGettingReady(asset)}
+        brokenLabel={!asset.thumbhash && cantShowPhoto(asset) ? $t('frameleaf_thumbnail_cant_show') : undefined}
         onComplete={(errored) => {
           const rect = element?.getBoundingClientRect();
           skipFade = !rect || rect.bottom < 0 || rect.top > window.innerHeight;
           loaded = true;
           thumbError = errored;
+          // FL-1457: the viewer strips tell "getting ready" from "can't show" as the Library's tiles do.
+          if (errored && !asset.thumbhash) {
+            thumbnailFailures.check();
+          }
         }}
       />
       {#if asset.isVideo}

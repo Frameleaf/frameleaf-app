@@ -53,6 +53,9 @@
     canShowFilmstrip?: boolean;
     /** VIEWER-P8: where the item sits in the collection, shown beside the name ("3 of 19"). */
     position?: ViewerPosition | null;
+    /** FL-1457 (N1): set only while a phone shows no footer, so "…" offers Full screen in its place. */
+    onToggleFullscreen?: () => void;
+    fullscreen?: boolean;
   }
 
   let {
@@ -68,6 +71,8 @@
     canNavigateCollection = false,
     canShowFilmstrip = false,
     position = null,
+    onToggleFullscreen,
+    fullscreen = false,
   }: Props = $props();
 
   const isOwner = $derived(authManager.authenticated && asset.ownerId === authManager.user.id);
@@ -284,7 +289,17 @@
             Viewer). Every entry maps to an existing asset action and a group that has no
             supported entry in this context is not rendered at all.
           -->
-          <ViewerMoreMenu {asset} {album} {stack} {preAction} {onAction} {canNavigateCollection} {canShowFilmstrip} />
+          <ViewerMoreMenu
+            {asset}
+            {album}
+            {stack}
+            {preAction}
+            {onAction}
+            {canNavigateCollection}
+            {canShowFilmstrip}
+            {onToggleFullscreen}
+            {fullscreen}
+          />
         </ButtonContextMenu>
       {/if}
     </div>
