@@ -207,6 +207,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     personal: [
       'password',
       'passkeys',
+      'two-step',
       'oauth',
       'authorized-devices',
       'connected-apps',
@@ -342,6 +343,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   // "How you sign in" (Personal.jsx MySignIn): the password, Frameleaf account and provider on one page.
   password: 'frameleaf_how_page_description',
   passkeys: 'frameleaf_passkey_page_description',
+  'two-step': 'frameleaf_two_step_page_description',
   // Sign-in methods (SignInMethods.jsx): "How people may sign in to this server, and how to get back in."
   authentication: 'frameleaf_signin_page_description',
   'frameleaf-signin': 'frameleaf_signin_frameleaf_page_description',
@@ -773,6 +775,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   privacy: {
     password: 'sign_in',
     passkeys: 'sign_in',
+    'two-step': 'sign_in',
     oauth: 'sign_in',
     'user-pin-code-settings': 'locked_content',
     'suppressed-content': 'locked_content',

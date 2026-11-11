@@ -4068,6 +4068,10 @@ export type ClientsResponse = {
     /** Whether Clients is in use and shown in the top bar */
     enabled: boolean;
 };
+export type DisplayPreferencesResponse = {
+    dateFormat: DisplayDateFormat;
+    hourCycle: DisplayHourCycle;
+};
 export type DownloadResponse = {
     /** Maximum archive size in bytes */
     archiveSize: number;
@@ -4213,6 +4217,7 @@ export type UserPreferencesResponseDto = {
     albums: AlbumsResponse;
     cast: CastResponse;
     clients?: ClientsResponse;
+    display?: DisplayPreferencesResponse;
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
@@ -4262,6 +4267,10 @@ export type CastUpdate = {
 export type ClientsUpdate = {
     /** Whether Clients is in use and shown in the top bar */
     enabled?: boolean;
+};
+export type DisplayPreferencesUpdate = {
+    dateFormat?: DisplayDateFormat;
+    hourCycle?: DisplayHourCycle;
 };
 export type DownloadUpdate = {
     /** Maximum archive size in bytes */
@@ -4401,6 +4410,7 @@ export type UserPreferencesUpdateDto = {
     avatar?: AvatarUpdate;
     cast?: CastUpdate;
     clients?: ClientsUpdate;
+    display?: DisplayPreferencesUpdate;
     download?: DownloadUpdate;
     emailNotifications?: EmailNotificationsUpdate;
     /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
@@ -40198,6 +40208,17 @@ export enum AdminAuditAction {
 export enum AssetOrder {
     Asc = "asc",
     Desc = "desc"
+}
+export enum DisplayDateFormat {
+    Auto = "auto",
+    Iso = "iso",
+    Dmy = "dmy",
+    Mdy = "mdy"
+}
+export enum DisplayHourCycle {
+    Auto = "auto",
+    H12 = "h12",
+    H23 = "h23"
 }
 export enum SuppressionScope {
     Owned = "owned",

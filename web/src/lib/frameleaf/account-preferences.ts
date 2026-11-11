@@ -12,6 +12,7 @@
  * what keeps unrelated groups (and the account's private Locked choices) untouched.
  */
 import { AssetOrder, type UserPreferencesResponseDto, type UserPreferencesUpdateDto } from '@frameleaf/sdk';
+import type { DisplayFormat } from '$lib/frameleaf/date-format';
 
 /** D5: one GB is 1,000,000,000 bytes. Archive sizes are stored as exact byte counts. */
 export const GB = 1000 ** 3;
@@ -62,6 +63,10 @@ export type AccountPreferencesDraft = {
   'search.includeArchived': boolean;
   /** FL-918: search questions go to classic search instead of the Library Assistant. */
   'search.classic': boolean;
+  /** FL-783: date order, independent of the language (`auto` follows the region). */
+  'display.dateFormat': DisplayFormat['dateFormat'];
+  /** FL-783: 12- or 24-hour clock, independent of the language (`auto` follows the region). */
+  'display.hourCycle': DisplayFormat['hourCycle'];
   /** ACCOUNT-P2: a shared Space suggests which of my named people appear in it. */
   'people.suggestInSpaces': boolean;
   'purchase.showSupportBadge': boolean;
@@ -180,6 +185,8 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'download.includeSidecar': true,
   'search.includeArchived': false,
   'search.classic': false,
+  'display.dateFormat': 'auto',
+  'display.hourCycle': 'auto',
   'people.suggestInSpaces': false,
   'purchase.showSupportBadge': true,
   'purchase.hideBuyButtonUntil': new Date(2022, 1, 12).toISOString(),
@@ -217,6 +224,8 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'download.includeSidecar': preferences.download.includeSidecar,
   'search.includeArchived': preferences.search.includeArchived,
   'search.classic': preferences.search.classic ?? false,
+  'display.dateFormat': preferences.display?.dateFormat ?? 'auto',
+  'display.hourCycle': preferences.display?.hourCycle ?? 'auto',
   'people.suggestInSpaces': preferences.people.suggestInSpaces,
   'purchase.showSupportBadge': preferences.purchase.showSupportBadge,
   'purchase.hideBuyButtonUntil': preferences.purchase.hideBuyButtonUntil,

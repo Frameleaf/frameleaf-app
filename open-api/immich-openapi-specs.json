@@ -95576,6 +95576,52 @@
         },
         "type": "object"
       },
+      "DisplayDateFormat": {
+        "description": "FL-783: date order. auto follows the region; iso is 2026-11-01, dmy 01/11/2026, mdy 11/01/2026",
+        "enum": [
+          "auto",
+          "iso",
+          "dmy",
+          "mdy"
+        ],
+        "type": "string"
+      },
+      "DisplayHourCycle": {
+        "description": "FL-783: clock. auto follows the region; h12 is 2:30 PM, h23 is 14:30",
+        "enum": [
+          "auto",
+          "h12",
+          "h23"
+        ],
+        "type": "string"
+      },
+      "DisplayPreferencesResponse": {
+        "properties": {
+          "dateFormat": {
+            "$ref": "#/components/schemas/DisplayDateFormat"
+          },
+          "hourCycle": {
+            "$ref": "#/components/schemas/DisplayHourCycle"
+          }
+        },
+        "required": [
+          "dateFormat",
+          "hourCycle"
+        ],
+        "type": "object"
+      },
+      "DisplayPreferencesUpdate": {
+        "description": "FL-783: how dates and times appear, independent of the language",
+        "properties": {
+          "dateFormat": {
+            "$ref": "#/components/schemas/DisplayDateFormat"
+          },
+          "hourCycle": {
+            "$ref": "#/components/schemas/DisplayHourCycle"
+          }
+        },
+        "type": "object"
+      },
       "DocumentEditAction": {
         "description": "What the owner decided about recognized text",
         "enum": [
@@ -164184,6 +164230,9 @@
           "clients": {
             "$ref": "#/components/schemas/ClientsResponse"
           },
+          "display": {
+            "$ref": "#/components/schemas/DisplayPreferencesResponse"
+          },
           "download": {
             "$ref": "#/components/schemas/DownloadResponse"
           },
@@ -164325,6 +164374,9 @@
           },
           "clients": {
             "$ref": "#/components/schemas/ClientsUpdate"
+          },
+          "display": {
+            "$ref": "#/components/schemas/DisplayPreferencesUpdate"
           },
           "download": {
             "$ref": "#/components/schemas/DownloadUpdate"
