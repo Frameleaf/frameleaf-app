@@ -324,8 +324,10 @@ export const fetchAutomationHop = (
   { allowHomeNetwork }: { allowHomeNetwork: boolean },
 ) => {
   const url = checkWebhookUrl(address, allowHomeNetwork);
+  // as sendWebhook: plain http connects only to home-network addresses, whatever the name resolves to
+  const secureDispatcher = allowHomeNetwork ? webhookAgents.home : webhookAgents.public;
   return fetch(url, {
-    dispatcher: allowHomeNetwork ? webhookAgents.home : webhookAgents.public,
+    dispatcher: url.protocol === 'http:' ? webhookAgents.plainHttp : secureDispatcher,
     method: init.method,
     redirect: 'manual',
     signal: AbortSignal.timeout(15_000),
