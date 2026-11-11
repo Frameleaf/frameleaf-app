@@ -36,7 +36,7 @@
     found?: number;
   };
 
-  let { query, assets = [], found = $bindable(0) }: Props = $props();
+  let { query, assets = [], found = $bindable() }: Props = $props();
 
   let hits = $state<VideoMomentSearchHitDto[]>([]);
   let requested = '';
