@@ -1557,6 +1557,8 @@
     .filters {
       flex-wrap: nowrap;
       overflow-x: auto;
+      /* FL-1390: a chip's click area reaches past it; it must not make the row scroll up and down. */
+      overflow-y: hidden;
       scrollbar-width: none;
     }
     .grid {
