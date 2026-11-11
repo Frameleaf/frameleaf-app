@@ -170,7 +170,8 @@ const runStep = async (
   ctx: MediumTestContext<typeof MetadataService> | MediumTestContext<typeof MediaService>,
   assetId: string,
   name: JobName,
-  run: () => Promise<JobStatus>,
+  // Metadata extraction resolves with nothing when it is done.
+  run: () => Promise<JobStatus | void>,
 ): Promise<{ facts: Facts; error?: string }> => {
   const jobs = ctx.getMock(JobRepository);
   let reason = '';
@@ -266,15 +267,18 @@ const compare = (entry: Entry, got: Partial<Record<Step, Facts>>) => {
 const writeReports = () => {
   mkdirSync(reportDir, { recursive: true });
   writeFileSync(join(reportDir, 'known-bad-corpus-actual.json'), `${JSON.stringify({ files: observed }, null, 2)}\n`);
+  const shortfall = manifest.files.length - observed.length;
   const body =
-    differences.length === 0
+    differences.length === 0 && shortfall === 0
       ? `Every file matched the manifest (${observed.length} of ${manifest.files.length} files ran).\n`
-      : [
-          `${differences.length} of ${observed.length} files differ from server/test/fixtures/known-bad-corpus.json.`,
-          '',
-          ...differences.flatMap(({ file, lines }) => [`- \`${file}\``, ...lines.map((line) => `  - ${line}`)]),
-          '',
-        ].join('\n');
+      : differences.length === 0
+        ? `Only ${observed.length} of ${manifest.files.length} files ran: the suite stopped before the rest.\n`
+        : [
+            `${differences.length} of ${manifest.files.length} files differ from server/test/fixtures/known-bad-corpus.json${shortfall > 0 ? ` (${shortfall} did not finish)` : ''}.`,
+            '',
+            ...differences.flatMap(({ file, lines }) => [`- \`${file}\``, ...lines.map((line) => `  - ${line}`)]),
+            '',
+          ].join('\n');
   writeFileSync(join(reportDir, 'known-bad-corpus-diff.md'), `# Known-bad file corpus\n\n${body}`);
 };
 
@@ -329,58 +333,71 @@ describe('known-bad corpus', () => {
   it.each(manifest.files.map((entry) => [entry.file, entry] as const))(
     '%s',
     async (_file, entry) => {
-      const originalPath = pathOf(entry);
-      expect(existsSync(originalPath), `${originalPath} is missing: run scripts/checkout-test-assets.sh`).toBe(true);
-      const { asset } = await metadata.newAsset({
-        ownerId,
-        originalPath,
-        originalFileName: basename(entry.file),
-        type: entry.type === 'video' ? AssetType.Video : AssetType.Image,
-        fileCreatedAt: FILE_DATE,
-        fileModifiedAt: FILE_DATE,
-        localDateTime: FILE_DATE,
-      });
-      const got: Partial<Record<Step, Facts>> = {};
-      const errors: Record<string, string> = {};
-      const keep = (step: Step, { facts, error }: { facts: Facts; error?: string }) => {
-        if (error) {
-          errors[step] = error;
+      try {
+        await checkFile(entry);
+      } catch (error) {
+        // A file that stopped part way must not leave the report saying everything matched.
+        if (!differences.some(({ file }) => file === entry.file)) {
+          const message = error instanceof Error ? error.message : String(error);
+          differences.push({ file: entry.file, lines: [`the run stopped: ${message.split('\n', 1)[0]}`] });
         }
-        return facts;
-      };
-
-      const extracted = await runStep(metadata, asset.id, JobName.AssetExtractMetadata, () =>
-        metadata.sut.handleMetadataExtraction({ id: asset.id }),
-      );
-      got.metadata = { ...keep('metadata', extracted), ...(await readMetadata(asset.id, entry.type)) };
-
-      const thumbnails = await runStep(media, asset.id, JobName.AssetGenerateThumbnails, () =>
-        media.sut.handleGenerateThumbnails({ id: asset.id }),
-      );
-      got.thumbnail = {
-        ...keep('thumbnail', thumbnails),
-        preview: await size(await filePath(asset.id, AssetFileType.Preview)),
-        thumbnail: await size(await filePath(asset.id, AssetFileType.Thumbnail)),
-      };
-
-      if (entry.type === 'video') {
-        const encoded = await runStep(media, asset.id, JobName.AssetEncodeVideo, () =>
-          media.sut.handleVideoConversion({ id: asset.id }),
-        );
-        got.encode = { ...keep('encode', encoded), ...(await readEncode(asset.id)) };
-      }
-
-      const { expect: _expected, ...described } = entry;
-      observed.push({ ...described, actual: got, errors });
-      const lines = compare(entry, got);
-      if (lines.length > 0) {
-        differences.push({ file: entry.file, lines });
-        const why = Object.entries(errors).map(([step, error]) => `(${step} error: ${error})`);
-        expect.fail(
-          `${entry.file} no longer matches the corpus manifest:\n${[...lines, ...why].map((line) => `  ${line}`).join('\n')}`,
-        );
+        throw error;
       }
     },
     180_000,
   );
 });
+
+const checkFile = async (entry: Entry) => {
+  const originalPath = pathOf(entry);
+  expect(existsSync(originalPath), `${originalPath} is missing: run scripts/checkout-test-assets.sh`).toBe(true);
+  const { asset } = await metadata.newAsset({
+    ownerId,
+    originalPath,
+    originalFileName: basename(entry.file),
+    type: entry.type === 'video' ? AssetType.Video : AssetType.Image,
+    fileCreatedAt: FILE_DATE,
+    fileModifiedAt: FILE_DATE,
+    localDateTime: FILE_DATE,
+  });
+  const got: Partial<Record<Step, Facts>> = {};
+  const errors: Record<string, string> = {};
+  const keep = (step: Step, { facts, error }: { facts: Facts; error?: string }) => {
+    if (error) {
+      errors[step] = error;
+    }
+    return facts;
+  };
+
+  const extracted = await runStep(metadata, asset.id, JobName.AssetExtractMetadata, () =>
+    metadata.sut.handleMetadataExtraction({ id: asset.id }),
+  );
+  got.metadata = { ...keep('metadata', extracted), ...(await readMetadata(asset.id, entry.type)) };
+
+  const thumbnails = await runStep(media, asset.id, JobName.AssetGenerateThumbnails, () =>
+    media.sut.handleGenerateThumbnails({ id: asset.id }),
+  );
+  got.thumbnail = {
+    ...keep('thumbnail', thumbnails),
+    preview: await size(await filePath(asset.id, AssetFileType.Preview)),
+    thumbnail: await size(await filePath(asset.id, AssetFileType.Thumbnail)),
+  };
+
+  if (entry.type === 'video') {
+    const encoded = await runStep(media, asset.id, JobName.AssetEncodeVideo, () =>
+      media.sut.handleVideoConversion({ id: asset.id }),
+    );
+    got.encode = { ...keep('encode', encoded), ...(await readEncode(asset.id)) };
+  }
+
+  const { expect: _expected, ...described } = entry;
+  observed.push({ ...described, actual: got, errors });
+  const lines = compare(entry, got);
+  if (lines.length > 0) {
+    differences.push({ file: entry.file, lines });
+    const why = Object.entries(errors).map(([step, error]) => `(${step} error: ${error})`);
+    expect.fail(
+      `${entry.file} no longer matches the corpus manifest:\n${[...lines, ...why].map((line) => `  ${line}`).join('\n')}`,
+    );
+  }
+};
