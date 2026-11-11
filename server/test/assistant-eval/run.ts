@@ -192,7 +192,8 @@ export async function run(database: Kysely<DB>, options: Mode) {
   };
   let validPlans = 0;
   const answers: EvalAnswer[] = [];
-  if (options.mode === 'assistant' || options.mode === 'candidate' || options.mode === 'qualification') {
+  const productionPlanner = mode === 'candidate' || mode === 'qualification';
+  if (mode === 'assistant' || productionPlanner) {
     const destination = ctx.getMock(MlDestinationRepository);
     let planner: MachineLearningRepository | undefined;
     if ('endpoint' in options) {
@@ -237,7 +238,7 @@ export async function run(database: Kysely<DB>, options: Mode) {
         ? answers.map((answer) => (plannerCaseIds.has(answer.id) ? answer : { ...answer, filters: null, hits: [] }))
         : undefined;
     return {
-      mode: options.mode,
+      mode,
       cases: questions.length,
       assets: assets.length,
       plannerAnswers: plannerCaseIds.size,
@@ -384,7 +385,7 @@ function assistantForFixture(
 function assistantClaims(response: AssistantAskResponseDto, assetId: string): Reason[] {
   return response.reasons
     .filter((reason) => reason.assetId === assetId)
-    .flatMap(({ items }) => items.map(claimFromAssistantReason));
+    .flatMap(({ items }) => items.map((item) => claimFromAssistantReason(item)));
 }
 
 function filterReasons(filters: EvalFilters): Reason[] {
