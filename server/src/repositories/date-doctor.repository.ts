@@ -2,17 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetVisibility } from 'src/enum.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import type { DateFinding, DateScanRow } from 'src/utils/date-doctor.js';
 import { hasDateToCheck } from 'src/utils/date-sanity.js';
+import { isDefaultVisible, isNotLocked } from 'src/utils/locked.js';
 
 export type DateFindingRow = DateFinding & { createdAt: Date };
 
 /** FL-912: the Date & Time Doctor's reads and its findings. */
 @Injectable()
 export class DateDoctorRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(@InjectKysely() private db: Kysely<DB>) {
+    // a scan's findings commit with the job that found them, never from an attempt the queue gave up on
+    this.db = publicationDatabase(this.db);
+  }
 
   /** Everyone who owns a photo, for the weekly scan. */
   @GenerateSql()
@@ -23,8 +27,8 @@ export class DateDoctorRepository {
 
   /**
    * One owner's photos as the Doctor reads them, and as the timeline counts them: with an EXIF row, their own, not in
-   * Trash, on the timeline or in the archive (Locked and the hidden halves of Live Photos are left out). A partner's
-   * copy that still follows its source's date is left out too: its date is the source's, scanned with the source.
+   * Trash, on the timeline or in the archive and not locked (`isDefaultVisible`; the hidden halves of Live Photos are
+   * left out too). A partner's copy that still follows its source's date is left out: its date is the source's.
    */
   @GenerateSql({ params: [DummyValue.UUID] })
   getScanRows(ownerId: string): Promise<DateScanRow[]> {
@@ -49,7 +53,7 @@ export class DateDoctorRepository {
       ])
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+      .where(isDefaultVisible('asset'))
       .where(
         sql<boolean>`not exists (select 1 from public.asset_origin o where o."assetId" = asset.id and o.following
           and o."sourceAssetId" is not null and not ('dateTimeOriginal' = any(o."overriddenFields")))`,
@@ -82,17 +86,21 @@ export class DateDoctorRepository {
   /** The owner's open findings, a shoot (camera and day) together, newest day first. */
   @GenerateSql({ params: [DummyValue.UUID] })
   getFindings(ownerId: string): Promise<DateFindingRow[]> {
-    return this.db
-      .selectFrom('asset_date_finding')
-      .innerJoin('asset', 'asset.id', 'asset_date_finding.assetId')
-      .selectAll('asset_date_finding')
-      .where('asset.ownerId', '=', ownerId)
-      .where('asset.deletedAt', 'is', null)
-      .where('asset_date_finding.dismissedAt', 'is', null)
-      .orderBy(sql`split_part(asset_date_finding."groupKey", '|', 2)`, 'desc')
-      .orderBy('asset_date_finding.groupKey')
-      .orderBy('asset_date_finding.currentDate')
-      .orderBy('asset_date_finding.assetId')
-      .execute() as Promise<DateFindingRow[]>;
+    return (
+      this.db
+        .selectFrom('asset_date_finding')
+        .innerJoin('asset', 'asset.id', 'asset_date_finding.assetId')
+        .selectAll('asset_date_finding')
+        .where('asset.ownerId', '=', ownerId)
+        .where('asset.deletedAt', 'is', null)
+        .where('asset_date_finding.dismissedAt', 'is', null)
+        // a photo locked since the scan stays out until the next one drops it
+        .where(isNotLocked('asset'))
+        .orderBy(sql`split_part(asset_date_finding."groupKey", '|', 2)`, 'desc')
+        .orderBy('asset_date_finding.groupKey')
+        .orderBy('asset_date_finding.currentDate')
+        .orderBy('asset_date_finding.assetId')
+        .execute() as Promise<DateFindingRow[]>
+    );
   }
 }

@@ -3,6 +3,7 @@ import { OnJob } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { DateDoctorFindingsResponseDto, DateDoctorGroup } from 'src/dtos/date-doctor.dto.js';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
+import { publishJobResult } from 'src/queue/context.js';
 import { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -67,7 +68,7 @@ export class DateDoctorService {
     const started = Date.now();
     const rows = await this.dateDoctorRepository.getScanRows(userId);
     const findings = detectDateFindings(rows);
-    await this.dateDoctorRepository.replaceFindings(userId, findings);
+    await publishJobResult(() => this.dateDoctorRepository.replaceFindings(userId, findings));
     this.logger.log(
       `Date & Time Doctor: ${findings.length} findings in ${rows.length} photos of ${userId} (${Date.now() - started} ms)`,
     );

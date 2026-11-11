@@ -46,7 +46,7 @@ import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { captureDetails } from 'src/utils/capture-details.js';
 import { mergeTimeZone } from 'src/utils/date.js';
-import { dateFromFileName, wallToInstant } from 'src/utils/date-doctor.js';
+import { dateFromFileName, namedDate } from 'src/utils/date-doctor.js';
 import { isFireworksPng } from 'src/utils/design-preview.js';
 import { DJI_SRT_READ_BYTES, getDjiSrtCandidates, parseDjiSrtLocation } from 'src/utils/dji-srt.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
@@ -1735,10 +1735,10 @@ export class MetadataService extends BaseService {
       // FL-912 (`metadata.dateFromFileName`): no date in the file, but its name holds the one the phone or app
       // wrote (IMG_20230512_134501, a screenshot, WhatsApp's day), which beats when the file was copied
       timeZone ??= storedTimeZone ?? null;
-      const wall = named.hasTime ? named.wall : new Date(named.wall.getTime() + 12 * 60 * 60_000);
-      this.logger.debug(`No exif date time found, using ${wall.toISOString()} from the name of asset ${asset.id}`);
-      localDateTime = DateTime.fromJSDate(wall, { zone: 'UTC' });
-      dateTimeOriginal = DateTime.fromJSDate(wallToInstant(wall, timeZone));
+      const { instant, local } = namedDate(named, timeZone);
+      this.logger.debug(`No exif date time found, using ${instant.toISOString()} from the name of asset ${asset.id}`);
+      localDateTime = DateTime.fromJSDate(local, { zone: 'UTC' });
+      dateTimeOriginal = DateTime.fromJSDate(instant);
     } else {
       // FileCreateDate is not available on linux, likely because exiftool hasn't integrated the statx syscall yet
       // birthtime is not available in Docker on macOS, so it appears as 0

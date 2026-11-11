@@ -79,14 +79,22 @@ const NAME_PATTERNS: RegExp[] = [
   /(?:IMG|VID)-(?<y>(?:19|20)\d{2})(?<m>\d{2})(?<d>\d{2})-WA\d+/i,
 ];
 
+/** A Pixel names its files by the moment in UTC, not by the clock time where it was. */
+const UTC_NAMES = /^PXL_/i;
+
+export type NamedDate = {
+  /** The date and time in the name, in UTC fields. */
+  wall: Date;
+  /** False for names that carry only a day (WhatsApp). */
+  hasTime: boolean;
+  /** `wall` is the moment in UTC (Pixel), not a local clock time. */
+  utc: boolean;
+};
+
 /**
- * The capture date a camera, phone or app wrote into the file name, as a local wall time in UTC fields; `hasTime`
- * is false for names that carry only a day (WhatsApp). Undefined when the name holds no believable date.
+ * The capture date a camera, phone or app wrote into the file name. Undefined when the name holds no believable date.
  */
-export const dateFromFileName = (
-  fileName: string,
-  now: Date = new Date(),
-): { wall: Date; hasTime: boolean } | undefined => {
+export const dateFromFileName = (fileName: string, now: Date = new Date()): NamedDate | undefined => {
   for (const pattern of NAME_PATTERNS) {
     const groups = pattern.exec(fileName)?.groups;
     if (!groups) {
@@ -115,7 +123,7 @@ export const dateFromFileName = (
     if (!wall.isValid || wall.year < 1990 || wall.toMillis() > now.getTime() + 24 * HOUR) {
       return undefined;
     }
-    return { wall: wall.toJSDate(), hasTime: groups.H !== undefined };
+    return { wall: wall.toJSDate(), hasTime: groups.H !== undefined, utc: UTC_NAMES.test(fileName) };
   }
   return undefined;
 };
@@ -125,6 +133,20 @@ export const wallToInstant = (wall: Date, zone: string | null): Date => {
   const local = DateTime.fromJSDate(wall, { zone: 'UTC' });
   const zoned = zone ? local.setZone(zone, { keepLocalTime: true }) : local;
   return (zoned.isValid ? zoned : local).toJSDate();
+};
+
+/**
+ * A name's date as the asset table holds dates, for a photo in `zone` (null: none): the moment (`instant`) and the
+ * local clock time in UTC fields (`local`). A day without a time is noon that day.
+ */
+export const namedDate = ({ wall, hasTime, utc }: NamedDate, zone: string | null): { instant: Date; local: Date } => {
+  if (utc) {
+    const zoned = zone ? DateTime.fromJSDate(wall, { zone }) : undefined;
+    const local = zoned?.isValid ? zoned.setZone('UTC', { keepLocalTime: true }).toJSDate() : wall;
+    return { instant: wall, local };
+  }
+  const local = hasTime ? wall : new Date(wall.getTime() + 12 * HOUR);
+  return { instant: wallToInstant(local, zone), local };
 };
 
 // ---- zones -----------------------------------------------------------------------------------------------------
@@ -145,20 +167,28 @@ export const offsetZone = (offset: string): string | undefined => {
   return `UTC${sign}${Number(hours)}${minutes === '00' ? '' : `:${minutes}`}`;
 };
 
-const gpsZones = new Map<string, string | undefined>();
-/** The zone at a place, from the bundled time zone map, remembered per ~1 km. */
-const zoneAt = (latitude: number, longitude: number): string | undefined => {
+const gpsZones = new Map<string, string[]>();
+/**
+ * The zones at a place, from the bundled time zone map, remembered per ~1 km. Some places have more than one
+ * (`Asia/Shanghai` and `Asia/Urumqi` in Ürümqi): any of them is right there.
+ */
+const zonesAt = (latitude: number, longitude: number): string[] => {
   const key = `${latitude.toFixed(2)},${longitude.toFixed(2)}`;
   if (!gpsZones.has(key)) {
     // ponytail: unbounded memo; a library spans few distinct ~1 km cells. Bound it if one ever does not.
     // eslint-disable-next-line import-x/no-named-as-default-member
-    gpsZones.set(key, geotz.find(latitude, longitude)[0]);
+    gpsZones.set(key, geotz.find(latitude, longitude));
   }
-  return gpsZones.get(key);
+  return gpsZones.get(key)!;
 };
 
+/** A real position: within range (the map throws on anything else), and not the 0,0 of a missing fix. */
 const hasGps = (row: DateScanRow) =>
-  row.latitude !== null && row.longitude !== null && (row.latitude !== 0 || row.longitude !== 0);
+  Number.isFinite(row.latitude) &&
+  Number.isFinite(row.longitude) &&
+  Math.abs(row.latitude!) <= 90 &&
+  Math.abs(row.longitude!) <= 180 &&
+  (row.latitude !== 0 || row.longitude !== 0);
 
 /** The camera's two EXIF offsets disagree (`OffsetTimeOriginal` vs `OffsetTime`). */
 const offsetsDisagree = (row: DateScanRow) =>
@@ -170,7 +200,9 @@ const offsetsDisagree = (row: DateScanRow) =>
  */
 const trustedZone = (row: DateScanRow): string | undefined => {
   if (hasGps(row)) {
-    return zoneAt(row.latitude!, row.longitude!);
+    // a place with two zones vouches only for one it is sure of
+    const zones = zonesAt(row.latitude!, row.longitude!);
+    return zones.length === 1 ? zones[0] : undefined;
   }
   return row.timeZone && !offsetsDisagree(row) ? row.timeZone : undefined;
 };
@@ -280,10 +312,16 @@ const findDrift = (
     return undefined;
   }
   // The exact shift: the median, over the shots near the best minute, of the photos' own offset to their anchor.
-  const exact = group
-    .flatMap((photo) => anchorRows.map((anchor) => anchor.localDateTime.getTime() - photo.localDateTime.getTime()))
-    .filter((delta) => Math.abs(delta - shift) <= MINUTE)
-    .toSorted((a, b) => a - b);
+  const exact: number[] = [];
+  for (const photo of group) {
+    for (const anchor of anchorRows) {
+      const delta = anchor.localDateTime.getTime() - photo.localDateTime.getTime();
+      if (Math.abs(delta - shift) <= MINUTE) {
+        exact.push(delta);
+      }
+    }
+  }
+  exact.sort((a, b) => a - b);
   shift = exact.length > 0 ? exact[Math.floor(exact.length / 2)] : shift;
   const { matched, anchors: used } = matchesAt(shift);
   const unshifted = matchesAt(0).matched.length;
@@ -322,18 +360,19 @@ export const detectDateFindings = (input: DateScanRow[], now: Date = new Date())
 
   rows.forEach((row, index) => {
     const named = dateFromFileName(row.originalFileName, now);
-    const namedInstant = named ? wallToInstant(named.wall, row.timeZone) : null;
+    const fromNameDate = named ? namedDate(named, row.timeZone) : null;
 
     // (f) the timeline's own rule; the only proposal is the name's date
     if (row.toCheck) {
       const problem = dateProblem({ takenAt: row.takenAt, localDateTime: row.localDateTime }, now);
       const future = problem ? problem === 'future' : row.takenAt.getTime() > now.getTime();
-      const fromName = namedInstant && !dateProblem({ takenAt: namedInstant, localDateTime: named!.wall }, now);
+      const fromName =
+        fromNameDate && !dateProblem({ takenAt: fromNameDate.instant, localDateTime: fromNameDate.local }, now);
       findings.push(
         finding(
           row,
           future ? DateFindingCause.FutureDate : DateFindingCause.EpochDate,
-          fromName ? namedInstant : null,
+          fromName ? fromNameDate.instant : null,
           fromName ? row.timeZone : null,
           fromName ? 0.8 : 0.5,
         ),
@@ -345,28 +384,23 @@ export const detectDateFindings = (input: DateScanRow[], now: Date = new Date())
     }
 
     // (e) the name holds a date far from the stored one: the stored one is a file date
-    if (named && !row.toCheck) {
-      const away = Math.abs(row.localDateTime.getTime() - named.wall.getTime());
-      if (named.hasTime ? away > FILENAME_SLACK : away > FILENAME_SLACK + 24 * HOUR) {
-        const wall = named.hasTime ? named.wall : new Date(named.wall.getTime() + 12 * HOUR);
+    if (named && fromNameDate && !row.toCheck) {
+      const away = Math.abs(row.localDateTime.getTime() - fromNameDate.local.getTime());
+      // a day without a time is noon: the stored date may be anywhere in that day
+      if (away > FILENAME_SLACK + (named.hasTime ? 0 : 12 * HOUR)) {
         findings.push(
-          finding(
-            row,
-            DateFindingCause.FilenameDate,
-            wallToInstant(wall, row.timeZone),
-            row.timeZone,
-            named.hasTime ? 0.9 : 0.6,
-          ),
+          finding(row, DateFindingCause.FilenameDate, fromNameDate.instant, row.timeZone, named.hasTime ? 0.9 : 0.6),
         );
       }
     }
 
     // (b) GPS puts the photo in a zone whose offset differs from the stored one: same instant, the place's zone
     if (hasGps(row) && row.timeZone) {
-      const place = zoneAt(row.latitude!, row.longitude!);
+      const places = zonesAt(row.latitude!, row.longitude!);
       const stored = offsetAt(row.timeZone, row.takenAt);
-      if (place && stored !== undefined && offsetAt(place, row.takenAt) !== stored) {
-        findings.push(finding(row, DateFindingCause.GpsZoneMismatch, row.takenAt, place, 0.85));
+      // wrong only when no zone of the place has the stored offset
+      if (places.length > 0 && stored !== undefined && places.every((zone) => offsetAt(zone, row.takenAt) !== stored)) {
+        findings.push(finding(row, DateFindingCause.GpsZoneMismatch, row.takenAt, places[0], 0.85));
       }
       return;
     }

@@ -3,7 +3,7 @@ import type { DateDoctorRepository } from 'src/repositories/date-doctor.reposito
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
-import { DateFindingCause, dateFromFileName, detectDateFindings } from 'src/utils/date-doctor.js';
+import { DateFindingCause, dateFromFileName, detectDateFindings, type DateScanRow } from 'src/utils/date-doctor.js';
 import { FIXTURE_NOW, buildDateDoctorFixture, scoreFindings } from 'test/fixtures/date-doctor.fixture.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { vi } from 'vitest';
@@ -23,7 +23,11 @@ describe('dateFromFileName', () => {
     ['IMG-20230512-WA0001.jpg', '2023-05-12T00:00:00.000Z', false],
     ['VID-20230512-WA0042.mp4', '2023-05-12T00:00:00.000Z', false],
   ])('reads %s', (fileName, wall, hasTime) => {
-    expect(dateFromFileName(fileName, now)).toEqual({ wall: new Date(wall), hasTime });
+    expect(dateFromFileName(fileName, now)).toEqual({
+      wall: new Date(wall),
+      hasTime,
+      utc: fileName.startsWith('PXL_'),
+    });
   });
 
   it.each([
@@ -38,6 +42,61 @@ describe('dateFromFileName', () => {
     'holiday 2023.jpg',
   ])('finds no date in %s', (fileName) => {
     expect(dateFromFileName(fileName, now)).toBeUndefined();
+  });
+});
+
+describe('detectDateFindings, edge cases', () => {
+  const row = (overrides: Partial<DateScanRow>): DateScanRow => ({
+    id: 'photo',
+    originalFileName: 'DSC00001.JPG',
+    takenAt: new Date('2023-05-12T04:45:01Z'),
+    localDateTime: new Date('2023-05-12T13:45:01Z'),
+    timeZone: 'Asia/Tokyo',
+    latitude: null,
+    longitude: null,
+    make: 'Sony',
+    model: 'RX100',
+    offsetTimeOriginal: null,
+    offsetTime: null,
+    dateLocked: false,
+    zoneLocked: false,
+    toCheck: false,
+    ...overrides,
+  });
+
+  it('reads a Pixel name as the moment in UTC', () => {
+    const [finding] = detectDateFindings(
+      [
+        row({
+          originalFileName: 'PXL_20230512_044501123.jpg',
+          takenAt: new Date('2031-06-01T00:00:00Z'),
+          localDateTime: new Date('2031-06-01T09:00:00Z'),
+          toCheck: true,
+        }),
+      ],
+      now,
+    );
+    expect(finding).toMatchObject({
+      cause: DateFindingCause.FutureDate,
+      proposedDate: new Date('2023-05-12T04:45:01Z'),
+    });
+  });
+
+  it('accepts any of the zones a place has', () => {
+    // Ürümqi: the map gives Asia/Shanghai and Asia/Urumqi
+    const urumqi = { latitude: 43.839_319, longitude: 87.526_148 };
+    const takenAt = new Date('2023-05-12T06:00:00Z');
+    expect(detectDateFindings([row({ ...urumqi, takenAt, timeZone: 'Asia/Urumqi' })], now)).toEqual([]);
+    expect(detectDateFindings([row({ ...urumqi, takenAt, timeZone: 'Asia/Shanghai' })], now)).toEqual([]);
+    expect(detectDateFindings([row({ ...urumqi, takenAt, timeZone: 'Europe/Paris' })], now)).toMatchObject([
+      { cause: DateFindingCause.GpsZoneMismatch },
+    ]);
+  });
+
+  it('treats a position out of range as no position, instead of failing the scan', () => {
+    expect(
+      detectDateFindings([row({ latitude: 91, longitude: 10 }), row({ id: 'b', longitude: 200, latitude: 1 })], now),
+    ).toEqual([]);
   });
 });
 

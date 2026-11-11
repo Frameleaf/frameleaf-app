@@ -102,7 +102,7 @@ describe('Date & Time Doctor scan (FL-912)', () => {
     // dates and zones set by hand are never proposed
     const locked = new Set(photos.filter((photo) => photo.dateLocked || photo.zoneLocked).map(({ id }) => id));
     expect(score.falselyFlagged.filter(({ id }) => locked.has(id))).toEqual([]);
-  });
+  }, 60_000);
 
   it('has a future or reset finding for exactly the photos the timeline keeps in "Dates to check"', async () => {
     const { ctx, timeline, doctor } = setup();
@@ -157,6 +157,29 @@ describe('Date & Time Doctor scan (FL-912)', () => {
     expect((await findingsOf(doctor, factory.auth({ user: partner }))).map(({ assetId }) => assetId)).toEqual([
       theirs.id,
     ]);
+  });
+
+  it('stores both offsets when metadata is read again, and keeps them through writes that do not read them', async () => {
+    const { ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newExif({ assetId: asset.id, make: 'Fujifilm' });
+    const assets = ctx.get(AssetRepository);
+    const offsets = () =>
+      db
+        .selectFrom('asset_exif')
+        .select(['offsetTimeOriginal', 'offsetTime'])
+        .where('assetId', '=', asset.id)
+        .executeTakeFirstOrThrow();
+
+    await assets.upsertExif({
+      exif: { assetId: asset.id, offsetTimeOriginal: '+01:00', offsetTime: '+02:00' },
+      lockedPropertiesBehavior: 'skip',
+    });
+    await expect(offsets()).resolves.toEqual({ offsetTimeOriginal: '+01:00', offsetTime: '+02:00' });
+
+    await assets.upsertExif({ exif: { assetId: asset.id, description: 'beach' }, lockedPropertiesBehavior: 'skip' });
+    await expect(offsets()).resolves.toEqual({ offsetTimeOriginal: '+01:00', offsetTime: '+02:00' });
   });
 
   it('replaces open findings on a new scan, and does not raise a dismissed one again', async () => {

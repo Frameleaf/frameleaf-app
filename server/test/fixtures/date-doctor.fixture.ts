@@ -76,8 +76,14 @@ const PHONE: [string, string] = ['Google', 'Pixel 8'];
 const DSLR: [string, string] = ['Canon', 'EOS R6'];
 const OLD_CAMERA: [string, string] = ['Nikon', 'D90'];
 
+/** A Pixel names its files by the moment in UTC. */
 const phoneAt = (wall: DateTime, place: Place) =>
-  photo(wall, { zone: place.zone, place, camera: PHONE, fileName: name('PXL', wall) });
+  photo(wall, {
+    zone: place.zone,
+    place,
+    camera: PHONE,
+    fileName: name('PXL', DateTime.fromObject(wall.toObject(), { zone: place.zone }).setZone('UTC')),
+  });
 
 /** A day out: phone photos with GPS through the day, in two moments. */
 const phoneDay = (day: DateTime, place: Place, count = 12) =>
