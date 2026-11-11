@@ -167,6 +167,17 @@ describe('MapScreen (FL-193)', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Reset map filters' }));
       expect(get(mapSettings).includeArchived).toBe(true);
     });
+
+    // An album has no archived count of its own, so its empty map offers the reset rather than "none yet".
+    it('offers the reset on an empty album map while archived items are left out', async () => {
+      sdkMock.getAlbumMapMarkers.mockResolvedValue([]);
+      render(MapScreen, { title: 'Album', albumId: 'album-1', onOpenAsset: vi.fn() });
+
+      expect(await screen.findByRole('heading', { name: 'No photos match on the map' })).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'Reset map filters' }));
+      expect(get(mapSettings).includeArchived).toBe(true);
+      expect(await screen.findByRole('heading', { name: 'No photos on the map yet' })).toBeInTheDocument();
+    });
   });
 
   it('keeps the In view list in step with the view when the style never loads (FL-51)', async () => {

@@ -237,7 +237,13 @@
 
   const patchSettings = (patch: Partial<MapSettings>) => ($mapSettings = { ...$mapSettings, ...patch });
   /** FL-1412 (M13): an empty map under a narrowing setting is "none match", not "none yet". */
-  const narrowed = $derived(mapIsNarrowed($mapSettings, statistics?.archived));
+  /**
+   * Located archived items the settings may be leaving out. An album has no count of its own (the
+   * statistics are the library's), so there it is assumed there may be some: an empty album map with
+   * archived items off offers the reset rather than saying the album has none.
+   */
+  const archivedHidden = $derived(scoped ? 1 : (statistics?.archived ?? 0));
+  const narrowed = $derived(mapIsNarrowed($mapSettings, archivedHidden));
   const focusGear = () => gear?.querySelector('button')?.focus();
 
   /* ------------------------------------------------------------------ */
@@ -1210,7 +1216,7 @@
           message={$t('frameleaf_map_empty_help')}
           action={{
             label: $t('frameleaf_map_reset_filters'),
-            onClick: () => patchSettings(mapFiltersReset($mapSettings, statistics?.archived)),
+            onClick: () => patchSettings(mapFiltersReset($mapSettings, archivedHidden)),
           }}
         />
       {:else}
