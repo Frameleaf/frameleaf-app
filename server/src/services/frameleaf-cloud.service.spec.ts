@@ -2626,7 +2626,11 @@ describe(FrameleafCloudService.name, () => {
       cloud.on('GET /api/v1/instance/keys/nonce', () => ({ status: 200, body: { nonce: 'nonce-12345' } }));
       cloud.on('POST /api/v1/instance/keys/rotate', () => ({ status: 200, body: {} }));
       makeDue();
+      // a slow server: the clock moves on between every reading, so the deadline must come from one of them
+      let clock = Date.now();
+      const slow = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 3));
       await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      slow.mockRestore();
 
       expect(mocks.event.emit).toHaveBeenCalledWith(
         'AdminNotify',
