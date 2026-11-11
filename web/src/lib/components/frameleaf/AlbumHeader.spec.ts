@@ -81,6 +81,26 @@ describe('AlbumHeader', () => {
     sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: false } as never);
   });
 
+  it.each([
+    { desktop: true, role: AlbumUserRole.Owner, locked: false, visible: true },
+    { desktop: false, role: AlbumUserRole.Owner, locked: false, visible: false },
+    { desktop: true, role: AlbumUserRole.Viewer, locked: false, visible: false },
+    { desktop: true, role: AlbumUserRole.Owner, locked: true, visible: false },
+  ])(
+    'offers offline originals only for unlocked owned albums in Desktop ($desktop/$role/$locked)',
+    async ({ desktop, role, locked, visible }) => {
+      const marker = '__FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__';
+      Reflect.set(globalThis, marker, desktop);
+      try {
+        renderHeader(albumAs(role, { kind: AlbumKind.Album, isLocked: locked }));
+        const more = await openMore();
+        expect(!!more.queryByRole('menuitem', { name: 'Keep Offline' })).toBe(visible);
+      } finally {
+        Reflect.deleteProperty(globalThis, marker);
+      }
+    },
+  );
+
   it('opens a workflow draft for this editable album without adding any photos', async () => {
     sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: true } as never);
     renderHeader(albumAs(AlbumUserRole.Owner));
