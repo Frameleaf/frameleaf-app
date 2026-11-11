@@ -60,9 +60,9 @@ const storageOrUndefined = (read: () => Storage) => {
 
 export const clearPrivateBrowserState = () => {
   privateStateGeneration++;
-  if (typeof window !== 'undefined' && Reflect.get(window, '__FRAMELEAF_LOCAL_COPY__') === true) {
+  if (typeof globalThis.location !== 'undefined' && Reflect.get(globalThis, '__FRAMELEAF_LOCAL_COPY__') === true) {
     try {
-      window.location.assign('/__frameleaf_desktop_copy/cancel');
+      globalThis.location.assign('/__frameleaf_desktop_copy/cancel');
     } catch {
       // A blocked navigation must never interrupt sign-out.
     }

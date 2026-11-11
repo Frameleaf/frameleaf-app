@@ -125,7 +125,6 @@
     try {
       const response = await fetch(`${getBaseUrl()}/preservation/packages/${item.id}/desktop-copy-grant`, {
         method: 'POST',
-        credentials: 'same-origin',
         cache: 'no-store',
         signal: controller.signal,
       });
@@ -137,7 +136,7 @@
         desktopCopyBusy = false;
         return;
       }
-      window.location.assign(`${desktopCopyPath}/${item.id}#${grant.token}`);
+      globalThis.location.assign(`${desktopCopyPath}/${item.id}#${grant.token}`);
     } catch (error) {
       desktopCopyBusy = false;
       if (!controller.signal.aborted) {
@@ -152,7 +151,7 @@
     if (desktopGrant) {
       desktopGrant.abort();
     } else {
-      window.location.assign(`${desktopCopyPath}/cancel`);
+      globalThis.location.assign(`${desktopCopyPath}/cancel`);
     }
   };
 
@@ -161,12 +160,19 @@
       return;
     }
     desktopCopyBusy = false;
-    if (event.detail === 'saved') {
-      toastManager.info($t('frameleaf_preservation_desktop_copy_saved'));
-    } else if (event.detail === 'unsupported') {
-      toastManager.danger($t('frameleaf_preservation_desktop_copy_unsupported'));
-    } else if (event.detail === 'failed') {
-      toastManager.danger($t('frameleaf_preservation_desktop_copy_error'));
+    switch (event.detail) {
+      case 'saved': {
+        toastManager.info($t('frameleaf_preservation_desktop_copy_saved'));
+        break;
+      }
+      case 'unsupported': {
+        toastManager.danger($t('frameleaf_preservation_desktop_copy_unsupported'));
+        break;
+      }
+      case 'failed': {
+        toastManager.danger($t('frameleaf_preservation_desktop_copy_error'));
+        break;
+      }
     }
   };
 
@@ -369,16 +375,16 @@
   };
 
   onMount(() => {
-    desktopCopy = Reflect.get(window, '__FRAMELEAF_LOCAL_COPY__') === true;
+    desktopCopy = Reflect.get(globalThis, '__FRAMELEAF_LOCAL_COPY__') === true;
     if (desktopCopy) {
-      window.addEventListener('frameleaf-local-copy-state', desktopCopyState);
+      globalThis.addEventListener('frameleaf-local-copy-state', desktopCopyState);
     }
     void load();
   });
   onDestroy(() => {
     desktopGrant?.abort();
     if (desktopCopy) {
-      window.removeEventListener('frameleaf-local-copy-state', desktopCopyState);
+      globalThis.removeEventListener('frameleaf-local-copy-state', desktopCopyState);
     }
     destroyed = true;
     clearTimeout(pollTimer);
