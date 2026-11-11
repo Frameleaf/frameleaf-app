@@ -77,8 +77,8 @@ import {
 import { getPreferences, isTrashReuploadOpen } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
 
-/** How long a finished document PDF may hold a review slot while it downloads. */
-const DOCUMENT_REVIEW_HOLD = 2 * 60 * 1000;
+/** How long a finished document PDF may take to download before the response is ended. */
+const DOCUMENT_REVIEW_HOLD = 5 * 60 * 1000;
 
 export interface AssetMediaRedirectResponse {
   targetSize: AssetMediaSize | 'original';
@@ -627,18 +627,16 @@ export class AssetMediaService extends BaseService {
       throw new ServiceUnavailableException('Document previews are busy. Try again shortly.');
     }
 
-    // A slot is held until the PDF is released after delivery, or for at most DOCUMENT_REVIEW_HOLD, so
-    // stalled downloads cannot keep finished PDFs piling up in temporary storage.
+    // A slot is held until the PDF is released after delivery. Delivery ends after DOCUMENT_REVIEW_HOLD,
+    // so a stalled download cannot keep a slot, or its PDF in temporary storage, indefinitely.
     this.activeDocumentReviews++;
     let directory: string | undefined;
-    let timer: NodeJS.Timeout | undefined;
     let released = false;
     const release = async () => {
       if (released) {
         return;
       }
       released = true;
-      clearTimeout(timer);
       this.activeDocumentReviews--;
       if (directory) {
         await rm(directory, { recursive: true, force: true });
@@ -670,11 +668,10 @@ export class AssetMediaService extends BaseService {
       if (current.ownerId !== ownerId || current.originalPath !== originalPath) {
         throw new ConflictException('This document changed during preview');
       }
-      timer = setTimeout(() => void release(), DOCUMENT_REVIEW_HOLD);
-      timer.unref();
       return new FileDownloadResponse({
         path: output,
         release,
+        deliveryTimeout: DOCUMENT_REVIEW_HOLD,
         contentType: 'application/pdf',
         fileName: `${getFileNameWithoutExtension(originalFileName)}.pdf`,
         cacheControl: CacheControl.PrivateWithoutCache,
