@@ -260,9 +260,9 @@ export class EagleLibraryRepository {
         return undefined;
       }
       // A FileHandle, not a path: the rule's string form is the same read through the checked descriptor.
-      // eslint-disable-next-line unicorn/consistent-json-file-read
+
       const content = await file.handle.readFile({ encoding: 'utf8' });
-      return JSON.parse(content.replace(/^\uFEFF/, '')) as unknown;
+      return JSON.parse(content.replace(/^\u{FEFF}/u, '')) as unknown;
     } catch {
       return undefined;
     } finally {

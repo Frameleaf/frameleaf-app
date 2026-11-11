@@ -173,6 +173,7 @@
     onOpenActivity,
     onExportBundle,
     onImportRetention,
+    onCloudReceipts,
     onExport,
     onRename,
     mode = 'basic',
@@ -251,6 +252,7 @@
      */
     onExportBundle?: () => void;
     onImportRetention?: () => void;
+    onCloudReceipts?: () => void;
     /**
      * Opens the video export dialog (FL-106 server, `Studio.jsx` Export). Passed only for the owner of
      * a saved project this instance may write, the one case the server exports.
@@ -985,7 +987,7 @@
         </Button>
       {/if}
 
-      {#if !accessLost && ((editorUp && onExportBundle) || (projectAvailable && onImportRetention))}
+      {#if !accessLost && ((editorUp && onExportBundle) || (projectAvailable && (onImportRetention || onCloudReceipts)))}
         <!-- Rare actions live here, so the header keeps one primary button at every width. -->
         <Menu label={$t('more')} align="end">
           {#snippet trigger()}
@@ -993,6 +995,9 @@
           {/snippet}
           {#if projectAvailable && onImportRetention}
             <MenuItem onSelect={onImportRetention}>{$t('frameleaf_studio_receipts_title')}</MenuItem>
+          {/if}
+          {#if projectAvailable && onCloudReceipts}
+            <MenuItem onSelect={onCloudReceipts}>{$t('frameleaf_studio_cloud_receipts')}</MenuItem>
           {/if}
           {#if editorUp && onExportBundle}
             <MenuItem onSelect={onExportBundle}>

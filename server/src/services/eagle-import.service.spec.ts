@@ -60,7 +60,7 @@ async function writeLibrary(root: string) {
   await mkdir(library, { recursive: true });
   await writeFile(
     path.join(library, 'metadata.json'),
-    '\uFEFF' +
+    '\u{FEFF}' +
       JSON.stringify({
         folders: [
           {

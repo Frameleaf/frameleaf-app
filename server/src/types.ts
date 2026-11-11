@@ -1835,6 +1835,11 @@ export type UserPreferences = {
     /** FL-918: search questions go to classic search instead of the Library Assistant */
     classic: boolean;
   };
+  /** FL-783: how dates and times appear, independent of the language; auto follows the region */
+  display: {
+    dateFormat: 'auto' | 'iso' | 'dmy' | 'mdy';
+    hourCycle: 'auto' | 'h12' | 'h23';
+  };
   purchase: {
     showSupportBadge: boolean;
     hideBuyButtonUntil: string;

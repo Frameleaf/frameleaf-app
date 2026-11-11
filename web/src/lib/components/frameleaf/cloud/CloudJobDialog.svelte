@@ -62,6 +62,7 @@
     summary?: string;
     /** The catalogue model the slider it was opened from named; left out, the chosen or recommended one. */
     initialModelSku?: string | null;
+    canSubmit?: () => boolean;
     onSubmitted?: (job: CloudMlJobResponseDto) => void;
     /** The dialog closed with nothing sent. */
     onDismissed?: () => void;
@@ -75,6 +76,7 @@
     workName,
     summary = '',
     initialModelSku = null,
+    canSubmit,
     onSubmitted,
     onDismissed,
   }: Props = $props();
@@ -91,6 +93,7 @@
   /** A whole video is being prepared for its estimate on the server; the dialog asks again shortly. */
   let preparing = $state(false);
   let stopWatching: (() => void) | undefined;
+  let destroyed = false;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   /** Only the latest estimate request may answer: a slower earlier one never overwrites it. */
   let estimateTurn = 0;
@@ -189,7 +192,7 @@
   };
 
   const submit = async () => {
-    if (!estimate || estimate.refusal || !estimate.permission.canConfirm || submitting) {
+    if (!estimate || estimate.refusal || !estimate.permission.canConfirm || submitting || canSubmit?.() === false) {
       return;
     }
     if (!estimateLive(estimate)) {
@@ -207,7 +210,9 @@
         },
       });
       // watching reads the job list at once and then keeps it current, as Activity does
-      stopWatching = activitySession.watch();
+      if (!destroyed) {
+        stopWatching = activitySession.watch();
+      }
       onSubmitted?.(job);
     } catch (error) {
       switch (cloudJobRefusal(error)) {
@@ -238,6 +243,8 @@
   };
 
   onDestroy(() => {
+    destroyed = true;
+    estimateTurn++;
     clearTimeout(retryTimer);
     stopWatching?.();
   });
@@ -485,7 +492,11 @@
         </Button>
       {/if}
       {#if !estimate?.refusal && estimate?.permission.canConfirm !== false}
-        <Button variant="primary" disabled={!estimate || estimating || submitting} onclick={() => void submit()}>
+        <Button
+          variant="primary"
+          disabled={!estimate || estimating || submitting || canSubmit?.() === false}
+          onclick={() => void submit()}
+        >
           <Icon icon={mdiCloudUploadOutline} size="1.125rem" aria-hidden={true} />
           {submitting
             ? $t('frameleaf_cloud_job_submitting')

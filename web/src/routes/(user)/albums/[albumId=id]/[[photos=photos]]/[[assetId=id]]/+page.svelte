@@ -737,7 +737,10 @@
       onRetry={() => itemGeneration++}
     />{/if}
   {#if isCollection}
-    <div class="relative h-full overflow-hidden md:px-4">
+    <!-- The gutter is named for the header, which folds its actions by its width with the gutters. -->
+    <div
+      class="relative h-full overflow-hidden md:px-4 md:[--fl-library-gutter-end:1rem] md:[--fl-library-gutter-start:1rem]"
+    >
       <Theme theme={appTheme}>
         <div class="h-full overflow-y-auto">
           <!-- On phones the header keeps the 16px gutter the library view gives an album's header. -->

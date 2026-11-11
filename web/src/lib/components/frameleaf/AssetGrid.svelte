@@ -79,6 +79,11 @@
     /** Rendered above the grid, inside the same scroll container. */
     header?: Snippet;
     empty?: Snippet;
+    /**
+     * Every id in visible order when this grid shows one section of a longer list (FL-1393), so a
+     * shift-click range can start in one section and end in another. By default the grid's own order.
+     */
+    rangeIds?: string[];
   };
 
   let {
@@ -101,6 +106,7 @@
     offlineFor,
     header,
     empty,
+    rangeIds,
   }: Props = $props();
 
   /** Rows mounted above and below the viewport, so a fast scroll does not show empty cells. */
@@ -241,7 +247,7 @@
   });
 
   /** Every id in visible order: what a shift-click range is taken against. */
-  const orderedIds = $derived(entries.map((entry) => entry.key));
+  const orderedIds = $derived(rangeIds ?? entries.map((entry) => entry.key));
 
   const pick = (asset: TimelineAsset) => {
     if (singleSelect) {

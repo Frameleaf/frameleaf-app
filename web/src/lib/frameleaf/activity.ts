@@ -222,6 +222,12 @@ export type ActivityItem = {
   cloudWork?: boolean;
   /** Where the job is (prototype `activity-feed.mjs` stages); the In progress section groups by it. */
   stage: ActivityStage;
+  /**
+   * FL-1409 (M7): a library scan that stopped early, in plain words. `interrupted`: the server restarted or the
+   * worker was lost, and the scan can be started again. `drive`: its folder can't be reached, which is a wait, not
+   * an interruption. `resuming`: interrupted once, and carrying on by itself.
+   */
+  scan?: 'interrupted' | 'drive' | 'resuming';
   /** FL-162: a Frameleaf Cloud job's model, workers and money, as the prototype's `CloudCost` shows them. */
   cloud?: ActivityCloudJob;
 };
@@ -498,6 +504,25 @@ export const mediaOperationEdit = (operation: Pick<MediaOperationDto, 'kind' | '
     : undefined;
 };
 
+/** The server's codes for a scan a restart or a lost worker stopped (`library-scan.service.ts`, the lease sweep). */
+const SCAN_INTERRUPTED_CODES: ReadonlySet<string> = new Set(['library_scan_interrupted', 'lease_expired']);
+/** Its folder is not there: missing, unreadable, or an empty mount point with items still indexed from it. */
+const SCAN_DRIVE_CODES: ReadonlySet<string> = new Set(['library_source_unavailable', 'library_source_empty']);
+
+/** FL-1409: what stopped a library scan, when the server's code says; nothing for any other job or failure. */
+export const scanStoppedBy = (
+  operation: Pick<MediaOperationDto, 'kind' | 'status' | 'errorCode' | 'autoRetries' | 'retryAt'>,
+): ActivityItem['scan'] => {
+  const code = operation.errorCode ?? '';
+  if (operation.kind !== MediaOperationKind.LibraryScan) {
+    return undefined;
+  }
+  if (operation.status === MediaOperationStatus.Failed) {
+    return SCAN_INTERRUPTED_CODES.has(code) ? 'interrupted' : SCAN_DRIVE_CODES.has(code) ? 'drive' : undefined;
+  }
+  return isRetryingMediaOperation(operation) && SCAN_INTERRUPTED_CODES.has(code) ? 'resuming' : undefined;
+};
+
 /** A physical deduplication plan's name, `PD-` and eight characters, or nothing. */
 const asPlanName = (value: unknown): string | null =>
   typeof value === 'string' && /^PD-[\dA-F]{8}$/.test(value) ? value : null;
@@ -619,6 +644,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(finished && operation.finishedAt && { finishedAt: Date.parse(operation.finishedAt) }),
     ...(CLOUD_WORK_KINDS.has(operation.kind) && { cloudWork: true }),
     stage: mediaOperationStage(operation),
+    ...(scanStoppedBy(operation) && { scan: scanStoppedBy(operation) }),
     // FL-162: a Frameleaf Cloud job reads its stage, progress and money from the cloud job itself
     ...(operation.cloudJob && fromCloudMlJob(operation, operation.cloudJob)),
   };

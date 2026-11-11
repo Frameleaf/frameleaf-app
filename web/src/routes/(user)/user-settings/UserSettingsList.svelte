@@ -14,6 +14,7 @@
   import LockedEncryptionPage from '$lib/components/frameleaf/settings/security/locked-encryption/LockedEncryptionPage.svelte';
   import HowYouSignInPage from '$lib/components/frameleaf/access/HowYouSignInPage.svelte';
   import PasskeysSection from '$lib/components/frameleaf/access/PasskeysSection.svelte';
+  import TwoStepSection from '$lib/components/frameleaf/access/TwoStepSection.svelte';
   import PinSection from '$lib/components/frameleaf/access/PinSection.svelte';
   import ProfileSection from '$lib/components/frameleaf/access/ProfileSection.svelte';
   import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
@@ -94,6 +95,9 @@
 {:else if section === 'passkeys'}
   <!-- FL-859: add, rename and remove passkeys (FL-767 prototype `Passkeys.jsx`). -->
   <PasskeysSection />
+{:else if section === 'two-step'}
+  <!-- FL-831: two-step sign-in with an authenticator app (FL-776 prototype `TwoStep.jsx`). -->
+  <TwoStepSection onSessionsChanged={refreshSessions} />
 {:else if section === 'frameleaf-account'}
   <FrameleafAccountSection view="page" />
 {:else if section === 'user-pin-code-settings'}

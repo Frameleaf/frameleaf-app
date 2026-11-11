@@ -45,8 +45,8 @@ import {
   writeAssetUploadPart,
 } from 'src/utils/asset-upload-resource.js';
 import { captureActor } from 'src/utils/capture.js';
-import { mimeTypes } from 'src/utils/mime-types.js';
 import { parseCloudIdentifier } from 'src/utils/icloud-identity.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 
 type UploadAdmissionCheck = (tx?: Transaction<DB>) => Promise<void>;
 

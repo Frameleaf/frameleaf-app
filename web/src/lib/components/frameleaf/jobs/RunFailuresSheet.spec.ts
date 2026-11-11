@@ -73,7 +73,7 @@ describe('review what failed (FL-1349)', () => {
     );
     open();
     expect(await screen.findByText('What failed in Reading photo details')).toBeInTheDocument();
-    expect(sdkMock.getJobRunFailures).toHaveBeenCalledWith({ id: RUN_ID });
+    expect(sdkMock.getJobRunFailures).toHaveBeenCalledWith({ id: RUN_ID, foldNightly: true });
     expect(screen.getByText(/^7,358 photos, 5 causes\. Each cause has one thing to do\./)).toBeInTheDocument();
 
     const actions = (title: string) =>
@@ -137,6 +137,7 @@ describe('review what failed (FL-1349)', () => {
     await waitFor(() =>
       expect(sdkMock.actOnJobRunFailures).toHaveBeenCalledWith({
         id: RUN_ID,
+        foldNightly: true,
         jobRunFailureActionDto: { cause: JobRunFailureCause.Unsupported, action: JobRunFailureAction.Stop },
       }),
     );
@@ -175,6 +176,7 @@ describe('review what failed (FL-1349)', () => {
     expect(await screen.findByText('Trying 19 photos again.')).toBeInTheDocument();
     expect(sdkMock.actOnJobRunFailures).toHaveBeenCalledWith({
       id: RUN_ID,
+      foldNightly: true,
       jobRunFailureActionDto: { cause: JobRunFailureCause.Drive, action: JobRunFailureAction.Retry },
     });
   });
@@ -228,6 +230,20 @@ describe('review what failed (FL-1349)', () => {
       run: { ...run, leftOver: 9, failureCauses: [{ cause: JobRunFailureCause.Unsupported, count: 9 }] },
     });
     expect(sdkMock.getJobRunFailures).toHaveBeenCalledTimes(2);
+  });
+
+  it('says where the photos went when newer work left them over again (FL-1430)', async () => {
+    sdkMock.getJobRunFailures.mockResolvedValue({
+      ...failures([group({ cause: JobRunFailureCause.Other, count: 0 })]),
+      superseded: 285,
+    });
+    open();
+    expect(
+      await screen.findByText(
+        'The 285 photos left over here were left over again by later work, so they’re counted on that card instead.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again now' })).not.toBeInTheDocument();
   });
 
   it('says so when what failed cannot be loaded', async () => {

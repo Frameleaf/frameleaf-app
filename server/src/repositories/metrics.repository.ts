@@ -4,6 +4,7 @@ import { type AddressInfo } from 'node:net';
 import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 import type { RequestHandler } from 'express';
 import { JobName, QueueName } from 'src/enum.js';
+import { assistantSwitchBack } from 'src/utils/assistant-switch-back.js';
 import { claimsFrameleafVia, isHomeAddress } from 'src/utils/frameleaf-sign-in.js';
 
 type QueueCounts = { waiting: number; active: number; failed: number };
@@ -48,11 +49,17 @@ export class MetricsRepository {
     labelNames: ['job_name', 'outcome'] as const,
     registers: [this.registry],
   });
+  private readonly desktopResultsAdopted = new Counter({
+    name: `${prefix}desktop_results_adopted_total`,
+    help: 'Desktop inference results adopted by committed Library queue jobs',
+    registers: [this.registry],
+  });
   private readonly collectors: Array<() => Promise<void> | void> = [];
   private server?: Server;
 
   constructor(sources?: MetricsSources) {
     collectDefaultMetrics({ register: this.registry, prefix });
+    assistantSwitchBack.register(this.registry);
     if (!sources) return;
 
     const gauge = (name: string, help: string, labelNames: string[]) =>
@@ -122,6 +129,10 @@ export class MetricsRepository {
 
   observeHttp(route: string, status: number, seconds: number) {
     this.httpDuration.observe({ route, status: String(status) }, seconds);
+  }
+
+  observeDesktopResultAdoption() {
+    this.desktopResultsAdopted.inc();
   }
 
   observeJob(name: JobName, outcome: 'completed' | 'failed') {

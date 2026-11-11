@@ -32,8 +32,10 @@ import { retryLockContention } from 'src/queue/catalogue.js';
 import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/queue/configuration.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
+import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
+import { causeRank } from 'src/queue/run-failure-cause.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
-import { reportedQueueJobs } from 'src/queue/run-query.js';
+import { failureRoots, needsLook, reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -60,6 +62,7 @@ import { DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { FIX_SEARCH_DELAY_MS } from 'src/utils/file-fix.js';
 import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
+import { NIGHT_DATA_KEY, nightWork, withNight } from 'src/utils/night-work.js';
 import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
@@ -745,7 +748,7 @@ export class JobRepository {
     }
     const context = queueExecution.getStore();
     context?.signal.throwIfAborted();
-    const admit = (tx: Transaction<DB>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
+    const admit = (tx: Transaction<DB>) => this.store.admitRun(id, kind, withNight(selection), admission.intents, tx);
     if (context?.buffering) {
       // The run and its parent-dependent intents become visible only with successful publication.
       context.adoptions.push(async (tx) => void (await admit(tx)));
@@ -784,27 +787,65 @@ export class JobRepository {
     return this.store.getRun(runId);
   }
 
+  /** FL-1430: Library care's file checks running now or just finished, for Recent work. */
+  recentFileCheck() {
+    return recentFileCheck(this.store.db);
+  }
+
   listRunItems(runId: string, take: number, skip: number) {
     return this.store.listRunItems(runId, take, skip);
   }
 
   /** FL-1349: a run's left-over photos by cause, with samples the reader may see. Undefined for an unknown run. */
-  reviewRunFailures(runId: string, privacy: RunFailurePrivacy) {
-    return reviewRunFailures(this.store.db, runId, privacy);
+  reviewRunFailures(runId: string, privacy: RunFailurePrivacy, foldNightly = false) {
+    return reviewRunFailures(this.store.db, runId, privacy, foldNightly);
   }
 
-  retryRunFailures(runId: string, cause: RunFailureCause) {
-    return this.store.retryRunFailures(runId, cause);
-  }
-
-  stopRunFailures(runId: string, cause: RunFailureCause) {
-    return this.store.stopRunFailures(runId, cause);
+  /**
+   * FL-1430: Try again now or Stop trying on what a Recent work card counts (`foldNightly`): each run of a folded
+   * night, leaving photos newer work left over again to that work. Undefined for an unknown run.
+   */
+  async actOnRunFailures(runId: string, cause: RunFailureCause, action: 'retry' | 'stop', foldNightly = false) {
+    if (!foldNightly) {
+      return action === 'retry' ? this.store.retryRunFailures(runId, cause) : this.store.stopRunFailures(runId, cause);
+    }
+    // FL-1430: the photos the card shows for this cause, worked out once over the whole night (or the run), then
+    // tried again or stopped in every run that left them over, each run's steps newer work took over left to that
+    // work. The count is the photos (tasks, in a run that counts tasks) something was actually done to.
+    const found = await recentWorkScope(this.store.db, runId);
+    if (!found) return;
+    const roots = (await failureRoots(this.store.db, found.scope)).filter(
+      (root) => needsLook(root) && root.rank === causeRank(cause),
+    );
+    const exclude = roots.flatMap(({ takenJobs }) => takenJobs);
+    const acted = new Set<string>();
+    let known = false;
+    for (const run of found.scope.runs) {
+      // Stop trying works on photos (as before FL-1430): a run that counts tasks has nothing it can stop
+      if (action === 'stop' && !run.countsPhotos) continue;
+      const mine = roots.filter((root) => root.runIds.includes(run.id) && root.rooted === run.countsPhotos);
+      if (mine.length === 0) continue;
+      const only = { items: mine.map(({ root }) => root), exclude };
+      const done =
+        action === 'retry'
+          ? await this.store.retryRunFailures(run.id, cause, only)
+          : await this.store.stopRunFailures(run.id, cause, only);
+      if (done === undefined) continue;
+      known = true;
+      if (done > 0) for (const { root } of mine) acted.add(root);
+    }
+    return known || roots.length === 0 ? acted.size : 0;
   }
 
   private intent(item: JobItem): QueueIntent {
     const context = queueExecution.getStore();
     const runId = runSubmission.getStore() ?? context?.claim.runId ?? undefined;
-    const data = inheritWorkflowCausation((item.data ?? {}) as Record<string, unknown>);
+    // FL-1430: work the overnight schedule queues carries its night, for the run it opens when it runs; a job copied or
+    // queued again outside the night carries none
+    const { [NIGHT_DATA_KEY]: _copied, ...own } = (item.data ?? {}) as Record<string, unknown>;
+    const causal = inheritWorkflowCausation(own);
+    const night = nightWork.getStore();
+    const data = night ? { ...causal, [NIGHT_DATA_KEY]: night } : causal;
     const queue = this.getQueueName(item.name);
     const isMl = [
       QueueName.SmartSearch,
@@ -868,7 +909,9 @@ export class JobRepository {
     const itemKey = `producer/${context.claim.id}`;
     await this.fenced(context, async (tx) => {
       await sql`insert into job_run(id, kind, selection, "enumerationDone")
-        values (${runId}::uuid, ${context.claim.name}, '{}'::jsonb, true)`.execute(tx);
+        values (${runId}::uuid, ${context.claim.name}, ${JSON.stringify(withNight({}))}::text::jsonb, true)`.execute(
+        tx,
+      );
       await sql`update job set "runId" = ${runId}::uuid, "itemKey" = ${itemKey}
         where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(tx);
     });
@@ -903,7 +946,7 @@ export class JobRepository {
   /** A library scan's run (its operation id) exists before its first batch; idempotent. */
   private async openLibraryScanRun(tx: Transaction<DB>, identity: LibrarySourceIdentity) {
     await sql`insert into job_run(id, kind, selection, "enumerationDone") values (${identity.operationId}::uuid,
-      ${MediaOperationKind.LibraryScan}, ${JSON.stringify({ libraryId: identity.libraryId })}::text::jsonb, false)
+      ${MediaOperationKind.LibraryScan}, ${JSON.stringify(withNight({ libraryId: identity.libraryId }))}::text::jsonb, false)
       on conflict do nothing`.execute(tx);
   }
 
@@ -966,11 +1009,18 @@ export class JobRepository {
     });
   }
 
-  /** Terminal control: the update callback must fence the exact domain claim. Jobs already queued keep running. */
-  async settleLibraryScanSource<T>(operationId: string, update: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
+  /**
+   * Terminal control: the update callback must fence the exact domain claim. Jobs already queued keep running.
+   * FL-1409: `ended` is false when the update put the scan back in the queue, so its run stays open for the rest.
+   */
+  async settleLibraryScanSource<T>(
+    operationId: string,
+    update: (tx: Transaction<DB>) => Promise<T>,
+    ended: (outcome: T) => boolean = () => true,
+  ): Promise<T> {
     return this.store.db.transaction().execute(async (tx) => {
       const outcome = await update(tx);
-      await this.store.finishEnumeration(operationId, tx);
+      if (ended(outcome)) await this.store.finishEnumeration(operationId, tx);
       return outcome;
     });
   }
@@ -1005,7 +1055,7 @@ export class JobRepository {
         const runId = producerRun ?? randomUUID();
         if (!producerRun) {
           await sql`insert into job_run(id, kind, selection, "enumerationDone")
-            values (${runId}::uuid, ${name}, '{}'::jsonb, true)`.execute(tx);
+            values (${runId}::uuid, ${name}, ${JSON.stringify(withNight({}))}::text::jsonb, true)`.execute(tx);
         }
         for (let after: string | null = null; ;) {
           const page = await this.store.insertSelectionPage(

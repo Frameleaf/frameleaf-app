@@ -15,6 +15,7 @@ import {
   queuedProcessingIsSetAside,
   recordProcessingFailure,
 } from 'src/queue/processing-failure.js';
+import { listRecentWork } from 'src/queue/recent-work.js';
 import {
   getRun,
   listRunItems,
@@ -35,6 +36,7 @@ import {
   QueueState,
   RunHolds,
 } from 'src/queue/types.js';
+import { NIGHT_DATA_KEY } from 'src/utils/night-work.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 type Executor = Kysely<DB>;
@@ -339,11 +341,13 @@ export class SqlQueueStore {
         : intent.name === JobName.FacialRecognition && intent.data.deferred
           ? sql<string>`s.id::text || '/deferred'`
           : sql<string>`s.id::text`;
+    // FL-1430: the night's marker says who asked, not what: a person's same request coalesces with the night's
+    const { [NIGHT_DATA_KEY]: _night, ...requestData } = intent.data;
     const dedupKey =
       intent.name === JobName.SmartAlbumReevaluate
         ? sql<string>`${`${intent.name}:`}::text || s.id::text || ${`:${kind}`}::text`
         : // A row's own data (a pet run's id) is part of the request: a restarted run must not coalesce into the old one.
-          sql<string>`${`sel:${intent.name}:`}::text || ${itemKey} || ${`:${createHash('sha1').update(canonicalJson(intent.data)).digest('hex')}`}::text
+          sql<string>`${`sel:${intent.name}:`}::text || ${itemKey} || ${`:${createHash('sha1').update(canonicalJson(requestData)).digest('hex')}`}::text
             || coalesce(':' || md5((s."row"->'data')::text), '')`;
     const {
       rows: [page],
@@ -967,7 +971,7 @@ export class SqlQueueStore {
   /** Activity and the running-jobs summary poll this; a costly recount is shared and not repeated at once. */
   private readonly runReads = costReusedRead(
     ({ take, skip, foldNightly }: { take: number; skip: number; foldNightly: boolean }) =>
-      listRuns(this.db, take, skip, foldNightly),
+      foldNightly ? listRecentWork(this.db, take, skip) : listRuns(this.db, take, skip),
   );
 
   listRuns(take: number, skip: number, foldNightly = false) {
@@ -1186,8 +1190,12 @@ export class SqlQueueStore {
    * `retryRun`, of only the photos (roots) `only.roots`, or the jobs `only.jobIds`, when given; returns how many jobs
    * and photos went back.
    */
-  private async putBackRunWork(runId: string, db: Executor, only: { roots?: string[]; jobIds?: string[] } = {}) {
-    const { roots, jobIds } = only;
+  private async putBackRunWork(
+    runId: string,
+    db: Executor,
+    only: { roots?: string[]; jobIds?: string[]; exclude?: string[] } = {},
+  ) {
+    const { roots, jobIds, exclude = [] } = only;
     let total = 0;
     const photos = new Set<string>();
     for (;;) {
@@ -1196,6 +1204,7 @@ export class SqlQueueStore {
         WHERE j."runId"=${runId}::uuid AND j."safeToRetry" AND j.data->>'operationId' IS NULL
           ${roots ? sql`AND j."rootItemKey" = any(${roots}::text[])` : sql``}
           ${jobIds ? sql`AND j.id = any(${jobIds}::uuid[])` : sql``}
+          AND j.id <> all(${exclude}::uuid[])
           AND j.state IN ('failed','blocked') AND NOT (${queuedProcessingIsSetAside})
           AND (j."dedupKey" IS NULL OR NOT EXISTS (
             SELECT 1 FROM job d WHERE d.queue=j.queue AND d."dedupKey"=j."dedupKey" AND d.id<>j.id
@@ -1224,7 +1233,16 @@ export class SqlQueueStore {
    * re-armed first (set aside work is never put back otherwise). Returns how many photos went back (tasks, in a run
    * that counts tasks), or undefined for an unknown run.
    */
-  async retryRunFailures(runId: string, cause: RunFailureCause): Promise<number | undefined> {
+  /**
+   * `only`: the photos (or, in a run that counts tasks, the failed jobs) to put back, worked out by the caller for a
+   * Recent work card (FL-1430), leaving out `exclude`, the failed tasks newer work took over; otherwise the cause's
+   * left-over photos of this run.
+   */
+  async retryRunFailures(
+    runId: string,
+    cause: RunFailureCause,
+    only?: { items: string[]; exclude: string[] },
+  ): Promise<number | undefined> {
     const photos = await this.db.transaction().execute(async (tx) => {
       const {
         rows: [run],
@@ -1232,17 +1250,19 @@ export class SqlQueueStore {
       if (!run) return;
       // a run that counts tasks has no photos: each failed task is its own item, named by its job id
       const countsPhotos = (await runCountsPhotos(tx, runId)) ?? true;
-      const items = await runFailureRoots(tx, runId, cause, countsPhotos);
+      const items = only?.items ?? (await runFailureRoots(tx, runId, cause, countsPhotos));
+      const exclude = only?.exclude ?? [];
       if (items.length === 0) return 0;
       await sql`update asset_processing_failure f set "quarantinedAt" = null, attempts = 0 from job j
         where j."runId" = ${runId}::uuid and j.state = 'failed'
           and ${countsPhotos ? sql`j."rootItemKey" = any(${items}::text[])` : sql`j.id = any(${items}::uuid[])`}
+          and j.id <> all(${exclude}::uuid[])
           and f."assetId" = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end
           and f.step = j.name and f."dismissedAt" is null`.execute(tx);
       const { jobs, photos } = await this.putBackRunWork(
         runId,
         tx,
-        countsPhotos ? { roots: items } : { jobIds: items },
+        countsPhotos ? { roots: items, exclude } : { jobIds: items, exclude },
       );
       await rewriteFailureCauses(tx, runId);
       return countsPhotos ? photos : jobs;
@@ -1256,13 +1276,19 @@ export class SqlQueueStore {
    * are dismissed, so nightly reprocessing selects them no more. Their jobs stay failed: history and the per-photo
    * list are kept. Returns how many photos were stopped, or undefined for an unknown run.
    */
-  async stopRunFailures(runId: string, cause: RunFailureCause): Promise<number | undefined> {
+  /** `only`: the photos to stop, worked out by the caller for a Recent work card, without `exclude` (FL-1430). */
+  async stopRunFailures(
+    runId: string,
+    cause: RunFailureCause,
+    only?: { items: string[]; exclude: string[] },
+  ): Promise<number | undefined> {
     const photos = await this.db.transaction().execute(async (tx) => {
       const {
         rows: [run],
       } = await sql`select id from job_run where id = ${runId}::uuid for no key update`.execute(tx);
       if (!run) return;
-      const roots = await runFailureRoots(tx, runId, cause);
+      const roots = only?.items ?? (await runFailureRoots(tx, runId, cause, true));
+      const exclude = only?.exclude ?? [];
       if (roots.length === 0) return 0;
       // a fixed cause, never exception text (`recordProcessingFailure`)
       const lastError = cause === 'unsupported' ? 'unsupported' : 'unreadable';
@@ -1272,7 +1298,7 @@ export class SqlQueueStore {
       } = await sql<{ photos: number }>`with picked as (
           select distinct j."rootItemKey" root, a.id "assetId", j.name step from job j join asset a
             on a.id = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end
-          where j."runId" = ${runId}::uuid and j."rootItemKey" = any(${roots}::text[])
+          where j."runId" = ${runId}::uuid and j."rootItemKey" = any(${roots}::text[]) and j.id <> all(${exclude}::uuid[])
             and j.state in ('failed','needs_attention') and j.name = any(${[...processingFailureSteps]}::text[])
         ), written as (
           insert into asset_processing_failure as f ("assetId", step, attempts, "lastError", "lastFailedAt", "dismissedAt")

@@ -45,9 +45,9 @@ describe('reading an Eagle library', () => {
     const library = await readEagleLibrary('Copied.library', [
       entry('metadata.json', '{}'),
       entry('images/I1.info/metadata.json', '{"name":"Café","ext":" .PSB "}'),
-      entry('images/I1.info/CAFE\u0301.PSB'),
+      entry('images/I1.info/CAFE\u{301}.PSB'),
       entry('images/I1.info/other.psb'),
-      entry('images/I1.info/._CAFE\u0301.PSB'),
+      entry('images/I1.info/._CAFE\u{301}.PSB'),
       entry('images/I2.info/metadata.json', '{"name":"Type"}'),
       entry('images/I2.info/Type.OTF'),
       entry('images/I2.info/Type_THUMBNAIL.PNG'),
@@ -56,7 +56,7 @@ describe('reading an Eagle library', () => {
       entry('images/I3.info/._Missing.otf'),
     ]);
     expect(library.items.map(({ ext, file }) => [ext, file?.name])).toEqual([
-      ['psb', 'CAFE\u0301.PSB'],
+      ['psb', 'CAFE\u{301}.PSB'],
       ['otf', 'Type.OTF'],
       ['otf', undefined],
     ]);
