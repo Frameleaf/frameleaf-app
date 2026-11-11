@@ -2989,6 +2989,7 @@
   "frameleaf_album_merge_will_hold": "“{name}” will hold {count, plural, one {# photo} other {# photos}}. No photos are removed from your library.",
   "frameleaf_album_merge_will_hold_both": "“{name}” will hold {count, plural, one {# photo} other {# photos}}, counting {inBoth} that are in both albums once. No photos are removed from your library.",
   "frameleaf_album_merge_winner_shared": "One of these is shared. Everyone in “{name}” will be able to see the photos from both albums.",
+  "frameleaf_album_keep_offline": "Keep Offline",
   "frameleaf_album_more_actions": "More actions",
   "frameleaf_album_options_activity": "Likes and comments",
   "frameleaf_album_options_activity_description": "Members can react to this and to the items in it.",
