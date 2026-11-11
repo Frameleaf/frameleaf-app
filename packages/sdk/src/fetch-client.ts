@@ -7378,8 +7378,14 @@ export type AssistantAskResponseDto = {
     results: SearchResponseDto;
     /** One line describing what was searched */
     summary: string;
+    /** Opaque token for reporting a switch to Classic search from this answer */
+    switchBackToken?: string;
     /** Parts of the question that could not be used */
     warnings: string[];
+};
+export type AssistantSwitchBackDto = {
+    /** The switch-back token from the Assistant answer */
+    token: string;
 };
 export type SignUpDto = {
     /** User email */
@@ -27489,6 +27495,18 @@ export function askAssistant({ assistantAskDto }: {
         ...opts,
         method: "POST",
         body: assistantAskDto
+    })));
+}
+/**
+ * Record a switch to Classic search
+ */
+export function recordAssistantSwitchBack({ assistantSwitchBackDto }: {
+    assistantSwitchBackDto: AssistantSwitchBackDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assistant/classic", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantSwitchBackDto
     })));
 }
 /**

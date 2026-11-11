@@ -1,6 +1,7 @@
 import {
   askAssistant,
   askSearch,
+  recordAssistantSwitchBack,
   searchLibraryItems,
   LibraryAssetItemKind,
   LibraryItemSearchMode,
@@ -66,6 +67,7 @@ export class LibrarySearchSession {
   #destroyed = false;
   #query: LibrarySearchQuery | null = null;
   #request?: AbortController;
+  #switchBack?: { token: string; isCurrent: () => boolean };
 
   reset(query: LibrarySearchQuery | null = null) {
     this.#request?.abort();
@@ -79,6 +81,7 @@ export class LibrarySearchSession {
     this.albums = [];
     this.askResponse = undefined;
     this.assistantResponse = undefined;
+    this.#switchBack = undefined;
     this.nextPage = query ? 1 : null;
     this.nextCursor = null;
     this.loading = false;
@@ -87,6 +90,14 @@ export class LibrarySearchSession {
   destroy() {
     this.#destroyed = true;
     this.reset();
+  }
+
+  async reportSwitchBack() {
+    const pending = this.#switchBack;
+    this.#switchBack = undefined;
+    if (pending?.isCurrent()) {
+      await recordAssistantSwitchBack({ assistantSwitchBackDto: { token: pending.token } }).catch(() => {});
+    }
   }
 
   /**
@@ -118,7 +129,7 @@ export class LibrarySearchSession {
   }
 
   /** `smartSearch`: the server's feature flag; false sends a search by meaning straight to text. */
-  async loadNextPage(options: { language: string; smartSearch?: boolean }) {
+  async loadNextPage(options: { language: string; smartSearch?: boolean; isCurrent?: () => boolean }) {
     const query = this.#query;
     if (this.#destroyed || !query || (!this.nextPage && !this.nextCursor) || this.loading) {
       return;
@@ -172,6 +183,9 @@ export class LibrarySearchSession {
         }
         this.assets = answer.results.assets.items;
         this.assistantResponse = answer;
+        if (answer.switchBackToken && options.isCurrent) {
+          this.#switchBack = { token: answer.switchBackToken, isCurrent: options.isCurrent };
+        }
         this.nextPage = null;
         this.nextCursor = null;
         return;

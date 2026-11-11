@@ -186,6 +186,9 @@
   /** Saves run one after another, in the order the switch was pressed, so an older choice never lands last. */
   let classicSaves: Promise<void> = Promise.resolve();
   const setClassicSearch = (classic: boolean) => {
+    if (classic && activeSearch?.kind === 'assistant') {
+      void searchSession.reportSwitchBack();
+    }
     classicChoice = classic;
     const isCurrent = authManager.captureSession();
     classicSaves = classicSaves.then(async () => {
@@ -491,7 +494,11 @@
     const asking = activeSearch?.kind === 'ask' || activeSearch?.kind === 'assistant';
     const assisting = activeSearch?.kind === 'assistant';
     try {
-      await searchSession.loadNextPage({ language: $lang, smartSearch: smartSearchEnabled });
+      await searchSession.loadNextPage({
+        language: $lang,
+        smartSearch: smartSearchEnabled,
+        isCurrent: authManager.captureSession(),
+      });
     } catch (error) {
       if (!asking) {
         // A first page that fails is the page's own state (with Try again); a later page that fails
