@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
+import z from 'zod';
 import cases from 'test/assistant-eval/cases.json' with { type: 'json' };
 import { requestPlan } from 'test/assistant-eval/planner.js';
 import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
@@ -11,7 +12,6 @@ import { run } from 'test/assistant-eval/run.js';
 import { type EvalCase, score } from 'test/assistant-eval/score.js';
 import thresholds from 'test/assistant-eval/thresholds.json' with { type: 'json' };
 import { getActiveForkKyselyDB } from 'test/utils.js';
-import z from 'zod';
 
 const mode = process.env.FRAMELEAF_ASSISTANT_EVAL_MODE ?? 'replay';
 
@@ -24,7 +24,7 @@ it(
     try {
       const report = await run(database, options);
       process.stdout.write(`${JSON.stringify(report)}\n`);
-      if (mode === 'replay' || mode === 'assistant' || mode === 'qualification') {
+      if (['replay', 'assistant', 'qualification'].includes(mode)) {
         expect(report.filterAccuracy).toBeGreaterThanOrEqual(thresholds.filterAccuracy);
         expect(report.recallAt24).toBeGreaterThanOrEqual(thresholds.recallAt24);
         expect(report.faithfulness).toBeGreaterThanOrEqual(thresholds.faithfulness);
@@ -77,7 +77,7 @@ it.skipIf(mode !== 'replay')(
     try {
       await once(worker, 'listening');
       const address = worker.address();
-      assert(address && typeof address === 'object');
+      assert.ok(address && typeof address === 'object');
       const database = await getActiveForkKyselyDB('assistant_http_eval');
       try {
         const report = await run(database, {
