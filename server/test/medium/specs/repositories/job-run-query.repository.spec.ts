@@ -665,6 +665,19 @@ describe('Recent work (FL-1349)', () => {
       });
     });
 
+    it("a stage one run of the night parks still counts in another run that doesn't park it", async () => {
+      const night = { startedAt: NIGHT_TWO };
+      const parks = await opened('library_scan', 60, night, { holds: { Smart: 'parked' } });
+      await job(parks, 'a', 'Metadata', { state: 'completed' });
+      await job(parks, 'a', 'Smart', { held: true });
+      const keeps = await opened('AssetExtractMetadata', 59, night);
+      await job(keeps, 'b', 'Metadata', { state: 'completed' });
+      await job(keeps, 'c', 'Smart');
+      const [card] = await listRecentWork(db, 25, 0);
+      // a and b are done; c's Smart task is its run's own work, waiting
+      expect(card).toMatchObject({ countedOnce: true, total: 3, completed: 2, waiting: 1 });
+    });
+
     it('leaves out finished runs with no work at all, and pages what is left without gaps', async () => {
       for (let n = 0; n < 4; n++) await opened('AssetEncodeVideo', 50 + n);
       const kept: string[] = [];

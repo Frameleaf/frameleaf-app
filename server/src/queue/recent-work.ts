@@ -272,8 +272,10 @@ async function nightPhotos(
   runs: Header[],
 ): Promise<{ counts: RunCounts; countedOnce: boolean }> {
   const photoRuns = reads.filter((read) => read.countsPhotos);
-  // parked stages are left out, as each run's own count leaves them out (`aggregateRun`)
-  const parked = [...new Set(runs.flatMap((run) => namesHeldAs(holdsOf(run.holds), 'parked')))];
+  // a run's parked stages are left out of that run, as its own count leaves them out (`aggregateRun`)
+  const parked = runs.flatMap((run) =>
+    namesHeldAs(holdsOf(run.holds), 'parked').map((name) => ({ run: run.id, name })),
+  );
   const tasks = photoRuns.reduce((sum, read) => sum + read.stageTotals.total, 0);
   if (photoRuns.length < 2) return { counts: sumCounts(photoRuns), countedOnce: true };
   // too many to count once, or the night's tasks are pruned: its tasks, said as tasks
@@ -281,7 +283,8 @@ async function nightPhotos(
   if (tasks > DISTINCT_PHOTOS_LIMIT) return summed;
   const { rows } = await sql<{ top: number; n: number }>`select top, count(*)::int n from (
       select ${STATE_TOP} top from job where "runId" = any(${photoRuns.map(({ id }) => id)}::uuid[])
-        and "rootItemKey" is not null and not (state in ('pending','waiting') and name = any(${parked}::text[]))
+        and "rootItemKey" is not null and not (state in ('pending','waiting') and ("runId", name) in (select * from unnest(
+          ${parked.map(({ run }) => run)}::uuid[], ${parked.map(({ name }) => name)}::text[])))
       group by "rootItemKey") photos group by top`.execute(db);
   if (rows.length === 0) return summed;
   const counts = zero();
