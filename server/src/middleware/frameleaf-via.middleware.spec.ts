@@ -161,6 +161,17 @@ describe('frameleafViaMiddleware (FL-161)', () => {
     expect(request.headers['x-frameleaf-manager']).toBeUndefined();
   });
 
+  it('retains the Desktop copy token only on requests that did not arrive through the edge', () => {
+    const token = 'x-frameleaf-desktop-copy';
+    const local = run({ [token]: 'copy-token' });
+    expect(local.headers[token]).toBe('copy-token');
+
+    for (const via of ['lan', 'wan', 'relay']) {
+      const remote = run({ 'x-frameleaf-via': via, 'x-frameleaf-via-auth': secret, [token]: 'copy-token' });
+      expect(remote.headers[token]).toBeUndefined();
+    }
+  });
+
   it('reads the arrival before the headers are stripped', () => {
     const headers = { 'x-frameleaf-via': 'wan', 'x-frameleaf-via-auth': secret };
     expect(readFrameleafArrival(headers, secret).via).toBe('wan');
