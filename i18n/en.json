@@ -10181,6 +10181,7 @@
   "frameleaf_jobs_name_media_health_locate_missing": "Locate a missing file",
   "frameleaf_jobs_name_media_health_scan_corrupt": "Scan for damaged files",
   "frameleaf_jobs_name_media_health_scan_missing": "Scan for missing files",
+  "frameleaf_jobs_name_media_import": "Download media",
   "frameleaf_jobs_name_memory_cleanup": "Clean up old memories",
   "frameleaf_jobs_name_memory_export": "Export a memory",
   "frameleaf_jobs_name_memory_generate": "Generate memories",

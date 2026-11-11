@@ -14,7 +14,12 @@ import type {
   MediaSubscriptionResponseDto,
   MediaSubscriptionUpdateDto,
 } from 'src/dtos/media-import.dto.js';
-import type { MediaImport, MediaImportAuthority, MediaSubscription } from 'src/repositories/media-import.repository.js';
+import type {
+  MediaImport,
+  MediaImportAuthority,
+  MediaImportItem,
+  MediaSubscription,
+} from 'src/repositories/media-import.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { FrameleafWorker, JobName, JobStatus, Permission, QueueName, StorageFolder } from 'src/enum.js';
@@ -77,7 +82,9 @@ export class MediaImportService {
   }
   async list(auth: AuthDto) {
     await this.repository.actor(auth, Permission.MediaImportRead);
-    return { imports: await Promise.all((await this.repository.list(auth.user.id)).map((row) => this.response(row))) };
+    const rows = await this.repository.list(auth.user.id);
+    const items = await this.repository.itemsByImport(rows.map((row) => row.id));
+    return { imports: await Promise.all(rows.map((row) => this.response(row, items.get(row.id) ?? []))) };
   }
   async get(auth: AuthDto, id: string) {
     await this.repository.actor(auth, Permission.MediaImportRead);
@@ -94,8 +101,8 @@ export class MediaImportService {
     await this.queue(row);
     return this.response(row);
   }
-  private async response(row: MediaImport): Promise<MediaImportResponseDto> {
-    const items = (await this.repository.items(row.id)).map((item) => ({
+  private async response(row: MediaImport, loaded?: MediaImportItem[]): Promise<MediaImportResponseDto> {
+    const items = (loaded ?? (await this.repository.items(row.id))).map((item) => ({
       id: item.id,
       provider: item.entry.provider,
       creatorId: item.entry.creatorId,

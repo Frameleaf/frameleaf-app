@@ -67,8 +67,11 @@ export async function up(db: Kysely<any>): Promise<void> {
       RETURN NULL;
     END;
     $body$;
-    CREATE TRIGGER media_import_asset_removed AFTER UPDATE OR DELETE ON asset
+    CREATE TRIGGER media_import_asset_deleted AFTER DELETE ON asset
       FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed();
+    CREATE TRIGGER media_import_asset_trashed AFTER UPDATE OF "deletedAt" ON asset
+      FOR EACH ROW WHEN (OLD."deletedAt" IS NULL AND NEW."deletedAt" IS NOT NULL)
+      EXECUTE FUNCTION media_import_asset_removed();
     CREATE FUNCTION media_import_collection_removed() RETURNS trigger LANGUAGE plpgsql AS $body$
     BEGIN
       UPDATE media_import_item item SET suppression = 'subscription', "updatedAt" = clock_timestamp()
@@ -86,7 +89,8 @@ export async function up(db: Kysely<any>): Promise<void> {
 export async function down(db: Kysely<any>): Promise<void> {
   await sql`
     DROP TRIGGER media_import_collection_removed ON album_asset;
-    DROP TRIGGER media_import_asset_removed ON asset;
+    DROP TRIGGER media_import_asset_trashed ON asset;
+    DROP TRIGGER media_import_asset_deleted ON asset;
     DROP FUNCTION media_import_collection_removed();
     DROP FUNCTION media_import_asset_removed();
     ALTER TABLE asset_source DROP COLUMN provider, DROP COLUMN "creatorId", DROP COLUMN "postId",

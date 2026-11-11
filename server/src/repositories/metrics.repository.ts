@@ -86,9 +86,10 @@ export class MetricsRepository {
       const providers = gauge('media_provider_failed_items', 'Failed media items by extractor provider', ['provider']);
       this.collectors.push(
         refresh(async () => {
-          const values = await read();
-          for (const key of Object.keys(counters) as (keyof typeof counters)[]) counters[key].set(values[key]);
+          const values = await read().catch(() => null);
           providers.reset();
+          if (!values) return;
+          for (const key of Object.keys(counters) as (keyof typeof counters)[]) counters[key].set(values[key]);
           for (const { provider, failures } of values.providers) providers.set({ provider }, failures);
         }, 30_000),
       );

@@ -24,12 +24,14 @@
   const retryKeys = new Map<string, string>();
   const seen = new Set<string>();
   const active = $derived(mediaImportActive(operation.state));
+  // read through a derived value, so a poll result with the same id doesn't restart the poller
+  const operationId = $derived(operation.id);
   const canRetry = $derived(!operation.subscriptionId && mediaImportRetryable(operation.state));
 
   $effect(() => {
     if (active && !pending) {
       return pollMediaImport(
-        operation.id,
+        operationId,
         (value) => {
           operation = value;
           refreshFailed = false;

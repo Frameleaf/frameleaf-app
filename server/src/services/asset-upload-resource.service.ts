@@ -32,6 +32,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaDownloadError } from 'src/repositories/media-downloader.repository.js';
 import { type MediaImportAuthority, MediaImportRepository } from 'src/repositories/media-import.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -269,18 +270,24 @@ export class AssetUploadResourceService {
       deviceId: 'media-import',
       libraryScope: LibraryScope.Design,
     };
-    this.media.canUploadFile({
-      auth,
-      fieldName: UploadFieldName.ASSET_DATA,
-      body: metadata,
-      file: {
-        uuid: id,
-        originalPath: downloaded.path,
-        originalName: downloaded.filename,
-        size: downloaded.size,
-        checksum: Buffer.from(downloaded.sha256, 'hex'),
-      },
-    });
+    try {
+      this.media.canUploadFile({
+        auth,
+        fieldName: UploadFieldName.ASSET_DATA,
+        body: metadata,
+        file: {
+          uuid: id,
+          originalPath: downloaded.path,
+          originalName: downloaded.filename,
+          size: downloaded.size,
+          checksum: Buffer.from(downloaded.sha256, 'hex'),
+        },
+      });
+    } catch (error) {
+      // A file type Library cannot keep (audio-only, for example) fails this item; later items still run.
+      if (error instanceof BadRequestException) throw new MediaDownloadError('unsupported');
+      throw error;
+    }
     let resource = await this.uploads.create(id, user.id, {
       metadata,
       checksum: Buffer.from(downloaded.sha256, 'hex'),

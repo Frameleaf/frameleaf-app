@@ -72,4 +72,19 @@ describe(MetricsRepository.name, () => {
       await media.close();
     }
   });
+  it('keeps the scrape when download health cannot be read', async () => {
+    const media = new MetricsRepository({
+      database: () => ({ reserved: 1, waiting: 0, capacity: 4 }),
+      media: () => Promise.reject(new Error('database unavailable')),
+    });
+    try {
+      const result = await fetch(await media.listen(0, '127.0.0.1'));
+      expect(result.status).toBe(200);
+      const body = await result.text();
+      expect(body).toContain('frameleaf_database_pool_connections{state="capacity"} 4');
+      expect(body).not.toContain('frameleaf_media_provider_failed_items{');
+    } finally {
+      await media.close();
+    }
+  });
 });

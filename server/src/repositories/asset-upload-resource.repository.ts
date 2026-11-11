@@ -209,13 +209,17 @@ export class AssetUploadResourceRepository {
           }
           rows.push(current);
         }
+        // Media import authority locks the owner for update inside this transaction; a shared lock taken
+        // here would be upgraded, and two imports for one owner would then deadlock.
+        const exclusive =
+          ids.length > 1 || hasEditConfiguration(tx) || rows.some((row) => row.metadata.publication === 'media-import');
         const owner = await tx
           .selectFrom('user')
           .select('id')
           .where('id', '=', ownerId)
           .where('deletedAt', 'is', null)
-          .$if(ids.length > 1 || hasEditConfiguration(tx), (qb) => qb.forUpdate())
-          .$if(ids.length === 1 && !hasEditConfiguration(tx), (qb) => qb.forShare())
+          .$if(exclusive, (qb) => qb.forUpdate())
+          .$if(!exclusive, (qb) => qb.forShare())
           .executeTakeFirst();
         if (!owner) {
           throw new NotFoundException('Upload owner unavailable');

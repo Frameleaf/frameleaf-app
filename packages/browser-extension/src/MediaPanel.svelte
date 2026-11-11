@@ -165,7 +165,8 @@
     const reply = await ask({ type: "media-poll", id });
     if (disposed || step !== "inspecting") return;
     if (reply?.operation) show(reply.operation);
-    else if (problem) step = "menu";
+    // any error ends the wait; only a reply that simply hasn't come yet is asked for again
+    else if (problem || error) step = "menu";
     else timer = setTimeout(() => void poll(id), 3000);
   }
   async function inspectPage(next: "page" | "subscribe") {

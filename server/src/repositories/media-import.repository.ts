@@ -195,28 +195,52 @@ export class MediaImportRepository {
     dto: MediaInspectDto,
     authorization: MediaImport['authorization'] = Permission.MediaImportCreate,
   ) {
-    const pending = await this.db
-      .selectFrom('media_import')
-      .select((eb) => eb.fn.countAll<string>().as('count'))
-      .where('ownerId', '=', ownerId)
-      .where('state', 'in', active)
-      .executeTakeFirstOrThrow();
-    if (Number(pending.count) >= 20)
-      throw new ConflictException('Wait for existing inspections and downloads to finish');
-    const connection = dto.connectionId ? await this.connection(ownerId, dto.connectionId) : null;
-    if (connection && connection.status !== 'connected') throw new ConflictException('Refresh this connection first');
-    return this.db
-      .insertInto('media_import')
-      .values({
-        ownerId,
-        apiKeyId: await this.workerKey(ownerId, apiKeyId, this.db),
-        urls: dto.urls,
-        authorization,
-        connectionId: connection?.id ?? null,
-        connectionRevision: connection?.revision ?? null,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    return this.db.transaction().execute(async (tx) => {
+      // The owner row serializes the count with the insert, as assertActor does for create.
+      const owner = await tx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', ownerId)
+        .where('deletedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!owner) throw new NotFoundException('Media import unavailable');
+      const pending = await tx
+        .selectFrom('media_import')
+        .select((eb) => eb.fn.countAll<string>().as('count'))
+        .where('ownerId', '=', ownerId)
+        .where('state', 'in', active)
+        .executeTakeFirstOrThrow();
+      if (Number(pending.count) >= 20)
+        throw new ConflictException('Wait for existing inspections and downloads to finish');
+      const connection = dto.connectionId ? await this.connection(ownerId, dto.connectionId, tx) : null;
+      if (connection && connection.status !== 'connected') throw new ConflictException('Refresh this connection first');
+      return tx
+        .insertInto('media_import')
+        .values({
+          ownerId,
+          apiKeyId: await this.workerKey(ownerId, apiKeyId, tx),
+          urls: dto.urls,
+          authorization,
+          connectionId: connection?.id ?? null,
+          connectionRevision: connection?.revision ?? null,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    });
+  }
+  /** One query for every listed import, so a history page never fans out per row. */
+  async itemsByImport(importIds: string[]) {
+    const grouped = new Map<string, MediaImportItem[]>(importIds.map((id) => [id, []]));
+    if (importIds.length === 0) return grouped;
+    const rows = await this.db
+      .selectFrom('media_import_item')
+      .selectAll()
+      .where('importId', 'in', importIds)
+      .orderBy('id')
+      .execute();
+    for (const row of rows) grouped.get(row.importId)?.push(row);
+    return grouped;
   }
   async get(ownerId: string, id: string, db: Kysely<DB> = this.db) {
     const row = await db

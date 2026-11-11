@@ -122,11 +122,31 @@ int main(int argc, char **argv) {
          setresgid(runner, runner, runner) || setresuid(runner, runner, runner))) {
         return 125;
     }
+    /* Inherited descriptors are bounded by the limit in force before it is lowered. */
+    struct rlimit inherited;
+    if (getrlimit(RLIMIT_NOFILE, &inherited)) {
+        return 125;
+    }
     struct rlimit core = {0, 0};
     struct rlimit files = {256, 256};
     if (!getuid() || !geteuid() || setrlimit(RLIMIT_CORE, &core) ||
-        setrlimit(RLIMIT_NOFILE, &files) || !safe_stdio() ||
-        syscall(SYS_close_range, 3U, ~0U, 0U) || lock_network()) {
+        setrlimit(RLIMIT_NOFILE, &files) || !safe_stdio()) {
+        return 125;
+    }
+    if (syscall(SYS_close_range, 3U, ~0U, 0U)) {
+        /* Kernels before 5.9 lack close_range; older container profiles refuse it. */
+        if (errno != ENOSYS && errno != EPERM) {
+            return 125;
+        }
+        /* 1048576 is the kernel's default per-process descriptor ceiling (fs.nr_open). */
+        rlim_t limit = inherited.rlim_max == RLIM_INFINITY || inherited.rlim_max > 1048576
+                           ? 1048576
+                           : inherited.rlim_max;
+        for (rlim_t fd = 3; fd < limit; fd++) {
+            close((int)fd);
+        }
+    }
+    if (lock_network()) {
         return 125;
     }
 

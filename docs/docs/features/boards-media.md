@@ -28,7 +28,7 @@ Connect only the site you want Library to access. Save to Frameleaf requests coo
 
 Refresh access when a session expires. Disconnect removes the retained credentials and stops dependent work. Signing out of the browser extension leaves already accepted Library downloads and subscriptions running. Account disablement, subscription pause and destination permission changes are still enforced.
 
-Site access is transferred over HTTPS. A Library address using a generated self-signed certificate can be used after Chrome trusts that certificate. **Open Library to trust its certificate**, then retry the extension request. If the browser exception does not apply to extension requests, import and trust the certificate for that Library address using Chrome's certificate manager or your operating system's trust settings, then retry. Saving a preference does not disable certificate verification.
+Site access is transferred over HTTPS. A Library address using a generated self-signed certificate can be used after Chrome trusts that certificate. Choose **Open Library**, accept the certificate in the browser, then choose **Retry** in the extension. If the browser exception does not apply to extension requests, import and trust the certificate for that Library address using Chrome's certificate manager or your operating system's trust settings, then retry. Saving a preference does not disable certificate verification.
 
 Partitioned cookies are not converted into unrestricted cookies. If a connection depends on them, use a supported provider authorization method. The extension does not copy your browser profile or put site credentials in its persistent capture queue.
 

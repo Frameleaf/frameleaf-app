@@ -1,4 +1,4 @@
-import { ConflictException, HttpException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import express from 'express';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
@@ -12,6 +12,7 @@ import type { AssetUploadResource } from 'src/repositories/asset-upload-resource
 import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
+import { MediaDownloadError } from 'src/repositories/media-downloader.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { writeAssetUploadPart } from 'src/utils/asset-upload-resource.js';
@@ -1087,5 +1088,57 @@ describe('iCloud source identity on resumable uploads (FL-296)', () => {
     await internals.recordSourceIdentity('owner', { ...row, metadata: { ...row.metadata, sourceIdentity: undefined } });
     await internals.recordSourceIdentity('owner', { ...row, resultAssetId: null });
     expect(identities.recordDevice).not.toHaveBeenCalled();
+  });
+});
+
+describe('media import file admission (FL-1427)', () => {
+  const setup = (refusal: Error) => {
+    vi.spyOn(StorageCore, 'getBaseFolder').mockReturnValue(tmpdir());
+    const uploads = { create: vi.fn() };
+    const media = {
+      canUploadFile: vi.fn(() => {
+        throw refusal;
+      }),
+    };
+    const mediaImports = {
+      assertAuthority: vi.fn().mockResolvedValue({ user: { id: 'owner' } }),
+      uploadId: vi.fn().mockResolvedValue(randomUUID()),
+    };
+    const service = new AssetUploadResourceService(
+      uploads as never,
+      media as never,
+      {} as never,
+      {} as never,
+      { checkDiskUsage: vi.fn().mockResolvedValue({ available: 1024 }) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      mediaImports as never,
+    );
+    const run = () =>
+      service.importMedia(
+        { itemId: randomUUID() } as never,
+        { filename: 'track.m4a', path: '/private/track.m4a', size: 4, sha256: 'ab'.repeat(32), entry: {} } as never,
+        new Date(),
+      );
+    return { run, uploads };
+  };
+  afterEach(() => vi.restoreAllMocks());
+
+  it('fails only the item when Library cannot keep its file type', async () => {
+    const { run, uploads } = setup(new BadRequestException('Unsupported file type track.m4a'));
+    const error = await run().catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(MediaDownloadError);
+    expect((error as MediaDownloadError).code).toBe('unsupported');
+    expect(uploads.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps other upload refusals as they are', async () => {
+    const { run, uploads } = setup(new ForbiddenException('New uploads are paused for this account'));
+    await expect(run()).rejects.toBeInstanceOf(ForbiddenException);
+    expect(uploads.create).not.toHaveBeenCalled();
   });
 });

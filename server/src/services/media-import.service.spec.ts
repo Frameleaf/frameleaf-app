@@ -182,3 +182,43 @@ it('stops a running extractor when its durable authority is revoked', async () =
     vi.useRealTimers();
   }
 });
+
+it('lists imports with one item query for the whole page', async () => {
+  const repository = automock(MediaImportRepository, { args: [{}, {}] });
+  const service = new MediaImportService(
+    repository,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  const rows = [randomUUID(), randomUUID()].map(
+    (id) =>
+      ({
+        id,
+        ownerId: authStub.user1.user.id,
+        state: 'ready',
+        albumId: null,
+        subscriptionId: null,
+        connectionId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        error: null,
+        inspection,
+      }) as unknown as MediaImport,
+  );
+  const item = (state: string) => ({ id: randomUUID(), entry, state, assetId: null, error: null, bytes: 0 }) as never;
+  repository.actor.mockResolvedValue(undefined);
+  repository.list.mockResolvedValue(rows);
+  repository.itemsByImport.mockResolvedValue(new Map([[rows[0].id, [item('saved'), item('failed')]]]));
+  const { imports } = await service.list(authStub.user1);
+  expect(repository.itemsByImport).toHaveBeenCalledExactlyOnceWith(rows.map((row) => row.id));
+  expect(repository.items).not.toHaveBeenCalled();
+  expect(imports.map(({ id, discovered, saved, failed }) => ({ id, discovered, saved, failed }))).toEqual([
+    { id: rows[0].id, discovered: 2, saved: 1, failed: 1 },
+    { id: rows[1].id, discovered: 0, saved: 0, failed: 0 },
+  ]);
+  expect(imports[0].items).toHaveLength(2);
+});
