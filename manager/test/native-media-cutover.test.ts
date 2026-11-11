@@ -9,6 +9,7 @@ import {
   runNativeMediaCutover,
   completeNativeMediaCutover,
   nativeActiveMediaIdentity,
+  nativeMediaMoveAdmission,
   type NativeMediaMoveAuthority,
 } from '../src/runtime/native-media-cutover.js';
 import { NativeHost, NativeInstallationSchema, NativeOperations } from '../src/runtime/native.js';
@@ -264,5 +265,68 @@ test('recovery keeps the operation lock until exact relocated readiness and reta
     assert.equal(starts, 3);
     assert.equal(f.calls(), 1);
     assert.equal(nativeActiveMediaIdentity(f.store, f.installation), exact);
+  });
+});
+
+
+test('candidate admission needs verified backup readback and exact explicit confirmation', async () => {
+  await fixture('target', async (f) => {
+    f.operation.state = 'complete';
+    f.store.save(f.operation);
+    const backup = f.store.start('backup', 'safety', { ...f.owner.identity }).operation;
+    const recovery = {
+      schemaVersion: 1, runtime: 'native', mediaIncluded: false,
+      databaseFormat: 'frameleaf-canonical', libraryId: f.selection.binding.libraryId,
+      createdAt: Date.now(),
+      installation: { id: f.installation.id, name: 'Fixture', release: 'frameleaf-v3.0.0-1' },
+      checkpoint: {
+        protocolVersion: 1, state: 'checkpoint', schemaVersion: 1,
+        operationId: backup.id, manifestSha256: f.installation.manifestSha256,
+        sourceRevision: f.installation.sourceRevision, postgresMajor: '19',
+        databaseFormat: 'frameleaf-canonical', dump: { bytes: 12, sha256: 'b'.repeat(64) },
+      },
+    };
+    let nativeReview = true;
+    let inspections = 0;
+    const admission = nativeMediaMoveAdmission(
+      f.store,
+      {
+        ...f.owner,
+        inspectAdmission: async (request, reviewed) => {
+          assert.equal(reviewed.recoverySha256, digest(recovery));
+          assert.equal(reviewed.checkpoint.operationId, backup.id);
+          assert.equal('state' in reviewed.checkpoint, false);
+          inspections++;
+          return { ...request, state: 'selected-fenced', writerFence: nativeReview ? 'held' : 'released' };
+        },
+      },
+      f.installation,
+      f.selection.binding.libraryId,
+      (key, input) => f.store.start('move-library', key, input).operation,
+    );
+    const reviewId = randomUUID();
+    const input = { binding: f.selection.binding, backupOperationId: backup.id, decision: 'target' as const };
+    await assert.rejects(admission.review(input, reviewId), /native_media_backup_unverified/);
+    assert.equal(inspections, 0);
+    backup.receipts['native-backup-verified'] = { snapshotId: 'a'.repeat(64), recovery };
+    backup.completed.push('native-backup-verified', 'native-backup-owner-cleaned');
+    backup.state = 'complete';
+    f.store.save(backup);
+    const review = await admission.review(input, reviewId);
+    assert.equal(f.store.locked(), null);
+    const key = randomUUID();
+    await assert.rejects(
+      admission.confirm({ reviewId, reviewSha256: '0'.repeat(64), key }),
+      /native_media_review_changed/,
+    );
+    nativeReview = false;
+    const confirmation = { reviewId, reviewSha256: review.reviewSha256, key };
+    await assert.rejects(admission.confirm(confirmation), /native_media_cutover_unconfirmed/);
+    assert.equal(f.store.locked(), null);
+    nativeReview = true;
+    const admitted = await admission.confirm(confirmation);
+    assert.equal(f.store.locked()?.id, admitted.id);
+    assert.deepEqual(await admission.confirm(confirmation), admitted);
+    assert.equal(inspections, 3);
   });
 });

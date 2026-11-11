@@ -7,7 +7,8 @@ import { Store } from '../store.js';
 import type {
   FencedSelection,
   MoveRequest,
-  NativeMediaMoveAuthority,
+  NativeMediaAdmissionAuthority,
+  ReviewedMediaBackup,
 } from './native-media-cutover.js';
 import {
   NativeRestoreInputBinding,
@@ -301,9 +302,11 @@ export class NativeHost implements NativeRuntime {
       this.activeMediaIdentity(),
     ) as Promise<Ready>;
   }
-  mediaMoveAuthority(): NativeMediaMoveAuthority {
+  mediaMoveAuthority(): NativeMediaAdmissionAuthority {
     return {
       identity: this.identity,
+      inspectAdmission: (request, backup) =>
+        this.mediaMoveRequest(request, undefined, undefined, backup),
       inspect: (request, signal) =>
         this.mediaMoveRequest(request, undefined, signal),
       apply: (selection: FencedSelection, decision, signal) => {
@@ -320,6 +323,7 @@ export class NativeHost implements NativeRuntime {
     request: MoveRequest,
     decision: 'target' | 'original' | undefined,
     signal?: AbortSignal,
+    reviewedBackup?: ReviewedMediaBackup,
   ): Promise<unknown> {
     const { id, secureInstallationId, candidate, state, manifestSha256 } =
       this.installation;
@@ -338,6 +342,7 @@ export class NativeHost implements NativeRuntime {
         manifestSha256,
         request,
         decision,
+        reviewedBackup,
       },
       signal,
     );
@@ -1162,6 +1167,12 @@ export class NativeOperations {
     const { operation, created } = this.store.start(kind, key, {
       ...this.runtime.identity,
     });
+    if (created) this.launch(operation);
+    return operation;
+  }
+  admitMediaMove(key: string, input: Record<string, unknown>): Operation {
+    if (!this.mediaMoveWork) throw new Refusal('native_action_unavailable');
+    const { operation, created } = this.store.start('move-library', key, input);
     if (created) this.launch(operation);
     return operation;
   }

@@ -4,10 +4,12 @@ import { digest, Refusal, type Operation } from '../contracts.js';
 import type { Store } from '../store.js';
 import {
   NativeInstallationSchema,
+  NativeCheckpointSchema,
   SecureInstallationIdSchema,
   type NativeInstallation,
   type NativeRuntime,
 } from './native.js';
+import { NativeRecovery } from './native-recovery.js';
 
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 const libraryId = z.string().regex(/^[a-f0-9]{12}$/);
@@ -41,6 +43,125 @@ const MoveInput = z.strictObject({
   binding: NativeMediaMoveBinding,
   decision: z.enum(['target', 'original']),
 });
+
+export const MediaMoveReviewRequest = z.strictObject({
+  binding: NativeMediaMoveBinding,
+  backupOperationId: operationId,
+  decision: z.enum(['target', 'original']),
+});
+
+export const MediaMoveConfirmRequest = z.strictObject({
+  reviewId: operationId,
+  reviewSha256: sha256,
+  key: operationId,
+});
+
+export const ReviewedMediaBackup = z.strictObject({
+  snapshotId: sha256,
+  recoverySha256: sha256,
+  checkpoint: NativeCheckpointSchema.omit({ protocolVersion: true, state: true }),
+});
+
+const MediaMoveReview = MediaMoveReviewRequest.extend({
+  reviewId: operationId,
+  expiresAt: z.number().int().positive(),
+  safety: ReviewedMediaBackup,
+});
+
+export type ReviewedMediaBackup = z.infer<typeof ReviewedMediaBackup>;
+
+export interface NativeMediaAdmissionAuthority extends NativeMediaMoveAuthority {
+  inspectAdmission(request: MoveRequest, backup: ReviewedMediaBackup): Promise<unknown>;
+}
+
+export function nativeMediaMoveAdmission(
+  store: Store,
+  owner: NativeMediaAdmissionAuthority,
+  installation: NativeInstallation,
+  library: string,
+  admit: (key: string, input: z.infer<typeof MoveInput>) => Operation,
+) {
+  const reviewKey = (id: string) => `native-media-move-review:${id}`;
+
+  function verifyBackup(backupId: string) {
+    const operation = store.history().find(({ id }) => id === backupId);
+    const verified = z.strictObject({ snapshotId: sha256, recovery: NativeRecovery })
+      .safeParse(operation?.receipts['native-backup-verified']);
+    if (
+      operation?.kind !== 'backup' ||
+      operation.state !== 'complete' ||
+      !isDeepStrictEqual(operation.input, owner.identity) ||
+      !operation.completed.includes('native-backup-verified') ||
+      !operation.completed.includes('native-backup-owner-cleaned') ||
+      !verified.success
+    )
+      throw new Refusal('native_media_backup_unverified');
+    const { snapshotId, recovery } = verified.data;
+    if (
+      recovery.libraryId !== library ||
+      recovery.installation.id !== installation.id ||
+      recovery.checkpoint.operationId !== operation.id ||
+      recovery.checkpoint.manifestSha256 !== installation.manifestSha256 ||
+      recovery.checkpoint.sourceRevision !== installation.sourceRevision
+    )
+      throw new Refusal('native_media_backup_unverified');
+    return {
+      snapshotId,
+      recoverySha256: digest(recovery),
+      checkpoint: ReviewedMediaBackup.shape.checkpoint.parse(
+        Object.fromEntries(Object.entries(recovery.checkpoint)
+          .filter(([name]) => name !== 'protocolVersion' && name !== 'state')),
+      ),
+    };
+  }
+
+  async function check(review: z.infer<typeof MediaMoveReview>) {
+    if (
+      review.expiresAt <= Date.now() ||
+      review.binding.libraryId !== library ||
+      review.binding.secureInstallationId !== installation.secureInstallationId ||
+      review.binding.manifestSha256 !== installation.manifestSha256 ||
+      !isDeepStrictEqual(verifyBackup(review.backupOperationId), review.safety)
+    )
+      throw new Refusal('native_media_review_changed');
+    const request = {
+      protocolVersion: 1 as const,
+      operationId: review.reviewId,
+      binding: review.binding,
+    };
+    const selected = FencedSelection.safeParse(await owner.inspectAdmission(request, review.safety));
+    if (
+      !selected.success ||
+      selected.data.operationId !== request.operationId ||
+      !isDeepStrictEqual(selected.data.binding, request.binding)
+    )
+      throw new Refusal('native_media_cutover_unconfirmed');
+  }
+
+  return {
+    async review(input: z.infer<typeof MediaMoveReviewRequest>, reviewId: string) {
+      const safety = verifyBackup(input.backupOperationId);
+      const review = MediaMoveReview.parse({
+        ...input, reviewId, safety, expiresAt: Date.now() + 10 * 60_000,
+      });
+      await check(review);
+      if (!store.createOnce(reviewKey(reviewId), review)) throw invalid();
+      return { reviewId, reviewSha256: digest(review), decision: review.decision, expiresAt: review.expiresAt };
+    },
+    async confirm({ reviewId, reviewSha256, key }: z.infer<typeof MediaMoveConfirmRequest>) {
+      const review = MediaMoveReview.safeParse(store.get(reviewKey(reviewId)));
+      if (!review.success || review.data.reviewId !== reviewId || digest(review.data) !== reviewSha256)
+        throw new Refusal('native_media_review_changed');
+      const input = { ...owner.identity, binding: review.data.binding, decision: review.data.decision };
+      const prior = store.request('move-library', key, input);
+      if (prior) return prior;
+      await check(review.data);
+      if (review.data.expiresAt <= Date.now())
+        throw new Refusal('native_media_review_changed');
+      return admit(key, input);
+    },
+  };
+}
 
 const MoveRequest = z.strictObject({
   protocolVersion: z.literal(1),

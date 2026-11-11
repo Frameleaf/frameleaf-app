@@ -8,6 +8,8 @@ import { Store } from './store.js';
 import type { NativeService } from './runtime/native-service.js';
 
 import { NativeUpdateApprovalRequest } from './runtime/native-update-approval.js';
+import { MediaMoveConfirmRequest, MediaMoveReviewRequest } from './runtime/native-media-cutover.js';
+import { randomUUID } from 'node:crypto';
 const NATIVE = '/manager-api/desktop/';
 const BROWSER = '/manager-api/desktop-grants';
 const nativePaths = new Set(
@@ -50,9 +52,15 @@ export function desktopApi(
     | 'restoreReview'
     | 'restore'
     | 'approveUpdate'
+    | 'mediaMove'
   >,
 ) {
   const router = express.Router({ caseSensitive: true, strict: true });
+  const mediaPaths = new Set(
+    recovery?.mediaMove
+      ? ['review-media-move', 'confirm-media-move', 'media-move-operation', 'resume-media-move'].map((name) => NATIVE + name)
+      : [],
+  );
   const bodies = new WeakMap<Request, Buffer>();
   const json = express.json({
     limit: '16kb',
@@ -75,7 +83,7 @@ export function desktopApi(
     try {
       if (request.baseUrl || request.originalUrl !== request.path)
         throw new Refusal('desktop_request_invalid', 400);
-      if (!(native ? nativePaths : browserPaths).has(request.path))
+      if (!(native ? nativePaths : browserPaths).has(request.path) && !mediaPaths.has(request.path))
         throw new Refusal('desktop_route_unavailable', 404);
       const method = request.path === BROWSER ? 'GET' : 'POST';
       if (request.method !== method)
@@ -311,6 +319,34 @@ export function desktopApi(
       throw new Refusal('desktop_operation_not_authorized', 403);
     response.json({ id: operations.resume(value.id).id });
   });
+  const mediaMove = recovery?.mediaMove;
+  if (mediaMove) {
+    const authorizedMove = (request: Request) => {
+      const { id } = Id.parse(request.body);
+      const current = authorize(request, 'move-library');
+      const found = store.history().find((value) => value.id === id);
+      if (!found || found.kind !== 'move-library' || found.input.runtime !== 'native' ||
+        found.input.installationId !== current.id)
+        throw new Refusal('desktop_operation_not_authorized', 403);
+      return found;
+    };
+    router.post(NATIVE + 'review-media-move', async (request, response) => {
+      authorize(request, 'move-library');
+      response.json(await mediaMove.review(MediaMoveReviewRequest.parse(request.body), randomUUID()));
+    });
+    router.post(NATIVE + 'confirm-media-move', async (request, response) => {
+      authorize(request, 'move-library');
+      const operation = await mediaMove.confirm(MediaMoveConfirmRequest.parse(request.body));
+      response.json({ id: operation.id });
+    });
+    router.post(NATIVE + 'media-move-operation', (request, response) => {
+      response.json(publicOperation(authorizedMove(request)));
+    });
+    router.post(NATIVE + 'resume-media-move', (request, response) => {
+      const operation = authorizedMove(request);
+      response.json({ id: operations.resume(operation.id).id });
+    });
+  }
   const errors: ErrorRequestHandler = (
     error: unknown,
     _request,

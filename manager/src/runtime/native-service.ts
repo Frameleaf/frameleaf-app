@@ -21,6 +21,7 @@ import { runNativeRestore } from './native-restore-operation.js';
 import {
   completeNativeMediaCutover,
   nativeActiveMediaIdentity,
+  nativeMediaMoveAdmission,
 } from './native-media-cutover.js';
 import {
   prepareNativeRestoreReview,
@@ -108,9 +109,15 @@ const Bootstrap = Configuration.extend({
     .max(256)
     .regex(/^[^\r\n\0]+$/),
   installationTransition: Transition.optional(),
+  // Only the installed qualification supervisor may opt in through bootstrap.
+  mediaMoveQualification: z.strictObject({
+    manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).optional(),
 })
   .strict()
-  .refine((value) => value.backupKey !== value.password);
+  .refine((value) => value.backupKey !== value.password)
+  .refine((value) => !value.mediaMoveQualification ||
+    value.mediaMoveQualification.manifestSha256 === value.installation.manifestSha256);
 export type NativeBootstrap = z.infer<typeof Bootstrap>;
 
 /** One private inherited pipe from the desktop supervisor; never HTTP, argv, env or a state file. */
@@ -467,6 +474,7 @@ export class NativeService {
   private readonly updateApproval: (
     input: unknown,
   ) => ReturnType<typeof approveNativeUpdate>;
+  readonly mediaMove?: ReturnType<typeof nativeMediaMoveAdmission>;
   private reviewPending = false;
   private activeReview?: string;
   readonly runtime: NativeRuntime;
@@ -496,6 +504,7 @@ export class NativeService {
       backupKey,
       tls,
       installationTransition,
+      mediaMoveQualification,
       ...configuration
     } = bootstrap;
     this.backupPassword = async () => backupKey;
@@ -584,6 +593,12 @@ export class NativeService {
             )
         : undefined,
     );
+    if (mediaOwner && mediaMoveQualification) {
+      this.mediaMove = nativeMediaMoveAdmission(
+        store, mediaOwner, context.installation, libraryId,
+        (key, input) => this.lifecycle.admitMediaMove(key, input),
+      );
+    }
     this.publicInstallation = Object.freeze({
       id: bootstrap.installation.id,
       name: bootstrap.name,
