@@ -1,6 +1,5 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, type CallToolResult, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import {
   BadRequestException,
   HttpException,
@@ -13,6 +12,7 @@ import z from 'zod';
 import type { AlbumResponseDto } from 'src/dtos/album.dto.js';
 import type { AssetResponseDto, SanitizedAssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { OAuthAppScope } from 'src/utils/oauth-apps.js';
 import { assistantSettings } from 'src/dtos/config.dto.js';
 import { SearchFacetField } from 'src/dtos/search.dto.js';
 import { AssetVisibility, Permission } from 'src/enum.js';
@@ -27,7 +27,6 @@ import { TagService } from 'src/services/tag.service.js';
 import { isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
-import type { OAuthAppScope } from 'src/utils/oauth-apps.js';
 
 const MAX_RESULTS = 100;
 const visibleFilter = {
@@ -184,7 +183,10 @@ export class McpService extends BaseService {
                   size: limit,
                   filter: { ...visibleFilter, text: { contains: query } },
                 });
-          return results.assets.items.filter(visibleAsset).slice(0, limit).map(assetSummary);
+          return results.assets.items
+            .filter(visibleAsset)
+            .slice(0, limit)
+            .map((asset) => assetSummary(asset));
         },
       ),
       get_asset: tool(
@@ -231,7 +233,7 @@ export class McpService extends BaseService {
         'library:read',
         z.strictObject({ limit: limitSchema }),
         async ({ limit = MAX_RESULTS }) =>
-          (await this.albums.getAll(auth, { take: limit })).slice(0, limit).map(albumSummary),
+          (await this.albums.getAll(auth, { take: limit })).slice(0, limit).map((album) => albumSummary(album)),
       ),
       get_album: tool(
         'Read an album and list its visible photos and videos.',
@@ -246,7 +248,10 @@ export class McpService extends BaseService {
           });
           return {
             ...albumSummary(album),
-            assets: assets.items.filter(visibleAsset).slice(0, limit).map(assetSummary),
+            assets: assets.items
+              .filter(visibleAsset)
+              .slice(0, limit)
+              .map((asset) => assetSummary(asset)),
           };
         },
       ),

@@ -77,13 +77,13 @@ import { LockedEncryptionController } from 'src/controllers/locked-encryption.co
 import { MailConnectionController } from 'src/controllers/mail-connection.controller.js';
 import { MaintenanceController } from 'src/controllers/maintenance.controller.js';
 import { MapController } from 'src/controllers/map.controller.js';
+import { McpController } from 'src/controllers/mcp.controller.js';
 import { MediaHealthController } from 'src/controllers/media-health.controller.js';
 import { MediaOperationController } from 'src/controllers/media-operation.controller.js';
 import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
-import { McpController } from 'src/controllers/mcp.controller.js';
 import {
   OAuthAppAdminController,
   OAuthAppController,

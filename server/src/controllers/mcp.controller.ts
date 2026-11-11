@@ -144,7 +144,7 @@ export class McpController {
 
   private async requireEnabled() {
     const { connectedApps } = await this.apps.getConfig({ withCache: true });
-    if (!connectedApps.allowMcp) {
+    if (connectedApps.allowMcp === false) {
       throw new NotFoundException();
     }
   }

@@ -1,9 +1,9 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { SearchFacetField } from 'src/dtos/search.dto.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { McpService } from 'src/services/mcp.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -25,7 +25,7 @@ describe(McpService.name, () => {
   const getAlbum = vi.fn();
   const searchMetadata = vi.fn();
   const searchFacets = vi.fn();
-  const previewUrl = vi.fn(async (id: string) => `https://example.test/preview/${id}`);
+  const previewUrl = vi.fn((id: string) => Promise.resolve(`https://example.test/preview/${id}`));
   const connect = async (...scopes: string[]) => {
     const auth: AuthDto = {
       user: authStub.admin.user,

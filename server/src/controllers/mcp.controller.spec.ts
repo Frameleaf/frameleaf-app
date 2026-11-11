@@ -2,11 +2,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { HttpException, UnauthorizedException } from '@nestjs/common';
-import express, { type NextFunction, type Request, type Response } from 'express';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import express, { type NextFunction, type Request, type Response, json } from 'express';
+import { type Server, createServer } from 'node:http';
 import request from 'supertest';
 import z from 'zod';
+import type { AddressInfo } from 'node:net';
 import { McpController } from 'src/controllers/mcp.controller.js';
 
 describe('MCP HTTP transport', () => {
@@ -55,7 +55,7 @@ describe('MCP HTTP transport', () => {
       .send(body);
 
   beforeAll(async () => {
-    app.use(express.json());
+    app.use(json());
     app.post('/api/mcp', (req, res, next) => {
       void controller.handle(req, res, req.body).catch(next);
     });
