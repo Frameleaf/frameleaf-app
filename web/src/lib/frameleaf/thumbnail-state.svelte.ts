@@ -34,6 +34,8 @@ class ThumbnailFailures {
   #reading = false;
   #watchers = 0;
   #timer: ReturnType<typeof setInterval> | undefined;
+  /** Whether the session the list was read for is still the one signed in; an account can change without a sign-out. */
+  #isCurrent: () => boolean = () => true;
 
   constructor() {
     // The list belongs to the account that read it: the next one to sign in starts from nothing.
@@ -63,13 +65,27 @@ class ThumbnailFailures {
     };
   }
 
+  /** The photo is on the list this session read. */
+  has(id: string) {
+    return this.#isCurrent() && this.ids.has(id);
+  }
+
   /** A tile's thumbnail did not load: read the list unless it was read in the last minute. */
   check(now = Date.now()) {
     // A shared link's visitor may not read the list; their tiles stay "getting ready".
-    if (this.#reading || now - this.#readAt < REFRESH_MS || !authManager.authenticated || authManager.isSharedLink) {
+    if (!authManager.authenticated || authManager.isSharedLink) {
+      return;
+    }
+    if (!this.#isCurrent()) {
+      // Another account's list: forget it, and read this account's now.
+      this.ids.clear();
+      this.#readAt = 0;
+    }
+    if (this.#reading || now - this.#readAt < REFRESH_MS) {
       return;
     }
     this.#reading = true;
+    this.#isCurrent = authManager.captureSession({ reactive: true });
     void this.#read()
       .catch(() => false)
       .then((read) => {
@@ -121,7 +137,7 @@ export const thumbnailFailures = new ThumbnailFailures();
 
 /** The photo's thumbnail will not come by itself: its file is missing, or making it failed or was stopped. */
 export const cantShowPhoto = (asset: { id: string; isOffline?: boolean }) =>
-  !!asset.isOffline || thumbnailFailures.ids.has(asset.id);
+  !!asset.isOffline || thumbnailFailures.has(asset.id);
 
 /** Still waiting for its thumbnail: no picture yet, and nothing says it can't be made. */
 export const isGettingReady = (asset: { id: string; thumbhash: string | null; isOffline?: boolean }) =>

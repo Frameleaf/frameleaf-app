@@ -94,6 +94,22 @@ describe('a photo with no thumbnail yet (FL-1409)', () => {
     expect(cantShowPhoto(photo)).toBe(false);
   });
 
+  it('forgets one account’s list when another takes over without a sign-out', async () => {
+    sdkMock.getProcessingFailures.mockResolvedValueOnce([{ assetId: 'photo-1' }] as never).mockResolvedValue([]);
+    thumbnailFailures.check(Date.now() + 1_200_000);
+    await vi.waitFor(() => expect(cantShowPhoto(photo)).toBe(true));
+
+    // `setUser` with another account moves the session on; no AuthLogout is emitted.
+    authManager.setUser({ id: 'another-account' } as never);
+    expect(cantShowPhoto(photo)).toBe(false);
+    // The next tile to ask reads the new account's list at once, not a minute later.
+    await vi.waitFor(() => {
+      thumbnailFailures.check();
+      expect(sdkMock.getProcessingFailures).toHaveBeenCalledTimes(2);
+    });
+    expect(thumbnailFailures.ids.size).toBe(0);
+  });
+
   it('never asks for the list on a shared link', () => {
     vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
     thumbnailFailures.check(Date.now() + 360_000);
