@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { albumLibraryFixture } from './album-library-fixture';
-  // eslint-disable-next-line no-useless-assignment
   let {
+    // eslint-disable-next-line no-useless-assignment
     timelineManager = $bindable(),
     children,
     empty,
