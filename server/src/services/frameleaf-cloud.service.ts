@@ -38,6 +38,7 @@ import {
   FrameleafSetupLinkResponseDto,
 } from 'src/dtos/frameleaf-server-setup.dto.js';
 import { readBuddyRecovery } from 'src/edge/buddy-recovery.js';
+import { emailText } from 'src/emails/components/email-locale.js';
 import {
   AdminAuditAction,
   DatabaseLock,
@@ -51,9 +52,7 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { emailText } from 'src/emails/components/email-locale.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
-import { localeOf } from 'src/utils/preferences.js';
 import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
@@ -139,6 +138,7 @@ import {
 } from 'src/utils/frameleaf-remote-access.js';
 import { type SetupClient, setupRefusal, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { localeOf } from 'src/utils/preferences.js';
 
 /** FL-292: the single-use link token the Frameleaf app hands a new server (as FRAMELEAF_LINK_TOKEN takes). */
 /** FL-708: the only hosts a password link may reach over plain HTTP (a cloud on this machine, in tests). */

@@ -1,8 +1,8 @@
 import { toPlainText } from '@react-email/render';
 import * as React from 'react';
-import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import { Img, Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import { invitationFirstLine } from 'src/emails/components/first-line.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { AlbumInviteEmailProps } from 'src/repositories/email.repository.js';

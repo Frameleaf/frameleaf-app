@@ -16,6 +16,7 @@ import {
   mapNotification,
   mapNotificationSummary,
 } from 'src/dtos/notification.dto.js';
+import { type EmailMessageKey, emailLocale, emailText } from 'src/emails/components/email-locale.js';
 import {
   AlbumKind,
   AssetFileType,
@@ -45,7 +46,6 @@ import {
   renderSystemNotification,
 } from 'src/utils/notification-locale.js';
 import { isEqualObject } from 'src/utils/object.js';
-import { type EmailMessageKey, emailLocale, emailText } from 'src/emails/components/email-locale.js';
 import { getPreferences, localeOf } from 'src/utils/preferences.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
 

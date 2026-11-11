@@ -13,9 +13,9 @@ import {
   Text,
   pixelBasedPreset,
 } from 'react-email';
+import { EmailLocaleContext } from 'src/emails/components/email-locale.js';
 import { ImmichFooter } from 'src/emails/components/footer.template.js';
 import { getFrameleafEmailLogoUrl } from 'src/emails/components/frameleaf-logo.js';
-import { EmailLocaleContext } from 'src/emails/components/email-locale.js';
 
 interface ImmichLayoutProps {
   children: React.ReactNode;

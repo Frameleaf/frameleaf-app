@@ -26,6 +26,7 @@
   import { maintenanceShouldRedirect } from '$lib/utils/maintenance';
   import { installFrameleafKit } from '$lib/frameleaf/kit-bridge';
   import { heroNavigation, installHeroIntent, sectionCrossfade } from '$lib/frameleaf/motion';
+  import { adoptNotificationLanguage } from '$lib/frameleaf/notification-language';
   import { installSearchShortcuts } from '$lib/frameleaf/search-shortcuts';
   import { applyThemeColor } from '$lib/frameleaf/theme-color';
   import { viewerZoomTransition } from '$lib/frameleaf/viewer-zoom';
@@ -192,6 +193,13 @@
   // Settings waits for its settings before it draws: its shape shows meanwhile (approved design, 2026-11-04).
   const SETTINGS_ROUTE = '/(user)/user-settings';
   const openingSettings = $derived(navigating.to?.route.id === SETTINGS_ROUTE && page.route.id !== SETTINGS_ROUTE);
+
+  // FL-1437: an account that never chose a language for its emails takes the one the app is shown in
+  $effect(() => {
+    if (authManager.authenticated) {
+      void adoptNotificationLanguage($lang);
+    }
+  });
 
   onMount(() => {
     const element = document.querySelector('#stencil');

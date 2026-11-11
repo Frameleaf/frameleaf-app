@@ -249,6 +249,8 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'emailNotifications.newSignIn': { label: 'frameleaf_notify_yours_new_sign_in' },
   'avatar.color': { label: 'frameleaf_prefs_colour' },
   'purchase.showSupportBadge': { label: 'frameleaf_words_support_badge' },
+  // FL-1437: the language picker saves the account's language for notifications and emails
+  'notifications.locale': { label: 'frameleaf_prefs_look_language' },
 });
 
 /** The page a personal preference lives on, by the first part of its path. */
@@ -256,6 +258,7 @@ const PREFERENCE_PAGES: Record<string, { area: SettingsAreaId; section: string }
   albums: { area: 'preferences', section: 'app-settings' },
   download: { area: 'preferences', section: 'download-settings' },
   emailNotifications: { area: 'notifications', section: 'email-preferences' },
+  notifications: { area: 'preferences', section: 'app-settings' },
   avatar: { area: 'preferences', section: 'account' },
   purchase: { area: 'preferences', section: 'user-purchase-settings' },
   cast: { area: 'preferences', section: 'feature' },

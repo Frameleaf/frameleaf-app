@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import { Link, Row, Text } from 'react-email';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { TestEmailProps } from 'src/repositories/email.repository.js';
 

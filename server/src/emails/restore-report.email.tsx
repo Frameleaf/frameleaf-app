@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { useEmailText } from 'src/emails/components/email-locale.js';
 import { Section, Text } from 'react-email';
 import type { RestoreReportEmailProps } from 'src/repositories/email.repository.js';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { useEmailText } from 'src/emails/components/email-locale.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 
 /**

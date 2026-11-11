@@ -25,6 +25,7 @@ import {
   UserAdminUpdateDto,
   mapUserAdmin,
 } from 'src/dtos/user.dto.js';
+import { emailText } from 'src/emails/components/email-locale.js';
 import {
   AccountEventAction,
   AdminAuditAction,
@@ -33,7 +34,6 @@ import {
   UserMetadataKey,
   UserStatus,
 } from 'src/enum.js';
-import { emailText } from 'src/emails/components/email-locale.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';

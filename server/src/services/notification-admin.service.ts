@@ -2,10 +2,9 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SystemConfigSmtpDto } from 'src/dtos/config.dto.js';
 import { NotificationCreateDto, mapNotification } from 'src/dtos/notification.dto.js';
-import { NotificationLevel, NotificationType } from 'src/enum.js';
 import { emailText } from 'src/emails/components/email-locale.js';
+import { NotificationLevel, NotificationType } from 'src/enum.js';
 import { EmailTemplate, MailApiError } from 'src/repositories/email.repository.js';
-import { localeOf } from 'src/utils/preferences.js';
 import { BaseService } from 'src/services/base.service.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import {
@@ -15,6 +14,7 @@ import {
   sendConnectedEmail,
   signInProviderOf,
 } from 'src/utils/mail-connection.js';
+import { localeOf } from 'src/utils/preferences.js';
 
 @Injectable()
 export class NotificationAdminService extends BaseService {

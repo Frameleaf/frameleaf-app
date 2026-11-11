@@ -1,8 +1,8 @@
 import { toPlainText } from '@react-email/render';
 import * as React from 'react';
-import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import { Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { WelcomeEmailProps } from 'src/repositories/email.repository.js';
 import { replaceTemplateTags } from 'src/utils/replace-template-tags.js';

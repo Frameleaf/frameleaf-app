@@ -52,7 +52,6 @@
     reindexHours,
     saveLocalSetup,
     setLinked,
-    SETUP_DEFAULT_LANGUAGE,
     setupChapters,
     SETUP_THEME,
     showsRequired,
@@ -261,7 +260,7 @@
     }
     // A language picked earlier in setup follows the person to this browser, so the picker, the
     // screen and what is saved at the end are the same language.
-    if (choices.language !== SETUP_DEFAULT_LANGUAGE && choices.language !== languageCodeFor($lang)) {
+    if (choices.language && choices.language !== languageCodeFor($lang)) {
       void chooseLanguage(choices.language);
     }
   });
@@ -495,7 +494,7 @@
       }
       // Only a language picked in setup is saved for the account's notifications and emails. An
       // untouched picker leaves whatever the account already has.
-      if (choices.language !== SETUP_DEFAULT_LANGUAGE) {
+      if (choices.language) {
         await saveNotificationLanguage(choices.language);
       }
       await finishFrameleafSetup();
@@ -529,7 +528,7 @@
   };
 
   /** The picker shows the language on screen: a browser's own language until one is picked here. */
-  const shownLanguage = $derived(languageCodeFor($lang) ?? choices.language);
+  const shownLanguage = $derived(languageCodeFor($lang) ?? (choices.language || 'en'));
   const chooseLanguage = async (value: string) => {
     choose({ language: value });
     $lang = value;
