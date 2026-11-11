@@ -351,17 +351,21 @@ const admission = (
 
 // FL-1442: the web lint runs in two halves (web-lint-shards) that together cover every file; Lint Web
 // (web-lint) is green only when both are.
-const WEB_LINT_COMMAND =
-  "pnpm exec eslint ${{ matrix.shard.args }} --max-warnings 0 --concurrency 2";
-const WEB_LINT_SHARDS = [
-  { name: "components", args: "src/lib/components" },
-  { name: "rest", args: ". --ignore-pattern 'src/lib/components/**'" },
-];
+const WEB_LINT_COMMAND = `. ../scripts/web-lint-half.sh
+pnpm exec eslint "$@" --max-warnings 0 --concurrency 2
+`;
 const assertPrimaryWebLint = (job) => {
-  assert.deepEqual(
-    job.strategy?.matrix?.shard,
-    WEB_LINT_SHARDS,
-    "the web lint halves must cover every file between them",
+  assert.deepEqual(job.strategy?.matrix, { half: ["components", "rest"] });
+  assert.equal(job.env?.HALF, "${{ matrix.half }}");
+  // the two halves lint every file between them, each once
+  const half = readFileSync(
+    path.join(root, "scripts/web-lint-half.sh"),
+    "utf8",
+  );
+  assert.match(half, /components\) set -- src\/lib\/components ;;/);
+  assert.match(
+    half,
+    /rest\) set -- \. --ignore-pattern 'src\/lib\/components\/\*\*' ;;/,
   );
   const lint = job.steps.find((step) => step.name === "Run linter");
   assert.ok(lint, "Lint Web requires its primary linter step");
@@ -460,7 +464,7 @@ test("the primary web lint gate cannot be replaced by diagnostics or weakened", 
     { run: `${command} || true` },
     { run: command.replace("--max-warnings 0", "--max-warnings 1") },
     { run: command.replace("--concurrency 2", "--concurrency auto") },
-    { run: command.replace("eslint ${{ matrix.shard.args }}", "eslint src") },
+    { run: command.replace('eslint "$@"', "eslint src") },
     { if: "failure()" },
     { if: "false" },
     { "continue-on-error": true },
@@ -482,7 +486,7 @@ test("the primary web lint gate cannot be replaced by diagnostics or weakened", 
     assertPrimaryWebLint({ ...job, "continue-on-error": true }),
   );
   const oneHalf = structuredClone(job);
-  oneHalf.strategy.matrix.shard = oneHalf.strategy.matrix.shard.slice(0, 1);
+  oneHalf.strategy.matrix.half = ["components"];
   assert.throws(() => assertPrimaryWebLint(oneHalf));
 });
 
