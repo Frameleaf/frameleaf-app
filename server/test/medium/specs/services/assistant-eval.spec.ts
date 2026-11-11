@@ -11,7 +11,7 @@ import library from 'test/assistant-eval/library.json' with { type: 'json' };
 import { requestPlan } from 'test/assistant-eval/planner.js';
 import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
 import { run } from 'test/assistant-eval/run.js';
-import { type EvalCase, score } from 'test/assistant-eval/score.js';
+import { type EvalCase, score, scoreByFamily } from 'test/assistant-eval/score.js';
 import thresholds from 'test/assistant-eval/thresholds.json' with { type: 'json' };
 import { getActiveForkKyselyDB } from 'test/utils.js';
 
@@ -173,6 +173,27 @@ const question: EvalCase = {
   question: 'Photos in Banff',
   expect: { filters: { city: 'Banff', type: 'IMAGE' }, assetKeys: ['one'] },
 };
+
+it('reports live metrics separately for each question family, including unanswered cases', () => {
+  const unanswered = { ...question, id: 'unanswered', family: 'people' };
+  const result = scoreByFamily(
+    [question, unanswered],
+    [asset],
+    [
+      { id: unanswered.id, filters: null, hits: [], elapsedMs: 8000 },
+      {
+        id: question.id,
+        filters: question.expect.filters,
+        hits: [{ key: asset.key, reasons: [{ field: 'city', value: 'Banff' }] }],
+        elapsedMs: 50,
+      },
+    ],
+  );
+  assert.deepEqual(result, {
+    'place-date': { cases: 1, validPlanRate: 1, filterAccuracy: 1, recallAt24: 1, faithfulness: 1, p95Ms: 50 },
+    people: { cases: 1, validPlanRate: 0, filterAccuracy: 0, recallAt24: 0, faithfulness: 0, p95Ms: 8000 },
+  });
+});
 
 it('counts only supported reasons', () => {
   const result = score(

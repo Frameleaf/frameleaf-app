@@ -50,8 +50,8 @@ Run a candidate exposing the FL-847 `POST /assistant/plan` contract on a test
 worker. Set `FRAMELEAF_ASSISTANT_EVAL_MODE=live` and set
 `FRAMELEAF_ASSISTANT_PLANNER_URL` to its HTTP(S) origin before invoking the same
 command. Only synthetic questions and catalogue names are sent. Live planning
-reports the accepted plan rate and fixture retrieval metrics. This mode uses
-the evaluator's reason claims.
+reports the accepted plan rate and fixture retrieval metrics overall and by
+question family. This mode uses the evaluator's reason claims.
 
 ## Live Assistant qualification
 

@@ -148,3 +148,21 @@ export function score(questions: EvalCase[], library: EvalAsset[], answers: Eval
     p95Ms: times[Math.ceil(0.95 * times.length) - 1],
   };
 }
+
+/** Diagnose live planner regressions by question family without emitting questions or responses. */
+export function scoreByFamily(questions: EvalCase[], library: EvalAsset[], answers: EvalAnswer[]) {
+  return Object.fromEntries(
+    [...Map.groupBy(questions, ({ family }) => family)].map(([family, cases]) => {
+      const ids = new Set(cases.map(({ id }) => id));
+      const familyAnswers = answers.filter(({ id }) => ids.has(id));
+      return [
+        family,
+        {
+          cases: cases.length,
+          validPlanRate: familyAnswers.filter(({ filters }) => filters !== null).length / cases.length,
+          ...score(cases, library, familyAnswers),
+        },
+      ];
+    }),
+  );
+}
