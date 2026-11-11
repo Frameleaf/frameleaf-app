@@ -1291,6 +1291,9 @@
   "preferences.people.suggestInSpaces": {
     "type": "boolean"
   },
+  "preferences.pets.sidebarWeb": {
+    "type": "boolean"
+  },
   "preferences.privacy.suppression.personIds": {
     "type": "array"
   },

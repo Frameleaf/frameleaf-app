@@ -8,7 +8,7 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
-import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, inside, onNetworkShare, overlaps } from './folders.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, externalRoots, externalRuleSources, inside, onNetworkShare, overlaps } from './folders.js';
 import { databaseDriveFinding, driveOf, type DriveReport } from './drives.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
@@ -2104,17 +2104,20 @@ export class Operations {
     this.mediaMove.backups = backups;
   }
   private checkExternalFolders(services: ServiceOverrides, used: string[], backups = process.env.MANAGER_BACKUP_ROOT!): void {
-    if (!broadRoots(this.roots)) return;
+    const sources = Object.values(services).flatMap((override) => (override?.mounts ?? []).map((mount) => mount.source));
     const occupied = [...used.filter(Boolean), backups, this.store.directory];
-    for (const override of Object.values(services))
-      for (const mount of override?.mounts ?? []) assertExternalFolder(mount.source, occupied);
+    for (const source of externalRuleSources(sources, broadRoots(this.roots), this.savedMountRoots())) assertExternalFolder(source, occupied);
   }
-  private mountRoots(): string[] {
+  private savedMountRoots(): string[] {
     return [
       ...this.roots,
       ...(this.databaseStorage?.roots ?? []),
       ...(process.env.MANAGER_MOUNT_ROOTS ?? '').split(':'),
     ].filter(Boolean);
+  }
+  /** FL-1407: plus the broad folders an earlier install mapped in for External folders. */
+  private mountRoots(): string[] {
+    return [...this.savedMountRoots(), ...externalRoots()];
   }
   private async renderServices(installation: Installation, services: ServiceOverrides): Promise<void> {
     checkServiceOverrides(installation.mounts.map(({ target }) => target), services, this.mountRoots());

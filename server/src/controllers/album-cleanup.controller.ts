@@ -44,6 +44,19 @@ export class AlbumCleanupController {
     return this.service.getSnapshot(auth);
   }
 
+  @Post('check')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Scan the albums again',
+    description:
+      'Start a new album cleanup scan now. Nothing in the albums changes; the status says when the scan has finished.',
+    history: history(),
+  })
+  checkAlbumCleanup(@Auth() auth: AuthDto): Promise<void> {
+    return this.service.check(auth);
+  }
+
   @Post('apply')
   @Authenticated({ permission: Permission.AlbumDelete })
   @HttpCode(HttpStatus.OK)

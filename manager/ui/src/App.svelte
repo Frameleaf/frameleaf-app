@@ -1308,7 +1308,22 @@
   <div class="field full"><span>{label}</span><div class="folder-field"><input aria-label={label} {value} oninput={(event) => set(event.currentTarget.value)} required autocomplete="off" spellcheck="false"/><button type="button" class="button quiet" onclick={() => (browsing = key)}>Browse…</button></div><small>{help}</small></div>
 {/snippet}
 {#snippet externalFolderSection()}
-  {#if dashboard?.folderSetup}<ExternalFolders bind:mounts={containers['frameleaf-server'].mounts} occupied={installation ? [dashboard.folderSetup.media, dashboard.folderSetup.database, ...(dashboard.folderSetup.thumbs ? [dashboard.folderSetup.thumbs] : []), dashboard.folderSetup.backups, dashboard.folderSetup.manager] : [mediaPath, databaseRoot, ...(thumbsFast && thumbsPath ? [thumbsPath] : []), backupPath, dashboard.folderSetup.manager]} {api} later={storageLayout} saving={installation ? { dirty: containers['frameleaf-server'].mounts !== containerText(containersSaved)['frameleaf-server'].mounts, disabled: busy || !!activeOperation, save: () => run(saveContainerSettings), discard: () => run(loadContainerSettings) } : null}/>{/if}
+  <!-- FL-1407: an earlier install has `externalFolders` once its template maps the broad folders; until then it is told how. -->
+  {@const places = dashboard?.folderSetup ?? dashboard?.externalFolders}
+  {#if places}<ExternalFolders bind:mounts={containers['frameleaf-server'].mounts} occupied={installation ? [places.media, places.database, ...(places.thumbs ? [places.thumbs] : []), places.backups, places.manager] : [mediaPath, databaseRoot, ...(thumbsFast && thumbsPath ? [thumbsPath] : []), backupPath, places.manager]} {api} later={storageLayout} saving={installation ? { dirty: containers['frameleaf-server'].mounts !== containerText(containersSaved)['frameleaf-server'].mounts, disabled: busy || !!activeOperation, save: () => run(saveContainerSettings), discard: () => run(loadContainerSettings) } : null}/>
+  {:else if installation && dashboard?.checkHost === 'unraid'}
+    <!-- ponytail: Unraid only, the one place a saved template outlives an update. Add other hosts when one needs it. -->
+    <section class="card mt16">
+      <div class="card-header"><div><h2>External folders</h2><p class="meta">Already keep photos somewhere else on this server? Frameleaf can show them without moving or copying them. This server was set up before Manager could see your shares, so it needs one change in Unraid first.</p></div></div>
+      <ol class="external-steps">
+        <li>In Unraid, open the <strong>Docker</strong> tab, click the Frameleaf Manager container (named <strong>Frameleaf</strong> unless you renamed it) and choose <strong>Edit</strong>.</li>
+        <li>At the bottom, click <strong>Add another Path, Port, Variable, Label or Device</strong>.</li>
+        <li>Set <strong>Config Type</strong> to Path, <strong>Container Path</strong> and <strong>Host Path</strong> both to <code>/mnt</code>, and <strong>Access Mode</strong> to Read Only - Slave. Click <strong>Add</strong>.</li>
+        <li>Click <strong>Apply</strong>. Manager restarts and Frameleaf keeps running. Open this page again and you can add folders here.</li>
+      </ol>
+      <div class="disclosure"><p>Nothing about where Frameleaf keeps your photos, database or backups changes. Frameleaf only sees the folders you add.</p></div>
+    </section>
+  {/if}
 {/snippet}
 {#snippet advancedContainers()}
   <details class="card mt16 containers" bind:open={containersOpen}>

@@ -25,6 +25,7 @@ const allCapabilities = (): RailCapabilities => ({
   map: true,
   trash: true,
   people: true,
+  pets: true,
   memories: true,
   tags: true,
   folders: true,
@@ -92,15 +93,13 @@ describe('Frameleaf rail destinations', () => {
     expect(ids.has('allAlbums')).toBe(true);
   });
 
-  it('keeps Pets next to People and never hides it behind an account preference', () => {
+  it('keeps Pets next to People, and drops it only when the account hid it from the sidebar', () => {
     const explore = buildRailSections(allCapabilities()).find((section) => section.id === 'explore');
     const ids = explore?.destinations.map((destination) => destination.id) ?? [];
 
     expect(ids.indexOf('pets')).toBe(ids.indexOf('people') + 1);
-    // Pets is a Frameleaf feature with no upstream feature preference behind it, so no
-    // capability can remove it.
-    expect(flatten(defaultRailCapabilities()).some((destination) => destination.id === 'pets')).toBe(true);
     expect(find(allCapabilities(), 'pets')?.href).toBe(Route.pets());
+    expect(find({ ...allCapabilities(), pets: false }, 'pets')).toBeUndefined();
   });
 
   it('always keeps the destinations that do not depend on a capability', () => {
@@ -112,7 +111,6 @@ describe('Frameleaf rail destinations', () => {
       'bestPhotos',
       'archive',
       'locked',
-      'pets',
       'places',
       'documents',
       'allAlbums',

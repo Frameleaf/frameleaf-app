@@ -1,4 +1,4 @@
-import { PersonMergeVerdict } from '@frameleaf/sdk';
+import { PersonMergeVerdict, PersonSplitVerdict } from '@frameleaf/sdk';
 import { render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
@@ -14,6 +14,7 @@ import PeoplePage from './+page.svelte';
 const actions = vi.hoisted(() => ({
   rename: undefined as ((name: string) => Promise<void>) | undefined,
   banner: undefined as { onAccept: () => Promise<void>; onReject: () => Promise<void> } | undefined,
+  mixed: undefined as { onSplit: () => Promise<void> } | undefined,
 }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/people') } }));
 vi.mock(
@@ -28,6 +29,11 @@ vi.mock('$lib/components/frameleaf/people/PersonCard.svelte', () => ({
 vi.mock('$lib/components/frameleaf/people/MergeSuggestionBanner.svelte', () => ({
   default: (_anchor: unknown, props: NonNullable<typeof actions.banner>) => {
     actions.banner = props;
+  },
+}));
+vi.mock('$lib/components/frameleaf/people/MixedPersonBanner.svelte', () => ({
+  default: (_anchor: unknown, props: NonNullable<typeof actions.mixed>) => {
+    actions.mixed = props;
   },
 }));
 vi.mock('$lib/frameleaf/toast', () => ({ toastUndo: vi.fn(), toastAction: vi.fn() }));
@@ -52,7 +58,9 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
   actions.rename = undefined;
   actions.banner = undefined;
+  actions.mixed = undefined;
   sdkMock.getAssetStatistics.mockResolvedValue({ images: 0, videos: 0, total: 0 });
+  sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [] });
   sdkMock.getMergeSuggestions.mockResolvedValue({
     suggestions: [{ person, suggestion: other, distance: 0.2, personEvidence: null, suggestionEvidence: null }],
   });
@@ -130,4 +138,31 @@ it('ignores late suggestion reads after the session changes', async () => {
   await pending.promise;
   await tick();
   expect(actions.banner).toBeUndefined();
+});
+
+// FL-1385: Undo after "No, split them" merges the new person back. A merge that could not be done
+// comes back as a result, not an error, and must not be reported as undone.
+it('says so when Undo of a split could not merge the new person back', async () => {
+  sdkMock.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
+  sdkMock.getSplitSuggestions.mockResolvedValue({
+    suggestions: [{ person, faceCount: 4, totalFaceCount: 12, distance: 0.9, personEvidence: [], otherEvidence: [] }],
+  });
+  sdkMock.setSplitVerdict.mockResolvedValue({
+    personId: person.id,
+    verdict: PersonSplitVerdict.Split,
+    newPersonId: 'someone-new',
+    movedFaceCount: 4,
+  });
+  sdkMock.mergePeople.mockResolvedValue([{ id: 'someone-new', success: false }]);
+  render(PeoplePage, { data });
+  await waitFor(() => expect(actions.mixed).toBeDefined());
+
+  await actions.mixed!.onSplit();
+  const undo = vi.mocked(toastUndo).mock.calls[0][1];
+  undo();
+
+  await waitFor(() =>
+    expect(sdkMock.mergePeople).toHaveBeenCalledWith({ mergePersonDto: { ids: [person.id, 'someone-new'] } }),
+  );
+  await waitFor(() => expect(handleError).toHaveBeenCalledOnce());
 });

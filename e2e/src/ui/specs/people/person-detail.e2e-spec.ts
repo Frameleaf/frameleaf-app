@@ -68,7 +68,7 @@ test.describe('person page', () => {
     );
     await context.route('**/api/people**', async (route, request) => {
       const { pathname } = new URL(request.url());
-      if (pathname === '/api/people/merge-suggestions') {
+      if (pathname === '/api/people/merge-suggestions' || pathname === '/api/people/split-suggestions') {
         return route.fulfill({ json: { suggestions: [] } });
       }
       if (pathname === `/api/people/${personId}/statistics`) {

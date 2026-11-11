@@ -97,7 +97,7 @@ test.describe('face history', () => {
     await context.route('**/api/people**', async (route, request) => {
       const url = new URL(request.url());
       const { pathname } = url;
-      if (pathname === '/api/people/merge-suggestions') {
+      if (pathname === '/api/people/merge-suggestions' || pathname === '/api/people/split-suggestions') {
         return route.fulfill({ json: { suggestions: [] } });
       }
       if (pathname === `/api/people/${personId}/statistics`) {

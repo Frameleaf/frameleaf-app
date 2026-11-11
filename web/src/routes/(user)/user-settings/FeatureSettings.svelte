@@ -39,6 +39,7 @@
     mdiImageSearchOutline,
     mdiLinkVariant,
     mdiMapOutline,
+    mdiPawOutline,
     mdiTagMultipleOutline,
   } from '@mdi/js';
   import { locale, t, type Translations } from 'svelte-i18n';
@@ -57,7 +58,8 @@
     | 'tags.enabled'
     | 'tags.sidebarWeb'
     | 'cast.gCastEnabled'
-    | 'recentlyAdded.sidebarWeb';
+    | 'recentlyAdded.sidebarWeb'
+    | 'pets.sidebarWeb';
 
   /**
    * A tool, the switch that turns it on (none: always on), its sidebar switch (none: no sidebar
@@ -68,6 +70,7 @@
     { id: 'folders', use: 'folders.enabled', sidebar: 'folders.sidebarWeb', icon: mdiFolderMultipleOutline },
     { id: 'memories', use: 'memories.enabled', sidebar: 'memories.sidebarWeb', icon: mdiHistory },
     { id: 'people', use: 'people.enabled', sidebar: 'people.sidebarWeb', icon: mdiAccountOutline },
+    { id: 'pets', sidebar: 'pets.sidebarWeb', icon: mdiPawOutline },
     { id: 'shared_links', use: 'sharedLinks.enabled', sidebar: 'sharedLinks.sidebarWeb', icon: mdiLinkVariant },
     { id: 'tags', use: 'tags.enabled', sidebar: 'tags.sidebarWeb', icon: mdiTagMultipleOutline },
     { id: 'ratings', use: 'ratings.enabled' },
@@ -107,6 +110,7 @@
     'tags.sidebarWeb',
     'cast.gCastEnabled',
     'recentlyAdded.sidebarWeb',
+    'pets.sidebarWeb',
   ];
 
   const store = createOwnPreferencesDraft(keys);

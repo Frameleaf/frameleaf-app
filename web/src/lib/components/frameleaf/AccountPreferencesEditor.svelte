@@ -388,6 +388,9 @@
             draft['recentlyAdded.sidebarWeb'],
             (value) => change('recentlyAdded.sidebarWeb', value),
           )}
+          {@render toggle($t('frameleaf_words_sidebar_pets'), undefined, draft['pets.sidebarWeb'], (value) =>
+            change('pets.sidebarWeb', value),
+          )}
         </div>
       {:else if section === 'preferences'}
         <div class="ap-fields">

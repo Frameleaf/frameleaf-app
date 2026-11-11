@@ -67,6 +67,30 @@ export function applyFolderDefaults(env: Record<string, string | undefined> = pr
   env.MANAGER_BACKUP_ROOT ??= join(dirname(env.MANAGER_DATA), 'frameleaf-backups');
 }
 
+/**
+ * FL-1407: an install from an earlier template keeps its saved roots, so it had no way to reach a folder of photos
+ * elsewhere on the server. Once its template maps the broad folders too (`mountinfo` is Manager's own mount table),
+ * External folders can offer them. Where Frameleaf keeps its own data stays exactly as it was.
+ */
+export function adoptMappedFolders(env: Record<string, string | undefined>, mountinfo: string): void {
+  const root = ['unraid', 'truenas'].includes(env.MANAGER_PLATFORM ?? '') ? MNT : env.MANAGER_FOLDER_ROOT;
+  if (!root || !env.MANAGER_STORAGE_ROOTS || env.MANAGER_STORAGE_ROOTS === root) return;
+  try {
+    if (split(root).every((place) => isMounted(place, mountinfo))) env.MANAGER_EXTERNAL_ROOTS = root;
+  } catch {
+    // A mount table Manager can't read leaves External folders off; it must never stop Manager from starting.
+  }
+}
+/** The broad folders an earlier install may add External folders from; none on a new install, which has them as its roots. */
+export const externalRoots = () => split(process.env.MANAGER_EXTERNAL_ROOTS ?? '');
+/**
+ * The extra folders held to the External folders rules. Where folders are chosen in Manager: all of them. On an
+ * earlier install: only what the broad mapping added, so a folder its saved roots already allowed never starts
+ * being refused (an update re-checks every saved setting).
+ */
+export const externalRuleSources = (sources: string[], chosenInManager: boolean, savedRoots: string[]) =>
+  chosenInManager ? sources : externalRoots().length ? sources.filter((source) => !savedRoots.some((root) => within(source, root))) : [];
+
 function assertUsable(path: string): void {
   // Strictly inside a broad folder: never a broad folder itself, even one inside another, and never /.
   const inside = holders(path);

@@ -69,6 +69,9 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   recentlyAdded: {
     sidebarWeb: false,
   },
+  pets: {
+    sidebarWeb: true,
+  },
   revision: 'revision-1',
   lockedRulesRevealed: true,
 });

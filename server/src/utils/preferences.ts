@@ -223,6 +223,9 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       workTime: true,
       workNames: false,
     },
+    pets: {
+      sidebarWeb: true,
+    },
     lockedPin: {
       relockMinutes: LOCKED_RELOCK_MINUTES_DEFAULT,
     },

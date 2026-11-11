@@ -1652,6 +1652,9 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
     mergeCandidatesAt?: string;
     /** The recognition distance the stored merge candidates were kept under. */
     mergeCandidatesDistance?: number;
+    splitCandidatesAt?: string;
+    /** The recognition distance the split candidates were worked out with. */
+    splitCandidatesDistance?: number;
   };
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
   [SystemMetadataKey.FrameleafLibraryMovePause]: LibraryMovePauseState;
@@ -1870,6 +1873,9 @@ export type UserPreferences = {
     browseNames: boolean;
     workTime: boolean;
     workNames: boolean;
+  };
+  pets: {
+    sidebarWeb: boolean;
   };
   /** FL-517: how long Locked photos stay open after the PIN unlocks them (5, 15 or 60 minutes). */
   lockedPin: {

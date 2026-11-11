@@ -4146,6 +4146,10 @@ export type PeopleResponse = {
     /** Whether a shared Space suggests which of my named people appear in it */
     suggestInSpaces: boolean;
 };
+export type PetsResponse = {
+    /** Whether pets appear in web sidebar */
+    sidebarWeb: boolean;
+};
 export type SuppressionResponse = {
     /** Person IDs to suppress from locked browsing sessions */
     personIds: string[];
@@ -4223,6 +4227,7 @@ export type UserPreferencesResponseDto = {
         locale?: string;
     };
     people: PeopleResponse;
+    pets?: PetsResponse;
     privacy: PrivacyResponse;
     purchase: PurchaseResponse;
     ratings: RatingsResponse;
@@ -4336,6 +4341,10 @@ export type PeopleUpdate = {
     /** Whether a shared Space suggests which of my named people appear in it */
     suggestInSpaces?: boolean;
 };
+export type PetsUpdate = {
+    /** Whether pets appear in web sidebar */
+    sidebarWeb?: boolean;
+};
 export type SuppressionUpdate = {
     /** Person IDs to suppress from locked browsing sessions */
     personIds?: string[];
@@ -4407,6 +4416,7 @@ export type UserPreferencesUpdateDto = {
         locale?: string;
     };
     people?: PeopleUpdate;
+    pets?: PetsUpdate;
     privacy?: PrivacyUpdate;
     purchase?: PurchaseUpdate;
     ratings?: RatingsUpdate;
@@ -4945,6 +4955,8 @@ export type AlbumCleanupFactsDto = {
     sameTrip: AlbumCleanupPairDto[];
 };
 export type AlbumCleanupSnapshotResponseDto = {
+    /** A new scan is waiting or running, so what is here may be about to change */
+    checking: boolean;
     /** When the scan ran */
     computedAt: string | null;
     /** What the scan found, for this session */
@@ -4966,6 +4978,8 @@ export type AlbumCleanupApplyProgressDto = {
 export type AlbumCleanupStatusResponseDto = {
     /** The newest cleanup you have not undone */
     apply: (AlbumCleanupApplyProgressDto) | null;
+    /** A new scan is waiting or running, so what is here may be about to change */
+    checking: boolean;
     /** When the scan ran */
     computedAt: string | null;
     /** The first scan has finished */
@@ -12333,6 +12347,42 @@ export type PersonMergeVerdictResponseDto = {
     /** The other person of the pair; the ignored person again for "ignore"; the merged person for "same" */
     suggestionId: string;
     verdict: PersonMergeVerdict;
+};
+export type PersonSplitSuggestionDto = {
+    /** Face embedding distance between the two groups of faces (higher is less alike) */
+    distance: number;
+    /** How many of the faces look like someone else */
+    faceCount: number;
+    /** A few of the faces that look like someone else */
+    otherEvidence: FaceEvidenceDto[];
+    /** The person being reviewed */
+    person: PersonResponseDto;
+    /** A few of the faces that look like most of the person */
+    personEvidence: FaceEvidenceDto[];
+    /** How many faces the person has */
+    totalFaceCount: number;
+};
+export type SplitSuggestionsResponseDto = {
+    /** People who may hold two different people */
+    suggestions: PersonSplitSuggestionDto[];
+};
+export type PersonSplitVerdictDeleteDto = {
+    /** The reviewed person */
+    personId: string;
+};
+export type PersonSplitVerdictCreateDto = {
+    /** The reviewed person */
+    personId: string;
+    verdict: PersonSplitVerdict;
+};
+export type PersonSplitVerdictResponseDto = {
+    /** How many faces moved, for "split" */
+    movedFaceCount: number;
+    /** The person the faces moved to, for "split" */
+    newPersonId: string | null;
+    /** The reviewed person */
+    personId: string;
+    verdict: PersonSplitVerdict;
 };
 export type PersonUpdateDto = {
     /** Person date of birth */
@@ -25228,6 +25278,15 @@ export function applyAlbumCleanup({ albumCleanupApplyDto }: {
     })));
 }
 /**
+ * Scan the albums again
+ */
+export function checkAlbumCleanup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/albums/cleanup/check", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get the album cleanup scan results
  */
 export function getAlbumCleanupSnapshot(opts?: Oazapfts.RequestOpts) {
@@ -32022,6 +32081,44 @@ export function setMergeVerdict({ personMergeVerdictCreateDto }: {
         ...opts,
         method: "PUT",
         body: personMergeVerdictCreateDto
+    })));
+}
+/**
+ * Get split suggestions
+ */
+export function getSplitSuggestions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SplitSuggestionsResponseDto;
+    }>("/people/split-suggestions", {
+        ...opts
+    }));
+}
+/**
+ * Undo a split suggestion verdict
+ */
+export function deleteSplitVerdict({ personSplitVerdictDeleteDto }: {
+    personSplitVerdictDeleteDto: PersonSplitVerdictDeleteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/people/split-suggestions/verdicts", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: personSplitVerdictDeleteDto
+    })));
+}
+/**
+ * Record a split suggestion verdict
+ */
+export function setSplitVerdict({ personSplitVerdictCreateDto }: {
+    personSplitVerdictCreateDto: PersonSplitVerdictCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonSplitVerdictResponseDto;
+    }>("/people/split-suggestions/verdicts", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: personSplitVerdictCreateDto
     })));
 }
 /**
@@ -41841,6 +41938,11 @@ export enum PersonMergeVerdict {
     Different = "different",
     Later = "later",
     Ignore = "ignore"
+}
+export enum PersonSplitVerdict {
+    Split = "split",
+    Same = "same",
+    Later = "later"
 }
 export enum PetSpecies {
     Cat = "cat",

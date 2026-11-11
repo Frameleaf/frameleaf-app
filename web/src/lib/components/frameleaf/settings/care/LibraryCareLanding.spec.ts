@@ -135,6 +135,7 @@ describe('Library care landing (FL-366)', () => {
     vi.mocked(getLocationScanStatus).mockResolvedValue({ enabled: false, available: false, scan: null });
     vi.mocked(getAlbumCleanupStatus).mockResolvedValue({
       ready: true,
+      checking: false,
       computedAt: null,
       suggestionCount: 0,
       apply: null,
@@ -149,6 +150,7 @@ describe('Library care landing (FL-366)', () => {
     vi.mocked(getSummary).mockResolvedValue(summary() as never);
     vi.mocked(getAlbumCleanupStatus).mockResolvedValue({
       ready: true,
+      checking: false,
       computedAt: null,
       suggestionCount: 7,
       apply: null,
@@ -156,6 +158,21 @@ describe('Library care landing (FL-366)', () => {
     render(LibraryCareLanding);
     expect(await screen.findByText('Album cleanup')).toBeInTheDocument();
     expect(await screen.findByText('7 albums have a suggestion')).toBeInTheDocument();
+  });
+
+  it('says it is reading the albums, not that there is nothing to suggest, while a new scan runs', async () => {
+    user.isAdmin = false;
+    vi.mocked(getSummary).mockResolvedValue(summary() as never);
+    vi.mocked(getAlbumCleanupStatus).mockResolvedValue({
+      ready: true,
+      checking: true,
+      computedAt: '2026-11-10T22:28:09.159Z',
+      suggestionCount: 0,
+      apply: null,
+    });
+    render(LibraryCareLanding);
+    expect(await screen.findByText('Reading your albums')).toBeInTheDocument();
+    expect(screen.queryByText('No suggestions right now')).not.toBeInTheDocument();
   });
 
   it('offers Undo beside the last cleanup', async () => {

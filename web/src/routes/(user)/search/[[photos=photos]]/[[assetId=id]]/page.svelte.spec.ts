@@ -247,6 +247,56 @@ it('offers ways forward when nothing matches, and a retry (not "no matches") whe
   expect(JSON.parse(url.searchParams.get('dq')!)).toMatchObject({ text: 'IMG', filter: {} });
 });
 
+describe('a search by meaning the server cannot answer (FL-1403)', () => {
+  const meaningSearch = (text: string) => {
+    const query = emptyDiscoveryQuery();
+    query.text = text;
+    query.mode = 'smart';
+    state.url = new URL(discoveryUrl(query), 'http://localhost');
+  };
+
+  it('matches by text and shows the empty state, never the library, while it is turned off', async () => {
+    addMessages('dev', en);
+    meaningSearch('zzzzqqq');
+    render(SearchPage);
+
+    expect(await screen.findByText(en.frameleaf_library_empty_filtered_title)).toBeInTheDocument();
+    expect(searchSmart).not.toHaveBeenCalled();
+    expect(searchAssets).toHaveBeenCalledOnce();
+    const sent = vi.mocked(searchAssets).mock.calls[0][0].metadataSearchDto;
+    expect(sent).not.toHaveProperty('query');
+    expect(sent.filter?.or).toContainEqual({ originalFileName: { like: 'zzzzqqq' } });
+    expect(screen.getByTestId('search-by-text-notice')).toHaveTextContent(en.frameleaf_search_by_text_notice);
+  });
+
+  it('matches by text and says so when the server refuses it', async () => {
+    flags.smartSearch = true;
+    meaningSearch('screenshot');
+    vi.mocked(searchSmart).mockRejectedValueOnce(
+      Object.assign(new Error('Smart search is not enabled'), { status: 400 }),
+    );
+    vi.mocked(searchAssets).mockResolvedValue(result(['named']));
+    render(SearchPage);
+
+    expect(await screen.findByText('named')).toBeInTheDocument();
+    expect(searchSmart).toHaveBeenCalledOnce();
+    expect(vi.mocked(searchAssets).mock.calls[0][0].metadataSearchDto).not.toHaveProperty('query');
+    expect(screen.getByTestId('search-by-text-notice')).toBeInTheDocument();
+    expect(handleError).not.toHaveBeenCalled();
+  });
+
+  it('says nothing extra while search by meaning answers', async () => {
+    flags.smartSearch = true;
+    meaningSearch('beach');
+    vi.mocked(searchSmart).mockResolvedValue(result(['ranked']));
+    render(SearchPage);
+
+    expect(await screen.findByText('ranked')).toBeInTheDocument();
+    expect(searchAssets).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('search-by-text-notice')).toBeNull();
+  });
+});
+
 it('is never blank without Ask: it offers the search palette', () => {
   addMessages('dev', en);
   render(SearchPage);

@@ -12520,6 +12520,45 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/albums/cleanup/check": {
+      "post": {
+        "description": "Start a new album cleanup scan now. Nothing in the albums changes; the status says when the scan has finished.",
+        "operationId": "checkAlbumCleanup",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Scan the albums again",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/cleanup/snapshot": {
       "get": {
         "description": "What the scan found in your top-level albums. A session without the PIN receives nothing computed from Locked items.",
@@ -40190,6 +40229,155 @@
           }
         ],
         "summary": "Record a merge suggestion verdict",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/people/split-suggestions": {
+      "get": {
+        "description": "Retrieve people who may hold the faces of two different people, with a few faces from each side, for the guided review flow.",
+        "operationId": "getSplitSuggestions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SplitSuggestionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get split suggestions",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/people/split-suggestions/verdicts": {
+      "delete": {
+        "description": "Remove a \"same\" or \"later\" answer, so the person can be suggested again.",
+        "operationId": "deleteSplitVerdict",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonSplitVerdictDeleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo a split suggestion verdict",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Answer whether a person is all one person: \"split\" moves the faces that look like someone else to a new, unnamed person now, \"same\" never asks about this person again and \"later\" skips it for 30 days.",
+        "operationId": "setSplitVerdict",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonSplitVerdictCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonSplitVerdictResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record a split suggestion verdict",
         "tags": [
           "People"
         ],
@@ -72850,6 +73038,10 @@
       },
       "AlbumCleanupSnapshotResponseDto": {
         "properties": {
+          "checking": {
+            "description": "A new scan is waiting or running, so what is here may be about to change",
+            "type": "boolean"
+          },
           "computedAt": {
             "description": "When the scan ran",
             "nullable": true,
@@ -72876,6 +73068,7 @@
           }
         },
         "required": [
+          "checking",
           "computedAt",
           "facts",
           "ready",
@@ -72893,6 +73086,10 @@
             ],
             "description": "The newest cleanup you have not undone",
             "nullable": true
+          },
+          "checking": {
+            "description": "A new scan is waiting or running, so what is here may be about to change",
+            "type": "boolean"
           },
           "computedAt": {
             "description": "When the scan ran",
@@ -72912,6 +73109,7 @@
         },
         "required": [
           "apply",
+          "checking",
           "computedAt",
           "ready",
           "suggestionCount"
@@ -119035,6 +119233,129 @@
         },
         "type": "object"
       },
+      "PersonSplitSuggestionDto": {
+        "properties": {
+          "distance": {
+            "description": "Face embedding distance between the two groups of faces (higher is less alike)",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "faceCount": {
+            "description": "How many of the faces look like someone else",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "otherEvidence": {
+            "description": "A few of the faces that look like someone else",
+            "items": {
+              "$ref": "#/components/schemas/FaceEvidenceDto"
+            },
+            "type": "array"
+          },
+          "person": {
+            "$ref": "#/components/schemas/PersonResponseDto",
+            "description": "The person being reviewed"
+          },
+          "personEvidence": {
+            "description": "A few of the faces that look like most of the person",
+            "items": {
+              "$ref": "#/components/schemas/FaceEvidenceDto"
+            },
+            "type": "array"
+          },
+          "totalFaceCount": {
+            "description": "How many faces the person has",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "distance",
+          "faceCount",
+          "otherEvidence",
+          "person",
+          "personEvidence",
+          "totalFaceCount"
+        ],
+        "type": "object"
+      },
+      "PersonSplitVerdict": {
+        "description": "\"split\": move the faces that look like someone else to a new, unnamed person now; \"same\": it is all one person, never ask again; \"later\": skip it for 30 days",
+        "enum": [
+          "split",
+          "same",
+          "later"
+        ],
+        "type": "string"
+      },
+      "PersonSplitVerdictCreateDto": {
+        "properties": {
+          "personId": {
+            "description": "The reviewed person",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/PersonSplitVerdict"
+          }
+        },
+        "required": [
+          "personId",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "PersonSplitVerdictDeleteDto": {
+        "properties": {
+          "personId": {
+            "description": "The reviewed person",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "personId"
+        ],
+        "type": "object"
+      },
+      "PersonSplitVerdictResponseDto": {
+        "properties": {
+          "movedFaceCount": {
+            "description": "How many faces moved, for \"split\"",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "newPersonId": {
+            "description": "The person the faces moved to, for \"split\"",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "personId": {
+            "description": "The reviewed person",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/PersonSplitVerdict"
+          }
+        },
+        "required": [
+          "movedFaceCount",
+          "newPersonId",
+          "personId",
+          "verdict"
+        ],
+        "type": "object"
+      },
       "PersonStatisticsResponseDto": {
         "properties": {
           "assets": {
@@ -119863,6 +120184,27 @@
           },
           "species": {
             "$ref": "#/components/schemas/PetSpecies"
+          }
+        },
+        "type": "object"
+      },
+      "PetsResponse": {
+        "properties": {
+          "sidebarWeb": {
+            "description": "Whether pets appear in web sidebar",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sidebarWeb"
+        ],
+        "type": "object"
+      },
+      "PetsUpdate": {
+        "properties": {
+          "sidebarWeb": {
+            "description": "Whether pets appear in web sidebar",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -149424,6 +149766,21 @@
         ],
         "type": "object"
       },
+      "SplitSuggestionsResponseDto": {
+        "properties": {
+          "suggestions": {
+            "description": "People who may hold two different people",
+            "items": {
+              "$ref": "#/components/schemas/PersonSplitSuggestionDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "suggestions"
+        ],
+        "type": "object"
+      },
       "StabilizeParameters": {
         "properties": {
           "cropEdges": {
@@ -163847,6 +164204,9 @@
           "people": {
             "$ref": "#/components/schemas/PeopleResponse"
           },
+          "pets": {
+            "$ref": "#/components/schemas/PetsResponse"
+          },
           "privacy": {
             "$ref": "#/components/schemas/PrivacyResponse"
           },
@@ -163986,6 +164346,9 @@
           },
           "people": {
             "$ref": "#/components/schemas/PeopleUpdate"
+          },
+          "pets": {
+            "$ref": "#/components/schemas/PetsUpdate"
           },
           "privacy": {
             "$ref": "#/components/schemas/PrivacyUpdate"
