@@ -40,7 +40,7 @@ async function clearOfficeSocket(profileUrl: string) {
   );
   for (const prefix of ['OSL_PIPE_SingleOfficeIPC_', `OSL_PIPE_${process.getuid?.()}_SingleOfficeIPC_`]) {
     const socket = join('/tmp', prefix + hash);
-    if ((await lstat(socket).catch(() => undefined))?.isSocket()) {
+    if ((await lstat(socket).catch(() => {}))?.isSocket()) {
       await rm(socket, { force: true });
     }
   }

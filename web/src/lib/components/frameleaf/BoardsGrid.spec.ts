@@ -30,7 +30,7 @@ describe('BoardsGrid', () => {
       showNames: false,
       onOpen: vi.fn(),
     });
-    const preview = container.querySelector('.bg-open img');
+    const preview = container.querySelector(':scope .bg-open img');
     expect(preview).toBeTruthy();
     expect(container.querySelectorAll('.bg-link-blank')).toHaveLength(1);
     expect(container.textContent).toContain('drawing.dwg');

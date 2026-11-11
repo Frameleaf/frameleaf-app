@@ -422,7 +422,9 @@
       {:else if asset.thumbhash && previewFailed !== asset.id}
         <a
           class="preview"
-          href={detail && /\.(?:docx?|html|key|numbers|pages|potx|pptx?|txt|xlsx?)$/i.test(detail.originalFileName)
+          href={/\.(?:docx?|html|key|numbers|pages|potx|pptx?|txt|xlsx?)$/i.test(
+            asset.originalFileName ?? detail?.originalFileName ?? '',
+          )
             ? getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Original, format: 'document-pdf', edited: false })
             : getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Fullsize, cacheKey: asset.thumbhash })}
           target="_blank"

@@ -136,9 +136,9 @@ import {
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
 import { batched, clamp, isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
+import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
 import { RawRenderError, type RawRenderFailure } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
