@@ -2137,7 +2137,7 @@
   "tag_full_path": "Полный путь: {tag}",
   "tag_not_found_question": "Не находите нужный тег? <link>Создайте новый.</link>",
   "tag_people": "Отметить человека",
-  "tag_plus_more_tags": "{tag} + {count, plural, one {# тег} other {# тегов} other {# тега}}",
+  "tag_plus_more_tags": "{tag} + {count, plural, one {# тег} many {# тегов} other {# тега}}",
   "tag_updated": "Тег {tag} изменен",
   "tagged_assets": "Тег назначен для {count, plural, one {# объекта} other {# объектов}}",
   "tags": "Теги",

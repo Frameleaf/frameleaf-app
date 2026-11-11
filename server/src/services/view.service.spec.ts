@@ -55,6 +55,7 @@ describe(ViewService.name, () => {
           coverAssetIds: ['asset-2', 'asset-1'],
           startDate: new Date('2024-06-01'),
           endDate: new Date('2026-03-09'),
+          datesToCheck: 0,
         },
         {
           path: '/photos/2026',
@@ -63,6 +64,7 @@ describe(ViewService.name, () => {
           coverAssetIds: ['asset-3'],
           startDate: new Date('2026-03-09'),
           endDate: new Date('2026-03-09'),
+          datesToCheck: 0,
         },
       ]);
 
@@ -75,6 +77,7 @@ describe(ViewService.name, () => {
           coverAssetIds: ['asset-2', 'asset-1'],
           startDate: '2024-06-01T00:00:00.000Z',
           endDate: '2026-03-09T00:00:00.000Z',
+          datesToCheck: 0,
         },
         {
           path: '/photos/2026',
@@ -83,6 +86,7 @@ describe(ViewService.name, () => {
           coverAssetIds: ['asset-3'],
           startDate: '2026-03-09T00:00:00.000Z',
           endDate: '2026-03-09T00:00:00.000Z',
+          datesToCheck: 0,
         },
       ]);
       expect(mocks.view.getFolderSummary).toHaveBeenCalledWith(authStub.admin.user.id, {});

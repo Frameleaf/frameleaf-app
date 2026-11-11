@@ -153,14 +153,15 @@
     justify-content: center;
     position: relative;
     isolation: isolate;
-    min-width: 44px;
+    min-width: var(--fl-control-target);
+    min-height: var(--fl-control-target);
     padding: 0 var(--fl-space-2);
     color: var(--fl-text);
     background: transparent;
     border: 0;
   }
   /* The prototype's Upload is a bordered `.button` (UploadPanel.jsx, styles.css `.topbar > .button`):
-     the drawn box is its 34px, the button keeps the 44px target floor (tokens.css). */
+     the drawn box is its 34px, the button is the 44px target (--fl-control-target). */
   .upload-menu :global(.menu-root > button)::before {
     content: '';
     position: absolute;

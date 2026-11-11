@@ -221,7 +221,7 @@ describe('Frameleaf theme contract', () => {
     expect(css).toMatch(
       /\.fl-scope :where\(\.button, \.fl-control, \.fl-press\):focus-visible {\s*outline: var\(--fl-focus-ring\);/,
     );
-    expect(css).toMatch(/\.fl-scope :where\(\.button, \.fl-control\) {\s*min-height: 44px;/);
+    expect(css).toMatch(/\.fl-scope :where\(\.button, \.fl-control\) {\s*min-height: var\(--fl-control-height\);/);
     expect(readFileSync('src/lib/components/layouts/UserPageLayout.svelte', 'utf8')).toMatch(
       /class="[^"]*\bfl-scope\b/,
     );
@@ -299,7 +299,12 @@ describe('Frameleaf theme contract', () => {
     expect(base.get('--fl-control-height')).toBe(`${brand.control.default}px`);
     expect(base.get('--fl-control-height-touch')).toBe(`${brand.control.touch}px`);
     expect(base.get('--fl-control-height-compact')).toBe(`${brand.control.compact}px`);
+    expect(base.get('--fl-control-target')).toBe(`${brand.control.target}px`);
+    expect(base.get('--fl-tab-height')).toBe(`${brand.control.tab}px`);
+    expect(base.get('--fl-chip-height')).toBe(`${brand.control.chip}px`);
+    expect(base.get('--fl-nav-row-height')).toBe(`${brand.control.navRow}px`);
     expect(brand.control.default).toBe(brand.touchTarget.iosPoints);
+    expect(brand.control.target).toBe(brand.touchTarget.iosPoints);
     expect(brand.control.touch).toBe(brand.touchTarget.androidDp);
 
     expect(Z_INDEX).toEqual(brand.z);
@@ -754,8 +759,69 @@ describe('Frameleaf theme contract', () => {
   it('honours reduced motion and keeps native touch targets', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).toMatch(/transition-duration: 0\.01ms !important/);
-    expect(css).toMatch(/min-height: 44px/);
+    // The floor is the drawn height token: 44px unless the pointer block below changes it.
+    expect(css).toMatch(/:where\(button, input, select, summary\),[^{]*{\s*min-height: var\(--fl-control-height\);/);
     expect(css).toMatch(/@media \(pointer: coarse\)[\S\s]*min-height: 48px/);
+  });
+
+  // FL-1390: one drawn height per pointer type, and one click area on all of them.
+  it('draws a control 36px tall with a mouse, 48px on touch, and keeps a 44px click area', () => {
+    const fine = blockAfter(css, '@media (pointer: fine)');
+    // The same three roots the tokens are declared on, so a nested `.frameleaf` root follows too.
+    expect(fine).toMatch(/:root,\s*\.fl-media-viewer,\s*\.frameleaf {\s*--fl-control-height: (\d+)px;\s*}/);
+    expect(fine).toContain(`--fl-control-height: ${brand.control.pointer}px;`);
+    // Nothing but the drawn height changes with the pointer: the target and the touch height are fixed.
+    expect([...fine.matchAll(/(--[\w-]+):/g)].map(([, name]) => name)).toEqual(['--fl-control-height']);
+    const coarse = blockAfter(css, '@media (pointer: coarse)');
+    expect(coarse).not.toContain('--fl-control-height');
+    expect(coarse).toMatch(
+      new RegExp(String.raw`min-height: ${brand.control.touch}px;\s*min-width: ${brand.control.touch}px;`),
+    );
+    expect(brand.control.pointer).toBeLessThan(brand.control.target);
+    expect(brand.control.touch).toBeGreaterThanOrEqual(brand.control.target);
+
+    // The click area: with a mouse a `.button` or `.fl-control` owns a strip above and below its box.
+    const strip = blockAfter(baseline, '@media (pointer: fine)');
+    const controls = String.raw`:where\(\.frameleaf \.button, \.fl-scope \.button, \.frameleaf \.fl-control, \.fl-scope \.fl-control\)`;
+    expect(strip).toMatch(new RegExp(String.raw`${controls} {\s*position: relative;\s*isolation: isolate;\s*}`));
+    const [, after] = new RegExp(`${controls}::after {([^}]*)}`).exec(strip) ?? [];
+    expect(after).toMatch(/content: '';/);
+    expect(after).toMatch(/position: absolute;/);
+    // Behind the control's own content, so a press inside the box lands where it did.
+    expect(after).toMatch(/z-index: -1;/);
+    expect(after).toMatch(/inset-inline: 0;/);
+    const [, formula] = /inset-block: ([^;]+);/.exec(after) ?? [];
+    expect(formula).toBe('min(0px, calc((100% - var(--fl-control-target)) / 2))');
+    // That formula, for a box of each height: the strip makes up the difference and never shrinks a box.
+    const pressed = (height: number) => height + 2 * Math.max(0, (brand.control.target - height) / 2);
+    expect(pressed(brand.control.pointer)).toBe(brand.control.target);
+    expect(pressed(brand.control.chip)).toBe(brand.control.target);
+    expect(pressed(brand.control.touch)).toBe(brand.control.touch);
+    // Touch is not given a strip: its controls are already taller than the target.
+    expect(baseline).not.toMatch(/@media \(pointer: coarse\)[^}]*{[^}]*::after/);
+  });
+
+  it('keeps the top bar buttons and the photo arrows a full target at any drawn height', () => {
+    const read = (file: string) => readFileSync(`src/lib/components/${file}`, 'utf8');
+    const topBar = read('frameleaf/TopBar.svelte');
+    expect(topBar).toMatch(
+      /@media \(min-width: 48rem\) {\s*\.fl-topbar-button,\s*\.fl-locked-toggle,\s*\.fl-notif-bell {\s*min-height: var\(--fl-control-target\);/,
+    );
+    expect(read('frameleaf/UploadMenuButton.svelte')).toContain('min-height: var(--fl-control-target);');
+    expect(read('frameleaf/AccountMenu.svelte')).toContain('min-height: var(--fl-control-target);');
+    expect(read('asset-viewer/NavigationArea.svelte')).toMatch(
+      /width: var\(--fl-control-target\);\s*height: var\(--fl-control-target\);/,
+    );
+    // Layout tabs, filter chips and navigation rows take their own heights with a mouse only.
+    expect(blockAfter(read('frameleaf/LibraryLayoutSwitch.svelte'), '@media (pointer: fine)')).toContain(
+      'min-height: var(--fl-tab-height);',
+    );
+    expect(read('frameleaf/AlbumDirectory.svelte')).toMatch(
+      /@media \(pointer: fine\) {\s*\.filters button {\s*min-height: var\(--fl-chip-height\);/,
+    );
+    expect(blockAfter(read('frameleaf/settings/SettingsHost.svelte'), '@media (pointer: fine)')).toContain(
+      'min-height: var(--fl-nav-row-height);',
+    );
   });
 
   it('draws a checkbox or radio at its own size inside the touch target', () => {
@@ -808,8 +874,9 @@ describe('Frameleaf theme contract', () => {
       .filter((selector) => selector.length > 0 && !selector.startsWith('@'));
     expect(selectors.length).toBeGreaterThan(0);
     for (const selector of selectors) {
-      // Zero specificity: a component's own rules, and the 44px/48px floors, always win.
-      expect(selector, 'baseline rule outside :where()').toMatch(/^:where\([\S\s]*\)$/);
+      // Zero specificity: a component's own rules, and the height floors, always win. The one
+      // pseudo-element is the click strip of a control (FL-1390).
+      expect(selector, 'baseline rule outside :where()').toMatch(/^:where\([\S\s]*\)(?:::after)?$/);
       expect(selector, 'unscoped baseline rule').toContain('.frameleaf');
     }
     // The prototype's 34px button height is not ported; nothing in the baseline shrinks a control.

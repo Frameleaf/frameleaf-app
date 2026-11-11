@@ -14,6 +14,7 @@
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
   import AlbumCoverDialog from '$lib/components/frameleaf/AlbumCoverDialog.svelte';
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
+  import DatesToCheckLink from '$lib/components/frameleaf/DatesToCheckLink.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import AlbumInlineEdit from '$lib/components/frameleaf/AlbumInlineEdit.svelte';
   import AlbumOptionsDialog from '$lib/components/frameleaf/AlbumOptionsDialog.svelte';
@@ -172,6 +173,12 @@
     addMenu?: Snippet;
     /** A shared space's invitations nobody has answered yet (not members, so not in `albumUsers`). */
     pendingInvites?: number;
+    /**
+     * FL-1410: photos here whose date cannot be right. The date range already leaves them out; the
+     * summary says how many there are and offers to fix them.
+     */
+    datesToCheck?: number;
+    onFixDates?: () => void;
   }
 
   let {
@@ -199,6 +206,8 @@
     filteredCount = null,
     addMenu,
     pendingInvites = 0,
+    datesToCheck = 0,
+    onFixDates,
   }: Props = $props();
   const download = () => (onDownload ? onDownload() : void handleDownloadAlbum(album));
 
@@ -724,6 +733,9 @@
         {:else if span && !boards}
           <span>{span}</span>
         {/if}
+        {#if datesToCheck > 0 && onFixDates && !boards}
+          <DatesToCheckLink count={datesToCheck} onclick={onFixDates} />
+        {/if}
         {#if others.length > 0}
           <button type="button" class="members" onclick={() => openShare()}>
             <AlbumAvatarStack users={others} />
@@ -756,7 +768,7 @@
     {#if boards && addMenu}
       {@render addMenu()}
     {:else if editor && isCollection}
-      <button type="button" class="action primary" onclick={() => openCreate(album.id)}>
+      <button type="button" class="action primary fl-control" onclick={() => openCreate(album.id)}>
         <Icon icon={mdiPlus} size="18" />
         <span>{$t('frameleaf_albums_create_album')}</span>
       </button>
@@ -780,21 +792,26 @@
     {/if}
 
     {#if canAddMatching && inRow('matching')}
-      <button type="button" class="action" aria-haspopup="dialog" onclick={() => (addMatchingOpen = true)}>
+      <button type="button" class="action fl-control" aria-haspopup="dialog" onclick={() => (addMatchingOpen = true)}>
         <Icon icon={mdiPlaylistPlus} size="18" />
         <span>{$t('frameleaf_spaces_add_matching_open')}</span>
       </button>
     {/if}
 
     {#if rule}
-      <button type="button" class="action primary" disabled={!rule.enabled} onclick={() => (reevaluateOpen = true)}>
+      <button
+        type="button"
+        class="action primary fl-control"
+        disabled={!rule.enabled}
+        onclick={() => (reevaluateOpen = true)}
+      >
         <Icon icon={mdiRefresh} size="18" />
         <span>{$t('frameleaf_rules_reevaluate')}</span>
       </button>
     {/if}
 
     {#if !boardsHead}
-      <button type="button" class="action" onclick={() => openShare()}>
+      <button type="button" class="action fl-control" onclick={() => openShare()}>
         <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" />
         <span>{owner ? $t('share') : $t('frameleaf_albums_members')}</span>
       </button>
@@ -806,35 +823,35 @@
       album), Re-evaluate and Share stay in the row. Wider, the header's width folds some of them.
     -->
     {#if owner && inRow('links')}
-      <button type="button" class="action" onclick={openLinks}>
+      <button type="button" class="action fl-control" onclick={openLinks}>
         <Icon icon={mdiLinkVariant} size="18" />
         <span>{$t('frameleaf_spaces_links')}</span>
       </button>
     {/if}
 
     {#if mapEnabled && inRow('map')}
-      <button type="button" class="action" disabled={mapMarkers.length === 0} onclick={() => void openMap()}>
+      <button type="button" class="action fl-control" disabled={mapMarkers.length === 0} onclick={() => void openMap()}>
         <Icon icon={mdiMapOutline} size="18" />
         <span>{$t('map')}</span>
       </button>
     {/if}
 
     {#if inRow('slideshow')}
-      <button type="button" class="action" disabled={assetCount === 0} onclick={() => onSlideshow?.()}>
+      <button type="button" class="action fl-control" disabled={assetCount === 0} onclick={() => onSlideshow?.()}>
         <Icon icon={mdiPlayCircleOutline} size="18" />
         <span>{$t('slideshow')}</span>
       </button>
     {/if}
 
     {#if inRow('movie')}
-      <button type="button" class="action" disabled={assetCount === 0} onclick={() => (movieOpen = true)}>
+      <button type="button" class="action fl-control" disabled={assetCount === 0} onclick={() => (movieOpen = true)}>
         <Icon icon={mdiMovieOpenPlayOutline} size="18" />
         <span>{$t('frameleaf_movie_make')}</span>
       </button>
     {/if}
 
     {#if inRow('download')}
-      <button type="button" class="action" disabled={assetCount === 0} onclick={download}>
+      <button type="button" class="action fl-control" disabled={assetCount === 0} onclick={download}>
         <Icon icon={mdiDownloadOutline} size="18" />
         <span>{$t('download')}</span>
       </button>
@@ -845,7 +862,7 @@
       <!-- SHARING-P7: "Comments" on album and space headers alike; "Activity" is the app's own workspace. -->
       <button
         type="button"
-        class="action"
+        class="action fl-control"
         aria-pressed={activityOpen}
         aria-label={$t('frameleaf_album_activity_button', { values: { count: likeCount + commentCount } })}
         onclick={() => onToggleActivity?.()}
@@ -1641,7 +1658,7 @@
   }
   .action {
     padding: 0 var(--fl-space-3);
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     font: inherit;
     color: var(--fl-text);
     background: var(--fl-raised);

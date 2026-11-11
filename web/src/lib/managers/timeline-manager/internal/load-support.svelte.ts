@@ -1,4 +1,9 @@
-import { getTimeBucket, getTimelineOrdered, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
+import {
+  getTimeBucket,
+  getTimelineOrdered,
+  TimelineDatesToCheck,
+  type TimeBucketAssetResponseDto,
+} from '@frameleaf/sdk';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { toISOYearMonthUTC } from '$lib/utils/timeline-util';
 import { TimelineManager } from '../timeline-manager.svelte';
@@ -106,6 +111,48 @@ const addBucketAssets = (
     );
   }
 };
+
+/**
+ * FL-1410: the photos whose date cannot be right, read into the one group that waits at the end of a
+ * dated timeline. They are read a claimed month at a time (`datesToCheck=only`), in the timeline's
+ * order, and kept in that order: their dates are the thing in doubt, so nothing is grouped by them.
+ */
+export async function loadDatesToCheck(
+  timelineManager: TimelineManager,
+  timelineMonth: TimelineMonth,
+  options: TimelineManagerOptions,
+  signal: AbortSignal,
+): Promise<void> {
+  if (timelineMonth.getFirstAsset()) {
+    return;
+  }
+  const projection = timelineManager.projectionGeneration;
+  // ponytail: the whole group in one load, a request per claimed month. A library with thousands of
+  // wrong dates would want these read a page at a time, as the calendar months are.
+  const responses: TimeBucketAssetResponseDto[] = [];
+  for (const timeBucket of timelineMonth.toCheckBuckets ?? []) {
+    const query = { ...authManager.params, timeBucket, datesToCheck: TimelineDatesToCheck.Only };
+    responses.push(await getTimeBucket({ ...options, ...query }, { signal }));
+    if (options.timelineAlbumId) {
+      const inAlbum = await getTimeBucket({ ...query, albumId: options.timelineAlbumId }, { signal });
+      for (const id of inAlbum?.id ?? []) {
+        timelineManager.albumAssets.add(id);
+      }
+    }
+  }
+  if (
+    signal.aborted ||
+    !timelineManager.months.includes(timelineMonth) ||
+    projection !== timelineManager.projectionGeneration
+  ) {
+    throw superseded();
+  }
+  for (const response of responses) {
+    if (response) {
+      timelineMonth.addOrderedAssets(response);
+    }
+  }
+}
 
 /** FL-30 (S-15): assets per page of a flat order. */
 export const ORDERED_PAGE_SIZE = 500;

@@ -95,8 +95,10 @@
     {/if}
 
     <div class="buttons">
-      <button type="button" disabled={saving} onclick={() => (open = false)}>{$t('cancel')}</button>
-      <button type="button" class="primary" disabled={saving} onclick={() => void save()}>{$t('save')}</button>
+      <button type="button" class="fl-control" disabled={saving} onclick={() => (open = false)}>{$t('cancel')}</button>
+      <button type="button" class="primary fl-control" disabled={saving} onclick={() => void save()}
+        >{$t('save')}</button
+      >
     </div>
   </div>
 </Dialog>
@@ -147,7 +149,7 @@
   }
   .buttons button {
     padding: 0 1rem;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

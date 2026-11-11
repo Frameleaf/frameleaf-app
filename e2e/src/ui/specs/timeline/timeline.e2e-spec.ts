@@ -513,8 +513,12 @@ test.describe('Timeline', () => {
       );
       await page.goto('/favorites');
       // It says how items get here, and offers no upload: that belongs to an empty library only.
-      await expect(page.getByText('Photos and videos you mark with the heart appear here.')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Upload photos' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'No favorites yet' })).toBeVisible();
+      await expect(page.getByText('Mark a photo with the heart and it appears here.')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Add photos' })).toHaveCount(0);
+      // FL-1412: an empty page has no toolbar and no Thumbnail size bar.
+      await expect(page.getByTestId('frameleaf-results-toolbar')).toHaveCount(0);
+      await expect(page.getByTestId('library-status-bar')).toHaveCount(0);
     });
   });
 
@@ -560,8 +564,8 @@ test.describe('Timeline', () => {
       await page.route('**/api/timeline/buckets?*', (route) => route.fulfill({ json: [] }));
       await page.goto('/photos');
       await expect(page.getByRole('heading', { name: 'Your library starts here' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Upload photos' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Upload folder' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Add photos' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Add a folder' })).toBeVisible();
       await expect(page.getByTestId('frameleaf-results-toolbar')).toHaveCount(0);
       await expect(page.getByRole('group', { name: 'Layout' })).toHaveCount(0);
       await expect(page.getByTestId('library-status-bar')).toHaveCount(0);
@@ -660,6 +664,44 @@ test.describe('Timeline', () => {
       await expect(actions).toBeVisible();
       // Compare lives on the selection bar only; the sheet does not repeat it.
       await expect(actions.getByRole('button', { name: 'Compare selected items' })).toHaveCount(0);
+    });
+
+    // FL-1390: with a mouse a control is drawn 36px tall and what is pressed is still 44px. The 4px
+    // above and below the drawn box belong to the button; the next pixel out does not.
+    test('a toolbar button is drawn 36px tall inside a 44px click area', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      expect(await page.evaluate(() => matchMedia('(pointer: fine)').matches)).toBe(true);
+      const toolbar = page.getByTestId('frameleaf-results-toolbar');
+      const button = toolbar.getByRole('button', { name: 'View', exact: true });
+      await expect(button).toBeVisible();
+      const hit = await button.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const x = box.left + box.width / 2;
+        const at = (y: number) => {
+          const found = document.elementFromPoint(x, y);
+          return found === element || element.contains(found);
+        };
+        return {
+          height: Math.round(box.height),
+          inside: at(box.top + box.height / 2),
+          above: at(box.top - 3.5),
+          below: at(box.bottom + 3.5),
+          beyondAbove: at(box.top - 5),
+          beyondBelow: at(box.bottom + 5),
+        };
+      });
+      expect(hit).toEqual({
+        height: 36,
+        inside: true,
+        above: true,
+        below: true,
+        beyondAbove: false,
+        beyondBelow: false,
+      });
+      // A press 3px above the drawn box still opens the View menu.
+      const box = (await button.boundingBox())!;
+      await page.mouse.click(box.x + box.width / 2, box.y - 3);
+      await expect(toolbar.getByRole('switch', { name: 'Show information panel' })).toBeVisible();
     });
 
     test('Browse sorts by file name through the flat order, and List shows rows (S-15)', async ({ page }) => {

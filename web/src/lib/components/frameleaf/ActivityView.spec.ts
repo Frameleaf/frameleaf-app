@@ -451,19 +451,32 @@ describe('Frameleaf Activity page', () => {
     expect(screen.queryByRole('region', { name: 'Finished' })).not.toBeInTheDocument();
   });
 
-  it('says everything is up to date when there are no tasks', async () => {
+  // FL-1412 (M13): a quiet Activity page is the one empty-page pattern, with the page's own words.
+  it('says everything is up to date, once and with nothing to filter, when there are no tasks', async () => {
     await mount([]);
 
-    // The prototype's words (work-v3.mjs `summaryFor`).
-    await vi.waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Everything is up to date' })).toBeInTheDocument(),
-    );
-    expect(screen.getByText('Nothing is running.')).toBeInTheDocument();
-    const filters = screen.getByRole('group', { name: 'Filter jobs' });
-    expect(filters.querySelectorAll('button')).toHaveLength(4);
-    expect(screen.getByRole('button', { name: 'Failed' })).toBeInTheDocument();
+    const empty = await screen.findByTestId('frameleaf-empty-state');
+    expect(within(empty).getByRole('heading', { name: 'Everything is up to date' })).toBeInTheDocument();
+    expect(empty).toHaveTextContent(en.frameleaf_activity_empty_help_own);
+    expect(empty.querySelector('button, a')).toBeNull();
+    // No filters, no status line and no empty In progress section beside it.
+    expect(screen.queryByRole('group', { name: 'Filter jobs' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'How the work is going' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'In progress' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing is running.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Back to library' })).not.toBeInTheDocument();
     // Nobody who may not pause the server's work is offered it.
     expect(screen.queryByRole('button', { name: 'Pause all' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the filters, and says so in the same pattern, when only the chosen filter is empty', async () => {
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [], total: 0 });
+    render(ActivityView, { props: { filter: 'done' } });
+
+    const empty = await screen.findByTestId('frameleaf-empty-state');
+    expect(within(empty).getByRole('heading', { name: 'No finished jobs yet' })).toBeInTheDocument();
+    expect(empty).toHaveTextContent('Jobs move here as they finish.');
+    expect(screen.getByRole('group', { name: 'Filter jobs' }).querySelectorAll('button')).toHaveLength(4);
   });
 
   const queue = (name: QueueName, overrides: Partial<QueueRunDto> = {}): QueueRunDto => ({
@@ -750,6 +763,40 @@ describe('Frameleaf Activity page', () => {
       await vi.waitFor(() =>
         expect(sdkMock.getJobRunFailures).toHaveBeenCalledWith(expect.objectContaining({ id: expect.any(String) })),
       );
+    } finally {
+      runningJobsSession.summary = idle;
+    }
+  });
+
+  // FL-1412 (M13): the empty page keeps to Recent work's run rules (FL-1409).
+  it.each([
+    ['is paused', { state: 'paused', reasons: ['queue_paused'], active: 0, paused: 40 }],
+    [
+      'waits for a drive',
+      {
+        state: 'waiting',
+        reasons: ['source-unavailable'],
+        unreachableLibraries: ['Family NAS'],
+        active: 0,
+        waiting: 40,
+      },
+    ],
+  ])('never says everything is up to date while a run %s', async (_, patch) => {
+    sdkMock.getRunningJobs.mockResolvedValue({
+      operations: [],
+      memoryExports: [],
+      canManageQueues: true,
+      canReadJobRuns: true,
+      queues: [],
+      durableRuns: [durableRun({ total: 40, completed: 0, failed: 0, needsAttention: 0, ...patch } as never)],
+    });
+    try {
+      await mount([]);
+
+      expect(await screen.findByRole('region', { name: 'In progress' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Everything is up to date' })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Filter jobs' })).toBeInTheDocument();
     } finally {
       runningJobsSession.summary = idle;
     }

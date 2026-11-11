@@ -14,6 +14,7 @@
    * search for the country.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
   import { landmarkKind, landmarkStateId, type LandmarkCard } from '$lib/frameleaf/landmarks';
@@ -213,27 +214,30 @@
       <h1>{$t('places')}</h1>
       {#if summary}<p>{summary}</p>{/if}
     </div>
-    <div class="dv-header-actions">
-      <label class="dv-search">
-        <Icon icon={mdiMagnify} size="16" />
-        <input
-          type="search"
-          placeholder={$t('frameleaf_places_find')}
-          aria-label={$t('frameleaf_places_find')}
-          bind:value={search}
-        />
-      </label>
-      <Button pressed={grouped} onclick={() => setGrouped(!grouped)}>
-        <Icon icon={mdiEarth} size="16" />
-        {$t('frameleaf_places_group_by_country')}
-      </Button>
-      {#if grouped && groupIds.length > 0}
-        <Button onclick={() => (allCollapsed ? expandAllPlacesGroups() : collapseAllPlacesGroups(groupIds))}>
-          <Icon icon={allCollapsed ? mdiArrowExpandAll : mdiArrowCollapseAll} size="16" />
-          {allCollapsed ? $t('expand_all') : $t('collapse_all')}
+    <!-- FL-1412 (M13): with no places there is nothing to find or group, so no controls. -->
+    {#if failed || tree.cities.length > 0}
+      <div class="dv-header-actions">
+        <label class="dv-search">
+          <Icon icon={mdiMagnify} size="16" />
+          <input
+            type="search"
+            placeholder={$t('frameleaf_places_find')}
+            aria-label={$t('frameleaf_places_find')}
+            bind:value={search}
+          />
+        </label>
+        <Button pressed={grouped} onclick={() => setGrouped(!grouped)}>
+          <Icon icon={mdiEarth} size="16" />
+          {$t('frameleaf_places_group_by_country')}
         </Button>
-      {/if}
-    </div>
+        {#if grouped && groupIds.length > 0}
+          <Button onclick={() => (allCollapsed ? expandAllPlacesGroups() : collapseAllPlacesGroups(groupIds))}>
+            <Icon icon={allCollapsed ? mdiArrowExpandAll : mdiArrowCollapseAll} size="16" />
+            {allCollapsed ? $t('expand_all') : $t('collapse_all')}
+          </Button>
+        {/if}
+      </div>
+    {/if}
   </header>
 
   {#if failed}
@@ -244,17 +248,17 @@
       {retrying}
     />
   {:else if tree.cities.length === 0}
-    <div class="dv-empty" role="status">
-      <Icon icon={mdiMapMarkerOutline} size="30" />
-      <strong>{$t('frameleaf_places_empty_title')}</strong>
-      <p>{$t('frameleaf_places_empty_help')}</p>
-    </div>
+    <EmptyState
+      icon={mdiMapMarkerOutline}
+      title={$t('frameleaf_places_empty_title')}
+      message={$t('frameleaf_places_empty_help')}
+    />
   {:else if visibleCount === 0}
-    <div class="dv-empty" role="status">
-      <Icon icon={mdiMapSearchOutline} size="30" />
-      <strong>{$t('frameleaf_places_no_match_title', { values: { query: search.trim() } })}</strong>
-      <p>{$t('frameleaf_places_no_match_help')}</p>
-    </div>
+    <EmptyState
+      icon={mdiMapSearchOutline}
+      title={$t('frameleaf_places_no_match_title', { values: { query: search.trim() } })}
+      message={$t('frameleaf_places_no_match_help')}
+    />
   {:else if grouped}
     {#each visible.countries as country (country.id)}
       {@const open = !isPlacesGroupCollapsed($placesViewSettings, country.id)}
@@ -508,23 +512,6 @@
   }
   .dv-link:hover {
     color: var(--fl-text);
-  }
-  .dv-empty {
-    padding: 50px 12px;
-    text-align: center;
-    color: var(--fl-muted);
-  }
-  .dv-empty strong {
-    display: block;
-    margin-top: 14px;
-    color: var(--fl-text);
-    font-size: 15px;
-  }
-  .dv-empty p {
-    max-width: 42ch;
-    margin: 8px auto 0;
-    font-size: 13px;
-    line-height: 1.55;
   }
   .dv-state {
     display: grid;

@@ -1,8 +1,8 @@
 import { AlbumKind, AlbumUserRole, getAlbumInfo, LibraryScope, type AlbumResponseDto } from '@frameleaf/sdk';
-import { render, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
-import { invalidate, onNavigate } from '$app/navigation';
+import { goto, invalidate, onNavigate } from '$app/navigation';
 import { libraryTransientKey } from '$lib/frameleaf/library-session';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -368,5 +368,46 @@ describe('leaving an empty, unnamed album', () => {
     render(AlbumPage, { data: data(owned({ id: 'keep', ...(overrides as Partial<AlbumResponseDto>) })) as never });
     await leaveTo('/(user)/photos');
     expect(handleDeleteAlbum).not.toHaveBeenCalled();
+  });
+});
+
+// FL-1412 (M13): an empty album is the one empty-page pattern, with Add photos for whoever can add them.
+describe('an empty album', () => {
+  const album = (overrides: Partial<AlbumResponseDto> = {}) =>
+    albumFactory.build({
+      kind: AlbumKind.Album,
+      albumName: 'Weekend trip',
+      assetCount: 0,
+      albumUsers: [{ user: userAdminFactory.build({ id: 'owner' }), role: AlbumUserRole.Owner }],
+      ...overrides,
+    });
+  const emptyState = () => within(screen.getByTestId('library-empty-slot')).getByTestId('frameleaf-empty-state');
+
+  it('says how photos get here and offers Add photos, which goes to the Library to pick them', async () => {
+    render(AlbumPage, { data: data(album()) as never });
+    const empty = emptyState();
+    expect(within(empty).getByRole('heading', { name: 'frameleaf_album_empty_title' })).toBeInTheDocument();
+    expect(empty).toHaveTextContent('frameleaf_album_empty_body');
+    expect(within(empty).getAllByRole('button')).toHaveLength(1);
+    await fireEvent.click(within(empty).getByRole('button', { name: 'add_photos' }));
+    expect(goto).toHaveBeenCalledWith('/photos');
+  });
+
+  it('offers nothing to someone who can only look', () => {
+    const viewer = [
+      { user: userAdminFactory.build({ id: 'jamie' }), role: AlbumUserRole.Owner },
+      { user: userAdminFactory.build({ id: 'owner' }), role: AlbumUserRole.Viewer },
+    ];
+    render(AlbumPage, { data: data(album({ albumUsers: viewer })) as never });
+    const empty = emptyState();
+    expect(empty).toHaveTextContent('frameleaf_album_empty_viewer');
+    expect(within(empty).queryByRole('button')).toBeNull();
+  });
+
+  it('says a smart album fills itself, with nothing to add by hand', () => {
+    render(AlbumPage, { data: data(album({ isSmart: true })) as never });
+    const empty = emptyState();
+    expect(empty).toHaveTextContent('frameleaf_albums_empty_smart_text');
+    expect(within(empty).queryByRole('button')).toBeNull();
   });
 });

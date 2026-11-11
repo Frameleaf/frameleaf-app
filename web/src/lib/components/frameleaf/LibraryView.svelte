@@ -136,7 +136,6 @@
     mdiCalendarRange,
     mdiCompare,
     mdiFilterOffOutline,
-    mdiFolderOutline,
     mdiImageMultipleOutline,
     mdiMovieOpenPlayOutline,
     mdiOpenInNew,
@@ -763,6 +762,11 @@
   const applyBulk = (action: BulkActionId, ids: string[]) => {
     // A stack change moves the counts and which members the server hides, so the page reads it again.
     if (action === 'stack' || action === 'unstack') {
+      void manager.refresh();
+      return;
+    }
+    // FL-1410: a date set by hand is no longer one to check; the server says where each photo belongs now.
+    if (action === 'change-date' && manager.datesToCheck) {
       void manager.refresh();
       return;
     }
@@ -1431,6 +1435,17 @@
   const firstRun = $derived(
     !publicView && !selectionMode && ownTimeline && view.partnerPhotos && !session.filterActive && resultCount === 0,
   );
+  /**
+   * FL-1412 (M13): an empty page shows its empty state and nothing to arrange it with: no layout tabs,
+   * no toolbar, no Thumbnail size bar. That is any signed-in view with nothing in it and nothing
+   * narrowing it (Favorites, Best Photos, an album), the new library included. The one exception is
+   * FL-1398's: the owner's timeline with partner photos switched off keeps its toolbar. A view a filter
+   * has emptied keeps its toolbar too, since Filter is how to change it; the status bar (the count and
+   * Thumbnail size) goes whenever there is nothing to count or size.
+   */
+  const bare = $derived(
+    !publicView && !selectionMode && !session.filterActive && resultCount === 0 && (!ownTimeline || view.partnerPhotos),
+  );
   /** Selected items this view does not show (chosen elsewhere with the same session), App.jsx's "outside". */
   const selectedOutside = $derived(snapshot ? 0 : session.selection.filter((id) => !findAsset(id)).length);
 
@@ -1521,6 +1536,8 @@
 
   /** Items a bar action selected on its own; put back to nothing if that action is cancelled. */
   let barSelectedIds: string[] | null = null;
+  /** What was selected before such an action took the selection over; a cancel puts it back. */
+  let barRestoreIds: string[] = [];
 
   /** Run an action through the bar, on the selection or, with none, on these items selected first. */
   const performOnBar = async (id: BulkActionId, ids: string[]) => {
@@ -1535,12 +1552,57 @@
     selectionBarRef.performAction(id);
   };
 
+  /**
+   * FL-1410 "Fix dates": the photos whose date cannot be right (the "Dates to check" group at the end
+   * of the timeline) are selected and "Change date" opens on them. The prototype opens its Date & Time
+   * Doctor here, which the app does not have yet; Change date is what sets a date by hand, and a date
+   * set by hand is no longer one to check. Where these photos' dates are not the viewer's to change,
+   * they are left selected and brought into view.
+   */
+  const canFixDates = $derived(libraryChrome && !selectionBar && !noSelectionBar && !options?.isTrashed);
+  export const fixDates = async () => {
+    const group = manager.months.find((month) => month.toCheck);
+    if (!group || !canFixDates) {
+      return;
+    }
+    try {
+      await manager.loadTimelineMonth(group.yearMonth, { cancelable: false });
+    } catch (error) {
+      handleError(error, $t('errors.failed_to_load_assets'));
+      return;
+    }
+    // The view moved on while the group loaded (a filter, a refresh): its photos are not this view's.
+    if (!manager.months.includes(group)) {
+      return;
+    }
+    const ids = group.getAssets().map(({ id }) => id);
+    if (ids.length === 0) {
+      return;
+    }
+    const before = session.selection;
+    session.dispatch({ type: 'selection', ids });
+    await tick();
+    if (selectionBarRef?.canPerform('change-date')) {
+      barSelectedIds = ids;
+      barRestoreIds = before;
+      selectionBarRef.performAction('change-date');
+      return;
+    }
+    manager.scrollTo(group.top);
+  };
+
   /** The bar's dialog closed: a cancelled action started from a key or a tile leaves nothing selected. */
   const onBarDialogSettled = (submitted: boolean) => {
     const selected = barSelectedIds;
+    const restore = barRestoreIds;
     barSelectedIds = null;
+    barRestoreIds = [];
     if (!submitted && selected && session.selection.every((id) => selected.includes(id))) {
-      session.clearSelection();
+      if (restore.length > 0) {
+        session.dispatch({ type: 'selection', ids: restore });
+      } else {
+        session.clearSelection();
+      }
     }
   };
 
@@ -1848,7 +1910,7 @@
       case 'layout-work': {
         // LIB-01: the tabs scroll away with the header, so the keys switch from anywhere in the
         // library and keep the place as the tabs do. Locked offers the Timeline only.
-        if (surface !== 'timeline' || publicView || firstRun || lockedView) {
+        if (surface !== 'timeline' || publicView || bare || lockedView) {
           break;
         }
         event.preventDefault();
@@ -1924,7 +1986,7 @@
           onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
           showDayHeaders={gridLayout === 'timeline'}
           grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
-          onGroupingChange={gridLayout === 'timeline' && !firstRun
+          onGroupingChange={gridLayout === 'timeline' && !bare
             ? (grouping) => session.patchView({ grouping })
             : undefined}
           {enableRouting}
@@ -1937,12 +1999,13 @@
           quickActions={quickActionsFor}
           timelineCaptions={gridLayout === 'timeline' && (captions.time || captions.names)}
           empty={emptyState}
+          onFixDates={canFixDates ? () => void fixDates() : undefined}
           {gutter}
-          groupingInHeader={!publicView && !firstRun && mainWidth >= GROUPING_IN_TOOLBAR}
+          groupingInHeader={!publicView && !bare && mainWidth >= GROUPING_IN_TOOLBAR}
         >
           {#snippet header(groupingControl: Snippet | undefined)}
             <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
-            <div class="fl-library-header" class:has-title={!!title} class:has-toolbar={!publicView && !firstRun}>
+            <div class="fl-library-header" class:has-title={!!title} class:has-toolbar={!publicView && !bare}>
               <div class="fl-library-header-content">
                 {#if title}
                   <h1 class="fl-library-title">{title}</h1>
@@ -1959,7 +2022,7 @@
               <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
               {@render groupingControl?.()}
             {/snippet}
-            {#if !publicView && !firstRun && !tabsInToolbar}
+            {#if !publicView && !bare && !tabsInToolbar}
               <!-- FL-707 P2/12, kept where the photo area is narrow (phones, the Work panel open): the
                    layout tabs get their own row under the header and any notice, directly above the
                    toolbar, with a line saying what the current one is for. -->
@@ -1968,7 +2031,7 @@
                 <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
               </div>
             {/if}
-            {#if !publicView && !firstRun}
+            {#if !publicView && !bare}
               <div class="fl-library-toolbar" bind:this={toolbarStrip}>
                 <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
                 <ResultsToolbar
@@ -2091,7 +2154,7 @@
       {/if}
     {/if}
   {/if}
-  {#if showStatusBar && !firstRun}
+  {#if showStatusBar && resultCount !== 0}
     <!-- App.jsx footer (LIB-P6): the count, the selection, "Saved on this device" and Thumbnail size. -->
     {#if thumbnailControl}
       <LibraryStatusBar
@@ -2163,15 +2226,12 @@
       primary
       action={{
         label: $t('frameleaf_library_first_run_upload'),
-        icon: mdiImageMultipleOutline,
         onClick: () => void openFileUploadDialog(),
       }}
       secondaryAction={{
-        label: $t('frameleaf_transfer_upload_folder'),
-        icon: mdiFolderOutline,
+        label: $t('frameleaf_library_first_run_folder'),
         onClick: () => void openFileUploadDialog({ directory: true }),
       }}
-      hint={mediaQueryManager.pointerCoarse ? undefined : $t('frameleaf_library_first_run_hint')}
     />
   {:else}
     <LibraryEmptyState icon={mdiCalendarRange} message={$t('frameleaf_library_empty')} />

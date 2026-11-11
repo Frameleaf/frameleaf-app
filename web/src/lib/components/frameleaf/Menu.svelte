@@ -267,6 +267,7 @@
     <button
       bind:this={triggerElement}
       type="button"
+      class="fl-control"
       aria-haspopup="menu"
       aria-expanded={open}
       aria-controls={open ? menuId : undefined}

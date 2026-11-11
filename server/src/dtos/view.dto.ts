@@ -18,6 +18,13 @@ const FolderSummaryResponseSchema = z
     startDate: z.string().meta({ format: 'date-time' }).describe('Start date (earliest original in this folder)'),
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
     endDate: z.string().meta({ format: 'date-time' }).describe('End date (latest original in this folder)'),
+    datesToCheck: z
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'Originals directly in this folder whose date cannot be right (not happened yet, or a camera reset date nobody set by hand). They are left out of startDate and endDate unless every original is one.',
+      ),
   })
   .meta({ id: 'FolderSummaryResponseDto' });
 

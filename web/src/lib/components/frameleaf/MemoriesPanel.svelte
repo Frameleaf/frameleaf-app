@@ -25,6 +25,7 @@
   import { goto } from '$app/navigation';
   import { clickOutside } from '$lib/actions/click-outside';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
@@ -486,99 +487,108 @@
 
   <Status message={status} />
 
-  <section class="fm-section" aria-label={$t('frameleaf_memories_today')}>
-    <div class="fm-section-heading">
-      <h2>{$t('frameleaf_memories_today')}</h2>
-      {#if sections.today.length > 0}
-        <small>{$t('frameleaf_memories_subtitle', { values: { count: sections.today.length } })}</small>
-      {/if}
-    </div>
-    {#if sections.today.length > 0}
-      <div class="fm-hero">
-        {#each sections.today as entry, position (entry.memory.id)}
-          {@render card(entry, position === 0 ? 'hero' : 'regular')}
-        {/each}
-      </div>
-    {:else if failed && nothing}
-      <InlineError
-        title={$t('frameleaf_memories_failed_title')}
-        message={$t('frameleaf_memories_failed_body')}
-        onRetry={retry}
-        {retrying}
-      />
-    {:else if memoryManager.loading && nothing}
-      <!-- The shape of what is coming: the day's lead memory and two beside it. -->
-      <div class="fm-hero frameleaf" style:background="transparent" aria-busy="true">
-        <span class="sr-only">{$t('loading')}</span>
-        <Skeleton variant="block" height="20rem" />
-        <Skeleton variant="block" height="20rem" />
-        <Skeleton variant="block" height="20rem" />
-      </div>
-    {:else}
-      <!-- FL-1394 (B8): a day with nothing to show is one quiet row, not a banner over another day's photo. -->
-      <p class="fm-quiet">
-        <strong>
-          {preparing ? $t('frameleaf_memories_preparing_title') : $t('frameleaf_memories_nothing_today')}
-        </strong>
-        <small>
-          {#if preparing}
-            {$t('frameleaf_memories_preparing_description')}
-          {:else if nextUp}
-            {$t('frameleaf_memories_next_arrives', {
-              values: { count: nextUp.inDays ?? 1, title: $memoryHeadline(nextUp.memory).title },
-            })}
-          {:else if preferences.onlyFavorites}
-            {$t('frameleaf_memories_quiet_favorites')}
-          {:else}
-            {$t('frameleaf_memories_quiet_description')}
-          {/if}
-        </small>
-      </p>
-    {/if}
-  </section>
-
-  {#if preferences.showUpcoming && sections.upcoming.length > 0}
-    <section class="fm-section" aria-label={$t('memories_upcoming')}>
+  {#if nothing && !failed && !memoryManager.loading}
+    <!-- FL-1412 (M13): with no memory to show at all the page is one message, in the pattern every
+         empty page uses: being prepared the day after a first import (FL-1408), or a quiet day (FL-1394). -->
+    <EmptyState
+      icon={preparing ? mdiHistory : mdiCalendarTodayOutline}
+      title={preparing ? $t('frameleaf_memories_preparing_title') : $t('frameleaf_memories_nothing_today')}
+      message={preparing
+        ? $t('frameleaf_memories_preparing_description')
+        : preferences.onlyFavorites
+          ? $t('frameleaf_memories_quiet_favorites')
+          : $t('frameleaf_memories_quiet_description')}
+    />
+  {:else}
+    <section class="fm-section" aria-label={$t('frameleaf_memories_today')}>
       <div class="fm-section-heading">
-        <h2>{$t('memories_upcoming')}</h2>
-        <small>{$t('frameleaf_memories_next_14_days')}</small>
-      </div>
-      <div class="fm-row">
-        {#each sections.upcoming as entry (entry.memory.id)}
-          {@render card(entry, 'regular')}
-        {/each}
-      </div>
-    </section>
-  {/if}
-
-  <!-- When nothing loaded, the retry above speaks for the page: no empty "Earlier" under it. Nor
-       under "being prepared" (FL-1408), which is the page's one message. -->
-  {#if !(failed && nothing) && !preparing}
-    <section class="fm-section" aria-label={$t('frameleaf_memories_earlier')}>
-      <div class="fm-section-heading">
-        <h2>{$t('frameleaf_memories_earlier')}</h2>
-        {#if sections.earlier.length > 0}
-          <small>{$t('frameleaf_memories_earlier_caption')}</small>
+        <h2>{$t('frameleaf_memories_today')}</h2>
+        {#if sections.today.length > 0}
+          <small>{$t('frameleaf_memories_subtitle', { values: { count: sections.today.length } })}</small>
         {/if}
       </div>
-      {#if sections.earlier.length > 0}
-        <div class="fm-grid">
-          {#each sections.earlier as entry (entry.memory.id)}
+      {#if sections.today.length > 0}
+        <div class="fm-hero">
+          {#each sections.today as entry, position (entry.memory.id)}
+            {@render card(entry, position === 0 ? 'hero' : 'regular')}
+          {/each}
+        </div>
+      {:else if failed && nothing}
+        <InlineError
+          title={$t('frameleaf_memories_failed_title')}
+          message={$t('frameleaf_memories_failed_body')}
+          onRetry={retry}
+          {retrying}
+        />
+      {:else if memoryManager.loading && nothing}
+        <!-- The shape of what is coming: the day's lead memory and two beside it. -->
+        <div class="fm-hero frameleaf" style:background="transparent" aria-busy="true">
+          <span class="sr-only">{$t('loading')}</span>
+          <Skeleton variant="block" height="20rem" />
+          <Skeleton variant="block" height="20rem" />
+          <Skeleton variant="block" height="20rem" />
+        </div>
+      {:else}
+        <!-- FL-1394 (B8): a day with nothing to show is one quiet row, not a banner over another day's photo. -->
+        <p class="fm-quiet">
+          <strong>{$t('frameleaf_memories_nothing_today')}</strong>
+          <small>
+            {#if nextUp}
+              {$t('frameleaf_memories_next_arrives', {
+                values: { count: nextUp.inDays ?? 1, title: $memoryHeadline(nextUp.memory).title },
+              })}
+            {:else if preferences.onlyFavorites}
+              {$t('frameleaf_memories_quiet_favorites')}
+            {:else}
+              {$t('frameleaf_memories_quiet_description')}
+            {/if}
+          </small>
+        </p>
+      {/if}
+    </section>
+
+    {#if preferences.showUpcoming && sections.upcoming.length > 0}
+      <section class="fm-section" aria-label={$t('memories_upcoming')}>
+        <div class="fm-section-heading">
+          <h2>{$t('memories_upcoming')}</h2>
+          <small>{$t('frameleaf_memories_next_14_days')}</small>
+        </div>
+        <div class="fm-row">
+          {#each sections.upcoming as entry (entry.memory.id)}
             {@render card(entry, 'regular')}
           {/each}
         </div>
-      {:else if !memoryManager.loading && !failed}
-        <div class="fm-empty" role="status">
-          <Icon icon={mdiHistory} size="30" aria-hidden="true" />
-          <strong>{nothing ? $t('frameleaf_memories_empty_title') : $t('frameleaf_memories_nothing_earlier')}</strong>
-          <p>
-            {preferences.onlyFavorites
+      </section>
+    {/if}
+
+    <!-- When nothing loaded, the retry above speaks for the page: no empty "Earlier" under it. Nor under
+       the quiet Today row (FL-1412): a page never carries two empty messages. -->
+    {#if !(failed && nothing) && (sections.earlier.length > 0 || sections.today.length > 0 || memoryManager.loading)}
+      <section class="fm-section" aria-label={$t('frameleaf_memories_earlier')}>
+        <div class="fm-section-heading">
+          <h2>{$t('frameleaf_memories_earlier')}</h2>
+          {#if sections.earlier.length > 0}
+            <small>{$t('frameleaf_memories_earlier_caption')}</small>
+          {/if}
+        </div>
+        {#if sections.earlier.length > 0}
+          <div class="fm-grid">
+            {#each sections.earlier as entry (entry.memory.id)}
+              {@render card(entry, 'regular')}
+            {/each}
+          </div>
+        {:else if !memoryManager.loading && !failed}
+          <EmptyState
+            compact
+            icon={mdiHistory}
+            title={$t('frameleaf_memories_nothing_earlier')}
+            message={preferences.onlyFavorites
               ? $t('frameleaf_memories_empty_favorites')
               : $t('frameleaf_memories_empty_description')}
-          </p>
-        </div>
-      {/if}
-    </section>
+          />
+        {/if}
+      </section>
+    {/if}
   {/if}
 
   {#if memoryManager.hidden.length > 0}
@@ -986,27 +996,6 @@
   }
 
   /* discovery.css:173-190 */
-  .fm-empty {
-    padding: 3.125rem 0.75rem;
-    color: var(--fl-muted);
-    text-align: center;
-  }
-  /* The icon renders as a block, so text-align leaves it at the start edge; centre it over the text. */
-  .fm-empty :global(svg) {
-    margin-inline: auto;
-  }
-  .fm-empty strong {
-    display: block;
-    margin-block-start: 0.875rem;
-    color: var(--fl-text);
-    font-size: 0.9375rem;
-  }
-  .fm-empty p {
-    max-width: 42ch;
-    margin: 0.5rem auto 0;
-    font-size: 0.8125rem;
-    line-height: 1.55;
-  }
   /* discovery.css:1037-1070 */
   .fm-hidden .fm-section-heading h2 {
     color: var(--fl-muted);

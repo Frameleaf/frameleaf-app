@@ -114,4 +114,26 @@ describe(TimelineController.name, () => {
       expect(count.status).toBe(400);
     });
   });
+
+  describe('dates that cannot be right (FL-1410)', () => {
+    it('takes datesToCheck on the buckets and refuses a value it does not know', async () => {
+      const exclude = await request(ctx.getHttpServer()).get('/timeline/buckets').query({ datesToCheck: 'exclude' });
+      expect(exclude.status).toBe(200);
+      expect(service.getTimeBuckets).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({ datesToCheck: 'exclude' }),
+      );
+
+      const unknown = await request(ctx.getHttpServer()).get('/timeline/buckets').query({ datesToCheck: 'some' });
+      expect(unknown.status).toBe(400);
+    });
+
+    it('GET /timeline/dates-to-check takes the buckets’ filters, and not datesToCheck itself', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .get('/timeline/dates-to-check')
+        .query({ isFavorite: 'true', datesToCheck: 'exclude' });
+      expect(status).toBe(200);
+      expect(service.getDatesToCheck).toHaveBeenCalledWith(undefined, { isFavorite: true });
+    });
+  });
 });

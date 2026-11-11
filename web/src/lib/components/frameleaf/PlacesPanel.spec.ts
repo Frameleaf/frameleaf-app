@@ -120,9 +120,16 @@ describe('PlacesPanel (FL-51)', () => {
     ).toEqual(['Kyoto, 30 items', 'Lisbon, 12 items', 'Sintra, 5 items']);
   });
 
-  it('has an empty state for a library without places', () => {
+  // FL-1412 (M13): the one empty-page pattern, the icon above the words, and nothing to find or group.
+  it('has an empty state for a library without places, and no controls', () => {
     render(PlacesPanel, { places: [], counts: new Map(), unplaced: 0 });
-    expect(screen.getByText('No places yet')).toBeInTheDocument();
+    const empty = screen.getByTestId('frameleaf-empty-state');
+    expect(within(empty).getByRole('heading', { name: 'No places yet' })).toBeInTheDocument();
+    expect(empty).toHaveTextContent('Photos that know where they were taken are grouped here by country and region.');
+    expect(empty.firstElementChild).toHaveClass('icon', 'framed');
+    expect(empty.querySelector('button, a')).toBeNull();
     expect(screen.getByText('Where your photos and videos were taken')).toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Group by country' })).toBeNull();
   });
 });

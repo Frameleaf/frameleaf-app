@@ -30,10 +30,12 @@ test.describe('Album', () => {
   test('sends Select from library to the Library and keeps the new album', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
 
-    // Albums page -> Create album opens the create dialog; creating stays on the directory with a
-    // status line (Collections.jsx onSubmit), and the new album opens from its card.
+    // Albums page -> the empty state's New album (FL-1412) opens the create dialog; creating stays on the
+    // directory with a status line (Collections.jsx onSubmit), and the new album opens from its card.
     await page.goto('/albums');
-    await page.getByRole('button', { name: 'Create album' }).first().click();
+    await expect(page.getByRole('heading', { name: 'No albums yet' })).toBeVisible();
+    await expect(page.getByRole('searchbox', { name: 'Search albums' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'New album', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Name').fill('Weekend trip');
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
@@ -485,7 +487,7 @@ test.describe('Album', () => {
     const sheet = page.getByRole('dialog', { name: 'Map settings' });
     await expect(sheet.getByRole('switch', { name: 'Partner items' })).toHaveAttribute('aria-checked', 'true');
     await sheet.getByRole('switch', { name: 'Only favorites' }).click();
-    await expect(page.getByText('No located items match these settings')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'No photos match on the map' })).toBeVisible();
     await sheet.getByRole('switch', { name: 'Only favorites' }).click();
     await expect(mapMarker).toBeVisible();
     await page.keyboard.press('Escape');

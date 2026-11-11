@@ -118,24 +118,28 @@
   const state = $derived(groupState ?? groupSelectionState(dayIds, selection));
   const selected = $derived(new Set(selection));
   const headingId = $derived(`fl-day-${timelineDay.timelineMonth.viewId}-${timelineDay.day}`);
+  /** FL-1410: the group of photos whose date cannot be right; it is no day, and its title says what it is. */
+  const toCheck = $derived(timelineDay.timelineMonth.toCheck);
   /**
    * The day's title as the prototype writes it (`explore-timeline.mjs` `timelineGroups`): the full
    * date, e.g. "Wednesday, December 11, 2024". Only this header uses it; the manager's shorter
    * `groupTitle` stays as it is for everything else. It follows the person's date format (FL-783).
    */
   const dayTitle = $derived(
-    formatLuxon(
-      fromTimelinePlainDate({
-        year: timelineDay.timelineMonth.yearMonth.year,
-        month: timelineDay.timelineMonth.yearMonth.month,
-        day: timelineDay.day,
-      }),
-      { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' },
-      $locale ?? undefined,
-    ),
+    toCheck
+      ? $t('frameleaf_library_dates_to_check')
+      : formatLuxon(
+          fromTimelinePlainDate({
+            year: timelineDay.timelineMonth.yearMonth.year,
+            month: timelineDay.timelineMonth.yearMonth.month,
+            day: timelineDay.day,
+          }),
+          { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' },
+          $locale ?? undefined,
+        ),
   );
   /** FL-1392 (B3): where the day was spent, beside its date; under it on phones (`headerExtra`). */
-  const places = $derived(showHeader && !grouped ? groupPlaces(timelineDay.cities, $t) : '');
+  const places = $derived(showHeader && !grouped && !toCheck ? groupPlaces(timelineDay.cities, $t) : '');
   const headerExtra = $derived(showHeader && !grouped ? timelineDay.headerExtra : 0);
 </script>
 
@@ -156,6 +160,7 @@
       id={headingId}
       title={dayTitle}
       {places}
+      flag={toCheck ? $t('frameleaf_library_dates_to_check_reason') : ''}
       stacked={timelineDay.timelineMonth.timelineManager.placeLineHeight > 0}
       count={groupCount ?? dayIds.length}
       {state}

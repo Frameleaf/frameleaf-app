@@ -959,12 +959,12 @@ describe(TagService.name, () => {
       const { asset: archived } = await ctx.newAsset({
         ownerId: user.id,
         visibility: AssetVisibility.Archive,
-        ...capturedAt('2030-01-01T00:00:00.000Z'),
+        ...capturedAt('2026-06-01T00:00:00.000Z'),
       });
       const { asset: trashed } = await ctx.newAsset({
         ownerId: user.id,
         deletedAt: new Date(),
-        ...capturedAt('2000-01-01T00:00:00.000Z'),
+        ...capturedAt('2000-02-01T00:00:00.000Z'),
       });
       const { asset: locked } = await ctx.newAsset({ ownerId: user.id, ...capturedAt('2010-05-05T09:00:00.000Z') });
       await ctx.database

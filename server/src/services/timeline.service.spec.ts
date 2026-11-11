@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
 import { AssetLockReason, AssetVisibility, ImageEnrichmentFilter, TimeBucketDateType } from 'src/enum.js';
 import { TimelineService } from 'src/services/timeline.service.js';
+import { TimelineDatesToCheck } from 'src/utils/date-sanity.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -819,6 +820,50 @@ describe(TimelineService.name, () => {
           userId: '00000000-0000-4000-8000-000000000000',
         }),
       ).rejects.toThrow("You may not access another user's locked timeline");
+    });
+  });
+  describe('dates that cannot be right (FL-1410)', () => {
+    it('hands datesToCheck to every timeline query unchanged', async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '{}' });
+      mocks.asset.getTimelineHighlights.mockResolvedValue([]);
+      const datesToCheck = TimelineDatesToCheck.Exclude;
+
+      await sut.getTimeBuckets(authStub.admin, { datesToCheck });
+      await sut.getTimeBucket(authStub.admin, { datesToCheck, timeBucket: 'bucket' });
+      await sut.getTimelineHighlights(authStub.admin, { datesToCheck, grouping: 'year' });
+
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0]).toMatchObject({ datesToCheck });
+      expect(mocks.asset.getTimeBucket.mock.calls[0][1]).toMatchObject({ datesToCheck });
+      expect(mocks.asset.getTimelineHighlights.mock.calls[0][0]).toMatchObject({ datesToCheck });
+    });
+
+    it('sums the notice from the buckets that hold only such photos: how many, which years, which months', async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([
+        { timeBucket: '2031-07-01', count: 4 },
+        { timeBucket: '2031-06-01', count: 26 },
+        { timeBucket: '1970-01-01', count: 25 },
+      ]);
+
+      await expect(sut.getDatesToCheck(authStub.admin, { isFavorite: true })).resolves.toEqual({
+        count: 55,
+        years: [1970, 2031],
+        timeBuckets: ['2031-07-01', '2031-06-01', '1970-01-01'],
+      });
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        expect.objectContaining({ isFavorite: true, datesToCheck: TimelineDatesToCheck.Only }),
+        authStub.admin,
+      );
+    });
+
+    it('keeps the buckets’ own checks: another user’s Locked timeline is refused', async () => {
+      await expect(
+        sut.getDatesToCheck(
+          { ...authStub.admin, session: { id: 'session', hasElevatedPermission: true } },
+          { visibility: AssetVisibility.Locked, userId: '00000000-0000-4000-8000-000000000000' },
+        ),
+      ).rejects.toThrow("You may not access another user's locked timeline");
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
     });
   });
 });

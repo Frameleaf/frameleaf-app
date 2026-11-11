@@ -257,8 +257,8 @@
    * tracking token: `font: var(--fl-type-title); letter-spacing: var(--fl-tracking-title);`, or
    * the `fl-type-*` classes in base.css. The --fl-font-* sizes are the same steps for rules that
    * only set a size. Nothing is below 11px. Headings are semibold and tighten as they grow: the
-   * confident voice shared with frameleaf.app. `hero` is for sign-in, first run and an empty
-   * library only.
+   * confident voice shared with frameleaf.app. `hero` is for sign-in and first run only; an empty
+   * library is the one empty-page pattern like every other empty page (FL-1412).
    */
   --fl-font-hero: 40px;
   --fl-font-display: 28px;
@@ -305,10 +305,22 @@
   --fl-icon-lg: 18px;
   --fl-icon-xl: 20px;
   --fl-icon-hero: 28px;
-  /* Control heights: the 44px floor, 48px for touch, 34px only for opt-in compact desktop controls. */
+  /*
+   * Control sizes (FL-1390). --fl-control-height is the height a control is drawn at: 44px, and
+   * 36px with a mouse (the `pointer: fine` block below). --fl-control-target is what is pressed, on
+   * every device: with a mouse a `.button` or `.fl-control` reaches it through an unseen strip above
+   * and below its box (base.css), so a size that must stay a full target uses this token and not
+   * the drawn height. Touch uses --fl-control-height-touch; 34px is only for opt-in compact desktop
+   * controls. The last three are drawn with a mouse only, by the components that own them: tabs
+   * that switch a page's layout, filter chips, and the rows of a navigation list.
+   */
   --fl-control-height: 44px;
   --fl-control-height-touch: 48px;
   --fl-control-height-compact: 34px;
+  --fl-control-target: 44px;
+  --fl-tab-height: 38px;
+  --fl-chip-height: 32px;
+  --fl-nav-row-height: 31px;
   /* Layers, lowest to highest. The legacy kit's own layers sit on the same numbers. */
   --fl-z-sticky: 10;
   --fl-z-rail: 20;
@@ -329,7 +341,7 @@
   --fl-focus-inset: -2px;
   /*
    * The same ring for a control drawn smaller than its box. A native checkbox or radio is a small
-   * square or circle inside a 44px box (the floor below), and an outline would ring the box. Drop
+   * square or circle inside a taller box (the floor below), and an outline would ring the box. Drop
    * shadows trace what is drawn instead: the offset in the page colour, then the ring in the
    * accent. Whole pixels, so the edge stays sharp at every screen density.
    */
@@ -342,6 +354,14 @@
   /* Success is the brand green: one hue for "done", selection and the primary action. */
   --fl-success: var(--fl-accent);
   --fl-success-text: var(--fl-accent-text);
+}
+/* With a mouse a control is drawn 36px tall; its click area stays --fl-control-target (base.css). */
+@media (pointer: fine) {
+  :root,
+  .fl-media-viewer,
+  .frameleaf {
+    --fl-control-height: 36px;
+  }
 }
 .fl-media-viewer,
 .frameleaf {
@@ -403,7 +423,8 @@
  * `.fl-scope` is the class scope (the page area of the signed-in layout carries it): inside it the
  * baseline's classes and the primitives work, but no element is restyled, so the pages already
  * there keep their layout. Only what opts in by class gets the ring and the height floor:
- * `.button`, `.fl-press`, and the primitives, which mark their controls `fl-control`.
+ * `.button`, `.fl-press`, and the primitives, which mark their controls `fl-control`. The floor is
+ * the drawn height: 44px, 36px with a mouse, 48px on touch.
  */
 .frameleaf :focus-visible,
 .fl-scope :where(.button, .fl-control, .fl-press):focus-visible {
@@ -416,7 +437,7 @@
 }
 .frameleaf :where(button, input, select, summary),
 .fl-scope :where(.button, .fl-control) {
-  min-height: 44px;
+  min-height: var(--fl-control-height);
 }
 .frameleaf :where(button, summary) {
   cursor: pointer;

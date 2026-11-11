@@ -160,10 +160,31 @@ describe('TrashManager (FL-47)', () => {
 
     render(TrashManager);
 
-    expect(await screen.findByText(en.frameleaf_trash_hero_empty_title)).toBeInTheDocument();
-    expect(screen.queryByText(en.frameleaf_trash_empty_title)).toBeNull();
+    // FL-1412 (M13): the one empty-page pattern in place of the hero, with how long things wait.
+    const title = await screen.findByRole('heading', { name: 'Trash is empty' });
+    const empty = title.closest<HTMLElement>('[data-testid="frameleaf-empty-state"]')!;
+    expect(empty).toHaveTextContent('Deleted photos wait here for 30 days before they are removed for good.');
+    expect(empty.querySelector('button, a')).toBeNull();
+    expect(screen.getAllByTestId('frameleaf-empty-state')).toHaveLength(1);
+    expect(screen.queryByText(en.frameleaf_trash_hero_empty_title)).toBeNull();
+    expect(screen.queryByText(en.frameleaf_trash_hero_label)).toBeNull();
     expect(screen.queryByRole('searchbox')).toBeNull();
     expect(screen.queryByText(en.frameleaf_trash_manage_all)).toBeNull();
+  });
+
+  it('with the Trash off and nothing in it, says so and offers its setting only to an administrator', async () => {
+    flags.value.trash = false;
+    serve([]);
+    try {
+      render(TrashManager);
+      const title = await screen.findByRole('heading', { name: 'Trash is empty' });
+      const empty = title.closest<HTMLElement>('[data-testid="frameleaf-empty-state"]')!;
+      expect(empty).toHaveTextContent(en.frameleaf_trash_retention_disabled);
+      // the person signed in here is not an administrator
+      expect(empty.querySelector('button, a')).toBeNull();
+    } finally {
+      flags.value.trash = true;
+    }
   });
 
   it('permanently deletes only the reviewed items, after the typed confirmation', async () => {

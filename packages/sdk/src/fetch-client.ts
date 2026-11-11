@@ -5641,7 +5641,7 @@ export type AnalyticsDayDto = {
     /** Items taken on this local date */
     captured: number;
     date: string;
-    /** Items added on this UTC date */
+    /** Items added on this UTC date (an item taken before the server started counts from the day it was taken) */
     uploaded: number;
 };
 export type AnalyticsSeriesDefinitionDto = {
@@ -5935,16 +5935,16 @@ export type AnalyticsBucketDto = {
     key: string;
     /** Bytes */
     logicalBytes: number | null;
-    /** When the growth values were read; null for a gap */
+    /** When the growth values were read, or for a bucket before the first nightly reading, the end of the bucket they were rebuilt for from the items added by then; null for a gap */
     observedAt: string | null;
     /** Cut short by the edge of the selected dates */
     partial: boolean;
-    /** Photos added in this period and still in the library */
+    /** Photos added in this period and still in the library (a photo taken before the server started counts from the day it was taken) */
     photos: number;
     /** Bytes */
     physicalBytes: number | null;
     through: string;
-    /** Videos added in this period and still in the library */
+    /** Videos added in this period and still in the library (a video taken before the server started counts from the day it was taken) */
     videos: number;
 };
 export type AnalyticsSummaryDto = {
@@ -19456,6 +19456,14 @@ export type TimeBucketsResponseDto = {
     /** Start of the calendar period in YYYY-MM-DD format; sorted asset lookups return the synthetic value 1970-01-01 */
     timeBucket: string;
 };
+export type TimelineDatesToCheckResponseDto = {
+    /** Photos whose date cannot be right */
+    count: number;
+    /** The months those dates claim, as GET /timeline/buckets names them and in the order asked for. Read the photos of each with GET /timeline/bucket and datesToCheck=only */
+    timeBuckets: string[];
+    /** The years those dates claim, oldest first, for one short sentence ("1970 and 2031") */
+    years: number[];
+};
 export type TimelineHighlightResponseDto = {
     /** Number of assets in this year or month, the same as the time buckets report */
     count: number;
@@ -20050,6 +20058,8 @@ export type FolderSummaryResponseDto = {
     count: number;
     /** Up to four assets for a cover: the newest captures directly in this folder */
     coverAssetIds: string[];
+    /** Originals directly in this folder whose date cannot be right (not happened yet, or a camera reset date nobody set by hand). They are left out of startDate and endDate unless every original is one. */
+    datesToCheck?: number;
     /** End date (latest original in this folder) */
     endDate: string;
     /** Folder path, without a trailing slash */
@@ -22103,6 +22113,8 @@ export type TimeBucketAssetDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned. */
+    datesToCheck?: TimelineDatesToCheck;
     /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     /** Expected first asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected */
@@ -22161,6 +22173,8 @@ export type TimeBucketDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned. */
+    datesToCheck?: TimelineDatesToCheck;
     /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
@@ -22204,6 +22218,54 @@ export type TimeBucketDto = {
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
     withStacked?: boolean;
 };
+export type TimelineDatesToCheckDto = {
+    /** Filter assets belonging to a specific album */
+    albumId?: string;
+    /** Filter assets by media type */
+    assetType?: AssetTypeEnum;
+    /** Bounding box coordinates as west,south,east,north (WGS84) */
+    bbox?: string;
+    /** Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED */
+    bestPhotos?: boolean;
+    /** Date source for timeline bucket grouping. Defaults to taken date. */
+    dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
+    /** Filter by favorite status (true for favorites only, false for non-favorites only) */
+    isFavorite?: boolean;
+    /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
+    isTrashed?: boolean;
+    key?: string;
+    libraryScope?: LibraryViewScope;
+    /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
+    lockReason?: AssetLockReason | "immich-locked-folder";
+    /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
+    order?: AssetOrder;
+    /** Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf) */
+    orderBy?: AssetOrderBy;
+    /** Filter assets containing a specific person (face recognition) */
+    personId?: string;
+    /** Filter assets in which the caller confirmed one of their own pets */
+    petId?: string;
+    slug?: string;
+    /** Return only suppressed content. Requires an elevated session. */
+    suppressedOnly?: boolean;
+    /** Filter assets with a specific tag */
+    tagId?: string;
+    /** Filter assets by specific user ID */
+    userId?: string;
+    /** Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED) */
+    visibility?: AssetVisibility;
+    /** With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself. */
+    withChildTags?: boolean;
+    /** Include location data in the response */
+    withCoordinates?: boolean;
+    /** Include partner-shared copies. Defaults to true; false hides them, except copies in an album the partner made, which always show */
+    withPartners?: boolean;
+    /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
+    withStacked?: boolean;
+};
 export type TimelineHighlightsDto = {
     /** Filter assets belonging to a specific album */
     albumId?: string;
@@ -22215,6 +22277,8 @@ export type TimelineHighlightsDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned. */
+    datesToCheck?: TimelineDatesToCheck;
     /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     grouping?: TimelineHighlightGrouping;
@@ -22270,6 +22334,8 @@ export type TimelineOrderedDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned. */
+    datesToCheck?: TimelineDatesToCheck;
     /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
@@ -37826,7 +37892,7 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
@@ -37834,6 +37900,7 @@ export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPho
     before?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    datesToCheck?: TimelineDatesToCheck;
     filter?: string;
     firstAssetId?: string;
     imageEnrichment?: ImageEnrichmentFilter;
@@ -37871,6 +37938,7 @@ export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPho
         before,
         bestPhotos,
         dateType,
+        datesToCheck,
         filter,
         firstAssetId,
         imageEnrichment,
@@ -37903,12 +37971,13 @@ export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPho
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    datesToCheck?: TimelineDatesToCheck;
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
@@ -37942,6 +38011,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
         bbox,
         bestPhotos,
         dateType,
+        datesToCheck,
         filter,
         imageEnrichment,
         isFavorite,
@@ -37970,14 +38040,78 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
     }));
 }
 /**
- * Get timeline highlights
+ * Get the dates to check
  */
-export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimelineDatesToCheck({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
+    isFavorite?: boolean;
+    isTrashed?: boolean;
+    key?: string;
+    libraryScope?: LibraryViewScope;
+    lockReason?: AssetLockReason | "immich-locked-folder";
+    order?: AssetOrder;
+    orderBy?: AssetOrderBy;
+    personId?: string;
+    petId?: string;
+    slug?: string;
+    suppressedOnly?: boolean;
+    tagId?: string;
+    userId?: string;
+    visibility?: AssetVisibility;
+    withChildTags?: boolean;
+    withCoordinates?: boolean;
+    withPartners?: boolean;
+    withStacked?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TimelineDatesToCheckResponseDto;
+    }>(`/timeline/dates-to-check${QS.query(QS.explode({
+        albumId,
+        assetType,
+        bbox,
+        bestPhotos,
+        dateType,
+        filter,
+        imageEnrichment,
+        isFavorite,
+        isTrashed,
+        key,
+        libraryScope,
+        lockReason,
+        order,
+        orderBy,
+        personId,
+        petId,
+        slug,
+        suppressedOnly,
+        tagId,
+        userId,
+        visibility,
+        withChildTags,
+        withCoordinates,
+        withPartners,
+        withStacked
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get timeline highlights
+ */
+export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+    albumId?: string;
+    assetType?: AssetTypeEnum;
+    bbox?: string;
+    bestPhotos?: boolean;
+    dateType?: TimeBucketDateType;
+    datesToCheck?: TimelineDatesToCheck;
     filter?: string;
     grouping?: TimelineHighlightGrouping;
     highlightCount?: number;
@@ -38010,6 +38144,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
         bbox,
         bestPhotos,
         dateType,
+        datesToCheck,
         filter,
         grouping,
         highlightCount,
@@ -38039,7 +38174,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
@@ -38047,6 +38182,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
     before?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    datesToCheck?: TimelineDatesToCheck;
     filter?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
@@ -38082,6 +38218,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
         before,
         bestPhotos,
         dateType,
+        datesToCheck,
         filter,
         imageEnrichment,
         isFavorite,
@@ -43747,6 +43884,10 @@ export enum TakeoutPairState {
 export enum TimeBucketDateType {
     Added = "added",
     Taken = "taken"
+}
+export enum TimelineDatesToCheck {
+    Exclude = "exclude",
+    Only = "only"
 }
 export enum AssetLockReason {
     Marked = "marked",

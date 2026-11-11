@@ -580,7 +580,7 @@
           />
           <button
             type="button"
-            class="icon"
+            class="icon fl-control"
             aria-pressed={showPassword}
             aria-label={showPassword ? $t('hide_password') : $t('show_password')}
             title={showPassword ? $t('hide_password') : $t('show_password')}
@@ -1036,7 +1036,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 44px;
+    min-width: var(--fl-control-height);
   }
   .slf-created {
     display: flex;

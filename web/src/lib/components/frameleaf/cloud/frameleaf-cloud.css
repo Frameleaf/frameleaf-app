@@ -870,7 +870,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  min-height: 44px;
+  min-height: var(--fl-control-height);
   padding: 0.4375rem var(--fl-space-3);
   font-weight: 600;
   color: var(--fl-accent-text);
