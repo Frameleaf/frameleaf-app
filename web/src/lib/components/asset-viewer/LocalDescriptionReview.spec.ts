@@ -31,10 +31,11 @@ vi.mock('@frameleaf/sdk', async () => ({
   updateAsset: vi.fn(),
 }));
 
+beforeAll(() => addMessages('dev', en));
+
 beforeEach(() => {
   vi.clearAllMocks();
   session.current = true;
-  addMessages('en', en);
   vi.mocked(getEnrichmentOptions).mockResolvedValue({
     destinations: [{ id: 'local', kind: MlDestinationKind.Local, enrichment: { admitted: true } }],
   } as Awaited<ReturnType<typeof getEnrichmentOptions>>);
