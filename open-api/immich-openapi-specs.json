@@ -77203,6 +77203,13 @@
             "nullable": true,
             "type": "string"
           },
+          "mediaPermissions": {
+            "description": "Media download permissions, listed apart from permissions so older clients can still read keys",
+            "items": {
+              "$ref": "#/components/schemas/MediaPermission"
+            },
+            "type": "array"
+          },
           "name": {
             "description": "API key name",
             "type": "string"
@@ -77237,6 +77244,7 @@
           "designPermissions",
           "id",
           "lastUsedAt",
+          "mediaPermissions",
           "name",
           "permissions",
           "secret",
@@ -77273,6 +77281,13 @@
             "nullable": true,
             "type": "string"
           },
+          "mediaPermissions": {
+            "description": "Media download permissions, listed apart from permissions so older clients can still read keys",
+            "items": {
+              "$ref": "#/components/schemas/MediaPermission"
+            },
+            "type": "array"
+          },
           "name": {
             "description": "API key name",
             "type": "string"
@@ -77302,6 +77317,7 @@
           "designPermissions",
           "id",
           "lastUsedAt",
+          "mediaPermissions",
           "name",
           "permissions",
           "signedInFrom",
@@ -77313,13 +77329,6 @@
         "description": "List of permissions",
         "enum": [
           "all",
-          "media-import.read",
-          "media-import.create",
-          "media-import.update",
-          "media-connection.read",
-          "media-connection.write",
-          "media-subscription.read",
-          "media-subscription.write",
           "activity.create",
           "activity.read",
           "activity.update",
@@ -106030,7 +106039,6 @@
       "JobName": {
         "description": "Job name",
         "enum": [
-          "media-import",
           "ICloudSync",
           "ICloudRelations",
           "AnalyticsCollect",
@@ -115261,6 +115269,19 @@
           "cancelled",
           "failed",
           "paused"
+        ],
+        "type": "string"
+      },
+      "MediaPermission": {
+        "description": "Media download permission",
+        "enum": [
+          "media-import.read",
+          "media-import.create",
+          "media-import.update",
+          "media-connection.read",
+          "media-connection.write",
+          "media-subscription.read",
+          "media-subscription.write"
         ],
         "type": "string"
       },

@@ -6004,6 +6004,8 @@ export type ApiKeyResponseDto = {
     id: string;
     /** When the key was last used to reach the server; null when it never has been */
     lastUsedAt: string | null;
+    /** Media download permissions, listed apart from permissions so older clients can still read keys */
+    mediaPermissions: MediaPermission[];
     /** API key name */
     name: string;
     /** List of permissions */
@@ -6029,6 +6031,8 @@ export type ApiKeyCreateResponseDto = {
     id: string;
     /** When the key was last used to reach the server; null when it never has been */
     lastUsedAt: string | null;
+    /** Media download permissions, listed apart from permissions so older clients can still read keys */
+    mediaPermissions: MediaPermission[];
     /** API key name */
     name: string;
     /** List of permissions */
@@ -40903,15 +40907,17 @@ export enum DesignPermission {
     CaptureCreate = "capture.create",
     CaptureCatalogRead = "capture.catalog.read"
 }
-export enum ApiKeyResponsePermission {
-    All = "all",
+export enum MediaPermission {
     MediaImportRead = "media-import.read",
     MediaImportCreate = "media-import.create",
     MediaImportUpdate = "media-import.update",
     MediaConnectionRead = "media-connection.read",
     MediaConnectionWrite = "media-connection.write",
     MediaSubscriptionRead = "media-subscription.read",
-    MediaSubscriptionWrite = "media-subscription.write",
+    MediaSubscriptionWrite = "media-subscription.write"
+}
+export enum ApiKeyResponsePermission {
+    All = "all",
     ActivityCreate = "activity.create",
     ActivityRead = "activity.read",
     ActivityUpdate = "activity.update",
@@ -43194,7 +43200,6 @@ export enum QueueJobStatus {
     Paused = "paused"
 }
 export enum JobName {
-    MediaImport = "media-import",
     ICloudSync = "ICloudSync",
     ICloudRelations = "ICloudRelations",
     AnalyticsCollect = "AnalyticsCollect",
