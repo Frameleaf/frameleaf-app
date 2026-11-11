@@ -48,7 +48,8 @@ const fingerprint = 'assistant-eval-synthetic';
 const typeMap = { IMAGE: AssetType.Image, VIDEO: AssetType.Video };
 
 type Mode =
-  { mode: 'replay' | 'baseline' | 'assistant' } | { mode: 'live' | 'candidate' | 'qualification'; endpoint: URL };
+  | { mode: 'replay' | 'baseline' | 'assistant' | 'rules' }
+  | { mode: 'live' | 'candidate' | 'qualification'; endpoint: URL };
 
 /** Run the same fixture library against reference plans, the rule planner, or a candidate worker. */
 export async function run(database: Kysely<DB>, options: Mode) {
@@ -175,7 +176,7 @@ export async function run(database: Kysely<DB>, options: Mode) {
           .execute();
       }
     }
-    if (mode === 'baseline') {
+    if (mode === 'baseline' || mode === 'rules') {
       await search.upsert(asset.id, neutralEmbedding);
     }
   }
@@ -192,8 +193,9 @@ export async function run(database: Kysely<DB>, options: Mode) {
   };
   let validPlans = 0;
   const answers: EvalAnswer[] = [];
+  const offlineAssistant = mode === 'assistant' || mode === 'rules';
   const productionPlanner = mode === 'candidate' || mode === 'qualification';
-  if (mode === 'assistant' || productionPlanner) {
+  if (offlineAssistant || productionPlanner) {
     const destination = ctx.getMock(MlDestinationRepository);
     let planner: MachineLearningRepository | undefined;
     if ('endpoint' in options) {
@@ -210,7 +212,9 @@ export async function run(database: Kysely<DB>, options: Mode) {
       app.authenticate.mockResolvedValue(auth);
       const http = request(app.getHttpServer());
       for (const { id, question } of questions) {
-        assistant.plans.set(question, plans[id]);
+        if (mode === 'assistant') {
+          assistant.plans.set(question, plans[id]);
+        }
         const startedAt = performance.now();
         const result = await http.post('/assistant/ask').send({ query: question, size: RESULT_LIMIT }).expect(200);
         const response: AssistantAskResponseDto = AssistantAskResponseDto.schema.parse(result.body);
@@ -237,15 +241,16 @@ export async function run(database: Kysely<DB>, options: Mode) {
       options.mode === 'candidate'
         ? answers.map((answer) => (plannerCaseIds.has(answer.id) ? answer : { ...answer, filters: null, hits: [] }))
         : undefined;
+    const diagnostics = mode === 'rules' ? answers : plannerOnly;
     return {
       mode,
       cases: questions.length,
       assets: assets.length,
       plannerAnswers: plannerCaseIds.size,
-      ...(plannerOnly && {
-        plannerOnly: score(questions, assets, plannerOnly),
-        byFamily: scoreByFamily(questions, assets, plannerOnly),
-        filterErrors: countFilterErrors(questions, plannerOnly),
+      ...(plannerOnly && { plannerOnly: score(questions, assets, plannerOnly) }),
+      ...(diagnostics && {
+        byFamily: scoreByFamily(questions, assets, diagnostics),
+        filterErrors: countFilterErrors(questions, diagnostics),
       }),
       protectedHits,
       ...score(questions, assets, answers),

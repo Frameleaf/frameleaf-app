@@ -44,6 +44,13 @@ Assistant HTTP response with a local fixture worker. Both use the seeded
 library and fixture authentication. These runs verify the harness and the
 API contract. Release qualification requires an actual planner model.
 
+Set `FRAMELEAF_ASSISTANT_EVAL_MODE=rules` to measure the same Assistant HTTP
+endpoint when no model answers. This measures the delivered rule plans,
+retrieval and visible reasons, with filter errors broken down by family and
+field. Like the legacy baseline it uses neutral CLIP vectors, which exercise
+retrieval without measuring visual similarity. It requires zero planner answers
+and zero protected hits.
+
 ## Candidate planner benchmarking
 
 Run a candidate exposing the FL-847 `POST /assistant/plan` contract on a test
