@@ -1096,9 +1096,16 @@ export class AuthService extends BaseService {
       const signIn = await this.sessionRepository.getSignIn(auth.session.id);
       // a Frameleaf sign-in counts only while its live tag exists (unlinking removes the tag and keeps the session)
       if (
-        signIn &&
-        ((signIn.source === 'frameleaf' && (await this.frameleafAccountRepository.getSession(auth.session.id))) ||
-          (signIn.source === 'local' && signIn.methods.includes('passkey')))
+        (!signIn || signIn.source === 'frameleaf') &&
+        (await this.frameleafAccountRepository.getSession(auth.session.id))
+      ) {
+        return;
+      }
+      // a session with no record (made outside createSession) is judged as before, by its passkey link
+      if (
+        signIn
+          ? signIn.source === 'local' && signIn.methods.includes('passkey')
+          : await this.passkeyRepository.isPasskeySession(auth.session.id)
       ) {
         return;
       }

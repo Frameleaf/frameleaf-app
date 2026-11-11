@@ -2851,6 +2851,21 @@ describe(AuthService.name, () => {
         expect(mocks.session.getSignIn).toHaveBeenCalledWith('session-1');
       });
 
+      it('judges a session with no sign-in record as before: by its Frameleaf tag, then its passkey link', async () => {
+        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.session.getSignIn.mockResolvedValue(undefined);
+        mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
+        await expect(sut.authenticate(sessionRequest('relay'))).resolves.toMatchObject({ user });
+
+        mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+        mocks.passkey.isPasskeySession.mockResolvedValue(true);
+        await expect(sut.authenticate(sessionRequest('relay'))).resolves.toMatchObject({ user });
+
+        mocks.passkey.isPasskeySession.mockResolvedValue(false);
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+        await signInRequired(sut.authenticate(sessionRequest('relay')));
+      });
+
       it.each(['wan', 'relay'] as const)('refuses a password session arriving %s', async (via) => {
         mocks.session.getByToken.mockResolvedValue(sessionRow());
         mocks.session.getSignIn.mockResolvedValue({
