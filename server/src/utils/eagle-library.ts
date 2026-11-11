@@ -208,7 +208,7 @@ export const eagleColour = (color?: string) => (color ? EAGLE_COLOURS[color.toLo
 
 /** Whether an item comes over: in the library, of a type Boards holds, and its file is there. */
 export const isComing = (item: EagleItem, supported: ReadonlySet<string>) =>
-  !item.unreadable && !item.isDeleted && supported.has(item.ext) && item.present;
+  !item.unreadable && !item.isDeleted && (supported.has('*') || supported.has(item.ext)) && item.present;
 
 const sameName = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
 
@@ -252,7 +252,6 @@ export function findEagleItemFile(item: Pick<EagleItem, 'name' | 'ext'>, fileNam
     const folded = fold(fileName);
     const ext = originalExtension(folded);
     return (
-      ext &&
       folded !== 'metadata.json' &&
       !folded.startsWith('._') &&
       !folded.endsWith('_thumbnail.png') &&
@@ -265,12 +264,16 @@ export function findEagleItemFile(item: Pick<EagleItem, 'name' | 'ext'>, fileNam
   }
   const named = candidates.filter((fileName) => {
     const folded = fold(fileName);
-    return folded === name || folded.slice(0, folded.lastIndexOf('.')) === name;
+    const dot = folded.lastIndexOf('.');
+    return folded === name || (dot > 0 && folded.slice(0, dot) === name);
   });
   return named.length === 1 ? named[0] : candidates.length === 1 ? candidates[0] : undefined;
 }
 
-const originalExtension = (fileName: string) => /\.([a-z\d][a-z\d-]*)$/i.exec(fileName)?.[1].toLowerCase() ?? '';
+const originalExtension = (fileName: string) => {
+  const dot = fileName.lastIndexOf('.');
+  return dot > 0 ? fileName.slice(dot + 1).toLowerCase() : '';
+};
 
 export interface EagleServerItem extends EagleItem {
   /** The name of the item's file in its folder, when it was found. */

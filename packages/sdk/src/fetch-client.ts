@@ -9428,7 +9428,7 @@ export type EagleLibraryResponseDto = {
     items: EagleItemDto[];
     name: string;
     smartFolders: string[];
-    /** File types this import brings over (lower case, no dot) */
+    /** File extensions this import accepts (lower case, no dot). * includes downloadable originals. */
     supported: string[];
     tagGroups: string[];
 };
@@ -16887,6 +16887,8 @@ export type WarmLibrarySetupDto = {
     reset?: boolean;
 };
 export type ServerMediaTypesResponseDto = {
+    /** Boards accepts other files as downloadable originals */
+    boardsOriginals?: boolean;
     /** Font file extensions an upload into Boards (libraryScope=design) accepts */
     font: string[];
     /** Supported image MIME types */

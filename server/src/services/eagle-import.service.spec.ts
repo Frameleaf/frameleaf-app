@@ -25,7 +25,7 @@ import { authStub } from 'test/fixtures/auth.stub.js';
 it('offers the full Boards upload formats to the Eagle worker', () => {
   const supported = eagleServerSupported();
   expect([...supported]).toEqual(expect.arrayContaining(['psb', 'kra', 'cr3', 'mxf', 'woff2']));
-  expect(supported.has('xmp')).toBe(false);
+  expect(supported.has('*')).toBe(true);
 });
 
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -391,6 +391,29 @@ describe('FL-653 Eagle import from a server folder', () => {
         ['I4', 'asset-Lodge Serif.otf', false],
       ]);
       expect(repository.save).toHaveBeenCalledWith(expect.any(String), workerId, { total: 4 });
+      expect(repository.finish).toHaveBeenCalledWith(expect.any(String), workerId, 'finished');
+    });
+
+    it('copies opaque originals to Boards and retains their real filenames', async () => {
+      const libraryPath = 'Design/Studio References.library';
+      const names = ['Audio.wav', 'Mesh.glb', 'Offline.mhtml', 'Design.afdesign', 'README'];
+      for (const [index, name] of names.entries()) {
+        const folder = path.join(root, libraryPath, 'images', `O${index}.info`);
+        await mkdir(folder);
+        const { name: title, ext } = path.parse(name);
+        await writeFile(path.join(folder, 'metadata.json'), JSON.stringify({ name: title, ext: ext.slice(1) }));
+        await writeFile(path.join(folder, name), name);
+      }
+      const checked = await service.check(admin, { rootId: '0', path: libraryPath });
+      await worker.run(row({ fingerprint: checked.fingerprint }) as never);
+
+      for (const filename of names) {
+        expect(assetMedia.uploadAsset).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ filename, libraryScope: LibraryScope.Design }),
+          expect.objectContaining({ originalName: filename, originalPath: expect.stringMatching(/\.bin$/) }),
+        );
+      }
       expect(repository.finish).toHaveBeenCalledWith(expect.any(String), workerId, 'finished');
     });
 

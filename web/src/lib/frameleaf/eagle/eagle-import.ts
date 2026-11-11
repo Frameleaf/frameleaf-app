@@ -313,7 +313,7 @@ export const hasFile = (item: EagleItem) => !!item.file || item.present === true
 
 /** Whether a record comes over: in the library, of a type Boards holds, and its file is there. */
 export function isComing(item: EagleItem, supported: ReadonlySet<string>) {
-  return !item.unreadable && !item.isDeleted && supported.has(item.ext) && hasFile(item);
+  return !item.unreadable && !item.isDeleted && (supported.has('*') || supported.has(item.ext)) && hasFile(item);
 }
 
 /**
@@ -380,14 +380,13 @@ export function planEagleImport(library: EagleLibrary, options: EaglePlanOptions
   const readable = library.items.filter((item) => !item.unreadable);
   const live = readable.filter((item) => !item.isDeleted);
   const trash = readable.filter((item) => item.isDeleted).map((item) => eagleFileName(item));
+  const accepts = (item: EagleItem) => supported.has('*') || supported.has(item.ext);
   const unsupported: EagleUnsupported[] = live
-    .filter((item) => item.ext && !supported.has(item.ext))
+    .filter((item) => (item.ext || hasFile(item)) && !accepts(item))
     .map((item) => ({ name: eagleFileName(item), reason: UNSUPPORTED_REASON[item.ext] ?? 'other' }));
   const missing = [
     ...library.items.filter((item) => item.unreadable).map((item) => `${item.id}.info`),
-    ...live
-      .filter((item) => (!item.ext || supported.has(item.ext)) && !hasFile(item))
-      .map((item) => eagleFileName(item)),
+    ...live.filter((item) => (!item.ext || accepts(item)) && !hasFile(item)).map((item) => eagleFileName(item)),
   ];
   const coming = live.filter((item) => isComing(item, supported));
   const isAlready = (item: EagleItem) =>

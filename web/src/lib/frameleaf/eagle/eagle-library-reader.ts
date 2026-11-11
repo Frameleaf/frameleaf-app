@@ -111,7 +111,6 @@ function findEagleItemFile(item: Pick<EagleItem, 'name' | 'ext'>, fileNames: Ite
     const folded = fold(fileName);
     const ext = originalExtension(folded);
     return (
-      ext &&
       folded !== 'metadata.json' &&
       !folded.startsWith('._') &&
       !folded.endsWith('_thumbnail.png') &&
@@ -124,12 +123,16 @@ function findEagleItemFile(item: Pick<EagleItem, 'name' | 'ext'>, fileNames: Ite
   }
   const named = candidates.filter((fileName) => {
     const folded = fold(fileName);
-    return folded === name || folded.slice(0, folded.lastIndexOf('.')) === name;
+    const dot = folded.lastIndexOf('.');
+    return folded === name || (dot > 0 && folded.slice(0, dot) === name);
   });
   return named.length === 1 ? named[0] : candidates.length === 1 ? candidates[0] : undefined;
 }
 
-const originalExtension = (fileName: string) => /\.([a-z\d][a-z\d-]*)$/i.exec(fileName)?.[1].toLowerCase() ?? '';
+const originalExtension = (fileName: string) => {
+  const dot = fileName.lastIndexOf('.');
+  return dot > 0 ? fileName.slice(dot + 1).toLowerCase() : '';
+};
 
 /** Files from `<input webkitdirectory>`: their paths start with the chosen folder's name. */
 export function entriesFromFileList(files: Iterable<File>): { name: string; entries: LibraryEntry[] } {
