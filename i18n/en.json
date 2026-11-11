@@ -3583,6 +3583,8 @@
   "frameleaf_apps_access_people_read": "See the names of people and pets you’ve named",
   "frameleaf_apps_access_tags_write": "Add tags to your photos, or take them off",
   "frameleaf_apps_admin_added": "Added {date}",
+  "frameleaf_apps_admin_allow_mcp": "AI agents (MCP)",
+  "frameleaf_apps_admin_allow_mcp_description": "Let people connect AI agents to their library through MCP. Turning this off also stops existing agents from using the library.",
   "frameleaf_apps_admin_allow_registration": "Let new apps register themselves",
   "frameleaf_apps_admin_allow_registration_description": "AI assistants such as Claude and ChatGPT add themselves when someone connects them. Each person still has to choose Allow before an app can see anything. Turn this off to allow only apps that are already registered.",
   "frameleaf_apps_admin_description": "Apps that can ask people on this server for access. Each person chooses what they allow.",

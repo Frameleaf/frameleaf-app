@@ -1348,13 +1348,14 @@ export class AssetRepository {
    * Locked (by visibility or by a lock rule), and none of the viewer's hidden people, pets or tags is in
    * it. Access itself is checked separately, with the ordinary access rules.
    */
-  async isCastable(id: string, hiddenContent?: HiddenContentFilter): Promise<boolean> {
+  async isCastable(id: string, hiddenContent?: HiddenContentFilter, excludeHidden = false): Promise<boolean> {
     const row = await this.db
       .selectFrom('asset')
       .select('asset.id')
       .where('asset.id', '=', asUuid(id))
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', '!=', AssetVisibility.Locked)
+      .$if(excludeHidden, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Hidden))
       .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, { hiddenContent }))
       .executeTakeFirst();

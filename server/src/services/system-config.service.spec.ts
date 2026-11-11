@@ -77,7 +77,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       cronExpression: '',
     },
   },
-  connectedApps: { allowRegistration: true },
+  connectedApps: { allowMcp: true, allowRegistration: true },
   analytics: {
     enabled: true,
     historyDays: 730,

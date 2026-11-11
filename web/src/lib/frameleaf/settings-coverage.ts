@@ -329,6 +329,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'libraryCare.rawRecovery',
   },
   {
+    pattern: 'connectedApps.allowMcp',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
+    evidence: 'connectedApps?.allowMcp',
+  },
+  {
     pattern: 'connectedApps.allowRegistration',
     // FL-860: Sign-in › Connected apps
     kind: 'control',

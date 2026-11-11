@@ -120,6 +120,8 @@ import { MetadataService } from 'src/services/metadata.service.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
+import { McpPreviewService } from 'src/services/mcp-preview.service.js';
+import { McpService } from 'src/services/mcp.service.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
 import { OvernightService } from 'src/services/overnight.service.js';
@@ -219,6 +221,8 @@ export const services = [
   AssetPaletteService,
   CaptureService,
   BrowserExtensionSignInService,
+  McpService,
+  McpPreviewService,
   OAuthAppService,
   AlbumItemsService,
   AssetSourceService,

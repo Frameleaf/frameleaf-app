@@ -183,6 +183,7 @@ export const RATE_LIMITS = Object.freeze({
     limit: 10,
     windowSeconds: 10 * MINUTE,
   },
+  mcp: { bucket: 'mcp', limit: 600, windowSeconds: MINUTE },
   /** `POST shared-links/login`. */
   sharedLinkLogin: {
     bucket: 'shared-link-login',

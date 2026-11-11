@@ -1589,6 +1589,8 @@ export type AdminConfigBackupsDto = {
     schedule: AdminConfigBackupScheduleDto;
 };
 export type AdminConfigConnectedAppsDto = {
+    /** Let AI agents connect to the library through MCP */
+    allowMcp?: boolean;
     /** Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything. */
     allowRegistration: boolean;
 };

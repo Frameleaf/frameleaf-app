@@ -93,6 +93,7 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'logging.level': { label: 'frameleaf_srvadv_trouble_amount', values: LEVELS },
   'analytics.enabled': { label: 'frameleaf_srvadv_trouble_analytics_keep' },
   // FL-860: Sign-in › Connected apps
+  'connectedApps.allowMcp': { label: 'frameleaf_apps_admin_allow_mcp' },
   'connectedApps.allowRegistration': { label: 'frameleaf_apps_admin_allow_registration' },
   'analytics.historyDays': {
     label: 'frameleaf_srvadv_trouble_analytics_for',

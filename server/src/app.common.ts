@@ -2,6 +2,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { json, urlencoded } from 'body-parser';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
+import type { RequestHandler } from 'express';
 import helmetMiddleware from 'helmet';
 import { existsSync } from 'node:fs';
 import sirv from 'sirv';
@@ -65,6 +66,14 @@ export async function configureExpress(
   // FL-161: record how the request arrived (vouched for by the edge worker's per-boot secret) and
   // drop every client-supplied `X-Frameleaf-*` claim before anything else reads the request.
   app.use(frameleafViaMiddleware(frameleafCloud.edge.secret));
+  const requireMcpJson: RequestHandler = (req, res, next) => {
+    if (req.method === 'POST' && !req.is('application/json')) {
+      res.sendStatus(415);
+      return;
+    }
+    next();
+  };
+  app.use(/^\/api\/mcp\/?$/i, requireMcpJson, json({ limit: '32kb' }));
   app.use(
     json({
       limit: '10mb',

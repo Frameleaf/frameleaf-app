@@ -20,6 +20,7 @@ import {
 import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import {
   AuthDto,
+  AuthOAuthApp,
   AuthStatusResponseDto,
   ChangePasswordDto,
   LoginCredentialDto,
@@ -82,7 +83,7 @@ import {
 } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
-import { isOAuthAccessToken } from 'src/utils/oauth-apps.js';
+import { MCP_PATH, isOAuthAccessToken } from 'src/utils/oauth-apps.js';
 import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
@@ -965,6 +966,11 @@ export class AuthService extends BaseService {
     const { adminRoute, sharedLinkRoute, uri } = metadata;
     const requestedPermission = metadata.permission ?? Permission.All;
 
+    const audience = authDto.oauthApp?.resource;
+    if (audience && new URL(audience).pathname === MCP_PATH) {
+      throw new UnauthorizedException('This connected app token is for the MCP endpoint');
+    }
+
     // FL-803: a connected app reaches only routes its scopes' permissions name: never an admin
     // route, and never one that takes any signed-in caller (`permission: false`), whoever owns it.
     if (authDto.oauthApp && (adminRoute || requestedPermission === false)) {
@@ -1004,6 +1010,33 @@ export class AuthService extends BaseService {
       throw new ForbiddenException(`Missing required permission: ${requestedPermission}`);
     }
 
+    return this.applyHiddenContent(authDto);
+  }
+
+  async authenticateMcp(headers: IncomingHttpHeaders, resource: string, via: FrameleafVia | null) {
+    const token = this.getBearerToken(headers);
+    if (!isOAuthAccessToken(token)) {
+      throw new UnauthorizedException();
+    }
+    return this.authorizeMcpGrant(await this.oauthApps.validateAccessToken(token, via), resource, via);
+  }
+
+  async authorizeMcpGrant(
+    auth: AuthDto,
+    resource: string,
+    via: FrameleafVia | null,
+  ): Promise<AuthDto & { oauthApp: AuthOAuthApp }> {
+    const oauthApp = auth.oauthApp;
+    if (oauthApp?.resource !== resource) {
+      throw new UnauthorizedException();
+    }
+    if (isRemoteVia(via)) {
+      await this.requireRemoteSignIn(auth, via, MCP_PATH);
+    }
+    return this.applyHiddenContent({ ...auth, oauthApp });
+  }
+
+  private async applyHiddenContent<T extends AuthDto>(authDto: T): Promise<T> {
     // FL-34: sensitive media is hidden by its lock record (`src/utils/locked.ts`), which every read
     // applies, so it is no longer part of this per-session filter: anything hidden while locked is in
     // the Locked view. The filter keeps the owner's own suppressed people, tags and pets.

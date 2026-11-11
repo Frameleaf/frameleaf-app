@@ -83,6 +83,7 @@ import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
+import { McpController } from 'src/controllers/mcp.controller.js';
 import {
   OAuthAppAdminController,
   OAuthAppController,
@@ -164,6 +165,7 @@ export const controllers = [
   AssetPaletteController,
   CaptureController,
   BrowserExtensionSignInController,
+  McpController,
   OAuthAppController,
   OAuthAppAdminController,
   OAuthAppWellKnownController,

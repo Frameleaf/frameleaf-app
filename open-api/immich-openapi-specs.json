@@ -69778,6 +69778,10 @@
       },
       "AdminConfigConnectedAppsDto": {
         "properties": {
+          "allowMcp": {
+            "description": "Let AI agents connect to the library through MCP",
+            "type": "boolean"
+          },
           "allowRegistration": {
             "description": "Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything.",
             "type": "boolean"
