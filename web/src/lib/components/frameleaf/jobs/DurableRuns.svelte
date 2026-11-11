@@ -88,14 +88,16 @@
         : $t(runTitleKey(run.kind, ownQueue(run)?.key, 'frameleaf_job_runs_server_work'));
   /** Photos when the work is one per photo, tasks otherwise. */
   const photos = (run: DurableJobRun) => run.countsPhotos !== false;
+  /** FL-1430: a night whose photos couldn't be counted once each counts its tasks. */
+  const progressInPhotos = (run: DurableJobRun) => photos(run) && run.countedOnce !== false;
   const howFar = (run: DurableJobRun) => {
     const done = settledItems(run);
     if (!run.enumerationDone) {
-      return $t(photos(run) ? 'frameleaf_job_runs_photos_so_far' : 'frameleaf_job_runs_tasks_so_far', {
+      return $t(progressInPhotos(run) ? 'frameleaf_job_runs_photos_so_far' : 'frameleaf_job_runs_tasks_so_far', {
         values: { count: done },
       });
     }
-    return $t(photos(run) ? 'frameleaf_job_runs_photos' : 'frameleaf_job_runs_tasks', {
+    return $t(progressInPhotos(run) ? 'frameleaf_job_runs_photos' : 'frameleaf_job_runs_tasks', {
       values: { count: run.total, done: number(done) },
     });
   };

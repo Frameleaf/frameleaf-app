@@ -298,6 +298,27 @@ describe('recent work', () => {
     await waitFor(() => expect(sdkMock.listDurableJobRuns).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('Checking files for damage')).not.toBeInTheDocument();
   });
+  it("a night whose photos couldn't be counted once says tasks (FL-1430)", async () => {
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [
+        durableRun({
+          nightly: true,
+          countedOnce: false,
+          state: 'completed',
+          finishedAt: '2026-11-11T03:00:00.000Z',
+          total: 3,
+          completed: 3,
+          failed: 0,
+          needsAttention: 0,
+          active: 0,
+          reasons: [],
+        }),
+      ],
+      hasNextPage: false,
+    });
+    render(DurableRuns);
+    expect(await screen.findByText('3 of 3 tasks')).toBeInTheDocument();
+  });
   it('counts tasks when the work is not about photos', async () => {
     sdkMock.listDurableJobRuns.mockResolvedValue({
       items: [durableRun({ countsPhotos: false, failed: 0, needsAttention: 0 })],

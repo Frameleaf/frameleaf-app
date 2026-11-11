@@ -19,6 +19,15 @@ export const fileCheckView = (
   if (check.running) {
     return { status: 'frameleaf_job_runs_state_running', tone: 'good', found: null, bucket: 'running' };
   }
+  // a check that failed or was cancelled found nothing worth saying: it didn't get through its work
+  if (check.failed) {
+    return {
+      status: 'frameleaf_job_runs_status_unfinished',
+      tone: 'warn',
+      found: { key: 'frameleaf_job_runs_file_check_unfinished', values: {} },
+      bucket: 'failed',
+    };
+  }
   const { damaged, missing } = check;
   const found: { key: Translations; values: Record<string, number> } =
     damaged > 0 && missing > 0

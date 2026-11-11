@@ -10,6 +10,7 @@ const check = (overrides: Partial<Parameters<typeof fileCheckView>[0]> = {}) => 
   total: 14_288,
   damaged: 0,
   missing: 0,
+  failed: false,
   ...overrides,
 });
 
@@ -35,6 +36,17 @@ describe("Library care's file check card (FL-1430)", () => {
       found: { key: 'frameleaf_job_runs_file_check_found_none', values: {} },
       bucket: 'done',
     });
+  });
+  it("a check that failed or was cancelled says it didn't finish, under Failed", () => {
+    expect(fileCheckView(check({ failed: true }))).toEqual({
+      status: 'frameleaf_job_runs_status_unfinished',
+      tone: 'warn',
+      found: { key: 'frameleaf_job_runs_file_check_unfinished', values: {} },
+      bucket: 'failed',
+    });
+    expect(Object.keys(en)).toEqual(
+      expect.arrayContaining(['frameleaf_job_runs_status_unfinished', 'frameleaf_job_runs_file_check_unfinished']),
+    );
   });
   it('a running check is running, and says nothing found yet', () => {
     expect(fileCheckView(check({ running: true, finishedAt: null }))).toEqual({
