@@ -16,7 +16,7 @@ import traceback
 from pathlib import Path, PurePosixPath
 from threading import Timer
 from time import perf_counter, sleep
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import onnx
 import orjson
@@ -83,6 +83,7 @@ class ModelBindingSpec(Contract):
 
 
 class QualificationSpec(ModelBindingSpec):
+    engine: Literal["onnx", "qwen-gguf"] = "onnx"
     provider: str
     fixture_file: str
     fixture_kind: str = Field(pattern=r"^(image|text)$")
@@ -97,11 +98,16 @@ class QualificationSpec(ModelBindingSpec):
         return safe_relative(value)
 
 
-def preprocessing_identity() -> str:
+def preprocessing_identity(engine: str = "onnx") -> str:
     root = Path(__file__).parent
     files = sorted((root / "models").rglob("*.py")) + [
         root / name for name in ("main.py", "schemas.py", "config.py", "producer_binding.py")
     ]
+    if engine == "qwen-gguf":
+        files.extend(
+            root / name
+            for name in ("native_qwen.py", "native_qwen_windows.py", "native_binding.py", "native_runtime.py")
+        )
     digest = hashlib.sha256()
     for path in files:
         digest.update(path.relative_to(root).as_posix().encode() + b"\0" + path.read_bytes())
@@ -192,7 +198,7 @@ async def qualify(
 
     if cache_dir.is_symlink():
         raise ValueError("native_cache_directory_invalid")
-    if preprocessing_identity() != spec.preprocessing_sha256:
+    if preprocessing_identity(spec.engine) != spec.preprocessing_sha256:
         raise ValueError("native_preprocessing_changed")
     if observer is not None and (spec.provider != "CoreMLExecutionProvider" or observer.provider != spec.provider):
         raise ValueError("native_device_observer_invalid")
@@ -203,7 +209,6 @@ async def qualify(
     settings.cache_folder = cache_dir.resolve()
     settings.ann = False
     settings.rknn = False
-    entries, models = verify_models(spec, cache_dir)
     fixture = fixture_root / spec.fixture_file
     if (
         fixture.is_symlink()
@@ -215,6 +220,41 @@ async def qualify(
     data = fixture.read_bytes()
     if hashlib.sha256(data).hexdigest() != spec.fixture_sha256:
         raise ValueError("native_fixture_changed")
+    if spec.engine == "qwen-gguf":
+        if observer is not None:
+            raise ValueError("native_engine_qualification_not_supported")
+        from frameleaf_ml.native_qwen import binary_sha256, predict_qwen, verify_qwen
+
+        verify_qwen(spec, cache_dir)
+        binary = binary_sha256()
+        samples = []
+        build = None
+        for _ in range(2):
+            start = perf_counter()
+            output, observed_build = await predict_qwen(cache_dir, data, binary)
+            samples.append((perf_counter() - start) * 1000)
+            compare_output(output, spec.expected_output)
+            if build is not None and observed_build != build:
+                raise ValueError("native_qwen_build_changed")
+            build = observed_build
+            verify_qwen(spec, cache_dir)
+        if binary_sha256() != binary or snapshot()["fingerprint"] != before["fingerprint"]:
+            raise ValueError("native_runtime_or_driver_changed")
+        return {
+            "protocolVersion": 1,
+            "engine": "qwen-gguf",
+            "modelKey": spec.model_key,
+            "bindingSha256": spec_sha256,
+            "preprocessingSha256": spec.preprocessing_sha256,
+            "fixtureSha256": spec.fixture_sha256,
+            "runtimeFingerprint": before["fingerprint"],
+            "runtime": before["facts"],
+            "state": "ready-cpu",
+            "reason": None,
+            "provider": spec.provider,
+            "qwenExecution": {"build": build, "binarySha256": binary, "coldMilliseconds": samples},
+        }
+    entries, models = verify_models(spec, cache_dir)
     session: OrtSession | None = None
     previous_temp = tempfile.tempdir
     completed = False
