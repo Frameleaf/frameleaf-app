@@ -16,8 +16,9 @@ export const FAILURE_PATTERNS = {
   unreachable: 'ENOENT|ENOTDIR|EACCES|ESTALE|EHOSTDOWN|no such file',
   // file wording only: machine learning's "404 Not Found" or "model not found" isn't a missing photo
   missing: 'ENOENT|no such file|file not found',
+  // FL-1430: exiftool's words for a damaged file ("File format error", "Entire file is binary zeros")
   damaged:
-    'premature end|truncated|incomplete|huffman|(^|[^a-z])SOI([^a-z]|$)|marker|APP[0-9]* segment|improper image header|corrupt',
+    'premature end|truncated|incomplete|huffman|(^|[^a-z])SOI([^a-z]|$)|marker|APP[0-9]* segment|improper image header|corrupt|file format error|entire file is binary zeros',
   unsupported: 'unsupported|unknown format|no decode delegate|not supported',
 } as const satisfies Record<'unreachable' | 'missing' | 'damaged' | 'unsupported', string>;
 
@@ -33,6 +34,13 @@ export type RunFailureInput = {
   offline: boolean;
   /** Its open Library care finding (or a damaged file Library care fixed); missing first when it has both */
   finding: 'missing' | 'corrupt' | null;
+};
+
+/** FL-1430: exiftool reports one problem twice ("X; X"); it is shown once. */
+export const singleMessage = (message: string | null) => {
+  if (!message) return message;
+  const parts = message.split('; ');
+  return parts.length > 1 && parts.every((part) => part === parts[0]) ? parts[0] : message;
 };
 
 const matches = (error: string | null, pattern: string) => new RegExp(pattern, 'i').test(error ?? '');
