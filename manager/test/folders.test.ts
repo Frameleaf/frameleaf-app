@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { overlappingWriter } from '../src/postgres-storage.js';
-import { assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, inside, isMounted, listFolders, realTarget } from '../src/folders.js';
+import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, externalRuleSources, ensureChosenFolder, ensureManagerFolder, inside, isMounted, listFolders, realTarget } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
 
@@ -48,6 +48,41 @@ test('a new TrueNAS or plain Docker install gets its broad folder; one with save
   const saved = { MANAGER_PLATFORM: 'truenas', MANAGER_DATA: '/mnt/tank/manager', MANAGER_STORAGE_ROOTS: '/mnt/tank/media' };
   applyFolderDefaults(saved);
   assert.deepEqual(saved, { MANAGER_PLATFORM: 'truenas', MANAGER_DATA: '/mnt/tank/manager', MANAGER_STORAGE_ROOTS: '/mnt/tank/media' });
+});
+
+test('an earlier install that maps /mnt gets External folders and keeps its saved roots', () => {
+  const mapped = '40 30 0:2 /mnt /mnt ro,relatime master:1 - rootfs rootfs rw\n41 40 0:45 / /mnt/user rw,relatime master:2 - fuse.shfs shfs rw';
+  const saved = { MANAGER_PLATFORM: 'unraid', MANAGER_DATA: '/mnt/user/appdata/frameleaf-manager', MANAGER_STORAGE_ROOTS: '/mnt/user/appdata/frameleaf-media' };
+  const earlier: Record<string, string> = { ...saved };
+  adoptMappedFolders(earlier, mapped);
+  assert.deepEqual(earlier, { ...saved, MANAGER_EXTERNAL_ROOTS: '/mnt' });
+  // Its four own folders mapped, as the earlier template has them: nothing changes.
+  const unmapped: Record<string, string> = { ...saved };
+  adoptMappedFolders(unmapped, '40 30 0:45 /appdata/frameleaf-media /mnt/user/appdata/frameleaf-media rw - fuse.shfs shfs rw');
+  assert.deepEqual(unmapped, saved);
+  const unreadable: Record<string, string> = { ...saved };
+  adoptMappedFolders(unreadable, 'not a mount table');
+  assert.deepEqual(unreadable, saved);
+  // A new install already has /mnt as its roots, and plain Docker without a launcher folder has no broad folder.
+  for (const env of [{ ...saved, MANAGER_STORAGE_ROOTS: '/mnt' }, { MANAGER_PLATFORM: 'linux', MANAGER_DATA: '/state', MANAGER_STORAGE_ROOTS: '/srv/media' }]) {
+    const copy: Record<string, string> = { ...env };
+    adoptMappedFolders(copy, mapped);
+    assert.deepEqual(copy, env);
+  }
+});
+
+test('on an earlier install the external rules cover what /mnt added, never a folder its saved roots allowed', () => {
+  const sources = ['/mnt/user/appdata/frameleaf-media/inbox', '/mnt/user/photos/Archive'];
+  const savedRoots = ['/mnt/user/appdata/frameleaf-media'];
+  assert.deepEqual(externalRoots(), []);
+  assert.deepEqual(externalRuleSources(sources, false, savedRoots), []);
+  assert.deepEqual(externalRuleSources(sources, true, savedRoots), sources);
+  process.env.MANAGER_EXTERNAL_ROOTS = '/mnt';
+  try {
+    assert.deepEqual(externalRuleSources(sources, false, savedRoots), ['/mnt/user/photos/Archive']);
+  } finally {
+    delete process.env.MANAGER_EXTERNAL_ROOTS;
+  }
 });
 
 test('on TrueNAS a pool is just a pool, whatever it is called, and the apps dataset is off limits', async () => {
