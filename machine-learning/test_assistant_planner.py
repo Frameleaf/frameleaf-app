@@ -1,7 +1,9 @@
 """FL-847: the Library Assistant planner endpoint, with a fake model in place of the FL-806 choice."""
 
+import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,6 +21,7 @@ from frameleaf_ml.models.assistant_planner import (
     conforms,
     validate_plan,
 )
+from frameleaf_ml.models.base import ModelUnavailableError
 from frameleaf_ml.schemas import ModelTask, ModelType
 
 TOOL_SCHEMA: dict[str, Any] = {
@@ -218,6 +221,46 @@ class TestEndpoint:
 
 
 class TestHardening:
+    @pytest.mark.parametrize("cache_change", ["extra", "corrupt", "symlink", "clean"])
+    def test_verifies_populated_cache_before_loading(
+        self, mocker: MockerFixture, tmp_path: Path, cache_change: str
+    ) -> None:
+        content = b"{}"
+        pinned = FAKE_MODEL._replace(
+            files=(("textual/config.json", hashlib.sha256(content).hexdigest()),), runtime="openvino"
+        )
+        mocker.patch.dict(assistant_planner.PLANNER_MODELS, {"fake-planner": pinned})
+        model = AssistantPlannerModel("fake-planner", cache_dir=tmp_path / "planner")
+        model.model_dir.mkdir(parents=True)
+        model.model_path.write_bytes(content)
+        if cache_change == "extra":
+            (model.model_dir / "generation_config.json").write_bytes(content)
+        elif cache_change == "corrupt":
+            model.model_path.write_bytes(b'{"changed":true}')
+        elif cache_change == "symlink":
+            external = tmp_path / "external.json"
+            external.write_bytes(content)
+            model.model_path.unlink()
+            model.model_path.symlink_to(external)
+        else:
+            (model.cache_dir / ".cache").mkdir()
+            (model.cache_dir / ".cache" / "download-metadata").touch()
+            (model.cache_dir / ".frameleaf-staged.json").touch()
+        pipeline = mocker.Mock()
+        mocker.patch.dict("sys.modules", {"openvino_genai": SimpleNamespace(LLMPipeline=pipeline)})
+        mocker.patch.object(assistant_planner, "_openvino_devices", return_value=["CPU"])
+        download = mocker.patch.object(model, "_download")
+
+        assert model.cached
+        if cache_change == "clean":
+            model.load(allow_download=False)
+            pipeline.assert_called_once_with(str(model.model_dir), "CPU")
+        else:
+            with pytest.raises(ModelUnavailableError):
+                model.load(allow_download=False)
+            pipeline.assert_not_called()
+        download.assert_not_called()
+
     def test_predict_cannot_pass_options_to_the_planner(self) -> None:
         from pydantic import ValidationError
 

@@ -382,7 +382,15 @@ class AssistantPlannerModel(InferenceModel):
                 raise self._unavailable(repo_id, model_source_url(), reason=f"failed the checksum of {path}")
 
     def _load(self) -> Any:
+        from frameleaf_ml.staging import cache_hashes
+
         spec = self.spec
+        try:
+            if self.cache_dir.is_symlink() or cache_hashes(self.cache_dir) != dict(spec.files):
+                raise ModelUnavailableError("Assistant planner cache does not match the pinned files")
+        except OSError as error:
+            raise ModelUnavailableError("Could not read the assistant planner cache") from error
+
         if spec.runtime == "openvino":
             try:
                 import openvino_genai
