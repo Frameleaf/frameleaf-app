@@ -54,6 +54,7 @@ import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
 import {
+  LOCAL_RIFE_CANDIDATE_ID,
   RestorationInference,
   RestorationInferenceInput,
   RestorationInferenceOptions,
@@ -2340,14 +2341,25 @@ export class MachineLearningRepository implements RestorationInference {
    * reason it is unavailable and the throughput its qualification measured. Metadata only; no
    * media is sent. Workload names the server does not know are dropped.
    */
-  async getRestorationModels(endpoint: MlEndpoint): Promise<RestorationCapabilityReport> {
+  async getRestorationModels(
+    endpoint: MlEndpoint,
+    candidate?: { modelId: typeof LOCAL_RIFE_CANDIDATE_ID; fingerprint: string | null; signal: AbortSignal },
+  ): Promise<RestorationCapabilityReport> {
     await this.authorize(endpoint);
     if (endpoint.cloud) {
       throw new Error('Frameleaf Cloud models come from its catalogue, not a restoration worker');
     }
-    const response = await fetch(new URL('restoration/models', endpoint.url), {
+    const url = new URL('restoration/models', endpoint.url);
+    const timeout = AbortSignal.timeout(this.timeout());
+    if (candidate) {
+      url.searchParams.set('modelId', candidate.modelId);
+      if (candidate.fingerprint) {
+        url.searchParams.set('modelFingerprint', candidate.fingerprint);
+      }
+    }
+    const response = await fetch(url, {
       headers: this.authHeaders(endpoint),
-      signal: AbortSignal.timeout(this.timeout()),
+      signal: candidate ? AbortSignal.any([candidate.signal, timeout]) : timeout,
       redirect: 'error',
     });
     if (response.status === 404) {
@@ -2406,6 +2418,7 @@ export class MachineLearningRepository implements RestorationInference {
       mode: options.mode,
       // FL-423: the chosen model, which the worker runs exactly or refuses; left out, the worker chooses
       ...(options.modelId && { modelId: options.modelId }),
+      ...(options.modelFingerprint && { modelFingerprint: options.modelFingerprint }),
       kind: input.kind,
       scale: options.upscale,
       maxWidth: Math.min(options.maxWidth, RESTORATION_MAX_OUTPUT_EDGE),
@@ -2522,8 +2535,10 @@ export class MachineLearningRepository implements RestorationInference {
         width: result.output.width,
         height: result.output.height,
         modelName: result.model.id,
-        // The pinned revision plus the start of the fingerprint over it and every weight hash.
-        modelVersion: `${result.model.revision.slice(0, 12)}+${result.model.fingerprint.slice(0, 12)}`,
+        // Keep legacy version strings compatible with existing previews.
+        modelVersion: `${result.model.revision.slice(0, 12)}+${
+          result.model.id === LOCAL_RIFE_CANDIDATE_ID ? result.model.fingerprint : result.model.fingerprint.slice(0, 12)
+        }`,
       };
     } catch (error) {
       if (response?.body && !response.bodyUsed) {

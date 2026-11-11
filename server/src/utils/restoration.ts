@@ -497,6 +497,48 @@ export const planRestorationChunks = (
   }));
 };
 
+export type RifeFrameChunk = RestorationChunk & {
+  startFrame: number;
+  endFrame: number;
+  context: boolean;
+};
+
+/** Full chunks carry the next frame as context, leaving room for a final two-frame chunk. */
+export const planRifeFrameChunks = (
+  frameCount: number,
+  cadence: { num: number; den: number },
+  maxFrames: number,
+): RifeFrameChunk[] => {
+  if (
+    !Number.isSafeInteger(frameCount) ||
+    frameCount < 2 ||
+    !Number.isSafeInteger(maxFrames) ||
+    maxFrames < 2 ||
+    !Number.isSafeInteger(cadence.num) ||
+    cadence.num <= 0 ||
+    !Number.isSafeInteger(cadence.den) ||
+    cadence.den <= 0
+  ) {
+    throw new RangeError('Smooth motion needs a measured cadence and at least two frames per render');
+  }
+  const chunks: RifeFrameChunk[] = [];
+  for (let startFrame = 0; startFrame < frameCount;) {
+    const remaining = frameCount - startFrame;
+    const context = remaining > maxFrames;
+    const endFrame = context ? startFrame + maxFrames - 1 : frameCount;
+    chunks.push({
+      sequence: chunks.length,
+      startFrame,
+      endFrame,
+      context,
+      startSeconds: (startFrame * cadence.den) / cadence.num,
+      endSeconds: (endFrame * cadence.den) / cadence.num,
+    });
+    startFrame = endFrame;
+  }
+  return chunks;
+};
+
 const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /**
@@ -504,7 +546,7 @@ const sha256Hex = (value: string) => createHash('sha256').update(value).digest('
  * is in the key: the exact source, the model binding and the time range. A chunk from a different
  * source, mode or destination can never be mistaken for this one, whatever its number.
  */
-export const restorationChunkIdentity = (snapshot: RestorationSnapshot, chunk: RestorationChunk) => {
+export const restorationChunkIdentity = (snapshot: RestorationSnapshot, chunk: RestorationChunk | RifeFrameChunk) => {
   const inputDigest = sha256Hex(`${snapshot.sourceChecksumHex}:${chunk.startSeconds}:${chunk.endSeconds}`);
   const historyDigest = sha256Hex(`restoration/1:${snapshot.stage}`);
   const configDigest = sha256Hex(
@@ -517,6 +559,7 @@ export const restorationChunkIdentity = (snapshot: RestorationSnapshot, chunk: R
       output: snapshot.output,
       ...(snapshot.model && { model: snapshot.model }),
       ...(snapshot.interpolationFactor && { interpolationFactor: snapshot.interpolationFactor }),
+      ...('startFrame' in chunk && { frameRange: [chunk.startFrame, chunk.endFrame] }),
     }),
   );
   const startTicks = BigInt(Math.round(chunk.startSeconds * 1000));
@@ -631,10 +674,17 @@ export type RestorationInferenceInput =
   | { kind: 'image'; path: string; width: number; height: number }
   | { kind: 'video'; path: string; width: number; height: number; durationSeconds: number };
 
+export const LOCAL_RIFE_CANDIDATE_ID = 'rife-onnx-candidate';
+
+/** Legacy model versions carry a digest prefix. This candidate keeps the complete reviewed digest. */
+export const localRifeFingerprint = (version: string | null | undefined): string | null =>
+  /^[a-f0-9]{12}\+([a-f0-9]{64})$/.exec(version ?? '')?.[1] ?? null;
+
 export type RestorationInferenceOptions = {
   mode: AssetRestorationMode;
   /** FL-423: the worker's model to run, exactly; null or absent, the worker's own model for the mode. */
   modelId?: string | null;
+  modelFingerprint?: string;
   upscale: 1 | 2 | 4;
   keepGrain: boolean;
   /** Smooth motion (FL-162): frames per source frame. Absent for a restoration. */

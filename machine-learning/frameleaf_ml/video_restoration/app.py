@@ -41,15 +41,15 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..env_aliases import read_env
-from .models import RestorationFailure, RestorationRegistry, adapter_for
-from .pipeline import AdapterFactory, restore
+from .models import RIFE_CANDIDATE_ID, RestorationFailure, RestorationRegistry, adapter_for
+from .pipeline import AdapterFactory, frame_budget, restore
 from .runtime_pool import RuntimePool
 from .schemas import (
     RESTORATION_PROTOCOL,
     RESULT_HEADER,
-    CapabilityReport,
     RestorationError,
     RestorationErrorCode,
+    RestorationMode,
     RestorationRequest,
     RestorationResult,
 )
@@ -138,11 +138,10 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
 
 
 def upload_limit(registry: RestorationRegistry) -> int:
-    """The largest upload any qualified model could use, from the manifest limits."""
-    largest = max(
-        (model.maxFrames * model.maxInputLongEdge**2 * UPLOAD_BYTES_PER_PIXEL for model in registry.report().models),
-        default=0,
-    )
+    """The largest upload any qualified model or signed candidate could use, from the manifest limits."""
+    limits = [(model.maxFrames, model.maxInputLongEdge) for model in registry.report().models]
+    limits += [(limit.maxFrames, limit.maxInputLongEdge) for limit in registry.candidate_limits()]
+    largest = max((frames * edge**2 * UPLOAD_BYTES_PER_PIXEL for frames, edge in limits), default=0)
     return max(MIN_UPLOAD_BYTES, largest)
 
 
@@ -307,8 +306,18 @@ def create_app(
         )
 
     @app.get("/restoration/models")
-    def models(refresh: bool = False) -> JSONResponse:
-        report: CapabilityReport = registry.refresh() if refresh else registry.report()
+    def models(refresh: bool = False, modelId: str | None = None, modelFingerprint: str | None = None) -> JSONResponse:
+        if modelId is not None or modelFingerprint is not None:
+            if not auth_token or modelId != RIFE_CANDIDATE_ID:
+                return JSONResponse({"message": "Not found"}, status_code=404)
+            try:
+                selected = registry.select(RestorationMode.SMOOTH_MOTION, modelId, modelFingerprint, kind="video")
+            except RestorationFailure as error:
+                return error_response(error)
+            capability = selected.capability.model_copy(update={"maxFrames": frame_budget(selected)})
+            report = registry.report().model_copy(update={"workloads": [], "models": [capability]})
+        else:
+            report = registry.refresh() if refresh else registry.report()
         return JSONResponse(report.model_dump(mode="json"))
 
     @app.post("/restoration/restore")

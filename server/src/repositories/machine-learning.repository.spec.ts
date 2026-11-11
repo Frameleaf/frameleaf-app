@@ -1340,51 +1340,61 @@ describe(MachineLearningRepository.name, () => {
       });
     });
 
-    it('asks a home restoration worker for Smooth motion at the chosen factor and size (FL-162)', async () => {
-      const fetch = vi.fn().mockResolvedValue(
-        answer(
-          result({
-            mode: 'smooth_motion',
-            model: {
-              id: 'rife-4-25',
-              family: 'rife',
+    it.each(['rife-4-25', 'rife-onnx-candidate'])(
+      'asks a home restoration worker for Smooth motion using %s',
+      async (modelId) => {
+        const fingerprint = 'a'.repeat(64);
+        const exact = modelId === 'rife-onnx-candidate';
+        const fetch = vi.fn().mockResolvedValue(
+          answer(
+            result({
               mode: 'smooth_motion',
-              revision: '0123456789abcdef0123456789abcdef01234567',
-              fingerprint: 'a'.repeat(64),
-              weights: [{ role: 'flownet', sha256: 'b'.repeat(64) }],
-              qualificationId: 'rife-4-25-2026-09',
-            },
-          }),
-        ),
-      );
-      vi.stubGlobal('fetch', fetch);
-      const selection = await admit(
-        { ...mlDestinationStub.lan, workloads: [MlWorkload.Interpolation] },
-        false,
-        AssetRestorationMode.SmoothMotion,
-      );
+              model: {
+                id: modelId,
+                family: 'rife',
+                mode: 'smooth_motion',
+                revision: '0123456789abcdef0123456789abcdef01234567',
+                fingerprint,
+                weights: [{ role: 'flownet', sha256: 'b'.repeat(64) }],
+                qualificationId: 'rife-4-25-2026-09',
+              },
+            }),
+          ),
+        );
+        vi.stubGlobal('fetch', fetch);
+        const selection = await admit(
+          { ...mlDestinationStub.lan, workloads: [MlWorkload.Interpolation] },
+          false,
+          AssetRestorationMode.SmoothMotion,
+        );
 
-      await sut.restore(
-        selection,
-        input(),
-        options({
-          mode: AssetRestorationMode.SmoothMotion,
-          upscale: 1,
+        const response = await sut.restore(
+          selection,
+          input(),
+          options({
+            mode: AssetRestorationMode.SmoothMotion,
+            upscale: 1,
+            interpolationFactor: 8,
+            trailingContextFrame: true,
+            modelId,
+            ...(exact && { modelFingerprint: fingerprint }),
+            maxWidth: 640,
+            maxHeight: 360,
+          }),
+        );
+
+        const form = fetch.mock.calls[0][1].body as FormData;
+        expect(JSON.parse(String(form.get('request')))).toMatchObject({
+          mode: 'smooth_motion',
+          scale: 1,
           interpolationFactor: 8,
           trailingContextFrame: true,
-          maxWidth: 640,
-          maxHeight: 360,
-        }),
-      );
-
-      const form = fetch.mock.calls[0][1].body as FormData;
-      expect(JSON.parse(String(form.get('request')))).toMatchObject({
-        mode: 'smooth_motion',
-        scale: 1,
-        interpolationFactor: 8,
-        trailingContextFrame: true,
-      });
-    });
+          modelId,
+          ...(exact && { modelFingerprint: fingerprint }),
+        });
+        expect(response.modelVersion).toBe(`0123456789ab+${exact ? fingerprint : fingerprint.slice(0, 12)}`);
+      },
+    );
 
     it('never writes over an existing file, the original included', async () => {
       const fetch = vi.fn();
