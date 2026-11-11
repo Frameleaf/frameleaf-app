@@ -150,7 +150,7 @@ describe(DesktopOfflineAlbumService.name, () => {
         { edited: false },
         expect.any(AbortSignal),
       );
-      expect(original.file.cacheControl).toEqual(CacheControl.PrivateWithoutCache);
+      expect(original.file.cacheControl).toEqual(CacheControl.None);
       expect(original.file.viewerId).toBeUndefined();
       service.onSessionDelete({ sessionId: 'different' });
       expect(abort).not.toHaveBeenCalled();

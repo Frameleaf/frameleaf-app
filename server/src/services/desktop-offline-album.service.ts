@@ -134,7 +134,8 @@ export class DesktopOfflineAlbumService {
       controller.signal.throwIfAborted();
       grant.expires = Date.now() + IDLE_GRANT_LIFETIME;
       // The public grant request has no authenticated viewer for a file sealed after the check.
-      return { file: { ...file, viewerId: undefined, cacheControl: CacheControl.PrivateWithoutCache }, close };
+      // CacheControl.None keeps the route's `private, no-store` header on 200 and 206 responses.
+      return { file: { ...file, viewerId: undefined, cacheControl: CacheControl.None }, close };
     } catch (error) {
       close();
       await file?.release?.();
