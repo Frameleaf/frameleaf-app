@@ -1,6 +1,8 @@
 import { Kysely } from 'kysely';
+import { randomBytes } from 'node:crypto';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
@@ -33,6 +35,41 @@ const link = (userId: string, sub: string) => ({
 
 it('installs feature tables in the real canonical baseline', async () => {
   await expectCanonicalTables(db, ['frameleaf_account_link', 'frameleaf_session']);
+});
+
+it('writes a first link proved with the password only while that password is still the account’s', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser({ password: 'hash-now' });
+  const sub = `sub-${newUuid()}`;
+
+  await expect(sut.upsertLink(link(user.id, sub), 'hash-before')).rejects.toThrow('This sign-in expired');
+  await expect(sut.getLinkByUser(user.id)).resolves.toBeUndefined();
+
+  await expect(sut.upsertLink(link(user.id, sub), 'hash-now')).resolves.toMatchObject({ userId: user.id, sub });
+});
+
+it('creates neither the link nor the session when the password changes after it was proved', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser({ password: 'hash-proved' });
+  const sessions = ctx.get(SessionRepository);
+  const sub = `sub-${newUuid()}`;
+
+  // the step-up checked 'hash-proved'; the person changes their password before the writes
+  await db.updateTable('user').set({ password: 'hash-changed' }).where('id', '=', user.id).execute();
+
+  await expect(sut.upsertLink(link(user.id, sub), 'hash-proved')).rejects.toThrow('This sign-in expired');
+  const token = randomBytes(32);
+  await expect(
+    sessions.create({ token, userId: user.id }, 'hash-proved', {
+      methods: ['email_code', 'pwd'],
+      level: 'verified',
+      source: 'frameleaf',
+      legacy: false,
+    }),
+  ).rejects.toThrow('Incorrect email or password');
+
+  await expect(sut.getLinkByUser(user.id)).resolves.toBeUndefined();
+  await expect(db.selectFrom('session').select('id').where('token', '=', token).execute()).resolves.toEqual([]);
 });
 
 it('links one Frameleaf account to one local account, keeps linkedAt for the same account', async () => {

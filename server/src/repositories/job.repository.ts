@@ -101,6 +101,9 @@ const REPEATABLE_JOBS = new Set<JobName>([
   // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.
   JobName.AlbumCleanupScan,
   JobName.AlbumCleanupApply,
+  // FL-912: a scan rewrites its owner's findings
+  JobName.DateDoctorScan,
+  JobName.DateDoctorScanQueueAll,
   JobName.DuplicateResolutionLifecycle,
   JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,
@@ -1131,8 +1134,8 @@ export class JobRepository {
   /**
    * Whether the preview a job waits for can still arrive. A job of a run whose own thumbnail item for the asset
    * has ended waits for nothing: that original made no preview (damaged or unsupported) and never will, so it
-   * fails like any other per-item failure instead of waiting forever and keeping the run, and an import's setup,
-   * open. Outside a run, or with no thumbnail item in it, the job keeps waiting.
+   * is skipped instead of waiting forever and keeping the run, and an import's setup, open. It is not failed: the
+   * thumbnail step already reported the photo. Outside a run, or with no thumbnail item in it, the job keeps waiting.
    */
   async previewMayArrive(assetId: string): Promise<boolean> {
     const runId = queueExecution.getStore()?.claim.runId;
@@ -1374,6 +1377,17 @@ export class JobRepository {
       case JobName.AlbumCleanupScan: {
         // One scan per person: opening Albums again while one is waiting asks for nothing new.
         return { deduplication: { id: albumCleanupScanKey(item.data.userId), keepLastIfActive: true } };
+      }
+      case JobName.DateDoctorScan: {
+        // One scan per owner: asking again while one waits asks for nothing new.
+        return { deduplication: { id: `${JobName.DateDoctorScan}:${item.data.userId}`, keepLastIfActive: true } };
+      }
+      case JobName.PartnerPropagate: {
+        // recognition assigns a photo's faces one at a time; one waiting face copy per photo covers them all
+        const { kind, sourceId, fields } = item.data;
+        return kind === 'asset' && fields.length === 1 && fields[0] === 'faces'
+          ? { deduplication: { id: `${JobName.PartnerPropagate}:faces:${sourceId}`, keepLastIfActive: true } }
+          : null;
       }
       case JobName.AlbumCleanupApply: {
         return { deduplication: { id: `${JobName.AlbumCleanupApply}:${item.data.id}` } };

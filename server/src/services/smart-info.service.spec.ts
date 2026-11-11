@@ -42,6 +42,20 @@ describe(SmartInfoService.name, () => {
     });
   });
 
+  it("hands a photo's embedding on to its partner copies once it has one", async () => {
+    const asset = { id: 'asset', ownerId: 'owner', visibility: AssetVisibility.Timeline };
+    mocks.assetJob.getForClipEncoding.mockResolvedValue(asset as never);
+    mocks.search.getEmbedding.mockResolvedValue({
+      assetId: asset.id,
+      embedding: '[1]',
+      producerModelKey: null,
+    } as never);
+    mocks.partnerOrigin.getLiveCopyIds.mockResolvedValue(['copy']);
+    await sut.handlePostprocessClip({ id: asset.id });
+    expect(mocks.partnerOrigin.getLiveCopyIds).toHaveBeenCalledWith(asset.id);
+    expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([{ name: JobName.SmartSearch, data: { id: 'copy' } }]);
+  });
+
   it('refuses a stored producer change even when postprocessing vector bytes stay equal', async () => {
     const asset = { id: 'asset', ownerId: 'owner', visibility: AssetVisibility.Timeline };
     mocks.assetJob.getForClipEncoding.mockResolvedValue(asset as never);
@@ -251,9 +265,31 @@ describe(SmartInfoService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
 
-      expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Failed);
+      expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Skipped);
 
       expect(mocks.search.upsert).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
+    });
+
+    it("takes a partner copy's embedding from its source instead of encoding the same picture again", async () => {
+      const copy = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(copy);
+      mocks.partnerOrigin.getLiveSourceId.mockResolvedValue('source');
+
+      // the source has none yet: it hands it over after its own postprocess
+      mocks.search.getEmbedding.mockResolvedValueOnce(undefined);
+      expect(await sut.handleEncodeClip({ id: copy.id })).toEqual(JobStatus.Skipped);
+      expect(mocks.search.upsert).not.toHaveBeenCalled();
+
+      mocks.search.getEmbedding.mockResolvedValue({
+        assetId: 'source',
+        embedding: '[1]',
+        producerModelKey: null,
+      } as never);
+      expect(await sut.handleEncodeClip({ id: copy.id })).toEqual(JobStatus.Success);
+      expect(mocks.search.getEmbedding).toHaveBeenCalledWith('source');
+      expect(mocks.search.upsert).toHaveBeenCalledWith(copy.id, '[1]');
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SmartSearchPostprocess, data: { id: copy.id } });
       expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
     });
 
@@ -397,7 +433,7 @@ describe(SmartInfoService.name, () => {
       await expect(encode('pending')).rejects.toThrow(JobDependencyUnavailable);
       // The run's thumbnail item for this damaged original has ended without a preview.
       mocks.job.previewMayArrive.mockResolvedValue(false);
-      await expect(encode('damaged')).resolves.toBe(JobStatus.Failed);
+      await expect(encode('damaged')).resolves.toBe(JobStatus.Skipped);
       expect(mocks.job.previewMayArrive).toHaveBeenCalledWith('damaged');
       expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
     });

@@ -986,6 +986,16 @@ export function comparisonPredicates<TB extends keyof DB, RE extends ReferenceEx
   }
   return predicates;
 }
+/** A LIKE metacharacter (backslash, percent, underscore), and the same character escaped with a backslash. */
+const LIKE_METACHARACTER = String.raw`([\\%_])`;
+const ESCAPED_METACHARACTER = String.raw`\\\1`;
+/**
+ * FL-1452: the filter's text as a LIKE pattern that matches it as written. Escaped after accent folding,
+ * which can turn a full-width `＿` or `％` into a wildcard: a folder `/photos/Trip_1/` never matches `TripA1`.
+ */
+const likeLiteral = (value: string) =>
+  sql`regexp_replace(f_unaccent(${value}), ${LIKE_METACHARACTER}, ${ESCAPED_METACHARACTER}, 'g')`;
+
 type StringColumn =
   | 'asset_exif.city'
   | 'asset_exif.state'
@@ -1003,21 +1013,22 @@ function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColum
   // FL-417: path search follows the photo's own path, never the folder a shared file is kept in
   const ref = column === 'asset.originalPath' ? displayPathSql() : sql.ref(column);
   const predicates = comparisonPredicates(eb, ref, filter);
+  // FL-1452: the text is matched as written: a folder `/photos/Trip_1/` must not also match `TripA1`
   if (filter.like !== undefined) {
-    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${filter.like}) || '%')`);
+    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || ${likeLiteral(filter.like)} || '%')`);
   }
   if (filter.notLike !== undefined) {
     // FL-49: "does not contain" keeps items with no value at all (a photo without a lens does not contain
     // "24-70"), as the search palette's -camera: and -lens: do in the design reference (search.mjs)
     predicates.push(
-      sql<SqlBool>`(${ref} is null or f_unaccent(${ref}) not ilike ('%' || f_unaccent(${filter.notLike}) || '%'))`,
+      sql<SqlBool>`(${ref} is null or f_unaccent(${ref}) not ilike ('%' || ${likeLiteral(filter.notLike)} || '%'))`,
     );
   }
   if (filter.startsWith !== undefined) {
-    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike (f_unaccent(${filter.startsWith}) || '%')`);
+    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike (${likeLiteral(filter.startsWith)} || '%')`);
   }
   if (filter.endsWith !== undefined) {
-    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${filter.endsWith}))`);
+    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || ${likeLiteral(filter.endsWith)})`);
   }
   return predicates;
 }

@@ -74,7 +74,7 @@ export const isServerManagedConfigPath = (path: string) => SERVER_MANAGED_CONFIG
  */
 export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminConfigDto)[]>> = Object.freeze({
   // FL-803: `connectedApps.allowRegistration` (apps registering themselves) sits with sign-in.
-  authentication: ['passwordLogin', 'oauth', 'connectedApps'],
+  authentication: ['passwordLogin', 'signInPolicy', 'oauth', 'connectedApps'],
   backup: ['backup'],
   image: ['image'],
   'cloud-processing': ['frameleafCloud'],

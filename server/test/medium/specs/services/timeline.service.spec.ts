@@ -897,6 +897,39 @@ describe(TimelineService.name, () => {
       ]);
     });
 
+    // FL-1452: a folder's "Show in timeline" asks for the folder's path and a slash, so `/photos/Trip`
+    // keeps its own photos and its subfolders', and neither `/photos/Trip2` nor (a wildcard) `Trip_1`'s
+    // look-alike `TripA1`
+    it('matches a path as written, so a folder is not its siblings', async () => {
+      const { sut, ctx, user, auth } = await library();
+      const at = async (originalPath: string) => {
+        const date = new Date('1971-05-01T12:00:00.000Z');
+        const { asset } = await ctx.newAsset({
+          ownerId: user.id,
+          originalPath,
+          fileCreatedAt: date,
+          localDateTime: date,
+        });
+        await ctx.newExif({ assetId: asset.id, make: 'Leica' });
+        return asset.id;
+      };
+      const trip = await at('/photos/Trip/a.jpg');
+      const inside = await at('/photos/Trip/day 2/b.jpg');
+      await at('/photos/Trip2/c.jpg');
+      const underscore = await at('/photos/Trip_1/d.jpg');
+      await at('/photos/TripA1/e.jpg');
+      const shown = (startsWith: string) =>
+        bucketIds(
+          sut,
+          auth,
+          { ...asQuery({ originalPath: { startsWith } }), visibility: AssetVisibility.Timeline },
+          '1971-05-01',
+        );
+
+      expect(sorted(await shown('/photos/Trip/'))).toEqual(sorted([trip, inside]));
+      expect(await shown('/photos/Trip_1/')).toEqual([underscore]);
+    });
+
     it('means for several people in the own library what search means: all of them, any of them, none of them', async () => {
       const { sut, ctx, user, auth, alice, bob, items } = await library();
       const search = ctx.get(SearchRepository);

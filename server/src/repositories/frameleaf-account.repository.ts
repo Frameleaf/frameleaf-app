@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { FrameleafAccess } from 'src/utils/frameleaf-sign-in.js';
@@ -107,8 +107,21 @@ export class FrameleafAccountRepository {
     row: Pick<FrameleafAccountLinkRow, 'userId' | 'sub' | 'email' | 'emailVerified' | 'role' | 'autoRegistered'> & {
       access?: FrameleafAccess | null;
     },
+    /**
+     * Unified sign-in: a first link proved with the local password commits only while that password is still the
+     * account's (checked under a lock on the account row, so a password change cannot slip in between).
+     */
+    expectedPassword?: string,
   ): Promise<FrameleafAccountLinkRow> {
     return this.db.transaction().execute(async (trx) => {
+      if (expectedPassword !== undefined) {
+        const current = await sql<{ id: string }>`
+          SELECT id FROM public."user" WHERE id = ${row.userId}::uuid AND password = ${expectedPassword} FOR SHARE
+        `.execute(trx);
+        if (current.rows.length === 0) {
+          throw new UnauthorizedException('This sign-in expired. Sign in with Frameleaf again.');
+        }
+      }
       const result = await sql<FrameleafAccountLinkRow>`
         INSERT INTO public.frameleaf_account_link ("userId", sub, email, "emailVerified", role, "autoRegistered", access)
         VALUES (${row.userId}::uuid, ${row.sub}, ${row.email}, ${row.emailVerified}, ${row.role}, ${row.autoRegistered}, ${row.access ?? null})

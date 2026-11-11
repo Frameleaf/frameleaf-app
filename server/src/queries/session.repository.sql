@@ -57,7 +57,24 @@ select
           and "user"."deletedAt" is null
           and "user"."importClaimPending" = $1
       ) as obj
-  ) as "user"
+  ) as "user",
+  (
+    select
+      to_json(obj)
+    from
+      (
+        select
+          "session_sign_in"."methods",
+          "session_sign_in"."level",
+          "session_sign_in"."source",
+          "session_sign_in"."legacy",
+          "session_sign_in"."authTime"
+        from
+          "session_sign_in"
+        where
+          "session_sign_in"."sessionId" = "session"."id"
+      ) as obj
+  ) as "signIn"
 from
   "session"
 where

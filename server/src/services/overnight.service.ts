@@ -10,6 +10,7 @@ import {
   FrameleafWorker,
   JobName,
   JobStatus,
+  OvernightStepTiming,
   QueueCommand,
   QueueName,
   SystemMetadataKey,
@@ -59,7 +60,8 @@ const WATCH_INTERVAL_MS = 30_000;
  * 1. Empty Trash and tidy up (the old nightly tasks, `QueueService.handleNightlyJobs`).
  * 2. Check added folders (`library.scan.enabled`; the folder scan no longer has a timer of its own).
  * 3. Bring in new iCloud photos (every connected iCloud Photos connection is checked).
- * 4. Check files (the integrity checks and the Library care health scan, which lost their timers).
+ * 4. Check files (the integrity checks and the Library care health scan, which lost their timers; once a week, on
+ *    `weeklyDay`, also the Date & Time Doctor's scan, FL-912).
  *
  * - A step starts when the one before it has finished: its queue has nothing waiting or running. A
  *   step still busy after `OVERNIGHT_STEP_LIMIT_MS` is left to finish on its own and the run moves on.
@@ -325,8 +327,8 @@ export class OvernightService {
     }
   }
 
-  /** Starts a step's work. */
-  private async begin(step: OvernightStep, config: SystemConfig): Promise<void> {
+  /** Starts a step's work. `weekly`: this is the week's day for weekly work (or Run now). */
+  private async begin(step: OvernightStep, config: SystemConfig, weekly: boolean): Promise<void> {
     switch (step) {
       case 'cleanup': {
         await this.queueService.handleNightlyJobs({ cleanup: true });
@@ -356,6 +358,12 @@ export class OvernightService {
         }
         if (config.libraryCare.healthScan) {
           await this.mediaHealth.startScheduledScans();
+        }
+        // FL-912: the Date & Time Doctor looks through every library once a week. It runs on the file checks' queue,
+        // so this step waits for it. It opens no run of its own, so Recent work gives it no card: it is part of the
+        // night's one card, under Check files.
+        if (weekly) {
+          await this.jobRepository.queue({ name: JobName.DateDoctorScanQueueAll, data: {} });
         }
         return;
       }
@@ -437,7 +445,15 @@ export class OvernightService {
               }
               return;
             } else {
-              await nightWork.run({ startedAt: run.startedAt, manual: run.manual }, () => this.begin(step, config));
+              const weekly = isStepDue(OvernightStepTiming.Weekly, {
+                manual: run.manual,
+                startedAt: run.startedAt,
+                weeklyDay: config.nightlyTasks.weeklyDay,
+                zone,
+              });
+              await nightWork.run({ startedAt: run.startedAt, manual: run.manual }, () =>
+                this.begin(step, config, weekly),
+              );
               run = { ...run, begunAt: new Date().toISOString(), waitingForBackupSince: null };
               state = { ...state, run };
               await this.save(state);

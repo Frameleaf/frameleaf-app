@@ -215,6 +215,8 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'DELETE auth/pin-code': RATE_LIMITS.login,
   // FL-793: the code step after a right password, and two-step sign-in changes (password proof)
   'POST auth/login/two-factor': RATE_LIMITS.twoFactorLogin,
+  // unified sign-in: the authenticator's answer to a verification_required
+  'POST auth/step-up': RATE_LIMITS.stepUp,
   'POST auth/two-factor/setup': RATE_LIMITS.twoFactorChange,
   'POST auth/two-factor/enable': RATE_LIMITS.twoFactorChange,
   'DELETE auth/two-factor': RATE_LIMITS.twoFactorChange,
@@ -240,6 +242,7 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST oauth/frameleaf/authorize': RATE_LIMITS.frameleafSignIn,
   'POST oauth/frameleaf/callback': RATE_LIMITS.frameleafSignIn,
   'POST oauth/frameleaf/exchange': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/step-up': RATE_LIMITS.frameleafSignIn,
   'POST oauth/frameleaf/handoff': RATE_LIMITS.frameleafSignIn,
   'POST oauth/frameleaf/handoff/redeem': RATE_LIMITS.frameleafSignIn,
   'GET oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
@@ -368,7 +371,12 @@ describe('controllers', () => {
   });
 
   it('should let only signing out skip the remote sign-in rule (FL-161)', () => {
-    expect(routes.filter((route) => route.remoteSignInExempt).map((route) => route.id)).toEqual(['POST auth/logout']);
+    expect(
+      routes
+        .filter((route) => route.remoteSignInExempt)
+        .map((route) => route.id)
+        .toSorted(),
+    ).toEqual(['POST auth/logout', 'POST auth/step-up']);
   });
 
   it('should keep render-worker and local Desktop routes on the home network', () => {

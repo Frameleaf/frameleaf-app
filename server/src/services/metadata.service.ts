@@ -45,6 +45,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { captureDetails } from 'src/utils/capture-details.js';
+import { dateFromFileName, namedDate } from 'src/utils/date-doctor.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { isFireworksPng } from 'src/utils/design-preview.js';
 import { DJI_SRT_READ_BYTES, getDjiSrtCandidates, parseDjiSrtLocation } from 'src/utils/dji-srt.js';
@@ -409,7 +410,14 @@ export class MetadataService extends BaseService {
     // LIB-02: a time zone set in Frameleaf stays locked (the sidecar holds only an offset), and the file's
     // date is read in it rather than in the zone its GPS position suggests
     const lockedTimeZone = lockedProperties.includes('timeZone') ? previous?.timeZone : undefined;
-    const dates = this.getDates(asset, exifTags, stats, lockedTimeZone, previous?.timeZone);
+    const dates = this.getDates(
+      asset,
+      exifTags,
+      stats,
+      lockedTimeZone,
+      previous?.timeZone,
+      metadata.dateFromFileName ?? true,
+    );
 
     const { width, height } = this.getImageDimensions(exifTags);
     const locationLocked = lockedProperties.includes('latitude');
@@ -521,6 +529,9 @@ export class MetadataService extends BaseService {
       dateTimeOriginal: dates.dateTimeOriginal,
       modifyDate: stats.mtime,
       timeZone: dates.timeZone,
+      // FL-912: the Date & Time Doctor compares the two (`offset-mismatch`)
+      offsetTimeOriginal: exifTags.OffsetTimeOriginal ?? null,
+      offsetTime: exifTags.OffsetTime ?? null,
 
       // gps
       latitude,
@@ -1677,11 +1688,12 @@ export class MetadataService extends BaseService {
   }
 
   private getDates(
-    asset: { id: string; originalPath: string; fileCreatedAt: Date },
+    asset: { id: string; originalPath: string; originalFileName: string; fileCreatedAt: Date },
     exifTags: ImmichTags,
     stats: Stats,
     lockedTimeZone?: string | null,
     storedTimeZone?: string | null,
+    fromFileName = false,
   ) {
     const result = firstDateTime(exifTags);
     const tag = result?.tag;
@@ -1713,11 +1725,20 @@ export class MetadataService extends BaseService {
     const exifDateTime = dateTime?.toDateTime();
     let dateTimeOriginal: DateTime;
     let localDateTime: DateTime;
+    let named: ReturnType<typeof dateFromFileName>;
     if (exifDateTime) {
       // Interpret unzoned wall time as UTC before applying the selected timezone.
       const zonedDateTime = dateTime?.hasZone ? exifDateTime : exifDateTime.setZone('UTC', { keepLocalTime: true });
       dateTimeOriginal = zonedDateTime.setZone(timeZone ?? 'UTC');
       localDateTime = dateTimeOriginal.setZone('UTC', { keepLocalTime: true });
+    } else if (fromFileName && (named = dateFromFileName(asset.originalFileName))) {
+      // FL-912 (`metadata.dateFromFileName`): no date in the file, but its name holds the one the phone or app
+      // wrote (IMG_20230512_134501, a screenshot, WhatsApp's day), which beats when the file was copied
+      timeZone ??= storedTimeZone ?? null;
+      const { instant, local } = namedDate(named, timeZone);
+      this.logger.debug(`No exif date time found, using ${instant.toISOString()} from the name of asset ${asset.id}`);
+      localDateTime = DateTime.fromJSDate(local, { zone: 'UTC' });
+      dateTimeOriginal = DateTime.fromJSDate(instant);
     } else {
       // FileCreateDate is not available on linux, likely because exiftool hasn't integrated the statx syscall yet
       // birthtime is not available in Docker on macOS, so it appears as 0

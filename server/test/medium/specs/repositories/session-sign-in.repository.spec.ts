@@ -18,7 +18,8 @@ it('writes the session and its sign-in record in one go, and removes them togeth
   const { user } = await ctx.newUser();
   const sut = new SessionRepository(db);
 
-  const session = await sut.create({ token: randomBytes(32), userId: user.id }, undefined, {
+  const token = randomBytes(32);
+  const session = await sut.create({ token, userId: user.id }, undefined, {
     methods: ['pwd', 'totp'],
     level: 'verified',
     source: 'local',
@@ -29,6 +30,16 @@ it('writes the session and its sign-in record in one go, and removes them togeth
     level: 'verified',
     source: 'local',
     legacy: false,
+  });
+
+  // the request path reads it with the session, in one query
+  const found = await sut.getByToken(token);
+  expect(found?.signIn).toMatchObject({ methods: ['pwd', 'totp'], level: 'verified', source: 'local', legacy: false });
+
+  await sut.raiseSignIn(session.id, 'recovery_code');
+  await expect(sut.getSignIn(session.id)).resolves.toMatchObject({
+    methods: ['pwd', 'totp', 'recovery_code'],
+    level: 'verified',
   });
 
   await db.deleteFrom('session').where('id', '=', session.id).execute();

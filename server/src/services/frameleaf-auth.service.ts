@@ -24,6 +24,7 @@ import {
   FrameleafLinkDto,
   FrameleafLinkResponseDto,
   FrameleafLinkRoleChange,
+  FrameleafStepUpDto,
   FrameleafTokenExchangeDto,
   FrameleafTokenExchangeErrorCode,
 } from 'src/dtos/frameleaf-auth.dto.js';
@@ -36,10 +37,10 @@ import {
   DatabaseLock,
   NotificationLevel,
   NotificationType,
-  SystemMetadataKey,
 } from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import {
+  AuthService,
   type LoginDetails,
   UNVERIFIED_EMAIL_MESSAGE,
   emailVerificationProblem,
@@ -49,7 +50,6 @@ import { BaseService } from 'src/services/base.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
 import {
   FRAMELEAF_APP_CALLBACK,
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
@@ -63,12 +63,18 @@ import {
   frameleafRedirectUri,
   frameleafRole,
   hasInstanceAccess,
-  httpsOrigin,
 } from 'src/utils/frameleaf-sign-in.js';
+import { frameleafTrustedOrigins } from 'src/utils/frameleaf-trusted-origins.js';
 import { localNotificationText } from 'src/utils/preferences.js';
 import { publishedLocalOrigins } from 'src/utils/public-url.js';
-import { createSession, withCapabilities } from 'src/utils/session.js';
-import { levelFromAcr, parseAmr } from 'src/utils/sign-in-level.js';
+import { VERIFICATION_CAPABILITY, createSession, withCapabilities } from 'src/utils/session.js';
+import { ACR_VERIFIED, levelFromAcr, parseAmr } from 'src/utils/sign-in-level.js';
+import { type ServerMac, peekToken, signToken, verifyToken } from 'src/utils/two-factor.js';
+import {
+  VERIFICATION_TRANSACTION_SECONDS,
+  type VerificationMethod,
+  verificationRequired,
+} from 'src/utils/verification-required.js';
 
 /** How long a handoff code may be used. */
 export const HANDOFF_TTL_SECONDS = 60;
@@ -188,10 +194,38 @@ const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode, message?: string
  *   the cloud invited gets their own regular account and library (owner decision, 2026-10-01), and
  *   sees others' media only through what is shared with them.
  */
+/** The verified claims a pending sign-in keeps (what `signIn` reads), and its signed form. */
+const PENDING_CLAIMS = [
+  'sub',
+  'email',
+  'email_verified',
+  'name',
+  'frameleaf_role',
+  'frameleaf_access',
+  'amr',
+  'acr',
+  'auth_time',
+] as const;
+type PendingSignIn = {
+  k: 'exchange';
+  uid: string;
+  claims: Record<string, unknown>;
+  sid?: string;
+  needPassword: boolean;
+  needAuthenticator: boolean;
+  /** The sign-in authority (Cloud link) that issued it; a pending sign-in never outlives a link change. */
+  auth: string;
+  iat: number;
+  exp: number;
+};
+
 @Injectable()
 export class FrameleafAuthService extends BaseService {
   @Inject(SignInSecurityService)
   private signInSecurity!: SignInSecurityService;
+
+  @Inject(AuthService)
+  private authService!: AuthService;
 
   /** `POST oauth/frameleaf/authorize`: the authorization URL for a registered callback. */
   async authorize(dto: OAuthConfigDto) {
@@ -201,31 +235,20 @@ export class FrameleafAuthService extends BaseService {
       throw new BadRequestException('This address is not registered for Sign in with Frameleaf');
     }
     if (redirectUri !== FRAMELEAF_APP_CALLBACK) {
-      const deps = { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
-      const { cloudUrl, link } = await readCloudLink(deps);
-      const settings = await this.getConfig({ withCache: false });
-      const state = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
-      const enrollment = state?.names;
-      const origins = [httpsOrigin(link?.services?.publicUrl), httpsOrigin(link?.services?.relayOrigin)];
-      if (
-        enrollment &&
-        enrollment.instanceId === link?.instanceId &&
-        enrollment.cloudUrl === cloudUrl &&
-        enrollment.linkedAt === link?.linkedAt
-      ) {
-        origins.push(httpsOrigin(`https://${enrollment.names.relay}`));
-        const custom = verifiedCustomHost(settings.frameleafCloud.remoteAccess);
-        if (custom) {
-          origins.push(httpsOrigin(`https://${custom}`));
-        }
-      }
+      const origins = await frameleafTrustedOrigins(
+        { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository },
+        await this.getConfig({ withCache: false }),
+      );
       if (!origins.includes(new URL(redirectUri).origin)) {
         throw new BadRequestException(
           'This address is not registered for Sign in with Frameleaf. Set up remote access in Frameleaf Cloud settings, then sign in through this server’s public address.',
         );
       }
     }
-    return this.oauthRepository.authorize(config, redirectUri, dto.state, dto.codeChallenge);
+    return this.oauthRepository.authorize(config, redirectUri, dto.state, dto.codeChallenge, {
+      // unified sign-in: ask Cloud for a passkey or two steps before it returns ("Use your Frameleaf passkey")
+      acrValues: dto.verified ? ACR_VERIFIED : undefined,
+    });
   }
 
   /** `POST oauth/frameleaf/callback`: finish a sign-in and create a tagged session. */
@@ -249,7 +272,118 @@ export class FrameleafAuthService extends BaseService {
           }
         };
         await checkRevocation();
-        return this.signIn(profile, loginDetails, { sid, bearerToken: idToken }, undefined, checkRevocation);
+        return this.signIn(
+          profile,
+          loginDetails,
+          { sid, bearerToken: idToken },
+          undefined,
+          checkRevocation,
+          undefined,
+          issuedAt,
+        );
+      }),
+    );
+  }
+
+  private verificationMac(): ServerMac {
+    const directory = identityDirectory(this.configRepository);
+    return (value) => this.cryptoRepository.serverKeyedHash(directory, 'two-factor-verification', value);
+  }
+
+  /**
+   * Contract A.2 for a Frameleaf sign-in that needs more before it can have a session: 403
+   * `verification_required`. The sign-in's verified claims travel in the signed `transaction` (the exchange
+   * token is single-use), so `POST oauth/frameleaf/step-up` can finish it with the local proof, or the app
+   * can run Cloud's step-up and exchange a new token.
+   */
+  private async verificationRefusal(
+    userId: string,
+    profile: OAuthProfile,
+    sid: string | undefined,
+    need: { needPassword: boolean; needAuthenticator: boolean },
+    issuedAt: Date,
+  ) {
+    const claims = Object.fromEntries(PENDING_CLAIMS.flatMap((key) => (key in profile ? [[key, profile[key]]] : [])));
+    const methods: VerificationMethod[] = ['frameleaf'];
+    if (need.needPassword) methods.push('password');
+    if (need.needAuthenticator) methods.push('totp', 'recovery_code');
+    const now = Math.floor(Date.now() / 1000);
+    const config = await this.config();
+    const authority = config ? await this.signInAuthority(config) : null;
+    if (!authority) {
+      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+    }
+    const pending: PendingSignIn = {
+      k: 'exchange',
+      uid: userId,
+      claims,
+      sid,
+      needPassword: need.needPassword,
+      needAuthenticator: need.needAuthenticator,
+      auth: authority,
+      // when Cloud issued the sign-in, not now: a back-channel logout in between is always seen by the step-up
+      iat: Math.floor(issuedAt.getTime() / 1000),
+      exp: now + VERIFICATION_TRANSACTION_SECONDS,
+    };
+    return verificationRequired(methods, await signToken(this.verificationMac(), pending, userId));
+  }
+
+  /**
+   * `POST oauth/frameleaf/step-up`: finish a Sign in with Frameleaf that answered `verification_required`, with
+   * the local password and/or authenticator code it asked for.
+   */
+  async stepUp(dto: FrameleafStepUpDto, details: LoginDetails) {
+    const loginDetails = withCapabilities(details, dto.capabilities);
+    const invalid = () => new UnauthorizedException('This sign-in expired. Sign in with Frameleaf again.');
+    const uid = peekToken<{ uid?: unknown }>(dto.transaction)?.uid;
+    const pending =
+      typeof uid === 'string'
+        ? await verifyToken<PendingSignIn>(this.verificationMac(), dto.transaction, uid, new Date())
+        : null;
+    const user = pending?.k === 'exchange' ? await this.userRepository.get(pending.uid, { withDeleted: false }) : null;
+    if (!pending || !user) {
+      throw invalid();
+    }
+    const config = await this.config();
+    const authority = config && (await this.signInAuthority(config));
+    if (!config || !authority || authority !== pending.auth) {
+      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+    }
+    const { methods: proved, passwordHash } = await this.authService.verifyLocalProof(user, dto, loginDetails, {
+      password: pending.needPassword,
+      authenticator: pending.needAuthenticator,
+    });
+    const profile = pending.claims as OAuthProfile;
+    const issuedAt = new Date(pending.iat * 1000);
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, () =>
+      this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        if (authority !== (await this.signInAuthority(config))) {
+          throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+        }
+        const checkRevocation = async () => {
+          if (
+            await this.frameleafAccountRepository.isSignInRevoked({
+              sub: profile.sub,
+              sid: pending.sid ?? null,
+              issuedAt,
+            })
+          ) {
+            throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+          }
+        };
+        await checkRevocation();
+        return this.signIn(
+          profile,
+          loginDetails,
+          { sid: pending.sid },
+          (refusal, message) =>
+            exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal], refusal === 'unclaimed' ? message : undefined),
+          checkRevocation,
+          // the proof belongs to this account, and to its password as checked: a changed password or an email
+          // that moved to another account in the meantime gets no session
+          { methods: proved, userId: user.id, passwordHash },
+          issuedAt,
+        );
       }),
     );
   }
@@ -367,6 +501,9 @@ export class FrameleafAuthService extends BaseService {
               throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
             }
           },
+          undefined,
+          // a pending sign-in keeps the exchange token's issue time, so a logout after it is always seen
+          new Date((iat - tolerance) * 1000),
         );
       }),
     );
@@ -384,8 +521,31 @@ export class FrameleafAuthService extends BaseService {
     refuse: (refusal: SignInRefusal, message: string) => Error = (_refusal, message) =>
       new BadRequestException(message),
     afterTag?: (sessionId: string) => Promise<void>,
+    proof?: { methods: string[]; userId: string; passwordHash?: string },
+    /** When Cloud issued this sign-in (for revocation checks on a pending step-up); default: now. */
+    issuedAt = new Date(),
   ) {
     const { sid } = oauth;
+    const { signInPolicy } = await this.getConfig({ withCache: true });
+    // unified sign-in rollout: a client that does not declare `verification` keeps today's rights
+    const enforce = !!loginDetails.capabilities?.includes(VERIFICATION_CAPABILITY) || !!signInPolicy.applyToOlderApps;
+    const proved = proof?.methods ?? [];
+    // the proof belongs to the account it was checked for: if the email moved or the link changed since, nothing
+    // is linked and no session is made
+    const requireProvedAccount = (candidate: { id: string } | undefined) => {
+      if (proof && candidate?.id !== proof.userId) {
+        throw new UnauthorizedException('This sign-in expired. Sign in with Frameleaf again.');
+      }
+    };
+    const cloudVerified = levelFromAcr(profile.acr) === 'verified';
+    const askFor = async (user: { id: string }, needPassword: boolean) => {
+      const enrolled = !!(await this.userRepository.getTwoFactor(user.id))?.enabledAt;
+      const needAuthenticator =
+        enrolled && !cloudVerified && !proved.includes('totp') && !proved.includes('recovery_code');
+      if (needPassword || needAuthenticator) {
+        throw await this.verificationRefusal(user.id, profile, sid, { needPassword, needAuthenticator }, issuedAt);
+      }
+    };
     const email = profile.email?.trim().toLowerCase();
     if (!email) {
       throw refuse('email', 'Frameleaf did not send an email address');
@@ -419,6 +579,13 @@ export class FrameleafAuthService extends BaseService {
         throw refuse('removed', DELETED_ACCOUNT_MESSAGE);
       }
     }
+    if (user) {
+      requireProvedAccount(user);
+    }
+    if (user && link && enforce) {
+      // a person's local authenticator is never skipped silently after a Basic Frameleaf sign-in
+      await askFor(user, false);
+    }
     if (!user) {
       // an account here with the same verified email is linked to this Frameleaf account
       const existing = await this.userRepository.getByEmail(email);
@@ -428,18 +595,39 @@ export class FrameleafAuthService extends BaseService {
         if (other && other.sub !== profile.sub) {
           throw refuse('conflict', 'This account is already linked to another Frameleaf account');
         }
+        requireProvedAccount(existing);
+        // the password proved must still be this account's before anything is linked
+        if (
+          proof?.passwordHash &&
+          (await this.userRepository.getForChangePassword(existing.id)).password !== proof.passwordHash
+        ) {
+          throw new UnauthorizedException('This sign-in expired. Sign in with Frameleaf again.');
+        }
         user = existing;
-        await this.frameleafAccountRepository.upsertLink({
-          userId: user.id,
-          sub: profile.sub,
-          email,
-          emailVerified: true,
-          role,
-          autoRegistered: false,
-          access,
-        });
+        // the first link to an existing account needs proof: a Verified Frameleaf sign-in, or the local password
+        // (an older client links as today)
+        if (enforce) {
+          await askFor(existing, !cloudVerified && !proved.includes('pwd'));
+        }
+        await this.frameleafAccountRepository.upsertLink(
+          {
+            userId: user.id,
+            sub: profile.sub,
+            email,
+            emailVerified: true,
+            role,
+            autoRegistered: false,
+            access,
+          },
+          // a link proved with the password commits only while that password is still the account's
+          proof?.passwordHash,
+        );
         await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
       }
+    }
+    if (!user) {
+      // a proof is for an existing account: never for one made now
+      requireProvedAccount(undefined);
     }
     if (!user) {
       // Frameleaf Cloud authorized this person for this server: it is the access authority
@@ -499,13 +687,21 @@ export class FrameleafAuthService extends BaseService {
       user,
       loginDetails,
       {
-        // how Frameleaf Cloud says the person signed in; no `acr` is Basic (spec, Contract A.3)
-        methods: parseAmr(profile.amr),
-        level: levelFromAcr(profile.acr),
-        authTime: typeof profile.auth_time === 'number' ? new Date(profile.auth_time * 1000) : undefined,
+        // how Frameleaf Cloud says the person signed in; no `acr` is Basic (spec, Contract A.3). Proof given
+        // here (the local password, the authenticator) is a second factor: the session is then Verified.
+        methods: [...parseAmr(profile.amr), ...proved],
+        level: proved.length > 0 ? 'verified' : levelFromAcr(profile.acr),
+        authTime:
+          proved.length > 0
+            ? new Date()
+            : typeof profile.auth_time === 'number'
+              ? new Date(profile.auth_time * 1000)
+              : undefined,
         source: 'frameleaf',
       },
       oauth,
+      // a session finished with the local password is fenced against a password change meanwhile
+      proof?.passwordHash,
     );
     try {
       await this.frameleafAccountRepository.tagSession({
@@ -863,16 +1059,23 @@ export class FrameleafAuthService extends BaseService {
    * Frameleaf sessions end; this session and their local sign-in are unchanged.
    */
   async unlink(auth: AuthDto): Promise<void> {
-    const removed = await this.frameleafAccountRepository.deleteLink(auth.user.id);
+    // under the link authority lock a child session takes its parent's tag under too (`POST /sessions`)
+    const removed = await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      const link = await this.frameleafAccountRepository.deleteLink(auth.user.id);
+      if (!link) {
+        return;
+      }
+      const sessionIds = (await this.frameleafAccountRepository.findSessions({ sub: link.sub })).map(
+        ({ sessionId }) => sessionId,
+      );
+      // the other Frameleaf sessions end; this one stays signed in but is no longer a Frameleaf session
+      await this.endSessions(sessionIds.filter((sessionId) => sessionId !== auth.session?.id));
+      await this.frameleafAccountRepository.deleteSessions(sessionIds);
+      return link;
+    });
     if (!removed) {
       return;
     }
-    const sessionIds = (await this.frameleafAccountRepository.findSessions({ sub: removed.sub })).map(
-      ({ sessionId }) => sessionId,
-    );
-    // the other Frameleaf sessions end; this one stays signed in but is no longer a Frameleaf session
-    await this.endSessions(sessionIds.filter((sessionId) => sessionId !== auth.session?.id));
-    await this.frameleafAccountRepository.deleteSessions(sessionIds);
     const user = await this.userRepository.get(auth.user.id, { withDeleted: false });
     if (user) {
       await this.auditLink(user, AdminAuditAction.FrameleafAccountUnlinked, removed.email);

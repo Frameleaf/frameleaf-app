@@ -83,6 +83,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       cronExpression: '',
     },
   },
+  signInPolicy: { require: 'administrators-away', applyToOlderApps: false },
   connectedApps: { allowMcp: true, allowRegistration: true },
   analytics: {
     enabled: true,
@@ -152,6 +153,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       import: false,
       write: true,
     },
+    dateFromFileName: true,
   },
   machineLearning: {
     enabled: true,
@@ -1015,6 +1017,71 @@ describe(SystemConfigService.name, () => {
         expect(configWrites().at(-1)).toMatchObject({ connectedApps: { allowMcp: false } });
       },
     );
+
+    describe('"Require a passkey or two-step"', () => {
+      const everyone = () => ({ ...defaults, signInPolicy: { require: 'everyone' as const } });
+
+      it('keeps the stored choice when an older settings client omits the whole section', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          signInPolicy: { require: 'everyone', applyToOlderApps: true },
+        } as never);
+        const { signInPolicy: _omitted, ...dto } = AdminConfigDto.schema.parse(defaults);
+
+        await sut.updateAdminConfig(dto as AdminConfigDto);
+
+        expect(configWrites().at(-1)).toMatchObject({ signInPolicy: { require: 'everyone', applyToOlderApps: true } });
+      });
+
+      it('keeps the stored choice when an older settings client omits it', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ signInPolicy: { require: 'everyone-away' } } as never);
+        const dto = AdminConfigDto.schema.parse({ ...defaults, signInPolicy: {} });
+
+        await sut.updateAdminConfig(dto);
+
+        expect(configWrites().at(-1)).toMatchObject({ signInPolicy: { require: 'everyone-away' } });
+      });
+
+      it('refuses "everyone, everywhere" to an owner with no local authenticator or passkey', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+        mocks.user.getTwoFactor.mockResolvedValue(undefined);
+        mocks.passkey.countByUser.mockResolvedValue(0);
+
+        await expect(sut.updateAdminConfig(everyone(), authStub.admin)).rejects.toThrow('Two-Step Verification');
+        expect(configWrites()).toHaveLength(0);
+      });
+
+      it('refuses it when the same save turns password sign-in off', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+        mocks.user.getTwoFactor.mockResolvedValue({ enabledAt: new Date() } as never);
+        const dto = { ...everyone(), passwordLogin: { enabled: false } };
+
+        await expect(sut.updateAdminConfig(dto, authStub.admin)).rejects.toThrow('password sign-in on');
+        expect(configWrites()).toHaveLength(0);
+      });
+
+      it('does not count an authenticator on an owner with no local password', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+        mocks.user.getTwoFactor.mockResolvedValue({ enabledAt: new Date() } as never);
+        mocks.user.getForChangePassword.mockResolvedValue({ id: authStub.admin.user.id, password: '' } as never);
+        mocks.passkey.countByUser.mockResolvedValue(0);
+
+        await expect(sut.updateAdminConfig(everyone(), authStub.admin)).rejects.toThrow('Add a passkey');
+      });
+
+      it.each([
+        ['a local authenticator', { enabledAt: new Date() }, 0],
+        ['a local passkey', undefined, 1],
+      ])('allows it for an owner with %s', async (_name, twoFactor, passkeys) => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+        mocks.user.getTwoFactor.mockResolvedValue(twoFactor as never);
+        mocks.user.getForChangePassword.mockResolvedValue({ id: authStub.admin.user.id, password: 'hash' } as never);
+        mocks.passkey.countByUser.mockResolvedValue(passkeys);
+
+        await sut.updateAdminConfig(everyone(), authStub.admin);
+
+        expect(configWrites().at(-1)).toMatchObject({ signInPolicy: { require: 'everyone' } });
+      });
+    });
 
     it('lets an administrator explicitly turn MCP back on', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ connectedApps: { allowMcp: false } } as never);
