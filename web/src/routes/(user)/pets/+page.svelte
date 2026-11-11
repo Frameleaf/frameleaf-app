@@ -19,6 +19,7 @@
   import { goto } from '$app/navigation';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
   import MergePetsDialog from '$lib/components/frameleaf/pets/MergePetsDialog.svelte';
   import PetCard from '$lib/components/frameleaf/pets/PetCard.svelte';
@@ -420,18 +421,17 @@
     {/if}
 
     {#if visible.length === 0}
-      <p class="empty" role="status">
-        <Icon icon={mdiPawOutline} size={ICON_SIZE.hero} aria-hidden="true" />
-        <span>
-          {#if pets.length === 0}
-            {$t('frameleaf_pets_empty')}
-          {:else if search.trim()}
-            {$t('frameleaf_pets_no_matches')}
-          {:else}
-            {$t('frameleaf_pets_all_hidden')}
-          {/if}
-        </span>
-      </p>
+      <!-- FL-1457 (FL-1412 M13): the one empty-page pattern. -->
+      <EmptyState
+        icon={mdiPawOutline}
+        message={$t(
+          pets.length === 0
+            ? 'frameleaf_pets_empty'
+            : search.trim()
+              ? 'frameleaf_pets_no_matches'
+              : 'frameleaf_pets_all_hidden',
+        )}
+      />
     {:else}
       <ul class="grid">
         {#each visible as pet (pet.id)}
@@ -639,17 +639,6 @@
     padding: 0;
     margin: 0;
     list-style: none;
-  }
-  .empty {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    color: var(--fl-muted);
-  }
-  .empty :global(svg) {
-    flex-shrink: 0;
   }
   .form {
     display: flex;

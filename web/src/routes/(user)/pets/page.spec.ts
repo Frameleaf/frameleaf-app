@@ -41,3 +41,20 @@ it('stops polling a recognition run once the page is gone, even with a poll in f
   await vi.advanceTimersByTimeAsync(20_000);
   expect(getPetCandidates).toHaveBeenCalledTimes(1);
 });
+
+// FL-1457 (FL-1412 M13): with no pets, the page says so in the one empty-page pattern.
+it('says there are no pets yet in the empty-page pattern', () => {
+  const idle = {
+    candidates: [],
+    recognitionAvailable: true,
+    recognition: { run: { status: PetRecognitionRunStatus.Completed } },
+  } as unknown as Candidates;
+  vi.mocked(getPetCandidates).mockResolvedValue(idle);
+  const { getByTestId } = render(PetsPage, {
+    data: { pets: [], candidates: idle, meta: { title: 'Pets' } } as unknown as PageData,
+  });
+
+  const empty = getByTestId('frameleaf-empty-state');
+  expect(empty).toHaveTextContent('frameleaf_pets_empty');
+  expect(empty.firstElementChild).toHaveClass('icon', 'framed');
+});
