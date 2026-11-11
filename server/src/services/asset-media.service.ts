@@ -264,8 +264,11 @@ export class AssetMediaService extends BaseService {
         if (mimeTypes.isAsset(filename)) {
           return true;
         }
-        // FL-1359: a font is a Boards item only. `libraryScope` must come before the file in the form.
-        if (mimeTypes.isFont(filename) && body.libraryScope === LibraryScope.Design) {
+        // Boards preserves native fonts and downloadable originals. Scope must precede the file in multipart.
+        if (
+          body.libraryScope === LibraryScope.Design &&
+          (mimeTypes.isFont(filename) || (!auth?.sharedLink && body.publication === undefined))
+        ) {
           return true;
         }
         break;
@@ -295,7 +298,7 @@ export class AssetMediaService extends BaseService {
 
     const extension = getFilenameExtension(body.filename || file.originalName);
     const lookup = {
-      [UploadFieldName.ASSET_DATA]: extension,
+      [UploadFieldName.ASSET_DATA]: mimeTypes.uploadExtension(body.filename || file.originalName),
       [UploadFieldName.SIDECAR_DATA]: '.xmp',
       [UploadFieldName.PROFILE_DATA]: extension,
     };
@@ -335,6 +338,12 @@ export class AssetMediaService extends BaseService {
 
     requireUploadsNotPaused(auth);
     this.requireQuota(auth, file.size);
+    if (
+      mimeTypes.isBoardOriginal(file.originalPath) &&
+      (dto.libraryScope !== LibraryScope.Design || auth.sharedLink || dto.livePhotoVideoId)
+    ) {
+      throw new BadRequestException(`Unsupported file type ${dto.filename || file.originalName}`);
+    }
     if (mimeTypes.isFont(file.originalPath)) {
       // FL-1359: fonts live in Boards only, and the file must be the font type its name says.
       const head = await this.storageRepository.readFile(file.originalPath, { buffer: Buffer.alloc(8), length: 8 });
@@ -678,10 +687,14 @@ export class AssetMediaService extends BaseService {
       }
     }
 
+    const boardOriginal = !developedPath && !editedPath && mimeTypes.isBoardOriginal(originalFileName);
     return this.withOriginalLocationPolicy(auth, { id, ownerId }, 'download', {
       path: filePath,
-      fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(filePath),
-      contentType: mimeTypes.lookup(filePath),
+      fileName: boardOriginal
+        ? originalFileName
+        : getFileNameWithoutExtension(originalFileName) + getFilenameExtension(filePath),
+      contentType: boardOriginal ? 'application/octet-stream' : mimeTypes.lookup(filePath),
+      ...(boardOriginal && { attachment: true }),
       // The current version can change under the same URL; a cached copy could be the one before.
       cacheControl: developedPath ? CacheControl.PrivateWithoutCache : CacheControl.PrivateWithCache,
     });

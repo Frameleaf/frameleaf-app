@@ -156,7 +156,9 @@ export class EagleLibraryResponseDto extends createZodDto(
       changed: z.number().meta({ format: 'double' }).optional().describe('When Eagle last changed the library (ms)'),
       items: z.array(EagleItemSchema),
       fingerprint: z.string(),
-      supported: z.array(z.string()).describe('File types this import brings over (lower case, no dot)'),
+      supported: z
+        .array(z.string())
+        .describe('File extensions this import accepts (lower case, no dot). * includes downloadable originals.'),
       earlierImport: EagleImportResponseDto.schema
         .nullable()
         .describe('Your earlier import of this library that has more to do, to carry on'),
