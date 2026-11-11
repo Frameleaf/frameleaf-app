@@ -370,13 +370,21 @@ describe(EmailRepository.name, () => {
       const data = { baseUrl: undefined, displayName: 'Alice', showBranding: true };
 
       it('writes the email in a shipped language, and in English for any other', async () => {
-        const french = await sut.renderEmail({ template: EmailTemplate.TEST_EMAIL, data: { ...data, locale: 'fr' } });
+        const french = await sut.renderEmail({
+          template: EmailTemplate.TEST_EMAIL,
+          data: { ...data, locale: 'fr' },
+          customTemplate: '',
+        });
         expect(french.html).toContain('lang="fr"');
         expect(french.text).toContain(catalogues.fr.test_body);
         expect(french.text).not.toContain(english.test_body);
 
         for (const locale of ['ja', 'fr-CA', 'not a locale', undefined]) {
-          const fallback = await sut.renderEmail({ template: EmailTemplate.TEST_EMAIL, data: { ...data, locale } });
+          const fallback = await sut.renderEmail({
+            template: EmailTemplate.TEST_EMAIL,
+            data: { ...data, locale },
+            customTemplate: '',
+          });
           expect(fallback.html).toContain('lang="en"');
           expect(fallback.text).toContain(english.test_body);
         }

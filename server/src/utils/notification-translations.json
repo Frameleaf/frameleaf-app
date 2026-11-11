@@ -183,31 +183,31 @@
         "body": "Le coffre chiffré hébergé reste sur le disque. Contactez votre Buddy pour organiser la récupération."
       },
       "cloud-ml-migration": {
-        "title": "Le traitement cloud est passé à Frameleaf Cloud",
-        "body": "Frameleaf Cloud remplace l’ancien service de traitement cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez où il s’exécute sous Destinations de traitement, ou ajoutez Frameleaf Cloud."
+        "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
+        "body": "Frameleaf Cloud remplace l’ancien service de traitement dans le cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez où il s’exécute sous Destinations de traitement, ou ajoutez Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
-        "title": "Le traitement cloud est passé à Frameleaf Cloud",
-        "body": "La destination de traitement cloud {names} a été supprimée : Frameleaf Cloud remplace l’ancien service de traitement cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez où il s’exécute sous Destinations de traitement, ou ajoutez Frameleaf Cloud."
+        "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
+        "body": "La destination de traitement dans le cloud {names} a été supprimée : Frameleaf Cloud remplace l’ancien service de traitement dans le cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez où il s’exécute sous Destinations de traitement, ou ajoutez Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
-        "title": "Le traitement cloud est passé à Frameleaf Cloud",
-        "body": "Les destinations de traitement cloud {names} ont été supprimées : Frameleaf Cloud remplace l’ancien service de traitement cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez où il s’exécute sous Destinations de traitement, ou ajoutez Frameleaf Cloud."
+        "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
+        "body": "Les destinations de traitement dans le cloud {names} ont été supprimées : Frameleaf Cloud remplace l’ancien service de traitement dans le cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez où il s’exécute sous Destinations de traitement, ou ajoutez Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
-        "title": "Le traitement cloud est passé à Frameleaf Cloud",
+        "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
         "body": "1 tâche inachevée s’est arrêtée et peut être relancée."
       },
       "cloud-ml-migration-jobs-many": {
-        "title": "Le traitement cloud est passé à Frameleaf Cloud",
+        "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
         "body": "{count} tâches inachevées se sont arrêtées et peuvent être relancées."
       },
       "cloud-ml-migration-workers-one": {
-        "title": "Le traitement cloud est passé à Frameleaf Cloud",
+        "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
         "body": "1 agent de rendu a été déconnecté."
       },
       "cloud-ml-migration-workers-many": {
-        "title": "Le traitement cloud est passé à Frameleaf Cloud",
+        "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
         "body": "{count} agents de rendu ont été déconnectés."
       },
       "admin-granted": {
@@ -255,12 +255,12 @@
         "body": "Le certificat du nom de ce serveur sur frameleaf.net n’a pas pu être émis ({error}). Une nouvelle tentative a lieu automatiquement, la prochaine à {nextAttemptAt}. Le certificat actuel fonctionne jusqu’au {until}."
       },
       "cloud-region-mismatch": {
-        "title": "Le traitement cloud utilise la mauvaise région",
-        "body": "Frameleaf Cloud a refusé le traitement cloud, car ce serveur utilise une autre région que celle des données de son compte Frameleaf, même après une nouvelle lecture de la liste des services de Frameleaf Cloud et du lien de ce serveur. Le traitement cloud reste désactivé tant que ce n’est pas corrigé : vérifiez que FRAMELEAF_CLOUD_URL pointe vers Frameleaf Cloud, puis reliez à nouveau le serveur dans Administration > Frameleaf Cloud."
+        "title": "Le traitement dans le cloud utilise la mauvaise région",
+        "body": "Frameleaf Cloud a refusé le traitement dans le cloud, car ce serveur utilise une autre région que celle des données de son compte Frameleaf, même après une nouvelle lecture de la liste des services de Frameleaf Cloud et du lien de ce serveur. Le traitement dans le cloud reste désactivé tant que ce n’est pas corrigé : vérifiez que FRAMELEAF_CLOUD_URL pointe vers Frameleaf Cloud, puis reliez à nouveau le serveur dans Administration > Frameleaf Cloud."
       },
       "cloud-clone-suspected": {
         "title": "Deux serveurs utilisent l’identité de ce serveur",
-        "body": "Frameleaf Cloud a vu la clé de ce serveur démarrer depuis deux endroits. Si vous avez copié ce serveur, donnez à la copie son propre dossier d’identité. La sauvegarde cloud et le traitement cloud sont suspendus jusqu’à la résolution du problème : le propriétaire du compte peut confirmer ce serveur dans le compte Frameleaf, sinon la suspension se lève d’elle-même après 24 heures sans redémarrage."
+        "body": "Frameleaf Cloud a vu la clé de ce serveur démarrer depuis deux endroits. Si vous avez copié ce serveur, donnez à la copie son propre dossier d’identité. La sauvegarde cloud et le traitement dans le cloud sont suspendus jusqu’à la résolution du problème : le propriétaire du compte peut confirmer ce serveur dans le compte Frameleaf, sinon la suspension se lève d’elle-même après 24 heures sans redémarrage."
       },
       "mail-needs-sign-in": {
         "title": "Courriels interrompus : reconnectez-vous à {provider}",
@@ -496,31 +496,31 @@
         "body": "{deviceName} no ha hecho copia de seguridad desde hace {count} días"
       },
       "activation-plan-active": {
-        "title": "Configuración de la copia de seguridad en la nube",
+        "title": "Configuración de la copia en la nube",
         "body": "{step} de {total} · Activando tu plan"
       },
       "activation-server-notified": {
-        "title": "Configuración de la copia de seguridad en la nube",
+        "title": "Configuración de la copia en la nube",
         "body": "{step} de {total} · Avisando a tu servidor"
       },
       "activation-preparing-storage": {
-        "title": "Configuración de la copia de seguridad en la nube",
+        "title": "Configuración de la copia en la nube",
         "body": "{step} de {total} · Preparando el almacenamiento"
       },
       "activation-first-backup-complete": {
-        "title": "Configuración de la copia de seguridad en la nube",
+        "title": "Configuración de la copia en la nube",
         "body": "{step} de {total} · Primera copia de seguridad completada"
       },
       "activation-first-backup-failed": {
-        "title": "Configuración de la copia de seguridad en la nube",
+        "title": "Configuración de la copia en la nube",
         "body": "{step} de {total} · La primera copia de seguridad requiere atención"
       },
       "activation-first-backup-running": {
-        "title": "Configuración de la copia de seguridad en la nube",
+        "title": "Configuración de la copia en la nube",
         "body": "{step} de {total} · Primera copia de seguridad en curso"
       },
       "activation-first-backup-scheduled": {
-        "title": "Configuración de la copia de seguridad en la nube",
+        "title": "Configuración de la copia en la nube",
         "body": "{step} de {total} · Primera copia de seguridad programada"
       },
       "album-invite-anonymous": {
@@ -533,19 +533,19 @@
       },
       "license-grace": {
         "title": "No se ha podido procesar la renovación de tu Frameleaf Cloud",
-        "body": "El acceso remoto y la copia de seguridad en la nube siguen funcionando hasta el {until}. Actualiza tu método de pago en tu cuenta de Frameleaf para evitar una pausa. Las funciones locales no se ven afectadas."
+        "body": "El acceso remoto y la copia en la nube siguen funcionando hasta el {until}. Actualiza tu método de pago en tu cuenta de Frameleaf para evitar una pausa. Las funciones locales no se ven afectadas."
       },
       "license-expired": {
         "title": "Tu plan de Frameleaf Cloud ha terminado",
-        "body": "El acceso remoto y la copia de seguridad en la nube están en pausa. Todo lo demás en este servidor, incluidas todas las fotos, sigue funcionando."
+        "body": "El acceso remoto y la copia en la nube están en pausa. Todo lo demás en este servidor, incluidas todas las fotos, sigue funcionando."
       },
       "buddy-backup-stale": {
-        "title": "La copia de seguridad Buddy no está al día",
+        "title": "La copia con un amigo no está al día",
         "body": "Tu último punto de restauración completo tiene más de tres días. Comprueba el estado del envío."
       },
       "buddy-backup-first-stale": {
-        "title": "La copia de seguridad Buddy no está al día",
-        "body": "La copia de seguridad Buddy no ha completado su primer punto de restauración pasados tres días. Comprueba el estado del envío."
+        "title": "La copia con un amigo no está al día",
+        "body": "La copia con un amigo no ha completado su primer punto de restauración pasados tres días. Comprueba el estado del envío."
       },
       "buddy-storage-low": {
         "title": "Queda poco espacio en el almacenamiento Buddy",
@@ -596,7 +596,7 @@
         "body": "La generación de descripciones de fotos nuevas con Frameleaf Cloud ha alcanzado el presupuesto de hoy de ${budget}. Las fotos nuevas esperan y se describen a partir de mañana; no se envía nada a otro destino."
       },
       "buddy-backup-incomplete": {
-        "title": "La copia de seguridad Buddy requiere atención",
+        "title": "La copia con un amigo requiere atención",
         "body": "{error}"
       },
       "relay-disconnected": {
@@ -637,7 +637,7 @@
       },
       "cloud-clone-suspected": {
         "title": "Dos servidores están usando la identidad de este servidor",
-        "body": "Frameleaf Cloud ha detectado que la clave de este servidor se inicia desde dos lugares. Si has copiado este servidor, dale a la copia su propia carpeta de identidad. La copia de seguridad en la nube y el procesamiento en la nube se pausan hasta que se resuelva: el propietario de la cuenta puede confirmar este servidor en la cuenta de Frameleaf, o se resuelve solo tras 24 horas sin reiniciar."
+        "body": "Frameleaf Cloud ha detectado que la clave de este servidor se inicia desde dos lugares. Si has copiado este servidor, dale a la copia su propia carpeta de identidad. La copia en la nube y el procesamiento en la nube se pausan hasta que se resuelva: el propietario de la cuenta puede confirmar este servidor en la cuenta de Frameleaf, o se resuelve solo tras 24 horas sin reiniciar."
       },
       "mail-needs-sign-in": {
         "title": "Correo detenido: vuelve a iniciar sesión en {provider}",
@@ -708,27 +708,27 @@
         "body": "El plan de tu familia está lleno. Pide al organizador de tu familia que lo mejore."
       },
       "cloud-backup-failed": {
-        "title": "Ha fallado la copia de seguridad en la nube",
-        "body": "La última copia de seguridad en la nube se detuvo: {error}"
+        "title": "Ha fallado la copia en la nube",
+        "body": "La última copia en la nube se detuvo: {error}"
       },
       "cloud-backup-key-locked": {
-        "title": "La copia de seguridad en la nube espera su clave",
-        "body": "Este servidor no guarda la clave de la copia de seguridad. Cárgala en Ajustes › Frameleaf Cloud › Copia de seguridad en la nube."
+        "title": "La copia en la nube espera su clave",
+        "body": "Este servidor no guarda la clave de la copia de seguridad. Cárgala en Ajustes › Frameleaf Cloud › Copia en la nube."
       },
       "cloud-backup-check-problems": {
-        "title": "La comprobación de la copia de seguridad en la nube ha encontrado problemas",
+        "title": "La comprobación de la copia en la nube ha encontrado problemas",
         "body": "Faltan {missing} archivos de la copia de seguridad y {damaged} están dañados. La próxima copia de seguridad los vuelve a subir desde este servidor; {incomplete} copias anteriores están marcadas como incompletas."
       },
       "cloud-backup-check-failed": {
-        "title": "Ha fallado la comprobación de la copia de seguridad en la nube",
+        "title": "Ha fallado la comprobación de la copia en la nube",
         "body": "{error}"
       },
       "cloud-backup-cleanup-failed": {
-        "title": "Ha fallado la limpieza de la copia de seguridad en la nube",
+        "title": "Ha fallado la limpieza de la copia en la nube",
         "body": "{error}"
       },
       "cloud-restore-failed": {
-        "title": "Ha fallado la restauración desde la copia de seguridad en la nube",
+        "title": "Ha fallado la restauración desde la copia en la nube",
         "body": "{error}"
       },
       "cloud-backup-drill-failed": {
@@ -917,12 +917,12 @@
         "body": "Fernzugriff und Cloud-Sicherung sind pausiert. Alles andere auf diesem Server, einschließlich aller Fotos, funktioniert weiter."
       },
       "buddy-backup-stale": {
-        "title": "Buddy Backup ist nicht mehr aktuell",
+        "title": "Die Buddy-Sicherung ist nicht mehr aktuell",
         "body": "Dein letzter vollständiger Wiederherstellungspunkt ist mehr als drei Tage alt. Prüfe den Sendestatus."
       },
       "buddy-backup-first-stale": {
-        "title": "Buddy Backup ist nicht mehr aktuell",
-        "body": "Buddy Backup hat nach drei Tagen noch keinen ersten Wiederherstellungspunkt abgeschlossen. Prüfe den Sendestatus."
+        "title": "Die Buddy-Sicherung ist nicht mehr aktuell",
+        "body": "Die Buddy-Sicherung hat nach drei Tagen noch keinen ersten Wiederherstellungspunkt abgeschlossen. Prüfe den Sendestatus."
       },
       "buddy-storage-low": {
         "title": "Der Buddy-Speicher wird knapp",
@@ -973,7 +973,7 @@
         "body": "Das Beschreiben neuer Fotos mit Frameleaf Cloud hat das heutige Budget von ${budget} erreicht. Neue Fotos warten und werden ab morgen beschrieben; es wird nichts an ein anderes Ziel gesendet."
       },
       "buddy-backup-incomplete": {
-        "title": "Buddy Backup braucht Aufmerksamkeit",
+        "title": "Die Buddy-Sicherung braucht Aufmerksamkeit",
         "body": "{error}"
       },
       "relay-disconnected": {
@@ -1250,31 +1250,31 @@
         "body": "{deviceName} non esegue il backup da {count} giorni"
       },
       "activation-plan-active": {
-        "title": "Configurazione del backup su Cloud",
+        "title": "Configurazione del backup su cloud",
         "body": "{step} di {total} · Attivazione del tuo piano"
       },
       "activation-server-notified": {
-        "title": "Configurazione del backup su Cloud",
+        "title": "Configurazione del backup su cloud",
         "body": "{step} di {total} · Notifica al tuo server"
       },
       "activation-preparing-storage": {
-        "title": "Configurazione del backup su Cloud",
+        "title": "Configurazione del backup su cloud",
         "body": "{step} di {total} · Preparazione dello spazio di archiviazione"
       },
       "activation-first-backup-complete": {
-        "title": "Configurazione del backup su Cloud",
+        "title": "Configurazione del backup su cloud",
         "body": "{step} di {total} · Primo backup completato"
       },
       "activation-first-backup-failed": {
-        "title": "Configurazione del backup su Cloud",
+        "title": "Configurazione del backup su cloud",
         "body": "{step} di {total} · Il primo backup richiede attenzione"
       },
       "activation-first-backup-running": {
-        "title": "Configurazione del backup su Cloud",
+        "title": "Configurazione del backup su cloud",
         "body": "{step} di {total} · Primo backup in corso"
       },
       "activation-first-backup-scheduled": {
-        "title": "Configurazione del backup su Cloud",
+        "title": "Configurazione del backup su cloud",
         "body": "{step} di {total} · Primo backup programmato"
       },
       "album-invite-anonymous": {
@@ -1294,12 +1294,12 @@
         "body": "L’accesso remoto e il backup su cloud sono in pausa. Tutto il resto su questo server, comprese tutte le foto, continua a funzionare."
       },
       "buddy-backup-stale": {
-        "title": "Buddy Backup non è aggiornato",
+        "title": "Il backup tra amici non è aggiornato",
         "body": "Il tuo ultimo punto di ripristino completo risale a più di tre giorni fa. Controlla lo stato dell’invio."
       },
       "buddy-backup-first-stale": {
-        "title": "Buddy Backup non è aggiornato",
-        "body": "Buddy Backup non ha completato il primo punto di ripristino dopo tre giorni. Controlla lo stato dell’invio."
+        "title": "Il backup tra amici non è aggiornato",
+        "body": "Il backup tra amici non ha completato il primo punto di ripristino dopo tre giorni. Controlla lo stato dell’invio."
       },
       "buddy-storage-low": {
         "title": "Lo spazio di Buddy sta per esaurirsi",
@@ -1314,31 +1314,31 @@
         "body": "Il vault cifrato ospitato resta sul disco. Contatta il tuo buddy per organizzare il ripristino."
       },
       "cloud-ml-migration": {
-        "title": "L’elaborazione su cloud è passata a Frameleaf Cloud",
-        "body": "Frameleaf Cloud sostituisce il precedente servizio di elaborazione su cloud. Il lavoro che lo usava non viene inviato altrove. Scegli dove eseguirlo in Destinazioni di elaborazione, oppure aggiungi Frameleaf Cloud."
+        "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
+        "body": "Frameleaf Cloud sostituisce il precedente servizio di elaborazione cloud. Il lavoro che lo usava non viene inviato altrove. Scegli dove eseguirlo in Destinazioni di elaborazione, oppure aggiungi Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
-        "title": "L’elaborazione su cloud è passata a Frameleaf Cloud",
-        "body": "La destinazione di elaborazione su cloud {names} è stata rimossa: Frameleaf Cloud sostituisce il precedente servizio di elaborazione su cloud. Il lavoro che la usava non viene inviato altrove. Scegli dove eseguirlo in Destinazioni di elaborazione, oppure aggiungi Frameleaf Cloud."
+        "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
+        "body": "La destinazione di elaborazione cloud {names} è stata rimossa: Frameleaf Cloud sostituisce il precedente servizio di elaborazione cloud. Il lavoro che la usava non viene inviato altrove. Scegli dove eseguirlo in Destinazioni di elaborazione, oppure aggiungi Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
-        "title": "L’elaborazione su cloud è passata a Frameleaf Cloud",
-        "body": "Le destinazioni di elaborazione su cloud {names} sono state rimosse: Frameleaf Cloud sostituisce il precedente servizio di elaborazione su cloud. Il lavoro che lo usava non viene inviato altrove. Scegli dove eseguirlo in Destinazioni di elaborazione, oppure aggiungi Frameleaf Cloud."
+        "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
+        "body": "Le destinazioni di elaborazione cloud {names} sono state rimosse: Frameleaf Cloud sostituisce il precedente servizio di elaborazione cloud. Il lavoro che lo usava non viene inviato altrove. Scegli dove eseguirlo in Destinazioni di elaborazione, oppure aggiungi Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
-        "title": "L’elaborazione su cloud è passata a Frameleaf Cloud",
+        "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
         "body": "1 processo non terminato è stato interrotto e può essere riavviato."
       },
       "cloud-ml-migration-jobs-many": {
-        "title": "L’elaborazione su cloud è passata a Frameleaf Cloud",
+        "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
         "body": "{count} processi non terminati sono stati interrotti e possono essere riavviati."
       },
       "cloud-ml-migration-workers-one": {
-        "title": "L’elaborazione su cloud è passata a Frameleaf Cloud",
+        "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
         "body": "1 worker di rendering è stato disconnesso."
       },
       "cloud-ml-migration-workers-many": {
-        "title": "L’elaborazione su cloud è passata a Frameleaf Cloud",
+        "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
         "body": "{count} worker di rendering sono stati disconnessi."
       },
       "admin-granted": {
@@ -1350,7 +1350,7 @@
         "body": "La descrizione delle nuove foto con Frameleaf Cloud ha raggiunto il budget di oggi di {budget} $. Le nuove foto restano in attesa e verranno descritte da domani; nulla viene inviato a un’altra destinazione."
       },
       "buddy-backup-incomplete": {
-        "title": "Buddy Backup richiede attenzione",
+        "title": "Il backup tra amici richiede attenzione",
         "body": "{error}"
       },
       "relay-disconnected": {
@@ -1386,12 +1386,12 @@
         "body": "Non è stato possibile emettere il certificato per il nome di questo server su frameleaf.net ({error}). Il tentativo viene ripetuto automaticamente, il prossimo alle {nextAttemptAt}. Il certificato attuale funziona fino al {until}."
       },
       "cloud-region-mismatch": {
-        "title": "L’elaborazione su cloud usa la regione sbagliata",
-        "body": "Frameleaf Cloud ha rifiutato l’elaborazione su cloud perché questo server usa una regione diversa da quella dei dati del suo account Frameleaf, anche dopo aver riletto l’elenco dei servizi di Frameleaf Cloud e il collegamento di questo server. L’elaborazione su cloud resta disattivata finché non viene risolto: verifica che FRAMELEAF_CLOUD_URL punti a Frameleaf Cloud, poi collega di nuovo il server in Amministrazione > Frameleaf Cloud."
+        "title": "L’elaborazione cloud usa la regione sbagliata",
+        "body": "Frameleaf Cloud ha rifiutato l’elaborazione cloud perché questo server usa una regione diversa da quella dei dati del suo account Frameleaf, anche dopo aver riletto l’elenco dei servizi di Frameleaf Cloud e il collegamento di questo server. L’elaborazione cloud resta disattivata finché non viene risolto: verifica che FRAMELEAF_CLOUD_URL punti a Frameleaf Cloud, poi collega di nuovo il server in Amministrazione > Frameleaf Cloud."
       },
       "cloud-clone-suspected": {
         "title": "Due server stanno usando l’identità di questo server",
-        "body": "Frameleaf Cloud ha rilevato che la chiave di questo server è in uso da due posizioni. Se hai copiato questo server, assegna alla copia una cartella di identità propria. Il backup su cloud e l’elaborazione su cloud restano in pausa finché non viene risolto: il proprietario dell’account può confermare questo server nell’account Frameleaf, oppure si risolve da solo dopo 24 ore senza riavvio."
+        "body": "Frameleaf Cloud ha rilevato che la chiave di questo server è in uso da due posizioni. Se hai copiato questo server, assegna alla copia una cartella di identità propria. Il backup su cloud e l’elaborazione cloud restano in pausa finché non viene risolto: il proprietario dell’account può confermare questo server nell’account Frameleaf, oppure si risolve da solo dopo 24 ore senza riavvio."
       },
       "mail-needs-sign-in": {
         "title": "Email interrotte: accedi di nuovo a {provider}",
@@ -1627,31 +1627,31 @@
         "body": "{deviceName} não faz cópia de segurança há {count} dias"
       },
       "activation-plan-active": {
-        "title": "Configuração da cópia de segurança na nuvem",
+        "title": "Configuração da cópia na nuvem",
         "body": "{step} de {total} · A ativar o seu plano"
       },
       "activation-server-notified": {
-        "title": "Configuração da cópia de segurança na nuvem",
+        "title": "Configuração da cópia na nuvem",
         "body": "{step} de {total} · A notificar o seu servidor"
       },
       "activation-preparing-storage": {
-        "title": "Configuração da cópia de segurança na nuvem",
+        "title": "Configuração da cópia na nuvem",
         "body": "{step} de {total} · A preparar o armazenamento"
       },
       "activation-first-backup-complete": {
-        "title": "Configuração da cópia de segurança na nuvem",
+        "title": "Configuração da cópia na nuvem",
         "body": "{step} de {total} · Primeira cópia de segurança concluída"
       },
       "activation-first-backup-failed": {
-        "title": "Configuração da cópia de segurança na nuvem",
+        "title": "Configuração da cópia na nuvem",
         "body": "{step} de {total} · A primeira cópia de segurança requer atenção"
       },
       "activation-first-backup-running": {
-        "title": "Configuração da cópia de segurança na nuvem",
+        "title": "Configuração da cópia na nuvem",
         "body": "{step} de {total} · Primeira cópia de segurança em curso"
       },
       "activation-first-backup-scheduled": {
-        "title": "Configuração da cópia de segurança na nuvem",
+        "title": "Configuração da cópia na nuvem",
         "body": "{step} de {total} · Primeira cópia de segurança agendada"
       },
       "album-invite-anonymous": {
@@ -1664,19 +1664,19 @@
       },
       "license-grace": {
         "title": "A renovação do seu Frameleaf Cloud não foi concluída",
-        "body": "O acesso remoto e a cópia de segurança na nuvem continuam a funcionar até {until}. Atualize o seu método de pagamento na sua conta Frameleaf para evitar uma pausa. As funcionalidades locais não são afetadas."
+        "body": "O acesso remoto e a cópia na nuvem continuam a funcionar até {until}. Atualize o seu método de pagamento na sua conta Frameleaf para evitar uma pausa. As funcionalidades locais não são afetadas."
       },
       "license-expired": {
         "title": "O seu plano Frameleaf Cloud terminou",
-        "body": "O acesso remoto e a cópia de segurança na nuvem estão em pausa. Tudo o resto neste servidor, incluindo todas as fotografias, continua a funcionar."
+        "body": "O acesso remoto e a cópia na nuvem estão em pausa. Tudo o resto neste servidor, incluindo todas as fotografias, continua a funcionar."
       },
       "buddy-backup-stale": {
-        "title": "A Cópia de segurança Buddy está desatualizada",
+        "title": "A cópia de segurança com amigo está desatualizada",
         "body": "O seu último ponto de restauro completo tem mais de três dias. Verifique o estado do envio."
       },
       "buddy-backup-first-stale": {
-        "title": "A Cópia de segurança Buddy está desatualizada",
-        "body": "A Cópia de segurança Buddy não concluiu o primeiro ponto de restauro após três dias. Verifique o estado do envio."
+        "title": "A cópia de segurança com amigo está desatualizada",
+        "body": "A cópia de segurança com amigo não concluiu o primeiro ponto de restauro após três dias. Verifique o estado do envio."
       },
       "buddy-storage-low": {
         "title": "O armazenamento Buddy está a ficar reduzido",
@@ -1727,7 +1727,7 @@
         "body": "A descrição de novas fotografias com o Frameleaf Cloud atingiu o orçamento de hoje de ${budget}. As novas fotografias aguardam e são descritas a partir de amanhã; nada é enviado para outro destino."
       },
       "buddy-backup-incomplete": {
-        "title": "A Cópia de segurança Buddy requer atenção",
+        "title": "A cópia de segurança com amigo requer atenção",
         "body": "{error}"
       },
       "relay-disconnected": {
@@ -1768,7 +1768,7 @@
       },
       "cloud-clone-suspected": {
         "title": "Dois servidores estão a utilizar a identidade deste servidor",
-        "body": "O Frameleaf Cloud detetou que a chave deste servidor é utilizada em dois locais. Se copiou este servidor, atribua à cópia a sua própria pasta de identidade. A cópia de segurança e o processamento na nuvem ficam em pausa até isto ser resolvido: o proprietário da conta pode confirmar este servidor na conta Frameleaf, ou a pausa termina por si após 24 horas sem reiniciar."
+        "body": "O Frameleaf Cloud detetou que a chave deste servidor é utilizada em dois locais. Se copiou este servidor, atribua à cópia a sua própria pasta de identidade. A cópia na nuvem e o processamento na nuvem ficam em pausa até isto ser resolvido: o proprietário da conta pode confirmar este servidor na conta Frameleaf, ou a pausa termina por si após 24 horas sem reiniciar."
       },
       "mail-needs-sign-in": {
         "title": "E-mail interrompido: volte a iniciar sessão em {provider}",
@@ -1839,27 +1839,27 @@
         "body": "O plano da sua família está cheio. Peça ao organizador da família que o atualize."
       },
       "cloud-backup-failed": {
-        "title": "A cópia de segurança na nuvem falhou",
-        "body": "A última cópia de segurança na nuvem foi interrompida: {error}"
+        "title": "A cópia na nuvem falhou",
+        "body": "A última cópia na nuvem foi interrompida: {error}"
       },
       "cloud-backup-key-locked": {
-        "title": "A cópia de segurança na nuvem está à espera da chave",
-        "body": "Este servidor não guarda a chave da cópia de segurança. Carregue-a em Definições › Frameleaf Cloud › Cópia de segurança na nuvem."
+        "title": "A cópia na nuvem está à espera da chave",
+        "body": "Este servidor não guarda a chave da cópia. Carregue-a em Definições › Frameleaf Cloud › Cópia na nuvem."
       },
       "cloud-backup-check-problems": {
-        "title": "A verificação da cópia de segurança na nuvem encontrou problemas",
+        "title": "A verificação da cópia na nuvem encontrou problemas",
         "body": "Faltam {missing} ficheiros com cópia de segurança e {damaged} estão danificados. A próxima cópia de segurança carrega-os novamente a partir deste servidor; {incomplete} cópias de segurança anteriores estão marcadas como incompletas."
       },
       "cloud-backup-check-failed": {
-        "title": "A verificação da cópia de segurança na nuvem falhou",
+        "title": "A verificação da cópia na nuvem falhou",
         "body": "{error}"
       },
       "cloud-backup-cleanup-failed": {
-        "title": "A limpeza da cópia de segurança na nuvem falhou",
+        "title": "A limpeza da cópia na nuvem falhou",
         "body": "{error}"
       },
       "cloud-restore-failed": {
-        "title": "A restauração a partir da cópia de segurança na nuvem falhou",
+        "title": "A restauração a partir da cópia na nuvem falhou",
         "body": "{error}"
       },
       "cloud-backup-drill-failed": {
@@ -2004,31 +2004,31 @@
         "body": "{deviceName} heeft al {count} dagen geen back-up gemaakt"
       },
       "activation-plan-active": {
-        "title": "Cloud-back-up instellen",
+        "title": "Cloudback-up instellen",
         "body": "{step} van {total} · Je abonnement wordt geactiveerd"
       },
       "activation-server-notified": {
-        "title": "Cloud-back-up instellen",
+        "title": "Cloudback-up instellen",
         "body": "{step} van {total} · Je server wordt op de hoogte gebracht"
       },
       "activation-preparing-storage": {
-        "title": "Cloud-back-up instellen",
+        "title": "Cloudback-up instellen",
         "body": "{step} van {total} · Opslag wordt voorbereid"
       },
       "activation-first-backup-complete": {
-        "title": "Cloud-back-up instellen",
+        "title": "Cloudback-up instellen",
         "body": "{step} van {total} · Eerste back-up voltooid"
       },
       "activation-first-backup-failed": {
-        "title": "Cloud-back-up instellen",
+        "title": "Cloudback-up instellen",
         "body": "{step} van {total} · Eerste back-up heeft aandacht nodig"
       },
       "activation-first-backup-running": {
-        "title": "Cloud-back-up instellen",
+        "title": "Cloudback-up instellen",
         "body": "{step} van {total} · Eerste back-up wordt uitgevoerd"
       },
       "activation-first-backup-scheduled": {
-        "title": "Cloud-back-up instellen",
+        "title": "Cloudback-up instellen",
         "body": "{step} van {total} · Eerste back-up gepland"
       },
       "album-invite-anonymous": {
@@ -2041,19 +2041,19 @@
       },
       "license-grace": {
         "title": "De verlenging van je Frameleaf Cloud-abonnement is niet gelukt",
-        "body": "Toegang op afstand en cloud-back-up blijven werken tot {until}. Werk je betaalmethode bij in je Frameleaf-account om een pauze te voorkomen. Lokale functies worden niet beïnvloed."
+        "body": "Toegang op afstand en cloudback-up blijven werken tot {until}. Werk je betaalmethode bij in je Frameleaf-account om een pauze te voorkomen. Lokale functies worden niet beïnvloed."
       },
       "license-expired": {
         "title": "Je Frameleaf Cloud-abonnement is beëindigd",
-        "body": "Toegang op afstand en cloud-back-up zijn gepauzeerd. Al het andere op deze server, inclusief elke foto, blijft werken."
+        "body": "Toegang op afstand en cloudback-up zijn gepauzeerd. Al het andere op deze server, inclusief elke foto, blijft werken."
       },
       "buddy-backup-stale": {
-        "title": "Buddy Back-up is verouderd",
+        "title": "Buddy-back-up is verouderd",
         "body": "Je laatste volledige herstelpunt is meer dan drie dagen oud. Controleer de verzendstatus."
       },
       "buddy-backup-first-stale": {
-        "title": "Buddy Back-up is verouderd",
-        "body": "Buddy Back-up heeft na drie dagen nog geen eerste herstelpunt voltooid. Controleer de verzendstatus."
+        "title": "Buddy-back-up is verouderd",
+        "body": "Buddy-back-up heeft na drie dagen nog geen eerste herstelpunt voltooid. Controleer de verzendstatus."
       },
       "buddy-storage-low": {
         "title": "De Buddy-opslag raakt vol",
@@ -2104,7 +2104,7 @@
         "body": "Het beschrijven van nieuwe foto's met Frameleaf Cloud heeft het budget van vandaag (${budget}) bereikt. Nieuwe foto's wachten en worden vanaf morgen beschreven; er wordt niets naar een andere bestemming gestuurd."
       },
       "buddy-backup-incomplete": {
-        "title": "Buddy Back-up heeft aandacht nodig",
+        "title": "Buddy-back-up heeft aandacht nodig",
         "body": "{error}"
       },
       "relay-disconnected": {
@@ -2145,7 +2145,7 @@
       },
       "cloud-clone-suspected": {
         "title": "Twee servers gebruiken de identiteit van deze server",
-        "body": "Frameleaf Cloud zag de sleutel van deze server op twee plaatsen starten. Als je deze server hebt gekopieerd, geef de kopie dan een eigen identiteitsmap. Cloud-back-up en cloudverwerking worden gepauzeerd tot dit is opgelost: de accounteigenaar kan deze server bevestigen in het Frameleaf-account, of het wordt vanzelf opgeheven na 24 uur zonder herstart."
+        "body": "Frameleaf Cloud zag de sleutel van deze server op twee plaatsen starten. Als je deze server hebt gekopieerd, geef de kopie dan een eigen identiteitsmap. Cloudback-up en cloudverwerking worden gepauzeerd tot dit is opgelost: de accounteigenaar kan deze server bevestigen in het Frameleaf-account, of het wordt vanzelf opgeheven na 24 uur zonder herstart."
       },
       "mail-needs-sign-in": {
         "title": "E-mail gestopt: log opnieuw in bij {provider}",
@@ -2216,27 +2216,27 @@
         "body": "Het abonnement van je gezin is vol. Vraag de organisator van je gezin om te upgraden."
       },
       "cloud-backup-failed": {
-        "title": "Cloud-back-up mislukt",
-        "body": "De laatste cloud-back-up is gestopt: {error}"
+        "title": "Cloudback-up mislukt",
+        "body": "De laatste cloudback-up is gestopt: {error}"
       },
       "cloud-backup-key-locked": {
-        "title": "Cloud-back-up wacht op de sleutel",
-        "body": "Deze server bewaart de back-upsleutel niet. Laad hem in Instellingen › Frameleaf Cloud › Cloud-back-up."
+        "title": "Cloudback-up wacht op de sleutel",
+        "body": "Deze server bewaart de back-upsleutel niet. Laad hem in Instellingen › Frameleaf Cloud › Cloudback-up."
       },
       "cloud-backup-check-problems": {
-        "title": "Controle van cloud-back-up vond problemen",
+        "title": "Controle van cloudback-up vond problemen",
         "body": "{missing} back-upbestanden ontbreken en {damaged} zijn beschadigd. De volgende back-up uploadt ze opnieuw vanaf deze server; {incomplete} eerdere back-ups zijn als onvolledig gemarkeerd."
       },
       "cloud-backup-check-failed": {
-        "title": "Controle van cloud-back-up mislukt",
+        "title": "Controle van cloudback-up mislukt",
         "body": "{error}"
       },
       "cloud-backup-cleanup-failed": {
-        "title": "Opschonen van cloud-back-up mislukt",
+        "title": "Opschonen van cloudback-up mislukt",
         "body": "{error}"
       },
       "cloud-restore-failed": {
-        "title": "Herstellen vanuit cloud-back-up mislukt",
+        "title": "Herstellen vanuit cloudback-up mislukt",
         "body": "{error}"
       },
       "cloud-backup-drill-failed": {
@@ -2381,31 +2381,31 @@
         "body": "{deviceName} nie wykonuje kopii zapasowej od {count} dni"
       },
       "activation-plan-active": {
-        "title": "Konfiguracja kopii zapasowej w chmurze",
+        "title": "Konfiguracja kopii w chmurze",
         "body": "{step} z {total} · Aktywowanie Twojego planu"
       },
       "activation-server-notified": {
-        "title": "Konfiguracja kopii zapasowej w chmurze",
+        "title": "Konfiguracja kopii w chmurze",
         "body": "{step} z {total} · Powiadamianie Twojego serwera"
       },
       "activation-preparing-storage": {
-        "title": "Konfiguracja kopii zapasowej w chmurze",
+        "title": "Konfiguracja kopii w chmurze",
         "body": "{step} z {total} · Przygotowywanie miejsca na dane"
       },
       "activation-first-backup-complete": {
-        "title": "Konfiguracja kopii zapasowej w chmurze",
+        "title": "Konfiguracja kopii w chmurze",
         "body": "{step} z {total} · Pierwsza kopia zapasowa ukończona"
       },
       "activation-first-backup-failed": {
-        "title": "Konfiguracja kopii zapasowej w chmurze",
+        "title": "Konfiguracja kopii w chmurze",
         "body": "{step} z {total} · Pierwsza kopia zapasowa wymaga uwagi"
       },
       "activation-first-backup-running": {
-        "title": "Konfiguracja kopii zapasowej w chmurze",
+        "title": "Konfiguracja kopii w chmurze",
         "body": "{step} z {total} · Trwa pierwsza kopia zapasowa"
       },
       "activation-first-backup-scheduled": {
-        "title": "Konfiguracja kopii zapasowej w chmurze",
+        "title": "Konfiguracja kopii w chmurze",
         "body": "{step} z {total} · Pierwsza kopia zapasowa zaplanowana"
       },
       "album-invite-anonymous": {
@@ -2418,11 +2418,11 @@
       },
       "license-grace": {
         "title": "Odnowienie Frameleaf Cloud nie powiodło się",
-        "body": "Dostęp zdalny i kopia zapasowa w chmurze działają do {until}. Zaktualizuj metodę płatności na swoim koncie Frameleaf, aby uniknąć wstrzymania. Funkcje lokalne nie są objęte."
+        "body": "Dostęp zdalny i kopia w chmurze działają do {until}. Zaktualizuj metodę płatności na swoim koncie Frameleaf, aby uniknąć wstrzymania. Funkcje lokalne nie są objęte."
       },
       "license-expired": {
         "title": "Twój plan Frameleaf Cloud wygasł",
-        "body": "Dostęp zdalny i kopia zapasowa w chmurze są wstrzymane. Wszystko inne na tym serwerze, w tym każde zdjęcie, nadal działa."
+        "body": "Dostęp zdalny i kopia w chmurze są wstrzymane. Wszystko inne na tym serwerze, w tym każde zdjęcie, nadal działa."
       },
       "buddy-backup-stale": {
         "title": "Kopia zapasowa u znajomego jest nieaktualna",
@@ -2522,7 +2522,7 @@
       },
       "cloud-clone-suspected": {
         "title": "Dwa serwery używają tożsamości tego serwera",
-        "body": "Frameleaf Cloud zauważył, że klucz tego serwera jest używany z dwóch miejsc. Jeśli skopiowano ten serwer, nadaj kopii własny folder tożsamości. Kopia zapasowa w chmurze i przetwarzanie w chmurze są wstrzymane do czasu rozwiązania problemu: właściciel konta może potwierdzić ten serwer na koncie Frameleaf, a problem ustąpi też samoczynnie po 24 godzinach bez ponownego uruchomienia."
+        "body": "Frameleaf Cloud zauważył, że klucz tego serwera jest używany z dwóch miejsc. Jeśli skopiowano ten serwer, nadaj kopii własny folder tożsamości. Kopia w chmurze i przetwarzanie w chmurze są wstrzymane do czasu rozwiązania problemu: właściciel konta może potwierdzić ten serwer na koncie Frameleaf, a problem ustąpi też samoczynnie po 24 godzinach bez ponownego uruchomienia."
       },
       "mail-needs-sign-in": {
         "title": "E-maile zatrzymane: zaloguj się ponownie w {provider}",
@@ -2593,27 +2593,27 @@
         "body": "Plan Twojej rodziny jest pełny. Poproś organizatora rodziny o jego zmianę na wyższy."
       },
       "cloud-backup-failed": {
-        "title": "Kopia zapasowa w chmurze nie powiodła się",
-        "body": "Ostatnia kopia zapasowa w chmurze została zatrzymana: {error}"
+        "title": "Kopia w chmurze nie powiodła się",
+        "body": "Ostatnia kopia w chmurze została zatrzymana: {error}"
       },
       "cloud-backup-key-locked": {
-        "title": "Kopia zapasowa w chmurze czeka na swój klucz",
-        "body": "Ten serwer nie przechowuje klucza kopii zapasowej. Wczytaj go w Ustawienia › Frameleaf Cloud › Kopia zapasowa w chmurze."
+        "title": "Kopia w chmurze czeka na swój klucz",
+        "body": "Ten serwer nie przechowuje klucza kopii. Wczytaj go w Ustawienia › Frameleaf Cloud › Kopia w chmurze."
       },
       "cloud-backup-check-problems": {
-        "title": "Sprawdzenie kopii zapasowej w chmurze wykryło problemy",
+        "title": "Sprawdzenie kopii w chmurze wykryło problemy",
         "body": "Brakuje {missing} plików z kopii zapasowej, a {damaged} jest uszkodzonych. Następna kopia zapasowa prześle je ponownie z tego serwera; wcześniejsze kopie zapasowe oznaczone jako niekompletne: {incomplete}."
       },
       "cloud-backup-check-failed": {
-        "title": "Sprawdzenie kopii zapasowej w chmurze nie powiodło się",
+        "title": "Sprawdzenie kopii w chmurze nie powiodło się",
         "body": "{error}"
       },
       "cloud-backup-cleanup-failed": {
-        "title": "Czyszczenie kopii zapasowej w chmurze nie powiodło się",
+        "title": "Czyszczenie kopii w chmurze nie powiodło się",
         "body": "{error}"
       },
       "cloud-restore-failed": {
-        "title": "Przywracanie z kopii zapasowej w chmurze nie powiodło się",
+        "title": "Przywracanie z kopii w chmurze nie powiodło się",
         "body": "{error}"
       },
       "cloud-backup-drill-failed": {
@@ -2758,31 +2758,31 @@
         "body": "{deviceName} har inte säkerhetskopierats på {count} dagar"
       },
       "activation-plan-active": {
-        "title": "Konfigurera Cloud Backup",
+        "title": "Konfigurera Molnsäkerhetskopiering",
         "body": "{step} av {total} · Aktiverar din plan"
       },
       "activation-server-notified": {
-        "title": "Konfigurera Cloud Backup",
+        "title": "Konfigurera Molnsäkerhetskopiering",
         "body": "{step} av {total} · Meddelar din server"
       },
       "activation-preparing-storage": {
-        "title": "Konfigurera Cloud Backup",
+        "title": "Konfigurera Molnsäkerhetskopiering",
         "body": "{step} av {total} · Förbereder lagring"
       },
       "activation-first-backup-complete": {
-        "title": "Konfigurera Cloud Backup",
+        "title": "Konfigurera Molnsäkerhetskopiering",
         "body": "{step} av {total} · Första säkerhetskopieringen klar"
       },
       "activation-first-backup-failed": {
-        "title": "Konfigurera Cloud Backup",
+        "title": "Konfigurera Molnsäkerhetskopiering",
         "body": "{step} av {total} · Första säkerhetskopieringen behöver åtgärdas"
       },
       "activation-first-backup-running": {
-        "title": "Konfigurera Cloud Backup",
+        "title": "Konfigurera Molnsäkerhetskopiering",
         "body": "{step} av {total} · Första säkerhetskopieringen pågår"
       },
       "activation-first-backup-scheduled": {
-        "title": "Konfigurera Cloud Backup",
+        "title": "Konfigurera Molnsäkerhetskopiering",
         "body": "{step} av {total} · Första säkerhetskopieringen är schemalagd"
       },
       "album-invite-anonymous": {
@@ -2802,12 +2802,12 @@
         "body": "Fjärråtkomst och molnsäkerhetskopiering är pausade. Allt annat på den här servern, inklusive alla bilder, fortsätter fungera."
       },
       "buddy-backup-stale": {
-        "title": "Buddy Backup är inaktuell",
+        "title": "Kompissäkerhetskopiering är inaktuell",
         "body": "Din senaste kompletta återställningspunkt är mer än tre dagar gammal. Kontrollera sändningsstatusen."
       },
       "buddy-backup-first-stale": {
-        "title": "Buddy Backup är inaktuell",
-        "body": "Buddy Backup har inte slutfört sin första återställningspunkt efter tre dagar. Kontrollera sändningsstatusen."
+        "title": "Kompissäkerhetskopiering är inaktuell",
+        "body": "Kompissäkerhetskopiering har inte slutfört sin första återställningspunkt efter tre dagar. Kontrollera sändningsstatusen."
       },
       "buddy-storage-low": {
         "title": "Buddy-lagringen börjar ta slut",
@@ -2858,7 +2858,7 @@
         "body": "Beskrivningen av nya bilder med Frameleaf Cloud nådde dagens budget på ${budget}. Nya bilder väntar och beskrivs från och med i morgon. Inget skickas till någon annan mottagare."
       },
       "buddy-backup-incomplete": {
-        "title": "Buddy Backup behöver åtgärdas",
+        "title": "Kompissäkerhetskopiering behöver åtgärdas",
         "body": "{error}"
       },
       "relay-disconnected": {
@@ -2895,7 +2895,7 @@
       },
       "cloud-region-mismatch": {
         "title": "Molnbearbetningen använder fel region",
-        "body": "Frameleaf Cloud avvisade molnbearbetning eftersom den här servern använder en annan region än datoregionen för sitt Frameleaf-konto, även efter att Frameleaf Clouds tjänstelista och den här serverns länk lästes in igen. Molnbearbetningen förblir avstängd tills detta är åtgärdat: kontrollera att FRAMELEAF_CLOUD_URL pekar på Frameleaf Cloud och länka sedan servern igen under Administration > Frameleaf Cloud."
+        "body": "Frameleaf Cloud avvisade molnbearbetning eftersom den här servern använder en annan region än dataregionen för sitt Frameleaf-konto, även efter att Frameleaf Clouds tjänstelista och den här serverns länk lästes in igen. Molnbearbetningen förblir avstängd tills detta är åtgärdat: kontrollera att FRAMELEAF_CLOUD_URL pekar på Frameleaf Cloud och länka sedan servern igen under Administration > Frameleaf Cloud."
       },
       "cloud-clone-suspected": {
         "title": "Två servrar använder den här serverns identitet",
@@ -3039,11 +3039,11 @@
         "body": "{senderName} bad dig om at deltage i deres klyngegruppe"
       },
       "space-mention": {
-        "title": "Nævnt i et delt rum",
+        "title": "Nævnt i et delt område",
         "body": "{senderName} nævnte dig i {albumName}"
       },
       "space-reply": {
-        "title": "Svar i et delt rum",
+        "title": "Svar i et delt område",
         "body": "{senderName} svarede på din kommentar i {albumName}"
       },
       "album-invite": {
@@ -3135,31 +3135,31 @@
         "body": "{deviceName} har ikke taget en sikkerhedskopi i {count} dage"
       },
       "activation-plan-active": {
-        "title": "Opsætning af cloud-sikkerhedskopi",
+        "title": "Opsætning af skybackup",
         "body": "{step} af {total} · Aktiverer dit abonnement"
       },
       "activation-server-notified": {
-        "title": "Opsætning af cloud-sikkerhedskopi",
+        "title": "Opsætning af skybackup",
         "body": "{step} af {total} · Giver din server besked"
       },
       "activation-preparing-storage": {
-        "title": "Opsætning af cloud-sikkerhedskopi",
+        "title": "Opsætning af skybackup",
         "body": "{step} af {total} · Forbereder lagerplads"
       },
       "activation-first-backup-complete": {
-        "title": "Opsætning af cloud-sikkerhedskopi",
+        "title": "Opsætning af skybackup",
         "body": "{step} af {total} · Første sikkerhedskopi er færdig"
       },
       "activation-first-backup-failed": {
-        "title": "Opsætning af cloud-sikkerhedskopi",
+        "title": "Opsætning af skybackup",
         "body": "{step} af {total} · Første sikkerhedskopi kræver opmærksomhed"
       },
       "activation-first-backup-running": {
-        "title": "Opsætning af cloud-sikkerhedskopi",
+        "title": "Opsætning af skybackup",
         "body": "{step} af {total} · Første sikkerhedskopi kører"
       },
       "activation-first-backup-scheduled": {
-        "title": "Opsætning af cloud-sikkerhedskopi",
+        "title": "Opsætning af skybackup",
         "body": "{step} af {total} · Første sikkerhedskopi er planlagt"
       },
       "album-invite-anonymous": {
@@ -3172,19 +3172,19 @@
       },
       "license-grace": {
         "title": "Fornyelsen af dit Frameleaf Cloud gik ikke igennem",
-        "body": "Fjernadgang og cloud-sikkerhedskopiering virker fortsat indtil {until}. Opdater din betalingsmetode i din Frameleaf-konto for at undgå en pause. Lokale funktioner påvirkes ikke."
+        "body": "Fjernadgang og skybackup virker fortsat indtil {until}. Opdater din betalingsmetode i din Frameleaf-konto for at undgå en pause. Lokale funktioner påvirkes ikke."
       },
       "license-expired": {
         "title": "Dit abonnement på Frameleaf Cloud er slut",
-        "body": "Fjernadgang og cloud-sikkerhedskopiering er sat på pause. Alt andet på denne server, inklusive hvert eneste billede, virker fortsat."
+        "body": "Fjernadgang og skybackup er sat på pause. Alt andet på denne server, inklusive hvert eneste billede, virker fortsat."
       },
       "buddy-backup-stale": {
-        "title": "Buddy Backup er forældet",
+        "title": "Buddybackup er forældet",
         "body": "Dit seneste komplette gendannelsespunkt er mere end tre dage gammelt. Tjek afsendelsesstatus."
       },
       "buddy-backup-first-stale": {
-        "title": "Buddy Backup er forældet",
-        "body": "Buddy Backup har ikke gennemført sit første gendannelsespunkt efter tre dage. Tjek afsendelsesstatus."
+        "title": "Buddybackup er forældet",
+        "body": "Buddybackup har ikke gennemført sit første gendannelsespunkt efter tre dage. Tjek afsendelsesstatus."
       },
       "buddy-storage-low": {
         "title": "Buddy-lagerpladsen er ved at løbe tør",
@@ -3199,31 +3199,31 @@
         "body": "Det hostede krypterede lager ligger stadig på disken. Kontakt din buddy for at aftale gendannelse."
       },
       "cloud-ml-migration": {
-        "title": "Cloud-behandling er flyttet til Frameleaf Cloud",
-        "body": "Frameleaf Cloud erstatter den tidligere tjeneste til cloud-behandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg, hvor det skal køre, under Behandlingsdestinationer, eller tilføj Frameleaf Cloud."
+        "title": "Skybehandling er flyttet til Frameleaf Cloud",
+        "body": "Frameleaf Cloud erstatter den tidligere tjeneste til skybehandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg, hvor det skal køre, under Behandlingsdestinationer, eller tilføj Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
-        "title": "Cloud-behandling er flyttet til Frameleaf Cloud",
-        "body": "Destinationen til cloud-behandling {names} blev fjernet: Frameleaf Cloud erstatter den tidligere tjeneste til cloud-behandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg, hvor det skal køre, under Behandlingsdestinationer, eller tilføj Frameleaf Cloud."
+        "title": "Skybehandling er flyttet til Frameleaf Cloud",
+        "body": "Destinationen til skybehandling {names} blev fjernet: Frameleaf Cloud erstatter den tidligere tjeneste til skybehandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg, hvor det skal køre, under Behandlingsdestinationer, eller tilføj Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
-        "title": "Cloud-behandling er flyttet til Frameleaf Cloud",
-        "body": "Destinationerne til cloud-behandling {names} blev fjernet: Frameleaf Cloud erstatter den tidligere tjeneste til cloud-behandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg, hvor det skal køre, under Behandlingsdestinationer, eller tilføj Frameleaf Cloud."
+        "title": "Skybehandling er flyttet til Frameleaf Cloud",
+        "body": "Destinationerne til skybehandling {names} blev fjernet: Frameleaf Cloud erstatter den tidligere tjeneste til skybehandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg, hvor det skal køre, under Behandlingsdestinationer, eller tilføj Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
-        "title": "Cloud-behandling er flyttet til Frameleaf Cloud",
+        "title": "Skybehandling er flyttet til Frameleaf Cloud",
         "body": "1 ufærdig opgave blev stoppet og kan startes igen."
       },
       "cloud-ml-migration-jobs-many": {
-        "title": "Cloud-behandling er flyttet til Frameleaf Cloud",
+        "title": "Skybehandling er flyttet til Frameleaf Cloud",
         "body": "{count} ufærdige opgaver blev stoppet og kan startes igen."
       },
       "cloud-ml-migration-workers-one": {
-        "title": "Cloud-behandling er flyttet til Frameleaf Cloud",
+        "title": "Skybehandling er flyttet til Frameleaf Cloud",
         "body": "1 renderingsarbejder blev logget ud."
       },
       "cloud-ml-migration-workers-many": {
-        "title": "Cloud-behandling er flyttet til Frameleaf Cloud",
+        "title": "Skybehandling er flyttet til Frameleaf Cloud",
         "body": "{count} renderingsarbejdere blev logget ud."
       },
       "admin-granted": {
@@ -3235,7 +3235,7 @@
         "body": "Beskrivelse af nye billeder med Frameleaf Cloud nåede dagens budget på ${budget}. Nye billeder venter og beskrives fra i morgen; intet sendes til nogen anden destination."
       },
       "buddy-backup-incomplete": {
-        "title": "Buddy Backup kræver opmærksomhed",
+        "title": "Buddybackup kræver opmærksomhed",
         "body": "{error}"
       },
       "relay-disconnected": {
@@ -3271,12 +3271,12 @@
         "body": "Certifikatet til denne servers navn på frameleaf.net kunne ikke udstedes ({error}). Det forsøges igen automatisk, næste gang {nextAttemptAt}. Det nuværende certifikat virker indtil {until}."
       },
       "cloud-region-mismatch": {
-        "title": "Cloud-behandling bruger den forkerte region",
-        "body": "Frameleaf Cloud afviste cloud-behandling, fordi denne server bruger en anden region end dataregionen for sin Frameleaf-konto, selv efter at have læst tjenestelisten fra Frameleaf Cloud og denne servers forbindelse igen. Cloud-behandling forbliver slået fra, indtil dette er rettet: tjek, at FRAMELEAF_CLOUD_URL peger på Frameleaf Cloud, og forbind derefter serveren igen under Administration > Frameleaf Cloud."
+        "title": "Skybehandling bruger den forkerte region",
+        "body": "Frameleaf Cloud afviste skybehandling, fordi denne server bruger en anden region end dataregionen for sin Frameleaf-konto, selv efter at have læst tjenestelisten fra Frameleaf Cloud og denne servers forbindelse igen. Skybehandling forbliver slået fra, indtil dette er rettet: tjek, at FRAMELEAF_CLOUD_URL peger på Frameleaf Cloud, og forbind derefter serveren igen under Administration > Frameleaf Cloud."
       },
       "cloud-clone-suspected": {
         "title": "To servere bruger denne servers identitet",
-        "body": "Frameleaf Cloud så denne servers nøgle starte fra to steder. Hvis du kopierede denne server, så giv kopien sin egen identitetsmappe. Cloud-sikkerhedskopiering og cloud-behandling holder pause, indtil dette er løst: kontoejeren kan bekræfte denne server i Frameleaf-kontoen, eller det forsvinder af sig selv efter 24 timer uden en genstart."
+        "body": "Frameleaf Cloud så denne servers nøgle starte fra to steder. Hvis du kopierede denne server, så giv kopien sin egen identitetsmappe. Skybackup og skybehandling holder pause, indtil dette er løst: kontoejeren kan bekræfte denne server i Frameleaf-kontoen, eller det forsvinder af sig selv efter 24 timer uden en genstart."
       },
       "mail-needs-sign-in": {
         "title": "E-mail stoppet: log ind på {provider} igen",
@@ -3347,27 +3347,27 @@
         "body": "Din families abonnement er fuldt. Bed din familieorganisator om at opgradere."
       },
       "cloud-backup-failed": {
-        "title": "Cloud-sikkerhedskopiering mislykkedes",
-        "body": "Den seneste cloud-sikkerhedskopi stoppede: {error}"
+        "title": "Skybackup mislykkedes",
+        "body": "Den seneste skybackup stoppede: {error}"
       },
       "cloud-backup-key-locked": {
-        "title": "Cloud-sikkerhedskopiering venter på sin nøgle",
-        "body": "Denne server opbevarer ikke sikkerhedskopinøglen. Indlæs den i Indstillinger › Frameleaf Cloud › Cloud-sikkerhedskopi."
+        "title": "Skybackup venter på sin nøgle",
+        "body": "Denne server opbevarer ikke sikkerhedskopinøglen. Indlæs den i Indstillinger › Frameleaf Cloud › Skybackup."
       },
       "cloud-backup-check-problems": {
-        "title": "Tjek af cloud-sikkerhedskopi fandt problemer",
+        "title": "Tjek af skybackup fandt problemer",
         "body": "{missing} sikkerhedskopierede filer mangler, og {damaged} er beskadigede. Den næste sikkerhedskopi uploader dem igen fra denne server; {incomplete} tidligere sikkerhedskopier er markeret som ufuldstændige."
       },
       "cloud-backup-check-failed": {
-        "title": "Tjek af cloud-sikkerhedskopi mislykkedes",
+        "title": "Tjek af skybackup mislykkedes",
         "body": "{error}"
       },
       "cloud-backup-cleanup-failed": {
-        "title": "Oprydning af cloud-sikkerhedskopi mislykkedes",
+        "title": "Oprydning af skybackup mislykkedes",
         "body": "{error}"
       },
       "cloud-restore-failed": {
-        "title": "Gendannelse fra cloud-sikkerhedskopi mislykkedes",
+        "title": "Gendannelse fra skybackup mislykkedes",
         "body": "{error}"
       },
       "cloud-backup-drill-failed": {
@@ -3512,31 +3512,31 @@
         "body": "{deviceName} har ikke tatt sikkerhetskopi på {count} dager"
       },
       "activation-plan-active": {
-        "title": "Oppsett av Cloud Backup",
+        "title": "Oppsett av skysikkerhetskopiering",
         "body": "{step} av {total} · Aktiverer abonnementet ditt"
       },
       "activation-server-notified": {
-        "title": "Oppsett av Cloud Backup",
+        "title": "Oppsett av skysikkerhetskopiering",
         "body": "{step} av {total} · Varsler serveren din"
       },
       "activation-preparing-storage": {
-        "title": "Oppsett av Cloud Backup",
+        "title": "Oppsett av skysikkerhetskopiering",
         "body": "{step} av {total} · Forbereder lagring"
       },
       "activation-first-backup-complete": {
-        "title": "Oppsett av Cloud Backup",
+        "title": "Oppsett av skysikkerhetskopiering",
         "body": "{step} av {total} · Første sikkerhetskopiering er fullført"
       },
       "activation-first-backup-failed": {
-        "title": "Oppsett av Cloud Backup",
+        "title": "Oppsett av skysikkerhetskopiering",
         "body": "{step} av {total} · Første sikkerhetskopiering trenger oppmerksomhet"
       },
       "activation-first-backup-running": {
-        "title": "Oppsett av Cloud Backup",
+        "title": "Oppsett av skysikkerhetskopiering",
         "body": "{step} av {total} · Første sikkerhetskopiering pågår"
       },
       "activation-first-backup-scheduled": {
-        "title": "Oppsett av Cloud Backup",
+        "title": "Oppsett av skysikkerhetskopiering",
         "body": "{step} av {total} · Første sikkerhetskopiering er planlagt"
       },
       "album-invite-anonymous": {
@@ -3549,19 +3549,19 @@
       },
       "license-grace": {
         "title": "Fornyelsen av Frameleaf Cloud gikk ikke gjennom",
-        "body": "Ekstern tilgang og skysikkerhetskopiering fortsetter å virke til {until}. Oppdater betalingsmåten din i Frameleaf-kontoen for å unngå en pause. Lokale funksjoner påvirkes ikke."
+        "body": "Fjerntilgang og skysikkerhetskopiering fortsetter å virke til {until}. Oppdater betalingsmåten din i Frameleaf-kontoen for å unngå en pause. Lokale funksjoner påvirkes ikke."
       },
       "license-expired": {
         "title": "Frameleaf Cloud-abonnementet ditt er avsluttet",
-        "body": "Ekstern tilgang og skysikkerhetskopiering er satt på pause. Alt annet på denne serveren, inkludert alle bilder, fortsetter å virke."
+        "body": "Fjerntilgang og skysikkerhetskopiering er satt på pause. Alt annet på denne serveren, inkludert alle bilder, fortsetter å virke."
       },
       "buddy-backup-stale": {
-        "title": "Buddy Backup er utdatert",
+        "title": "Venn-sikkerhetskopiering er utdatert",
         "body": "Ditt siste fullstendige gjenopprettingspunkt er mer enn tre dager gammelt. Sjekk sendestatusen."
       },
       "buddy-backup-first-stale": {
-        "title": "Buddy Backup er utdatert",
-        "body": "Buddy Backup har ikke fullført sitt første gjenopprettingspunkt etter tre dager. Sjekk sendestatusen."
+        "title": "Venn-sikkerhetskopiering er utdatert",
+        "body": "Venn-sikkerhetskopiering har ikke fullført sitt første gjenopprettingspunkt etter tre dager. Sjekk sendestatusen."
       },
       "buddy-storage-low": {
         "title": "Buddy-lagringen begynner å bli full",
@@ -3612,39 +3612,39 @@
         "body": "Beskrivelse av nye bilder med Frameleaf Cloud nådde dagens budsjett på ${budget}. Nye bilder venter og beskrives fra i morgen; ingenting sendes til noe annet sted."
       },
       "buddy-backup-incomplete": {
-        "title": "Buddy Backup trenger oppmerksomhet",
+        "title": "Venn-sikkerhetskopiering trenger oppmerksomhet",
         "body": "{error}"
       },
       "relay-disconnected": {
-        "title": "Relay for ekstern tilgang er frakoblet",
+        "title": "Relay for fjerntilgang er frakoblet",
         "body": "Denne serveren har ikke vært koblet til Frameleaf Relay siden {since}. Den prøver fortsatt; hjemme fungerer den som før."
       },
       "relay-disconnected-error": {
-        "title": "Relay for ekstern tilgang er frakoblet",
+        "title": "Relay for fjerntilgang er frakoblet",
         "body": "Denne serveren har ikke vært koblet til Frameleaf Relay siden {since}. Den prøver fortsatt; hjemme fungerer den som før. Det siste problemet var: {error}"
       },
       "edge-certificate-address": {
-        "title": "Sertifikatet for ekstern tilgang kunne ikke fornyes",
+        "title": "Sertifikatet for fjerntilgang kunne ikke fornyes",
         "body": "Sertifikatet for Frameleaf-adressen til denne serveren kunne ikke utstedes ({error}). Det prøves på nytt automatisk, neste gang {nextAttemptAt}."
       },
       "edge-certificate-address-expiring": {
-        "title": "Sertifikatet for ekstern tilgang kunne ikke fornyes",
+        "title": "Sertifikatet for fjerntilgang kunne ikke fornyes",
         "body": "Sertifikatet for Frameleaf-adressen til denne serveren kunne ikke utstedes ({error}). Det prøves på nytt automatisk, neste gang {nextAttemptAt}. Det nåværende sertifikatet virker til {until}."
       },
       "edge-certificate-domain": {
-        "title": "Sertifikatet for ekstern tilgang kunne ikke fornyes",
+        "title": "Sertifikatet for fjerntilgang kunne ikke fornyes",
         "body": "Sertifikatet for ditt eget domene kunne ikke utstedes ({error}). Det prøves på nytt automatisk, neste gang {nextAttemptAt}."
       },
       "edge-certificate-domain-expiring": {
-        "title": "Sertifikatet for ekstern tilgang kunne ikke fornyes",
+        "title": "Sertifikatet for fjerntilgang kunne ikke fornyes",
         "body": "Sertifikatet for ditt eget domene kunne ikke utstedes ({error}). Det prøves på nytt automatisk, neste gang {nextAttemptAt}. Det nåværende sertifikatet virker til {until}."
       },
       "edge-certificate-name": {
-        "title": "Sertifikatet for ekstern tilgang kunne ikke fornyes",
+        "title": "Sertifikatet for fjerntilgang kunne ikke fornyes",
         "body": "Sertifikatet for navnet til denne serveren på frameleaf.net kunne ikke utstedes ({error}). Det prøves på nytt automatisk, neste gang {nextAttemptAt}."
       },
       "edge-certificate-name-expiring": {
-        "title": "Sertifikatet for ekstern tilgang kunne ikke fornyes",
+        "title": "Sertifikatet for fjerntilgang kunne ikke fornyes",
         "body": "Sertifikatet for navnet til denne serveren på frameleaf.net kunne ikke utstedes ({error}). Det prøves på nytt automatisk, neste gang {nextAttemptAt}. Det nåværende sertifikatet virker til {until}."
       },
       "cloud-region-mismatch": {
