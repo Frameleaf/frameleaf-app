@@ -78,6 +78,11 @@
     sections?: Exclude<TimelineGrouping, 'all'> | null;
     /** FL-1398: the View menu turned the year scrubber off. */
     hideScrubber?: boolean;
+    /**
+     * There is no Timeline to switch to (a public share is always Browse): touch and narrow screens
+     * keep the thin scrubber here, so a long share can still be moved through by date.
+     */
+    keepThinScrubber?: boolean;
     /** Work with the panel beside the grid: the item the panel describes gets a neutral ring. */
     inPanelId?: string | null;
     /**
@@ -146,6 +151,7 @@
     showTimes = true,
     sections = null,
     hideScrubber = false,
+    keepThinScrubber = false,
     inPanelId = null,
     onThumbnailSizeChange,
     grouping = 'days',
@@ -180,7 +186,8 @@
   /**
    * On touch and on narrow screens the scrubber is the prototype's thin line in a slim column
    * (timeline-library.css, 700px), and only Timeline has one: Browse and Work keep the whole width
-   * for the photos (UI review 2026-11-10, A6).
+   * for the photos (UI review 2026-11-10, A6). A page with no Timeline to switch to keeps it
+   * (`keepThinScrubber`).
    */
   const thinScrubber = $derived(coarsePointer || maxMd);
   const isEmpty = $derived(timelineManager.isInitialized && timelineManager.months.length === 0);
@@ -434,7 +441,10 @@
   const SCRUBBER_LABEL_ROOM = 34;
   /** The scrubber is drawn: a flat order (filename, rating) has no dates to scrub through. */
   const showScrubber = $derived(
-    timelineManager.months.length > 0 && !timelineManager.ordered && !hideScrubber && (!thinScrubber || showDayHeaders),
+    timelineManager.months.length > 0 &&
+      !timelineManager.ordered &&
+      !hideScrubber &&
+      (!thinScrubber || showDayHeaders || keepThinScrubber),
   );
   /**
    * The rows' scrubber only where there is something to scrub through: photos that fit on one

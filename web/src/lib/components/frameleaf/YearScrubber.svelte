@@ -242,7 +242,12 @@
     scrubTo(month, month.start);
   };
 
-  const bubble = $derived(hover?.month ?? (dragging ? current : null));
+  /**
+   * The slider was reached with the keyboard (focus that did not come from a press on the track).
+   * The thin line has no year labels, so the bubble names the month it is on meanwhile.
+   */
+  let keyboardFocus = $state(false);
+  const bubble = $derived(hover?.month ?? (dragging || (thin && keyboardFocus) ? current : null));
   const bubbleFraction = $derived(hover ? hover.fraction : (current?.center ?? 0));
 </script>
 
@@ -272,6 +277,8 @@
     onpointercancel={onPointerUp}
     onpointerleave={onPointerLeave}
     onkeydown={onKeyDown}
+    onfocus={() => (keyboardFocus = !dragging)}
+    onblur={() => (keyboardFocus = false)}
   >
     {#each years as year (year.year)}
       <i class="fl-scrub-yeartick" style:top="{year.start * 100}%" aria-hidden="true"></i>

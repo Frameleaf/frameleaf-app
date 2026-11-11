@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import YearScrubber from './YearScrubber.svelte';
@@ -58,6 +58,26 @@ describe('YearScrubber', () => {
     const scrubber = screen.getByTestId('frameleaf-year-scrubber');
     expect(scrubber.style.getPropertyValue('--fl-scrub-clear')).toBe('120px');
     expect(scrubber).toHaveClass('is-thin');
+  });
+
+  // The thin line has no year labels: reached with the keyboard, its bubble names the month it is on.
+  it('names the current month while the thin line holds keyboard focus', async () => {
+    const timelineManager = {
+      scrubberTimelineHeight: 1000,
+      topSectionHeight: 0,
+      scrubberMonths: [
+        { year: 2026, month: 8, title: 'August 2026', assetCount: 3, height: 600 },
+        { year: 2026, month: 7, title: 'July 2026', assetCount: 1, height: 400 },
+      ],
+    } as unknown as TimelineManager;
+    render(YearScrubber, { timelineManager, thin: true, viewportTopMonth: { year: 2026, month: 7 } });
+    const slider = screen.getByRole('slider');
+
+    expect(screen.queryByText('July 2026')).not.toBeInTheDocument();
+    await fireEvent.focus(slider);
+    expect(screen.getByText('July 2026')).toBeInTheDocument();
+    await fireEvent.blur(slider);
+    expect(screen.queryByText('July 2026')).not.toBeInTheDocument();
   });
 
   // LIB-P4: the header block spans the scrubber's own column too, so the track keeps clear of it there.
