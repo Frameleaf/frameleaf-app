@@ -14,6 +14,12 @@ import { trustedStorage } from './platform';
  * so it keeps working without signing in again.
  */
 export type ConnectionMethod = 'sign-in' | 'key';
+/**
+ * FL-1427: what a signed-in access was allowed. `capture` saves into Boards; `media` also asks
+ * your Library to download media, connect sites and follow creators. An access from before this
+ * existed has none recorded and is `capture`.
+ */
+export type AccessGrant = 'capture' | 'media';
 type Connection = {
   version: 1;
   binding: ServerBinding;
@@ -22,6 +28,7 @@ type Connection = {
   catalog: CaptureCatalogDto | null;
   method?: ConnectionMethod;
   apiKeyId?: string;
+  grant?: AccessGrant;
   /**
    * FL-655: a paused sign-in access keeps its key only so Sign out can still remove it on the
    * server; it is never used to save (credentialFor needs a connected status).
@@ -64,6 +71,9 @@ async function read(): Promise<Connection | null> {
       value.method === undefined || ['sign-in', 'key'].includes(value.method)
     ) ||
     !(value.apiKeyId === undefined || typeof value.apiKeyId === 'string') ||
+    !(
+      value.grant === undefined || ['capture', 'media'].includes(value.grant)
+    ) ||
     !(value.pausedToken === undefined || typeof value.pausedToken === 'string')
   )
     throw new CaptureFailure('credential');
@@ -83,6 +93,7 @@ export async function connectionStatus(): Promise<ConnectionStatus | null> {
         status: value.status,
         catalog: value.catalog,
         method: value.method ?? 'key',
+        ...(value.grant && { grant: value.grant }),
       }
     : null;
 }
@@ -90,7 +101,11 @@ export async function connectionStatus(): Promise<ConnectionStatus | null> {
 export async function saveConnection(
   binding: ServerBinding,
   token: string,
-  access: { method: ConnectionMethod; apiKeyId?: string } = { method: 'key' },
+  access: {
+    method: ConnectionMethod;
+    apiKeyId?: string;
+    grant?: AccessGrant;
+  } = { method: 'key' },
 ) {
   await initializeStorage();
   await trustedStorage().set({
@@ -102,6 +117,7 @@ export async function saveConnection(
       catalog: null,
       method: access.method,
       ...(access.apiKeyId && { apiKeyId: access.apiKeyId }),
+      ...(access.grant && { grant: access.grant }),
     } satisfies Connection,
   });
 }
@@ -149,6 +165,7 @@ export async function pauseConnection(binding: ServerBinding) {
         status: 'needs-attention',
         catalog: null,
         ...(value.method && { method: value.method }),
+        ...(value.grant && { grant: value.grant }),
         ...(value.method === 'sign-in' &&
           (value.token ?? value.pausedToken) && {
             pausedToken: value.token ?? value.pausedToken,

@@ -18,7 +18,16 @@ import {
   QueueFailure,
 } from './queue';
 import type { ServerBinding } from './api';
-import type { QueueProgress } from './platform';
+import type { QueueItem, QueueProgress } from './platform';
+import { LibraryFailure } from './media-api';
+import { handleMedia, registerMediaWatch } from './media-background';
+import {
+  listMediaReceipts,
+  mediaReceiptDone,
+  requestMediaCancel,
+  requestMediaRetry,
+  type MediaReceipt,
+} from './media-queue';
 import {
   DiscoveryFailure,
   discoverActivePage,
@@ -109,6 +118,88 @@ function pauseDeliveryBinding(binding: ServerBinding) {
 }
 const uuidPattern =
   /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
+const MEDIA_WORDS: Record<string, string> = {
+  inspecting: 'Your Library is checking it',
+  ready: 'Waiting for your Library',
+  queued: 'Waiting for your Library',
+  downloading: 'Your Library is downloading',
+  assembling: 'Your Library is putting the video together',
+  importing: 'Your Library is adding it to Boards',
+};
+const plural = (count: number, word: string) =>
+  `${count} ${word}${count === 1 ? '' : 's'}`;
+/** FL-1427: a media receipt as a line in the saving list. */
+function mediaQueueItem(receipt: MediaReceipt, paused: boolean): QueueItem {
+  const counts = [
+    receipt.saved && `${receipt.saved} saved`,
+    receipt.skipped && `${receipt.skipped} skipped`,
+    receipt.failed && `${receipt.failed} failed`,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const detail = {
+    submitting: receipt.error ?? 'Sending to your Library',
+    active: [
+      MEDIA_WORDS[receipt.remoteState ?? ''] ?? 'Your Library is working on it',
+      receipt.discovered > 0 &&
+        `${receipt.saved} of ${plural(receipt.discovered, 'item')} saved`,
+      receipt.error,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    saved: `Saved by your Library${counts ? ` · ${counts}` : ''}`,
+    partial: `Finished with errors${counts ? ` · ${counts}` : ''}`,
+    failed: `Couldn’t download · ${receipt.error ?? 'Your Library couldn’t finish it.'}`,
+    cancelled: 'Cancelled',
+    paused: `Paused on your Library${receipt.error ? ` · ${receipt.error}` : ''}`,
+    subscribed:
+      'Subscribed · your Library saves new posts to this creator’s collection. Manage it in Boards.',
+  }[receipt.state];
+  const state = (
+    {
+      submitting: 'queued',
+      active: 'uploading',
+      saved: 'saved',
+      subscribed: 'saved',
+      partial: 'failed',
+      failed: 'failed',
+      cancelled: 'cancelled',
+      paused: 'needs-attention',
+    } as const
+  )[receipt.state];
+  const download = receipt.kind === 'download';
+  const waiting = !!receipt.cancelRequested || !!receipt.retryKey;
+  return {
+    id: receipt.id,
+    label: receipt.label.slice(0, 2000),
+    state,
+    offset: 0,
+    kind: download ? 'media' : 'subscription',
+    albumId: receipt.albumId ?? '',
+    updatedAt: receipt.updatedAt,
+    detail: detail.slice(0, 1000),
+    ...(receipt.albumId &&
+      uuidPattern.test(receipt.albumId) &&
+      (receipt.saved > 0 || receipt.state === 'subscribed') && {
+        itemId: receipt.albumId,
+        itemKind: 'collection' as const,
+      }),
+    cancelling: !!receipt.cancelRequested,
+    canRetry:
+      !paused &&
+      !waiting &&
+      ((download &&
+        !!receipt.remoteId &&
+        ['partial', 'failed', 'paused', 'cancelled'].includes(receipt.state)) ||
+        (receipt.state === 'submitting' && !!receipt.error)),
+    canCancel:
+      !paused &&
+      download &&
+      !mediaReceiptDone(receipt) &&
+      !receipt.cancelRequested,
+  };
+}
+let mediaWoken = 0;
 async function queueProgress(): Promise<QueueProgress> {
   const current = await connectionStatus();
   const empty: QueueProgress = { items: [], unfinished: 0, hasMore: false };
@@ -133,38 +224,106 @@ async function queueProgress(): Promise<QueueProgress> {
     ...tasks.filter((task) => done(task.state)).slice(0, 20),
   ];
   const now = Date.now();
+  // FL-1427: work your Library is doing is listed with what is being sent from here. A saving list
+  // that can't be read for media still shows its captures.
+  const receipts = await listMediaReceipts(current.binding).catch(() => []);
+  const working = receipts.filter((receipt) => !mediaReceiptDone(receipt));
+  const media = [
+    ...working.slice(0, 50),
+    ...receipts.filter(mediaReceiptDone).slice(0, 10),
+  ].map((receipt) => mediaQueueItem(receipt, paused));
+  // While the list is open, ask the Library how its work is going every few seconds.
+  if (!paused && working.length > 0 && now - mediaWoken > 5000) {
+    mediaWoken = now;
+    wake();
+  }
+  const firstDone = visible.findIndex((task) => done(task.state));
+  const captures = visible.map((task): QueueItem => {
+    const busy = (task.claim?.expiresAt ?? 0) > now;
+    const label = task.file?.filename ?? task.bookmark?.title ?? 'Capture';
+    return {
+      id: task.id,
+      label: typeof label === 'string' ? label.slice(0, 2000) : 'Capture',
+      state: task.state,
+      offset: task.offset,
+      total: task.file?.size,
+      retryAt: task.retryAt,
+      error:
+        typeof task.error === 'string' ? task.error.slice(0, 1000) : undefined,
+      kind: task.bookmark ? 'link' : 'image',
+      albumId: task.albumId,
+      updatedAt: task.updatedAt,
+      ...(task.receipt &&
+        uuidPattern.test(task.receipt.itemId) && {
+          itemId: task.receipt.itemId,
+          itemKind: task.receipt.kind,
+        }),
+      cancelling: !!task.cancelRequested,
+      canRetry:
+        !paused && !done(task.state) && !busy && (task.retryAt ?? 0) <= now,
+      canCancel: !paused && !done(task.state) && !task.cancelRequested,
+    };
+  });
+  const split = firstDone === -1 ? captures.length : firstDone;
   return {
-    unfinished: unfinished.length,
+    unfinished: unfinished.length + working.length,
     hasMore: unfinished.length > 100,
-    items: visible.map((task) => {
-      const busy = (task.claim?.expiresAt ?? 0) > now;
-      const label = task.file?.filename ?? task.bookmark?.title ?? 'Capture';
-      return {
-        id: task.id,
-        label: typeof label === 'string' ? label.slice(0, 2000) : 'Capture',
-        state: task.state,
-        offset: task.offset,
-        total: task.file?.size,
-        retryAt: task.retryAt,
-        error:
-          typeof task.error === 'string'
-            ? task.error.slice(0, 1000)
-            : undefined,
-        kind: task.bookmark ? 'link' : 'image',
-        albumId: task.albumId,
-        updatedAt: task.updatedAt,
-        ...(task.receipt &&
-          uuidPattern.test(task.receipt.itemId) && {
-            itemId: task.receipt.itemId,
-            itemKind: task.receipt.kind,
-          }),
-        cancelling: !!task.cancelRequested,
-        canRetry:
-          !paused && !done(task.state) && !busy && (task.retryAt ?? 0) <= now,
-        canCancel: !paused && !done(task.state) && !task.cancelRequested,
-      };
-    }),
+    // unfinished first (captures, then Library work), then what finished
+    items: [
+      ...captures.slice(0, split),
+      ...media.filter(
+        (item) => !['saved', 'failed', 'cancelled'].includes(item.state),
+      ),
+      ...captures.slice(split),
+      ...media.filter((item) =>
+        ['saved', 'failed', 'cancelled'].includes(item.state),
+      ),
+    ],
   };
+}
+/** FL-1427: the Media tab. Never queued behind other messages: the Library may take a while. */
+async function runMedia(message: { type: string }): Promise<ExtensionReply> {
+  let current: Awaited<ReturnType<typeof connectionStatus>> = null;
+  try {
+    current = await connectionStatus();
+    if (!current || current.status !== 'connected')
+      throw new CaptureFailure('credential');
+    if (!(await hasServerAccess(current.binding.origin)))
+      throw new CaptureFailure('permission');
+    // Looking whether media downloads exist needs nothing more; using them needs your say-so.
+    const open = ['media-state', 'media-check'].includes(message.type);
+    const granted = current.method !== 'sign-in' || current.grant === 'media';
+    if (!open && !granted) throw new LibraryFailure('grant');
+    const media = await handleMedia(message, {
+      binding: current.binding,
+      token: await credentialFor(current.binding),
+      wake,
+    });
+    return {
+      ok: true,
+      connection: current,
+      media: { ...media, ...(open && { granted }) },
+    };
+  } catch (error) {
+    // The address stopped answering as this server and account: stop, exactly as saving does.
+    if (
+      current &&
+      error instanceof CaptureFailure &&
+      ['authorization', 'identity', 'unsupported'].includes(error.code)
+    )
+      await pauseDeliveryBinding(current.binding).catch(() => {});
+    return {
+      ok: false,
+      error:
+        error instanceof CaptureFailure ||
+        error instanceof LibraryFailure ||
+        error instanceof QueueFailure
+          ? error.message
+          : 'Could not finish that. Try again.',
+      ...(error instanceof LibraryFailure && { mediaProblem: error.problem }),
+      connection: await connectionStatus().catch(() => null),
+    };
+  }
 }
 async function refresh() {
   const current = await connectionStatus();
@@ -234,6 +393,13 @@ export function handleMessage(
       stopScreenshot();
     // FL-655: the sign-in window stays open while you sign in, so it never holds the queue of messages.
     if (settingsPage && message.type === 'sign-in') return signIn(message);
+    if (typeof message.type === 'string' && message.type.startsWith('media-'))
+      return trustedSender(sender, ['/popup.html'])
+        ? runMedia(message as { type: string })
+        : Promise.resolve({
+            ok: false,
+            error: 'Open the extension toolbar to download media.',
+          });
     if (message.type === 'screenshot') {
       if (
         !trustedSender(sender, ['/popup.html']) ||
@@ -497,10 +663,21 @@ export function handleMessage(
           const task = (await listCaptures(current.binding)).find(
             (task) => task.id === message.id,
           );
-          if (!task)
-            throw new QueueFailure(
-              'This item isn’t in this account’s saving list.',
-            );
+          if (!task) {
+            // FL-1427: Library work is cancelled and retried on the Library, not here
+            const receipt = (
+              await listMediaReceipts(current.binding).catch(() => [])
+            ).find((receipt) => receipt.id === message.id);
+            if (!receipt)
+              throw new QueueFailure(
+                'This item isn’t in this account’s saving list.',
+              );
+            await (message.type === 'retry-capture'
+              ? requestMediaRetry(message.id, current.binding)
+              : requestMediaCancel(message.id, current.binding));
+            wake();
+            break;
+          }
           if (message.type === 'retry-capture') {
             if ((task.retryAt ?? 0) > Date.now())
               throw new QueueFailure(
@@ -629,6 +806,17 @@ export function retryRemovals(): Promise<void> {
   })());
 }
 let signingIn = false;
+/** FL-1427: asking for media downloads, said in the popup's own words (it stays signed in throughout). */
+const UPGRADE_WORDS: Partial<Record<SignInProblem, string>> = {
+  cancelled:
+    'Nothing changed. Media downloads stay off until you allow them on your Library.',
+  unreachable:
+    'Your Library didn’t answer. Check that it’s turned on and that this browser trusts its certificate.',
+  expired: 'That took too long. Press Allow again to start over.',
+  busy: 'A sign-in window is already open. Finish there, or close it and try again.',
+  'old-server':
+    'Your Library needs an update before it can download media. Saving images, links and screenshots still works.',
+};
 /**
  * FL-655: sign in with your Frameleaf account. The popup closes while the browser's sign-in window
  * is open, so this runs here and leaves a notice ("You're signed in", or what went wrong) for the
@@ -644,6 +832,12 @@ async function signIn(message: object): Promise<ExtensionReply> {
   const allowLocalhost =
     'allowLocalhost' in message && message.allowLocalhost === true;
   const switching = 'switching' in message && message.switching === true;
+  /**
+   * FL-1427: allow media downloads for the server and account already signed in to. It goes through
+   * the same sign-in window and Allow page, and is kept only if it comes back as that same server
+   * and account.
+   */
+  const upgrade = 'grant' in message && message.grant === 'media';
   let origin: string;
   try {
     origin = normalizeServerAddress(message.address, allowLocalhost);
@@ -667,9 +861,18 @@ async function signIn(message: object): Promise<ExtensionReply> {
   let saved = false;
   try {
     if (!(await hasServerAccess(origin))) throw new SignInFailure('permission');
-    await checkServer(origin, transport);
+    const current = upgrade ? await connectionStatus() : null;
+    if (
+      upgrade &&
+      (current?.status !== 'connected' || current.binding.origin !== origin)
+    )
+      throw new SignInFailure('failed');
+    const { grants } = await checkServer(origin, transport);
+    // A Library from before media downloads is never asked for them: its Allow page would refuse.
+    if (upgrade && !grants.includes('media'))
+      throw new SignInFailure('old-server');
     await setSignInNotice(null);
-    if (switching)
+    if (switching && !upgrade)
       await serialize(async () => {
         stopDelivery();
         stopScreenshot();
@@ -692,6 +895,7 @@ async function signIn(message: object): Promise<ExtensionReply> {
           state,
           client: browserClient(),
           installationId: await installationId(),
+          ...(upgrade && { grant: 'media' as const }),
         }),
       );
     } catch (error) {
@@ -708,6 +912,9 @@ async function signIn(message: object): Promise<ExtensionReply> {
     if (Date.now() - started > SIGN_IN_WINDOW_MS)
       throw new SignInFailure('expired');
     const code = readReturn(returned, redirectUri, state);
+    // The exchange replaces this browser's access on the server, so nothing is sent with the old
+    // one from here on; saving starts again with whichever access is kept.
+    if (upgrade) stopDelivery();
     const access = await exchangeCode(
       origin,
       { code, codeVerifier: verifier, redirectUri },
@@ -728,6 +935,13 @@ async function signIn(message: object): Promise<ExtensionReply> {
         binding.userId !== access.userId
       )
         throw new SignInFailure('failed');
+      // More access is only ever added to the server and account it was asked for.
+      if (
+        current &&
+        (binding.serverId !== current.binding.serverId ||
+          binding.userId !== current.binding.userId)
+      )
+        throw new SignInFailure('failed');
       if (generation !== before) throw new Superseded();
       // the access this replaces, on whichever server, is removed there
       await revokeSignedIn();
@@ -735,10 +949,12 @@ async function signIn(message: object): Promise<ExtensionReply> {
       await saveConnection(binding, access.secret, {
         method: 'sign-in',
         apiKeyId: access.apiKeyId,
+        // what the server says it allowed, never what was asked for
+        grant: access.grant,
       });
       saved = true;
       await rememberServer(origin, binding.userName);
-      await setSignInNotice({ kind: 'welcome' });
+      await setSignInNotice(upgrade ? null : { kind: 'welcome' });
       await refresh().catch(() => {});
       wake();
     });
@@ -757,6 +973,17 @@ async function signIn(message: object): Promise<ExtensionReply> {
       };
     const problem: SignInProblem =
       error instanceof SignInFailure ? error.problem : 'failed';
+    // You stay signed in while asking for more, so this is said in the Media tab, not as a sign-in problem.
+    if (upgrade) {
+      wake();
+      return {
+        ok: false,
+        error:
+          UPGRADE_WORDS[problem] ??
+          'Media downloads weren’t allowed. Nothing changed; you can try again.',
+        connection: await connectionStatus().catch(() => null),
+      };
+    }
     await setSignInNotice({ kind: 'problem', problem, origin }).catch(() => {});
     return {
       ok: false,
@@ -924,6 +1151,7 @@ async function handleMenu(
   });
 }
 registerCaptureMenus(handleMenu);
+registerMediaWatch();
 registerDeliveryAlarm(() => {
   wake();
   void retryRemovals().catch(() => {});

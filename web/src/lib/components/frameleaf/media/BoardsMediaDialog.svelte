@@ -41,7 +41,7 @@
   let alternate = $state(false);
   let createdId = $state<string>();
   const controller = new AbortController();
-  let body: HTMLDivElement;
+  let body = $state<HTMLDivElement>();
   const close = () => {
     open = false;
   };

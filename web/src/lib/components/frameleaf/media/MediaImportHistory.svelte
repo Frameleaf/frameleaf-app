@@ -19,7 +19,7 @@
 
   let jobs = $state<MediaImportResponseDto[]>([]);
   let operation = $state<MediaImportResponseDto>();
-  let selectedHeading: HTMLHeadingElement;
+  let selectedHeading = $state<HTMLHeadingElement>();
   let lastTrigger: HTMLElement | undefined;
   let busy = $state(true);
   let failed = $state(false);

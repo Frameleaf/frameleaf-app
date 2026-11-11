@@ -153,7 +153,7 @@ it('inspects several URLs, waits for the feed preview and requires explicit atta
   );
   expect(await screen.findByText('Inspecting')).toBeInTheDocument();
   expect(await screen.findByText('Limited preview.')).toBeInTheDocument();
-  const start = screen.getByRole('button', { name: 'Start download' });
+  const start = await screen.findByRole('button', { name: 'Start download' });
   expect(start).toBeDisabled();
   expect(container.querySelector('img')).toBeNull();
   expect(screen.queryByRole('link', { name: 'Open source page' })).not.toBeInTheDocument();
@@ -231,7 +231,8 @@ it('requires an explicit subscription history choice and defaults to a top-level
   await fireEvent.click(screen.getByRole('button', { name: 'Preview creator' }));
   const subscribe = await screen.findByRole('button', { name: 'Subscribe' });
   expect(subscribe).toBeDisabled();
-  expect(screen.getAllByRole('radio').every((element) => !(element as HTMLInputElement).checked)).toBe(true);
+  const historyChoices = within(screen.getByRole('group', { name: 'History to save' })).getAllByRole('radio');
+  expect(historyChoices.every((element) => !(element as HTMLInputElement).checked)).toBe(true);
   await fireEvent.click(screen.getByRole('radio', { name: 'Since a date' }));
   expect(subscribe).toBeDisabled();
   await fireEvent.click(screen.getByRole('radio', { name: 'New posts only' }));
@@ -302,7 +303,7 @@ it('clears credentials after a failed request and after closing, without browser
   expect(await screen.findByRole('alert')).toBeInTheDocument();
   expect(password).toHaveValue('');
   await enter('other-fixture-password');
-  const buttons = screen.getAllByRole('button', { name: 'Close', exact: true });
+  const buttons = screen.getAllByRole('button', { name: 'Close' });
   await fireEvent.click(buttons.at(-1)!);
   expect(onClosed).toHaveBeenCalledOnce();
   expect(container.querySelector('input[type="password"]')).toBeNull();

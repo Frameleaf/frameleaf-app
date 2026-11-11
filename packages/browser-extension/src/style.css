@@ -1083,3 +1083,79 @@ details.source[open] {
     box-shadow: none;
   }
 }
+
+/* FL-1427: media downloads, in the Page tab */
+.media-actions {
+  display: grid;
+  gap: 8px;
+}
+.media-actions button {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  font-weight: 400;
+  text-align: left;
+}
+.media-actions button > span,
+.media-list label > span,
+.media-check > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.media-actions strong {
+  font-weight: 600;
+}
+.media-actions small,
+.media-list small,
+.media-check small {
+  color: var(--fl-muted);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.media-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+}
+.media-list legend {
+  padding: 0 4px;
+  color: var(--fl-muted);
+  font-size: 13px;
+}
+.media-list label,
+.media-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.media-list label > span {
+  overflow-wrap: anywhere;
+}
+.media-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.media-facts dt {
+  color: var(--fl-muted);
+}
+.media-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.cert-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}

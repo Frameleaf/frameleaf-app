@@ -18,8 +18,18 @@
   let { methods }: { methods: AuthenticationMethod[] } = $props();
 
   const supported = {
-    bluesky: { label: 'Bluesky', domains: ['bsky.app', 'bsky.social'], method: MediaAuthenticationMethod.Credentials, replace: 'frameleaf_boards_media_replace_bluesky' },
-    reddit: { label: 'Reddit', domains: ['reddit.com'], method: MediaAuthenticationMethod.Token, replace: 'frameleaf_boards_media_replace_reddit' },
+    bluesky: {
+      label: 'Bluesky',
+      domains: ['bsky.app', 'bsky.social'],
+      method: MediaAuthenticationMethod.Credentials,
+      replace: 'frameleaf_boards_media_replace_bluesky',
+    },
+    reddit: {
+      label: 'Reddit',
+      domains: ['reddit.com'],
+      method: MediaAuthenticationMethod.Token,
+      replace: 'frameleaf_boards_media_replace_reddit',
+    },
   } as const;
   type Provider = keyof typeof supported;
   const providers = $derived(
@@ -37,7 +47,7 @@
   let loadFailed = $state(false);
   let pending = $state(false);
   let failed = $state(false);
-  let labelInput: HTMLInputElement;
+  let labelInput = $state<HTMLInputElement>();
 
   const load = async () => {
     loading = true;
@@ -52,7 +62,7 @@
   };
 
   onMount(() => {
-    secure = window.location.protocol === 'https:';
+    secure = location.protocol === 'https:';
     void load();
     return () => {
       controller.abort();
@@ -172,7 +182,7 @@
             </div>
           {:else}
             <div class="media-actions">
-              {#if secure && providers.some((provider) => provider === connection.provider)}
+              {#if secure && (providers as string[]).includes(connection.provider)}
                 <Button disabled={showForm || !!disconnecting || pending} onclick={() => void edit(connection)}>
                   {$t(supported[connection.provider as Provider].replace)}
                 </Button>
@@ -196,7 +206,7 @@
   {:else}
     <p>{$t('frameleaf_boards_media_connections_empty')}</p>
   {/if}
-  {#if secure && providers.length && !showForm}
+  {#if secure && providers.length > 0 && !showForm}
     <div>
       <Button variant="primary" disabled={pending || !!disconnecting} onclick={() => void edit()}
         >{$t('frameleaf_boards_media_connect')}</Button

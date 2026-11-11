@@ -4,6 +4,7 @@
   import Connect from "./Connect.svelte";
   import Header from "./Header.svelte";
   import Icon from "./Icon.svelte";
+  import MediaPanel from "./MediaPanel.svelte";
   import QueuePanel from "./QueuePanel.svelte";
   import SettingsPanel from "./SettingsPanel.svelte";
   import SignedOut from "./SignedOut.svelte";
@@ -30,6 +31,12 @@
   let tab = $state<Tab>("images");
   let unfinished = $state(0);
   let showWaiting = $state(false);
+  // FL-1427: media is looked up only once the Page tab is opened, and takes it over while in use
+  let pageOpened = $state(false);
+  let mediaOpen = $state(false);
+  $effect(() => {
+    if (tab === "page") pageOpened = true;
+  });
   // FL-655: sign-in state, Settings and Switch server live in the popup too
   let recent = $state<RecentServer[]>([]);
   let notice = $state<SignInNotice | null>(null);
@@ -281,16 +288,25 @@
       aria-labelledby="tab-page"
       hidden={tab !== "page"}
     >
-      <p class="lead">
-        Save this page as a link in Boards. You can check its title and address
-        first. The page itself isn’t copied.
-      </p>
-      <button
-        class="primary wide"
-        type="button"
-        disabled={discovering}
-        onclick={() => void discover("bookmark")}>Save this page</button
-      >
+      {#if !mediaOpen}
+        <p class="lead">
+          Save this page as a link in Boards. You can check its title and
+          address first. The page itself isn’t copied.
+        </p>
+        <button
+          class="primary wide"
+          type="button"
+          disabled={discovering}
+          onclick={() => void discover("bookmark")}>Save this page</button
+        >
+      {/if}
+      {#if pageOpened}
+        <MediaPanel
+          {connection}
+          bind:open={mediaOpen}
+          onQueued={() => (tab = "saving")}
+        />
+      {/if}
     </div>
     <div
       class="sheet-body"

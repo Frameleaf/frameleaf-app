@@ -42,7 +42,7 @@
   $effect(() => {
     const { albumId, items } = operation;
     const saved = items.flatMap(({ assetId }) => (assetId && !seen.has(assetId) ? [assetId] : []));
-    if (albumId && saved.length) {
+    if (albumId && saved.length > 0) {
       for (const id of saved) {
         seen.add(id);
       }
@@ -109,7 +109,7 @@
       {/if}
     </div>
   {/if}
-  {#if details && operation.items.length}
+  {#if details && operation.items.length > 0}
     <ul class="media-list media-scroll" aria-label={$t('frameleaf_boards_media_attachments')}>
       {#each operation.items as item (item.id)}
         <li>

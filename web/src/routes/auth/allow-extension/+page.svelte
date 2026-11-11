@@ -11,7 +11,7 @@
   import { mdiAlertCircleOutline, mdiCheck, mdiClose, mdiInformationOutline } from '@mdi/js';
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
-  import { extensionBrowserName, isReturnFor } from '$lib/frameleaf/extension-sign-in';
+  import { asksForMedia, extensionBrowserName, isReturnFor } from '$lib/frameleaf/extension-sign-in';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { authorizeBrowserExtensionSignIn, startBrowserExtensionSignIn } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
@@ -25,6 +25,8 @@
   let accessName = $state('');
 
   const request = $derived(data.request);
+  // FL-1427: the extension is asking to download media, use connected sites and follow creators too
+  const media = $derived(asksForMedia(data.request));
   const browser = $derived(request ? extensionBrowserName(request.client) : 'Chrome');
   const user = $derived(authManager.authenticated ? authManager.user : undefined);
   const host = typeof location === 'undefined' ? '' : location.host;
@@ -104,7 +106,11 @@
   {:else}
     <div class="auth-heading">
       <h1>{$t('frameleaf_extension_allow_title')}</h1>
-      <p>{$t('frameleaf_extension_allow_body', { values: { browser } })}</p>
+      <p>
+        {$t(media ? 'frameleaf_extension_allow_media_body' : 'frameleaf_extension_allow_body', {
+          values: { browser },
+        })}
+      </p>
     </div>
     <div class="auth-card allow">
       <div class="account">
@@ -122,6 +128,15 @@
         <ul>
           <li><Icon icon={mdiCheck} size="16" class="is-can" />{$t('frameleaf_extension_allow_can_save')}</li>
           <li><Icon icon={mdiCheck} size="16" class="is-can" />{$t('frameleaf_extension_allow_can_names')}</li>
+          {#if media}
+            <li>
+              <Icon icon={mdiCheck} size="16" class="is-can" />{$t('frameleaf_extension_allow_can_media_download')}
+            </li>
+            <li><Icon icon={mdiCheck} size="16" class="is-can" />{$t('frameleaf_extension_allow_can_media_sites')}</li>
+            <li>
+              <Icon icon={mdiCheck} size="16" class="is-can" />{$t('frameleaf_extension_allow_can_media_subscribe')}
+            </li>
+          {/if}
         </ul>
       </section>
       <section aria-labelledby="allow-cant">

@@ -193,7 +193,7 @@
   let linkDialog = $state<{ url?: string } | null>(null);
   let extensionOpen = $state(false);
   let mediaSheet = $state<MediaSheet>();
-  let mediaMenuHost: HTMLDivElement;
+  let mediaMenuHost = $state<HTMLDivElement>();
   const openMediaSheet = (sheet: MediaSheet) => (mediaSheet = sheet);
   const saveLink = $derived(
     onSaveLink ?? (workspace === 'design' ? (url?: string) => (linkDialog = { url }) : undefined),

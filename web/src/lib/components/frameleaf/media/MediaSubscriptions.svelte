@@ -43,7 +43,7 @@
   let connectionId = $state('');
   let confirmUnsubscribe = $state(false);
   let historyOpen = $state(false);
-  let heading: HTMLHeadingElement;
+  let heading = $state<HTMLHeadingElement>();
   let lastTrigger: HTMLElement | undefined;
   let revision = 0;
   let timer: ReturnType<typeof setTimeout>;
@@ -62,7 +62,7 @@
     !!subscription &&
       (interval !== subscription.intervalMinutes || (connectionId || null) !== subscription.connectionId),
   );
-  const connectionMissing = $derived(!!connectionId && !connections.some(({ id }) => id === connectionId));
+  const connectionMissing = $derived(!!connectionId && connections.every(({ id }) => id !== connectionId));
 
   const readConnections = async () => {
     connectionsFailed = false;
@@ -158,8 +158,8 @@
 {#if loading}
   <p role="status">{$t('loading')}</p>
 {:else if subscription}
+  {@const source = libraryReferenceUrl(subscription.url)}
   <div class="media-fields">
-    {@const source = libraryReferenceUrl(subscription.url)}
     <div><Button disabled={pending} onclick={() => void back()}>{$t('back')}</Button></div>
     <h3 tabindex="-1" bind:this={heading}>{subscription.creator} · {subscription.provider}</h3>
     <p role="status">{$t(`frameleaf_boards_media_subscription_${subscription.status}`)}</p>

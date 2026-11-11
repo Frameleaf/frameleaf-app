@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  asksForMedia,
   extensionSignInRequest,
   isReturnFor,
   keepExtensionContinue,
@@ -39,8 +40,19 @@ describe('the Allow page request (FL-655)', () => {
     { client: 'firefox' },
     { installation: 'short' },
     { installation: '' },
+    { grant: 'everything' },
+    { grant: '' },
   ])('refuses %o', (overrides) => {
     expect(extensionSignInRequest(query(overrides))).toBeNull();
+  });
+
+  it('asks for media downloads only when the extension does (FL-1427)', () => {
+    expect(asksForMedia(extensionSignInRequest(query()))).toBe(false);
+    expect(extensionSignInRequest(query({ grant: 'capture' }))).not.toHaveProperty('grant');
+    const media = extensionSignInRequest(query({ grant: 'media' }));
+    expect(media).toEqual(expect.objectContaining({ grant: 'media', installationId: 'installation-one-0123' }));
+    expect(asksForMedia(media)).toBe(true);
+    expect(asksForMedia(null)).toBe(false);
   });
 
   it('only goes back to the extension that asked', () => {

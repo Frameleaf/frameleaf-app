@@ -93,9 +93,11 @@
   const savedWith = $derived(
     sources.some((source) => !source.importedFrom && !source.provider)
       ? { icon: mdiPuzzleOutline, label: $t('frameleaf_boards_source_via_extension') }
-      : sources.some((source) => source.importedFrom === 'eagle')
-        ? { icon: mdiDownloadOutline, mdiFolderZipOutline, label: $t('frameleaf_boards_source_via_eagle') }
-        : (fallbackVia ?? { icon: mdiTrayArrowUp, label: $t('frameleaf_boards_source_via_upload') }),
+      : sources.some((source) => source.provider)
+        ? { icon: mdiDownloadOutline, label: $t('frameleaf_boards_source_via_media') }
+        : sources.some((source) => source.importedFrom === 'eagle')
+          ? { icon: mdiFolderZipOutline, label: $t('frameleaf_boards_source_via_eagle') }
+          : (fallbackVia ?? { icon: mdiTrayArrowUp, label: $t('frameleaf_boards_source_via_upload') }),
   );
 </script>
 

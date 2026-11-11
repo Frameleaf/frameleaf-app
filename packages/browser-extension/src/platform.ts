@@ -1,4 +1,6 @@
 import type { CaptureState } from './queue';
+import type { MediaProblem } from './media-api';
+import type { MediaReplyData, MediaRequest } from './media-background';
 import type { CapturePreview } from './preview';
 import type {
   ConnectionStatus,
@@ -43,7 +45,11 @@ export type ExtensionRequest =
       address: string;
       allowLocalhost?: boolean;
       switching?: boolean;
+      /** FL-1427: also ask for media downloads, for the server and account already signed in to. */
+      grant?: 'media';
     }
+  // FL-1427: media downloads, connected sites and creator subscriptions
+  | MediaRequest
   | { type: 'sign-in-state' | 'dismiss-notice' }
   // FL-655: sign out of this browser only, leaving the access listed in Frameleaf
   | { type: 'disconnect'; localOnly: true };
@@ -55,12 +61,15 @@ export interface QueueItem {
   total?: number;
   retryAt?: number;
   error?: string;
-  kind: 'image' | 'link';
+  /** `media` and `subscription` are work your Library does; the others are sent from here. */
+  kind: 'image' | 'link' | 'media' | 'subscription';
   albumId: string;
   updatedAt: number;
-  /** The saved item, once the server has confirmed it. */
+  /** How your Library says its work stands, shown instead of the saving words. */
+  detail?: string;
+  /** The saved item (or the collection media was saved to), once the server has confirmed it. */
   itemId?: string;
-  itemKind?: 'asset' | 'bookmark';
+  itemKind?: 'asset' | 'bookmark' | 'collection';
   cancelling: boolean;
   canRetry: boolean;
   canCancel: boolean;
@@ -80,12 +89,14 @@ export type ExtensionReply =
       albumId?: string;
       recent?: RecentServer[];
       notice?: SignInNotice | null;
+      media?: MediaReplyData;
     }
   | {
       ok: false;
       error: string;
       connection?: ConnectionStatus | null;
       problem?: SignInProblem;
+      mediaProblem?: MediaProblem;
     };
 export const trustedStorage = () => chrome.storage.local;
 export function trustedSender(
@@ -208,3 +219,30 @@ export const requestMediaOrigins = (origins: string[]) =>
   chrome.permissions.request({
     origins: [...new Set(origins.map(mediaPermissionPattern))],
   });
+
+/**
+ * FL-1427: each of these is asked for by a press in the popup, for one site, and only when the
+ * feature that needs it is used. None is requested at install.
+ */
+const hostPattern = (origin: string) => {
+  const url = new URL(origin);
+  return `${url.protocol}//${url.hostname}/*`;
+};
+/** Read one site's sign-in, to share it with your Library when you press Connect. */
+export const requestSiteAccess = (origins: string[]) =>
+  chrome.permissions.request({
+    permissions: ['cookies'],
+    origins: origins.map(hostPattern),
+  });
+/** List the media one page requests while you watch it. */
+export const requestMediaWatch = (origin: string) =>
+  chrome.permissions.request({
+    permissions: ['webRequest'],
+    origins: [hostPattern(origin)],
+  });
+/** Also list media that page loads from these other sites. */
+export const requestMediaHosts = (origins: string[]) =>
+  chrome.permissions.request({ origins: origins.map(hostPattern) });
+/** Opens your Library's own address in a tab, so the browser can show (and you can accept) its certificate. */
+export const openLibrary = (origin: string) =>
+  chrome.tabs.create({ url: `${normalizeServerAddress(origin, true)}/` });

@@ -17,7 +17,7 @@ export const parseMediaUrls = (text: string, max: number) => {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const urls = lines.map(libraryReferenceUrl);
+  const urls = lines.map((line) => libraryReferenceUrl(line));
   return lines.length > 0 && lines.length <= max && urls.every((url) => url && url.length <= 8192)
     ? [...new Set(urls as string[])]
     : [];

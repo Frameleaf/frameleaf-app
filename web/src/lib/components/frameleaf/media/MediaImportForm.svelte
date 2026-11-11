@@ -24,7 +24,7 @@
     type TagResponseDto,
   } from '@frameleaf/sdk';
   import { onMount, tick, untrack } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
   import {
     MEDIA_INTERVALS,
     mediaReceiptKey,
@@ -72,9 +72,9 @@
   let connectionListFailed = $state(false);
   let catalogLoading = $state(true);
   let busy = $state(false);
-  let error = $state('');
-  let previewHeading: HTMLHeadingElement;
-  let urlInput: HTMLInputElement | HTMLTextAreaElement;
+  let error = $state<Translations | ''>('');
+  let previewHeading = $state<HTMLHeadingElement>();
+  let urlInput = $state<HTMLInputElement | HTMLTextAreaElement>();
 
   const ready = $derived(operation?.state === MediaImportState.Ready);
   const eligibleFeed = $derived(operation?.kind === MediaInspectionKind.Feed && !!operation.creatorId);
@@ -110,7 +110,7 @@
       const writable = new Set(catalog.albums.map(({ id }) => id));
       const eligible = subscription ? privateMediaParents(allAlbums, ownerId) : allAlbums;
       albums = eligible.filter(({ id }) => writable.has(id));
-      if (albumId && !albums.some(({ id }) => id === albumId)) {
+      if (albumId && albums.every(({ id }) => id !== albumId)) {
         albumId = null;
       }
       tags = catalog.tags;

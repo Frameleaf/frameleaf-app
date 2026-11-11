@@ -12,6 +12,16 @@ const BrowserExtensionClientSchema = z
   .describe('The browser Save to Frameleaf runs in')
   .meta({ id: 'BrowserExtensionClient' });
 
+/**
+ * FL-1427: what the extension asks to be allowed to do. `capture` (the default, and all an older
+ * extension ever asks for) saves into Boards; `media` adds media downloads, connected sites and
+ * creator subscriptions.
+ */
+const BrowserExtensionGrantSchema = z
+  .enum(['capture', 'media'])
+  .describe('capture: save into Boards; media: also download media, connect sites and follow creators')
+  .meta({ id: 'BrowserExtensionGrant' });
+
 const SignInRequestShape = {
   redirectUri: z
     .string()
@@ -25,6 +35,7 @@ const SignInRequestShape = {
     .string()
     .regex(/^[\w-]{16,128}$/)
     .describe('A random id this installation of the extension made once; its access replaces only its own'),
+  grant: BrowserExtensionGrantSchema.optional().describe('What to allow; capture when left out'),
 };
 
 const BrowserExtensionSignInStartSchema = z
@@ -75,6 +86,7 @@ const BrowserExtensionSignInExchangeResponseSchema = z
     name: z.string().describe('How the access is listed in API keys'),
     userId: z.uuidv4(),
     serverId: z.string(),
+    grant: BrowserExtensionGrantSchema.describe('What was allowed, as bound to the code'),
   })
   .meta({ id: 'BrowserExtensionSignInExchangeResponseDto' });
 
@@ -93,6 +105,7 @@ const BrowserExtensionSignInErrorSchema = z
 const BrowserExtensionSignInInfoSchema = z
   .object({
     version: z.int().describe('The extension sign-in this server supports (1)'),
+    grants: z.array(BrowserExtensionGrantSchema).describe('What an extension can ask to be allowed here'),
   })
   .meta({ id: 'BrowserExtensionSignInInfoDto' });
 

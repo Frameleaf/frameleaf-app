@@ -10,7 +10,8 @@ returning
 -- BrowserExtensionSignInRepository.getAccess
 select
   "browser_extension_access"."apiKeyId",
-  "api_key"."name"
+  "api_key"."name",
+  "api_key"."permissions"
 from
   "browser_extension_access"
   inner join "api_key" on "api_key"."id" = "browser_extension_access"."apiKeyId"
