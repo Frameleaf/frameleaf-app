@@ -99,9 +99,11 @@ export const startFrameleaf = async (
   location: Location,
   bounce?: { returnTo: string; nonce: string },
   isCurrent?: () => boolean,
+  verified?: boolean,
 ) => {
   const redirectUri = purpose === 'link' ? `${location.origin}/link` : location.href.split('?', 1)[0];
-  const { url } = await startFrameleafSignIn({ oAuthConfigDto: { redirectUri } });
+  // "Use your Frameleaf passkey": Frameleaf asks for a passkey or two steps before it returns
+  const { url } = await startFrameleafSignIn({ oAuthConfigDto: { redirectUri, ...(verified && { verified }) } });
   if (isCurrent && !isCurrent()) {
     return;
   }

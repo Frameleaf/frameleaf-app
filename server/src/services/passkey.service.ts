@@ -48,6 +48,7 @@ import {
   requestOrigin,
 } from 'src/utils/passkey.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
+import { frameleafTrustedOrigins } from 'src/utils/frameleaf-trusted-origins.js';
 import { createSession, withCapabilities } from 'src/utils/session.js';
 
 /** FL-836: the error code of adding a passkey without a recent password check. */
@@ -121,10 +122,17 @@ export class PasskeyService extends BaseService {
     });
     const services: Record<string, unknown> = (linked ? link?.services : null) ?? {};
     const text = (value: unknown) => (typeof value === 'string' ? value : null);
+    // every https origin this server already trusts for Sign in with Frameleaf: the published addresses, the
+    // enrolled relay name and a verified custom hostname, and the external domain
+    const origins = await frameleafTrustedOrigins(
+      { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository },
+      config,
+    );
     const place = passkeyPlace(requestOrigin(headers, isSecure), [
       config.server.externalDomain,
       text(services.relayOrigin),
       text(services.publicUrl),
+      ...origins,
     ]);
     // the Origin header is the page's word only: the request itself must also have come over https
     // (or through a proxy that says so), else a session token could cross the network in clear

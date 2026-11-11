@@ -295,6 +295,12 @@ const OAuthConfigSchema = z
     redirectUri: z.string().describe('OAuth redirect URI'),
     state: z.string().optional().describe('OAuth state parameter'),
     codeChallenge: z.string().optional().describe('OAuth code challenge (PKCE)'),
+    verified: z
+      .boolean()
+      .optional()
+      .describe(
+        'Sign in with Frameleaf only: ask Frameleaf for a passkey or two steps before it returns (acr_values verified)',
+      ),
   })
   .meta({ id: 'OAuthConfigDto' });
 

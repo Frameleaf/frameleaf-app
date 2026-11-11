@@ -370,7 +370,7 @@
     }
   };
 
-  const startFrameleafFrom = async (bounce?: { returnTo: string; nonce: string }) => {
+  const startFrameleafFrom = async (bounce?: { returnTo: string; nonce: string }, verified?: boolean) => {
     frameleafLoading = true;
     frameleafError = '';
     if (!setRememberMePreference(rememberMe) || !setOAuthContinue(data.continueUrl)) {
@@ -379,7 +379,7 @@
       return;
     }
     try {
-      await startFrameleaf('sign-in', location, bounce, isCurrent);
+      await startFrameleaf('sign-in', location, bounce, isCurrent, verified);
     } catch (error) {
       if (!alive) {
         return;
@@ -399,6 +399,17 @@
       return;
     }
     await startFrameleafFrom();
+  };
+
+  // a local passkey can't exist at this address (an IP, http or a home name): use the one Frameleaf holds
+  const handleFrameleafPasskey = async () => {
+    const signInOrigin = frameleaf.signInOrigin;
+    if (signInOrigin && new URL(signInOrigin).origin !== location.origin) {
+      frameleafLoading = true;
+      location.assign(bounceUrl(signInOrigin, location, rememberMe));
+      return;
+    }
+    await startFrameleafFrom(undefined, true);
   };
 
   const continueAtHome = () => {
@@ -428,6 +439,11 @@
       ? $t('frameleaf_auth_opening_frameleaf')
       : frameleafButtonText}</button
   >
+  {#if !passkeysHere && frameleaf.signInAvailable}
+    <button type="button" class="auth-link" disabled={loading || frameleafLoading} onclick={handleFrameleafPasskey}
+      >{$t('frameleaf_auth_use_frameleaf_passkey')}</button
+    >
+  {/if}
 {/snippet}
 
 {#if twoStep}

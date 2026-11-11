@@ -438,6 +438,22 @@ export class UserAdminService extends BaseService {
   }
 
   /**
+   * Unified sign-in "Reset sign-in": one action for a person who can't get in. Emails them a link to choose a
+   * new password, removes their authenticator and passkeys, and signs out every session. The three separate
+   * actions remain for precision. The link comes first: with no email set up it is refused before anything is
+   * removed, so nobody is left with no way back in.
+   */
+  async resetSignIn(auth: AuthDto, id: string): Promise<void> {
+    const user = await this.findOrFail(id, {});
+    const base = await this.requirePasswordLinkBase();
+    await this.emailPasswordLink(auth, user, base, false);
+    await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.PasswordReset, 'link')]);
+    await this.removeAllPasskeys(auth, user);
+    // removes the authenticator and signs the account out everywhere
+    await this.resetTwoFactor(auth, id);
+  }
+
+  /**
    * FL-836: remove every passkey of an account, for someone who lost a device and can't sign in to
    * remove its passkey. The sessions those passkeys started are signed out. Recorded in the account's
    * history (and its own activity log) only when there were any.

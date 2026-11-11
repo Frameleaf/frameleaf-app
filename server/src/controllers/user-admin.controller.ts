@@ -206,6 +206,19 @@ export class UserAdminController {
     return this.service.resetTwoFactor(auth, id);
   }
 
+  @Post(':id/reset-sign-in')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Reset sign-in for a user',
+    description:
+      'For someone who can’t get in: emails them a link to choose a new password, removes their authenticator and passkeys, and signs out every session. Needs email set up on this server. Recorded in the account history.',
+    history: new HistoryBuilder().added('v3.5.0').beta('v3.5.0'),
+  })
+  resetUserSignInAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.resetSignIn(auth, id);
+  }
+
   @Delete(':id/passkeys')
   @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
   @HttpCode(HttpStatus.NO_CONTENT)

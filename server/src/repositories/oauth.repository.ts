@@ -93,7 +93,13 @@ export class OAuthRepository {
     this.logger.setContext(OAuthRepository.name);
   }
 
-  async authorize(config: OAuthConfig, redirectUrl: string, state?: string, codeChallenge?: string) {
+  async authorize(
+    config: OAuthConfig,
+    redirectUrl: string,
+    state?: string,
+    codeChallenge?: string,
+    options: { acrValues?: string } = {},
+  ) {
     const client = await this.getClient(config);
     state ??= randomState();
 
@@ -113,6 +119,10 @@ export class OAuthRepository {
 
     if (config.prompt) {
       params.prompt = config.prompt;
+    }
+
+    if (options.acrValues) {
+      params.acr_values = options.acrValues;
     }
 
     if (client.serverMetadata().supportsPKCE()) {
