@@ -30,6 +30,13 @@ FEED_CATEGORIES = frozenset(
     "album archive author board bookmark bookmarks channel collection favorites feed favorites following gallery "
     "group hashtag history home likes list media playlist posts profile replies saved search stories subreddit tag timeline tweets user with-replies".split()
 )
+SECTIONS = {"twitter": "post", "bluesky": "post", "reddit": "post", "pinterest": "pin"}
+TABS = {"videos": "video", "shorts": "short", "streams": "live"}
+FORMATS = {
+    "1080": "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b",
+    "720": "bv*[height<=720]+ba/b[height<=720]/bv*+ba/b",
+    "audio": "ba/b",
+}
 OUTPUT = sys.stdout
 
 
@@ -52,6 +59,8 @@ class QuietLogger:
 class Extraction:
     def __init__(self, request):
         self.session = request.get("session") or {}
+        self.saves = request.get("saves") or {}
+        self.format = FORMATS.get(request.get("quality")) if request.get("operation") == "download" else None
         self.curl = curl_handler(request["socketPath"], request["token"])
         self.gallery_session = gallery_session_factory(request["socketPath"], request["token"], self.session)
         self.auth_fields = {name for name in ("username", "password", "refreshToken", "accessToken", "clientId", "clientSecret")
@@ -87,6 +96,7 @@ class Extraction:
             "overwrites": False,
             "hls_use_mpegts": True,
             "geo_bypass": False,
+            "format": self.format,
         }) as ydl:
             load_session_cookies(ydl.cookiejar, self.session)
             yield ydl
@@ -100,7 +110,8 @@ class Extraction:
             gallery_config.set(("extractor",), key, value)
         if authored_only and provider == "twitter":
             for key, value in (
-                ("strategy", "with_replies"), ("replies", "self"), ("retweets", False),
+                ("strategy", "with_replies"), ("replies", True if self.saves.get("replies") else "self"),
+                ("retweets", bool(self.saves.get("reposts"))),
                 ("quoted", False), ("text-tweets", False), ("unavailable", True),
             ):
                 gallery_config.set(("extractor", "twitter"), key, value)
@@ -124,6 +135,18 @@ class Extraction:
                     gallery_config.set(("extractor", "reddit"), key, self.session[prop])
         else:
             raise BridgeError("unsupported_session")
+
+    def keeps(self, entry):
+        """Whether the subscription saves this kind of item. A kind that was not switched off is kept."""
+        def off(*names):
+            return any(self.saves.get(name) is False for name in names)
+
+        named = {"short": "shorts", "live": "live", "reel": "reels"}.get(entry.get("section"))
+        if named:
+            return not off(named)
+        if entry["kind"] == "image":
+            return not off("images", "photos", "pins")
+        return entry["kind"] != "video" or not off("videos")
 
     @contextmanager
     def gallery_transport(self):
@@ -178,8 +201,9 @@ class Extraction:
             if message == Message.Directory:
                 if source.category == "reddit":
                     reddit_posts += 1
-                if identity is not None and not identity[0] and requested_kind == "feed":
-                    identity[:] = creator_fields(fields)
+                # A repost names its original author; the feed belongs to whoever reposted it.
+                if identity is not None and not identity[0] and requested_kind == "feed" and not fields.get("retweet_id"):
+                    identity[:] = [*creator_fields(fields), creator_profile(fields, source.category)]
             if message == Message.Url:
                 entry = gallery_entry(source.category, url, target, fields)
                 if entry and entry["extractionUrl"] != url:
@@ -231,23 +255,24 @@ class Extraction:
                 source = gallery.find(target) or source
             self.configure_gallery(provider, url, authored_only)
             kind = "feed" if authored_only or source.subcategory in FEED_CATEGORIES or source.subcategory.startswith("user-") else "item"
-            identity = [None, None]
+            identity = [None, None, None]
             identifies_creator = authored_only or source.subcategory in ("channel", "profile", "user")
             with self.gallery_transport():
                 entries, next_checkpoint, limitation = list_entries(
                     self.gallery_entries(source, target, set(), identity if identifies_creator else None, requested_kind=kind),
-                    max(1, min(request.get("limit") or (100 if kind == "item" else 24), 100)),
-                    checkpoint, since,
+                    max(1, min(request.get("limit") or (100 if kind == "item" else 24), 200)),
+                    checkpoint, since, keep=self.keeps if enumerate_feed else None,
                 )
             if len({entry["postId"] for entry in entries}) > 1:
                 kind = "feed"
             if authored_only and not identity[0]:
                 if provider == "bluesky" and getattr(source, "_user_did", None):
-                    identity[:] = [source._user_did, source.groups[0]]
+                    identity[:2] = [source._user_did, source.groups[0]]
                 elif provider == "twitter" and getattr(source, "_user_obj", None):
-                    identity[:] = creator_fields({"author": source._transform_user(source._user_obj)})
+                    author = {"author": source._transform_user(source._user_obj)}
+                    identity[:] = [*creator_fields(author), creator_profile(author, provider)]
                 elif provider == "reddit" and (user := source.kwdict.get("user")) and user.get("id"):
-                    identity[:] = ["t2_" + user["id"], user.get("name")]
+                    identity[:2] = ["t2_" + user["id"], user.get("name")]
             return inspection(url, provider, kind, entries, next_checkpoint, limitation, identity=identity)
 
         if self.auth_fields:
@@ -280,11 +305,12 @@ class Extraction:
                 return exact or (day if day and cutoff and day[:10] != cutoff[:10] else None)
 
             entries, next_checkpoint, limitation = list_entries(
-                candidates, max(1, min(request.get("limit") or (24 if kind == "feed" else 100), 100)), checkpoint, since,
-                resolve_date if provider == "youtube" else None,
+                candidates, max(1, min(request.get("limit") or (24 if kind == "feed" else 100), 200)), checkpoint, since,
+                resolve_date if provider == "youtube" else None, self.keeps if enumerate_feed else None,
             )
             return inspection(canonical or url, provider, kind, entries, next_checkpoint, limitation,
-                              bounded_text(metadata.get("title"), 512), creator_fields(metadata))
+                              bounded_text(metadata.get("title"), 512),
+                              (*creator_fields(metadata), creator_profile(metadata, provider, kind == "feed")))
 
     def direct_entry(self, url, provider="generic"):
         extension = url_extension(url)
@@ -412,6 +438,50 @@ def creator_fields(data):
     return creator_id, creator
 
 
+def creator_profile(data, provider, feed=True):
+    """What the extractor says about the account itself; nothing is guessed from a post."""
+    author = data.get("author") or data.get("user") or data.get("account") or {}
+    if not isinstance(author, dict):
+        author = {}
+    images = {image.get("id"): image.get("url") for image in data.get("thumbnails") or () if isinstance(image, dict)}
+    uploader = data.get("uploader_id")
+    profile = {
+        "handle": bounded_text(author.get("handle") or author.get("screen_name")
+                               or (author.get("name") if provider == "twitter" else None)
+                               or (uploader if isinstance(uploader, str) and uploader.startswith("@") else None), 256),
+        "about": bounded_text(author.get("description") or (data.get("description") if feed else None), 4000),
+        "url": http_url(data.get("channel_url") or data.get("uploader_url")),
+        "avatarUrl": http_url(images.get("avatar_uncropped") or author.get("profile_image") or author.get("avatar")),
+        "bannerUrl": http_url(images.get("banner_uncropped") or author.get("profile_banner") or author.get("banner")),
+    }
+    return {key: value for key, value in profile.items() if value} or None
+
+
+def entry_details(entry, fields, section):
+    """Optional facts about one attachment; a key is present only when the extractor supplied it."""
+    if section:
+        entry["section"] = section
+    tags = []
+    for key in ("hashtags", "tags"):
+        values = fields.get(key)
+        for value in values if isinstance(values, (list, tuple)) else ():
+            tag = bounded_text(value, 65).lstrip("#")[:64]
+            if tag and tag not in tags and len(tags) < 30:
+                tags.append(tag)
+    if tags:
+        entry["tags"] = tags
+    board = fields.get("board") if isinstance(fields.get("board"), dict) else {}
+    playlist = identifier(fields.get("playlist_id") or board.get("id"))
+    title = bounded_text(fields.get("playlist_title") or board.get("name"), 512)
+    if playlist and title:
+        entry["playlistId"] = playlist
+        entry["playlistTitle"] = title
+    duration = fields.get("duration")
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool) and 0 < duration < 10_000_000:
+        entry["duration"] = round(float(duration), 3)
+    return entry
+
+
 def gallery_entry(provider, source_url, media_url, fields):
     if isinstance(media_url, str) and media_url.startswith("ytdl:"):
         media_url = media_url[5:]
@@ -442,7 +512,7 @@ def gallery_entry(provider, source_url, media_url, fields):
         kind = "image"
     else:
         return None
-    return {
+    return entry_details({
         "provider": provider,
         "creatorId": creator_id,
         "postId": post_id or file_id or url_id,
@@ -455,14 +525,25 @@ def gallery_entry(provider, source_url, media_url, fields):
         "creator": creator,
         "publishedAt": published_date(fields.get("date"), fields.get("createdAt"), fields.get("created_utc")),
         "kind": kind,
-    }
+    }, fields, SECTIONS.get(provider))
 
 
 def youtube_provider(metadata):
     return (metadata.get("extractor") or metadata.get("ie_key") or metadata.get("extractor_key") or "generic").lower().split(":", 1)[0]
 
 
-def youtube_entry(info, source_url, parent=None):
+def youtube_section(info, page, hint):
+    path = urlsplit(page).path
+    if "/shorts/" in path or info.get("media_type") == "short":
+        return "short"
+    if "/reel/" in path or "/reels/" in path:
+        return "reel"
+    if info.get("live_status") == "was_live" or info.get("media_type") == "livestream":
+        return "live"
+    return hint or (None if info.get("vcodec") == "none" else "video")
+
+
+def youtube_entry(info, source_url, parent=None, context=None):
     media_id = identifier(info.get("id"))
     source = info.get("webpage_url") or (info.get("url") if info.get("_type") in ("url", "url_transparent") else source_url)
     page = public_page(source) or public_page(source_url)
@@ -488,7 +569,9 @@ def youtube_entry(info, source_url, parent=None):
     }
     if http_url(info.get("thumbnail")):
         entry["thumbnailUrl"] = info["thumbnail"]
-    return entry
+    # Only the enclosing playlist is trusted: yt-dlp also labels a channel's own uploads as a playlist.
+    fields = {**info, "playlist_id": None, "playlist_title": None, **(context or {})}
+    return entry_details(entry, fields, youtube_section(info, page, (context or {}).get("section")))
 
 
 def same_attachment(first, second):
@@ -504,7 +587,23 @@ def youtube_locator(metadata, source_url, exact_source):
     return original if original != source_url else None
 
 
-def youtube_candidates(ydl, metadata, source_url, parent=None, depth=0, exact_source=True):
+def playlist_context(metadata, context):
+    """A channel's tab names the section; a real playlist (not the channel's own uploads) names itself."""
+    context = dict(context or {})
+    page = urlsplit(http_url(metadata.get("webpage_url")) or "")
+    if (page.hostname or "").removeprefix("www.").removeprefix("m.") == "youtube.com":
+        if section := TABS.get(page.path.rstrip("/").rpartition("/")[2]):
+            context["section"] = section
+    playlist = identifier(metadata.get("id"))
+    title = bounded_text(metadata.get("title"), 512)
+    if metadata.get("_type") == "playlist" and playlist and title and playlist not in (
+        identifier(metadata.get("channel_id")), identifier(metadata.get("uploader_id")),
+    ):
+        context.update(playlist_id=playlist, playlist_title=title)
+    return context
+
+
+def youtube_candidates(ydl, metadata, source_url, parent=None, depth=0, exact_source=True, context=None):
     if depth > 3 or not metadata:
         yield None
         return
@@ -518,8 +617,9 @@ def youtube_candidates(ydl, metadata, source_url, parent=None, depth=0, exact_so
         if result_type == "multi_video":
             parent = identifier(metadata.get("id"))
             source_url = youtube_locator(metadata, source_url, exact_source) or http_url(metadata.get("webpage_url")) or source_url
+        context = playlist_context(metadata, context)
         for item in metadata.get("entries") or ():
-            yield from youtube_candidates(ydl, item, source_url, parent, depth + 1, exact_source=False)
+            yield from youtube_candidates(ydl, item, source_url, parent, depth + 1, exact_source=False, context=context)
     elif metadata.get("ie_key") == "YoutubeTab":
         target = http_url(metadata.get("url"))
         if not target or urlsplit(target).hostname not in ("www.youtube.com", "youtube.com", "m.youtube.com") or not re.fullmatch(
@@ -528,9 +628,9 @@ def youtube_candidates(ydl, metadata, source_url, parent=None, depth=0, exact_so
             yield None
             return
         child = ydl.extract_info(target, download=False)
-        yield from youtube_candidates(ydl, child, target, depth=depth + 1)
+        yield from youtube_candidates(ydl, child, target, depth=depth + 1, context=context)
     else:
-        entry = youtube_entry(metadata, source_url, parent)
+        entry = youtube_entry(metadata, source_url, parent, context)
         locator = source_url if parent else youtube_locator(metadata, source_url, exact_source)
         if entry and locator:
             entry["extractionUrl"] = locator
@@ -538,7 +638,7 @@ def youtube_candidates(ydl, metadata, source_url, parent=None, depth=0, exact_so
         yield entry
 
 
-def list_entries(entries, limit, checkpoint, since, resolve_date=None):
+def list_entries(entries, limit, checkpoint, since, resolve_date=None, keep=None):
     result = []
     seen = set()
     checkpoint, _, previous_limit = (checkpoint or "").partition(":")
@@ -570,6 +670,8 @@ def list_entries(entries, limit, checkpoint, since, resolve_date=None):
                 marker_found = marker == checkpoint
                 if marker_found:
                     last_marker = marker
+                continue
+            if keep and not keep(entry):
                 continue
             if len(result) >= limit:
                 return result, continuation(), "limit"
@@ -605,7 +707,7 @@ def list_entries(entries, limit, checkpoint, since, resolve_date=None):
 
 
 def inspection(url, provider, kind, entries, checkpoint, limitation, title=None, identity=(None, None)):
-    creator_id, creator = identity
+    creator_id, creator, *profile = identity
     if entries and kind == "item":
         creator_id = creator_id or entries[0]["creatorId"]
         creator = creator or entries[0]["creator"]
@@ -620,6 +722,7 @@ def inspection(url, provider, kind, entries, checkpoint, limitation, title=None,
         "checkpoint": checkpoint,
         "complete": limitation is None,
         "limitation": limitation,
+        "profile": profile[0] if profile else None,
     }
 
 

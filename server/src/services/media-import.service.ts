@@ -1,20 +1,25 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   MediaCapabilitiesDto,
   MediaConnectionCreateDto,
   MediaConnectionRefreshDto,
+  MediaCreatorItemsQueryDto,
+  MediaCreatorResponseDto,
+  MediaCreatorUpdateDto,
   MediaImportCreateDto,
   MediaImportResponseDto,
   MediaInspectDto,
   MediaSubscriptionCreateDto,
   MediaSubscriptionResponseDto,
   MediaSubscriptionUpdateDto,
+  MediaWatchUpdateDto,
 } from 'src/dtos/media-import.dto.js';
 import type {
+  MediaCreatorItem,
   MediaImport,
   MediaImportAuthority,
   MediaImportItem,
@@ -22,7 +27,16 @@ import type {
 } from 'src/repositories/media-import.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { FrameleafWorker, JobName, JobStatus, Permission, QueueName, StorageFolder } from 'src/enum.js';
+import {
+  AssetType,
+  CacheControl,
+  FrameleafWorker,
+  JobName,
+  JobStatus,
+  Permission,
+  QueueName,
+  StorageFolder,
+} from 'src/enum.js';
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -35,7 +49,15 @@ import {
 import { MediaImportRepository, MediaItemConflict } from 'src/repositories/media-import.repository.js';
 import { MediaSessionRepository } from 'src/repositories/media-session.repository.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
-import { mediaSourceKey, subscriptionSince } from 'src/utils/media-import.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
+import {
+  MEDIA_RECENT_COUNT,
+  mediaEntryDetails,
+  mediaPublicUrl,
+  mediaSourceKey,
+  subscriptionSince,
+} from 'src/utils/media-import.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 
 class MediaCapacityWait extends Error {}
 
@@ -114,6 +136,7 @@ export class MediaImportService {
       creator: item.entry.creator,
       publishedAt: item.entry.publishedAt,
       kind: item.entry.kind,
+      ...mediaEntryDetails(item.entry),
       state: item.state,
       assetId: item.assetId,
       error: item.error,
@@ -124,6 +147,8 @@ export class MediaImportService {
       state: row.state,
       albumId: row.albumId,
       subscriptionId: row.subscriptionId,
+      mediaCreatorId: row.mediaCreatorId,
+      quality: row.quality,
       connectionId: row.connectionId,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -232,7 +257,15 @@ export class MediaImportService {
       url: row.url,
       albumId: row.albumId,
       connectionId: row.connectionId,
-      history: row.history,
+      mediaCreatorId: row.mediaCreatorId,
+      // Clients from before a recent reach read it as the nearest thing they know.
+      history:
+        row.history.mode === 'recent'
+          ? { mode: 'new' as const }
+          : { mode: row.history.mode, ...(row.history.since && { since: row.history.since }) },
+      reach: row.history,
+      saves: row.saves,
+      quality: row.quality,
       intervalMinutes: row.intervalMinutes,
       status: row.status,
       lastSuccessAt: row.lastSuccessAt?.toISOString() ?? null,
@@ -242,6 +275,160 @@ export class MediaImportService {
       error: row.error,
       ...(await this.repository.subscriptionCounts(row.id)),
     };
+  }
+  private creatorResponse(
+    row: Awaited<ReturnType<MediaImportRepository['creators']>>[number],
+  ): MediaCreatorResponseDto {
+    const subscription = row.subscription;
+    return {
+      id: row.id,
+      provider: row.provider,
+      creatorId: row.creatorId,
+      name: row.name,
+      handle: row.handle,
+      about: row.about,
+      url: mediaPublicUrl(row.url),
+      hasAvatar: !!row.avatarPath,
+      hasBanner: !!row.bannerPath,
+      albumId: row.albumId,
+      parentAlbumId: row.parentAlbumId,
+      following: !!subscription,
+      subscription: subscription && {
+        id: subscription.id,
+        status: subscription.status,
+        intervalMinutes: subscription.intervalMinutes,
+        history: subscription.history,
+        saves: subscription.saves,
+        quality: subscription.quality,
+        connectionId: subscription.connectionId,
+        lastSuccessAt: subscription.lastSuccessAt?.toISOString() ?? null,
+        nextCheckAt: subscription.nextCheckAt.toISOString(),
+        historyComplete: subscription.historyComplete,
+        limitation: subscription.limitation,
+        error: subscription.error,
+      },
+      savedCount: row.savedCount,
+      newCount: row.newCount,
+      seenAt: row.seenAt.toISOString(),
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+  private itemResponse(row: MediaCreatorItem) {
+    return {
+      assetId: row.assetId,
+      creatorId: row.creatorId,
+      kind:
+        row.type === AssetType.Video
+          ? ('video' as const)
+          : row.type === AssetType.Audio
+            ? ('audio' as const)
+            : ('image' as const),
+      ...mediaEntryDetails({
+        section: row.section ?? undefined,
+        tags: row.tags,
+        playlistId: row.playlistId ?? undefined,
+        playlistTitle: row.playlistTitle ?? undefined,
+        duration: row.duration ?? undefined,
+      }),
+      title: row.title,
+      description: row.postText ?? '',
+      publishedAt: row.publishedAt?.toISOString() ?? null,
+      savedAt: row.savedAt.toISOString(),
+      postId: row.postId,
+      pageUrl: mediaPublicUrl(row.pageUrl),
+      savedBy: row.subscribed ? ('subscription' as const) : ('download' as const),
+      hasPoster: !!row.posterPath,
+      watched: row.watched ?? false,
+      position: row.position ?? 0,
+    };
+  }
+  async creators(auth: AuthDto) {
+    await this.repository.actor(auth, Permission.MediaImportRead);
+    return { creators: (await this.repository.creators(auth.user.id)).map((row) => this.creatorResponse(row)) };
+  }
+  async creator(auth: AuthDto, id: string, permission = Permission.MediaImportRead) {
+    await this.repository.actor(auth, permission);
+    const [row] = await this.repository.creators(auth.user.id, id);
+    if (!row) throw new NotFoundException('Creator unavailable');
+    return this.creatorResponse(row);
+  }
+  async moveCreator(auth: AuthDto, id: string, dto: MediaCreatorUpdateDto) {
+    await this.repository.actor(auth, Permission.MediaImportUpdate);
+    await this.repository.moveCreator(auth.user.id, id, dto.parentAlbumId);
+    return this.creator(auth, id, Permission.MediaImportUpdate);
+  }
+  async seen(auth: AuthDto, id: string) {
+    await this.repository.actor(auth, Permission.MediaImportUpdate);
+    await this.repository.seen(auth.user.id, id);
+    return this.creator(auth, id, Permission.MediaImportUpdate);
+  }
+  async creatorItems(auth: AuthDto, id: string, dto: MediaCreatorItemsQueryDto) {
+    await this.repository.actor(auth, Permission.MediaImportRead);
+    const rows = await this.repository.creatorItems(auth.user.id, id, dto);
+    const hasNextPage = rows.length > 50;
+    return { items: rows.slice(0, 50).map((row) => this.itemResponse(row)), page: dto.page, hasNextPage };
+  }
+  async newItems(auth: AuthDto, limit: number) {
+    await this.repository.actor(auth, Permission.MediaImportRead);
+    return { items: (await this.repository.newItems(auth.user.id, limit)).map((row) => this.itemResponse(row)) };
+  }
+  async watch(auth: AuthDto, assetId: string, dto: MediaWatchUpdateDto) {
+    await this.repository.actor(auth, Permission.MediaImportUpdate);
+    const row = await this.repository.watch(auth.user.id, assetId, dto);
+    return {
+      assetId: row.assetId,
+      watched: row.watched,
+      position: row.position,
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+  private picture(path: string | null) {
+    if (!path) throw new NotFoundException('Picture unavailable');
+    return new FileDownloadResponse({
+      path,
+      contentType: mimeTypes.lookup(path),
+      cacheControl: CacheControl.PrivateWithoutCache,
+    });
+  }
+  async creatorImage(auth: AuthDto, id: string, kind: 'avatar' | 'banner') {
+    await this.repository.actor(auth, Permission.MediaImportRead);
+    const creator = await this.repository.creator(auth.user.id, id);
+    return this.picture(kind === 'avatar' ? creator.avatarPath : creator.bannerPath);
+  }
+  async poster(auth: AuthDto, assetId: string) {
+    await this.repository.actor(auth, Permission.MediaImportRead);
+    return this.picture(await this.repository.poster(auth.user.id, assetId));
+  }
+  /**
+   * Keeps one public picture beside the owner's thumbnails. A picture that cannot be fetched is
+   * left out; it never fails the import it belongs to.
+   */
+  private async keepPicture(row: MediaImport, provider: string, url: string, folder: string, name: string) {
+    try {
+      await mkdir(folder, { recursive: true, mode: 0o700 });
+      const file = await this.extract(row, provider, (signal) =>
+        this.downloader.fetchImage(url, { directory: folder, signal }),
+      );
+      const path = join(folder, name + extname(file.path));
+      await rename(file.path, path);
+      return path;
+    } catch (error) {
+      if (jobSignal()?.aborted) throw error;
+      return null;
+    }
+  }
+  private pictures(ownerId: string, ...folders: string[]) {
+    return join(StorageCore.getFolderLocation(StorageFolder.Thumbnails, ownerId), 'media-creators', ...folders);
+  }
+  private async creatorPictures(row: MediaImport) {
+    if (!row.mediaCreatorId) return;
+    const creator = await this.repository.creator(row.ownerId, row.mediaCreatorId).catch(() => null);
+    for (const kind of ['avatar', 'banner'] as const) {
+      const url = creator?.[`${kind}Url`];
+      if (!creator || !url || creator[`${kind}Path`]) continue;
+      const path = await this.keepPicture(row, creator.provider, url, this.pictures(row.ownerId, creator.id), kind);
+      if (path) await this.repository.setCreatorImage(creator.id, kind, url, path);
+    }
   }
   private async queue(row: MediaImport) {
     if (
@@ -378,15 +565,20 @@ export class MediaImportService {
       if (row.subscriptionId) {
         const subscription = await this.repository.subscription(row.ownerId, row.subscriptionId);
         const since = subscriptionSince(subscription);
+        // Their latest few are one page from the top; after that only what is new is looked for.
+        const recent = subscription.history.mode === 'recent' && !subscription.historyComplete;
         inspection = await this.extract(row, null, (signal) =>
           this.downloader.enumerate(subscription.extractionUrl ?? subscription.url, {
             session,
             signal,
-            checkpoint: subscription.checkpoint,
+            checkpoint: recent ? null : subscription.checkpoint,
             since,
-            limit: 100,
+            limit: recent ? (subscription.history.count ?? MEDIA_RECENT_COUNT) : 100,
+            saves: subscription.saves,
           }),
         );
+        if (recent && (inspection.limitation === null || inspection.limitation === 'limit'))
+          inspection = { ...inspection, complete: true, checkpoint: null, limitation: null };
         if (inspection.creatorId !== subscription.creatorId || inspection.provider !== subscription.provider) {
           await this.repository.failAttempt(
             authority,
@@ -430,6 +622,7 @@ export class MediaImportService {
     }
     const root = join(StorageCore.getBaseFolder(StorageFolder.Upload), '.media-imports');
     await mkdir(root, { recursive: true, mode: 0o700 });
+    await this.creatorPictures(row);
     for (const item of await this.repository.items(row.id)) {
       if (['saved', 'skipped'].includes(item.state)) continue;
       const itemAuthority = { ...authority, itemId: item.id };
@@ -453,6 +646,7 @@ export class MediaImportService {
             session,
             signal,
             streamMp4: row.streamMp4,
+            quality: row.quality,
             maxBytes,
             onProgress: (bytes, phase) => {
               if (bytes > reported) {
@@ -474,7 +668,13 @@ export class MediaImportService {
           throw new BadRequestException('Inspect individual attachments before downloading');
         await this.repository.progress(itemAuthority, 'importing', files[0].size);
         await this.repository.transition(authority, 'importing');
-        await this.uploads.importMedia(itemAuthority, files[0], item.createdAt);
+        const assetId = await this.uploads.importMedia(itemAuthority, files[0], item.createdAt);
+        // Ingestion makes its own thumbnail from the file; the site's cover is kept beside it.
+        const cover = item.entry.kind === 'video' && mediaPublicUrl(item.entry.thumbnailUrl);
+        const poster =
+          cover &&
+          (await this.keepPicture(row, item.entry.provider, cover, this.pictures(row.ownerId, 'posters'), assetId));
+        if (poster) await this.repository.setPoster(row.ownerId, assetId, item.entry, poster);
       } catch (error) {
         await pendingProgress;
         if (signal?.aborted || error instanceof MediaCapacityWait) throw error;

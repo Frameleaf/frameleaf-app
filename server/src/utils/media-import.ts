@@ -1,8 +1,60 @@
 import { BadRequestException } from '@nestjs/common';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { parse } from 'tldts';
-import type { MediaDownloadSession } from 'src/repositories/media-downloader.repository.js';
+import type { MediaDownloadEntry, MediaDownloadSession } from 'src/repositories/media-downloader.repository.js';
 import type { MediaSubscription } from 'src/repositories/media-import.repository.js';
+import type { MediaHistory } from 'src/schema/tables/media-import.table.js';
+
+export const MEDIA_SECTIONS = ['video', 'short', 'live', 'reel', 'post', 'pin', 'photo'] as const;
+export type MediaSection = (typeof MEDIA_SECTIONS)[number];
+export const MEDIA_RECENT_COUNT = 20;
+
+/** The extractor's optional facts about one entry, bounded before they are stored or returned. */
+export function mediaEntryDetails(entry: Partial<MediaDownloadEntry>) {
+  const text = (value: unknown, limit: number) =>
+    typeof value === 'string' && value.trim() ? value.trim().slice(0, limit) : null;
+  const playlistId = text(entry.playlistId, 256);
+  const playlistTitle = text(entry.playlistTitle, 512);
+  return {
+    section: MEDIA_SECTIONS.find((section) => section === entry.section) ?? null,
+    tags: Array.isArray(entry.tags)
+      ? [...new Set(entry.tags.map((tag) => text(tag, 64)).filter((tag) => tag !== null))].slice(0, 30)
+      : [],
+    playlistId: playlistId && playlistTitle ? playlistId : null,
+    playlistTitle: playlistId && playlistTitle ? playlistTitle : null,
+    duration:
+      typeof entry.duration === 'number' && Number.isFinite(entry.duration) && entry.duration > 0
+        ? entry.duration
+        : null,
+  };
+}
+
+/** A link is shown only when it is an ordinary web address without credentials. */
+export function mediaPublicUrl(value: string | null | undefined) {
+  try {
+    const url = new URL(value ?? '');
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a changed reach asks for older items than the subscription has looked for. An uncertain
+ * change counts: looking again saves only what is missing, and a narrower reach removes nothing.
+ */
+export function mediaReachWidened(previous: MediaHistory, next: MediaHistory, createdAt: Date) {
+  if (next.mode === 'new' || previous.mode === 'all') {
+    return false;
+  }
+  if (next.mode === 'recent') {
+    return previous.mode !== 'recent' || (next.count ?? MEDIA_RECENT_COUNT) > (previous.count ?? MEDIA_RECENT_COUNT);
+  }
+  const start = (history: MediaHistory) =>
+    history.mode === 'since' ? Date.parse(history.since!) : history.mode === 'new' ? createdAt.getTime() : null;
+  const from = start(previous);
+  return next.mode === 'all' || from === null || start(next)! < from;
+}
 
 export const nextMediaCheck = (minutes: number, now = Date.now(), random = Math.random()) =>
   new Date(now + minutes * 60_000 + Math.floor(Math.min(60_000, minutes * 3000) * random));
@@ -17,7 +69,7 @@ export function subscriptionSince(
   const baseline =
     subscription.history.mode === 'since'
       ? subscription.history.since!
-      : subscription.history.mode === 'new'
+      : subscription.history.mode === 'new' || (subscription.history.mode === 'recent' && subscription.historyComplete)
         ? subscription.createdAt.toISOString()
         : null;
   if (

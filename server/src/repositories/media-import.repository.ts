@@ -10,6 +10,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
+  MediaCreatorItemsQueryDto,
   MediaImportCreateDto,
   MediaInspectDto,
   MediaSubscriptionCreateDto,
@@ -19,11 +20,21 @@ import type { MediaDownloadInspection } from 'src/repositories/media-downloader.
 import type { DB } from 'src/schema/index.js';
 import type {
   MediaConnectionTable,
+  MediaCreatorTable,
+  MediaHistory,
   MediaImportItemTable,
   MediaImportTable,
   MediaSubscriptionTable,
 } from 'src/schema/tables/media-import.table.js';
-import { AlbumUserRole, AssetStatus, LibraryScope, Permission, UserMetadataKey, UserStatus } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  AssetStatus,
+  AssetType,
+  LibraryScope,
+  Permission,
+  UserMetadataKey,
+  UserStatus,
+} from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { CaptureRepository } from 'src/repositories/capture.repository.js';
@@ -35,7 +46,14 @@ import {
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { hiddenFromOthers, tagIsSuppressed } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
-import { mediaSourceKey, nextMediaCheck } from 'src/utils/media-import.js';
+import {
+  MEDIA_RECENT_COUNT,
+  mediaEntryDetails,
+  mediaPublicUrl,
+  mediaReachWidened,
+  mediaSourceKey,
+  nextMediaCheck,
+} from 'src/utils/media-import.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
@@ -44,6 +62,10 @@ export type MediaImport = Selectable<MediaImportTable>;
 export type MediaImportItem = Selectable<MediaImportItemTable>;
 export type MediaConnection = Selectable<MediaConnectionTable>;
 export type MediaSubscription = Selectable<MediaSubscriptionTable>;
+export type MediaCreator = Selectable<MediaCreatorTable>;
+export type MediaCreatorItem = Awaited<ReturnType<MediaImportRepository['creatorItems']>>[number];
+type CreatorIdentity = Pick<MediaDownloadInspection, 'kind' | 'provider' | 'creatorId' | 'creator' | 'canonicalUrl'> &
+  Pick<Partial<MediaDownloadInspection>, 'profile'>;
 export type MediaImportAuthority = {
   ownerId: string;
   importId: string;
@@ -55,6 +77,9 @@ export type MediaImportAuthority = {
 };
 const active = ['inspecting', 'queued', 'downloading', 'assembling', 'importing'] as const;
 const hash = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
+const reach = (history: MediaHistory): MediaHistory =>
+  history.mode === 'recent' ? { mode: 'recent', count: history.count ?? MEDIA_RECENT_COUNT } : history;
+const CREATOR_ITEMS_PAGE = 50;
 
 /** One item cannot be published; the rest of its import carries on. */
 export class MediaItemConflict extends ConflictException {}
@@ -292,7 +317,11 @@ export class MediaImportRepository {
         if (connection.status !== 'connected' || connection.revision !== preview.connectionRevision)
           throw new ConflictException('Site access changed; inspect the URL again');
       }
-      await this.destination(tx, auth.user.id, dto.albumId, dto.tagIds);
+      // Saving one post adds its creator without following them; their collection is made on first use.
+      const creator = await this.upsertCreator(tx, auth.user.id, preview.inspection);
+      const albumId = dto.albumId ?? (creator ? await this.creatorAlbum(tx, creator) : null);
+      if (!albumId) throw new BadRequestException('Choose a Boards collection for this media');
+      await this.destination(tx, auth.user.id, albumId, dto.tagIds);
       const selected = await tx
         .selectFrom('media_import_item')
         .selectAll()
@@ -311,7 +340,9 @@ export class MediaImportRepository {
           inspection: preview.inspection,
           connectionId: preview.connectionId,
           connectionRevision: preview.connectionRevision,
-          albumId: dto.albumId,
+          albumId,
+          mediaCreatorId: creator?.id ?? null,
+          quality: dto.quality,
           tagIds: [...new Set(dto.tagIds)],
           streamMp4: dto.streamMp4,
           overrideSuppression: dto.overrideSuppression,
@@ -568,6 +599,8 @@ export class MediaImportRepository {
           )
           .onConflict((oc) => oc.columns(['importId', 'sourceKey']).doNothing())
           .execute();
+      // Each check brings the account's current name and pictures.
+      if (row.subscriptionId) await this.upsertCreator(tx, row.ownerId, inspection);
       const { entries: _, ...summary } = inspection;
       await tx
         .updateTable('media_import')
@@ -680,6 +713,15 @@ export class MediaImportRepository {
           .values(row.tagIds.map((tagId) => ({ tagId, assetId: existing.id })))
           .onConflict((oc) => oc.doNothing())
           .execute();
+      if (row.mediaCreatorId)
+        await tx
+          .updateTable('asset_source')
+          .set({ mediaCreatorId: row.mediaCreatorId })
+          .where('assetId', '=', existing.id)
+          .where('provider', '=', item.entry.provider)
+          .where('postId', '=', item.entry.postId)
+          .where('mediaCreatorId', 'is', null)
+          .execute();
       await tx
         .updateTable('media_import_item')
         .set({ assetId: existing.id, state: 'saved', error: null, updatedAt: new Date() })
@@ -766,6 +808,8 @@ export class MediaImportRepository {
         attachmentId: entry.attachmentId,
         publishedAt: entry.publishedAt,
         postText: entry.description,
+        mediaCreatorId: row.mediaCreatorId,
+        ...mediaEntryDetails(entry),
       })
       .onConflict((oc) => oc.column('captureId').doNothing())
       .execute();
@@ -835,6 +879,288 @@ export class MediaImportRepository {
         .execute();
     });
   }
+  /** The owner's record of this account. What a single post does not say is left as it was. */
+  private async upsertCreator(tx: Kysely<DB>, ownerId: string, info: CreatorIdentity | null) {
+    if (!info?.creatorId || !info.provider) return null;
+    const profile = info.profile ?? {};
+    const text = (value: string | undefined, limit: number) => value?.trim().slice(0, limit) || null;
+    const known = Object.fromEntries(
+      Object.entries({
+        handle: text(profile.handle, 255),
+        about: text(profile.about, 4000),
+        url: mediaPublicUrl(profile.url ?? (info.kind === 'feed' ? info.canonicalUrl : null)),
+        avatarUrl: mediaPublicUrl(profile.avatarUrl),
+        bannerUrl: mediaPublicUrl(profile.bannerUrl),
+      }).filter(([, value]) => value !== null),
+    );
+    const name = (info.creator ?? info.creatorId).slice(0, 255);
+    // A picture that moved is fetched again; the copy of the old one is no longer served.
+    const moved = (column: 'avatar' | 'banner') =>
+      sql<
+        string | null
+      >`case when media_creator.${sql.ref(`${column}Url`)} is distinct from excluded.${sql.ref(`${column}Url`)}
+        then null else media_creator.${sql.ref(`${column}Path`)} end`;
+    return tx
+      .insertInto('media_creator')
+      .values({ ownerId, provider: info.provider, creatorId: info.creatorId, name, ...known })
+      .onConflict((oc) =>
+        oc.columns(['ownerId', 'provider', 'creatorId']).doUpdateSet({
+          name,
+          ...known,
+          ...(known.avatarUrl && { avatarPath: moved('avatar') }),
+          ...(known.bannerUrl && { bannerPath: moved('banner') }),
+          updatedAt: new Date(),
+        }),
+      )
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+  /** The creator's own private collection, made the first time something is filed into it. */
+  private async creatorAlbum(tx: Kysely<DB>, creator: MediaCreator, parentId?: string) {
+    if (creator.albumId) {
+      try {
+        await this.destination(tx, creator.ownerId, creator.albumId);
+        return creator.albumId;
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) throw error;
+      }
+    }
+    const album = await new AlbumRepository(tx).create(
+      {
+        albumName: `${creator.name} · ${creator.provider}`.slice(0, 255),
+        libraryScope: LibraryScope.Design,
+        parentId: parentId ?? null,
+      },
+      [],
+      [{ userId: creator.ownerId, role: AlbumUserRole.Owner }],
+      creator.ownerId,
+    );
+    await tx.updateTable('media_creator').set({ albumId: album.id }).where('id', '=', creator.id).execute();
+    return album.id;
+  }
+  private async privateParent(tx: Kysely<DB>, ownerId: string, parentId: string) {
+    await this.destination(tx, ownerId, parentId);
+    const shared = await tx
+      .selectFrom('album_closure')
+      .innerJoin('album_user', 'album_user.albumId', 'album_closure.id_ancestor')
+      .select('album_user.userId')
+      .where('id_descendant', '=', parentId)
+      .where('userId', '!=', ownerId)
+      .executeTakeFirst();
+    const links = await tx
+      .selectFrom('album_closure')
+      .innerJoin('shared_link', 'shared_link.albumId', 'album_closure.id_ancestor')
+      .select('shared_link.id')
+      .where('id_descendant', '=', parentId)
+      .executeTakeFirst();
+    if (shared || links) throw new BadRequestException('Choose a private parent collection');
+  }
+
+  async creator(ownerId: string, id: string, db: Kysely<DB> = this.db) {
+    const row = await db
+      .selectFrom('media_creator')
+      .selectAll()
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst();
+    if (!row) throw new NotFoundException('Creator unavailable');
+    return row;
+  }
+  /** Every creator of one account with its folder, live subscription and counts, in three queries. */
+  async creators(ownerId: string, id?: string) {
+    const rows = await this.db
+      .selectFrom('media_creator')
+      .leftJoin('album', 'album.id', 'media_creator.albumId')
+      .selectAll('media_creator')
+      .select('album.parentId as parentAlbumId')
+      .where('media_creator.ownerId', '=', ownerId)
+      .$if(!!id, (qb) => qb.where('media_creator.id', '=', id!))
+      .orderBy('media_creator.name')
+      .orderBy('media_creator.id')
+      .execute();
+    if (rows.length === 0) return [];
+    const ids = rows.map((row) => row.id);
+    const subscriptions = await this.db
+      .selectFrom('media_subscription')
+      .selectAll()
+      .where('ownerId', '=', ownerId)
+      .where('mediaCreatorId', 'in', ids)
+      .where('status', '!=', 'unsubscribed')
+      .orderBy('createdAt', 'desc')
+      .execute();
+    const counts = await this.creatorSources(ownerId)
+      .select((eb) => [
+        'creator.id',
+        eb.fn.countAll<string>().as('saved'),
+        eb.fn.countAll<string>().filterWhereRef('source.createdAt', '>', 'creator.seenAt').as('fresh'),
+      ])
+      .where('creator.id', 'in', ids)
+      .groupBy('creator.id')
+      .execute();
+    return rows.map((row) => {
+      const count = counts.find((item) => item.id === row.id);
+      return {
+        ...row,
+        subscription: subscriptions.find((subscription) => subscription.mediaCreatorId === row.id) ?? null,
+        savedCount: Number(count?.saved ?? 0),
+        newCount: Number(count?.fresh ?? 0),
+      };
+    });
+  }
+  /** Folders are parent collections: the creator's collection moves under a private one, or to the top. */
+  async moveCreator(ownerId: string, id: string, parentAlbumId: string | null) {
+    return this.db.transaction().execute(async (tx) => {
+      const creator = await this.creator(ownerId, id, tx);
+      await this.destination(tx, ownerId, creator.albumId);
+      if (parentAlbumId) await this.privateParent(tx, ownerId, parentAlbumId);
+      await new AlbumRepository(tx).reparentIn(tx, creator.albumId!, parentAlbumId);
+    });
+  }
+  async seen(ownerId: string, id: string) {
+    const row = await this.db
+      .updateTable('media_creator')
+      .set({ seenAt: new Date() })
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .returning('id')
+      .executeTakeFirst();
+    if (!row) throw new NotFoundException('Creator unavailable');
+  }
+  setCreatorImage(id: string, kind: 'avatar' | 'banner', url: string, path: string) {
+    return this.db
+      .updateTable('media_creator')
+      .set(kind === 'avatar' ? { avatarPath: path } : { bannerPath: path })
+      .where('id', '=', id)
+      .where(kind === 'avatar' ? 'avatarUrl' : 'bannerUrl', '=', url)
+      .execute();
+  }
+
+  /** One row per saved item of the owner's creators; nothing of another account, the Trash or Locked. */
+  private creatorSources(ownerId: string) {
+    return this.db
+      .selectFrom('asset_source as source')
+      .innerJoin('asset', 'asset.id', 'source.assetId')
+      .innerJoin('media_creator as creator', 'creator.id', 'source.mediaCreatorId')
+      .leftJoin('media_watch as watch', (join) =>
+        join.onRef('watch.assetId', '=', 'asset.id').on('watch.ownerId', '=', ownerId),
+      )
+      .where('creator.ownerId', '=', ownerId)
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.deletedAt', 'is', null)
+      .where(isNotLocked())
+      .where(sql<boolean>`not ${hiddenFromOthers(undefined)}`)
+      .where(
+        sql<boolean>`not exists (select 1 from asset_source later where later."assetId" = source."assetId"
+          and later."mediaCreatorId" = source."mediaCreatorId" and later.id > source.id)`,
+      );
+  }
+  private itemRows(ownerId: string) {
+    return this.creatorSources(ownerId).select([
+      'asset.id as assetId',
+      'asset.type',
+      'creator.id as creatorId',
+      'source.section',
+      'source.title',
+      'source.postText',
+      'source.tags',
+      'source.publishedAt',
+      'source.createdAt as savedAt',
+      'source.duration',
+      'source.postId',
+      'source.playlistId',
+      'source.playlistTitle',
+      'source.pageUrl',
+      'source.posterPath',
+      'watch.watched',
+      'watch.position',
+      sql<boolean>`exists (select 1 from media_import_item item join media_import operation on operation.id = item."importId"
+        where item."assetId" = source."assetId" and item."uploadId" = source."captureId"
+        and operation."subscriptionId" is not null)`.as('subscribed'),
+    ]);
+  }
+  /** One page of a creator's items, with one more row than the page when another page follows. */
+  async creatorItems(ownerId: string, id: string, dto: MediaCreatorItemsQueryDto) {
+    await this.creator(ownerId, id);
+    const words = dto.q ? `%${dto.q.replaceAll(/[\\%_]/g, String.raw`\$&`)}%` : null;
+    const published = sql<Date>`coalesce(source."publishedAt", source."createdAt")`;
+    return this.itemRows(ownerId)
+      .where('creator.id', '=', id)
+      .$if(!!dto.section, (qb) => qb.where('source.section', '=', dto.section!))
+      .$if(!!dto.kind, (qb) => qb.where('asset.type', '=', dto.kind!.toUpperCase() as AssetType))
+      .$if(!!dto.unwatched, (qb) => qb.where(sql<boolean>`coalesce(watch.watched, false) = false`))
+      .$if(!!words, (qb) =>
+        qb.where(
+          sql<boolean>`(source.title ilike ${words} or source."postText" ilike ${words} or source.tags::text ilike ${words})`,
+        ),
+      )
+      .$if(dto.sort === 'longest', (qb) => qb.orderBy('source.duration', (ob) => ob.desc().nullsLast()))
+      .orderBy(published, dto.sort === 'oldest' ? 'asc' : 'desc')
+      .orderBy('source.id')
+      .offset((dto.page - 1) * CREATOR_ITEMS_PAGE)
+      .limit(CREATOR_ITEMS_PAGE + 1)
+      .execute();
+  }
+  /** The newest items saved since their creator was last opened, across every creator. */
+  newItems(ownerId: string, limit: number) {
+    return this.itemRows(ownerId)
+      .whereRef('source.createdAt', '>', 'creator.seenAt')
+      .orderBy('source.createdAt', 'desc')
+      .orderBy('source.id')
+      .limit(limit)
+      .execute();
+  }
+  async watch(ownerId: string, assetId: string, state: { watched: boolean; position: number }) {
+    return this.db.transaction().execute(async (tx) => {
+      const asset = await tx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', assetId)
+        .where('ownerId', '=', ownerId)
+        .where('deletedAt', 'is', null)
+        .where(isNotLocked())
+        .forShare()
+        .executeTakeFirst();
+      if (!asset) throw new NotFoundException('Media unavailable');
+      return tx
+        .insertInto('media_watch')
+        .values({ ownerId, assetId, ...state })
+        .onConflict((oc) => oc.columns(['ownerId', 'assetId']).doUpdateSet({ ...state, updatedAt: new Date() }))
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    });
+  }
+  /** The site's cover of a saved video, set once by the import that saved it. */
+  setPoster(ownerId: string, assetId: string, entry: MediaImportItem['entry'], path: string) {
+    return this.db
+      .updateTable('asset_source')
+      .set({ posterPath: path })
+      .where('assetId', '=', assetId)
+      .where('provider', '=', entry.provider)
+      .where('postId', '=', entry.postId)
+      .where('attachmentId', '=', entry.attachmentId)
+      .where('posterPath', 'is', null)
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset')
+            .select('asset.id')
+            .whereRef('asset.id', '=', 'asset_source.assetId')
+            .where('asset.ownerId', '=', ownerId),
+        ),
+      )
+      .returning('id')
+      .executeTakeFirst();
+  }
+  async poster(ownerId: string, assetId: string) {
+    const row = await this.creatorSources(ownerId)
+      .select('source.posterPath')
+      .where('asset.id', '=', assetId)
+      .where('source.posterPath', 'is not', null)
+      .executeTakeFirst();
+    if (!row?.posterPath) throw new NotFoundException('Cover unavailable');
+    return row.posterPath;
+  }
+
   async subscription(ownerId: string, id: string, db: Kysely<DB> = this.db) {
     const row = await db
       .selectFrom('media_subscription')
@@ -888,33 +1214,12 @@ export class MediaImportRepository {
       const info = preview.inspection;
       if (preview.state !== 'ready' || info?.kind !== 'feed' || !info.creatorId)
         throw new BadRequestException('Inspect a supported creator feed before subscribing');
-      if (dto.parentId) {
-        await this.destination(tx, auth.user.id, dto.parentId);
-        const shared = await tx
-          .selectFrom('album_closure')
-          .innerJoin('album_user', 'album_user.albumId', 'album_closure.id_ancestor')
-          .select('album_user.userId')
-          .where('id_descendant', '=', dto.parentId)
-          .where('userId', '!=', auth.user.id)
-          .executeTakeFirst();
-        const links = await tx
-          .selectFrom('album_closure')
-          .innerJoin('shared_link', 'shared_link.albumId', 'album_closure.id_ancestor')
-          .select('shared_link.id')
-          .where('id_descendant', '=', dto.parentId)
-          .executeTakeFirst();
-        if (shared || links) throw new BadRequestException('Choose a private parent collection');
-      }
-      const album = await new AlbumRepository(tx).create(
-        {
-          albumName: `${info.creator ?? info.creatorId} · ${info.provider}`.slice(0, 255),
-          libraryScope: LibraryScope.Design,
-          parentId: dto.parentId ?? null,
-        },
-        [],
-        [{ userId: auth.user.id, role: AlbumUserRole.Owner }],
-        auth.user.id,
-      );
+      if (dto.parentId) await this.privateParent(tx, auth.user.id, dto.parentId);
+      const creator = (await this.upsertCreator(tx, auth.user.id, info))!;
+      // A creator added by an earlier single download keeps the collection they already have.
+      const kept = creator.albumId;
+      const albumId = await this.creatorAlbum(tx, creator, dto.parentId);
+      if (dto.parentId && albumId === kept) await new AlbumRepository(tx).reparentIn(tx, albumId, dto.parentId);
       return tx
         .insertInto('media_subscription')
         .values({
@@ -927,9 +1232,12 @@ export class MediaImportRepository {
           creator: info.creator ?? info.creatorId,
           url: info.canonicalUrl,
           extractionUrl: preview.urls[0],
-          albumId: album.id,
+          albumId,
+          mediaCreatorId: creator.id,
           connectionId: preview.connectionId,
-          history: dto.history,
+          history: reach(dto.history),
+          saves: dto.saves,
+          quality: dto.quality,
           intervalMinutes: dto.intervalMinutes,
         })
         .returningAll()
@@ -938,9 +1246,12 @@ export class MediaImportRepository {
   }
   async updateSubscription(ownerId: string, id: string, dto: MediaSubscriptionUpdateDto) {
     return this.db.transaction().execute(async (tx) => {
-      await this.subscription(ownerId, id, tx);
+      const before = await this.subscription(ownerId, id, tx);
+      const history = dto.history && reach(dto.history);
+      // Reaching further back looks again from the start; work already running would end it early.
+      const widened = !!history && mediaReachWidened(before.history, history, before.createdAt);
       const changedAuthority =
-        dto.connectionId !== undefined || ['pause', 'resume', 'unsubscribe'].includes(dto.action ?? '');
+        widened || dto.connectionId !== undefined || ['pause', 'resume', 'unsubscribe'].includes(dto.action ?? '');
       if (changedAuthority) await this.cancelJobs(tx, sql<boolean>`"subscriptionId" = ${id}::uuid`);
       const current = await tx
         .selectFrom('media_subscription')
@@ -969,6 +1280,10 @@ export class MediaImportRepository {
         .set({
           status,
           ...(dto.intervalMinutes && { intervalMinutes: dto.intervalMinutes }),
+          ...(history && { history }),
+          ...(dto.saves && { saves: dto.saves }),
+          ...(dto.quality && { quality: dto.quality }),
+          ...(widened && { historyComplete: false, checkpoint: null, lastReconcileAt: null, nextCheckAt: new Date() }),
           ...(dto.connectionId !== undefined && { connectionId: dto.connectionId }),
           generation: changedAuthority ? current.generation + 1 : current.generation,
           ...(dto.action === 'resume' || dto.action === 'check' ? { nextCheckAt: new Date(), error: null } : {}),
@@ -1020,6 +1335,8 @@ export class MediaImportRepository {
             subscriptionId: subscription.id,
             subscriptionGeneration: subscription.generation,
             albumId: subscription.albumId,
+            mediaCreatorId: subscription.mediaCreatorId,
+            quality: subscription.quality,
             urls: [subscription.extractionUrl ?? subscription.url],
             connectionId: connection?.id ?? null,
             connectionRevision: connection?.revision ?? null,

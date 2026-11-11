@@ -34,6 +34,8 @@ class GalleryFixtureExtractor(Extractor):
             "post_id": post,
             "media_id": "protected-video",
             "extension": "mp4",
+            "hashtags": ["fixture", "#protected"],
+            "duration": 2.0,
             "_http_headers": {"X-Fixture-Attachment": "protected"},
         }
 
@@ -47,6 +49,9 @@ class QueryFixtureIE(InfoExtractor):
             "id": identity,
             "title": "Synthetic query-identified clip",
             "webpage_url": ROOT + "/player.php",
+            "tags": ["Fixture", "clip"],
+            "duration": 2,
+            "media_type": "short" if identity == "short" else None,
             "formats": [{
                 "url": ROOT + ("/silent.mp4" if identity == "silent" else "/video.mp4"),
                 "ext": "mp4", "vcodec": "h264", "acodec": "aac",
@@ -70,7 +75,7 @@ class QueryCollectionIE(InfoExtractor):
         return self.playlist_result([
             self.url_result(flat_url, extractor.ie_key(), "flat", webpage_url=ROOT + "/player.php"),
             resolved,
-        ], self._match_id(url))
+        ], self._match_id(url), "Fixture collection")
 
 
 class FixtureExtraction(bridge.Extraction):

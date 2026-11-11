@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   decryptMediaSession,
   encryptMediaSession,
+  mediaEntryDetails,
+  mediaPublicUrl,
+  mediaReachWidened,
   mediaSourceKey,
   nextMediaCheck,
   subscriptionSince,
@@ -32,6 +35,67 @@ describe('media import identity and credentials', () => {
     expect(
       subscriptionSince({ ...subscription, history: { mode: 'new' }, historyComplete: false }, now.getTime()),
     ).toBe(subscription.createdAt.toISOString());
+  });
+  it('takes the latest few first, then only what is new', () => {
+    const now = new Date('2026-11-10T00:00:00Z');
+    const subscription = {
+      history: { mode: 'recent' as const, count: 20 },
+      historyComplete: false,
+      createdAt: new Date('2026-11-01'),
+      lastSuccessAt: null,
+      lastReconcileAt: null,
+    };
+    expect(subscriptionSince(subscription, now.getTime())).toBeNull();
+    expect(subscriptionSince({ ...subscription, historyComplete: true }, now.getTime())).toBe(
+      subscription.createdAt.toISOString(),
+    );
+  });
+  it('treats only a further reach as a reason to look back again', () => {
+    const created = new Date('2026-06-01');
+    const since = (date: string) => ({ mode: 'since' as const, since: `${date}T00:00:00Z` });
+    const widened = (previous: object, next: object) => mediaReachWidened(previous as never, next as never, created);
+    expect(widened({ mode: 'new' }, { mode: 'all' })).toBe(true);
+    expect(widened({ mode: 'new' }, { mode: 'recent', count: 20 })).toBe(true);
+    expect(widened({ mode: 'recent', count: 20 }, { mode: 'recent', count: 50 })).toBe(true);
+    expect(widened({ mode: 'new' }, since('2026-01-01'))).toBe(true);
+    expect(widened(since('2026-03-01'), since('2026-01-01'))).toBe(true);
+    expect(widened({ mode: 'recent', count: 20 }, since('2026-01-01'))).toBe(true);
+    expect(widened({ mode: 'all' }, { mode: 'new' })).toBe(false);
+    expect(widened({ mode: 'all' }, { mode: 'all' })).toBe(false);
+    expect(widened({ mode: 'all' }, { mode: 'recent', count: 200 })).toBe(false);
+    expect(widened({ mode: 'recent', count: 50 }, { mode: 'recent', count: 20 })).toBe(false);
+    expect(widened({ mode: 'recent' }, { mode: 'recent', count: 20 })).toBe(false);
+    expect(widened(since('2026-01-01'), since('2026-03-01'))).toBe(false);
+    expect(widened({ mode: 'new' }, since('2026-07-01'))).toBe(false);
+    expect(widened(since('2026-01-01'), { mode: 'new' })).toBe(false);
+  });
+  it('bounds what an extractor says about an item and drops what it cannot know', () => {
+    expect(
+      mediaEntryDetails({
+        section: 'short',
+        tags: ['larch', 'larch', ' ', 7 as never, 'x'.repeat(200), ...Array.from({ length: 40 }, (_, k) => `t${k}`)],
+        playlistId: 'list',
+        playlistTitle: 'Joinery',
+        duration: 12.5,
+      }),
+    ).toMatchObject({ section: 'short', playlistId: 'list', playlistTitle: 'Joinery', duration: 12.5 });
+    const { tags } = mediaEntryDetails({
+      tags: ['larch', 'larch', 'x'.repeat(200), ...Array.from({ length: 40 }, (_, k) => `t${k}`)],
+    });
+    expect(tags.slice(0, 2)).toEqual(['larch', 'x'.repeat(64)]);
+    expect(tags).toHaveLength(30);
+    expect(mediaEntryDetails({ section: 'story', tags: 'larch' as never, playlistId: 'list', duration: NaN })).toEqual({
+      section: null,
+      tags: [],
+      playlistId: null,
+      playlistTitle: null,
+      duration: null,
+    });
+  });
+  it('shows a source link only when it is an ordinary web address', () => {
+    expect(mediaPublicUrl('https://example.org/post?id=1')).toBe('https://example.org/post?id=1');
+    for (const value of ['javascript:alert(1)', 'file:///etc/hosts', 'https://name:secret@example.org/', 'post', null])
+      expect(mediaPublicUrl(value)).toBeNull();
   });
   it('uses provider identity, never a changing CDN URL', () => {
     const entry = { provider: 'twitter', postId: '123', attachmentId: '456' };

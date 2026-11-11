@@ -320,19 +320,26 @@ def download_attachment(extraction, request, emit, entry, session, fields):
         required = codecs & {"video", "audio"}
     else:
         paths, extensions, stream, size, duration, required = download_video(extraction, entry, limit, progress, session)
+        if request.get("quality") == "audio":
+            kind = "audio"
+            required.discard("video")
 
+    # Sound only from a source with no separate audio keeps the sound of its best combined file.
+    strip_video = kind == "audio" and any("video" in codecs for _, codecs in paths)
     mp4 = stream or request.get("streamMp4")
     extension = extensions[0]
-    if mp4:
+    if strip_video:
+        extension = "m4a"
+    elif mp4:
         extension = "mp4"
     elif len(paths) > 1:
         extension = "mp4" if set(extensions) <= {"m4a", "mp4"} else "mkv"
     if extension not in MIME_TYPES:
         raise BridgeError("unsupported")
     output = Path("media." + extension)
-    if mp4 or len(paths) > 1:
+    if strip_video or mp4 or len(paths) > 1:
         progress(size, "assembling")
-        assemble([path for path, _ in paths], [codecs for _, codecs in paths], kind, output, mp4)
+        assemble([path for path, _ in paths], [codecs for _, codecs in paths], kind, output, mp4 or strip_video)
     else:
         paths[0][0].rename(output)
 

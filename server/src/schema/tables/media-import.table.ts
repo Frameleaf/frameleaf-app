@@ -11,6 +11,7 @@ import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { MediaDownloadEntry, MediaDownloadInspection } from 'src/repositories/media-downloader.repository.js';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 export type MediaImportState =
@@ -25,7 +26,13 @@ export type MediaImportState =
   | 'failed'
   | 'cancelled'
   | 'paused';
-export type MediaHistory = { mode: 'all' | 'since' | 'new'; since?: string };
+/** `recent` takes the latest `count` items, then everything new. */
+export type MediaHistory = { mode: 'all' | 'since' | 'new' | 'recent'; since?: string; count?: number };
+export type MediaQuality = 'best' | '1080' | '720' | 'audio';
+/** What a subscription keeps, per kind the platform offers. A kind left out is kept. */
+export type MediaSaves = Partial<
+  Record<'videos' | 'shorts' | 'live' | 'images' | 'replies' | 'reposts' | 'pins' | 'photos' | 'reels', boolean>
+>;
 
 @Table('media_connection')
 @Index({ columns: ['ownerId'] })
@@ -39,6 +46,42 @@ export class MediaConnectionTable {
   @Column({ default: 'connected' }) status!: Generated<'connected' | 'expired' | 'disconnected'>;
   @Column({ type: 'integer', default: 1 }) revision!: Generated<number>;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
+  @UpdateDateColumn() updatedAt!: Generated<Timestamp>;
+}
+
+/** FL-1446: one account on one site, for one owner; it exists whether or not the owner follows it. */
+@Table('media_creator')
+@Unique({ columns: ['ownerId', 'provider', 'creatorId'] })
+export class MediaCreatorTable {
+  @PrimaryGeneratedUuidV7Column() id!: Generated<string>;
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', index: false }) ownerId!: string;
+  @Column() provider!: string;
+  @Column() creatorId!: string;
+  @Column() name!: string;
+  @Column({ nullable: true }) handle!: string | null;
+  @Column({ type: 'text', nullable: true }) about!: string | null;
+  @Column({ type: 'text', nullable: true }) url!: string | null;
+  /** Where the site keeps the picture. Private: only the fetched copy at `avatarPath` is ever served. */
+  @Column({ type: 'text', nullable: true }) avatarUrl!: string | null;
+  @Column({ type: 'text', nullable: true }) avatarPath!: string | null;
+  @Column({ type: 'text', nullable: true }) bannerUrl!: string | null;
+  @Column({ type: 'text', nullable: true }) bannerPath!: string | null;
+  @ForeignKeyColumn(() => AlbumTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' }) albumId!:
+    string | null;
+  /** When the owner last opened this creator; items saved after it are new. */
+  @Column({ type: 'timestamp with time zone', default: () => 'now()' }) seenAt!: Generated<Timestamp>;
+  @CreateDateColumn() createdAt!: Generated<Timestamp>;
+  @UpdateDateColumn() updatedAt!: Generated<Timestamp>;
+}
+
+/** FL-1447: what one owner has watched of one item. Never read for another account. */
+@Table('media_watch')
+export class MediaWatchTable {
+  @ForeignKeyColumn(() => UserTable, { primary: true, onDelete: 'CASCADE', onUpdate: 'CASCADE', index: false })
+  ownerId!: string;
+  @ForeignKeyColumn(() => AssetTable, { primary: true, onDelete: 'CASCADE', onUpdate: 'CASCADE' }) assetId!: string;
+  @Column({ type: 'boolean', default: false }) watched!: Generated<boolean>;
+  @Column({ type: 'double precision', default: 0 }) position!: Generated<number>;
   @UpdateDateColumn() updatedAt!: Generated<Timestamp>;
 }
 
@@ -62,6 +105,10 @@ export class MediaSubscriptionTable {
   connectionId!: string | null;
   @Column({ type: 'uuid', nullable: true }) apiKeyId!: string | null;
   @Column({ type: 'jsonb' }) history!: MediaHistory;
+  @ForeignKeyColumn(() => MediaCreatorTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
+  mediaCreatorId!: string | null;
+  @Column({ type: 'jsonb', default: '{}' }) saves!: Generated<MediaSaves>;
+  @Column({ default: 'best' }) quality!: Generated<MediaQuality>;
   @Column({ type: 'integer', default: 60 }) intervalMinutes!: Generated<number>;
   @Column({ default: 'active' }) status!: Generated<'active' | 'paused' | 'attention' | 'unsubscribed'>;
   @Column({ type: 'integer', default: 1 }) generation!: Generated<number>;
@@ -102,6 +149,9 @@ export class MediaImportTable {
   @Column({ default: 'inspecting' }) state!: Generated<MediaImportState>;
   @Column({ type: 'integer', default: 1 }) generation!: Generated<number>;
   @Column({ type: 'uuid', nullable: true }) jobRunId!: string | null;
+  @ForeignKeyColumn(() => MediaCreatorTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
+  mediaCreatorId!: string | null;
+  @Column({ default: 'best' }) quality!: Generated<MediaQuality>;
   @Column({ type: 'boolean', default: false }) streamMp4!: Generated<boolean>;
   @Column({ type: 'boolean', default: false }) overrideSuppression!: Generated<boolean>;
   @Column({ type: 'jsonb', nullable: true }) inspection!: Omit<MediaDownloadInspection, 'entries'> | null;

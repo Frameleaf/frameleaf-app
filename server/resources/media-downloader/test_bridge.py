@@ -8,7 +8,7 @@ from unittest.mock import patch
 import requests
 from gallery_dl.extractor.nozomi import NozomiExtractor
 
-from bridge import BridgeError, creator_feed, gallery_entry, inspection, list_entries, public_page, youtube_candidates
+from bridge import BridgeError, Extraction, creator_feed, creator_profile, gallery_entry, inspection, list_entries, public_page, youtube_candidates
 from transport import cookie_policy, gallery_session_factory, load_session_cookies
 
 
@@ -43,6 +43,25 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual([item["postId"] for item in second[0]], ["c"])
         self.assertIsNone(second[2])
         self.assertEqual(list_entries(entries(["new", "c"]), 2, first[1], None)[2], "checkpoint_missing")
+
+    def test_saves_filter_before_the_page_limit_and_keep_unknown_kinds(self):
+        def entries():
+            for index, (kind, section) in enumerate([
+                ("video", "short"), ("video", "video"), ("video", "live"), ("image", "pin"),
+                ("video", "reel"), ("audio", None), ("video", None), ("video", "video"),
+            ]):
+                yield {"provider": "test", "postId": str(index), "attachmentId": "one", "publishedAt": None,
+                       "kind": kind, **({"section": section} if section else {})}
+
+        def kept(saves, limit=100):
+            extraction = Extraction({"socketPath": "/tmp/fixture-socket", "token": "fixture-token", "saves": saves})
+            return [entry["postId"] for entry in list_entries(entries(), limit, None, None, keep=extraction.keeps)[0]]
+
+        self.assertEqual(kept({}), ["0", "1", "2", "3", "4", "5", "6", "7"])
+        self.assertEqual(kept({"shorts": False, "live": False, "reels": False}), ["1", "3", "5", "6", "7"])
+        self.assertEqual(kept({"videos": False, "shorts": True}), ["0", "2", "3", "4", "5"])
+        self.assertEqual(kept({"pins": False}), ["0", "1", "2", "4", "5", "6", "7"])
+        self.assertEqual(kept({"shorts": False}, limit=2), ["1", "2"])
 
     def test_since_filters_old_entries_without_assuming_feed_sort_order(self):
         def entries():
@@ -122,8 +141,77 @@ class BridgeTests(unittest.TestCase):
         ]}
         entries = list(youtube_candidates(None, metadata, root))
         self.assertEqual([entry["attachmentId"] for entry in entries], ["video", "short", "archive"])
+        self.assertEqual([entry["section"] for entry in entries], ["video", "short", "live"])
+        self.assertTrue(all("playlistId" not in entry for entry in entries))
         self.assertEqual(entries[0]["pageUrl"], "https://www.youtube.com/watch?v=video")
         self.assertEqual(public_page("https://youtube.com/watch?list=playlist&v=video"), "https://youtube.com/watch?v=video")
+
+    def test_section_comes_from_extractor_fields_only(self):
+        def section(**info):
+            (entry,) = youtube_candidates(None, {"id": "one", "extractor": "Fixture", **info}, "https://fixture.invalid/one")
+            return entry.get("section")
+
+        self.assertEqual(section(webpage_url="https://www.youtube.com/shorts/one"), "short")
+        self.assertEqual(section(media_type="short"), "short")
+        self.assertEqual(section(webpage_url="https://www.facebook.com/reel/1"), "reel")
+        self.assertEqual(section(live_status="was_live"), "live")
+        self.assertEqual(section(), "video")
+        self.assertIsNone(section(vcodec="none"))
+        fields = {"extension": "jpg", "id": 1}
+        self.assertEqual(gallery_entry("twitter", "https://x.com/fixture", "https://cdn.fixture.invalid/a.jpg", fields)["section"], "post")
+        self.assertEqual(gallery_entry("pinterest", "https://fixture.invalid/pin", "https://cdn.fixture.invalid/a.jpg", fields)["section"], "pin")
+        self.assertNotIn("section", gallery_entry("fixture", "https://fixture.invalid/a", "https://cdn.fixture.invalid/a.jpg", fields))
+
+    def test_tags_playlist_and_duration_are_bounded_and_optional(self):
+        fields = {
+            "extension": "mp4", "id": 1, "duration": 31.4159,
+            "hashtags": ["#larch", "larch", "x" * 200, 7, *(f"tag{index}" for index in range(40))],
+            "board": {"id": 42, "name": "Mountain rooms"},
+        }
+        entry = gallery_entry("pinterest", "https://fixture.invalid/pin", "https://cdn.fixture.invalid/a.mp4", fields)
+        self.assertEqual(entry["tags"][:3], ["larch", "x" * 64, "tag0"])
+        self.assertEqual(len(entry["tags"]), 30)
+        self.assertEqual((entry["playlistId"], entry["playlistTitle"], entry["duration"]), ("42", "Mountain rooms", 31.416))
+        plain = gallery_entry("fixture", "https://fixture.invalid/a", "https://cdn.fixture.invalid/a.jpg",
+                              {"extension": "jpg", "tags": "not a list", "duration": float("inf")})
+        self.assertFalse({"tags", "playlistId", "playlistTitle", "duration"} & plain.keys())
+
+    def test_playlist_names_its_items_and_a_channel_does_not(self):
+        def items(**playlist):
+            return list(youtube_candidates(None, {"_type": "playlist", **playlist, "entries": [
+                {"_type": "url", "id": "one", "ie_key": "Youtube", "url": "https://www.youtube.com/watch?v=one",
+                 "duration": 12, "playlist_id": "untrusted", "playlist_title": "Untrusted"},
+            ]}, "https://www.youtube.com/playlist?list=PLfixture"))
+
+        (listed,) = items(id="PLfixture", title="Joinery", channel_id="UCfixture")
+        self.assertEqual((listed["playlistId"], listed["playlistTitle"], listed["duration"]), ("PLfixture", "Joinery", 12.0))
+        (uploaded,) = items(id="UCfixture", title="Fixture - Videos", channel_id="UCfixture")
+        self.assertNotIn("playlistId", uploaded)
+
+    def test_creator_profile_reports_only_account_fields(self):
+        channel = {
+            "channel_id": "UCfixture", "channel": "Fixture", "uploader_id": "@fixture", "description": "About the channel",
+            "channel_url": "https://www.youtube.com/channel/UCfixture",
+            "thumbnails": [{"id": "avatar_uncropped", "url": "https://cdn.fixture.invalid/avatar"},
+                           {"id": "banner_uncropped", "url": "https://cdn.fixture.invalid/banner"},
+                           {"id": "0", "url": "file:///etc/hosts"}],
+        }
+        self.assertEqual(creator_profile(channel, "youtube"), {
+            "handle": "@fixture", "about": "About the channel", "url": "https://www.youtube.com/channel/UCfixture",
+            "avatarUrl": "https://cdn.fixture.invalid/avatar", "bannerUrl": "https://cdn.fixture.invalid/banner",
+        })
+        # One video's description is not the channel's, and a video has no account pictures.
+        self.assertEqual(creator_profile({**channel, "thumbnails": None}, "youtube", feed=False),
+                         {"handle": "@fixture", "url": "https://www.youtube.com/channel/UCfixture"})
+        author = {"author": {"id": 1, "name": "fixture", "nick": "Fixture", "description": "Offcuts",
+                             "profile_image": "https://cdn.fixture.invalid/a.jpg", "profile_banner": "javascript:alert(1)"}}
+        self.assertEqual(creator_profile(author, "twitter"),
+                         {"handle": "fixture", "about": "Offcuts", "avatarUrl": "https://cdn.fixture.invalid/a.jpg"})
+        self.assertIsNone(creator_profile({}, "fixture"))
+        result = inspection("https://fixture.invalid/feed", "twitter", "feed", [], None, None,
+                            identity=["1", "Fixture", creator_profile(author, "twitter")])
+        self.assertEqual(result["profile"]["handle"], "fixture")
+        self.assertIsNone(inspection("https://fixture.invalid/feed", "fixture", "feed", [], None, None)["profile"])
 
     def test_public_source_keeps_known_provider_identity_only(self):
         self.assertEqual(

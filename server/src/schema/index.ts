@@ -151,9 +151,11 @@ import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import {
   MediaConnectionTable,
+  MediaCreatorTable,
   MediaImportItemTable,
   MediaImportTable,
   MediaSubscriptionTable,
+  MediaWatchTable,
 } from 'src/schema/tables/media-import.table.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
@@ -507,6 +509,8 @@ export class ImmichDatabase {
     StudioExportVersionSourceTable,
     StudioExportRemoteReferenceTable,
     MediaConnectionTable,
+    MediaCreatorTable,
+    MediaWatchTable,
     MediaSubscriptionTable,
     MediaImportTable,
     MediaImportItemTable,
@@ -825,6 +829,8 @@ export interface DB extends QueueDatabase {
   takeout_album: TakeoutAlbumTable;
   takeout_file: TakeoutFileTable;
   media_connection: MediaConnectionTable;
+  media_creator: MediaCreatorTable;
+  media_watch: MediaWatchTable;
   media_subscription: MediaSubscriptionTable;
   media_import: MediaImportTable;
   media_import_item: MediaImportItemTable;

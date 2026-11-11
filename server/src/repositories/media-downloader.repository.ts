@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { spawn } from 'node:child_process';
-import { randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import sanitize from 'sanitize-filename';
+import type { MediaQuality, MediaSaves } from 'src/schema/tables/media-import.table.js';
 import { MediaBrokerError, startMediaDownloadBroker, validateMediaUrl } from 'src/utils/media-download-broker.js';
 import { MediaDownloadFileError, copyMediaDownload } from 'src/utils/media-download-file.js';
 
@@ -45,6 +46,21 @@ export type MediaDownloadEntry = {
   publishedAt: string | null;
   kind: 'image' | 'video' | 'audio';
   thumbnailUrl?: string;
+  /** Present only when the extractor's own fields say so. */
+  section?: string;
+  tags?: string[];
+  playlistId?: string;
+  playlistTitle?: string;
+  duration?: number;
+};
+
+/** What the extractor reports about the account itself. The picture URLs are never sent to a client. */
+export type MediaCreatorProfile = {
+  handle?: string;
+  about?: string;
+  url?: string;
+  avatarUrl?: string;
+  bannerUrl?: string;
 };
 
 export type MediaDownloadInspection = {
@@ -58,6 +74,7 @@ export type MediaDownloadInspection = {
   checkpoint: string | null;
   complete: boolean;
   limitation: string | null;
+  profile?: MediaCreatorProfile | null;
 };
 
 export type MediaDownloadedFile = {
@@ -111,10 +128,16 @@ export class MediaDownloadError extends Error {
 }
 
 type InspectionOptions = { session?: MediaDownloadSession; signal?: AbortSignal };
-type EnumerationOptions = InspectionOptions & { checkpoint?: string | null; since?: string | null; limit?: number };
+type EnumerationOptions = InspectionOptions & {
+  checkpoint?: string | null;
+  since?: string | null;
+  limit?: number;
+  saves?: MediaSaves;
+};
 type DownloadOptions = InspectionOptions & {
   directory: string;
   streamMp4?: boolean;
+  quality?: MediaQuality;
   maxBytes: number;
   onProgress?: (bytes: number, phase: 'downloading' | 'assembling') => void;
 };
@@ -132,7 +155,7 @@ type BridgeRequest =
   | ({ operation: 'inspect' | 'enumerate'; url: string } & Omit<EnumerationOptions, 'signal'>)
   | ({ operation: 'download'; entry: MediaDownloadEntry } & Pick<
       DownloadOptions,
-      'maxBytes' | 'streamMp4' | 'session'
+      'maxBytes' | 'streamMp4' | 'session' | 'quality'
     >);
 type BridgeResult = MediaDownloadCapabilities | MediaDownloadInspection | BridgeFile[];
 type RunnerOptions = InspectionOptions & Pick<DownloadOptions, 'onProgress'>;
@@ -177,15 +200,15 @@ export class MediaDownloaderRepository {
   }
 
   async enumerate(url: string, options: EnumerationOptions = {}): Promise<MediaDownloadInspection> {
-    const { signal, session, checkpoint, since, limit } = options;
+    const { signal, session, checkpoint, since, limit, saves } = options;
     return (await this.run(
-      { operation: 'enumerate', url: this.validateUrl(url), session, checkpoint, since, limit },
+      { operation: 'enumerate', url: this.validateUrl(url), session, checkpoint, since, limit, saves },
       { signal },
     )) as MediaDownloadInspection;
   }
 
   async download(entry: MediaDownloadEntry, options: DownloadOptions): Promise<MediaDownloadedFile[]> {
-    const { directory, maxBytes, session, streamMp4, signal, onProgress } = options;
+    const { directory, maxBytes, session, streamMp4, quality, signal, onProgress } = options;
     this.validateUrl(entry.pageUrl);
     if (entry.mediaUrl) {
       this.validateUrl(entry.mediaUrl);
@@ -199,7 +222,7 @@ export class MediaDownloaderRepository {
     const created: string[] = [];
     try {
       return (await this.run(
-        { operation: 'download', entry, session, streamMp4, maxBytes },
+        { operation: 'download', entry, session, streamMp4, quality, maxBytes },
         { signal, onProgress },
         async (stage, result) => {
           if (!Array.isArray(result) || result.length === 0) {
@@ -227,6 +250,31 @@ export class MediaDownloaderRepository {
       await Promise.allSettled(created.map((file) => rm(file, { force: true })));
       throw mediaError(error);
     }
+  }
+
+  /**
+   * One public picture (a creator's avatar or banner, a video's cover) through the same isolated,
+   * public-only path as media, with no site session. The file is checked to be a picture.
+   */
+  async fetchImage(url: string, options: Pick<DownloadOptions, 'directory' | 'signal'>): Promise<MediaDownloadedFile> {
+    const id = createHash('sha256').update(url).digest('hex').slice(0, 32);
+    const [file] = await this.download(
+      {
+        provider: 'generic',
+        creatorId: null,
+        postId: id,
+        attachmentId: id,
+        pageUrl: url,
+        mediaUrl: url,
+        title: 'Picture',
+        description: '',
+        creator: null,
+        publishedAt: null,
+        kind: 'image',
+      },
+      { ...options, maxBytes: 10 * 1024 * 1024 },
+    );
+    return file;
   }
 
   private validateUrl(value: string): string {

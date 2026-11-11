@@ -233,14 +233,36 @@ class RuntimeTests(unittest.TestCase):
         (entry,) = inspection["result"]["entries"]
         self.assertEqual(entry["pageUrl"], FIXTURE + "/player.php")
         self.assertEqual(entry["attachmentId"], "original")
+        self.assertEqual((entry["section"], entry["tags"], entry["duration"]), ("video", ["Fixture", "clip"], 2.0))
+        self.assertNotIn("playlistId", entry)
+        self.assertIsNone(inspection["result"]["profile"])
         result, _ = self.run_bridge("download", entry=entry, maxBytes=5_000_000)
         self.assertEqual(result["type"], "result", result)
+
+    def test_extractor_fields_name_a_short_and_gallery_tags(self):
+        inspection, _ = self.run_bridge("inspect", url=FIXTURE + "/player.php?clip=short")
+        self.assertEqual(inspection["result"]["entries"][0]["section"], "short")
+        inspection, _ = self.run_bridge("inspect", url=FIXTURE + "/gallery?post=fixture")
+        (entry,) = inspection["result"]["entries"]
+        self.assertEqual((entry["tags"], entry["duration"]), (["fixture", "protected"], 2.0))
+        self.assertNotIn("section", entry)
+
+    def test_quality_limits_height_and_sound_only_drops_the_picture(self):
+        response, folder = self.download("player.php?clip=original", quality="720")
+        self.assertEqual(response["result"], [{"filename": "media.mp4", "mimeType": "video/mp4"}], response)
+        response, folder = self.download("player.php?clip=original", quality="audio")
+        self.assertEqual(response["result"], [{"filename": "media.m4a", "mimeType": "audio/mp4"}], response)
+        kinds = subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(folder / "media.m4a"),
+        ], text=True).splitlines()
+        self.assertEqual(kinds, ["audio"])
 
     def test_nested_query_locators_replay_exact_flat_and_resolved_leaves(self):
         response, _ = self.run_bridge("inspect", url=FIXTURE + "/fixture-collection/nested")
         self.assertEqual(response["type"], "result", response)
         entries = response["result"]["entries"]
         self.assertEqual([entry["attachmentId"] for entry in entries], ["flat", "resolved"])
+        self.assertEqual({(entry["playlistId"], entry["playlistTitle"]) for entry in entries}, {("nested", "Fixture collection")})
         for entry in entries:
             with self.subTest(attachment=entry["attachmentId"]):
                 self.assertEqual(entry["pageUrl"], FIXTURE + "/player.php")

@@ -1,7 +1,11 @@
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { MediaImportAuthority } from 'src/repositories/media-import.repository.js';
-import { MediaImportCreateDto } from 'src/dtos/media-import.dto.js';
+import {
+  MediaCreatorItemsQueryDto,
+  MediaImportCreateDto,
+  MediaSubscriptionCreateDto,
+} from 'src/dtos/media-import.dto.js';
 import { LibraryScope, Permission } from 'src/enum.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { CaptureRepository } from 'src/repositories/capture.repository.js';
@@ -278,7 +282,7 @@ describe('durable Boards media imports', () => {
       await db
         .selectFrom('album_asset')
         .selectAll()
-        .where('albumId', '=', dto.albumId)
+        .where('albumId', '=', dto.albumId!)
         .where('assetId', '=', asset.id)
         .execute(),
     ).toHaveLength(0);
@@ -340,12 +344,14 @@ describe('durable Boards media imports', () => {
       })
       .where('id', '=', preview.id)
       .execute();
-    const subscription = await repo.createSubscription(auth, {
-      inspectionId: preview.id,
-      history: { mode: 'all' },
-      intervalMinutes: 60,
-      idempotencyKey: randomUUID(),
-    });
+    const subscription = await repo.createSubscription(
+      auth,
+      MediaSubscriptionCreateDto.schema.parse({
+        inspectionId: preview.id,
+        history: { mode: 'all' },
+        idempotencyKey: randomUUID(),
+      }),
+    );
     const operation = await repo.create(auth, { ...dto, albumId: subscription.albumId! });
     await db
       .updateTable('media_import')
@@ -389,5 +395,213 @@ describe('durable Boards media imports', () => {
     await repo.updateSubscription(auth.user.id, subscription.id, { action: 'unsubscribe' });
     expect((await repo.subscription(auth.user.id, subscription.id)).status).toBe('unsubscribed');
     expect(await db.selectFrom('album').select('id').where('id', '=', subscription.albumId!).execute()).toHaveLength(1);
+  });
+});
+
+describe('Boards creators', () => {
+  const identify = (id: string, kind: 'item' | 'feed') =>
+    db
+      .updateTable('media_import')
+      .set({
+        inspection: {
+          kind,
+          provider: 'fixture',
+          creatorId: 'creator',
+          creator: 'Creator',
+          title: 'Creator',
+          canonicalUrl: entry.pageUrl,
+          checkpoint: null,
+          complete: true,
+          limitation: null,
+          profile: { handle: '@creator', avatarUrl: 'https://cdn.example.org/avatar', bannerUrl: 'file:///etc/hosts' },
+        },
+      })
+      .where('id', '=', id)
+      .execute();
+  const page = (query: object = {}) => MediaCreatorItemsQueryDto.schema.parse(query);
+  /** One download with no collection chosen, published as one asset of its creator. */
+  const saved = async () => {
+    const context = await setup();
+    const { repo, auth, dto, ctx, preview, item } = context;
+    await identify(preview.id, 'item');
+    await db
+      .updateTable('media_import_item')
+      .set({
+        entry: {
+          ...entry,
+          section: 'short',
+          tags: ['larch', 'x'.repeat(200)],
+          duration: 42,
+          playlistId: 'list',
+          playlistTitle: 'Joinery',
+        },
+      })
+      .where('id', '=', item.id)
+      .execute();
+    const operation = await repo.create(auth, { ...dto, albumId: undefined, idempotencyKey: randomUUID() });
+    const [receipt] = await repo.items(operation.id);
+    const authority = await claim(auth.user.id, operation.id, receipt.id);
+    await repo.uploadId(authority);
+    const { asset } = await ctx.newAsset({ ownerId: auth.user.id, libraryScope: LibraryScope.Design });
+    await db
+      .transaction()
+      .execute((tx) =>
+        repo.publish(tx, authority, () => Promise.resolve({ id: asset.id, status: 'created' as const })),
+      );
+    const [creator] = await repo.creators(auth.user.id);
+    return { ...context, operation, asset, creator };
+  };
+
+  it('adds the creator of a single download without following, then follows into the same collection', async () => {
+    const { repo, auth, preview, operation, asset, creator } = await saved();
+    expect(creator).toMatchObject({
+      provider: 'fixture',
+      creatorId: 'creator',
+      name: 'Creator',
+      handle: '@creator',
+      avatarUrl: 'https://cdn.example.org/avatar',
+      bannerUrl: null,
+      albumId: operation.albumId,
+      subscription: null,
+      savedCount: 1,
+      newCount: 1,
+    });
+    expect(operation.mediaCreatorId).toBe(creator.id);
+    const album = await db
+      .selectFrom('album')
+      .select('albumName')
+      .where('id', '=', operation.albumId!)
+      .executeTakeFirstOrThrow();
+    expect(album.albumName).toBe('Creator · fixture');
+    const [listed] = await repo.creatorItems(auth.user.id, creator.id, page());
+    expect(listed).toMatchObject({
+      assetId: asset.id,
+      creatorId: creator.id,
+      section: 'short',
+      tags: ['larch', 'x'.repeat(64)],
+      duration: 42,
+      playlistId: 'list',
+      postId: entry.postId,
+      subscribed: false,
+      watched: null,
+    });
+    expect(await repo.creatorItems(auth.user.id, creator.id, page({ section: 'video' }))).toHaveLength(0);
+    expect(await repo.creatorItems(auth.user.id, creator.id, page({ q: 'LARCH' }))).toHaveLength(1);
+    expect(await repo.creatorItems(auth.user.id, creator.id, page({ q: '100%' }))).toHaveLength(0);
+    expect(await repo.newItems(auth.user.id, 10)).toHaveLength(1);
+
+    await repo.seen(auth.user.id, creator.id);
+    expect((await repo.creators(auth.user.id))[0].newCount).toBe(0);
+    expect(await repo.newItems(auth.user.id, 10)).toHaveLength(0);
+
+    await identify(preview.id, 'feed');
+    const subscription = await repo.createSubscription(
+      auth,
+      MediaSubscriptionCreateDto.schema.parse({
+        inspectionId: preview.id,
+        history: { mode: 'recent' },
+        saves: { shorts: false },
+        quality: '720',
+        idempotencyKey: randomUUID(),
+      }),
+    );
+    expect(subscription).toMatchObject({
+      albumId: operation.albumId,
+      mediaCreatorId: creator.id,
+      history: { mode: 'recent', count: 20 },
+      saves: { shorts: false },
+      quality: '720',
+    });
+    const [followed] = await repo.creators(auth.user.id);
+    expect(followed.subscription?.id).toBe(subscription.id);
+    expect(await repo.creators(auth.user.id)).toHaveLength(1);
+  });
+
+  it('never shows a creator, its items or what was watched to another account', async () => {
+    const { repo, auth, asset, creator } = await saved();
+    const other = await setup();
+    await repo.watch(auth.user.id, asset.id, { watched: true, position: 12.5 });
+    expect((await repo.creatorItems(auth.user.id, creator.id, page()))[0]).toMatchObject({
+      watched: true,
+      position: 12.5,
+    });
+    expect(await repo.creatorItems(auth.user.id, creator.id, page({ unwatched: 'true' }))).toHaveLength(0);
+
+    expect(await repo.creators(other.auth.user.id)).toHaveLength(0);
+    expect(await repo.newItems(other.auth.user.id, 10)).toHaveLength(0);
+    await expect(repo.creator(other.auth.user.id, creator.id)).rejects.toThrow('unavailable');
+    await expect(repo.creatorItems(other.auth.user.id, creator.id, page())).rejects.toThrow('unavailable');
+    await expect(repo.seen(other.auth.user.id, creator.id)).rejects.toThrow('unavailable');
+    await expect(repo.moveCreator(other.auth.user.id, creator.id, null)).rejects.toThrow('unavailable');
+    await expect(repo.poster(other.auth.user.id, asset.id)).rejects.toThrow('unavailable');
+    await expect(repo.watch(other.auth.user.id, asset.id, { watched: true, position: 0 })).rejects.toThrow(
+      'unavailable',
+    );
+    expect(await db.selectFrom('media_watch').select('ownerId').where('assetId', '=', asset.id).execute()).toEqual([
+      { ownerId: auth.user.id },
+    ]);
+  });
+
+  it('moves a creator into a private folder and keeps the cover the site gave', async () => {
+    const { repo, auth, ctx, asset, creator } = await saved();
+    const { album: folder } = await ctx.newAlbum({ ownerId: auth.user.id, libraryScope: LibraryScope.Design });
+    await repo.moveCreator(auth.user.id, creator.id, folder.id);
+    expect((await repo.creators(auth.user.id))[0].parentAlbumId).toBe(folder.id);
+    await repo.moveCreator(auth.user.id, creator.id, null);
+    expect((await repo.creators(auth.user.id))[0].parentAlbumId).toBeNull();
+    const other = await setup();
+    await expect(repo.moveCreator(auth.user.id, creator.id, other.album.id)).rejects.toThrow('unavailable');
+
+    await expect(repo.poster(auth.user.id, asset.id)).rejects.toThrow('unavailable');
+    await repo.setPoster(auth.user.id, asset.id, entry, '/private/poster.jpg');
+    expect(await repo.poster(auth.user.id, asset.id)).toBe('/private/poster.jpg');
+    await repo.setCreatorImage(creator.id, 'avatar', 'https://cdn.example.org/other', '/private/stale.jpg');
+    expect((await repo.creator(auth.user.id, creator.id)).avatarPath).toBeNull();
+    await repo.setCreatorImage(creator.id, 'avatar', 'https://cdn.example.org/avatar', '/private/avatar.jpg');
+    expect((await repo.creator(auth.user.id, creator.id)).avatarPath).toBe('/private/avatar.jpg');
+  });
+
+  it('looks further back when the reach widens and removes nothing when it narrows', async () => {
+    const { repo, auth, preview, asset } = await saved();
+    await identify(preview.id, 'feed');
+    const subscription = await repo.createSubscription(
+      auth,
+      MediaSubscriptionCreateDto.schema.parse({
+        inspectionId: preview.id,
+        history: { mode: 'new' },
+        idempotencyKey: randomUUID(),
+      }),
+    );
+    await db
+      .updateTable('media_subscription')
+      .set({ historyComplete: true, checkpoint: 'marker', lastReconcileAt: new Date() })
+      .where('id', '=', subscription.id)
+      .execute();
+    const wider = await repo.updateSubscription(auth.user.id, subscription.id, { history: { mode: 'all' } });
+    expect(wider).toMatchObject({
+      history: { mode: 'all' },
+      historyComplete: false,
+      checkpoint: null,
+      lastReconcileAt: null,
+      generation: subscription.generation + 1,
+    });
+    await db
+      .updateTable('media_subscription')
+      .set({ historyComplete: true })
+      .where('id', '=', subscription.id)
+      .execute();
+    const narrower = await repo.updateSubscription(auth.user.id, subscription.id, {
+      history: { mode: 'new' },
+      saves: { live: false },
+      quality: 'audio',
+    });
+    expect(narrower).toMatchObject({
+      history: { mode: 'new' },
+      saves: { live: false },
+      quality: 'audio',
+      historyComplete: true,
+      generation: wider.generation,
+    });
+    expect(await db.selectFrom('asset').select('id').where('id', '=', asset.id).execute()).toHaveLength(1);
   });
 });
