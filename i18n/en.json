@@ -2935,6 +2935,7 @@
   "frameleaf_album_edit_title": "Edit title",
   "frameleaf_album_icon_for": "Icon for {name}",
   "frameleaf_album_icon_updated": "Icon updated",
+  "frameleaf_album_keep_offline": "Keep Offline",
   "frameleaf_album_kind_album": "album",
   "frameleaf_album_kind_collection": "collection",
   "frameleaf_album_kind_space": "shared space",
