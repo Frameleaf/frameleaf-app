@@ -1561,21 +1561,28 @@
    */
   const canFixDates = $derived(libraryChrome && !selectionBar && !noSelectionBar && !options?.isTrashed);
   export const fixDates = async () => {
-    const group = manager.months.find((month) => month.toCheck);
-    if (!group || !canFixDates) {
+    // FL-1452: a new filter the timeline has not taken yet leaves the old view's group here; not its photos
+    const pages = manager.settled ? manager.months.filter((month) => month.toCheck) : [];
+    if (pages.length === 0 || !canFixDates) {
       return;
     }
-    try {
-      await manager.loadTimelineMonth(group.yearMonth, { cancelable: false });
-    } catch (error) {
-      handleError(error, $t('errors.failed_to_load_assets'));
-      return;
+    // FL-1452: the group is read a page at a time, and a page out of view may be released: take each
+    // page's photos as it loads. ponytail: every page in turn, which a group of thousands takes a moment over.
+    const ids: string[] = [];
+    for (const page of pages) {
+      try {
+        await manager.loadTimelineMonth(page.yearMonth, { cancelable: false });
+      } catch (error) {
+        handleError(error, $t('errors.failed_to_load_assets'));
+        return;
+      }
+      // The view moved on while the group loaded (a filter, a refresh): its photos are not this view's.
+      if (!manager.settled || !manager.months.includes(page)) {
+        return;
+      }
+      ids.push(...page.getAssets().map(({ id }) => id));
     }
-    // The view moved on while the group loaded (a filter, a refresh): its photos are not this view's.
-    if (!manager.months.includes(group)) {
-      return;
-    }
-    const ids = group.getAssets().map(({ id }) => id);
+    const group = pages[0];
     if (ids.length === 0) {
       return;
     }

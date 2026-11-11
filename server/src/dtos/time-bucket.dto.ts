@@ -142,14 +142,15 @@ const TimeBucketQueryBaseSchema = z
 
 export const TIMELINE_CALENDAR_MAX_TAKE = 1000;
 export const TIMELINE_CALENDAR_MIN_PAGE_SIZE = 100;
+const PageSizeSchema = z.coerce
+  .number()
+  .int()
+  .min(TIMELINE_CALENDAR_MIN_PAGE_SIZE)
+  .max(TIMELINE_CALENDAR_MAX_TAKE)
+  .optional()
+  .describe('Return bounded calendar-page summaries instead of whole-month counts');
 const TimeBucketSchema = TimeBucketQueryBaseSchema.extend({
-  pageSize: z.coerce
-    .number()
-    .int()
-    .min(TIMELINE_CALENDAR_MIN_PAGE_SIZE)
-    .max(TIMELINE_CALENDAR_MAX_TAKE)
-    .optional()
-    .describe('Return bounded calendar-page summaries instead of whole-month counts'),
+  pageSize: PageSizeSchema,
   locateAssetId: z
     .uuid()
     .optional()
@@ -406,9 +407,13 @@ const TimelineHighlightResponseSchema = z
  * FL-1410: what a timeline says of its photos whose date cannot be right (`utils/date-sanity.ts`), for the
  * same filters as its time buckets.
  */
-const TimelineDatesToCheckQuerySchema = TimeBucketQueryBaseSchema.omit({ datesToCheck: true }).meta({
-  id: 'TimelineDatesToCheckDto',
-});
+const TimelineDatesToCheckQuerySchema = TimeBucketQueryBaseSchema.omit({ datesToCheck: true })
+  .extend({
+    pageSize: PageSizeSchema.describe(
+      'FL-1452: also return the calendar pages of these photos (pages), as GET /timeline/buckets pages them',
+    ),
+  })
+  .meta({ id: 'TimelineDatesToCheckDto' });
 const TimelineDatesToCheckResponseSchema = z
   .object({
     count: z.int().min(0).describe('Photos whose date cannot be right'),
@@ -421,6 +426,12 @@ const TimelineDatesToCheckResponseSchema = z
         'The months those dates claim, as GET /timeline/buckets names them and in the order asked for. Read the photos of each with GET /timeline/bucket and datesToCheck=only',
       )
       .meta({ example: ['2031-06-01', '1970-01-01'] }),
+    pages: z
+      .array(TimeBucketsResponseSchema)
+      .optional()
+      .describe(
+        'With pageSize: the calendar pages of these photos, in the order asked for. Read each with GET /timeline/bucket, datesToCheck=only and the page options',
+      ),
   })
   .meta({ id: 'TimelineDatesToCheckResponseDto' });
 

@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { TimeBucketDto } from 'src/dtos/time-bucket.dto.js';
+import { TimeBucketDto, TimelineDatesToCheckDto } from 'src/dtos/time-bucket.dto.js';
 import { AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -181,6 +181,28 @@ describe('dates that cannot be right (FL-1410)', () => {
       years: [1970, 2000, 2031],
       timeBuckets: ['2031-06-01', '2000-01-01', '1970-01-01'],
     });
+    // FL-1452: with pageSize the group gets its pages too, as the buckets page them, and the same counts
+    const paged = await sut.getDatesToCheck(auth, TimelineDatesToCheckDto.schema.parse({ pageSize: '100' }));
+    expect(paged).toMatchObject({
+      count: 3,
+      years: [1970, 2000, 2031],
+      timeBuckets: ['2031-06-01', '2000-01-01', '1970-01-01'],
+    });
+    expect(paged.pages).toEqual([
+      expect.objectContaining({ timeBucket: '2031-06-01', count: 1, page: 0, firstAssetId: future }),
+      expect.objectContaining({ timeBucket: '2000-01-01', count: 1, page: 0, firstAssetId: reset2000 }),
+      expect.objectContaining({ timeBucket: '1970-01-01', count: 1, page: 0, firstAssetId: reset1970 }),
+    ]);
+    const page = paged.pages![1];
+    await expect(
+      sut.getTimeBucket(auth, {
+        ...only,
+        timeBucket: page.timeBucket,
+        take: page.count,
+        firstAssetId: page.firstAssetId,
+        lastAssetId: page.lastAssetId,
+      }),
+    ).resolves.toContain(reset2000);
     // a photo with no EXIF row cannot be listed by a bucket, so the notice does not count it
     await ctx.newAsset({ ownerId: user.id, ...taken('2031-06-05T09:00:00.000Z') });
     await expect(sut.getDatesToCheck(auth, {})).resolves.toMatchObject({ count: 3 });

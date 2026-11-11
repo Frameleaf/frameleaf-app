@@ -20,7 +20,12 @@ const reset = taken('1970-01-01T00:00:00.000Z');
 const dated = [
   { timeBucket: '2026-08-01', count: 1, page: 0, after: null, firstAssetId: august.id, lastAssetId: august.id },
 ];
-const toCheck = { count: 3, years: [1970, 2031], timeBuckets: ['2031-06-01', '1970-01-01'] };
+// FL-1452: the summary gives the group's pages, as the buckets page the dated months
+const toCheckPages = [
+  { timeBucket: '2031-06-01', count: 2, page: 0, after: null, firstAssetId: future[0].id, lastAssetId: future[1].id },
+  { timeBucket: '1970-01-01', count: 1, page: 0, after: null, firstAssetId: reset.id, lastAssetId: reset.id },
+];
+const toCheck = { count: 3, years: [1970, 2031], timeBuckets: ['2031-06-01', '1970-01-01'], pages: toCheckPages };
 
 const seed = () => {
   sdkMock.getTimeBuckets.mockResolvedValue(dated);
@@ -56,13 +61,15 @@ describe('dates to check (FL-1410)', () => {
         expect.objectContaining({ isFavorite: true, pageSize: 500, datesToCheck: TimelineDatesToCheck.Exclude }),
       );
       // the summary is asked with the view's filters alone
-      expect(sdkMock.getTimelineDatesToCheck).toHaveBeenCalledWith({ isFavorite: true });
+      expect(sdkMock.getTimelineDatesToCheck).toHaveBeenCalledWith({ isFavorite: true, pageSize: 500 });
 
-      expect(manager.months.map((month) => month.toCheck)).toEqual([false, true]);
-      const group = manager.months[1];
-      expect(group.title).toBe('frameleaf_library_dates_to_check');
-      expect(group.assetsCount).toBe(3);
-      expect(group.startsGroup).toBe(true);
+      // one group, held as its pages
+      expect(manager.months.map((month) => month.toCheck)).toEqual([false, true, true]);
+      const [first, second] = manager.months.slice(1);
+      expect(first.title).toBe('frameleaf_library_dates_to_check');
+      expect(first.assetsCount + second.assetsCount).toBe(3);
+      expect(first.startsGroup).toBe(true);
+      expect(second.startsGroup).toBe(false);
       // the notice: how many, and the years their dates claim
       expect(manager.datesToCheck).toEqual({ count: 3, years: [1970, 2031] });
       expect(manager.assetCount).toBe(4);
@@ -71,21 +78,31 @@ describe('dates to check (FL-1410)', () => {
     }
   });
 
-  it('reads the group a claimed month at a time and keeps the order the server sent', async () => {
+  it('reads the group a page at a time and keeps the order the server sent', async () => {
     seed();
     const manager = await open();
     try {
-      const group = manager.months[1];
-      await manager.loadTimelineMonth(group.yearMonth, { cancelable: false });
-      const reads = sdkMock.getTimeBucket.mock.calls
-        .map(([query]) => query)
-        .filter(({ datesToCheck }) => datesToCheck === TimelineDatesToCheck.Only);
-      expect(reads.map(({ timeBucket }) => timeBucket)).toEqual(['2031-06-01', '1970-01-01']);
+      const [first, second] = manager.months.slice(1);
+      await manager.loadTimelineMonth(first.yearMonth, { cancelable: false });
+      const reads = () =>
+        sdkMock.getTimeBucket.mock.calls
+          .map(([query]) => query)
+          .filter(({ datesToCheck }) => datesToCheck === TimelineDatesToCheck.Only);
+      await manager.loadTimelineMonth(second.yearMonth, { cancelable: false });
+      // each page from the month its photos claim, with the page's own bounds
+      expect(reads()).toEqual([
+        expect.objectContaining({ timeBucket: '2031-06-01', take: 2, firstAssetId: future[0].id }),
+        expect.objectContaining({ timeBucket: '1970-01-01', take: 1, firstAssetId: reset.id }),
+      ]);
 
-      expect(group.getAssets().map(({ id }) => id)).toEqual([future[0].id, future[1].id, reset.id]);
-      // one group, not a day in 2031 and a day in 1970
-      expect(group.timelineDays).toHaveLength(1);
-      expect(group.timelineDays[0].groupTitle).toBe('frameleaf_library_dates_to_check');
+      expect([...first.getAssets(), ...second.getAssets()].map(({ id }) => id)).toEqual([
+        future[0].id,
+        future[1].id,
+        reset.id,
+      ]);
+      // each page is one run under the group's title, not a day in 2031 and a day in 1970
+      expect(first.timelineDays).toHaveLength(1);
+      expect(first.timelineDays[0].groupTitle).toBe('frameleaf_library_dates_to_check');
 
       // the dated month is read without them
       await manager.loadTimelineMonth(manager.months[0].yearMonth, { cancelable: false });
@@ -105,6 +122,7 @@ describe('dates to check (FL-1410)', () => {
     try {
       await manager.loadTimelineMonth(manager.months[0].yearMonth, { cancelable: false });
       await manager.loadTimelineMonth(manager.months[1].yearMonth, { cancelable: false });
+      await manager.loadTimelineMonth(manager.months[2].yearMonth, { cancelable: false });
       // 2031 claims to be newer than August 2026, and is shown after it
       const range = await manager.retrieveRange({ id: august.id }, { id: future[1].id });
       expect(range.map(({ id }) => id)).toEqual([august.id, future[0].id, future[1].id]);
@@ -115,7 +133,7 @@ describe('dates to check (FL-1410)', () => {
     }
   });
 
-  it('gives the group its place on the scrubber and no year', async () => {
+  it('gives the group one place on the scrubber and no year', async () => {
     seed();
     const manager = await open();
     try {
@@ -132,8 +150,9 @@ describe('dates to check (FL-1410)', () => {
     seed();
     const manager = await open({ order: AssetOrder.Asc });
     try {
-      expect(manager.months.map((month) => month.toCheck)).toEqual([false, true]);
+      expect(manager.months.map((month) => month.toCheck)).toEqual([false, true, true]);
       expect(manager.months[1].yearMonth.year).toBeGreaterThan(manager.months[0].yearMonth.year);
+      expect(manager.months[2].yearMonth).toEqual({ ...manager.months[1].yearMonth, page: 1 });
     } finally {
       manager.destroy();
     }
@@ -155,8 +174,9 @@ describe('dates to check (FL-1410)', () => {
     try {
       // not in the dated order: the lookup comes back empty
       sdkMock.getTimeBuckets.mockResolvedValueOnce([]);
+      // on the group's second page: the pages are read until it is found
       const month = await manager.findTimelineMonthForAsset({ id: reset.id });
-      expect(month).toBe(manager.months[1]);
+      expect(month).toBe(manager.months[2]);
     } finally {
       manager.destroy();
     }
@@ -164,7 +184,7 @@ describe('dates to check (FL-1410)', () => {
 
   it('shows no group and no notice when every date is right, or the server says nothing', async () => {
     seed();
-    sdkMock.getTimelineDatesToCheck.mockResolvedValue({ count: 0, years: [], timeBuckets: [] });
+    sdkMock.getTimelineDatesToCheck.mockResolvedValue({ count: 0, years: [], timeBuckets: [], pages: [] });
     const manager = await open();
     try {
       expect(manager.months.map((month) => month.toCheck)).toEqual([false]);
@@ -204,6 +224,95 @@ describe('dates to check (FL-1410)', () => {
       );
       expect(manager.months.some((month) => month.toCheck)).toBe(false);
       expect(manager.datesToCheck).toBeUndefined();
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  // FL-1452 (from the review of PR 1089): between a new filter and the timeline taking it, the old group
+  // is still held. Fix dates asks whether the months are for the options last asked for.
+  it('is not settled while newer options wait to be taken', async () => {
+    seed();
+    const manager = await open();
+    try {
+      expect(manager.settled).toBe(true);
+      const pending = manager.updateOptions({ isFavorite: true });
+      expect(manager.settled).toBe(false);
+      expect(manager.months.some((month) => month.toCheck)).toBe(true);
+      await pending;
+      expect(manager.settled).toBe(true);
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  // FL-1452: a bad import puts thousands of photos on 1 January 2000. The group is read a page at a time,
+  // and a page far from view is let go, as a calendar month's pages are.
+  it('pages a group of several thousand, and releases the pages it no longer needs', async () => {
+    seed();
+    const PAGES = 12;
+    const pageAssets = new Map<string, ReturnType<typeof taken>[]>();
+    const pages = Array.from({ length: PAGES }, (_, page) => {
+      const assets = Array.from({ length: 500 }, (_, index) =>
+        taken(new Date(Date.UTC(2000, 0, 1, 0, 0, 0, 0) + (PAGES * 500 - page * 500 - index) * 1000).toISOString()),
+      );
+      pageAssets.set(assets[0].id, assets);
+      return {
+        timeBucket: '2000-01-01',
+        count: 500,
+        page,
+        after: page === 0 ? null : `after-${page}`,
+        firstAssetId: assets[0].id,
+        lastAssetId: assets.at(-1)!.id,
+      };
+    });
+    sdkMock.getTimelineDatesToCheck.mockResolvedValue({
+      count: PAGES * 500,
+      years: [2000],
+      timeBuckets: ['2000-01-01'],
+      pages,
+    });
+    sdkMock.getTimeBucket.mockImplementation(({ datesToCheck, firstAssetId }) =>
+      Promise.resolve(
+        datesToCheck === TimelineDatesToCheck.Only
+          ? toResponseDto(...pageAssets.get(firstAssetId!)!)
+          : toResponseDto(august),
+      ),
+    );
+    const manager = await open();
+    try {
+      const group = manager.months.filter((month) => month.toCheck);
+      expect(group).toHaveLength(PAGES);
+      expect(manager.datesToCheck).toEqual({ count: 6000, years: [2000] });
+      // nothing of the group is read until a page is wanted
+      expect(group.some((month) => month.isLoaded)).toBe(false);
+
+      await manager.loadTimelineMonth(group[0].yearMonth, { cancelable: false });
+      expect(group[0].getAssets()).toHaveLength(500);
+      expect(group[1].isLoaded).toBe(false);
+      await manager.loadTimelineMonth(group[1].yearMonth, { cancelable: false });
+      expect(sdkMock.getTimeBucket).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          timeBucket: '2000-01-01',
+          datesToCheck: TimelineDatesToCheck.Only,
+          take: 500,
+          after: 'after-1',
+          firstAssetId: pages[1].firstAssetId,
+        }),
+        expect.anything(),
+      );
+
+      for (const month of group.slice(2)) {
+        await manager.loadTimelineMonth(month.yearMonth, { cancelable: false });
+      }
+      // at most eight pages are held; pages out of view were let go
+      expect(group.filter((month) => month.isLoaded).length).toBeLessThanOrEqual(8);
+      expect(group.at(-1)!.getAssets()).toHaveLength(500);
+      const released = group.find((month) => !month.isLoaded)!;
+      expect(released.getAssets()).toHaveLength(0);
+      // and one read brings a page back
+      await manager.loadTimelineMonth(released.yearMonth, { cancelable: false });
+      expect(released.getAssets()).toHaveLength(500);
     } finally {
       manager.destroy();
     }

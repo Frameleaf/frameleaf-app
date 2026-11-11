@@ -60,12 +60,16 @@
     getAllTags,
     getAlbumInfo,
     getAlbumItems,
+    getTimeBucket,
+    getTimelineDatesToCheck,
     LibraryScope,
     LibraryViewScope,
     searchAssets,
+    TimelineDatesToCheck,
     type AlbumResponseDto,
     type AssetResponseDto,
     type TagResponseDto,
+    type TimelineDatesToCheckResponseDto,
   } from '@frameleaf/sdk';
   import { CommandPaletteDefaultProvider, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiImagePlusOutline } from '@mdi/js';
@@ -479,6 +483,55 @@
       itemGeneration++;
     }),
   );
+  /**
+   * FL-1452: a mixed album's photos are no timeline, so its header asks the server how many dates to
+   * check it holds (the photo album reads them from its timeline), and Fix dates reads their ids.
+   */
+  let mixedDatesToCheck = $state<TimelineDatesToCheckResponseDto>();
+  let mixedDatesGeneration = $state(0);
+  let itemsView = $state<LibraryItemsView>();
+  $effect(() => {
+    const id = albumId;
+    void mixedDatesGeneration;
+    mixedDatesToCheck = undefined;
+    if (!mixedAlbum || isSpace) {
+      return;
+    }
+    const current = authManager.captureSession();
+    void (async () => {
+      try {
+        const toCheck = await getTimelineDatesToCheck({ albumId: id, pageSize: 500 });
+        if (current() && albumId === id) {
+          mixedDatesToCheck = toCheck;
+        }
+      } catch {
+        // No count, no link: the album shows as it did.
+      }
+    })();
+  });
+  const fixMixedDates = async () => {
+    const id = albumId;
+    const pages = mixedDatesToCheck?.pages ?? [];
+    try {
+      const buckets = await Promise.all(
+        pages.map((page) =>
+          getTimeBucket({
+            albumId: id,
+            timeBucket: page.timeBucket,
+            datesToCheck: TimelineDatesToCheck.Only,
+            take: page.count,
+            after: page.after ?? undefined,
+          }),
+        ),
+      );
+      if (albumId === id) {
+        await itemsView?.changeDates(buckets.flatMap((bucket) => bucket.id));
+      }
+    } catch (error) {
+      handleError(error, $t('errors.failed_to_load_assets'));
+    }
+  };
+
   /** A Boards collection asks what goes in the .zip (FL-660). */
   const boardsCollection = $derived(designContext && mixedAlbum && !isSpace);
   let downloadOpen = $state(false);
@@ -699,8 +752,8 @@
       onSlideshow={() => handlePromiseError(handleStartSlideshow(view))}
       onToggleActivity={() => (activityOpen = !activityOpen)}
       onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
-      datesToCheck={timelineManager?.datesToCheck?.count}
-      onFixDates={() => void libraryView?.fixDates()}
+      datesToCheck={mixedAlbum ? mixedDatesToCheck?.count : timelineManager?.datesToCheck?.count}
+      onFixDates={() => void (mixedAlbum ? fixMixedDates() : libraryView?.fixDates())}
       onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
       {addMenu}
     />
@@ -766,6 +819,12 @@
   {:else if mixedAlbum}
     {#key albumId}
       <LibraryItemsView
+        bind:this={itemsView}
+        onApplied={(action) => {
+          if (action === 'change-date') {
+            mixedDatesGeneration++;
+          }
+        }}
         title={album.albumName || $t('unnamed_album')}
         query={mixedQuery}
         {album}

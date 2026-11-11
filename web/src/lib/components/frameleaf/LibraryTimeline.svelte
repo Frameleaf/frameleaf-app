@@ -826,6 +826,15 @@
    */
   type DisplayGroup = { key: string; title: string; months: TimelineMonth[]; day?: number; toCheck?: boolean };
   const dayGroup = (day: TimelineDay): DisplayGroup => {
+    // FL-1452: the dates to check are one group over all their pages, whatever days their dates claim
+    if (day.timelineMonth.toCheck) {
+      return {
+        key: 'dates-to-check',
+        title: day.groupTitle,
+        day: day.day,
+        months: timelineManager.months.filter((page) => page.toCheck),
+      };
+    }
     const { year, month } = day.timelineMonth.yearMonth;
     return {
       key: `day-${year}-${month}-${day.day}`,
@@ -856,6 +865,12 @@
     for (const month of timelineManager.months) {
       // FL-1410: the photos whose date cannot be right are one group of their own, after every other
       if (month.toCheck) {
+        // FL-1452: its pages are one group
+        const last = groups.at(-1);
+        if (last?.toCheck) {
+          last.months.push(month);
+          continue;
+        }
         groups.push({
           key: 'dates-to-check',
           title: $t('frameleaf_library_dates_to_check'),
@@ -1702,13 +1717,15 @@
                   {showFileNames}
                   {showTimes}
                   {inPanelId}
-                  showHeader={withHeaders}
+                  showHeader={withHeaders && month.startsGroup}
                   grouped={effectiveGrouping !== 'days' || (!!cells && !sectioned)}
                   headerHeight={month.groupHeaderHeight}
                   headerWidth={timelineManager.dayRows ? timelineManager.viewportWidth : undefined}
                   onOpen={handleOpen}
                   {onToggleSelect}
-                  groupCount={month.calendarPage?.days?.find((entry) => entry.day === timelineDay.day)?.count}
+                  groupCount={month.toCheck
+                    ? timelineManager.datesToCheck?.count
+                    : month.calendarPage?.days?.find((entry) => entry.day === timelineDay.day)?.count}
                   groupState={displayGroupState(dayGroup(timelineDay))}
                   onSelectGroup={(_ids, checked) => selectDisplayGroup(dayGroup(timelineDay), checked)}
                   onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}

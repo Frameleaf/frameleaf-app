@@ -133,6 +133,7 @@
     onGetExtension,
     bookmark,
     onKindsChange,
+    onApplied,
   }: {
     title: string;
     query: DiscoveryQuery;
@@ -162,7 +163,12 @@
       kinds: import('@frameleaf/sdk').LibraryItemSearchKind[] | undefined,
       query: DiscoveryQuery,
     ) => void;
+    /** A bulk action finished on these items (FL-1452). */
+    onApplied?: (action: import('$lib/frameleaf/bulk-actions').BulkActionId, ids: string[]) => void;
   } = $props();
+  let resultsView = $state<ResultsView>();
+  /** FL-1452: select these photos and open Change date on them (a mixed album's "Fix dates"). */
+  export const changeDates = (ids: string[]) => resultsView?.changeDates(ids);
   let viewElement = $state<HTMLElement>();
   let mainElement = $state<HTMLElement>();
   /**
@@ -1245,6 +1251,8 @@
             empty={emptyState}
           />
         {:else}<ResultsView
+            bind:this={resultsView}
+            {onApplied}
             {bulkContext}
             assets={timelineAssets}
             items={results.items}

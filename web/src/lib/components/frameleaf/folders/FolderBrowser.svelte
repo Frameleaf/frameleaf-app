@@ -340,10 +340,12 @@
 
   const showInTimeline = (node: FolderNode) => {
     status = $t('frameleaf_folders_show_in_timeline_status', { values: { name: nameOf(node) } });
-    // The Photos timeline narrowed to the folder path (M3): the time buckets apply it (FL-425).
+    // The Photos timeline narrowed to the folder path (M3): the time buckets apply it (FL-425). With the
+    // slash it is this folder and the folders in it, as its count is, and not `/photos/Trip2` (FL-1452).
+    const prefix = node.path.endsWith('/') ? node.path : `${node.path}/`;
     void goto(
       viewInLibraryHref(
-        { ...emptyDiscoveryQuery(), filter: { originalPath: { startsWith: node.path } } },
+        { ...emptyDiscoveryQuery(), filter: { originalPath: { startsWith: prefix } } },
         location.origin,
       ),
     );

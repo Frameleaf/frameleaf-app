@@ -65290,6 +65290,17 @@
             }
           },
           {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "FL-1452: also return the calendar pages of these photos (pages), as GET /timeline/buckets pages them",
+            "schema": {
+              "minimum": 100,
+              "maximum": 1000,
+              "type": "integer"
+            }
+          },
+          {
             "name": "personId",
             "required": false,
             "in": "query",
@@ -165581,6 +165592,13 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "pages": {
+            "description": "With pageSize: the calendar pages of these photos, in the order asked for. Read each with GET /timeline/bucket, datesToCheck=only and the page options",
+            "items": {
+              "$ref": "#/components/schemas/TimeBucketsResponseDto"
+            },
+            "type": "array"
           },
           "timeBuckets": {
             "description": "The months those dates claim, as GET /timeline/buckets names them and in the order asked for. Read the photos of each with GET /timeline/bucket and datesToCheck=only",

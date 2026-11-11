@@ -67,9 +67,9 @@ function canRunOn(manager: TimelineManager, index: number) {
   if (manager.cells && !manager.dayRows) {
     return true;
   }
-  // FL-1410: the dates to check are a group of their own, whatever the grouping
+  // FL-1410: the dates to check are a group of their own, whatever the grouping; its pages run on (FL-1452)
   if (month.toCheck) {
-    return false;
+    return previous.toCheck;
   }
   if (manager.grouping === 'all') {
     return true;

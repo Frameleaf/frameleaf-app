@@ -142,12 +142,19 @@ export class TimelineService extends BaseService {
    */
   async getDatesToCheck(auth: AuthDto, dto: TimelineDatesToCheckDto): Promise<TimelineDatesToCheckResponseDto> {
     await this.timeBucketChecks(auth, dto);
-    const options = this.buildTimeBucketOptions(auth, { ...dto, datesToCheck: TimelineDatesToCheck.Only });
-    const buckets = await this.assetRepository.getTimeBuckets(options, auth);
+    const { pageSize, ...bucketDto } = dto;
+    const options = this.buildTimeBucketOptions(auth, { ...bucketDto, datesToCheck: TimelineDatesToCheck.Only });
+    // FL-1452: with pageSize, the pages are the buckets: one read gives the counts and where to read them
+    const buckets =
+      pageSize === undefined
+        ? await this.assetRepository.getTimeBuckets(options, auth)
+        : await this.assetRepository.getTimeBuckets(options, auth, { pageSize });
+    const timeBuckets = [...new Set(buckets.map(({ timeBucket }) => timeBucket))];
     return {
       count: buckets.reduce((sum, { count }) => sum + count, 0),
-      years: [...new Set(buckets.map(({ timeBucket }) => new Date(timeBucket).getUTCFullYear()))].sort((a, b) => a - b),
-      timeBuckets: buckets.map(({ timeBucket }) => timeBucket),
+      years: [...new Set(timeBuckets.map((timeBucket) => new Date(timeBucket).getUTCFullYear()))].sort((a, b) => a - b),
+      timeBuckets,
+      ...(pageSize !== undefined && { pages: buckets }),
     };
   }
 

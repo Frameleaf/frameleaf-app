@@ -75,6 +75,7 @@ import {
   visibilityIs,
 } from 'src/utils/locked.js';
 import { fromChecksum } from 'src/utils/request.js';
+import { escapeLikeTerm } from 'src/utils/trash-review.js';
 import { DATABASE_CLOSE_TIMEOUT_SECONDS } from 'src/utils/shutdown.js';
 
 /**
@@ -1003,21 +1004,22 @@ function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColum
   // FL-417: path search follows the photo's own path, never the folder a shared file is kept in
   const ref = column === 'asset.originalPath' ? displayPathSql() : sql.ref(column);
   const predicates = comparisonPredicates(eb, ref, filter);
+  // FL-1452: the text is matched as written: a folder `/photos/Trip_1/` must not also match `TripA1`
   if (filter.like !== undefined) {
-    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${filter.like}) || '%')`);
+    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${escapeLikeTerm(filter.like)}) || '%')`);
   }
   if (filter.notLike !== undefined) {
     // FL-49: "does not contain" keeps items with no value at all (a photo without a lens does not contain
     // "24-70"), as the search palette's -camera: and -lens: do in the design reference (search.mjs)
     predicates.push(
-      sql<SqlBool>`(${ref} is null or f_unaccent(${ref}) not ilike ('%' || f_unaccent(${filter.notLike}) || '%'))`,
+      sql<SqlBool>`(${ref} is null or f_unaccent(${ref}) not ilike ('%' || f_unaccent(${escapeLikeTerm(filter.notLike)}) || '%'))`,
     );
   }
   if (filter.startsWith !== undefined) {
-    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike (f_unaccent(${filter.startsWith}) || '%')`);
+    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike (f_unaccent(${escapeLikeTerm(filter.startsWith)}) || '%')`);
   }
   if (filter.endsWith !== undefined) {
-    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${filter.endsWith}))`);
+    predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${escapeLikeTerm(filter.endsWith)}))`);
   }
   return predicates;
 }
