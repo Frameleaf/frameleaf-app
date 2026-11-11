@@ -108,6 +108,20 @@ export const RATE_LIMITS = Object.freeze({
     principalAcrossAddresses: true,
   },
   /**
+   * Unified sign-in: `POST auth/step-up`, the authenticator's answer to a `verification_required`: 10 tries per
+   * address and 5 wrong codes per session (its token) from any address in ten minutes, whatever transaction
+   * they carry.
+   */
+  stepUp: {
+    bucket: 'step-up',
+    limit: 10,
+    windowSeconds: 10 * MINUTE,
+    principal: 'credential',
+    principalLimit: 5,
+    principalCounts: 'failures',
+    principalAcrossAddresses: true,
+  },
+  /**
    * FL-793: setting up, turning off and renewing two-step sign-in (`auth/two-factor/*`), which take the
    * password or a code: 30 per address and 10 per session (or API key), from any address, in ten minutes.
    */

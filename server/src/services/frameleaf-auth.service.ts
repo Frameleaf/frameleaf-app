@@ -593,15 +593,19 @@ export class FrameleafAuthService extends BaseService {
         if (enforce) {
           await askFor(existing, !cloudVerified && !proved.includes('pwd'));
         }
-        await this.frameleafAccountRepository.upsertLink({
-          userId: user.id,
-          sub: profile.sub,
-          email,
-          emailVerified: true,
-          role,
-          autoRegistered: false,
-          access,
-        });
+        await this.frameleafAccountRepository.upsertLink(
+          {
+            userId: user.id,
+            sub: profile.sub,
+            email,
+            emailVerified: true,
+            role,
+            autoRegistered: false,
+            access,
+          },
+          // a link proved with the password commits only while that password is still the account's
+          proof?.passwordHash,
+        );
         await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
       }
     }

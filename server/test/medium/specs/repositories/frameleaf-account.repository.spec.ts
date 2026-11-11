@@ -35,6 +35,17 @@ it('installs feature tables in the real canonical baseline', async () => {
   await expectCanonicalTables(db, ['frameleaf_account_link', 'frameleaf_session']);
 });
 
+it('writes a first link proved with the password only while that password is still the account’s', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser({ password: 'hash-now' });
+  const sub = `sub-${newUuid()}`;
+
+  await expect(sut.upsertLink(link(user.id, sub), 'hash-before')).rejects.toThrow('This sign-in expired');
+  await expect(sut.getLinkByUser(user.id)).resolves.toBeUndefined();
+
+  await expect(sut.upsertLink(link(user.id, sub), 'hash-now')).resolves.toMatchObject({ userId: user.id, sub });
+});
+
 it('links one Frameleaf account to one local account, keeps linkedAt for the same account', async () => {
   const { ctx, sut } = setup();
   const { user } = await ctx.newUser();

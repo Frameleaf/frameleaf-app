@@ -1,3 +1,4 @@
+import { UnauthorizedException } from '@nestjs/common';
 import { type JWK, SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, importJWK, jwtVerify } from 'jose';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -438,6 +439,7 @@ describe(FrameleafAuthService.name, () => {
       expect(mocks.user.create).not.toHaveBeenCalled();
       expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
         expect.objectContaining({ userId: existing.id, autoRegistered: false }),
+        undefined,
       );
       expect(response.userId).toBe(existing.id);
     });
@@ -776,6 +778,20 @@ describe(FrameleafAuthService.name, () => {
         expect(mocks.session.create).not.toHaveBeenCalled();
       });
 
+      it('fences the link write itself with the proved password', async () => {
+        const { transaction } = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j11', claims: basicClaims }) }, capable),
+        );
+        // the password changes after the early check: the link write's own check refuses it
+        mocks.frameleafAccount.upsertLink.mockRejectedValueOnce(new UnauthorizedException('This sign-in expired'));
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({ status: 401 });
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: existing.id }),
+          'bcrypt-hash',
+        );
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      });
+
       it('lets an older client link by email match as today, even when the account has an authenticator', async () => {
         await enrol();
         await sut.exchangeToken({ token: await mint({ jti: 'j9', claims: basicClaims }) }, loginDetails);
@@ -960,6 +976,7 @@ describe(FrameleafAuthService.name, () => {
       expect(mocks.user.create).not.toHaveBeenCalled();
       expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
         expect.objectContaining({ userId: existing.id, autoRegistered: false }),
+        undefined,
       );
     });
 

@@ -39,6 +39,9 @@ class TestController {
   @RateLimited(RATE_LIMITS.twoFactorLogin)
   twoFactorLogin() {}
 
+  @RateLimited(RATE_LIMITS.stepUp)
+  stepUp() {}
+
   @RemoteMediaCeiling()
   thumbnail() {}
 
@@ -246,6 +249,25 @@ describe(RateLimitGuard.name, () => {
     const request = makeRequest({ body: { twoFactorToken: 'challenge-1', code: '123456' } });
     await sut.canActivate(contextFor(TestController.prototype.twoFactorLogin, request));
     expect(request.frameleafRateLimitFailures).toEqual([expect.objectContaining({ limit: 5, counts: 'failures' })]);
+  });
+
+  it('counts wrong step-up codes per session from any address, whatever transaction they carry', async () => {
+    for (const [ip, transaction] of [
+      ['198.51.100.7', 'transaction-1'],
+      ['203.0.113.9', 'transaction-2'],
+    ]) {
+      const request = makeRequest({
+        ip,
+        headers: { authorization: 'Bearer session-token' },
+        body: { transaction, code: '123456' },
+      });
+      await sut.canActivate(contextFor(TestController.prototype.stepUp, request));
+      expect(store.hit).toHaveBeenLastCalledWith(
+        `frameleaf:rate-limit:step-up:principal:${keyed('credential:session-token')}`,
+        600,
+      );
+      expect(request.frameleafRateLimitFailures).toEqual([expect.objectContaining({ limit: 5, counts: 'failures' })]);
+    }
   });
 
   it('counts a shared link by its key and address and an admin action by the credential presented', async () => {

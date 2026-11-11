@@ -111,7 +111,7 @@ export class AuthController {
   })
   @Authenticated({ permission: false })
   @RemoteSignInExempt()
-  @RateLimited(RATE_LIMITS.twoFactorLogin)
+  @RateLimited(RATE_LIMITS.stepUp)
   @HttpCode(HttpStatus.NO_CONTENT)
   stepUp(@Auth() auth: AuthDto, @Body() dto: StepUpDto, @GetLoginDetails() loginDetails: LoginDetails): Promise<void> {
     return this.service.stepUp(auth, dto, loginDetails);

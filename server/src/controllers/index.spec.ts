@@ -216,7 +216,7 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   // FL-793: the code step after a right password, and two-step sign-in changes (password proof)
   'POST auth/login/two-factor': RATE_LIMITS.twoFactorLogin,
   // unified sign-in: the authenticator's answer to a verification_required
-  'POST auth/step-up': RATE_LIMITS.twoFactorLogin,
+  'POST auth/step-up': RATE_LIMITS.stepUp,
   'POST auth/two-factor/setup': RATE_LIMITS.twoFactorChange,
   'POST auth/two-factor/enable': RATE_LIMITS.twoFactorChange,
   'DELETE auth/two-factor': RATE_LIMITS.twoFactorChange,
