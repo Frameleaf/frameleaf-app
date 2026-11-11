@@ -55,6 +55,7 @@ import { DescriptionTagCleanupService } from 'src/services/description-tag-clean
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
+import { DesktopOfflineAlbumService } from 'src/services/desktop-offline-album.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
@@ -231,6 +232,7 @@ export const services = [
   DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,
   DesktopDeviceService,
+  DesktopOfflineAlbumService,
   PhotoSourceService,
   SourceResourceAuthService,
   DesktopMlService,

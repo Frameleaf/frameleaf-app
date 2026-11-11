@@ -116,6 +116,22 @@ export class SessionRepository {
       .executeTakeFirst();
   }
 
+  /** Resolve a narrow native album grant without reading its browser session credential. */
+  getOfflineAlbumOwner(sessionId: string, ownerId: string) {
+    return this.db
+      .selectFrom('session')
+      .innerJoin('user', 'user.id', 'session.userId')
+      .select(columns.authUser)
+      .where('session.id', '=', sessionId)
+      .where('session.userId', '=', ownerId)
+      .where('user.deletedAt', 'is', null)
+      .where('user.importClaimPending', '=', false)
+      .where((eb) =>
+        eb.or([eb('session.expiresAt', 'is', null), eb('session.expiresAt', '>', sql<Date>`clock_timestamp()`)]),
+      )
+      .executeTakeFirst();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   getByUserId(userId: string) {
     return this.db

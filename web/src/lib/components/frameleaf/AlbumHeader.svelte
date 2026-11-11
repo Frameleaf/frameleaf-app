@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack, type Snippet } from 'svelte';
+  import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
@@ -197,10 +197,47 @@
   const currentUserId = $derived(authManager.user.id);
   let automationAvailable = $state(false);
   let desktopOffline = $state(false);
+  let localDesktopOffline = $state(false);
+  let requestingOffline = $state(false);
+  let offlineRequest: AbortController | undefined;
+  onDestroy(() => offlineRequest?.abort());
+  async function keepOffline() {
+    if (requestingOffline) return;
+    const id = album.id;
+    const path = `/__frameleaf_desktop__/offline-albums/${id}`;
+    if (!localDesktopOffline) {
+      globalThis.location.assign(path);
+      return;
+    }
+    const sessionCurrent = authManager.captureSession();
+    const request = new AbortController();
+    offlineRequest = request;
+    requestingOffline = true;
+    try {
+      const response = await fetch(`/api/albums/${id}/desktop-offline-grant`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal: request.signal,
+      });
+      const value = response.ok ? await response.json() : null;
+      if (request.signal.aborted || !sessionCurrent() || album.id !== id) return;
+      if (typeof value?.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(value.token)) {
+        throw new Error('Offline album unavailable');
+      }
+      globalThis.location.assign(`${path}#${value.token}`);
+    } catch (error) {
+      if (!request.signal.aborted && sessionCurrent()) handleError(error, $t('frameleaf_album_keep_offline_error'));
+    } finally {
+      offlineRequest = undefined;
+      requestingOffline = false;
+    }
+  }
   onMount(() => {
     desktopOffline =
       (globalThis as typeof globalThis & { __FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__?: boolean })
         .__FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__ === true;
+    localDesktopOffline = Reflect.get(globalThis, '__FRAMELEAF_DESKTOP_LOCAL_OFFLINE_ALBUMS__') === true;
     void Promise.resolve(getWorkflowCapabilities())
       .then((value) => {
         automationAvailable = value?.sourceFilters ?? false;
@@ -824,8 +861,8 @@
       {#snippet trigger()}
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
-      {#if desktopOffline && owner && album.kind === AlbumKind.Album && album.isLocked === false && assetCount > 0}
-        <MenuItem onSelect={() => location.assign(`/__frameleaf_desktop__/offline-albums/${album.id}`)}>
+      {#if (desktopOffline || localDesktopOffline) && owner && album.kind === AlbumKind.Album && album.isLocked === false && assetCount > 0}
+        <MenuItem disabled={requestingOffline} onSelect={keepOffline}>
           <Icon icon={mdiDownloadOutline} size="18" />
           {$t('frameleaf_album_keep_offline')}
         </MenuItem>
