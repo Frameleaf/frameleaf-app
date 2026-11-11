@@ -170,7 +170,7 @@ it.each(['chooser', 'request', 'session'])('keeps featured-photo selection owned
   }
 });
 
-// FL-1457 (N1): a phone that shows no footer under a photo has Full screen as the last item of "…".
+// FL-1457 (N1): a phone that shows no footer under a photo has Full screen at the end of the Viewer group in "…".
 describe('Full screen in "…" on a phone (FL-1457)', () => {
   const widthIs = (phone: boolean) =>
     vi.spyOn(globalThis, 'matchMedia').mockImplementation(
@@ -184,15 +184,23 @@ describe('Full screen in "…" on a phone (FL-1457)', () => {
     );
   afterEach(() => vi.restoreAllMocks());
 
-  it('is the last item, and toggles full screen', async () => {
+  it('ends the Viewer group, and toggles full screen', async () => {
     widthIs(true);
     const onToggleFullscreen = vi.fn();
     const asset = assetFactory.build({ ownerId: 'owner', type: AssetTypeEnum.Image });
-    render(ViewerMoreMenu, { asset, preAction: vi.fn(), onAction: vi.fn(), onToggleFullscreen });
+    render(ViewerMoreMenu, {
+      asset,
+      preAction: vi.fn(),
+      onAction: vi.fn(),
+      canNavigateCollection: true,
+      onToggleFullscreen,
+    });
 
-    const items = screen.getAllByRole('menuitem');
-    expect(items.at(-1)).toHaveTextContent('frameleaf_viewer_enter_fullscreen');
-    await fireEvent.click(items.at(-1)!);
+    const items = screen.getAllByRole('menuitem').map((item) => item.textContent?.trim());
+    const fullScreen = items.findIndex((text) => text?.includes('frameleaf_viewer_enter_fullscreen'));
+    expect(items[fullScreen - 1]).toContain('frameleaf_viewer_slideshow_settings');
+    expect(items[fullScreen + 1]).toContain('frameleaf_image_display_auto');
+    await fireEvent.click(screen.getByText('frameleaf_viewer_enter_fullscreen'));
     expect(onToggleFullscreen).toHaveBeenCalledOnce();
   });
 
@@ -206,7 +214,7 @@ describe('Full screen in "…" on a phone (FL-1457)', () => {
       onToggleFullscreen: vi.fn(),
       fullscreen: true,
     });
-    expect(screen.getAllByRole('menuitem').at(-1)).toHaveTextContent('frameleaf_viewer_exit_fullscreen');
+    expect(screen.getByText('frameleaf_viewer_exit_fullscreen')).toBeInTheDocument();
   });
 
   it('is not offered on a wide screen, nor where the phone keeps its footer', () => {

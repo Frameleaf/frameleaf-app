@@ -487,6 +487,18 @@
   {/if}
 {/each}
 
+<!-- FL-1457 (N1, prototype MediaViewer.jsx): the Viewer group, always the last one, ends with Full screen on a phone. -->
+{#if onToggleFullscreen && phone.current}
+  {#if groups.at(-1)?.id !== 'viewer'}
+    <ViewerMenuGroupLabel text={$t('frameleaf_viewer_group_viewer')} divided={groups.length > 0} />
+  {/if}
+  <MenuOption
+    icon={fullscreen ? mdiFullscreenExit : mdiFullscreen}
+    text={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
+    onClick={onToggleFullscreen}
+  />
+{/if}
+
 {#if isImageAsset(asset) && !asset.duration}
   <ViewerMenuGroupLabel text={$t('frameleaf_image_display')} divided />
   <MenuOption
@@ -500,13 +512,5 @@
     subtitle={$imageViewingPreference === 'sdr' ? $t('selected') : ''}
     icon={$imageViewingPreference === 'sdr' ? mdiCheckCircleOutline : undefined}
     onClick={() => imageViewingPreference.set('sdr')}
-  />
-{/if}
-
-{#if onToggleFullscreen && phone.current}
-  <MenuOption
-    icon={fullscreen ? mdiFullscreenExit : mdiFullscreen}
-    text={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
-    onClick={onToggleFullscreen}
   />
 {/if}
