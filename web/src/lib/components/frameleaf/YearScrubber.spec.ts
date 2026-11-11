@@ -108,6 +108,52 @@ describe('YearScrubber', () => {
     expect(screen.getByText('Dates to check')).toBeInTheDocument();
   });
 
+  // FL-1452: at the very bottom the top of the view is past the last month ('lead-out'); the marker
+  // stayed on the first month there.
+  it('keeps the marker on the last month at the very bottom of the timeline', () => {
+    const timelineManager = {
+      scrubberTimelineHeight: 1000,
+      topSectionHeight: 0,
+      scrubberMonths: [
+        { year: 2026, month: 8, title: 'August 2026', assetCount: 3, height: 600 },
+        { year: 2026, month: 7, title: 'July 2026', assetCount: 1, height: 400 },
+      ],
+    } as unknown as TimelineManager;
+    const { container } = render(YearScrubber, {
+      timelineManager,
+      height: 600,
+      viewportTopMonth: 'lead-out',
+      viewportTopMonthScrollPercent: 0,
+    });
+    const marker = container.querySelector<HTMLElement>('.fl-scrub-marker')!;
+    expect(marker.style.top).toBe('100%');
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '1');
+    expect(container.querySelector('.fl-scrub-tick.is-current')).toBe(container.querySelectorAll('.fl-scrub-tick')[1]);
+  });
+
+  // FL-1452: the Years and Months cards leave the dates to check out; their scrubber has no dead end for them
+  it('leaves the dates to check off the track over the cards', () => {
+    const timelineManager = {
+      scrubberTimelineHeight: 1000,
+      topSectionHeight: 0,
+      scrubberMonths: [
+        { year: 2026, month: 8, title: 'August 2026', assetCount: 3, height: 600 },
+        { year: 2024, month: 7, title: 'July 2024', assetCount: 1, height: 200 },
+        { year: 0, month: 1, title: 'Dates to check', assetCount: 55, height: 200, toCheck: true },
+      ],
+    } as unknown as TimelineManager;
+    const { container } = render(YearScrubber, {
+      timelineManager,
+      height: 600,
+      datedOnly: true,
+      viewportTopMonth: { year: 2024, month: 7 },
+      viewportTopMonthScrollPercent: 1,
+    });
+    expect(container.querySelectorAll('.fl-scrub-tick')).toHaveLength(2);
+    // the dated months fill the whole track
+    expect(container.querySelector<HTMLElement>('.fl-scrub-marker')!.style.top).toBe('100%');
+  });
+
   // LIB-P4: the header block spans the scrubber's own column too, so the track keeps clear of it there.
   it('keeps its track clear of the page header in its own column as well', () => {
     render(YearScrubber, { timelineManager: new TimelineManager(), clear: 120 });

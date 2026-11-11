@@ -51,6 +51,7 @@
   import { getGlobalActions } from '$lib/services/app.service';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
+  import { readDatesToCheckIds } from '$lib/utils/dates-to-check';
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
@@ -60,12 +61,14 @@
     getAllTags,
     getAlbumInfo,
     getAlbumItems,
+    getTimelineDatesToCheck,
     LibraryScope,
     LibraryViewScope,
     searchAssets,
     type AlbumResponseDto,
     type AssetResponseDto,
     type TagResponseDto,
+    type TimelineDatesToCheckResponseDto,
   } from '@frameleaf/sdk';
   import { CommandPaletteDefaultProvider, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiImagePlusOutline } from '@mdi/js';
@@ -361,6 +364,8 @@
     if (!isCurrentView(view)) {
       return;
     }
+    // FL-1452: what the album holds may have changed, so a mixed album reads its dates to check again
+    mixedDatesGeneration++;
     await refreshAlbum();
     if (!isCurrentView(view) || manager !== timelineManager) {
       return;
@@ -431,6 +436,8 @@
 
   const onAlbumRemoveAssets = async ({ assetIds, albumIds }: { assetIds: string[]; albumIds: string[] }) => {
     if (albumIds.includes(albumId)) {
+      // FL-1452: a mixed album reads its dates to check again
+      mixedDatesGeneration++;
       await handleRemoveAssets(assetIds);
     }
   };
@@ -479,6 +486,56 @@
       itemGeneration++;
     }),
   );
+  /**
+   * FL-1452: a mixed album's photos are no timeline, so its header asks the server how many dates to
+   * check it holds (the photo album reads them from its timeline), and Fix dates reads their ids.
+   */
+  let mixedDatesToCheck = $state<TimelineDatesToCheckResponseDto>();
+  let mixedDatesGeneration = $state(0);
+  let itemsView = $state<LibraryItemsView>();
+  $effect(() => {
+    const id = albumId;
+    const generation = mixedDatesGeneration;
+    mixedDatesToCheck = undefined;
+    if (!mixedAlbum || isSpace) {
+      return;
+    }
+    const current = authManager.captureSession();
+    void (async () => {
+      try {
+        const toCheck = await getTimelineDatesToCheck({ albumId: id });
+        // An older read must not replace a newer one (a count read again after Change date)
+        if (current() && albumId === id && mixedDatesGeneration === generation) {
+          mixedDatesToCheck = toCheck;
+        }
+      } catch {
+        // No count, no link: the album shows as it did.
+      }
+    })();
+  });
+  let fixingMixedDates = false;
+  const fixMixedDates = async () => {
+    // One Fix dates at a time: a second click while the ids are read does nothing
+    if (fixingMixedDates) {
+      return;
+    }
+    fixingMixedDates = true;
+    const view = albumView;
+    const generation = mixedDatesGeneration;
+    try {
+      const ids = await readDatesToCheckIds({ albumId: view.albumId });
+      // Not if the page moved on (another album, back again, or another session) or the album's photos
+      // changed while they were read
+      if (isCurrentView(view) && mixedDatesGeneration === generation) {
+        await itemsView?.changeDates(ids);
+      }
+    } catch (error) {
+      handleError(error, $t('errors.failed_to_load_assets'));
+    } finally {
+      fixingMixedDates = false;
+    }
+  };
+
   /** A Boards collection asks what goes in the .zip (FL-660). */
   const boardsCollection = $derived(designContext && mixedAlbum && !isSpace);
   let downloadOpen = $state(false);
@@ -578,6 +635,8 @@
     if (!albumIds.includes(albumId)) {
       return;
     }
+    // FL-1452: a mixed album reads its dates to check again
+    mixedDatesGeneration++;
     await refreshAlbum();
   };
 
@@ -699,8 +758,8 @@
       onSlideshow={() => handlePromiseError(handleStartSlideshow(view))}
       onToggleActivity={() => (activityOpen = !activityOpen)}
       onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
-      datesToCheck={timelineManager?.datesToCheck?.count}
-      onFixDates={() => void libraryView?.fixDates()}
+      datesToCheck={mixedAlbum ? mixedDatesToCheck?.count : timelineManager?.datesToCheckCount}
+      onFixDates={() => void (mixedAlbum ? fixMixedDates() : libraryView?.fixDates())}
       onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
       {addMenu}
     />
@@ -766,6 +825,12 @@
   {:else if mixedAlbum}
     {#key albumId}
       <LibraryItemsView
+        bind:this={itemsView}
+        onApplied={(action) => {
+          if (action === 'change-date') {
+            mixedDatesGeneration++;
+          }
+        }}
         title={album.albumName || $t('unnamed_album')}
         query={mixedQuery}
         {album}

@@ -19712,6 +19712,8 @@ export type TimeBucketsResponseDto = {
 export type TimelineDatesToCheckResponseDto = {
     /** Photos whose date cannot be right */
     count: number;
+    /** With pageSize: the calendar pages of these photos, in the order asked for. Read each with GET /timeline/bucket, datesToCheck=only and the page options */
+    pages?: TimeBucketsResponseDto[];
     /** The months those dates claim, as GET /timeline/buckets names them and in the order asked for. Read the photos of each with GET /timeline/bucket and datesToCheck=only */
     timeBuckets: string[];
     /** The years those dates claim, oldest first, for one short sentence ("1970 and 2031") */
@@ -22497,6 +22499,8 @@ export type TimelineDatesToCheckDto = {
     order?: AssetOrder;
     /** Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf) */
     orderBy?: AssetOrderBy;
+    /** FL-1452: also return the calendar pages of these photos (pages), as GET /timeline/buckets pages them */
+    pageSize?: number;
     /** Filter assets containing a specific person (face recognition) */
     personId?: string;
     /** Filter assets in which the caller confirmed one of their own pets */
@@ -38615,7 +38619,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
 /**
  * Get the dates to check
  */
-export function getTimelineDatesToCheck({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimelineDatesToCheck({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, pageSize, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -38630,6 +38634,7 @@ export function getTimelineDatesToCheck({ albumId, assetType, bbox, bestPhotos, 
     lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
+    pageSize?: number;
     personId?: string;
     petId?: string;
     slug?: string;
@@ -38660,6 +38665,7 @@ export function getTimelineDatesToCheck({ albumId, assetType, bbox, bestPhotos, 
         lockReason,
         order,
         orderBy,
+        pageSize,
         personId,
         petId,
         slug,

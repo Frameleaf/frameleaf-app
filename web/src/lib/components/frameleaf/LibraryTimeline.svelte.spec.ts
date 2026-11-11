@@ -615,6 +615,11 @@ describe('dates that cannot be right (FL-1410)', () => {
       count: 2,
       years: [1970, 2031],
       timeBuckets: ['2031-06-01', '1970-01-01'],
+      // FL-1452: two pages, one group
+      pages: [
+        { timeBucket: '2031-06-01', count: 1, page: 0, after: null },
+        { timeBucket: '1970-01-01', count: 1, page: 0, after: null },
+      ],
     });
     sdkMock.getTimeBucket.mockImplementation(({ timeBucket, datesToCheck }) =>
       Promise.resolve(
@@ -677,7 +682,8 @@ describe('dates that cannot be right (FL-1410)', () => {
       );
     expect(titles()).toEqual(['frameleaf_library_group_all', 'frameleaf_library_dates_to_check']);
     expect(screen.getAllByTestId('frameleaf-group-flag')).toHaveLength(1);
-    expect(manager.months.at(-1)!.startsGroup).toBe(true);
+    // its pages are one group: the first opens it, the next runs on under the same header (FL-1452)
+    expect(manager.months.filter((month) => month.toCheck).map((month) => month.startsGroup)).toEqual([true, false]);
   });
 
   it('says nothing where the page cannot fix dates, or outside the Timeline', async () => {

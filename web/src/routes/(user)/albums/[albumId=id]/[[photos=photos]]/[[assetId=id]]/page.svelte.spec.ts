@@ -1,4 +1,13 @@
-import { AlbumKind, AlbumUserRole, getAlbumInfo, LibraryScope, type AlbumResponseDto } from '@frameleaf/sdk';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  getAlbumInfo,
+  getTimeBucket,
+  getTimelineDatesToCheck,
+  LibraryScope,
+  TimelineDatesToCheck,
+  type AlbumResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
@@ -11,6 +20,7 @@ import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { getAlbumAssetsActions, handleDeleteAlbum } from '$lib/services/album.service';
 import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { albumLibraryFixture } from '@test-data/components/album-library-fixture';
+import { libraryItemsFixture } from '@test-data/components/library-items-fixture';
 import { deferredPromise } from '@test-data/deferred';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -19,7 +29,14 @@ import AlbumPage from './+page.svelte';
 
 const owners = vi.hoisted(() => ({
   current: true,
-  header: undefined as { onRefresh: () => Promise<void>; onSlideshow: () => Promise<void> } | undefined,
+  header: undefined as
+    | {
+        onRefresh: () => Promise<void>;
+        onSlideshow: () => Promise<void>;
+        datesToCheck?: number;
+        onFixDates?: () => void;
+      }
+    | undefined,
 }));
 
 vi.mock('$app/navigation', () => ({
@@ -40,6 +57,8 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   // A collection's photos page by cursor through the album subtree filter.
   searchAssets: vi.fn().mockResolvedValue({ assets: { items: [], nextCursor: null } }),
   getAlbumItems: vi.fn().mockResolvedValue({ bookmarkCount: 0 }),
+  getTimelineDatesToCheck: vi.fn(),
+  getTimeBucket: vi.fn(),
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { authenticated: true, user: { id: 'owner' }, captureSession: () => () => owners.current },
@@ -75,6 +94,10 @@ vi.mock(
   '$lib/components/frameleaf/LibraryView.svelte',
   async () => import('@test-data/components/AlbumLibraryFixture.svelte'),
 );
+vi.mock(
+  '$lib/components/frameleaf/LibraryItemsView.svelte',
+  async () => import('@test-data/components/LibraryItemsFixture.svelte'),
+);
 vi.mock('$lib/components/frameleaf/ResultsAssetViewer.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/ResultsView.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/SpaceMediaComments.svelte', () => ({ default: () => {} }));
@@ -83,6 +106,7 @@ vi.mock('$lib/components/timeline/TimelineAssetViewer.svelte', () => ({ default:
 beforeEach(() => {
   owners.current = true;
   owners.header = undefined;
+  libraryItemsFixture.changeDates = vi.fn();
   albumLibraryFixture.manager = { refresh: vi.fn().mockResolvedValue(undefined), getRandomAsset: vi.fn() };
   slideshowStore.slideshowNavigation.set(SlideshowNavigation.Shuffle);
   slideshowStore.slideshowState.set(SlideshowState.None);
@@ -410,4 +434,47 @@ describe('an empty album', () => {
     expect(empty).toHaveTextContent('frameleaf_albums_empty_smart_text');
     expect(within(empty).queryByRole('button')).toBeNull();
   });
+});
+
+// FL-1452: an album with bookmarks or documents is drawn without a timeline; its header still says how
+// many dates to check it holds, and Fix dates opens Change date on them.
+it('gives a mixed album the dates to check count and a Fix dates that opens Change date on them', async () => {
+  const pages = [
+    { timeBucket: '2000-01-01', count: 2, page: 0, after: null },
+    { timeBucket: '1970-01-01', count: 1, page: 0, after: null },
+  ];
+  vi.mocked(getTimelineDatesToCheck).mockResolvedValue({
+    count: 3,
+    years: [1970, 2000],
+    timeBuckets: ['2000-01-01', '1970-01-01'],
+    pages,
+  });
+  vi.mocked(getTimeBucket).mockImplementation(({ timeBucket }) =>
+    Promise.resolve({ id: timeBucket === '2000-01-01' ? ['a', 'b'] : ['c'] } as never),
+  );
+  const mixed = albumFactory.build({ id: 'mixed', kind: AlbumKind.Album, libraryScope: LibraryScope.Both });
+  render(AlbumPage, { data: data(mixed) as never });
+
+  await waitFor(() => expect(owners.header?.datesToCheck).toBe(3));
+  expect(getTimelineDatesToCheck).toHaveBeenCalledWith({ albumId: 'mixed' });
+
+  owners.header!.onFixDates!();
+  await waitFor(() => expect(libraryItemsFixture.changeDates).toHaveBeenCalledWith(['a', 'b', 'c']));
+  expect(getTimeBucket).toHaveBeenCalledWith({
+    albumId: 'mixed',
+    timeBucket: '2000-01-01',
+    datesToCheck: TimelineDatesToCheck.Only,
+    take: 2,
+  });
+
+  // A date set by hand is no longer one to check: the count is read again
+  vi.mocked(getTimelineDatesToCheck).mockResolvedValue({ count: 0, years: [], timeBuckets: [], pages: [] });
+  libraryItemsFixture.onApplied!('change-date', ['a', 'b', 'c']);
+  await waitFor(() => expect(owners.header?.datesToCheck).toBe(0));
+
+  // Photos added to the album: the count is read again
+  vi.mocked(getAlbumInfo).mockResolvedValue(mixed);
+  vi.mocked(getTimelineDatesToCheck).mockResolvedValue({ count: 1, years: [2031], timeBuckets: ['2031-06-01'] });
+  eventManager.emit('AlbumAddAssets', { albumIds: ['mixed'], assetIds: ['added'] });
+  await waitFor(() => expect(owners.header?.datesToCheck).toBe(1));
 });

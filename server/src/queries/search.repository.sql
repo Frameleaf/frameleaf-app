@@ -2610,14 +2610,16 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
-  and f_unaccent ("asset_exif"."description") ilike ('%' || f_unaccent ($7) || '%')
+  and f_unaccent ("asset_exif"."description") ilike (
+    '%' || regexp_replace(f_unaccent ($7), $8, $9, 'g') || '%'
+  )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $8
+  $10
 offset
-  $9
+  $11
 
 -- SearchRepository.searchMetadataV3 (string-pattern-notLike)
 select
@@ -2691,15 +2693,17 @@ where
   )
   and (
     "asset_exif"."description" is null
-    or f_unaccent ("asset_exif"."description") not ilike ('%' || f_unaccent ($7) || '%')
+    or f_unaccent ("asset_exif"."description") not ilike (
+      '%' || regexp_replace(f_unaccent ($7), $8, $9, 'g') || '%'
+    )
   )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $8
+  $10
 offset
-  $9
+  $11
 
 -- SearchRepository.searchMetadataV3 (string-pattern-startsWith)
 select
@@ -2771,14 +2775,16 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
-  and f_unaccent ("asset"."originalFileName") ilike (f_unaccent ($7) || '%')
+  and f_unaccent ("asset"."originalFileName") ilike (
+    regexp_replace(f_unaccent ($7), $8, $9, 'g') || '%'
+  )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $8
+  $10
 offset
-  $9
+  $11
 
 -- SearchRepository.searchMetadataV3 (string-pattern-camera)
 select
@@ -2850,14 +2856,16 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
-  and f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($7) || '%')
+  and f_unaccent ("asset_exif"."make") ilike (
+    '%' || regexp_replace(f_unaccent ($7), $8, $9, 'g') || '%'
+  )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $8
+  $10
 offset
-  $9
+  $11
 
 -- SearchRepository.searchMetadataV3 (string-similarity-ocr)
 select

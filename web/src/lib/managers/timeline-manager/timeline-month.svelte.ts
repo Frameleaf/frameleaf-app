@@ -22,7 +22,6 @@ import {
   fromTimelinePlainDate,
   fromTimelinePlainYearMonth,
   getTimes,
-  type TimelineYearMonth,
   getOrderingDate,
 } from '$lib/utils/timeline-util';
 import { GroupInsertionCache } from './group-insertion-cache.svelte';
@@ -86,18 +85,17 @@ export class TimelineMonth {
   flowContentHeight = $state(0);
 
   /**
-   * FL-1410: set on the one group that holds the photos whose date cannot be right, which waits at the
-   * end of a dated timeline: the time buckets (`datesToCheck=only`) its photos are read from. It is not
-   * a calendar month; its photos keep the wrong dates they claim.
+   * FL-1410: set on the pages of the one group that holds the photos whose date cannot be right, which
+   * waits at the end of a dated timeline. Each page is read from the month its photos claim
+   * (`calendarPage.timeBucket`, `datesToCheck=only`). It is not a calendar month; its photos keep the
+   * wrong dates they claim.
    */
-  toCheckBuckets: string[] | undefined = undefined;
-  get toCheck(): boolean {
-    return this.toCheckBuckets !== undefined;
-  }
+  toCheck = false;
 
   constructor(
     timelineManager: TimelineManager,
-    yearMonth: TimelineYearMonth,
+    /** FL-1452: a page of the dates to check brings its own place in the group (`page`). */
+    yearMonth: TimelinePageKey,
     initialCount: number,
     loaded: boolean,
     order: AssetOrder = AssetOrder.Desc,
@@ -114,7 +112,7 @@ export class TimelineMonth {
     this.yearMonth = {
       year: yearMonth.year,
       month: yearMonth.month,
-      ...(calendarPage?.page !== undefined && { page: calendarPage.page }),
+      ...((yearMonth.page ?? calendarPage?.page) !== undefined && { page: yearMonth.page ?? calendarPage?.page }),
     };
     this.title = title ?? formatTimelineMonthTitle(fromTimelinePlainYearMonth(yearMonth));
     this.heading = title ?? formatTimelineMonthHeading(fromTimelinePlainYearMonth(yearMonth));
@@ -374,12 +372,17 @@ export class TimelineMonth {
    */
   get startsGroup(): boolean {
     const { grouping, months } = this.timelineManager;
+    // FL-1410: the dates to check are a group of their own, whatever the grouping; its pages are one
+    // group with one header (FL-1452)
+    if (this.toCheck) {
+      const at = this.#index;
+      return at <= 0 || !months[at - 1].toCheck;
+    }
     if (grouping === 'days') {
       return true;
     }
     const index = this.#index;
-    // FL-1410: the dates to check are a group of their own, whatever the grouping
-    if (index <= 0 || this.toCheck) {
+    if (index <= 0) {
       return true;
     }
     if (grouping === 'months') {
@@ -396,7 +399,7 @@ export class TimelineMonth {
    */
   get groupHeaderHeight(): number {
     const manager = this.timelineManager;
-    if (manager.grouping === 'days' || this.startsGroup) {
+    if (this.startsGroup) {
       return manager.headerHeight;
     }
     return manager.continuousGroups && !manager.cells ? manager.justifiedLayoutOptions.spacing : manager.gap;
