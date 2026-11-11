@@ -4,13 +4,18 @@
  * writes anything: adding a photo or changing its date is always the person's choice (FL-1090 mock).
  */
 
+import { withGoodDates } from 'src/utils/date-sanity.js';
+
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
 /** A gap longer than this between album photos starts a new trip segment; a day without photos is still the trip. */
 export const TRIP_GAP_MS = 48 * HOUR_MS;
 /** Photos taken this long before the first or after the last album photo of a segment still count. */
 export const TRIP_PADDING_MS = 12 * HOUR_MS;
-/** ponytail: a segment longer than three weeks is an everyday album, not a trip; suggest nothing for it. */
+/**
+ * FL-1411: an album is a trip only when all its photos fit in three weeks. A catch-all album has busy weeks
+ * too, and those are not trips; suggest nothing for it.
+ */
 export const TRIP_MAX_SPAN_MS = 21 * DAY_MS;
 export const TRIP_MIN_PHOTOS = 3;
 /** A located photo within this distance of any located album photo is at the trip's places. */
@@ -87,20 +92,21 @@ const located = <T extends { latitude: number | null; longitude: number | null }
   Number.isFinite(item.latitude) &&
   Number.isFinite(item.longitude);
 
-/** The album's trip: time segments split at long gaps, the places photographed, and the cameras used. */
-export const describeTrip = (photos: TripPhoto[]): Trip | undefined => {
-  const sorted = [...photos].sort((a, b) => a.takenAt.getTime() - b.takenAt.getTime());
+/**
+ * The album's trip: time segments split at long gaps, the places photographed, and the cameras used. Dates
+ * that cannot be right (a camera's reset date, a date still to come) are left out before anything is measured,
+ * so one of them neither makes a trip album look years long nor counts as part of the trip.
+ */
+export const describeTrip = (photos: TripPhoto[], now: Date = new Date()): Trip | undefined => {
+  const sorted = withGoodDates(photos, now).sort((a, b) => a.takenAt.getTime() - b.takenAt.getTime());
+  if (sorted.length === 0 || sorted.at(-1)!.takenAt.getTime() - sorted[0].takenAt.getTime() > TRIP_MAX_SPAN_MS) return;
   const groups: TripPhoto[][] = [];
   for (const photo of sorted) {
     const current = groups.at(-1);
     if (current && photo.takenAt.getTime() - current.at(-1)!.takenAt.getTime() <= TRIP_GAP_MS) current.push(photo);
     else groups.push([photo]);
   }
-  const trips = groups.filter(
-    (group) =>
-      group.length >= TRIP_MIN_PHOTOS &&
-      group.at(-1)!.takenAt.getTime() - group[0].takenAt.getTime() <= TRIP_MAX_SPAN_MS,
-  );
+  const trips = groups.filter((group) => group.length >= TRIP_MIN_PHOTOS);
   if (trips.length === 0) return;
   const kept = trips.flat();
   const points = kept.filter((photo) => located(photo)) as (TripPhoto & { latitude: number; longitude: number })[];

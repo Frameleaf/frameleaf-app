@@ -632,8 +632,11 @@
       <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
       <a href={albumHref(ancestor.id)}>{ancestor.albumName || $t('unnamed_album')}</a>
     {/each}
-    <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
-    <span aria-current="page">{name}</span>
+    <!-- FL-1411 (M12): on a phone the path stops at the parent; the name is the title just below. -->
+    {#if !compact}
+      <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
+      <span aria-current="page">{name}</span>
+    {/if}
   </nav>
 
   <div class="main">

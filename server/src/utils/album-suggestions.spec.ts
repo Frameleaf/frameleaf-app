@@ -39,13 +39,18 @@ const rockies = [
 ];
 
 describe('describeTrip', () => {
-  it('splits an album into trips at long gaps and pads each one', () => {
-    const trip = describeTrip([
-      ...rockies,
-      photo('b1', '2027-02-01T12:00:00'),
-      photo('b2', '2027-02-01T13:00:00'),
-      photo('b3', '2027-02-02T09:00:00'),
-    ])!;
+  const now = at('2026-11-11T12:00:00Z');
+
+  it('splits an album into trip segments at long gaps and pads each one', () => {
+    const trip = describeTrip(
+      [
+        ...rockies,
+        photo('b1', '2026-08-22T12:00:00'),
+        photo('b2', '2026-08-22T13:00:00'),
+        photo('b3', '2026-08-23T09:00:00'),
+      ],
+      now,
+    )!;
     expect(trip.segments).toHaveLength(2);
     expect(trip.segments[0].from).toEqual(at('2026-08-11T06:00:00Z'));
     expect(trip.segments[0].to).toEqual(at('2026-08-16T22:00:00Z'));
@@ -56,8 +61,47 @@ describe('describeTrip', () => {
     const everyday = Array.from({ length: 40 }, (_, day) =>
       photo(`e${day}`, `2026-0${day < 30 ? 6 : 7}-${String((day % 30) + 1).padStart(2, '0')}T12:00:00`),
     );
-    expect(describeTrip(everyday)).toBeUndefined();
-    expect(describeTrip([photo('x', '2026-08-11T18:00:00')])).toBeUndefined();
+    expect(describeTrip(everyday, now)).toBeUndefined();
+    expect(describeTrip([photo('x', '2026-08-11T18:00:00')], now)).toBeUndefined();
+  });
+
+  // FL-1411 (M11): a catch-all album got "1,000 more photos look like they're from this trip".
+  it('is a trip when the whole album fits in three weeks', () => {
+    const threeWeeks = Array.from({ length: 22 }, (_, day) =>
+      photo(`t${day}`, `2026-08-${String(day + 1).padStart(2, '0')}T12:00:00`),
+    );
+    expect(describeTrip(threeWeeks, now)?.photoIds).toHaveLength(22);
+    expect(describeTrip([...threeWeeks, photo('late', '2026-08-23T12:00:00')], now)).toBeUndefined();
+  });
+
+  it('is no trip when the album spans twenty years, however busy its weeks are', () => {
+    const catchAll = Array.from({ length: 20 }, (_, year) => [
+      photo(`y${year}a`, `${2006 + year}-07-01T12:00:00`),
+      photo(`y${year}b`, `${2006 + year}-07-02T12:00:00`),
+      photo(`y${year}c`, `${2006 + year}-07-03T12:00:00`),
+    ]).flat();
+    expect(describeTrip(catchAll, now)).toBeUndefined();
+  });
+
+  it('leaves out dates that cannot be right before it measures the album', () => {
+    const trip = describeTrip(
+      [
+        ...rockies,
+        // A camera whose clock was never set, and one set to a year still to come.
+        { ...photo('reset', '1970-01-01T06:00:00'), localDateTime: at('1970-01-01T00:00:00Z') },
+        photo('y2k', '2000-01-01T10:00:00'),
+        photo('future1', '2031-03-01T12:00:00'),
+        photo('future2', '2031-03-01T13:00:00'),
+        photo('future3', '2031-03-02T12:00:00'),
+      ],
+      now,
+    )!;
+    expect(trip.photoIds).toEqual(['a1', 'a2', 'a3', 'a4', 'a5']);
+    expect(trip.segments).toHaveLength(1);
+    // A photo taken later today is not a wrong date.
+    expect(
+      describeTrip([...rockies, photo('today', '2026-08-16T20:00:00')], at('2026-08-16T12:00:00Z'))?.photoIds,
+    ).toContain('today');
   });
 });
 
@@ -272,25 +316,25 @@ describe('outfits', () => {
   it("checks the save date against the outfit's trip, not a later look-alike's", () => {
     const twoTrips = describeTrip([
       ...rockies,
-      photo('b1', '2027-02-01T12:00:00'),
-      photo('b2', '2027-02-01T13:00:00'),
-      photo('b3', '2027-02-02T09:00:00'),
+      photo('b1', '2026-08-22T12:00:00'),
+      photo('b2', '2026-08-22T13:00:00'),
+      photo('b3', '2026-08-23T09:00:00'),
     ])!;
     const outfit = matchOutfit(emma(jacket), [worn('a4', '2026-08-14T17:00:00', jacket)])!;
     const lookAlike = {
       assetId: 'b2',
       distance: 0.2,
-      takenAt: at('2027-02-01T13:00:00Z'),
-      localDateTime: at('2027-02-01T07:00:00Z'),
+      takenAt: at('2026-08-22T13:00:00Z'),
+      localDateTime: at('2026-08-22T07:00:00Z'),
     };
-    // Saved between the two trips: it can be from August, not February.
+    // Saved between the two parts of the trip: it can be from the first, not the second.
     expect(
       estimateDate(twoTrips, {
         neighbours: [lookAlike],
         people: [],
         place: null,
         outfit,
-        savedAt: at('2026-12-01T00:00:00Z'),
+        savedAt: at('2026-08-19T00:00:00Z'),
       }),
     ).toMatchObject({ precision: 'day', localDateTime: '2026-08-14T12:00:00' });
   });

@@ -131,6 +131,26 @@ describe('AlbumDirectory', () => {
     expect(screen.getByText('3 albums · 1 collection · 2 shared')).toBeInTheDocument();
   });
 
+  // FL-1411 (M10): "Other albums" only means something beside a collection or a shared space.
+  it('shows no "Other albums" heading when there are no collections or shared spaces', () => {
+    renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: [trail], spaces: [] }, onRefresh: vi.fn() });
+
+    expect(screen.getByRole('article', { name: 'Trail camera' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Other albums/ })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Other albums' })).toBeNull();
+  });
+
+  it.each([
+    ['a collection', { collections: tree.collections, albums: [trail], spaces: [] }],
+    ['a shared space', { collections: [], albums: [trail], spaces: [space] }],
+  ])('keeps the "Other albums" heading beside %s', (_, withOthers) => {
+    renderWithTooltips(AlbumDirectory, { tree: withOthers, onRefresh: vi.fn() });
+
+    const other = screen.getByRole('region', { name: 'Other albums' });
+    expect(within(other).getByRole('heading', { level: 2 })).toHaveTextContent('Other albums');
+    expect(other).toHaveTextContent('Trail camera');
+  });
+
   it('offers the filter pills, and the Smart pill keeps only smart albums', async () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 
