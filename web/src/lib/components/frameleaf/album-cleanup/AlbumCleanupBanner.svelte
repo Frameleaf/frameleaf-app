@@ -38,7 +38,8 @@
       await new Promise((resolve) => setTimeout(resolve, SCAN_POLL_MS));
       status = await getAlbumCleanupStatus();
     }
-    if (signal.aborted || status.suggestionCount < CLEANUP_BANNER_MIN_SUGGESTIONS) {
+    // Still looking after the last poll: the count on record is the old one, so say nothing this visit.
+    if (signal.aborted || status.checking || status.suggestionCount < CLEANUP_BANNER_MIN_SUGGESTIONS) {
       return;
     }
     const { facts } = await getAlbumCleanupSnapshot();

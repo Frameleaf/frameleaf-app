@@ -101,6 +101,26 @@ describe(AlbumCleanupBanner.name, () => {
     }
   });
 
+  it('says nothing from an old count when the scan outlasts the wait', async () => {
+    sdkMock.getAlbumCleanupStatus.mockResolvedValue({
+      ready: true,
+      checking: true,
+      computedAt: '2026-11-08T00:00:00.000Z',
+      suggestionCount: 40,
+      apply: null,
+    });
+    vi.useFakeTimers();
+    try {
+      render(AlbumCleanupBanner);
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(sdkMock.getAlbumCleanupStatus).toHaveBeenCalledTimes(13);
+      expect(sdkMock.getAlbumCleanupSnapshot).not.toHaveBeenCalled();
+      expect(screen.queryByText('frameleaf_album_cleanup_review_suggestions')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stays quiet after Not now', () => {
     vi.spyOn(authManager, 'preferences', 'get').mockReturnValue(preferences(true));
     render(AlbumCleanupBanner);
