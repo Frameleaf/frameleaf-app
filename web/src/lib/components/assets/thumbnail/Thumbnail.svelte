@@ -25,6 +25,7 @@
   } from '@mdi/js';
   import type { ClassValue } from 'svelte/elements';
   import { motionFade } from '$lib/frameleaf/motion';
+  import { cantShowPhoto, isGettingReady, thumbnailFailures } from '$lib/frameleaf/thumbnail-state.svelte';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
   import ImageThumbnail from './ImageThumbnail.svelte';
   import VideoThumbnail from './VideoThumbnail.svelte';
@@ -177,11 +178,16 @@
         widthStyle="{width}px"
         heightStyle="{height}px"
         curve={selected}
+        pending={isGettingReady(asset)}
+        brokenLabel={cantShowPhoto(asset) ? $t('frameleaf_thumbnail_cant_show') : undefined}
         onComplete={(errored) => {
           const rect = element?.getBoundingClientRect();
           skipFade = !rect || rect.bottom < 0 || rect.top > window.innerHeight;
           loaded = true;
           thumbError = errored;
+          if (errored && !asset.thumbhash) {
+            thumbnailFailures.check();
+          }
         }}
       />
       {#if asset.isVideo}

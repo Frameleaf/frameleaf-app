@@ -4,6 +4,8 @@
   import CloudGpuUpgrade from '$lib/components/frameleaf/cloud/CloudGpuUpgrade.svelte';
   import StudioRenderProgress from '$lib/components/frameleaf/StudioRenderProgress.svelte';
   import SpokenWordsActivity from '$lib/components/frameleaf/SpokenWordsActivity.svelte';
+  import ActivityLeftOver from '$lib/components/frameleaf/ActivityLeftOver.svelte';
+  import ActivityScanStopped from '$lib/components/frameleaf/ActivityScanStopped.svelte';
   import ActivityWorkFeatures from '$lib/components/frameleaf/ActivityWorkFeatures.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -32,6 +34,7 @@
     activityWorkStatus,
     buildBackgroundWorkCards,
     buildWorkFeatureRows,
+    leftOverRuns,
     otherWorkCards,
     tonightLabel,
     workEtaSeconds,
@@ -52,7 +55,14 @@
   import { downloadUrl, getAssetMediaUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, getBaseUrl, getStudioBundleOperation, updateQueue, type QueueName } from '@frameleaf/sdk';
+  import {
+    AssetMediaSize,
+    getBaseUrl,
+    getStudioBundleOperation,
+    scanLibrary,
+    updateQueue,
+    type QueueName,
+  } from '@frameleaf/sdk';
   import { Icon, Theme, themeManager } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
@@ -158,6 +168,12 @@
   const busyServer = $derived(serverWork.length + cloudWork.length);
   /** FL-1388: the same work as people know it, one row for each feature of Settings › Background work. */
   const features = $derived(buildWorkFeatureRows(serverWork));
+  /**
+   * FL-1409: finished work that left photos over. Recent work says "312 photos need a look" for it, so this page
+   * counts it too and never says "Everything is up to date" beside that card. Shown under All and Needs a look.
+   */
+  const leftOver = $derived(filter === 'all' || filter === 'failed' ? leftOverRuns(runningJobsSession.summary) : []);
+  const leftOverCount = $derived(leftOverRuns(runningJobsSession.summary).length);
   /** Pausing the server's work is an administrator's: the server says who may, and sends its work to nobody else. */
   const canManage = $derived(runningJobsSession.summary.canManageQueues);
   /** In progress shows under All and In progress (the `running` filter). */
@@ -168,8 +184,8 @@
     name === 'done'
       ? finishedCount
       : name === 'failed'
-        ? counts.failed
-        : (name === 'all' ? counts.all - counts.done + finishedCount : counts.running) + busyServer;
+        ? counts.failed + leftOverCount
+        : (name === 'all' ? counts.all - counts.done + finishedCount + leftOverCount : counts.running) + busyServer;
   const hasFinished = $derived(items.some((item) => item.canDismiss));
 
   /** The one sentence the page opens on (prototype `summaryFor`): how the work is going, most urgent first. */
@@ -184,7 +200,11 @@
     activitySession.unreachable || runningJobsSession.unreachable || (isAdmin && cloudWorkSession.unreachable),
   );
   const status = $derived.by(() => {
-    const known = activityWorkStatus({ rows: features, needsLook: counts.failed, jobs: otherMoving });
+    const known = activityWorkStatus({
+      rows: features,
+      needsLook: counts.failed + leftOverCount,
+      jobs: otherMoving,
+    });
     return known === 'idle' && stale ? 'unread' : known;
   });
   const banner = $derived.by(() => {
@@ -202,7 +222,7 @@
         return {
           warn: true,
           icon: mdiAlertCircleOutline,
-          title: $t('frameleaf_activity_work_attention', { values: { count: counts.failed } }),
+          title: $t('frameleaf_activity_work_attention', { values: { count: counts.failed + leftOverCount } }),
           body: $t('frameleaf_activity_work_attention_body'),
         };
       }
@@ -463,6 +483,21 @@
     }
   };
 
+  /**
+   * FL-1409: start an interrupted scan again. The scan checks its folders and the library's owner first, as from
+   * Libraries; the stopped one is then cleared, and the new one shows under In progress.
+   */
+  const scanAgain = (item: ActivityItem, libraryId: string) =>
+    void run(
+      item,
+      async () => {
+        await scanLibrary({ id: libraryId });
+        await activitySession.dismiss(item.operationId as string);
+        await activitySession.refresh();
+      },
+      'frameleaf_activity_scan_again_started',
+    );
+
   const openResult = (item: ActivityItem) => {
     if (item.assetId) {
       void goto(Route.viewAsset({ id: item.assetId }));
@@ -614,7 +649,7 @@
 
   {#if activitySession.loading && items.length === 0}
     <p class="fla-empty" role="status" aria-busy="true">{$t('loading')}</p>
-  {:else if !showProgress && visible.length === 0}
+  {:else if !showProgress && visible.length + leftOver.length === 0}
     <div class="fla-empty">
       <Icon icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock} size="2.25rem" aria-hidden={true} />
       <h2>{$t(filter === 'failed' ? 'frameleaf_activity_empty_failed' : 'frameleaf_activity_empty_done')}</h2>
@@ -701,7 +736,10 @@
           {:else}
             {statusLine(item)}
           {/if}
-          {#if (item.failed || item.statusKey === 'frameleaf_activity_status_retrying') && item.error}
+          {#if item.scan === 'resuming'}
+            <!-- FL-1409: a restart is said in plain words; the server's own message is not shown for it. -->
+            · {$t('frameleaf_activity_scan_resuming')}
+          {:else if (item.failed || item.statusKey === 'frameleaf_activity_status_retrying') && item.error}
             · <span class="fla-error">{item.error}</span>
           {/if}
         </p>
@@ -796,15 +834,26 @@
     </article>
   {/snippet}
 
-  {#if needsLook.length > 0}
+  {#if needsLook.length + leftOver.length > 0}
     <section class="fla-section" aria-labelledby="{rowIdPrefix}-needs-look">
       <h2 id="{rowIdPrefix}-needs-look" class="fla-section-title">
-        {$t('frameleaf_activity_section_needs_look')} <span class="fla-count">{needsLook.length}</span>
+        {$t('frameleaf_activity_section_needs_look')}
+        <span class="fla-count">{needsLook.length + leftOver.length}</span>
       </h2>
       <div class="fla-list">
         {#each needsLook as item (item.id)}
-          {@render card(item, visible.indexOf(item), 'h3')}
+          {#if item.scan === 'interrupted' || item.scan === 'drive'}
+            <ActivityScanStopped
+              {item}
+              busy={busyId === item.id}
+              onScanAgain={(libraryId) => scanAgain(item, libraryId)}
+              onDismiss={() => dismiss(item)}
+            />
+          {:else}
+            {@render card(item, visible.indexOf(item), 'h3')}
+          {/if}
         {/each}
+        <ActivityLeftOver runs={leftOver} onChanged={() => void runningJobsSession.refresh()} />
       </div>
     </section>
   {/if}

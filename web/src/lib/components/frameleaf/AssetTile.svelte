@@ -35,7 +35,9 @@
   import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { lockBadgeLabelKey } from '$lib/frameleaf/locked-view';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { cantShowPhoto, thumbnailFailures } from '$lib/frameleaf/thumbnail-state.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
+  import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
@@ -155,10 +157,16 @@
       requestedAt = performance.now();
     }
   });
-  const onImageComplete = () => {
+  /** The thumbnail did not load: with no thumbhash either, the photo is getting ready or can't be shown. */
+  let imageFailed = $state(false);
+  const onImageComplete = (errored: boolean) => {
     // A tile painted during a scrub, or from the cache, swaps at once; a slow one crossfades.
     fadeHash = performance.now() - requestedAt > INSTANT_LOAD_MS;
     imageLoaded = true;
+    imageFailed = errored;
+    if (errored && !asset.thumbhash) {
+      thumbnailFailures.check();
+    }
   };
 
   let previewMode = $state<'video' | 'live' | null>(null);
@@ -194,6 +202,12 @@
   // T-17: the template draws no Archived badge (archiving takes an item out of the library), and the
   // Offline badge follows the asset's own flag (`AssetTile.jsx` `asset.isOffline`).
   const isOffline = $derived(offline ?? !!asset.isOffline);
+  /**
+   * FL-1409: no thumbnail yet. Its file is missing, or making the thumbnail failed or was stopped: "Can't show
+   * this photo", with the way to Library care. Otherwise it is still waiting: the calm placeholder.
+   */
+  const cantShow = $derived(!asset.thumbhash && cantShowPhoto({ id: asset.id, isOffline }));
+  const gettingReady = $derived(!asset.thumbhash && !cantShow);
   // Production stores durations in milliseconds on the timeline model, as the upstream thumbnail does.
   const durationSeconds = $derived(asset.duration ? Number(asset.duration) / 1000 : 0);
   const stars = $derived(typeof rating === 'number' ? rating : typeof asset.rating === 'number' ? asset.rating : 0);
@@ -258,7 +272,7 @@
   });
   /** Template: a video's duration, else the pixel size, else the file size. */
   const listDetail = $derived.by(() => {
-    if (asset.isVideo) {
+    if (asset.isVideo && durationSeconds > 0) {
       return durationLabel(durationSeconds);
     }
     if (asset.width && asset.height) {
@@ -515,6 +529,8 @@
           widthStyle="{imageWidth}px"
           heightStyle="{imageHeight}px"
           class="fl-tile-image"
+          pending={gettingReady}
+          brokenLabel={cantShow ? $t('frameleaf_thumbnail_cant_show') : undefined}
           onComplete={onImageComplete}
         />
       {:else}
@@ -540,11 +556,13 @@
       {#if overlay}
         <span class="fl-tile-overlay" aria-hidden="true">{@render overlay(asset)}</span>
       {/if}
-      <span class="fl-tile-badges">
+      <!-- A photo that can't be shown says so along the bottom of the tile, where the badges would be. -->
+      <span class="fl-tile-badges" hidden={cantShow && imageFailed}>
         {#if asset.isVideo}
           <span class="fl-badge">
             <Icon icon={mdiPlay} size="12" />
-            {durationLabel(durationSeconds)}
+            <!-- FL-1409: no "0:00" until the video's length is known. -->
+            {#if durationSeconds > 0}{durationLabel(durationSeconds)}{/if}
           </span>
         {/if}
         {#if isLive}
@@ -610,6 +628,13 @@
     <!-- The selection and focus ring, above the photo (an outline on the button paints under it). -->
     <span class="fl-tile-ring fl-continuous-corners" aria-hidden="true"></span>
   </button>
+
+  {#if cantShow && imageFailed && !selecting}
+    <!-- Beside the button, not in it: what the tile is, and the way to where such a photo is looked after. -->
+    <a class="fl-tile-care" href={Route.libraryCare()} aria-label={$t('frameleaf_thumbnail_cant_show_care')}>
+      {$t('frameleaf_thumbnail_cant_show')}
+    </a>
+  {/if}
 
   <label class="fl-tile-select" class:is-coarse={coarsePointer}>
     <input
@@ -887,6 +912,9 @@
     max-width: calc(100% - 12px);
     pointer-events: none;
   }
+  .fl-tile-badges[hidden] {
+    display: none;
+  }
   .fl-badge {
     display: inline-flex;
     align-items: center;
@@ -989,6 +1017,32 @@
   .fl-tile.has-actions:hover .fl-tile-job-slot,
   .fl-tile.has-actions:focus-within .fl-tile-job-slot {
     opacity: 0;
+  }
+  /* FL-1409: the way to Library care from a photo that can't be shown; the tile itself still opens the photo. */
+  .fl-tile-care {
+    position: absolute;
+    inset-inline: 8px;
+    bottom: 8px;
+    z-index: 2;
+    min-height: 32px;
+    overflow: hidden;
+    padding: 0 8px;
+    border-radius: var(--fl-radius-control);
+    line-height: 32px;
+    text-align: center;
+    background: var(--fl-panel);
+    box-shadow: inset 0 0 0 1px var(--fl-border);
+    color: var(--fl-text);
+    font-size: var(--fl-font-micro);
+    font-weight: var(--fl-weight-medium, 500);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fl-tile-care:hover {
+    background: var(--fl-raised);
+  }
+  .fl-tile[data-layout='list'] .fl-tile-care {
+    display: none;
   }
   .fl-tile-select {
     position: absolute;

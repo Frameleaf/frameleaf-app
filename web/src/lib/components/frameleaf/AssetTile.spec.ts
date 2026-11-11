@@ -7,6 +7,7 @@ import { readable } from 'svelte/store';
 import { describe, expect, it, vi } from 'vitest';
 import { DRAG_SELECT_EVENT } from '$lib/components/timeline/drag-select';
 import { clearLocksRevealed, markLocksRevealed } from '$lib/components/timeline/lock-reveal';
+import { thumbnailFailures } from '$lib/frameleaf/thumbnail-state.svelte';
 import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
 import { bucketTimelineAssets } from '$lib/managers/timeline-manager/timeline-month.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -382,5 +383,64 @@ describe('AssetTile list and browse dates', () => {
     await rerender({ showFileName: false, showTime: true });
     expect(container.querySelector('.fl-tile-caption')).toHaveClass('is-time-only');
     expect(container.querySelector('time')).not.toBeNull();
+  });
+});
+
+// FL-1409 (M5): a photo that is not ready is calm; one that can't be shown says so and leads to Library care.
+describe('AssetTile for a photo with no thumbnail (FL-1409)', () => {
+  const fail = async (container: HTMLElement) => {
+    vi.spyOn(thumbnailFailures, 'check').mockImplementation(() => {});
+    await fireEvent.error(container.querySelector('img')!);
+  };
+
+  it('shows the calm placeholder while the photo waits for its thumbnail', async () => {
+    const { container } = render(AssetTile, { asset: asset(), width: 200, height: 133 });
+    await fail(container);
+
+    expect(container.querySelector('[data-thumbnail-pending]')).toHaveAccessibleName('frameleaf_thumbnail_pending');
+    expect(container.querySelector('[data-broken-asset]')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'frameleaf_thumbnail_cant_show_care' })).not.toBeInTheDocument();
+    expect(thumbnailFailures.check).toHaveBeenCalled();
+  });
+
+  it('keeps the can’t-show tile for a photo whose thumbnail failed, and leads to Library care', async () => {
+    thumbnailFailures.ids.add('asset-1');
+    try {
+      const { container } = render(AssetTile, { asset: asset(), width: 200, height: 133 });
+      await fail(container);
+
+      expect(container.querySelector('[data-thumbnail-pending]')).toBeNull();
+      expect(container.querySelector('[data-broken-asset]')).toHaveAccessibleName('frameleaf_thumbnail_cant_show');
+      // The words are on the tile at any size; the link's name says where it leads.
+      const care = screen.getByRole('link', { name: 'frameleaf_thumbnail_cant_show_care' });
+      expect(care).toHaveTextContent('frameleaf_thumbnail_cant_show');
+      expect(care).toHaveAttribute('href', expect.stringContaining('care'));
+    } finally {
+      thumbnailFailures.ids.delete('asset-1');
+    }
+  });
+
+  it('keeps the can’t-show tile for a photo whose file is missing from its library', async () => {
+    const { container } = render(AssetTile, { asset: asset({ isOffline: true }), width: 200, height: 133 });
+    await fail(container);
+
+    expect(container.querySelector('[data-thumbnail-pending]')).toBeNull();
+    expect(container.querySelector('[data-broken-asset]')).toHaveAccessibleName('frameleaf_thumbnail_cant_show');
+  });
+
+  it('shows no 0:00 on a video whose length isn’t known yet', () => {
+    const { container } = render(AssetTile, {
+      asset: asset({ isVideo: true, isImage: false, duration: null }),
+      width: 200,
+      height: 133,
+    });
+    expect(container.querySelector('.fl-tile-badges')).not.toHaveTextContent('0:00');
+
+    const known = render(AssetTile, {
+      asset: asset({ id: 'asset-2', isVideo: true, isImage: false, duration: 65_000 }),
+      width: 200,
+      height: 133,
+    });
+    expect(known.container.querySelector('.fl-tile-badges')).toHaveTextContent('1:05');
   });
 });

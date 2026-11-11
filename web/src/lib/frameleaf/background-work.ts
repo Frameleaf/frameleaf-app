@@ -9,6 +9,8 @@ import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
 import { isImportRunKind, isRunSettled, runStateKey, settledItems } from '$lib/frameleaf/durable-runs';
 import { JOB_QUEUES } from '$lib/frameleaf/job-queues';
+import { leftOver } from '$lib/frameleaf/run-failures';
+import { runHeadline } from '$lib/frameleaf/run-headline';
 import { WORK_FEATURES, type WorkFeature } from '$lib/frameleaf/work-features';
 
 /**
@@ -38,8 +40,13 @@ export type BackgroundWorkCard = {
   statusKey: Translations;
   /** Nothing will move until somebody or something else acts: a missing worker or a failed step. */
   stuck: boolean;
-  /** The server state the card says instead of its stage, if any; kept so two runs of one kind combine. */
+  /** The server state a queue's card says instead of its stage, if any. A run's card says its headline. */
   reason: DurableJobState | null;
+  /**
+   * FL-1409: a run's one reason, as its Recent work card gives it ("The external library “Family archive” can’t be
+   * reached…"), for a row that shows the run by itself.
+   */
+  why?: { key: Translations; values?: Record<string, string | number> };
   /** Items waiting their turn, including paused and scheduled ones. */
   waiting: number;
   /** Items being worked on now. */
@@ -100,28 +107,15 @@ export const tonightLabel = (startsAt: string | null, $t: MessageFormatter, loca
  * States that say more than "queued" about work nothing is running yet, most telling first. A queue the server
  * could not read is unavailable whatever its last counts said, running included: those counts may be stale.
  */
-const WAITING_REASONS: readonly DurableJobState[] = ['unavailable', 'blocked', 'retrying', 'delayed'];
+const WAITING_REASONS: ReadonlySet<DurableJobState> = new Set(['unavailable', 'blocked', 'retrying', 'delayed']);
 
 const statusOf = (stage: BackgroundWorkStage, state: DurableJobState | null | undefined) => {
-  const reason =
-    state === 'unavailable' || (stage === 'queued' && state && WAITING_REASONS.includes(state)) ? state : null;
+  const reason = state === 'unavailable' || (stage === 'queued' && state && WAITING_REASONS.has(state)) ? state : null;
   return {
     statusKey: reason ? runStateKey(reason) : ACTIVITY_STAGE_KEYS[stage],
     stuck: reason === 'blocked' || reason === 'unavailable',
     reason,
   };
-};
-
-/** The more telling of two cards' reasons, so the order the runs arrive in never hides a warning. */
-const strongerReason = (a: DurableJobState | null, b: DurableJobState | null) => {
-  const rank = (state: DurableJobState | null) => (state ? WAITING_REASONS.indexOf(state) : -1);
-  if (rank(a) === -1) {
-    return b;
-  }
-  if (rank(b) === -1) {
-    return a;
-  }
-  return rank(a) <= rank(b) ? a : b;
 };
 
 const percent = (done: number, total: number) =>
@@ -181,6 +175,17 @@ const fromImportRun = (run: DurableJobRun): BackgroundWorkCard | null => {
   };
 };
 
+/** Headlines that say nothing moves until somebody or something else acts. */
+const STUCK_HEADLINES: ReadonlySet<Translations> = new Set<Translations>([
+  'frameleaf_job_runs_state_unavailable',
+  'frameleaf_job_runs_state_blocked',
+  'frameleaf_job_runs_status_waiting_drive',
+]);
+
+/**
+ * FL-1409: a run's card says what its Recent work card says. The state, its reason and whether it is stuck all come
+ * from `runHeadline`, so Activity can't read "Running" while Recent work reads "Paused" or "Waiting for a drive".
+ */
 const fromRun = (run: DurableJobRun): BackgroundWorkCard | null => {
   if (isRunSettled(run)) {
     return null;
@@ -193,13 +198,21 @@ const fromRun = (run: DurableJobRun): BackgroundWorkCard | null => {
   if (running + waiting <= 0) {
     return null;
   }
+  const headline = runHeadline(run);
   const stage: BackgroundWorkStage =
-    run.state === 'paused' ? 'paused' : running > 0 || run.state === 'running' ? 'running' : 'queued';
+    headline.status === 'frameleaf_job_runs_state_paused'
+      ? 'paused'
+      : headline.status === 'frameleaf_job_runs_state_running'
+        ? 'running'
+        : 'queued';
   return {
     id: `run:${run.id}`,
     queueName: run.kind as QueueName,
     stage,
-    ...statusOf(stage, run.state),
+    statusKey: headline.status,
+    stuck: STUCK_HEADLINES.has(headline.status),
+    reason: null,
+    ...(headline.why && { why: { key: headline.why, values: headline.values } }),
     waiting,
     running,
     progress: stage === 'running' && run.enumerationDone ? percent(settledItems(run), run.total) : null,
@@ -253,10 +266,16 @@ export const buildBackgroundWorkCards = (summary: DurableRunningJobs | null | un
           : existing.stage === 'paused' || card.stage === 'paused'
             ? 'paused'
             : 'queued';
+      // What the one card says: the headline of a run at the card's stage; of two waiting runs, the stuck one's.
+      const lead =
+        (stage === 'queued' && [existing, card].find((run) => run.stuck)) ||
+        (existing.stage === stage ? existing : card);
       byKind.set(card.queueName, {
         ...existing,
         stage,
-        ...statusOf(stage, strongerReason(existing.reason, card.reason)),
+        statusKey: lead.statusKey,
+        stuck: lead.stuck,
+        why: lead.why,
         waiting: existing.waiting + card.waiting,
         running: existing.running + card.running,
         progress: stage === 'running' && totals.enumerated ? percent(totals.settled, totals.total) : null,
@@ -349,6 +368,17 @@ export const faceRecognitionWork = (summary: DurableRunningJobs | null | undefin
   buildWorkFeatureRows(buildBackgroundWorkCards(summary).filter((card) => FACE_QUEUES.has(card.queueName))).find(
     (row) => row.feature.id === 'faces',
   );
+
+/**
+ * FL-1409: finished work that left photos over, as Recent work shows it ("312 photos need a look"). Activity drops
+ * settled runs from its rows, so without these it would say "Everything is up to date" beside that card. The nightly
+ * schedule's work comes back every night with the same photos: only its newest run counts, as Recent work folds it.
+ */
+export const leftOverRuns = (summary: DurableRunningJobs | null | undefined): DurableJobRun[] => {
+  const runs = summary?.canReadJobRuns ? (summary.durableRuns ?? []) : [];
+  const newestNightly = runs.find((run) => run.nightly);
+  return runs.filter((run) => isRunSettled(run) && leftOver(run) > 0 && (!run.nightly || run.id === newestNightly?.id));
+};
 
 /** What Activity's first line says, most urgent first (prototype `summaryFor`). */
 export type ActivityWorkStatus = 'paused' | 'attention' | 'working' | 'unread' | 'tonight' | 'jobs' | 'idle';
