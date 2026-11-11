@@ -1887,6 +1887,8 @@
     .fl-items-toolbar :global(.fl-toolbar-row) {
       flex-wrap: nowrap;
       overflow-x: auto;
+      /* FL-1390: a control's click area reaches past it; it must not make the row scroll up and down. */
+      overflow-y: hidden;
       padding-inline: var(--fl-space-4);
       scroll-padding-inline: var(--fl-space-4);
       scrollbar-width: none;
@@ -1920,6 +1922,7 @@
     .fl-boards-toolbar {
       flex-wrap: nowrap;
       overflow-x: auto;
+      overflow-y: hidden;
       padding-inline: var(--fl-space-4);
       scrollbar-width: none;
     }

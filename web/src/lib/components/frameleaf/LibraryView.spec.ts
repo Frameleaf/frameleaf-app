@@ -898,6 +898,18 @@ describe('LibraryView', () => {
       }
     });
 
+    it('keeps the View menu in reach on a map area that only partner photos filled (FL-1456)', async () => {
+      libraryView.set({ partnerPhotos: false });
+      try {
+        await setupLibrary({
+          options: { visibility: AssetVisibility.Timeline, bbox: '-116.3,51.0,-115.5,51.5' } as never,
+        });
+        expect(await screen.findByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
+      } finally {
+        libraryView.reset();
+      }
+    });
+
     it('says uploads are on their way instead of offering Upload again while their previews are made', async () => {
       uploadAssetsStore.track('success');
       try {

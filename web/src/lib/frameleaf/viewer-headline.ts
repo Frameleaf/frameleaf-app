@@ -109,8 +109,6 @@ export function viewerHeadline(asset: AssetResponseDto): string[] {
   ].filter((part): part is string => !!part);
 }
 
-export const viewerHeadlineText = (asset: AssetResponseDto): string => viewerHeadline(asset).join(' · ');
-
 /**
  * When the photo was taken, on the clock of the place it was taken in: the capture time in the
  * photo's own zone when it has one, else the server's local date and time. The Information panel's
