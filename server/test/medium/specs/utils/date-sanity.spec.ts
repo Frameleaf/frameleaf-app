@@ -216,6 +216,7 @@ describe('dates that cannot be right (FL-1410)', () => {
     ]);
 
     const ordered = JSON.parse(await sut.getTimelineOrdered(auth, { ...only, sort: 'filename', skip: 0, take: 10 }));
+    expect(ordered.id).toHaveLength(3);
     expect(new Set(ordered.id)).toEqual(new Set([future, reset2000, reset1970]));
   });
 
