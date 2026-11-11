@@ -126,9 +126,12 @@ describe('sendWebhook', () => {
 });
 
 describe('cloud metadata inside private ranges', () => {
-  it.each(['100.100.100.200', 'fd00:ec2::254', '::ffff:100.100.100.200'])('never allows %s', (address) => {
-    expect(isWebhookAddressAllowed(address, true)).toBe(false);
-  });
+  it.each(['100.100.100.200', 'fd00:ec2::254', 'fd20:ce::254', '::ffff:100.100.100.200'])(
+    'never allows %s',
+    (address) => {
+      expect(isWebhookAddressAllowed(address, true)).toBe(false);
+    },
+  );
 });
 
 describe('cloud metadata names', () => {

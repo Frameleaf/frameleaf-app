@@ -71,6 +71,7 @@
 
   let { asset, selectedCount = 0, onOpen, onClose, onChooseColor, boards = false, onTrash, font }: Props = $props();
   const fontMode = $derived(font !== undefined);
+  const originalOnly = $derived(boards && asset && !asset.isImage && !asset.isVideo && !fontMode);
   const weightAxis = $derived(font?.axes.find((axis) => axis.tag === 'wght'));
   /** The licence link a font file carries is shown only when it is a web address. */
   const licenceLink = $derived(font?.licenseUrl && /^https?:\/\//i.test(font.licenseUrl) ? font.licenseUrl : null);
@@ -367,7 +368,7 @@
       {/if}
     </dl>
   </section>
-  {#if isOwner && !fontMode}
+  {#if isOwner && !fontMode && !originalOnly}
     <section class="part">
       {#await import('$lib/components/frameleaf/BoardsScopeSwitch.svelte') then { default: BoardsScopeSwitch }}<BoardsScopeSwitch
           assetId={item.id}
@@ -410,6 +411,8 @@
   {#if asset}
     {#if fontMode}
       <!-- The specimen is the viewer's stage. -->
+    {:else if originalOnly}
+      <!-- The file is available through Download original. -->
     {:else if annotations && detail}
       {@const current = annotations}
       <figure class="preview annotated">

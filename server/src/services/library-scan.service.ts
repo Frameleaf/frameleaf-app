@@ -101,7 +101,8 @@ const WRITE_DENIED = new Set(['EACCES', 'EPERM', 'EROFS']);
  *
  * A scan is a durable `media_operation` of kind `library_scan`, one per library at a time: it shows
  * in Activity and the notifications panel with its progress, can be paused, resumed and cancelled,
- * records interrupted claims for recovery, and requires attention instead of unsafe automatic replay.
+ * and records interrupted claims for recovery. A scan the server stopped under (FL-1409) carries on by
+ * itself once; a lost claim still requires attention instead of unsafe automatic replay.
  *
  * It runs inside a `LibraryScanRun` job on the library queue, so pausing that queue holds new scans
  * and "waiting for the library queue" still means "waiting for scans". A tick wakes the queue for
@@ -434,21 +435,40 @@ export class LibraryScanService {
     } finally {
       clearInterval(keepAlive);
       if (parentSignal?.aborted) {
-        // Scan work and its source iterator have stopped. Give only this claim-fenced terminal
+        // Scan work and its source iterator have stopped. Give only this claim-fenced
         // write a separate bounded SQL lifetime; ordinary writes retain the cancelled signal.
+        // FL-1409: a restart is not a failed scan. This worker still holds the claim, so the scan goes back in
+        // the queue once and carries on from its recorded phase and cursor, as a paused scan does.
+        // ponytail: the one automatic retry every job gets; a second interruption is reported, with Scan again.
         await withExecutionCleanup(() =>
-          this.failSource(operation.id, claimToken, {
-            error: 'The library queue attempt was interrupted',
-            errorCode: 'library_scan_interrupted',
-          }),
+          this.failSource(
+            operation.id,
+            claimToken,
+            { error: 'The library queue attempt was interrupted', errorCode: 'library_scan_interrupted' },
+            true,
+          ),
         );
       }
     }
   }
 
-  private failSource(operationId: string, claimToken: string, failure: { error: string; errorCode: string }) {
-    return this.jobRepository.settleLibraryScanSource(operationId, (executor) =>
-      this.operations.fail(operationId, claimToken, failure, { retry: false, executor }),
+  /** `resume` puts the scan back in the queue for its one automatic retry; its run then stays open. */
+  private failSource(
+    operationId: string,
+    claimToken: string,
+    failure: { error: string; errorCode: string },
+    resume = false,
+  ) {
+    return this.jobRepository.settleLibraryScanSource(
+      operationId,
+      (executor) =>
+        this.operations.fail(
+          operationId,
+          claimToken,
+          failure,
+          resume ? { resumable: true, executor } : { retry: false, executor },
+        ),
+      (outcome) => outcome !== 'retrying',
     );
   }
 

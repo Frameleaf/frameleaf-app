@@ -16298,6 +16298,15 @@
         "operationId": "getProcessingFailures",
         "parameters": [
           {
+            "name": "includeDismissed",
+            "required": false,
+            "in": "query",
+            "description": "Also list failures someone chose to keep as they are or to stop trying (FL-1409)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "skip",
             "required": false,
             "in": "query",
@@ -16306,6 +16315,15 @@
               "maximum": 9007199254740991,
               "default": 0,
               "type": "integer"
+            }
+          },
+          {
+            "name": "step",
+            "required": false,
+            "in": "query",
+            "description": "Only failures of this step",
+            "schema": {
+              "$ref": "#/components/schemas/ProcessingFailureStep"
             }
           },
           {
@@ -97295,7 +97313,7 @@
             "type": "array"
           },
           "supported": {
-            "description": "File types this import brings over (lower case, no dot)",
+            "description": "File extensions this import accepts (lower case, no dot). * includes downloadable originals.",
             "items": {
               "type": "string"
             },
@@ -137956,11 +137974,19 @@
       },
       "ProcessingFailureQueryDto": {
         "properties": {
+          "includeDismissed": {
+            "description": "Also list failures someone chose to keep as they are or to stop trying (FL-1409)",
+            "type": "boolean"
+          },
           "skip": {
             "default": 0,
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "step": {
+            "$ref": "#/components/schemas/ProcessingFailureStep",
+            "description": "Only failures of this step"
           },
           "take": {
             "default": 100,
@@ -146965,6 +146991,10 @@
       },
       "ServerMediaTypesResponseDto": {
         "properties": {
+          "boardsOriginals": {
+            "description": "Boards accepts other files as downloadable originals",
+            "type": "boolean"
+          },
           "font": {
             "description": "Font file extensions an upload into Boards (libraryScope=design) accepts",
             "items": {

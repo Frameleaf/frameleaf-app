@@ -286,6 +286,9 @@ const isType = (filename: string, r: Record<string, string[]>) =>
 const lookup = (filename: string) =>
   types[getFilenameExtension(filename).toLowerCase()]?.[0] ?? 'application/octet-stream';
 
+const isBoardOriginal = (filename: string) =>
+  !isType(filename, image) && !isType(filename, video) && !isType(filename, font);
+
 export const mimeTypes = {
   image,
   profile,
@@ -308,6 +311,8 @@ export const mimeTypes = {
   isProfile: (filename: string) => isType(filename, profile),
   isSidecar: (filename: string) => isType(filename, sidecar),
   isVideo: (filename: string) => isType(filename, video),
+  isBoardOriginal,
+  uploadExtension: (filename: string) => (isBoardOriginal(filename) ? '.bin' : getFilenameExtension(filename)),
   isFont: (filename: string) => isType(filename, font),
   canBeTransparent: (filename: string) =>
     transparentCapableExtensions.has(getFilenameExtension(filename).toLowerCase()),

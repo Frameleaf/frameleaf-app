@@ -35,6 +35,60 @@ describe('ImageThumbnail component', () => {
     expect(baseElement.querySelector('span')?.textContent).toEqual('error_loading_image');
   });
 
+  // FL-1409 (M5): a photo still waiting for its thumbnail is a calm placeholder, never the broken tile.
+  it('shows the calm placeholder, not the broken tile, for a photo that is getting ready', async () => {
+    const { baseElement } = render(ImageThumbnail, {
+      url: '/test-thumbnail.jpg',
+      altText: 'Test image',
+      widthStyle: '200px',
+      heightStyle: '150px',
+      pending: true,
+    });
+    // It is calm from the start: the picture being asked for already has the placeholder's fill.
+    expect(baseElement.querySelector('img')).toHaveClass('fl-thumb-pending');
+    await fireEvent.error(baseElement.querySelector('img')!);
+
+    const placeholder = baseElement.querySelector<HTMLElement>('[data-thumbnail-pending]')!;
+    expect(placeholder).toHaveAccessibleName('frameleaf_thumbnail_pending');
+    expect(placeholder).toHaveClass('fl-thumb-pending');
+    // The size of the tile.
+    expect(placeholder.style.width).toBe('200px');
+    expect(placeholder.style.height).toBe('150px');
+    expect(baseElement.querySelector('[data-broken-asset]')).toBeNull();
+  });
+
+  it('asks for a photo that is getting ready again by itself', async () => {
+    vi.useFakeTimers();
+    try {
+      const { baseElement } = render(ImageThumbnail, {
+        url: '/api/assets/a/thumbnail?size=thumbnail',
+        altText: 'Test image',
+        widthStyle: '200px',
+        pending: true,
+      });
+      await fireEvent.error(baseElement.querySelector('img')!);
+      expect(baseElement.querySelector('img')).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(baseElement.querySelector('img')).toHaveAttribute('src', '/api/assets/a/thumbnail?size=thumbnail&retry=1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a clear tile, in the words it is given, for a photo that can’t be shown', async () => {
+    const { baseElement } = render(ImageThumbnail, {
+      url: '/test-thumbnail.jpg',
+      altText: 'Test image',
+      widthStyle: '200px',
+      brokenLabel: 'Can’t show this photo',
+    });
+    await fireEvent.error(baseElement.querySelector('img')!);
+
+    expect(baseElement.querySelector('[data-thumbnail-pending]')).toBeNull();
+    expect(baseElement.querySelector('[data-broken-asset]')).toHaveAccessibleName('Can’t show this photo');
+  });
+
   it('calls onComplete with false on successful load', async () => {
     const onComplete = vi.fn();
     const { baseElement } = render(ImageThumbnail, {

@@ -28,11 +28,17 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { fetchAutomationHop } from 'src/utils/public-fetch.js';
 import { toDefinition } from 'src/utils/workflow-definition.js';
 import { resolveMethod } from 'src/utils/workflow.js';
 import { MediumTestContext } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getKyselyDB } from 'test/utils.js';
+
+vi.mock('src/utils/public-fetch.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/utils/public-fetch.js')>()),
+  fetchAutomationHop: vi.fn(),
+}));
 
 let isInitialized = false;
 
@@ -709,9 +715,8 @@ describe('core plugin', () => {
     it('should trigger a webhook on asset upload', async () => {
       const { user } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user.id });
-
-      const fetchMock = vi.fn(() => Promise.resolve(new Response('')));
-      vi.stubGlobal('fetch', fetchMock);
+      // FL-1420: an unsigned step's hops go through the automation address guard
+      vi.mocked(fetchAutomationHop).mockResolvedValue(new Response('') as never);
 
       const workflow = await createWorkflow({
         ownerId: user.id,
@@ -719,17 +724,41 @@ describe('core plugin', () => {
         steps: [
           {
             method: 'immich-plugin-core#webhook',
-            config: { url: 'http://localhost', method: 'POST' },
+            config: { url: 'https://hooks.example.test/upload', method: 'POST' },
           },
         ],
       });
 
       await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeUndefined();
-      expect(fetchMock).toHaveBeenCalled();
+      expect(fetchAutomationHop).toHaveBeenCalledWith(
+        'https://hooks.example.test/upload',
+        expect.objectContaining({ method: 'POST' }),
+        { allowHomeNetwork: false },
+      );
+    });
+
+    it('never sends an unsigned webhook to the server itself (FL-1420)', async () => {
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const actual = await vi.importActual<typeof import('src/utils/public-fetch.js')>('src/utils/public-fetch.js');
+      vi.mocked(fetchAutomationHop).mockImplementation(actual.fetchAutomationHop);
+
+      const workflow = await createWorkflow({
+        ownerId: user.id,
+        trigger: WorkflowTrigger.AssetCreate,
+        steps: [{ method: 'immich-plugin-core#webhook', config: { url: 'http://localhost', method: 'POST' } }],
+      });
+
+      try {
+        await ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id });
+      } catch {
+        // a refused step may fail the run; what matters is that nothing was sent
+      }
+      expect(vi.mocked(fetchAutomationHop).mock.results).toEqual([expect.objectContaining({ type: 'throw' })]);
     });
 
     afterEach(() => {
-      vi.unstubAllGlobals();
+      vi.mocked(fetchAutomationHop).mockReset();
     });
   });
 });
