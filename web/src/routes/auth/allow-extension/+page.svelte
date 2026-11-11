@@ -143,7 +143,11 @@
         <h2 id="allow-cant">{$t('frameleaf_extension_allow_cant_title')}</h2>
         <ul>
           <li><Icon icon={mdiClose} size="16" class="is-cant" />{$t('frameleaf_extension_allow_cant_photos')}</li>
-          <li><Icon icon={mdiClose} size="16" class="is-cant" />{$t(media ? 'frameleaf_extension_allow_cant_change_media' : 'frameleaf_extension_allow_cant_change')}</li>
+          <li>
+            <Icon icon={mdiClose} size="16" class="is-cant" />{$t(
+              media ? 'frameleaf_extension_allow_cant_change_media' : 'frameleaf_extension_allow_cant_change',
+            )}
+          </li>
           <li><Icon icon={mdiClose} size="16" class="is-cant" />{$t('frameleaf_extension_allow_cant_read')}</li>
         </ul>
       </section>
