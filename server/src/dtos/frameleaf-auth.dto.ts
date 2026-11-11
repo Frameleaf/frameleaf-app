@@ -89,6 +89,42 @@ const FrameleafTokenExchangeSchema = z
   })
   .meta({ id: 'FrameleafTokenExchangeDto' });
 
+/** Unified sign-in, Contract A.2: the 403 a sign-in or request answers when it needs more than it reached. */
+const VerificationRequiredResponseSchema = z
+  .object({
+    message: z.string(),
+    error: z.string(),
+    statusCode: z.int(),
+    code: z.literal('verification_required'),
+    acr: z.string().describe('The level that would do: urn:frameleaf:acr:verified'),
+    maxAge: z.int().nullable().describe('How recent the sign-in must be, in seconds; null when any time will do'),
+    methods: z
+      .array(z.enum(['frameleaf', 'totp', 'recovery_code', 'password']).meta({ id: 'VerificationMethod' }))
+      .describe(
+        "What would complete it: frameleaf (Cloud's step-up, then a new exchange) on its own, or the local proofs listed. totp and recovery_code are alternatives (the local authenticator). password (a first link) is needed together with totp or recovery_code when both are listed: send the password and one authenticator code in the same step-up.",
+      ),
+    transaction: z
+      .string()
+      .describe('Send it to POST /auth/step-up (a session) or POST /oauth/frameleaf/step-up (a sign-in), 10 minutes'),
+  })
+  .meta({ id: 'VerificationRequiredResponseDto' });
+
+/** Unified sign-in: the local proof a `verification_required` from the exchange or callback asked for. */
+const FrameleafStepUpSchema = z
+  .object({
+    transaction: z.string().min(1).max(4000).describe('transaction from the verification_required answer'),
+    password: z.string().max(1000).optional().describe('The local password, when methods lists password'),
+    code: z
+      .string()
+      .regex(/^\d{6}$/)
+      .optional()
+      .describe('The 6-digit code from the authenticator app'),
+    recoveryCode: z.string().min(1).max(32).optional().describe('One of the recovery codes, instead of code'),
+    rememberMe: z.boolean().optional(),
+    capabilities: capabilitiesField,
+  })
+  .meta({ id: 'FrameleafStepUpDto' });
+
 const FrameleafTokenExchangeErrorSchema = z
   .object({
     message: z.string(),
@@ -102,6 +138,8 @@ export class FrameleafAccountLinkResponseDto extends createZodDto(FrameleafAccou
 export class FrameleafHandoffResponseDto extends createZodDto(FrameleafHandoffResponseSchema) {}
 export class FrameleafHandoffCreateDto extends createZodDto(FrameleafHandoffCreateSchema) {}
 export class FrameleafHandoffRedeemDto extends createZodDto(FrameleafHandoffRedeemSchema) {}
+export class VerificationRequiredResponseDto extends createZodDto(VerificationRequiredResponseSchema) {}
+export class FrameleafStepUpDto extends createZodDto(FrameleafStepUpSchema) {}
 export class FrameleafTokenExchangeDto extends createZodDto(FrameleafTokenExchangeSchema) {}
 export class FrameleafTokenExchangeErrorDto extends createZodDto(FrameleafTokenExchangeErrorSchema) {}
 

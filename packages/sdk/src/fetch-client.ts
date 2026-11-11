@@ -2236,6 +2236,12 @@ export type AdminConfigServerDto = {
     /** Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on */
     timeZone?: string;
 };
+export type AdminConfigSignInPolicyDto = {
+    /** Older apps and sessions that predate this setting follow it too (default off) */
+    applyToOlderApps?: boolean;
+    /** Who must sign in with a passkey, or with two steps: administrators away from home (default), everyone away from home, or everyone everywhere */
+    "require"?: SignInRequirement;
+};
 export type AdminConfigSmartAlbumKindDto = {
     /** CLIP query phrases used when no tag trigger matches */
     clipQueries: string[];
@@ -2340,6 +2346,7 @@ export type AdminConfigDto = {
     passwordLogin: AdminConfigPasswordLoginDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
+    signInPolicy?: AdminConfigSignInPolicyDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
     storageWarning?: AdminConfigStorageWarningDto;
@@ -2375,6 +2382,7 @@ export type AdminConfigDtoRead = {
     passwordLogin: AdminConfigPasswordLoginDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
+    signInPolicy?: AdminConfigSignInPolicyDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
     storageWarning?: AdminConfigStorageWarningDto;
@@ -3061,6 +3069,15 @@ export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** A verified, locally staged Buddy recovery */
     buddyRecoveryId?: string;
+    /** Confirm it’s you. Not needed within 10 minutes of a Frameleaf or passkey sign-in; otherwise the password, and the authenticator code when the account has one */
+    confirmation?: {
+        /** The 6-digit code from the authenticator app */
+        code?: string;
+        /** The account password */
+        password?: string;
+        /** A recovery code, instead of code */
+        recoveryCode?: string;
+    };
     /** Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails */
     keepSafetyBackup?: boolean;
     /** Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters). Omit to keep the current reason; null or an empty string clears it */
@@ -3982,6 +3999,15 @@ export type UserAdminCreateDto = {
 export type UserAdminDeleteDto = {
     /** The account's email as the administrator typed it to confirm; when sent, the delete is refused unless it matches (case-insensitive) */
     confirmEmail?: string;
+    /** Confirm it’s you. Not needed within 10 minutes of a Frameleaf or passkey sign-in; otherwise the password, and the authenticator code when the account has one */
+    confirmation?: {
+        /** The 6-digit code from the authenticator app */
+        code?: string;
+        /** The account password */
+        password?: string;
+        /** A recovery code, instead of code */
+        recoveryCode?: string;
+    };
     /** Force delete even if user has assets */
     force?: boolean;
 };
@@ -7424,6 +7450,8 @@ export type LoginCredentialDto = {
     password: string;
     /** Persist authentication cookies across browser sessions (default true) */
     rememberMe?: boolean;
+    /** Answer in sign-in steps: status "done" with the session, or "next" with a transaction and methods */
+    steps?: boolean;
     /** FL-793: this client can show the two-step code step. Without it, an account with two-step sign-in is refused (403, code two_factor_required) instead of answered with twoFactorRequired. */
     twoFactor?: boolean;
 };
@@ -7434,12 +7462,18 @@ export type LoginResponseDto = {
     isAdmin: boolean;
     /** Is onboarded */
     isOnboarded: boolean;
+    /** Sign in in steps: with status next, what would complete the step, most preferred first */
+    methods?: SignInStepMethod[];
     /** User name */
     name: string;
     /** Profile image path */
     profileImagePath: string;
     /** Should change password */
     shouldChangePassword: boolean;
+    /** Sign in in steps (sent when the request had steps: true): done, or next with a transaction */
+    status?: SignInStepStatus;
+    /** Sign in in steps: with status next, send it with the proof to POST /auth/login/two-factor as twoFactorToken */
+    transaction?: string;
     /** FL-793: the password was right and the account uses two-step sign-in. No session was created and accessToken is empty: send the code to POST /auth/login/two-factor with twoFactorToken. */
     twoFactorRequired?: boolean;
     /** FL-793: proves the password step for five minutes; send it with the code */
@@ -7456,6 +7490,8 @@ export type LoginTwoFactorDto = {
     code?: string;
     /** One of the recovery codes, as written down */
     recoveryCode?: string;
+    /** Answer in sign-in steps: status "done" with the session, or "next" with a transaction and methods */
+    steps?: boolean;
     /** Skip the code step in this browser for 30 days */
     trustDevice?: boolean;
     /** twoFactorToken from POST /auth/login */
@@ -7593,11 +7629,19 @@ export type AuthStatusResponseDto = {
     /** FL-793: two-step sign-in is on */
     twoFactorEnabled: boolean;
 };
+export type StepUpDto = {
+    /** The 6-digit code from the authenticator app */
+    code?: string;
+    /** One of the recovery codes, as written down */
+    recoveryCode?: string;
+    /** transaction from the verification_required answer */
+    transaction: string;
+};
 export type TwoFactorProofDto = {
     /** The 6-digit code from the authenticator app */
     code?: string;
-    /** The account password */
-    password: string;
+    /** The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in */
+    password?: string;
     /** One of the recovery codes, as written down */
     recoveryCode?: string;
 };
@@ -7616,8 +7660,8 @@ export type TwoFactorSetupResponseDto = {
     secret: string;
 };
 export type TwoFactorPasswordDto = {
-    /** The account password */
-    password: string;
+    /** The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in */
+    password?: string;
 };
 export type ValidateAccessTokenResponseDto = {
     /** Authentication status */
@@ -12408,10 +12452,14 @@ export type OAuthAppGrantDto = {
 export type OAuthConfigDto = {
     /** OAuth code challenge (PKCE) */
     codeChallenge?: string;
+    /** The administrator's own provider only: ask it to authenticate the person again now (max_age=0), so the sign-in counts as recent, for example to set up Two-Step Verification on an account with no password */
+    reauthenticate?: boolean;
     /** OAuth redirect URI */
     redirectUri: string;
     /** OAuth state parameter */
     state?: string;
+    /** Sign in with Frameleaf only: ask Frameleaf for a passkey or two steps before it returns (acr_values verified) */
+    verified?: boolean;
 };
 export type OAuthAuthorizeResponseDto = {
     /** OAuth authorization URL */
@@ -12432,6 +12480,20 @@ export type OAuthCallbackDto = {
     state?: string;
     /** OAuth callback URL */
     url: string;
+};
+export type VerificationRequiredResponseDto = {
+    /** The level that would do: urn:frameleaf:acr:verified */
+    acr: string;
+    code: Code;
+    error: string;
+    /** How recent the sign-in must be, in seconds; null when any time will do */
+    maxAge: number | null;
+    message: string;
+    /** What would complete it: frameleaf (Cloud's step-up, then a new exchange) on its own, or the local proofs listed. totp and recovery_code are alternatives (the local authenticator). password (a first link) is needed together with totp or recovery_code when both are listed: send the password and one authenticator code in the same step-up. */
+    methods: VerificationMethod[];
+    statusCode: number;
+    /** Send it to POST /auth/step-up (a session) or POST /oauth/frameleaf/step-up (a sign-in), 10 minutes */
+    transaction: string;
 };
 export type FrameleafTokenExchangeDto = {
     /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
@@ -12536,6 +12598,19 @@ export type FrameleafLinkResponseDto = {
 export type FrameleafLinkConfirmDto = {
     /** The token a preview returned */
     confirmToken: string;
+};
+export type FrameleafStepUpDto = {
+    /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
+    capabilities?: string[];
+    /** The 6-digit code from the authenticator app */
+    code?: string;
+    /** The local password, when methods lists password */
+    password?: string;
+    /** One of the recovery codes, instead of code */
+    recoveryCode?: string;
+    rememberMe?: boolean;
+    /** transaction from the verification_required answer */
+    transaction: string;
 };
 export type PartnerBackfillDto = {
     /** Items copied so far */
@@ -25464,6 +25539,17 @@ export function updateUserPreferencesAdmin({ id, userPreferencesUpdateDto }: {
     })));
 }
 /**
+ * Reset sign-in for a user
+ */
+export function resetUserSignInAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/reset-sign-in`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Restore a deleted user
  */
 export function restoreUserAdmin({ id }: {
@@ -28196,6 +28282,18 @@ export function getAuthStatus(opts?: Oazapfts.RequestOpts) {
     }>("/auth/status", {
         ...opts
     }));
+}
+/**
+ * Answer a verification_required with the authenticator
+ */
+export function stepUp({ stepUpDto }: {
+    stepUpDto: StepUpDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/auth/step-up", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: stepUpDto
+    })));
 }
 /**
  * Turn off two-step sign-in
@@ -32548,6 +32646,9 @@ export function finishFrameleafSignIn({ oAuthCallbackDto }: {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: LoginResponseDto;
+    } | {
+        status: 403;
+        data: VerificationRequiredResponseDto;
     }>("/oauth/frameleaf/callback", oazapfts.json({
         ...opts,
         method: "POST",
@@ -32571,7 +32672,7 @@ export function exchangeFrameleafToken({ frameleafTokenExchangeDto }: {
         data: FrameleafTokenExchangeErrorDto;
     } | {
         status: 403;
-        data: FrameleafTokenExchangeErrorDto;
+        data: FrameleafTokenExchangeErrorDto | VerificationRequiredResponseDto;
     }>("/oauth/frameleaf/exchange", oazapfts.json({
         ...opts,
         method: "POST",
@@ -32656,6 +32757,21 @@ export function confirmFrameleafAccountLink({ frameleafLinkConfirmDto }: {
         ...opts,
         method: "POST",
         body: frameleafLinkConfirmDto
+    })));
+}
+/**
+ * Finish a Sign in with Frameleaf that needs the local password or authenticator
+ */
+export function stepUpFrameleafSignIn({ frameleafStepUpDto }: {
+    frameleafStepUpDto: FrameleafStepUpDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LoginResponseDto;
+    }>("/oauth/frameleaf/step-up", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafStepUpDto
     })));
 }
 /**
@@ -40592,6 +40708,11 @@ export enum LoginPageMessageFormat {
     Plain = "plain",
     Html = "html"
 }
+export enum SignInRequirement {
+    AdministratorsAway = "administrators-away",
+    EveryoneAway = "everyone-away",
+    Everyone = "everyone"
+}
 export enum ClassificationRuleAction {
     Review = "review",
     Tag = "tag"
@@ -42090,6 +42211,17 @@ export enum AssistantMediaType {
     Image = "IMAGE",
     Video = "VIDEO"
 }
+export enum SignInStepMethod {
+    Totp = "totp",
+    RecoveryCode = "recovery_code",
+    EmailCode = "email_code",
+    Password = "password",
+    Passkey = "passkey"
+}
+export enum SignInStepStatus {
+    Done = "done",
+    Next = "next"
+}
 export enum BrowserExtensionGrant {
     Capture = "capture",
     Media = "media"
@@ -42934,6 +43066,15 @@ export enum RestorationModelState {
     NoGpu = "no-gpu",
     GpuUnqualified = "gpu-unqualified",
     InsufficientVram = "insufficient-vram"
+}
+export enum Code {
+    VerificationRequired = "verification_required"
+}
+export enum VerificationMethod {
+    Frameleaf = "frameleaf",
+    Totp = "totp",
+    RecoveryCode = "recovery_code",
+    Password = "password"
 }
 export enum FrameleafTokenExchangeErrorCode {
     FrameleafExchangeNotLinked = "frameleaf_exchange_not_linked",

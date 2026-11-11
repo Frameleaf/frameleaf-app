@@ -4,7 +4,7 @@ import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable, Kysely, Transaction, Updateable } from 'kysely';
-import { columns } from 'src/database.js';
+import { type AuthSession, columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { SessionSignInTable } from 'src/schema/tables/session-sign-in.table.js';
@@ -76,6 +76,19 @@ export class SessionRepository {
       .execute();
   }
 
+  /** The person answered a `verification_required` with their authenticator: the session is Verified now. */
+  async raiseSignIn(sessionId: string, method: 'totp' | 'recovery_code') {
+    await this.db
+      .updateTable('session_sign_in')
+      .set({
+        methods: sql`array_append(array_remove("methods", ${method}), ${method}::character varying)`,
+        level: 'verified',
+        authTime: sql`now()`,
+      })
+      .where('sessionId', '=', sessionId)
+      .execute();
+  }
+
   /** How a session was made; undefined for a session older than the record. */
   @GenerateSql({ params: [DummyValue.UUID] })
   getSignIn(sessionId: string) {
@@ -121,8 +134,8 @@ export class SessionRepository {
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
-  getByToken(token: Buffer) {
-    return this.db
+  async getByToken(token: Buffer) {
+    const session = await this.db
       .selectFrom('session')
       .select((eb) => [
         ...columns.authSession,
@@ -134,12 +147,26 @@ export class SessionRepository {
             .where('user.deletedAt', 'is', null)
             .where('user.importClaimPending', '=', false),
         ).as('user'),
+        jsonObjectFrom(
+          eb
+            .selectFrom('session_sign_in')
+            .select([
+              'session_sign_in.methods',
+              'session_sign_in.level',
+              'session_sign_in.source',
+              'session_sign_in.legacy',
+              'session_sign_in.authTime',
+            ])
+            .whereRef('session_sign_in.sessionId', '=', 'session.id'),
+        ).as('signIn'),
       ])
       .where('session.token', '=', token)
       .where((eb) =>
         eb.or([eb('session.expiresAt', 'is', null), eb('session.expiresAt', '>', DateTime.now().toJSDate())]),
       )
       .executeTakeFirst();
+    // `signIn` is absent for a caller that never reads how the session was made
+    return session as (Omit<NonNullable<typeof session>, 'signIn'> & { signIn?: AuthSession['signIn'] }) | undefined;
   }
 
   /** Resolve a narrow native album grant without reading its browser session credential. */

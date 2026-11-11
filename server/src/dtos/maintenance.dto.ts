@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { confirmationField } from 'src/dtos/auth.dto.js';
 import { MaintenanceAction, MaintenanceActionSchema, StorageFolderSchema } from 'src/enum.js';
 
 /**
@@ -30,6 +31,7 @@ const SetMaintenanceModeSchema = z
     reason: maintenanceReason,
     restoreBackupFilename: z.string().optional().describe('Restore backup filename'),
     buddyRecoveryId: z.uuid().optional().describe('A verified, locally staged Buddy recovery'),
+    confirmation: confirmationField,
     keepSafetyBackup: z
       .boolean()
       .optional()

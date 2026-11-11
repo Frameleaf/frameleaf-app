@@ -19,6 +19,7 @@ import {
   PinCodeSetupDto,
   SessionUnlockDto,
   SignUpDto,
+  StepUpDto,
   TwoFactorCodeDto,
   TwoFactorPasswordDto,
   TwoFactorProofDto,
@@ -99,6 +100,21 @@ export class AuthController {
         ...(trustToken ? [{ key: AuthCookie.TwoFactorTrust, value: trustToken }] : []),
       ],
     });
+  }
+
+  @Post('step-up')
+  @Endpoint({
+    summary: 'Answer a verification_required with the authenticator',
+    description:
+      "A request answered 403 verification_required lists the methods that would complete it. Send the transaction from that answer with an authenticator code (or a recovery code); the session then counts as verified. Cloud's own step-up is answered with a new exchange token instead.",
+    history: new HistoryBuilder().added('v3.5.0').beta('v3.5.0'),
+  })
+  @Authenticated({ permission: false })
+  @RemoteSignInExempt()
+  @RateLimited(RATE_LIMITS.stepUp)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  stepUp(@Auth() auth: AuthDto, @Body() dto: StepUpDto, @GetLoginDetails() loginDetails: LoginDetails): Promise<void> {
+    return this.service.stepUp(auth, dto, loginDetails);
   }
 
   @Post('two-factor/setup')

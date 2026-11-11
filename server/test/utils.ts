@@ -130,6 +130,7 @@ import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metada
 export type ControllerContext = {
   authenticate: Mock;
   requireSetupAvailable: Mock;
+  getAuthService: () => Mocked<AuthService>;
   getHttpServer: () => any;
   reset: () => void;
   close: () => Promise<void>;
@@ -174,7 +175,12 @@ export const controllerSetup = async (
       { provide: ClsService, useValue: { getId: vi.fn() } },
       {
         provide: AuthService,
-        useValue: { authenticate: vi.fn(), requireSetupAvailable: vi.fn(), requireOriginalTransfer: vi.fn() },
+        useValue: {
+          authenticate: vi.fn(),
+          requireSetupAvailable: vi.fn(),
+          requireOriginalTransfer: vi.fn(),
+          requireConfirmedRecently: vi.fn(),
+        },
       },
       ...providers,
     ],
@@ -198,6 +204,7 @@ export const controllerSetup = async (
   return {
     authenticate,
     requireSetupAvailable,
+    getAuthService: () => resolvedAuthService,
     getHttpServer: () => app.getHttpServer(),
     reset: () => {
       authenticate.mockReset();
@@ -682,6 +689,10 @@ export const newTestService = <T extends BaseService>(
       Object.assign(sut, { [key]: newLockedEncryptionService(mocks) });
     } else if (type === SignInSecurityService) {
       Object.assign(sut, { [key]: overrides.signInSecurity ?? mocks.signInSecurity });
+    }
+    // unified sign-in: Sign in with Frameleaf checks local proof through AuthService, on the same mocks
+    if (type === AuthService) {
+      Object.assign(sut, { [key]: newTestService(AuthService, mocks as unknown as Partial<ServiceOverrides>).sut });
     }
     if (type === MediaHealthRepository) {
       Object.assign(sut, { [key]: mocks.mediaHealth });
