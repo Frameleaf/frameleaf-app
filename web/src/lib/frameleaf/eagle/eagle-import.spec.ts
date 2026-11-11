@@ -40,6 +40,30 @@ describe('reading an Eagle library', () => {
     expect(library.items.find(({ id }) => id === 'I11')!.unreadable).toBe(true);
   });
 
+  it('matches copied originals and plans the formats advertised by Boards', async () => {
+    const entry = (path: string, data = '') => ({ path, file: new File([data], path.split('/').at(-1)!) });
+    const library = await readEagleLibrary('Copied.library', [
+      entry('metadata.json', '{}'),
+      entry('images/I1.info/metadata.json', '{"name":"Café","ext":" .PSB "}'),
+      entry('images/I1.info/CAFE\u0301.PSB'),
+      entry('images/I1.info/other.psb'),
+      entry('images/I1.info/._CAFE\u0301.PSB'),
+      entry('images/I2.info/metadata.json', '{"name":"Type"}'),
+      entry('images/I2.info/Type.OTF'),
+      entry('images/I2.info/Type_THUMBNAIL.PNG'),
+      entry('images/I2.info/Type.xmp'),
+      entry('images/I3.info/metadata.json', '{"name":"Missing","ext":"otf"}'),
+      entry('images/I3.info/._Missing.otf'),
+    ]);
+    expect(library.items.map(({ ext, file }) => [ext, file?.name])).toEqual([
+      ['psb', 'CAFE\u0301.PSB'],
+      ['otf', 'Type.OTF'],
+      ['otf', undefined],
+    ]);
+    expect(supportedExtensions(['.PSB', '.cr3', '.mxf', '.otf'])).toEqual(new Set(['psb', 'cr3', 'mxf', 'otf']));
+    expect(planEagleImport(library, { supported: supportedExtensions(['.psb', '.otf']) }).coming).toBe(2);
+  });
+
   it('tells two libraries with the same name apart', async () => {
     const first = await readFixture();
     const again = await readFixture();
@@ -167,6 +191,20 @@ describe('the check before importing', () => {
       { supported: supportedExtensions(['.jpg', '.png', '.webp', '.mp4']) },
     );
     expect(old.unsupported).toContainEqual({ name: 'Lodge Serif.otf', reason: 'other' });
+  });
+
+  it('reports comments on newly supported video formats as video comments', () => {
+    const [item] = library.items;
+    const video = { ...item, ext: 'mxf' };
+    const plan = planEagleImport(
+      { ...library, items: [video] },
+      {
+        supported: new Set(['mxf']),
+        videoExtensions: new Set(['mxf']),
+      },
+    );
+    expect(plan.areaCommentsWaiting).toBe(0);
+    expect(plan.notMapped.videoComments).toEqual([video.name + '.mxf']);
   });
 
   it('lists a type the server does not take, instead of dropping it', () => {
