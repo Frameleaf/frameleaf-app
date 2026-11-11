@@ -46,6 +46,12 @@ describe('date-format', () => {
     expect(formatDate(date, { month: 'short', day: 'numeric', ...UTC }, 'en-US', as('dmy'))).toBe('1 Nov');
   });
 
+  it("keeps the locale's own digits in a written-out date", () => {
+    const text = formatDate(date, { dateStyle: 'long', ...UTC }, 'ar-EG', as('dmy'));
+    expect(text).not.toContain('NaN');
+    expect(text.startsWith('١ ')).toBe(true);
+  });
+
   it('leaves a date without a day to the language', () => {
     const monthYear = { month: 'long', year: 'numeric', ...UTC } as const;
     expect(formatDate(date, monthYear, 'en-US', as('dmy'))).toBe('November 2026');

@@ -88,11 +88,14 @@ const orderedDate = (
     const ordered = dateFormat === 'dmy' ? [day, month, year] : [month, day, year];
     return withWeekday(ordered.filter(Boolean).join('/'), ', ');
   }
-  const name = partsOf(date, locale, { ...shared, month: fields.month, day: 'numeric' }).month ?? month;
+  // the day from the same call as the month name, so it keeps the locale's digits (Arabic, Persian)
+  const named = partsOf(date, locale, { ...shared, month: fields.month, day: 'numeric' });
+  const name = named.month ?? month;
+  const plainDay = named.day ?? day;
   const text =
     dateFormat === 'dmy'
-      ? [String(Number(day)), name, year].filter(Boolean).join(' ')
-      : `${name} ${Number(day)}${year ? `, ${year}` : ''}`;
+      ? [plainDay, name, year].filter(Boolean).join(' ')
+      : `${name} ${plainDay}${year ? `, ${year}` : ''}`;
   return withWeekday(text, ', ');
 };
 
