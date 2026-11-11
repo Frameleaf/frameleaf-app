@@ -436,6 +436,8 @@
 
   const onAlbumRemoveAssets = async ({ assetIds, albumIds }: { assetIds: string[]; albumIds: string[] }) => {
     if (albumIds.includes(albumId)) {
+      // FL-1452: a mixed album reads its dates to check again
+      mixedDatesGeneration++;
       await handleRemoveAssets(assetIds);
     }
   };
@@ -512,10 +514,11 @@
     })();
   });
   const fixMixedDates = async () => {
-    const id = albumId;
+    const view = albumView;
     try {
-      const ids = await readDatesToCheckIds({ albumId: id });
-      if (albumId === id) {
+      const ids = await readDatesToCheckIds({ albumId: view.albumId });
+      // Not if the page moved on (another album, back again, or another session) while they were read
+      if (isCurrentView(view)) {
         await itemsView?.changeDates(ids);
       }
     } catch (error) {
