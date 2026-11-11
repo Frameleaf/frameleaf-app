@@ -1,4 +1,4 @@
-"""Detached Ed25519 approval for an explicit local still-runtime qualification."""
+"""Detached Ed25519 approval for an explicit local restoration qualification."""
 
 import hashlib
 import json
@@ -8,7 +8,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .models import STILL_SCRIPT, ModelSpec, QualificationRecord, model_fingerprint
+from .models import RIFE_CANDIDATE_SCRIPT, STILL_SCRIPT, ModelSpec, QualificationRecord, model_fingerprint
 
 
 def _sha256(path: Path) -> str:
@@ -18,14 +18,21 @@ def _sha256(path: Path) -> str:
 
 def approval_statement(spec: ModelSpec, record: QualificationRecord, worker_revision: str) -> bytes:
     """Bind the signed qualification to the actual entrypoint, interpreter and current platform."""
+    match spec.signed_candidate:
+        case "still":
+            purpose, script = "frameleaf-realesrgan-still-qualification-v1", STILL_SCRIPT
+        case "rife-onnx":
+            purpose, script = "frameleaf-rife-onnx-qualification-v1", RIFE_CANDIDATE_SCRIPT
+        case _:
+            raise ValueError("this runtime has no signed candidate approval")
     return json.dumps(
         {
-            "purpose": "frameleaf-realesrgan-still-qualification-v1",
+            "purpose": purpose,
             "workerRevision": worker_revision,
             "platform": platform.system(),
             "architecture": platform.machine(),
             "modelFingerprint": model_fingerprint(spec),
-            "entrypointSha256": _sha256(spec.runtime.root / STILL_SCRIPT),
+            "entrypointSha256": _sha256(spec.runtime.root / script),
             "pythonSha256": _sha256(spec.runtime.python),
             "qualificationSha256": hashlib.sha256(record.model_dump_json().encode()).hexdigest(),
         },
@@ -35,7 +42,7 @@ def approval_statement(spec: ModelSpec, record: QualificationRecord, worker_revi
 
 
 @dataclass(frozen=True)
-class SignedStillApproval:
+class SignedRuntimeApproval:
     """Trust inputs are injected by the qualification harness, outside the model manifest.
 
     The public worker never constructs this object. The trusted executable, public key and
@@ -54,7 +61,7 @@ class SignedStillApproval:
             return False
         try:
             statement = approval_statement(spec, record, worker_revision)
-            with tempfile.TemporaryDirectory(prefix="frameleaf-still-approval-") as directory:
+            with tempfile.TemporaryDirectory(prefix="frameleaf-runtime-approval-") as directory:
                 root = Path(directory)
                 for name, data in (("key", self.public_key), ("statement", statement), ("signature", self.signature)):
                     (root / name).write_bytes(data)
@@ -81,5 +88,5 @@ class SignedStillApproval:
                     timeout=10,
                 )
             return completed.returncode == 0
-        except (OSError, subprocess.TimeoutExpired):
+        except (OSError, ValueError, subprocess.TimeoutExpired):
             return False

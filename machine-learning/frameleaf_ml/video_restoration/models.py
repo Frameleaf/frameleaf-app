@@ -116,6 +116,22 @@ STILL_ARGV = (
     "--checkpoint",
     "{weight:model}",
 )
+RIFE_CANDIDATE_ID = "rife-onnx-candidate"
+RIFE_CANDIDATE_SCRIPT = "machine-learning/frameleaf_ml/video_restoration/rife_candidate.py"
+RIFE_CANDIDATE_WEIGHT_SHA256 = "4da60c1f20d42dba4f21503140940aa48a488585ead977532bf22e95a0319327"
+RIFE_CANDIDATE_ARGV = (
+    "{python}",
+    "-I",
+    "{runtime_root}/" + RIFE_CANDIDATE_SCRIPT,
+    "--model",
+    "{weight:model}",
+    "--img",
+    "{input_dir}",
+    "--output",
+    "{output_dir}",
+    "--exp",
+    "{exp}",
+)
 
 
 class RestorationFailure(Exception):
@@ -226,6 +242,16 @@ class ModelSpec(ConfigModel):
     requiresGpu: bool = True
     notes: str = ""
 
+    @property
+    def signed_candidate(self) -> Literal["still", "rife-onnx"] | None:
+        if (
+            self.id == RIFE_CANDIDATE_ID
+            or any("rife_candidate" in argument for argument in self.runtime.argv)
+            or any(weight.sha256 == RIFE_CANDIDATE_WEIGHT_SHA256 for weight in self.weights)
+        ):
+            return "rife-onnx"
+        return "still" if self.family == STILL_FAMILY else None
+
     @model_validator(mode="after")
     def _check_placeholders(self) -> "ModelSpec":
         roles = {weight.role for weight in self.weights}
@@ -266,6 +292,24 @@ class ModelSpec(ConfigModel):
             or [(weight.role, weight.sha256) for weight in self.weights] != [("model", STILL_WEIGHT_SHA256)]
         ):
             raise ValueError(f"model {self.id}: invalid Real-ESRGAN still runtime configuration")
+        if self.signed_candidate == "rife-onnx" and (
+            self.id != RIFE_CANDIDATE_ID
+            or self.family != "rife"
+            or self.nativeScale is not None
+            or self.requiresGpu
+            or self.dynamicRanges != [DynamicRange.SDR]
+            or self.limits.maxInputLongEdge > 1920
+            or self.limits.maxFrames > 240
+            or self.limits.maxFramesPerChunk > self.limits.maxFrames
+            or self.limits.minVramBytes != 0
+            or not self.runtime.root.is_absolute()
+            or not self.runtime.python.is_absolute()
+            or self.runtime.protocol != "process"
+            or self.runtime.env
+            or tuple(self.runtime.argv) != RIFE_CANDIDATE_ARGV
+            or [(weight.role, weight.sha256) for weight in self.weights] != [("model", RIFE_CANDIDATE_WEIGHT_SHA256)]
+        ):
+            raise ValueError(f"model {self.id}: invalid signed RIFE candidate configuration")
         return self
 
 
@@ -1088,7 +1132,7 @@ class RestorationRegistry:
         runtime_inspector: Callable[[ModelSpec], RuntimeStatus] = inspect_runtime,
         verifier: WeightVerifier | None = None,
         container_revision: str | None = None,
-        still_admission: Callable[[ModelSpec, QualificationRecord, str], bool] | None = None,
+        signed_admission: Callable[[ModelSpec, QualificationRecord, str], bool] | None = None,
     ) -> None:
         self.manifest_path = manifest_path
         self.qualification_path = qualification_path
@@ -1096,7 +1140,7 @@ class RestorationRegistry:
         self.runtime_inspector = runtime_inspector
         self.verifier = verifier or WeightVerifier()
         self.container_revision = container_revision
-        self.still_admission = still_admission
+        self.signed_admission = signed_admission
         self._lock = threading.Lock()
         self._report: CapabilityReport | None = None
 
@@ -1153,7 +1197,7 @@ class RestorationRegistry:
         gpus = self.gpu_query()
         manifest = config.manifest
         models = (
-            [self._evaluate(spec, config, manifest, gpus) for spec in manifest.models if spec.family != STILL_FAMILY]
+            [self._evaluate(spec, config, manifest, gpus) for spec in manifest.models if spec.signed_candidate is None]
             if manifest
             else []
         )
@@ -1175,7 +1219,7 @@ class RestorationRegistry:
         config = self.load()
         specs = config.manifest.models if config.manifest else []
         return self._build_report(
-            [verifying_capability(spec) for spec in specs if spec.family != STILL_FAMILY], [], config.problems
+            [verifying_capability(spec) for spec in specs if spec.signed_candidate is None], [], config.problems
         )
 
     def select(
@@ -1201,7 +1245,11 @@ class RestorationRegistry:
         candidates = [
             spec
             for spec in manifest.models
-            if spec.mode == mode and (spec.family != STILL_FAMILY or (kind == "image" and spec.id == model_id))
+            if spec.mode == mode
+            and (
+                spec.signed_candidate is None
+                or (spec.id == model_id and kind == ("image" if spec.signed_candidate == "still" else "video"))
+            )
         ]
         if model_id is not None:
             candidates = [spec for spec in candidates if spec.id == model_id]
@@ -1214,15 +1262,15 @@ class RestorationRegistry:
         available: list[tuple[ModelSpec, ModelCapability]] = []
         for spec in candidates:
             capability = self._evaluate(spec, config, manifest, gpus)
-            if capability.state == ModelState.AVAILABLE and spec.family == STILL_FAMILY:
+            if capability.state == ModelState.AVAILABLE and spec.signed_candidate is not None:
                 record, _ = find_qualification(spec, config.records, self.container_revision)
                 if (
-                    self.still_admission is None
+                    self.signed_admission is None
                     or self.container_revision is None
                     or record is None
-                    or not self.still_admission(spec, record, self.container_revision)
+                    or not self.signed_admission(spec, record, self.container_revision)
                 ):
-                    reasons.append(f"{spec.id}: no valid signed installed still-runtime approval")
+                    reasons.append(f"{spec.id}: no valid signed installed runtime approval")
                     continue
             if capability.state == ModelState.AVAILABLE:
                 available.append((spec, capability))

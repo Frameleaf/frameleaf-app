@@ -16,8 +16,8 @@ from frameleaf_ml.video_restoration.models import (
     RestorationRegistry,
 )
 from frameleaf_ml.video_restoration.pipeline import restore
+from frameleaf_ml.video_restoration.runtime_approval import SignedRuntimeApproval, approval_statement
 from frameleaf_ml.video_restoration.schemas import RestorationErrorCode, RestorationMode, RestorationRequest
-from frameleaf_ml.video_restoration.still_approval import SignedStillApproval, approval_statement
 from test_realesrgan_still_candidate import SCRIPT, fixture_image
 from test_video_restoration import IMAGE_REVISION, make_spec, passing_record
 
@@ -66,13 +66,13 @@ def test_signed_still_selection_and_new_render(tmp_path):
         ["pkeyutl", "-sign", "-rawin", "-inkey", "private", "-in", "statement", "-out", "signature"],
     ):
         subprocess.run([openssl, *args], cwd=tmp_path, check=True)
-    approval = SignedStillApproval(
+    approval = SignedRuntimeApproval(
         Path(openssl), (tmp_path / "public").read_bytes(), (tmp_path / "signature").read_bytes()
     )
 
     def registry(admission=None):
         return RestorationRegistry(
-            manifest, qualification, gpu_query=list, container_revision=IMAGE_REVISION, still_admission=admission
+            manifest, qualification, gpu_query=list, container_revision=IMAGE_REVISION, signed_admission=admission
         )
 
     def rejected(registry, kind="image", model=spec.id):
@@ -86,7 +86,7 @@ def test_signed_still_selection_and_new_render(tmp_path):
     assert admitted.refresh().workloads == []
     rejected(admitted, kind="video")
     rejected(admitted, model=None)
-    wrong = SignedStillApproval(approval.openssl, approval.public_key, bytes(64))
+    wrong = SignedRuntimeApproval(approval.openssl, approval.public_key, bytes(64))
     rejected(registry(wrong))
     assert admitted.select(RestorationMode.FAITHFUL, spec.id, None, kind="image").spec == spec
 

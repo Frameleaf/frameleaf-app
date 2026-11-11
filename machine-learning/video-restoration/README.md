@@ -85,15 +85,15 @@ with any redistributed weights. The candidate itself fetches no assets.
 
 For a disposable qualification configuration, use family `rife`, mode
 `smooth_motion`, `requiresGpu: false`, `nativeScale: null`, and `dynamicRanges: ["sdr"]`.
-Set `runtime.root` to the pinned Library checkout’s `machine-learning` directory,
+Use model ID `rife-onnx-candidate`. Set `runtime.root` to the pinned Library checkout,
 `revision` to that checkout’s exact commit, and `runtime.python` to its locked CPU
-environment. Configure a weight named `rife_onnx` with the above digest. The runtime
+environment. Configure the weight role `model` with the above digest. The runtime
 arguments use the existing adapter’s frame-folder contract.
 
 ```json
 [
-  "{python}", "-m", "frameleaf_ml.video_restoration.rife_candidate",
-  "--model", "{weight:rife_onnx}", "--img", "{input_dir}",
+  "{python}", "-I", "{runtime_root}/machine-learning/frameleaf_ml/video_restoration/rife_candidate.py",
+  "--model", "{weight:model}", "--img", "{input_dir}",
   "--output", "{output_dir}", "--exp", "{exp}"
 ]
 ```
@@ -101,12 +101,16 @@ arguments use the existing adapter’s frame-folder contract.
 The candidate limits input to 240 frames, 1920 pixels on the long edge and
 1920 × 1088 pixels per frame. It copies source endpoints byte-for-byte, holds
 frames across detected hard cuts and evaluates each intermediate phase directly.
-The model stays unavailable until the existing runtime, rights and qualification
-checks pass. For an opt-in local pipeline test with an existing copy of the model,
+The candidate additionally requires a detached Ed25519 approval binding its exact
+model fingerprint, entrypoint and Python bytes, reviewed qualification, worker
+revision, and platform. The installed qualification harness supplies the key and
+signature separately from the model manifest. Public discovery and selection
+remain gated. For an opt-in local pipeline test with an existing copy of the model,
 run `FRAMELEAF_RIFE_CANDIDATE_MODEL=/path/to/model.onnx uv run --extra cpu pytest test_rife_candidate.py`
-from `machine-learning`. That test exercises synthetic video, audio and the exact
-model. Installed resource limits and representative motion quality still need
-qualification.
+from `machine-learning`. Also set `FRAMELEAF_TEST_OPENSSL` to an absolute OpenSSL
+3 executable to exercise detached admission and preview-to-full binding with a
+disposable key. The tests exercise synthetic video, audio and the exact model.
+Installed resource limits and representative motion quality still need qualification.
 
 ## When a model is available
 
