@@ -1,10 +1,25 @@
 name: Known-bad file corpus
-# FL-883: before an upstream sync merges, push the known-bad corpus (server/test/fixtures/known-bad-corpus.json)
-# through metadata, thumbnails and video encoding in the medium runner image, and compare with the manifest.
-# Pull requests from any other branch see this job skipped. Run it by hand from the Actions tab for any branch.
+# FL-883: push the known-bad corpus (server/test/fixtures/known-bad-corpus.json) through metadata, thumbnails
+# and video encoding in the medium runner image, and compare with the manifest. It runs on every pull request
+# that changes the media pipeline it guards, and by hand from the Actions tab for any branch. Frameleaf never
+# pulls code from Immich, so the guard is on Frameleaf's own changes.
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'server/src/services/metadata.service.ts'
+      - 'server/src/services/media.service.ts'
+      - 'server/src/services/media-health*.ts'
+      - 'server/src/repositories/metadata.repository.ts'
+      - 'server/src/repositories/media.repository.ts'
+      - 'server/src/utils/media.ts'
+      - 'server/src/utils/mime-types.ts'
+      - 'server/Dockerfile'
+      - 'server/test/fixtures/known-bad-corpus.json'
+      - 'server/test/fixtures/known-bad/**'
+      - 'server/test/medium/specs/corpus/**'
+      - 'scripts/checkout-test-assets.sh'
+      - '.github/workflows/known-bad-corpus.yml'
   workflow_dispatch:
 
 permissions: {}
@@ -16,7 +31,7 @@ concurrency:
 jobs:
   corpus:
     name: Known-bad corpus
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'aj/upstream-sync-')) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
