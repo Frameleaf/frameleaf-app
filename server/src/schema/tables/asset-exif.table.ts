@@ -127,6 +127,13 @@ export class AssetExifTable {
   @Column({ type: 'character varying', nullable: true })
   timeZone!: string | null;
 
+  /** FL-912: the file's `OffsetTimeOriginal` and `OffsetTime`, which the Date & Time Doctor compares. */
+  @Column({ type: 'text', nullable: true })
+  offsetTimeOriginal!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  offsetTime!: string | null;
+
   @Column({ type: 'character varying', nullable: true })
   projectionType!: string | null;
 

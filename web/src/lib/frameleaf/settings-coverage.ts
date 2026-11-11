@@ -1093,6 +1093,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'map.lightStyle',
   },
   {
+    pattern: 'metadata.dateFromFileName',
+    // FL-912: on by default; its switch comes with the Date & Time Doctor's page (FL-943)
+    kind: 'api-only',
+    file: '../server/src/services/metadata.service.ts',
+    evidence: 'metadata.dateFromFileName',
+  },
+  {
     pattern: 'metadata.faces.import',
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/intelligence/Faces.svelte',

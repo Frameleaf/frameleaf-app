@@ -1123,6 +1123,9 @@ const AdminConfigSchemaWithVisibility = z
             write: configBool.optional().describe('Save people’s names in XMP sidecars'),
           })
           .meta({ id: 'AdminConfigFacesDto' }),
+        dateFromFileName: configBool
+          .optional()
+          .describe('When a file has no date of its own, use the one in its name (IMG_20230512_134501, a screenshot)'),
       })
       .meta({ id: 'AdminConfigMetadataDto' }),
     oauth: z
@@ -1856,6 +1859,7 @@ export const defaults = Object.freeze<SystemConfig>({
       import: false,
       write: true,
     },
+    dateFromFileName: true,
   },
   oauth: {
     autoLaunch: false,

@@ -3,6 +3,7 @@ import { AccountEventRepository } from 'src/repositories/account-event.repositor
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
+import { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
 import { AlbumCleanupRepository } from 'src/repositories/album-cleanup.repository.js';
 import { AlbumMergeRepository } from 'src/repositories/album-merge.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
@@ -297,6 +298,7 @@ export const repositories = [
   AlbumSourceRepository,
   AlbumChangeRunRepository,
   AlbumCleanupRepository,
+  DateDoctorRepository,
   AlbumMergeRepository,
   StackRepository,
   StudioPreviewRepository,

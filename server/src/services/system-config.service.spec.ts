@@ -152,6 +152,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       import: false,
       write: true,
     },
+    dateFromFileName: true,
   },
   machineLearning: {
     enabled: true,

@@ -65,6 +65,7 @@ import { AssetBackupDeletionTable } from 'src/schema/tables/asset-backup-deletio
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
 import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
 import { AssetEditAuditTable } from 'src/schema/tables/asset-edit-audit.table.js';
+import { AssetDateFindingTable } from 'src/schema/tables/asset-date-finding.table.js';
 import { AssetEditTable } from 'src/schema/tables/asset-edit.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceAuditTable } from 'src/schema/tables/asset-face-audit.table.js';
@@ -375,6 +376,7 @@ export class ImmichDatabase {
     AlbumCleanupApplyTable,
     AlbumCleanupSnapshotTable,
     AssetViewTable,
+    AssetDateFindingTable,
     BookmarkTagTable,
     AssetSourceTable,
     AccountEventTable,
@@ -704,6 +706,7 @@ export interface DB extends QueueDatabase {
   asset_keyframe: AssetKeyframeTable;
   asset_video_fingerprint: AssetVideoFingerprintTable;
   asset_view: AssetViewTable;
+  asset_date_finding: AssetDateFindingTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;
