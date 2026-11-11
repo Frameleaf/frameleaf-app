@@ -9,15 +9,15 @@ import AssistantModeSwitch from './AssistantModeSwitch.svelte';
 describe('AssistantModeSwitch', () => {
   beforeAll(() => addMessages('dev', en));
 
-  it('uses the localized product name in the selected language', () => {
+  it('uses the localized product name in the selected language', async () => {
     addMessages('fr', fr);
     const previous = get(locale);
-    locale.set('fr');
+    await locale.set('fr');
     try {
       render(AssistantModeSwitch, { classic: false, onChange: vi.fn() });
       expect(screen.getByRole('radio', { name: 'Assistant Frameleaf' })).toBeInTheDocument();
     } finally {
-      locale.set(previous);
+      await locale.set(previous);
     }
   });
 

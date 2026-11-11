@@ -425,7 +425,7 @@ describe('Ask about your photos', () => {
     state.url = new URL('http://localhost/search?ask=beach');
     render(SearchPage);
 
-    expect(screen.getByRole('status')).toHaveTextContent('Ask about your photos is turned off on this server.');
+    expect(screen.getByRole('status')).toHaveTextContent('Ask Search is turned off on this server.');
     expect(askSearch).not.toHaveBeenCalled();
   });
 
