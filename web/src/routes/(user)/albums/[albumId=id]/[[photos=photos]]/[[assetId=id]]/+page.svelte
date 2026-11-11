@@ -364,6 +364,8 @@
     if (!isCurrentView(view)) {
       return;
     }
+    // FL-1452: what the album holds may have changed, so a mixed album reads its dates to check again
+    mixedDatesGeneration++;
     await refreshAlbum();
     if (!isCurrentView(view) || manager !== timelineManager) {
       return;
