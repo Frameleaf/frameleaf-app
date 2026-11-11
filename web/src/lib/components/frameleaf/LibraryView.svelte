@@ -73,7 +73,13 @@
   } from '$lib/frameleaf/album-view-sort';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
-  import { captionsFor, hiddenParts, sectionGrouping, viewTimelineOptions } from '$lib/frameleaf/library-view';
+  import {
+    captionsFor,
+    DEFAULT_LIBRARY_VIEW,
+    hiddenParts,
+    sectionGrouping,
+    viewTimelineOptions,
+  } from '$lib/frameleaf/library-view';
   import { libraryView } from '$lib/frameleaf/library-view.svelte';
   import { searchQueryForTimeline, timelineQueryOptions } from '$lib/frameleaf/library-query-options';
   import { locale } from '$lib/stores/preferences.store';
@@ -310,9 +316,10 @@
 
   /**
    * FL-1398: the View menu's choices, kept with the account. "Stacks" and "Also show" change what the
-   * page asks the timeline for; a public page and a picking step keep the page's own request.
+   * page asks the timeline for; a picking step keeps the page's own request. A public share is nobody's
+   * library: a signed-in visitor's own choices never shape it, so it is drawn with the defaults.
    */
-  const view = $derived(libraryView.value);
+  const view = $derived(publicView ? DEFAULT_LIBRARY_VIEW : libraryView.value);
   const libraryRoot = $derived(destination?.kind === 'library');
   const options = $derived(
     pageOptions && !publicView && !selectionMode ? viewTimelineOptions(pageOptions, view, libraryRoot) : pageOptions,
@@ -472,7 +479,7 @@
 
   /** FL-1398: time and file name under each photo are the View menu's, kept per layout. */
   const captionLayout = $derived(gridLayout === 'timeline' || gridLayout === 'work' ? gridLayout : 'browse');
-  const captions = $derived(publicView ? { time: false, names: false } : captionsFor(view, captionLayout));
+  const captions = $derived(captionsFor(view, captionLayout));
 
   /** The List view (S-15): Browse's and Work's rows; the Timeline always keeps its dated rows. */
   const listView = $derived(!publicView && gridLayout !== 'timeline' && session.state.view === 'list');

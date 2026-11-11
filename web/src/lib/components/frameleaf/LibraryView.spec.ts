@@ -269,6 +269,18 @@ describe('LibraryView', () => {
     expect(screen.getByTestId('work-panel')).toBeInTheDocument();
   });
 
+  it('draws a public share with the default view, whatever the signed-in visitor chose (FL-1398)', async () => {
+    libraryView.set({ badges: false, crop: false, groupBy: 'month', browseTime: true });
+    try {
+      await setup(true);
+      const root = screen.getByTestId('frameleaf-library');
+      expect(root).not.toHaveAttribute('data-view-hide');
+      expect(root).not.toHaveAttribute('data-view-fit');
+    } finally {
+      libraryView.reset();
+    }
+  });
+
   it('has no file-name button of its own in Work: the View menu holds it, per layout (FL-1398)', async () => {
     sdkMock.getPartners.mockResolvedValue([]);
     await setup(false);
