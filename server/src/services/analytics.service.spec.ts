@@ -115,6 +115,7 @@ describe(AnalyticsService.name, () => {
     getInventory: vitest.fn(),
     getPhysical: vitest.fn(),
     getArrivalsByDay: vitest.fn(),
+    getAddedByDay: vitest.fn(),
     getCapturesByDay: vitest.fn(),
     getCameras: vitest.fn(),
     getAlbums: vitest.fn(),
@@ -155,6 +156,7 @@ describe(AnalyticsService.name, () => {
       { day: '2026-09-18', photos: 3, videos: 1 },
       { day: '2026-01-02', photos: 2, videos: 0 },
     ]);
+    analyticsRepository.getAddedByDay.mockResolvedValue([]);
     analyticsRepository.getCapturesByDay.mockResolvedValue([{ day: '2026-09-18', items: 2 }]);
     analyticsRepository.getCameras.mockResolvedValue([
       { make: 'Apple', model: 'iPhone 16 Pro', items: 80 },
@@ -433,7 +435,23 @@ describe(AnalyticsService.name, () => {
       );
     });
 
-    it('keeps days and buckets reconciled and leaves unobserved growth as gaps', async () => {
+    it('rebuilds growth before the first reading from items added by then', async () => {
+      analyticsRepository.getSamples.mockResolvedValue([
+        { series: AnalyticsSeriesId.LibraryItems, value: 300, observedAt: new Date('2026-09-18T00:05:00Z') },
+      ]);
+      analyticsRepository.getLatestObservation.mockResolvedValue(new Date('2026-09-18T00:05:00Z'));
+      analyticsRepository.getAddedByDay.mockResolvedValue([
+        { day: '2025-09-30', items: 200, logicalBytes: 2000, physicalBytes: 1500 },
+        { day: '2026-03-02', items: 100, logicalBytes: 1000, physicalBytes: 1000 },
+      ]);
+      const result = await sut.getReport(admin(), { scope: 'all', range: AnalyticsRange.Year });
+      const month = (key: string) => result.series.find((row) => row.key === key);
+      expect(month('2026-02')).toMatchObject({ items: 200, physicalBytes: 1500 });
+      expect(month('2026-03')).toMatchObject({ items: 300, logicalBytes: 3000, physicalBytes: 2500 });
+      expect(month('2026-09')).toMatchObject({ items: 300, logicalBytes: null });
+    });
+
+    it('keeps days and buckets reconciled and rebuilds growth before the first reading from added days', async () => {
       analyticsRepository.getSamples.mockResolvedValue([
         { series: AnalyticsSeriesId.LibraryItems, value: 99, observedAt: new Date('2026-09-18T00:05:00Z') },
       ]);
@@ -445,7 +463,8 @@ describe(AnalyticsService.name, () => {
       expect(uploaded).toBe(6);
       expect(result.days.reduce((sum, row) => sum + row.captured, 0)).toBe(2);
       expect(result.series.at(-1)).toMatchObject({ items: 99, logicalBytes: null });
-      expect(result.series[0]).toMatchObject({ items: null, observedAt: null });
+      // no item was added before the window opened or in its first month
+      expect(result.series[0]).toMatchObject({ items: 0, observedAt: `${result.series[0].through}T23:59:59.999Z` });
       expect(result.history.state).toBe(AnalyticsState.Measured);
     });
 

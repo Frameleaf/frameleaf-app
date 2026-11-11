@@ -398,6 +398,42 @@ export const bindGrowth = (buckets: AnalyticsBucketWindow[], samples: AnalyticsS
 };
 
 /**
+ * Growth for the buckets that end before the first nightly reading in the window, rebuilt from the
+ * items' added days (`getAddedByDay`), so a library imported in one go is not a blank chart until the
+ * collector has run for months. Buckets from the first reading on keep the readings, gaps included.
+ * A rebuilt bucket's `observedAt` is the end of its last day.
+ */
+export const backfillGrowth = (
+  buckets: AnalyticsBucketWindow[],
+  growth: BoundGrowth[],
+  added: Array<{ day: string; items: number; logicalBytes: number; physicalBytes: number }>,
+): BoundGrowth[] => {
+  const firstRead = growth.findIndex((bound) => bound.observedAt !== null);
+  if (firstRead === -1) {
+    return growth;
+  }
+  const total = { items: 0, logicalBytes: 0, physicalBytes: 0 };
+  let next = 0;
+  return growth.map((bound, index) => {
+    if (index >= firstRead) {
+      return bound;
+    }
+    const { through } = buckets[index];
+    for (; next < added.length && added[next].day <= through; next++) {
+      total.items += added[next].items;
+      total.logicalBytes += added[next].logicalBytes;
+      total.physicalBytes += added[next].physicalBytes;
+    }
+    return {
+      [AnalyticsSeriesId.LibraryItems]: total.items,
+      [AnalyticsSeriesId.LibraryLogicalBytes]: total.logicalBytes,
+      [AnalyticsSeriesId.LibraryPhysicalBytes]: total.physicalBytes,
+      observedAt: new Date(`${through}T23:59:59.999Z`),
+    };
+  });
+};
+
+/**
  * Sum per-day rows into buckets. A day the table has no row for counts as zero: these series are
  * read from tables that hold every retained item or recorded request, so a missing day had none.
  */

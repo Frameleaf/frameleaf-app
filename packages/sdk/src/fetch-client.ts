@@ -5615,7 +5615,7 @@ export type AnalyticsDayDto = {
     /** Items taken on this local date */
     captured: number;
     date: string;
-    /** Items added on this UTC date */
+    /** Items added on this UTC date (an item taken before the server started counts from the day it was taken) */
     uploaded: number;
 };
 export type AnalyticsSeriesDefinitionDto = {
@@ -5909,16 +5909,16 @@ export type AnalyticsBucketDto = {
     key: string;
     /** Bytes */
     logicalBytes: number | null;
-    /** When the growth values were read; null for a gap */
+    /** When the growth values were read, or for a bucket before the first nightly reading, the end of the bucket they were rebuilt for from the items added by then; null for a gap */
     observedAt: string | null;
     /** Cut short by the edge of the selected dates */
     partial: boolean;
-    /** Photos added in this period and still in the library */
+    /** Photos added in this period and still in the library (a photo taken before the server started counts from the day it was taken) */
     photos: number;
     /** Bytes */
     physicalBytes: number | null;
     through: string;
-    /** Videos added in this period and still in the library */
+    /** Videos added in this period and still in the library (a video taken before the server started counts from the day it was taken) */
     videos: number;
 };
 export type AnalyticsSummaryDto = {

@@ -313,7 +313,7 @@ describe('LibraryAnalytics', () => {
       );
       expect(tableTotal(container, 'calendar-captured')).toBe(7);
       await fireEvent.change(within(days).getByLabelText('Show'), { target: { value: 'uploaded' } });
-      expect(within(days).getByRole('heading', { name: '4 uploads over 7 days' })).toBeInTheDocument();
+      expect(within(days).getByRole('heading', { name: '4 items added over 7 days' })).toBeInTheDocument();
     });
 
     it('hides people and places outside the owner scope and says why', () => {
