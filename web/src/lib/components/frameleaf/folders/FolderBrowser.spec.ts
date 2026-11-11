@@ -203,15 +203,19 @@ describe('FolderBrowser', () => {
       );
     });
 
-    it('says "No folders yet" for an empty library, with nothing to search and Show in timeline disabled', () => {
+    // FL-1412 (M13): the one empty-page pattern, and no controls with nothing to act on.
+    it('says "No folders yet" for an empty library, with nothing to search, sort or show in the timeline', () => {
       renderBrowser('/', { tree: buildFolderTree([]), assets: [] });
-      expect(screen.getByText('No folders yet')).toBeInTheDocument();
-      expect(
-        screen.getByText('Imported originals appear here in the same structure as your storage.'),
-      ).toBeInTheDocument();
+      const empty = screen.getByTestId('frameleaf-empty-state');
+      expect(within(empty).getByRole('heading', { name: 'No folders yet' })).toBeInTheDocument();
+      expect(empty).toHaveTextContent(
+        'Folders on your storage that Frameleaf reads from appear here as they are on disk.',
+      );
+      expect(empty.querySelector('button, a')).toBeNull();
       expect(cards()).toHaveLength(0);
       expect(screen.queryByRole('searchbox')).toBeNull();
-      expect(screen.getByRole('button', { name: 'Show in timeline' })).toBeDisabled();
+      expect(screen.queryByRole('group', { name: 'View' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Show in timeline' })).toBeNull();
     });
   });
 

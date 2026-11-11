@@ -5,6 +5,8 @@ import {
   mapAreaCovers,
   mapAreasMeet,
   mapDateWindow,
+  mapFiltersReset,
+  mapIsNarrowed,
   parseMapArea,
   toMapArea,
   widenMapArea,
@@ -36,6 +38,59 @@ describe('mapDateWindow', () => {
 
     const full = mapDateWindow({ datePreset: 'custom', dateAfter: '2026-02-01', dateBefore: '2026-02-03' }, now);
     expect(DateTime.fromISO(full.fileCreatedBefore!) > DateTime.fromISO(full.fileCreatedAfter!)).toBe(true);
+  });
+});
+
+// FL-1412 (M13): an empty map tells "no located photos yet" from "none match these filters".
+describe('map filters', () => {
+  const defaults = {
+    datePreset: 'all' as const,
+    onlyFavorites: false,
+    includeArchived: false,
+    withSharedAlbums: true,
+    withPartners: true,
+  };
+
+  it('is not narrowed by the default settings, nor by leaving out archived items when there are none', () => {
+    expect(mapIsNarrowed(defaults)).toBe(false);
+    expect(mapIsNarrowed(defaults, 0)).toBe(false);
+    expect(mapIsNarrowed({ ...defaults, includeArchived: true }, 4)).toBe(false);
+  });
+
+  it.each([
+    ['a date range', { datePreset: '30d' as const }],
+    ['only favorites', { onlyFavorites: true }],
+    ['no shared albums', { withSharedAlbums: false }],
+  ])('is narrowed by %s', (_, patch) => {
+    expect(mapIsNarrowed({ ...defaults, ...patch })).toBe(true);
+  });
+
+  it('counts only the switch its scope uses: shared albums for the library, partner items for an album', () => {
+    expect(mapIsNarrowed({ ...defaults, withPartners: false })).toBe(false);
+    expect(mapIsNarrowed({ ...defaults, withPartners: false }, 0, true)).toBe(true);
+    expect(mapIsNarrowed({ ...defaults, withSharedAlbums: false }, 0, true)).toBe(false);
+    // and the reset leaves the other scope's switch as it was set
+    expect(mapFiltersReset(defaults)).not.toHaveProperty('withPartners');
+    expect(mapFiltersReset(defaults, 0, true)).toEqual(expect.objectContaining({ withPartners: true }));
+    expect(mapFiltersReset(defaults, 0, true)).not.toHaveProperty('withSharedAlbums');
+  });
+
+  it('is narrowed by archived items that are left out', () => {
+    expect(mapIsNarrowed(defaults, 4)).toBe(true);
+  });
+
+  it('resets to every date and every item, and brings archived items in only when they were hidden', () => {
+    const narrowed = { ...defaults, datePreset: 'custom' as const, onlyFavorites: true, withPartners: false };
+    expect(mapFiltersReset(narrowed)).toEqual({
+      datePreset: 'all',
+      dateAfter: '',
+      dateBefore: '',
+      onlyFavorites: false,
+      withSharedAlbums: true,
+      includeArchived: false,
+    });
+    expect(mapFiltersReset(defaults, 4).includeArchived).toBe(true);
+    expect(mapIsNarrowed({ ...defaults, ...mapFiltersReset(defaults, 4) }, 4)).toBe(false);
   });
 });
 

@@ -1,6 +1,7 @@
 import { AssetTypeEnum, type ServerConfigDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import MapScreen from '$lib/components/frameleaf/MapScreen.svelte';
 import { BUBBLE_NAME_LAYER, CLUSTER_OBSTACLE_LAYER, clusterObstacleLayer } from '$lib/frameleaf/map-clusters';
@@ -106,12 +107,92 @@ describe('MapScreen (FL-193)', () => {
     // No "0 in view" before there is an answer
     expect(screen.getByText(en.frameleaf_map_finding)).toBeInTheDocument();
     expect(await screen.findByText(en.frameleaf_map_load_failed_title)).toBeInTheDocument();
-    expect(screen.queryByText(en.frameleaf_map_empty_title)).not.toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_map_none_title)).not.toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_map_try_again }));
     await waitFor(() => expect(screen.queryByText(en.frameleaf_map_load_failed_title)).not.toBeInTheDocument());
     expect(sdkMock.getMapMarkers).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText(en.frameleaf_map_empty_title)).toBeInTheDocument();
+    expect(await screen.findByText(en.frameleaf_map_none_title)).toBeInTheDocument();
+  });
+
+  // FL-1412 (M13): "no located photos yet" is not "none match these filters".
+  describe('an empty map', () => {
+    const defaults = {
+      datePreset: 'all' as const,
+      dateAfter: '',
+      dateBefore: '',
+      onlyFavorites: false,
+      includeArchived: false,
+      withSharedAlbums: true,
+      withPartners: true,
+    };
+    beforeEach(() => mapSettings.update((settings) => ({ ...settings, ...defaults })));
+    afterEach(() => mapSettings.update((settings) => ({ ...settings, ...defaults })));
+
+    it('says a new library has no photos on the map yet, and offers nothing to reset', async () => {
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      const title = await screen.findByRole('heading', { name: 'No photos on the map yet' });
+      const empty = title.closest<HTMLElement>('[data-testid="frameleaf-empty-state"]')!;
+      expect(empty).toHaveTextContent('Photos that know where they were taken appear here.');
+      expect(within(empty).queryByRole('button')).toBeNull();
+      expect(screen.queryByText(en.frameleaf_map_empty_title)).not.toBeInTheDocument();
+    });
+
+    it('says none match under a narrowed date, and Reset map filters shows every date again', async () => {
+      mapSettings.update((settings) => ({ ...settings, datePreset: '30d', onlyFavorites: true }));
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      const title = await screen.findByRole('heading', { name: 'No photos match on the map' });
+      const empty = title.closest<HTMLElement>('[data-testid="frameleaf-empty-state"]')!;
+      expect(empty).toHaveTextContent('Widen the dates or include archived items to see more.');
+      expect(screen.queryByText(en.frameleaf_map_none_title)).not.toBeInTheDocument();
+      expect(within(empty).getAllByRole('button')).toHaveLength(1);
+
+      await fireEvent.click(within(empty).getByRole('button', { name: 'Reset map filters' }));
+      expect(get(mapSettings)).toMatchObject({ datePreset: 'all', onlyFavorites: false, includeArchived: false });
+      // still nothing located, and nothing narrowing it any more
+      expect(await screen.findByRole('heading', { name: 'No photos on the map yet' })).toBeInTheDocument();
+      expect(sdkMock.getMapMarkers).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ fileCreatedAfter: expect.anything() }),
+        expect.anything(),
+      );
+    });
+
+    it('counts archived photos left out as a filter, and the reset brings them in', async () => {
+      sdkMock.getMapStatistics.mockResolvedValue({ archived: 3, partner: 0, unlocated: 0 });
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      expect(await screen.findByRole('heading', { name: 'No photos match on the map' })).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'Reset map filters' }));
+      expect(get(mapSettings).includeArchived).toBe(true);
+    });
+
+    it('offers the reset when the archived count could not be read, rather than saying there are none', async () => {
+      sdkMock.getMapStatistics.mockRejectedValue(new Error('offline'));
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      expect(await screen.findByRole('heading', { name: 'No photos match on the map' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Reset map filters' })).toBeInTheDocument();
+    });
+
+    it('does not count Partner items, an album switch, against the library map', async () => {
+      mapSettings.update((settings) => ({ ...settings, withPartners: false }));
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      expect(await screen.findByRole('heading', { name: 'No photos on the map yet' })).toBeInTheDocument();
+    });
+
+    // An album has no archived count of its own, so its empty map offers the reset rather than "none yet".
+    it('offers the reset on an empty album map while archived items are left out', async () => {
+      sdkMock.getAlbumMapMarkers.mockResolvedValue([]);
+      render(MapScreen, { title: 'Album', albumId: 'album-1', onOpenAsset: vi.fn() });
+
+      expect(await screen.findByRole('heading', { name: 'No photos match on the map' })).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'Reset map filters' }));
+      expect(get(mapSettings).includeArchived).toBe(true);
+      expect(await screen.findByRole('heading', { name: 'No photos on the map yet' })).toBeInTheDocument();
+    });
   });
 
   it('keeps the In view list in step with the view when the style never loads (FL-51)', async () => {

@@ -8,6 +8,7 @@
   import ActivityScanStopped from '$lib/components/frameleaf/ActivityScanStopped.svelte';
   import ActivityWorkFeatures from '$lib/components/frameleaf/ActivityWorkFeatures.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import {
     ACTIVITY_FILTERS,
@@ -208,6 +209,15 @@
     });
     return known === 'idle' && stale ? 'unread' : known;
   });
+  /**
+   * FL-1412 (M13): nothing is running, nothing finished and nothing needs a look, so the page is its
+   * empty state: no filters, no status line, no empty section. `status` is idle only under the run rules
+   * Recent work uses (FL-1409), so a run that left photos over, is paused or waits for a drive never
+   * reads as "Everything is up to date"; nor does a page whose numbers may be old.
+   */
+  const allQuiet = $derived(
+    filter === 'all' && !settling && status === 'idle' && items.length === 0 && busyServer === 0 && leftOverCount === 0,
+  );
   const banner = $derived.by(() => {
     const left = features.reduce((sum, row) => sum + row.left, 0);
     switch (status) {
@@ -575,32 +585,34 @@
       <p class="fla-intro">{$t('frameleaf_activity_intro')}</p>
     </div>
 
-    <div class="fla-head-actions">
-      <div class="fla-filters" role="group" aria-label={$t('frameleaf_activity_filter_group')}>
-        {#each ACTIVITY_FILTERS as name (name)}
-          <button
-            type="button"
-            class:is-on={filter === name}
-            aria-pressed={filter === name}
-            onclick={() => setFilter(name)}
-          >
-            {$t(`frameleaf_activity_filter_${name}`)}
-            {#if chipCount(name) > 0}
-              <b aria-hidden="true">{chipCount(name)}</b>
-              <span class="sr-only"
-                >{$t('frameleaf_activity_filter_count', { values: { count: chipCount(name) } })}</span
-              >
-            {/if}
-          </button>
-        {/each}
-      </div>
+    {#if !allQuiet}
+      <div class="fla-head-actions">
+        <div class="fla-filters" role="group" aria-label={$t('frameleaf_activity_filter_group')}>
+          {#each ACTIVITY_FILTERS as name (name)}
+            <button
+              type="button"
+              class:is-on={filter === name}
+              aria-pressed={filter === name}
+              onclick={() => setFilter(name)}
+            >
+              {$t(`frameleaf_activity_filter_${name}`)}
+              {#if chipCount(name) > 0}
+                <b aria-hidden="true">{chipCount(name)}</b>
+                <span class="sr-only"
+                  >{$t('frameleaf_activity_filter_count', { values: { count: chipCount(name) } })}</span
+                >
+              {/if}
+            </button>
+          {/each}
+        </div>
 
-      {#if hasFinished}
-        <Button onclick={() => void clearFinished()}>
-          <Icon icon={mdiCheckAll} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_clear_finished')}
-        </Button>
-      {/if}
-    </div>
+        {#if hasFinished}
+          <Button onclick={() => void clearFinished()}>
+            <Icon icon={mdiCheckAll} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_clear_finished')}
+          </Button>
+        {/if}
+      </div>
+    {/if}
   </header>
 
   <SpokenWordsActivity />
@@ -623,7 +635,13 @@
   {/if}
 
   <!-- The page's answer (prototype `.fw3-status`): how the work is going, Pause all, and its settings. -->
-  {#if !(settling && status === 'idle')}
+  {#if allQuiet}
+    <EmptyState
+      icon={mdiCheckCircleOutline}
+      title={$t('frameleaf_activity_work_idle')}
+      message={$t(isAdmin ? 'frameleaf_activity_work_quiet' : 'frameleaf_activity_empty_help_own')}
+    />
+  {:else if !(settling && status === 'idle')}
     <section class="fw3-status" class:is-warn={banner.warn} aria-label={$t('frameleaf_activity_work_status')}>
       <Icon icon={banner.icon} size="28" aria-hidden={true} />
       <div class="fw3-status-text">
@@ -656,11 +674,11 @@
   {#if activitySession.loading && items.length === 0}
     <p class="fla-empty" role="status" aria-busy="true">{$t('loading')}</p>
   {:else if !showProgress && visible.length + leftOver.length === 0}
-    <div class="fla-empty">
-      <Icon icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock} size="2.25rem" aria-hidden={true} />
-      <h2>{$t(filter === 'failed' ? 'frameleaf_activity_empty_failed' : 'frameleaf_activity_empty_done')}</h2>
-      {#if filter === 'done'}<p>{$t('frameleaf_activity_empty_help_finished')}</p>{/if}
-    </div>
+    <EmptyState
+      icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock}
+      title={filter === 'done' ? $t('frameleaf_activity_empty_done') : undefined}
+      message={$t(filter === 'done' ? 'frameleaf_activity_empty_help_finished' : 'frameleaf_activity_empty_failed')}
+    />
   {/if}
 
   <!-- A job in progress, or one that failed. Its title is one level below the heading it sits under. -->
@@ -864,7 +882,7 @@
     </section>
   {/if}
 
-  {#if showProgress && !(activitySession.loading && items.length === 0)}
+  {#if showProgress && !allQuiet && !(activitySession.loading && items.length === 0)}
     <section class="fla-section" aria-labelledby="{rowIdPrefix}-in-progress">
       <h2 id="{rowIdPrefix}-in-progress" class="fla-section-title">
         {$t('frameleaf_activity_section_in_progress')}
@@ -1490,16 +1508,6 @@
     gap: 10px;
     max-width: 900px;
     margin: 0;
-  }
-  .fla-empty h2 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--fl-text);
-  }
-  .fla-empty p {
-    margin: 0;
-    max-width: 420px;
   }
   .fla-footer {
     display: flex;

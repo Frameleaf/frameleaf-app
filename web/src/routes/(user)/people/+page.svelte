@@ -51,6 +51,7 @@
   import {
     mdiAccountMultipleOutline,
     mdiAccountOffOutline,
+    mdiAccountOutline,
     mdiAccountSearchOutline,
     mdiEyeOffOutline,
     mdiEyeOutline,
@@ -164,6 +165,8 @@
   const hiddenCount = $derived(people.filter((person) => person.isHidden).length);
   const visible = $derived(people.filter((person) => showHidden || !person.isHidden));
   const cards = $derived(sortPeopleForGrid(filterPeopleByName(visible, search), sort));
+  /** FL-1412 (M13): nobody at all, so nothing to find, sort or hide: the page is its empty state. */
+  const nobody = $derived(!nextPage && people.length === 0);
   const summary = $derived(
     [
       $t('frameleaf_people_count', { values: { count: visible.length } }),
@@ -680,29 +683,31 @@
         <h1 class="fl-type-display">{$t('people')}</h1>
         {#if summary}<p class="pl-summary">{summary}</p>{/if}
       </div>
-      <div class="pl-toolbar">
-        <input
-          type="search"
-          aria-label={$t('frameleaf_people_find_a_person')}
-          placeholder={$t('frameleaf_people_find_a_person')}
-          bind:value={search}
-        />
-        <select aria-label={$t('frameleaf_people_sort')} bind:value={sort}>
-          <option value="name">{$t('name')}</option>
-          <option value="count">{$t('frameleaf_people_sort_count')}</option>
-          <option value="recent">{$t('frameleaf_people_sort_recent')}</option>
-        </select>
-        <!-- Always offered, as in the prototype (People.jsx:791-798): a view switch named for what it does next. -->
-        <FrameleafButton pressed={showHidden} onclick={() => (showHidden = !showHidden)}>
-          <Icon icon={showHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {showHidden ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
-        </FrameleafButton>
-        <FrameleafButton onclick={() => goto('/people/manage')}>
-          <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          <!-- FL-1394 (S1): was "Show and hide people", which read like "Show hidden" beside it. -->
-          {$t('frameleaf_people_choose_who_appears')}
-        </FrameleafButton>
-      </div>
+      {#if !nobody}
+        <div class="pl-toolbar">
+          <input
+            type="search"
+            aria-label={$t('frameleaf_people_find_a_person')}
+            placeholder={$t('frameleaf_people_find_a_person')}
+            bind:value={search}
+          />
+          <select aria-label={$t('frameleaf_people_sort')} bind:value={sort}>
+            <option value="name">{$t('name')}</option>
+            <option value="count">{$t('frameleaf_people_sort_count')}</option>
+            <option value="recent">{$t('frameleaf_people_sort_recent')}</option>
+          </select>
+          <!-- Always offered, as in the prototype (People.jsx:791-798): a view switch named for what it does next. -->
+          <FrameleafButton pressed={showHidden} onclick={() => (showHidden = !showHidden)}>
+            <Icon icon={showHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+            {showHidden ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
+          </FrameleafButton>
+          <FrameleafButton onclick={() => goto('/people/manage')}>
+            <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+            <!-- FL-1394 (S1): was "Show and hide people", which read like "Show hidden" beside it. -->
+            {$t('frameleaf_people_choose_who_appears')}
+          </FrameleafButton>
+        </div>
+      {/if}
     </header>
     {#if facesOff}
       <!-- FL-1408: nothing is being compared while face recognition is off, so nothing is asked. -->
@@ -769,16 +774,17 @@
           ? { label: $t('frameleaf_activity_work_settings'), href: commandCenterUrl('processing', 'queues') }
           : undefined}
       />
+    {:else if !nextPage && search.trim()}
+      <EmptyState icon={mdiAccountSearchOutline} message={$t('frameleaf_people_no_match')} />
+    {:else if !nextPage && hiddenCount > 0}
+      <EmptyState icon={mdiEyeOffOutline} message={$t('frameleaf_people_everyone_hidden')} />
     {:else if !nextPage}
-      <p class="people-empty" role="status">
-        {#if search.trim()}
-          {$t('frameleaf_people_no_match')}
-        {:else if hiddenCount > 0}
-          {$t('frameleaf_people_everyone_hidden')}
-        {:else}
-          {$t('frameleaf_people_none_assigned')}
-        {/if}
-      </p>
+      <!-- FL-1412 (M13): face recognition is on and has found nobody yet. -->
+      <EmptyState
+        icon={mdiAccountOutline}
+        title={$t('frameleaf_people_empty_title')}
+        message={$t('frameleaf_people_empty_description')}
+      />
     {/if}
   </section>
 </UserPageLayout>
@@ -879,11 +885,6 @@
     margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
-  }
-  .people-empty {
-    padding: 3rem 1rem;
-    color: var(--fl-muted);
-    text-align: center;
   }
   @media (max-width: 700px) {
     /* people.css:1011-1016: the controls take the row under the title, the search field its own line. */

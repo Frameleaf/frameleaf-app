@@ -207,6 +207,8 @@ it('draws the palette-style chips on the results page and removes one condition 
   query.text = 'IMG';
   query.filter = { city: { eq: 'Banff' }, isFavorite: { eq: true } };
   state.url = new URL(discoveryUrl(query), 'http://localhost');
+  // FL-1412: the toolbar is there to arrange results, so this search has one.
+  vi.mocked(searchAssets).mockResolvedValue(result(['match']));
   render(SearchPage);
   await waitFor(() => expect(document.querySelector('#search-chips')).not.toBeNull());
   const chips = document.querySelector('#search-chips')!;
@@ -246,7 +248,9 @@ it('offers ways forward when nothing matches, and a retry (not "no matches") whe
   await fireEvent.click(retry);
   // The Library's filtered empty state (owner 2026-11-05: a search is the Library narrowed by it).
   expect(await screen.findByText(en.frameleaf_library_empty_filtered_title)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: en.frameleaf_library_empty_filtered_clear })).toBeInTheDocument();
+  // FL-1412 (M13): under filters the wider search leads, and clearing stays beside it.
+  expect(screen.getByRole('button', { name: en.frameleaf_library_empty_filtered_clear })).not.toHaveClass('primary');
+  expect(screen.getByRole('button', { name: 'Remove filters' })).toHaveClass('primary');
   await fireEvent.click(screen.getByRole('button', { name: 'Remove filters' }));
   const url = new URL(navigation.goto.mock.calls.at(-1)![0] as string, 'http://localhost');
   expect(JSON.parse(url.searchParams.get('dq')!)).toMatchObject({ text: 'IMG', filter: {} });
@@ -266,6 +270,15 @@ describe('a search by meaning the server cannot answer (FL-1403)', () => {
     render(SearchPage);
 
     expect(await screen.findByText(en.frameleaf_library_empty_filtered_title)).toBeInTheDocument();
+    // FL-1412 (M13): the one empty-page pattern, and clearing is its one action.
+    const empty = screen.getByTestId('frameleaf-empty-state');
+    expect(empty).toHaveTextContent(en.frameleaf_library_empty_filtered_message);
+    expect(within(empty).getAllByRole('button')).toHaveLength(1);
+    expect(within(empty).getByRole('button', { name: en.frameleaf_library_empty_filtered_clear })).toHaveClass(
+      'primary',
+    );
+    expect(screen.queryByTestId('frameleaf-results-toolbar')).toBeNull();
+    expect(screen.queryByTestId('library-status-bar')).toBeNull();
     expect(searchSmart).not.toHaveBeenCalled();
     expect(searchAssets).toHaveBeenCalledOnce();
     const sent = vi.mocked(searchAssets).mock.calls[0][0].metadataSearchDto;

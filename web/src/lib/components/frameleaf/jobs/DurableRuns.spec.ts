@@ -24,6 +24,14 @@ beforeEach(() => {
   sdkMock.listDurableJobRuns.mockResolvedValue({ items: [], hasNextPage: false });
 });
 describe('recent work', () => {
+  // FL-1412 (M13): the shared empty state in its panel form, with FL-1349's approved words.
+  it('says nothing has run yet in the shared empty state, with no action', async () => {
+    render(DurableRuns);
+    const empty = await screen.findByTestId('frameleaf-empty-state');
+    expect(empty).toHaveTextContent('Nothing yet. Work the server starts shows here.');
+    expect(empty).toHaveClass('compact');
+    expect(empty.querySelector('button, a')).toBeNull();
+  });
   it('says how far a run has got in photos, and what is left over by cause', async () => {
     sdkMock.listDurableJobRuns.mockResolvedValue({
       items: [
