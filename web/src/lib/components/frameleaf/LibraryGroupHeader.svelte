@@ -13,6 +13,13 @@
   type Props = {
     id: string;
     title: string;
+    /** A day's places ("Banff and Lake Louise", FL-1392); empty where the photos have none. */
+    places?: string;
+    /**
+     * Phones: the date keeps one line with the count at its end, and the places sit on a second line
+     * under it (review-1110.css B3). The timeline reserves that line's height for a day with places.
+     */
+    stacked?: boolean;
     count: number;
     state: 'none' | 'some' | 'all';
     width: number;
@@ -28,7 +35,19 @@
     onSelect?: (checked: boolean) => void | boolean | Promise<boolean>;
   };
 
-  let { id, title, count, state, width, height, hovered = false, selecting = false, onSelect }: Props = $props();
+  let {
+    id,
+    title,
+    places = '',
+    stacked = false,
+    count,
+    state,
+    width,
+    height,
+    hovered = false,
+    selecting = false,
+    onSelect,
+  }: Props = $props();
 
   const change = async (input: HTMLInputElement) => {
     const applied = await onSelect?.(input.checked);
@@ -39,7 +58,13 @@
   };
 </script>
 
-<header class="fl-group-header" style:width="{width}px" style:height="{height}px">
+<header
+  class="fl-group-header"
+  class:is-stacked={stacked}
+  class:has-places={!!places}
+  style:width="{width}px"
+  style:height="{height}px"
+>
   <label class="fl-group-select" class:is-active={state !== 'none'} class:is-shown={hovered || selecting}>
     <input
       type="checkbox"
@@ -58,6 +83,9 @@
   </label>
   <!-- A long title (a day's full date in a narrow group) is cut short; the tooltip keeps it whole. -->
   <h2 {id} {title}>{title}</h2>
+  {#if places}
+    <span class="fl-group-places" title={places} data-testid="frameleaf-group-places">{places}</span>
+  {/if}
   <span class="fl-group-count">{$t('items_count', { values: { count } })}</span>
 </header>
 
@@ -94,6 +122,49 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     white-space: nowrap;
+  }
+  /* review-1110.css B3 `.tl-group-places`: where the day was spent, after a dot. It gives way before the date does. */
+  .fl-group-places {
+    flex-shrink: 99;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fl-group-places::before {
+    content: '·';
+    margin-inline-end: 8px;
+    color: var(--fl-muted);
+  }
+  /* Phones: the date and the count on one line, the places under the date (19px: `PLACE_LINE_HEIGHT`). */
+  .fl-group-header.is-stacked {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-content: center;
+    column-gap: 10px;
+    row-gap: 2px;
+  }
+  .is-stacked.has-places .fl-group-select {
+    grid-row: 1 / span 2;
+  }
+  .is-stacked h2 {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .is-stacked .fl-group-count {
+    grid-row: 1;
+    grid-column: 3;
+  }
+  .is-stacked .fl-group-places {
+    grid-row: 2;
+    grid-column: 2 / 4;
+    color: var(--fl-muted);
+    line-height: 17px;
+  }
+  .is-stacked .fl-group-places::before {
+    content: none;
   }
   .fl-group-select {
     position: relative;

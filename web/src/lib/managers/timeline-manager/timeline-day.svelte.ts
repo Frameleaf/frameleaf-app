@@ -140,6 +140,7 @@ export class TimelineDay {
       return { moveAssets, processedIds, unprocessedIds, changedGeometry };
     }
 
+    const headerExtraBefore = this.headerExtra;
     for (let index = this.viewerAssets.length - 1; index >= 0; index--) {
       const { id: assetId, asset } = this.viewerAssets[index];
       if (!ids.has(assetId)) {
@@ -164,6 +165,8 @@ export class TimelineDay {
         changedGeometry = true;
       }
     }
+    // FL-1392: a day that gains its first place, or loses its last, changes its header's height on phones.
+    changedGeometry ||= this.headerExtra !== headerExtraBefore;
     return { moveAssets, processedIds, unprocessedIds, changedGeometry };
   }
 
@@ -221,6 +224,22 @@ export class TimelineDay {
       this.activeViewerAssets = hasActive ? this.viewerAssets.slice(first, last + 1) : [];
     }
     this.isInOrNearViewport = hasActive;
+  }
+
+  /** The day's places, in the order its photos show them; its header names them (FL-1392). */
+  get cities(): string[] {
+    return [...new Set(this.viewerAssets.map(({ asset }) => asset?.city).filter((city): city is string => !!city))];
+  }
+
+  /**
+   * Phones: how much taller this day's header is, for the line that names its places. The layout
+   * puts the day's top this far down, so its rows sit where every position sum expects them
+   * (`top` + the header height), and the header is drawn from this far above `top`.
+   */
+  get headerExtra(): number {
+    const manager = this.timelineMonth.timelineManager;
+    const perDay = manager.dayRows && manager.grouping === 'days' && manager.placeLineHeight > 0;
+    return perDay && this.cities.length > 0 ? manager.placeLineHeight : 0;
   }
 
   get absoluteTimelineDayTop() {

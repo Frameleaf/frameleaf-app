@@ -317,9 +317,13 @@
     line-height: 1.3;
     color: inherit;
     text-decoration: none;
+    /* FL-1411 (M10): two lines, so careless names are cut after they differ, not before. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .name:hover {
     text-decoration: underline;

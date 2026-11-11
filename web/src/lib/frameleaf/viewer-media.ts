@@ -32,6 +32,15 @@ export const isStitchedVideoProjection = (projectionType: string | null | undefi
 export const isPanoramaVideoProjection = (projectionType: string | null | undefined): boolean =>
   projectionType === ProjectionType.EQUIRECTANGULAR || isStitchedVideoProjection(projectionType);
 
+/**
+ * FL-1392 (UI review 2026-11-10, B6): on a phone the viewer has one bottom bar, the actions. The
+ * footer under it stays only for what the "…" menu does not offer: a video's Original / Optimized
+ * switch and its zoom row, and a panorama's look-around switch. A photo's Play, slideshow settings
+ * and filmstrip are in "…", and its zoom is a pinch or a double tap.
+ */
+export const keepsPhoneFooter = (asset: Pick<AssetResponseDto, 'type' | 'exifInfo' | 'originalPath'>): boolean =>
+  isVideoAsset(asset) || isPanorama(asset);
+
 /** A still with a paired motion clip the viewer can play in place. */
 export const isLivePhoto = (asset: Pick<AssetResponseDto, 'livePhotoVideoId'>): boolean => !!asset.livePhotoVideoId;
 

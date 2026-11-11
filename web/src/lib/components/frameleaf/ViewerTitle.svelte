@@ -1,6 +1,8 @@
 <script lang="ts">
   /**
-   * The viewer's file name with the short EXIF line underneath (FL-35).
+   * The viewer's title with the short EXIF line underneath (FL-35). FL-1392 (B3): the title says
+   * when and where the photo was taken and the time leads the line under it; the file name is the
+   * title's tooltip and stays in Information.
    *
    * The data is the metadata the detail panel already receives on `AssetResponseDto`;
    * this is layout only, matching `mv-title` in the approved template. The line collapses
@@ -12,9 +14,10 @@
    * (media-viewer.css:2039-2041).
    */
   import { knownMediaKinds, mediaKindInfo } from '$lib/frameleaf/media-kinds';
-  import { viewerHeadlineText } from '$lib/frameleaf/viewer-headline';
+  import { viewerHeadline, viewerWhenWhere } from '$lib/frameleaf/viewer-headline';
   import { isLivePhoto, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
+  import { locale } from '$lib/stores/preferences.store';
   import type { AssetResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
@@ -25,7 +28,8 @@
 
   let { asset, position = null }: Props = $props();
 
-  const headline = $derived(viewerHeadlineText(asset));
+  const whenWhere = $derived(viewerWhenWhere(asset, $locale));
+  const headline = $derived([whenWhere.time, ...viewerHeadline(asset)].filter(Boolean).join(' · '));
   const kind = $derived.by(() => {
     // FL-1284: the kind of shot the file records (Slo-mo, Portrait, Burst …) says the most
     const [mediaKind] = knownMediaKinds(asset);
@@ -47,8 +51,8 @@
 
 <div class="dark flex min-w-0 flex-col justify-center ps-1 text-white" data-testid="viewer-title">
   <div class="flex min-w-0 items-baseline gap-2">
-    <strong class="truncate text-sm font-semibold" title={asset.originalFileName}>
-      {asset.originalFileName}
+    <strong class="truncate text-sm font-semibold" title={asset.originalFileName} data-testid="viewer-title-heading">
+      {whenWhere.title}
     </strong>
     {#if position || kind}
       <small class="fl-title-meta shrink-0 text-xs text-white/70">

@@ -80,7 +80,7 @@
   import { hasRouterStarted } from '$lib/utils/router-started';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { SvelteSet } from 'svelte/reactivity';
+  import { MediaQuery, SvelteSet } from 'svelte/reactivity';
 
   /**
    * The Albums page (FL-52). Collections are shelves with their albums beneath;
@@ -124,6 +124,11 @@
 
   const currentUserId = $derived(authManager.user.id);
   const view = $derived(normalizeAlbumDirectoryView($albumDirectoryView));
+  /**
+   * At 700px and under the tools fill the page's width and sort is at their start edge, so its menu opens
+   * from that edge; hung from the end of a 48px trigger it would open off the screen.
+   */
+  const stacked = new MediaQuery('max-width: 700px');
 
   let search = $state('');
   /** The persistent line under the filters: a drag hint, or that the directory was reloaded. */
@@ -771,7 +776,7 @@
       </label>
       <!-- The prototype's sort menu (Collections.jsx:672-683), plus "Custom order" (FL-52). -->
       <div class="sort">
-        <Menu label={$t('frameleaf_albums_sort')} align="end">
+        <Menu label={$t('frameleaf_albums_sort')} align={stacked.current ? 'start' : 'end'}>
           {#snippet trigger()}
             <Icon icon={mdiSortVariant} size="17" aria-hidden={true} />
             <span aria-hidden="true">{sortLabels[view.sort]()}</span>
@@ -781,15 +786,6 @@
           {/each}
         </Menu>
       </div>
-      <button
-        type="button"
-        class="select-toggle"
-        aria-pressed={selecting}
-        onclick={() => (selecting ? stopSelecting() : (selecting = true))}
-      >
-        <Icon icon={selecting ? mdiClose : mdiCheckboxMultipleMarkedOutline} size="17" aria-hidden={true} />
-        <span>{selecting ? $t('done') : $t('select')}</span>
-      </button>
       <div class="view" role="group" aria-label={$t('view')}>
         <button
           type="button"
@@ -810,6 +806,17 @@
           <Icon icon={mdiViewListOutline} size="18" />
         </button>
       </div>
+      <!-- After the view switch, beside New (FL-1411): the prototype's order with the app's Select added. -->
+      <button
+        type="button"
+        class="select-toggle"
+        aria-pressed={selecting}
+        aria-label={selecting ? $t('done') : $t('select')}
+        onclick={() => (selecting ? stopSelecting() : (selecting = true))}
+      >
+        <Icon icon={selecting ? mdiClose : mdiCheckboxMultipleMarkedOutline} size="17" aria-hidden={true} />
+        <span>{selecting ? $t('done') : $t('select')}</span>
+      </button>
       <!-- The prototype's primary "New" menu (Collections.jsx:702-735). -->
       <div class="new-menu">
         <Menu label={$t('frameleaf_albums_new')} align="end">
@@ -881,8 +888,10 @@
   {/each}
 
   {#if arrangement.albums.length > 0}
-    <section class="plain" aria-label={$t('frameleaf_albums_other')}>
-      {#if arrangement.shelves.length > 0 || showSpaces}
+    <!-- FL-1411 (M10): albums are "other" only beside a collection or a shared space; alone they need no heading. -->
+    {@const other = arrangement.shelves.length > 0 || arrangement.spaces.length > 0}
+    <section class="plain" aria-label={other ? $t('frameleaf_albums_other') : undefined}>
+      {#if other}
         <h2>
           {$t('frameleaf_albums_other')}
           <small>{$t('frameleaf_albums_count', { values: { count: arrangement.albums.length } })}</small>
@@ -1168,7 +1177,10 @@
     background: var(--fl-accent);
     color: var(--fl-accent-text);
   }
-  /* Exactly a tile's height (AlbumTile: cover, 8px, name, gap, the 28px meta row), so the scrollbar never jumps. */
+  /*
+   * A tile's height with a one-line name (AlbumTile: cover, 8px, name, gap, the 28px meta row). A name that
+   * takes its second line grows its row when the tile is built, which happens before it reaches the view.
+   */
   .placeholder-link {
     position: absolute;
     width: 1px;
@@ -1469,6 +1481,39 @@
     border-style: solid;
     color: var(--fl-text);
     scale: 1.02;
+  }
+  /*
+   * FL-1411 (M12): two rows on a phone, never three. Search has the first; sort, view, Select and New share
+   * the second, which fits only when sort and Select show their icon alone. Both keep their accessible name.
+   */
+  @media (max-width: 520px) {
+    .sort :global(.menu-root > button),
+    .select-toggle {
+      justify-content: center;
+      min-width: var(--fl-control-height);
+      padding-inline: 0;
+    }
+    .sort :global(.menu-root > button > span),
+    .select-toggle > span {
+      display: none;
+    }
+  }
+  @media (max-width: 520px) and (pointer: coarse) {
+    .sort :global(.menu-root > button),
+    .select-toggle {
+      min-width: var(--fl-control-height-touch);
+    }
+  }
+  /* The narrowest phones (320px): New gives up its name too, or it would be alone on a third row. */
+  @media (max-width: 340px) {
+    .new-menu :global(.menu-root > button) {
+      justify-content: center;
+      min-width: var(--fl-control-height-touch);
+      padding-inline: 0;
+    }
+    .new-menu :global(.menu-root > button > span) {
+      display: none;
+    }
   }
   @media (max-width: 700px) {
     .head {

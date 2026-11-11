@@ -1453,6 +1453,32 @@ describe('AssetViewer', () => {
       expect(viewer.querySelectorAll('[data-testid="viewer-title-position"]')).toHaveLength(1);
       expect(viewer.querySelector('[data-testid="viewer-title-position"]')).toHaveAttribute('aria-live', 'polite');
     });
+
+    // FL-1392 (UI review 2026-11-10, B6): the stylesheet hides a photo's footer on phones by this class.
+    it('marks a photo for one bottom bar on phones, and leaves a video its footer', () => {
+      const photo = renderImage();
+      expect(photo.viewer).toHaveClass('phone-one-bar');
+      photo.viewer.remove();
+
+      const video = renderImage({}, { type: AssetTypeEnum.Video });
+      expect(video.viewer).not.toHaveClass('phone-one-bar');
+      expect(video.viewer.querySelector('[data-testid="viewer-footer"]')).not.toBeNull();
+    });
+
+    // The rule hides the footer alone: the filmstrip and stack strip share its chrome group.
+    it('marks only the footer for the one-bar rule', () => {
+      const { viewer } = renderImage();
+      const marked = viewer.querySelectorAll('[data-viewer-footer]');
+      expect(marked).toHaveLength(1);
+      expect(marked[0].querySelector('[data-testid="viewer-footer"]')).not.toBeNull();
+    });
+
+    // A shared link has no "…" menu, so its slideshow settings and filmstrip switch stay in the footer.
+    it('keeps the footer on phones for a shared link', () => {
+      setSharedLink(sharedLinkFactory.build());
+      const { viewer } = renderImage();
+      expect(viewer).not.toHaveClass('phone-one-bar');
+    });
   });
 
   // FL-36 / V-18 (MediaViewer.jsx:254-263): the slideshow plays in the viewer; full screen is a choice.

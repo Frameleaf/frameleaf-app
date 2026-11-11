@@ -372,15 +372,29 @@ jobs:
             "$RUNNER_TEMP/frameleaf-manager.xml" "$RUNNER_TEMP/frameleaf-manager.compose.yaml" "$RUNNER_TEMP/frameleaf-manager.hexos.json" \
             --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Frameleaf Manager $RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/manager-notes.md" --latest=false
+          # A read straight after a write can still return the old value (FL-1445: manager-v1.2.15 went red
+          # here with every alias already correct). Ask again for up to a minute, then fail as before.
+          settles() {
+            local expected="$1" attempt seen=""
+            shift
+            for attempt in $(seq 1 12); do
+              seen="$("$@" 2> "$RUNNER_TEMP/settles-error" || true)"
+              [[ "$seen" == "$expected" ]] && return 0
+              sleep 5
+            done
+            # The release exists by now, so a rerun cannot get here again: say what was read and why.
+            echo "::error::$* never returned $expected; last value: '${seen}'; last error: $(tr '\n' ' ' < "$RUNNER_TEMP/settles-error")"
+            return 1
+          }
           oras tag "ghcr.io/frameleaf/frameleaf-manager@$DIGEST" "$RELEASE_TAG" latest
-          [[ "$(oras resolve ghcr.io/frameleaf/frameleaf-manager:latest)" == "$DIGEST" ]]
+          settles "$DIGEST" oras resolve ghcr.io/frameleaf/frameleaf-manager:latest
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/latest" > "$RUNNER_TEMP/latest-manager-tag.json" 2> "$RUNNER_TEMP/latest-tag-error"; then
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/latest" -f sha="$SOURCE_SHA" -F force=true > /dev/null
           else
             grep -q 'HTTP 404' "$RUNNER_TEMP/latest-tag-error"
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/latest -f sha="$SOURCE_SHA" > /dev/null
           fi
-          [[ "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/latest" --jq .object.sha)" == "$SOURCE_SHA" ]]
+          settles "$SOURCE_SHA" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/latest" --jq .object.sha
           oras logout ghcr.io
       - name: Retain publication binding
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

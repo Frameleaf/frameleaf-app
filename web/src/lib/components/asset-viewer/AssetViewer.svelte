@@ -30,7 +30,7 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
   import { isDialogOpen, isTypingTarget } from '$lib/frameleaf/viewer-keys';
-  import { isPanorama, isPanoramaVideoProjection } from '$lib/frameleaf/viewer-media';
+  import { isPanorama, isPanoramaVideoProjection, keepsPhoneFooter } from '$lib/frameleaf/viewer-media';
   import { castManager } from '$lib/managers/cast-manager.svelte';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
@@ -1636,6 +1636,12 @@
   // FL-36 / V-18: the footer stays while an inline slideshow plays, so Pause and the settings are
   // reachable; a tap on the photo hides it with the rest of the chrome.
   const showFooter = $derived(!assetViewerManager.isShowEditor);
+  /**
+   * FL-1392 (B6): on phones a photo has one bottom bar, because "…" already offers what the footer
+   * did. A shared link's viewer has no "…" menu, so it keeps its footer (the slideshow settings and
+   * the filmstrip switch are nowhere else there), as do a video and a panorama (`keepsPhoneFooter`).
+   */
+  const phoneOneBar = $derived(showFooter && !sharedLink && !keepsPhoneFooter(asset));
 
   // VIEWER-P1 / P3: the stack card stays with a slideshow, as in the template (MediaViewer.jsx:1619-1633).
   const showStackStrip = $derived(!!stack && withStacked && !assetViewerManager.isShowEditor);
@@ -1701,6 +1707,7 @@
   class:dragging={!!dismissDrag}
   class:with-footer={showFilmstripStrip || showStackStrip}
   class:info-open={showDetailPanel}
+  class:phone-one-bar={phoneOneBar}
   style:--fl-viewer-footer-height={showFooter && footerHeight > 0 ? `${footerHeight}px` : undefined}
   style:--fl-viewer-strips-height="{showFilmstripStrip ? stripsHeight : 0}px"
   style:--fl-viewer-strips-area-height="{stripsAreaHeight}px"
@@ -2081,6 +2088,7 @@
     <div
       class="absolute inset-x-0 bottom-0 z-2 col-span-4 col-start-1"
       data-viewer-chrome="footer"
+      data-viewer-footer
       bind:clientHeight={footerHeight}
     >
       <ViewerFooter
@@ -2460,6 +2468,21 @@
   @media (max-width: 700px) {
     #immich-asset-viewer {
       --fl-viewer-toolbar-offset: calc(var(--fl-viewer-footer-height) + 53px);
+    }
+
+    /*
+     * FL-1392 (review-1110.css B6): a photo has one bottom bar on phones. Its footer is not drawn
+     * (`phoneOneBar`; the filmstrip and the stack strip, which fade with the footer, stay), and the
+     * actions toolbar sits on the bottom edge with the safe area under
+     * it (AssetViewerNavBar: 6px, the 40px tools, then 8px or the safe area, under a 1px rule).
+     */
+    #immich-asset-viewer.phone-one-bar {
+      --fl-viewer-footer-height: 0px;
+      --fl-viewer-toolbar-offset: calc(47px + max(8px, env(safe-area-inset-bottom)));
+    }
+
+    .phone-one-bar [data-viewer-footer] {
+      display: none;
     }
   }
 

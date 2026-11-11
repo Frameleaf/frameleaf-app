@@ -210,6 +210,16 @@ export interface InfoDetailRow {
 }
 
 /**
+ * The rows that sit under the closed "File details" line (FL-1392, UI review 2026-11-10 B5): facts
+ * about the stored file, not about the photo. The file name stays in the main list.
+ */
+export const FILE_DETAIL_ROWS: ReadonlySet<InfoDetailRowId> = new Set<InfoDetailRowId>([
+  'path',
+  'bit-depth',
+  'checksum',
+]);
+
+/**
  * The design's Details list: file, path, image, camera, lens, exposure, video and checksum,
  * in that order, with every row the asset cannot fill dropped. The path and the checksum are
  * only shown to the owner — they are storage facts about someone else's library otherwise.

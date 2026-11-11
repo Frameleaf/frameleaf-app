@@ -56,6 +56,8 @@ export function layoutTimelineMonth(timelineManager: TimelineManager, month: Tim
   const dayRows = timelineManager.dayRows;
   for (const timelineDay of month.timelineDays) {
     timelineDay.layout(options, noDefer);
+    // A phone's day header is taller when it names the day's places (FL-1392); see `headerExtra`.
+    const headerExtra = timelineDay.headerExtra;
 
     // Calculate space needed for this item (including gap if not first in row)
     const spaceNeeded = timelineDay.width + (timelineDayCol > 0 ? timelineManager.gap : 0);
@@ -66,7 +68,7 @@ export function layoutTimelineMonth(timelineManager: TimelineManager, month: Tim
       timelineDay.row = timelineDayRow;
       timelineDay.col = timelineDayCol++;
       timelineDay.start = cumulativeWidth;
-      timelineDay.top = cumulativeHeight;
+      timelineDay.top = cumulativeHeight + headerExtra;
     } else {
       // Move to next row
       cumulativeHeight += currentRowHeight;
@@ -78,12 +80,12 @@ export function layoutTimelineMonth(timelineManager: TimelineManager, month: Tim
       timelineDay.row = timelineDayRow;
       timelineDay.col = timelineDayCol;
       timelineDay.start = 0;
-      timelineDay.top = cumulativeHeight;
+      timelineDay.top = cumulativeHeight + headerExtra;
 
       timelineDayCol++;
     }
     cumulativeWidth += timelineDay.width + timelineManager.gap;
-    currentRowHeight = timelineDay.height + timelineManager.headerHeight;
+    currentRowHeight = timelineDay.height + timelineManager.headerHeight + headerExtra;
   }
 
   // Add the height of the final row

@@ -9,6 +9,7 @@ import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { locale } from '$lib/stores/preferences.store';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { setSharedLink } from '$lib/utils';
 import { downloadAssetFile } from '$lib/utils/asset-utils';
@@ -72,8 +73,8 @@ describe('AssetViewerNavBar component', () => {
     expect(getByLabelText('frameleaf_viewer_close_label')).toBeInTheDocument();
   });
 
-  // VIEWER-P8 (MediaViewer.jsx:1019-1031): "n of N" sits beside the name in the header.
-  it('shows the position beside the name, and nothing when there is none', () => {
+  // VIEWER-P8 (MediaViewer.jsx:1019-1031): "n of N" sits beside the title in the header.
+  it('shows the position beside the title, and nothing when there is none', () => {
     authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
     const asset = assetFactory.build({ isTrashed: false, originalFileName: 'lake.jpg' });
     const placed = renderWithTooltips(AssetViewerNavBar, {
@@ -81,13 +82,44 @@ describe('AssetViewerNavBar component', () => {
       ...additionalProps,
       position: { index: 2, total: 19 },
     });
-    expect(placed.getByTestId('viewer-title')).toHaveTextContent('lake.jpg');
+    expect(placed.getByTestId('viewer-title-heading')).toHaveAttribute('title', 'lake.jpg');
     expect(placed.getByTestId('viewer-title-position')).toHaveTextContent('frameleaf_viewer_position');
     placed.unmount();
 
     const unplaced = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps, position: null });
-    expect(unplaced.getByTestId('viewer-title')).toHaveTextContent('lake.jpg');
+    expect(unplaced.getByTestId('viewer-title-heading')).toHaveAttribute('title', 'lake.jpg');
     expect(unplaced.queryByTestId('viewer-title-position')).not.toBeInTheDocument();
+  });
+
+  // FL-1392 (UI review 2026-11-10, B3): the title says when and where; the file name is its tooltip.
+  it('titles the photo with its date and place, and leads the line under it with the time', () => {
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    locale.set('en-US');
+    const asset = assetFactory.build({
+      isTrashed: false,
+      originalFileName: 'PXL_20260816_071400123.jpg',
+      localDateTime: '2026-08-16T07:14:00.000Z',
+      exifInfo: { city: 'Banff', state: 'Alberta', country: 'Canada', make: 'Google', model: 'Pixel 9' },
+    });
+    const { getByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+
+    expect(getByTestId('viewer-title-heading')).toHaveTextContent(/^Sun, Aug 16, 2026 · Banff, Alberta$/);
+    expect(getByTestId('viewer-title-heading')).toHaveAttribute('title', 'PXL_20260816_071400123.jpg');
+    expect(getByTestId('viewer-title')).not.toHaveTextContent('PXL_');
+    expect(getByTestId('viewer-exif-line')).toHaveTextContent(/^7:14\sAM · Google Pixel 9/);
+  });
+
+  it('titles a photo with no place with its date alone', () => {
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    locale.set('en-US');
+    const asset = assetFactory.build({
+      isTrashed: false,
+      localDateTime: '2026-08-16T07:14:00.000Z',
+      exifInfo: { city: null, state: null, country: null },
+    });
+    const { getByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+
+    expect(getByTestId('viewer-title-heading')).toHaveTextContent(/^Sun, Aug 16, 2026$/);
   });
 
   describe('if the current user owns the asset', () => {
@@ -377,21 +409,23 @@ describe('AssetViewerNavBar component', () => {
       expect(line).toContain('24.5 MB');
     });
 
-    it('leaves out the EXIF line when the asset carries no metadata', () => {
+    it('shows the time alone under the title when the asset carries no metadata', () => {
       const ownerId = 'id-of-the-user';
       signIn(ownerId);
+      locale.set('en-US');
       const asset = assetFactory.build({
         ownerId,
         isTrashed: false,
         type: AssetTypeEnum.Image,
+        localDateTime: '2026-08-16T07:14:00.000Z',
         width: null,
         height: null,
         duration: null,
         exifInfo: undefined,
       });
 
-      const { queryByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
-      expect(queryByTestId('viewer-exif-line')).not.toBeInTheDocument();
+      const { getByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(getByTestId('viewer-exif-line')).toHaveTextContent(/^7:14\sAM$/);
     });
   });
   // FL-83: a shared link's viewer has no More menu, so its slideshow sits in the bar, gated as the

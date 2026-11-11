@@ -131,6 +131,53 @@ describe('AlbumDirectory', () => {
     expect(screen.getByText('3 albums · 1 collection · 2 shared')).toBeInTheDocument();
   });
 
+  // FL-1411 (M12): on a phone sort is a 48px button at the start edge; a menu hung from its end opens off screen.
+  it('opens the sort menu from the start edge on a phone, and from the end edge on a wide screen', async () => {
+    const width = (phone: boolean) => (query: string) => ({
+      matches: phone && query.includes('max-width: 700px'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+    const sortMenu = async () => {
+      const { unmount } = renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+      await fireEvent.click(screen.getByRole('button', { name: 'Sort albums' }));
+      const end = (await screen.findByRole('menu', { name: 'Sort albums' })).classList.contains('end');
+      unmount();
+      return end;
+    };
+    try {
+      vi.mocked(matchMedia).mockImplementation(width(true) as never);
+      expect(await sortMenu()).toBe(false);
+      vi.mocked(matchMedia).mockImplementation(width(false) as never);
+      expect(await sortMenu()).toBe(true);
+    } finally {
+      vi.mocked(matchMedia).mockImplementation(width(false) as never);
+    }
+  });
+
+  // FL-1411 (M10): "Other albums" only means something beside a collection or a shared space.
+  it('shows no "Other albums" heading when there are no collections or shared spaces', () => {
+    renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: [trail], spaces: [] }, onRefresh: vi.fn() });
+
+    expect(screen.getByRole('article', { name: 'Trail camera' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Other albums/ })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Other albums' })).toBeNull();
+  });
+
+  it.each([
+    ['a collection', { collections: tree.collections, albums: [trail], spaces: [] }],
+    ['a shared space', { collections: [], albums: [trail], spaces: [space] }],
+  ])('keeps the "Other albums" heading beside %s', (_, withOthers) => {
+    renderWithTooltips(AlbumDirectory, { tree: withOthers, onRefresh: vi.fn() });
+
+    const other = screen.getByRole('region', { name: 'Other albums' });
+    expect(within(other).getByRole('heading', { level: 2 })).toHaveTextContent('Other albums');
+    expect(other).toHaveTextContent('Trail camera');
+  });
+
   it('offers the filter pills, and the Smart pill keeps only smart albums', async () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 

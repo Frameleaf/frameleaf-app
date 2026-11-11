@@ -29,6 +29,11 @@ type LayoutOptions = {
    * Frameleaf Timeline turns it on.
    */
   dayRows: boolean;
+  /**
+   * Frameleaf (FL-1392): on phones a day's places sit on a second line under its date, so the header
+   * of a day that has places is this much taller. 0 (the default) keeps every header one height.
+   */
+  placeLineHeight: number;
 };
 export abstract class VirtualScrollManager {
   topSectionHeight = $state(0);
@@ -51,6 +56,7 @@ export abstract class VirtualScrollManager {
   #cells = $state<CellGridOptions | null>(null);
   #captionHeight = $state(0);
   #dayRows = $state(false);
+  #placeLineHeight = $state(0);
   #scrolling = $state(false);
   #suspendTransitions = $state(false);
   #resetScrolling = debounce(() => (this.#scrolling = false), 1000);
@@ -172,6 +178,19 @@ export abstract class VirtualScrollManager {
     return this.#dayRows;
   }
 
+  #setPlaceLineHeight(value: number) {
+    if (this.#placeLineHeight === value) {
+      return false;
+    }
+    this.#placeLineHeight = value;
+    return true;
+  }
+
+  /** How much taller the header of a day with places is (a phone's second line), or 0. */
+  get placeLineHeight() {
+    return this.#placeLineHeight;
+  }
+
   set scrolling(value: boolean) {
     this.#scrolling = value;
     if (value) {
@@ -241,6 +260,7 @@ export abstract class VirtualScrollManager {
     cells = null,
     captionHeight = 0,
     dayRows = false,
+    placeLineHeight = 0,
   }: Partial<LayoutOptions> = {}) {
     // Note: every setter must run. `||=` short-circuits, so the first option that reported a change
     // used to stop the rest from being applied at all — switching to the mobile layout set the
@@ -253,6 +273,7 @@ export abstract class VirtualScrollManager {
       this.#setCells(cells),
       this.#setCaptionHeight(captionHeight),
       this.#setDayRows(dayRows),
+      this.#setPlaceLineHeight(placeLineHeight),
     ];
     if (changes.includes(true)) {
       this.refreshLayout();

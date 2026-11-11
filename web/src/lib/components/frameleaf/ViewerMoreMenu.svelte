@@ -287,10 +287,15 @@
     );
 
   // The settings return focus to the footer's cog, as closing them does in the template (MediaViewer.jsx:740-744).
-  const openSlideshowSettings = () =>
+  // A photo on a phone has no footer (FL-1392), so there focus goes back to the More button.
+  const openSlideshowSettings = () => {
+    const footer = document.querySelector<HTMLElement>('[data-viewer-footer]');
     slideshowStore.openSettings(
-      document.querySelector<HTMLElement>('[data-testid="viewer-footer"] [data-slideshow-settings]'),
+      footer && getComputedStyle(footer).display !== 'none'
+        ? footer.querySelector<HTMLElement>('[data-slideshow-settings]')
+        : document.querySelector<HTMLElement>('[data-testid="asset-viewer-navbar-actions"] [aria-haspopup]'),
     );
+  };
 </script>
 
 {#each groups as group, index (group.id)}
