@@ -123,18 +123,28 @@ test.describe('Detail Panel', () => {
 
   // FL-36: the information panel's Details list. The path and the checksum are storage facts
   // about the owner's own library, so they are absent for anyone else rather than shown empty.
+  // FL-1392: they sit under a "File details" line that is closed until asked for.
   test.describe('Details', () => {
-    test('shows the file, path and checksum rows to the owner', async ({ context, page }) => {
+    test('shows the file name, and the path and checksum under File details, to the owner', async ({
+      context,
+      page,
+    }) => {
       await utils.setAuthCookies(context, admin.accessToken);
       await page.goto(`/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
       await page.getByRole('button', { name: 'Information', exact: true }).click();
       const details = page.getByTestId('frameleaf-info-details');
+      const fileDetails = page.getByTestId('frameleaf-info-file-details');
 
       await expect(details.getByText('Filename', { exact: true })).toBeVisible();
-      await expect(details.getByText('Path', { exact: true })).toBeVisible();
-      await expect(details.getByText('Checksum', { exact: true })).toBeVisible();
+      await expect(fileDetails.getByText('Filename', { exact: true })).toHaveCount(0);
+      await expect(fileDetails.getByText('Path', { exact: true })).toBeHidden();
+      await expect(fileDetails.getByText('Checksum', { exact: true })).toBeHidden();
+
+      await fileDetails.getByText('File details', { exact: true }).click();
+      await expect(fileDetails.getByText('Path', { exact: true })).toBeVisible();
+      await expect(fileDetails.getByText('Checksum', { exact: true })).toBeVisible();
     });
 
     test('omits the path and the checksum for a shared-link visitor', async ({ page }) => {
