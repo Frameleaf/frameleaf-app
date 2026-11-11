@@ -179,6 +179,9 @@ export class SessionRepository {
     expectedPassword?: string,
     signIn?: Omit<Insertable<SessionSignInTable>, 'sessionId'>,
   ) {
+    if (expectedPassword === undefined && !signIn) {
+      return this.db.insertInto('session').values(dto).returningAll().executeTakeFirstOrThrow();
+    }
     return this.db.transaction().execute(async (trx) => {
       if (expectedPassword !== undefined) {
         const user = await trx
