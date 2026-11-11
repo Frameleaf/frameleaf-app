@@ -52,10 +52,12 @@ describe('YearScrubber', () => {
     expect(column).toBe(40);
   });
 
-  // Floating over the photos' edge it also floats over the page header, whose last control it covered.
-  it('keeps its track clear of the page header the host says is still on screen, when it floats', () => {
-    render(YearScrubber, { timelineManager: new TimelineManager(), overlay: true, clear: 120 });
-    expect(screen.getByTestId('frameleaf-year-scrubber').style.getPropertyValue('--fl-scrub-clear')).toBe('120px');
+  // Touch and narrow screens: the thin line keeps clear of the page header too, and says it is thin.
+  it('keeps its track clear of the page header the host says is still on screen, as the thin line', () => {
+    render(YearScrubber, { timelineManager: new TimelineManager(), thin: true, clear: 120 });
+    const scrubber = screen.getByTestId('frameleaf-year-scrubber');
+    expect(scrubber.style.getPropertyValue('--fl-scrub-clear')).toBe('120px');
+    expect(scrubber).toHaveClass('is-thin');
   });
 
   // LIB-P4: the header block spans the scrubber's own column too, so the track keeps clear of it there.

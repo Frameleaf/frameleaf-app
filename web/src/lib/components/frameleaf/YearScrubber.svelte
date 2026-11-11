@@ -32,13 +32,8 @@
     scrubberWidth?: number;
     /** Whether the track is being dragged; bound by the timeline to hold back thumbnails meanwhile. */
     dragging?: boolean;
-    /**
-     * Float over the photos' edge instead of taking a column (touch and narrow screens). It then
-     * shows only while `active`, while it is dragged and while it holds keyboard focus.
-     */
-    overlay?: boolean;
-    /** The library is being scrolled; only read in `overlay`. */
-    active?: boolean;
+    /** Touch and narrow screens: a thin line with a dot in a slim column, without the year labels. */
+    thin?: boolean;
     /**
      * Pixels at the top the track keeps out of: what is still on screen of the page header, the
      * toolbar band and the grouping row, which span the scrubber's column (LIB-P4) and whose
@@ -57,8 +52,7 @@
     onJump,
     scrubberWidth = $bindable(),
     dragging = $bindable(false),
-    overlay = false,
-    active = true,
+    thin = false,
     clear = 0,
   }: Props = $props();
 
@@ -254,8 +248,7 @@
 
 <div
   class="fl-scrubber"
-  class:is-overlay={overlay}
-  class:is-idle={overlay && !active && !dragging}
+  class:is-thin={thin}
   bind:clientWidth={measuredWidth}
   style:height={height ? `${height}px` : undefined}
   style:--fl-scrub-clear="{clear}px"
@@ -333,29 +326,36 @@
     cursor: ns-resize;
   }
   /*
-   * Touch and narrow screens: the photos keep the full width. The scrubber is a slim frosted
-   * strip over their edge that fades in while the library scrolls and away again when it rests.
-   * The year labels are left out (the bubble names the month while dragging).
+   * Touch and narrow screens (prototype timeline-library.css, 700px): a 1px line with the months as
+   * short ticks and a dot where the library is, in a 28px column beside the photos. The year labels
+   * are left out (the bubble names the month while dragging).
    */
-  .fl-scrubber.is-overlay {
-    transition: opacity var(--fl-duration-fade) var(--fl-ease);
+  .fl-scrubber.is-thin {
+    width: 28px;
   }
-  .fl-scrubber.is-overlay .fl-scrub-track {
-    border: 1px solid var(--fl-material-edge);
-    border-radius: var(--fl-radius-pill);
-    background: var(--fl-material);
-    -webkit-backdrop-filter: var(--fl-material-blur);
-    backdrop-filter: var(--fl-material-blur);
+  .fl-scrubber.is-thin .fl-scrub-track::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 12px;
+    width: 1px;
+    background: var(--fl-border);
   }
-  .fl-scrubber.is-overlay .fl-scrub-year,
-  .fl-scrubber.is-overlay .fl-scrub-yeartick {
+  .fl-scrubber.is-thin .fl-scrub-year,
+  .fl-scrubber.is-thin .fl-scrub-yeartick {
     display: none;
   }
-  .fl-scrubber.is-overlay.is-idle:not(:focus-within) {
-    opacity: 0;
+  .fl-scrubber.is-thin .fl-scrub-tick {
+    inset-inline-end: 12px;
+    height: 1px;
+    border-radius: 0;
   }
-  .fl-scrubber.is-overlay.is-idle:not(:focus-within) .fl-scrub-track {
-    pointer-events: none;
+  .fl-scrubber.is-thin .fl-scrub-marker {
+    inset-inline-end: 8px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--fl-canvas);
   }
   .fl-scrub-yeartick {
     position: absolute;
