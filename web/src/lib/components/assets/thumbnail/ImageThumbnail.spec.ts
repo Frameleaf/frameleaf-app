@@ -1,4 +1,5 @@
 import { fireEvent, render } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
 import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
 
 vi.mock('$lib/utils/sw-messaging', () => ({
@@ -205,5 +206,23 @@ describe('ImageThumbnail component', () => {
     expect(image).not.toBeNull();
     expect(image!.getAttribute('src')).toBe('/failed.jpg');
     expect(baseElement.querySelector('[data-broken-asset]')).toBeNull();
+  });
+});
+
+// FL-1457 (FL-1409 leftover): the pending placeholder's band of light does not move under reduced motion. Component
+// styles are not applied under jsdom, so this reads the stylesheet: the band animates, and the reduced-motion block
+// stops it.
+describe('pending placeholder under prefers-reduced-motion (FL-1457)', () => {
+  const style = readFileSync('src/lib/components/assets/thumbnail/ImageThumbnail.svelte', 'utf8').split('<style>')[1];
+
+  it('animates the band normally', () => {
+    expect(style).toMatch(/:global\(\.fl-thumb-pending\) \{[^}]*animation: fl-thumb-pending [^;]*infinite;/);
+  });
+
+  it('stops it when reduced motion is asked for', () => {
+    const reduced = style.slice(style.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reduced).toMatch(
+      /^@media \(prefers-reduced-motion: reduce\) \{\s*:global\(\.fl-thumb-pending\) \{\s*animation: none;/,
+    );
   });
 });
