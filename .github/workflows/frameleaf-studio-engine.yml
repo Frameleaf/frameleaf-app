@@ -162,6 +162,8 @@ jobs:
           name: whisper-timing-diagnostic-${{ github.sha }}
           path: ${{ runner.temp }}/whisper-timing-report.json
           if-no-files-found: warn
+      - name: Route runner apt off ubuntu.com (FL-1453)
+        run: bash scripts/ci-ubuntu-mirror.sh
       - name: Install FFmpeg with libx265 for HDR master verification
         run: |
           sudo apt-get update

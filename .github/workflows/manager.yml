@@ -83,6 +83,8 @@ jobs:
           node-version-file: .nvmrc
       - name: Install independent Manager dependencies
         run: npm ci --prefix manager --ignore-scripts
+      - name: Route runner apt off ubuntu.com (FL-1453)
+        run: bash scripts/ci-ubuntu-mirror.sh
       - name: Install filesystem metadata and native-helper test tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends acl attr gcc libc6-dev
       - name: Types and Svelte
