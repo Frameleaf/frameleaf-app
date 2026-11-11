@@ -1,5 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { DatabaseLock } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -29,6 +29,21 @@ afterAll(async () => {
   await db.destroy();
 });
 afterEach(() => vi.restoreAllMocks());
+
+/** Wait (at most 5 seconds) until a backend is waiting for this advisory lock in PostgreSQL. */
+const waitForLockWaiter = async (lock: DatabaseLock) => {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const waiting = await sql<{ count: number }>`
+      SELECT count(*)::int AS count FROM pg_locks WHERE locktype = 'advisory' AND objid = ${lock} AND NOT granted
+    `.execute(db);
+    if (waiting.rows[0]!.count > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`No backend waited for advisory lock ${lock}`);
+};
 
 const real = [CryptoRepository, DatabaseRepository, FrameleafAccountRepository, SessionRepository, UserRepository];
 
@@ -127,6 +142,8 @@ it.each(['child', 'unlink'] as const)(
     await entered.promise;
     const secondRun = first === 'child' ? frameleaf.unlink(auth) : sessions.create(auth, {});
     await contending.promise;
+    // ...and PostgreSQL holds its request: another backend waiting for the link authority advisory lock
+    await waitForLockWaiter(DatabaseLock.FrameleafLinkAuthority);
     resume.resolve();
     const [firstResult, secondResult] = await Promise.allSettled([firstRun, secondRun]);
     const [childResult, unlinkResult] = first === 'child' ? [firstResult, secondResult] : [secondResult, firstResult];
