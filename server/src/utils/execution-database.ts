@@ -16,6 +16,17 @@ export const DATABASE_CLEANUP_TIMEOUT_MS = 2000;
  */
 export const databaseBusy = (message: string) => new ServiceUnavailableException(message);
 const cleanupExecution = new AsyncLocalStorage<AbortSignal>();
+/**
+ * PostgreSQL cancels whatever a session runs when a cancel request arrives, not the statement it was sent for.
+ * A job's cancelled query can finish first, so the request stops the transaction's ROLLBACK. Each request stops
+ * at most one statement; the bound only guards against a driver that keeps cancelling.
+ */
+const STRAY_CANCEL_ROLLBACK_RETRIES = 2;
+const isCancelRequest = (error: unknown) =>
+  !!error &&
+  typeof error === 'object' &&
+  (error as { code?: unknown }).code === '57014' &&
+  (error as { message?: unknown }).message === 'canceling statement due to user request';
 
 /** Only rollback and mandatory session-lock cleanup may outlive an aborted job. */
 export const withDatabaseCleanup = <T>(callback: () => Promise<T>): Promise<T> =>
@@ -93,13 +104,14 @@ export const boundExecutionReservations = (
           const unsafe = connection.unsafe.bind(connection);
           connection.unsafe = ((...args: Parameters<typeof connection.unsafe>) => {
             const query = unsafe(...args);
+            const rollback = /^\s*rollback\b/i.test(args[0]);
             const cleanup =
-              cleanupExecution.getStore() ??
-              (/^\s*rollback\b/i.test(args[0]) ? AbortSignal.timeout(DATABASE_CLEANUP_TIMEOUT_MS) : undefined);
+              cleanupExecution.getStore() ?? (rollback ? AbortSignal.timeout(DATABASE_CLEANUP_TIMEOUT_MS) : undefined);
             const cancellation = cleanup ?? executionSignal();
             if (!cancellation) return query;
+            let current = query;
             const cancel = () => {
-              query.cancel();
+              current.cancel();
               // A cleanup timeout must close the underlying connection, not just stop awaiting it.
               if (cleanup) void discardPool().catch(() => {});
             };
@@ -115,7 +127,25 @@ export const boundExecutionReservations = (
                     const execute = async () => {
                       try {
                         watch();
-                        return await query;
+                        for (let retries = 0; ; retries++) {
+                          try {
+                            return await current;
+                          } catch (error) {
+                            if (
+                              !rollback ||
+                              !cleanup ||
+                              cleanup.aborted ||
+                              retries >= STRAY_CANCEL_ROLLBACK_RETRIES ||
+                              !isCancelRequest(error)
+                            ) {
+                              throw error;
+                            }
+                            // FL-1443: an earlier statement's cancel request reached the session after that
+                            // statement finished and stopped this ROLLBACK instead. Nothing ran, so roll back again
+                            // rather than closing the pool and restarting the worker (its claims then wait out the lease).
+                            current = unsafe(...args);
+                          }
+                        }
                       } catch (error) {
                         if (cleanup) await discardPool();
                         throw error;

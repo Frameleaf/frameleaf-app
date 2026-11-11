@@ -96,4 +96,69 @@ describe('bounded execution database reservations', () => {
     expect(restart).toHaveBeenCalledOnce();
     await expect(client.reserve()).rejects.toThrow('requires worker restart');
   });
+
+  describe("a rollback stopped by an earlier statement's cancel request (FL-1443)", () => {
+    const cancelRequest = () => Object.assign(new Error('canceling statement due to user request'), { code: '57014' });
+    const setup = (unsafe: (sql: string) => Promise<unknown>) => {
+      const end = vi.fn().mockResolvedValue(undefined);
+      const restart = vi.fn();
+      const release = vi.fn();
+      const client = boundExecutionReservations(
+        {
+          reserve: () => Promise.resolve({ release, unsafe: vi.fn(unsafe) }),
+          end,
+        } as unknown as ReturnType<typeof createPostgres>,
+        restart,
+      );
+      return { client, end, restart, release };
+    };
+
+    it('rolls back again and keeps the pool and the worker', async () => {
+      const statements: string[] = [];
+      let stray = true;
+      const { client, end, restart, release } = setup((sql) => {
+        statements.push(sql);
+        if (sql === 'rollback' && stray) {
+          stray = false;
+          return Promise.reject(cancelRequest());
+        }
+        return Promise.resolve([]);
+      });
+      const connection = await client.reserve();
+      await expect(Promise.resolve(connection.unsafe('rollback'))).resolves.toEqual([]);
+      connection.release();
+      expect(statements).toEqual(['rollback', 'rollback']);
+      expect(release).toHaveBeenCalledOnce();
+      expect(end).not.toHaveBeenCalled();
+      expect(restart).not.toHaveBeenCalled();
+    });
+
+    it('still closes the pool when the rollback keeps failing', async () => {
+      const unsafe = vi.fn(() => Promise.reject(cancelRequest()));
+      const { client, end, restart, release } = setup(unsafe);
+      const connection = await client.reserve();
+      await expect(Promise.resolve(connection.unsafe('rollback'))).rejects.toThrow('due to user request');
+      connection.release();
+      expect(unsafe).toHaveBeenCalledTimes(3);
+      expect(end).toHaveBeenCalledWith({ timeout: 0 });
+      expect(release).not.toHaveBeenCalled();
+      expect(restart).toHaveBeenCalledOnce();
+    });
+
+    it('never repeats a cleanup statement other than a rollback, or a rollback that timed out', async () => {
+      for (const [sql, error] of [
+        ['SELECT pg_advisory_unlock(9)', cancelRequest()],
+        ['rollback', Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' })],
+      ] as const) {
+        const unsafe = vi.fn(() => Promise.reject(error));
+        const { client, restart } = setup(unsafe);
+        const connection = await client.reserve();
+        await expect(withDatabaseCleanup(() => Promise.resolve(connection.unsafe(sql)))).rejects.toThrow(
+          'canceling statement',
+        );
+        expect(unsafe).toHaveBeenCalledOnce();
+        expect(restart).toHaveBeenCalledOnce();
+      }
+    });
+  });
 });
