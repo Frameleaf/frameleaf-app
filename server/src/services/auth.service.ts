@@ -1244,6 +1244,18 @@ export class AuthService extends BaseService {
     ) {
       record = { ...record, source: 'local' };
     }
+    if (away && !record) {
+      // a session with no record (made outside createSession) is judged as before: legacy, by its Frameleaf tag
+      // or its passkey link
+      const tagged = !!(await this.frameleafAccountRepository.getSession(auth.session.id));
+      const passkey = !tagged && (await this.passkeyRepository.isPasskeySession(auth.session.id));
+      record = {
+        source: tagged ? 'frameleaf' : 'local',
+        methods: passkey ? ['passkey'] : [],
+        level: passkey ? 'verified' : 'basic',
+        legacy: true,
+      };
+    }
     const { frameleafCloud, signInPolicy } = await this.getConfig({ withCache: true });
     // the authenticator matters only after a Basic Frameleaf sign-in: look it up only then
     const hasAuthenticator =
