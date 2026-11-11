@@ -14,6 +14,7 @@
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
   import AlbumCoverDialog from '$lib/components/frameleaf/AlbumCoverDialog.svelte';
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
+  import DatesToCheckLink from '$lib/components/frameleaf/DatesToCheckLink.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import AlbumInlineEdit from '$lib/components/frameleaf/AlbumInlineEdit.svelte';
   import AlbumOptionsDialog from '$lib/components/frameleaf/AlbumOptionsDialog.svelte';
@@ -172,6 +173,12 @@
     addMenu?: Snippet;
     /** A shared space's invitations nobody has answered yet (not members, so not in `albumUsers`). */
     pendingInvites?: number;
+    /**
+     * FL-1410: photos here whose date cannot be right. The date range already leaves them out; the
+     * summary says how many there are and offers to fix them.
+     */
+    datesToCheck?: number;
+    onFixDates?: () => void;
   }
 
   let {
@@ -199,6 +206,8 @@
     filteredCount = null,
     addMenu,
     pendingInvites = 0,
+    datesToCheck = 0,
+    onFixDates,
   }: Props = $props();
   const download = () => (onDownload ? onDownload() : void handleDownloadAlbum(album));
 
@@ -723,6 +732,9 @@
           <span>{$t('frameleaf_boards_collections_inside', { values: { count: childAlbums.length } })}</span>
         {:else if span && !boards}
           <span>{span}</span>
+        {/if}
+        {#if datesToCheck > 0 && onFixDates && !boards}
+          <DatesToCheckLink count={datesToCheck} onclick={onFixDates} />
         {/if}
         {#if others.length > 0}
           <button type="button" class="members" onclick={() => openShare()}>

@@ -26,6 +26,7 @@
   import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import DatesToCheckLink from '$lib/components/frameleaf/DatesToCheckLink.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import FolderCardGrid from '$lib/components/frameleaf/folders/FolderCardGrid.svelte';
   import FolderColumns from '$lib/components/frameleaf/folders/FolderColumns.svelte';
@@ -376,6 +377,10 @@
       <!-- FoldersV2.jsx: the top has no path row; where it sits on disk stays in the subtitle's tooltip. -->
       <p title={isTop && showsDisk ? folder.path : undefined}>
         {isTop ? $t('frameleaf_folders_subtitle') : summary.join(' · ')}
+        {#if !isTop && folder.datesToCheck > 0}
+          <!-- FL-1410: the range leaves wrong dates out; the timeline of this folder is where they wait to be fixed. -->
+          · <DatesToCheckLink count={folder.datesToCheck} onclick={() => showInTimeline(folder)} />
+        {/if}
       </p>
       {#if phone && showsDisk && !isTop}
         <p class="disk">

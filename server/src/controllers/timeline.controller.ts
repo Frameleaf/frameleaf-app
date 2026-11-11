@@ -6,6 +6,8 @@ import {
   TimeBucketAssetDto,
   TimeBucketAssetResponseDto,
   TimeBucketDto,
+  TimelineDatesToCheckDto,
+  TimelineDatesToCheckResponseDto,
   TimelineHighlightResponseDto,
   TimelineHighlightsDto,
   TimelineOrderedDto,
@@ -73,5 +75,21 @@ export class TimelineController {
     @Query() dto: TimelineHighlightsDto,
   ): Promise<TimelineHighlightResponseDto[]> {
     return this.service.getTimelineHighlights(auth, dto);
+  }
+
+  @Get('dates-to-check')
+  @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
+  @ApiOkResponse({ type: TimelineDatesToCheckResponseDto })
+  @Endpoint({
+    summary: 'Get the dates to check',
+    description:
+      'For the same filters as the time buckets: how many of the photos have a date that cannot be right (not happened yet, or a camera reset date nobody set by hand), the years those dates claim and the months to read them from. A timeline asks its buckets with datesToCheck=exclude and shows these photos apart, at its end.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getTimelineDatesToCheck(
+    @Auth() auth: AuthDto,
+    @Query() dto: TimelineDatesToCheckDto,
+  ): Promise<TimelineDatesToCheckResponseDto> {
+    return this.service.getDatesToCheck(auth, dto);
   }
 }

@@ -13,6 +13,7 @@
    * On a phone only "Tag photos" stays in the row; Colour, Move and Merge join the "…" menu.
    */
   import { goto, invalidateAll } from '$app/navigation';
+  import DatesToCheckLink from '$lib/components/frameleaf/DatesToCheckLink.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import TagCard from '$lib/components/frameleaf/tags/TagCard.svelte';
@@ -46,7 +47,18 @@
   import { locale, t } from 'svelte-i18n';
   import { MediaQuery } from 'svelte/reactivity';
 
-  let { node, tree }: { node: FrameleafTagNode; tree: FrameleafTagTree } = $props();
+  let {
+    node,
+    tree,
+    datesToCheck = 0,
+    onFixDates,
+  }: {
+    node: FrameleafTagNode;
+    tree: FrameleafTagTree;
+    /** FL-1410: photos with this tag whose date cannot be right; the date range leaves them out. */
+    datesToCheck?: number;
+    onFixDates?: () => void;
+  } = $props();
 
   /** Phones (the mock's `max-width: 700px`): the secondary actions live in the "…" menu. */
   const phone = new MediaQuery('max-width: 700px');
@@ -172,6 +184,9 @@
         {/if}
         {#if span}
           <span>{span}</span>
+        {/if}
+        {#if datesToCheck > 0 && onFixDates}
+          <DatesToCheckLink count={datesToCheck} onclick={onFixDates} />
         {/if}
       </div>
     </div>

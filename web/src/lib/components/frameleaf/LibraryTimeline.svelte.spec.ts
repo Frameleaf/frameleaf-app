@@ -601,3 +601,92 @@ it('selects a complete dense calendar day across bounded pages', async () => {
     manager.destroy();
   }
 });
+
+describe('dates that cannot be right (FL-1410)', () => {
+  const august = inMonth('2026-08', 2);
+  const wrong = [...inMonth('2031-06', 1), ...inMonth('1970-01', 1)];
+  let manager: TimelineManager;
+  let session: LibrarySessionStore;
+
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2026-08-01', count: august.length }]);
+    sdkMock.getTimelineDatesToCheck.mockResolvedValue({
+      count: 2,
+      years: [1970, 2031],
+      timeBuckets: ['2031-06-01', '1970-01-01'],
+    });
+    sdkMock.getTimeBucket.mockImplementation(({ timeBucket, datesToCheck }) =>
+      Promise.resolve(
+        datesToCheck === 'only'
+          ? toResponseDto(wrong[timeBucket.startsWith('2031') ? 0 : 1])
+          : toResponseDto(...august),
+      ),
+    );
+    manager = new TimelineManager();
+    await manager.updateViewport({ width: 1000, height: 2000 });
+    await tick();
+    session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
+  });
+  afterEach(() => manager.destroy());
+
+  const draw = (props: Record<string, unknown> = {}) =>
+    render(LibraryTimeline, {
+      timelineManager: manager,
+      session,
+      grouping: 'days',
+      onGroupingChange: vi.fn(),
+      onFixDates: vi.fn(),
+      ...props,
+    } as never);
+
+  it('says how many and which years above the photos, and offers to fix them', async () => {
+    const onFixDates = vi.fn();
+    draw({ onFixDates });
+    const notice = await screen.findByTestId('frameleaf-dates-notice');
+    // the count and the years go to the sentence; the years as one list in the reader's language
+    expect(notice.textContent).toContain('frameleaf_library_dates_notice');
+    expect(notice.textContent).toContain('frameleaf_library_dates_notice_wait');
+    await fireEvent.click(within(notice).getByRole('button', { name: 'frameleaf_library_dates_fix' }));
+    expect(onFixDates).toHaveBeenCalledOnce();
+  });
+
+  it('keeps them in one group after the dated days, marked with why they wait', async () => {
+    const { container } = draw();
+    await waitFor(() => expect(manager.months.every((month) => month.isLoaded)).toBe(true));
+    await tick();
+    const headings = [...container.querySelectorAll(':scope [data-testid="frameleaf-day-group"] h2')].map(
+      (heading) => heading.textContent,
+    );
+    expect(headings.at(-1)).toBe('frameleaf_library_dates_to_check');
+    expect(headings).toHaveLength(2);
+    expect(headings[0]).toContain('2026');
+    expect(screen.getAllByTestId('frameleaf-group-flag')).toHaveLength(1);
+    // the wrong dates' photos are there to open and select, last
+    const tiles = [...container.querySelectorAll('[data-testid="frameleaf-asset-tile"]')];
+    expect(tiles).toHaveLength(august.length + wrong.length);
+  });
+
+  it('keeps the group its own under month, year and all groupings', async () => {
+    const { container } = draw({ grouping: 'all' });
+    await waitFor(() => expect(manager.months.every((month) => month.isLoaded)).toBe(true));
+    await tick();
+    const titles = () =>
+      [...container.querySelectorAll(':scope [data-testid="frameleaf-group"] h2')].map(
+        (heading) => heading.textContent,
+      );
+    expect(titles()).toEqual(['frameleaf_library_group_all', 'frameleaf_library_dates_to_check']);
+    expect(screen.getAllByTestId('frameleaf-group-flag')).toHaveLength(1);
+    expect(manager.months.at(-1)!.startsGroup).toBe(true);
+  });
+
+  it('says nothing where the page cannot fix dates, or outside the Timeline', async () => {
+    const { unmount } = draw({ onFixDates: undefined });
+    await tick();
+    expect(screen.queryByTestId('frameleaf-dates-notice')).toBeNull();
+    unmount();
+    draw({ tileLayout: 'browse', showDayHeaders: false });
+    await tick();
+    expect(screen.queryByTestId('frameleaf-dates-notice')).toBeNull();
+  });
+});

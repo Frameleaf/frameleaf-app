@@ -100,6 +100,15 @@ export type ScrubberMonth = {
   year: number;
   month: number;
   title: string;
+  /** FL-1410: the "Dates to check" group at the end; it has its place on the track but no year. */
+  toCheck?: boolean;
+};
+
+/** FL-1410: the photos whose date cannot be right, as the server counts them for this view. */
+export type DatesToCheck = {
+  count: number;
+  /** The years those dates claim, oldest first ("1970 and 2031"). */
+  years: number[];
 };
 
 export interface UpdateGeometryOptions {

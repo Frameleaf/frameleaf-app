@@ -96,6 +96,10 @@
   const years = $derived.by(() => {
     const result: { year: number; start: number; end: number; assetCount: number }[] = [];
     for (const month of months) {
+      // FL-1410: the dates to check keep their place on the track, and claim no year
+      if (month.toCheck) {
+        continue;
+      }
       const last = result.at(-1);
       if (!last || last.year !== month.year) {
         result.push({ year: month.year, start: month.start, end: month.end, assetCount: month.assetCount });

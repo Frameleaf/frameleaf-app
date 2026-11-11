@@ -64,7 +64,14 @@ function canRunOn(manager: TimelineManager, index: number) {
   if (!manager.continuousGroups || !month || !previous || !month.isLoaded || !previous.isLoaded) {
     return false;
   }
-  if ((manager.cells && !manager.dayRows) || manager.grouping === 'all') {
+  if (manager.cells && !manager.dayRows) {
+    return true;
+  }
+  // FL-1410: the dates to check are a group of their own, whatever the grouping
+  if (month.toCheck) {
+    return false;
+  }
+  if (manager.grouping === 'all') {
     return true;
   }
   // FL-1398: a cell grid in sections is one grid per month or year group.

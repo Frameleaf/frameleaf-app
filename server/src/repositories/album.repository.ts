@@ -37,6 +37,7 @@ import {
   withDefaultVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { hasGoodDate } from 'src/utils/date-sanity.js';
 import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
@@ -272,8 +273,19 @@ export class AlbumRepository {
         .$call((qb) => withHiddenContentFilter(qb, options))
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
         .select('album_asset.albumId as albumId')
-        .select((eb) => eb.fn.min(sql<Date>`("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('startDate'))
-        .select((eb) => eb.fn.max(sql<Date>`("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('endDate'))
+        // FL-1410: a date that cannot be right (a clock set to 2031, a camera's 1970) never stretches the range
+        .select((eb) =>
+          eb.fn
+            .min(sql<Date>`("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date`)
+            .filterWhere(hasGoodDate())
+            .as('startDate'),
+        )
+        .select((eb) =>
+          eb.fn
+            .max(sql<Date>`("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date`)
+            .filterWhere(hasGoodDate())
+            .as('endDate'),
+        )
         // lastModifiedAssetTimestamp is only used in mobile app, please remove if not need
         .select((eb) => eb.fn.max('asset.updatedAt').as('lastModifiedAssetTimestamp'))
         // only the hidden-content view reads it; sorting every album's items for it took seconds on big libraries
