@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
@@ -157,6 +157,24 @@ describe('Date & Time Doctor scan (FL-912)', () => {
     expect((await findingsOf(doctor, factory.auth({ user: partner }))).map(({ assetId }) => assetId)).toEqual([
       theirs.id,
     ]);
+  });
+
+  it('leaves out a photo locked before the scan, and hides one locked after it', async () => {
+    const { ctx, doctor } = setup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const [lockedBefore, lockedAfter, open] = await insert(ctx, user.id, buildDateDoctorFixture().slice(0, 3));
+    const lock = (assetId: string) =>
+      db.insertInto('asset_lock').values({ assetId, reason: AssetLockReason.Marked, lockedBy: user.id }).execute();
+
+    await lock(lockedBefore.id);
+    await doctor.handleScan({ userId: user.id });
+    expect((await findingsOf(doctor, auth)).map(({ assetId }) => assetId).toSorted()).toEqual(
+      [lockedAfter.id, open.id].toSorted(),
+    );
+
+    await lock(lockedAfter.id);
+    expect((await findingsOf(doctor, auth)).map(({ assetId }) => assetId)).toEqual([open.id]);
   });
 
   it('stores both offsets when metadata is read again, and keeps them through writes that do not read them', async () => {
