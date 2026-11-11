@@ -1133,7 +1133,7 @@ export const routedMlDestinationId = async (
       MlAdmissionRefusal.WorkloadNotRouted,
       workload,
       null,
-      `no destination is routed for ${workload}; choose one under Processing destinations`,
+      `no destination is routed for ${workload}; choose one in Where work runs`,
     );
   }
   return route.destinationId;

@@ -1,6 +1,6 @@
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { lang } from '$lib/stores/preferences.store';
-import { convertBCP47, langs } from '$lib/utils/i18n';
+import { convertBCP47, langs, languageCodeFor } from '$lib/utils/i18n';
 
 class LanguageManager {
   constructor() {
@@ -21,7 +21,8 @@ class LanguageManager {
   }
 
   setLanguage(code: string) {
-    const item = langs.find((item) => item.code === code);
+    const availableCode = code === 'dev' ? code : languageCodeFor(code);
+    const item = langs.find((item) => convertBCP47(item.code) === availableCode);
     if (!item) {
       return;
     }

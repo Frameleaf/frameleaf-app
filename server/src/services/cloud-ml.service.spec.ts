@@ -1172,13 +1172,13 @@ describe(CloudMlService.name, () => {
         userId: 'admin-1',
         title: '[Fixture Cloud processing moved to Frameleaf Cloud]',
         description:
-          '[Fixture The cloud processing destinations Cloud GPU, Lab were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.] [Fixture 1 unfinished job stopped and can be started again.] [Fixture 3 render workers were signed out.]',
+          '[Fixture The cloud processing destinations Cloud GPU, Lab were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.] [Fixture 1 unfinished job stopped and can be started again.] [Fixture 3 render workers were signed out.]',
       });
       expect(english).toMatchObject({
         userId: 'admin-2',
         title: 'Cloud processing moved to Frameleaf Cloud',
         description:
-          'The cloud processing destinations Cloud GPU, Lab were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud. 1 unfinished job stopped and can be started again. 3 render workers were signed out.',
+          'The cloud processing destinations Cloud GPU, Lab were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud. 1 unfinished job stopped and can be started again. 3 render workers were signed out.',
       });
     });
 

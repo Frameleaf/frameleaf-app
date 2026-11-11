@@ -2,6 +2,7 @@ import { HttpException, HttpStatus, Inject, Injectable, ServiceUnavailableExcept
 import type { UserAdmin } from 'src/database.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
+import { emailText } from 'src/emails/components/email-locale.js';
 import { FrameleafEnvironment, JobName, NotificationLevel, NotificationType } from 'src/enum.js';
 import { RATE_LIMITED_MESSAGE, rateLimitAddress } from 'src/middleware/rate-limit.guard.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
@@ -9,15 +10,11 @@ import { RateLimitRepository, type SignInAttempt } from 'src/repositories/rate-l
 import { BaseService } from 'src/services/base.service.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isHomeAddress, isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
-import { getPreferences } from 'src/utils/preferences.js';
+import { getPreferences, localeOf } from 'src/utils/preferences.js';
 import { SIGN_IN_SECURITY_URL, signInNetwork } from 'src/utils/sign-in-security.js';
 
 type BackoffKind = 'password' | 'two-factor' | 'passkey' | 'shared-link';
 type AlertUser = Pick<UserAdmin, 'id' | 'email' | 'metadata'>;
-const SIGN_IN_FAILURE_TITLE = 'Someone tried to sign in to your account';
-const SIGN_IN_FAILURE_DESCRIPTION =
-  'There were repeated unsuccessful sign-in attempts. If they weren’t yours, review your signed-in devices and change your password.';
-const NEW_SIGN_IN_TITLE = 'New sign-in to your Frameleaf Library';
 
 @Injectable()
 export class SignInSecurityService extends BaseService {
@@ -49,7 +46,8 @@ export class SignInSecurityService extends BaseService {
         JSON.stringify([kind, principal, rateLimitAddress(details.securityClientIp ?? details.clientIp)]),
       );
       const keys = [`sign-in-backoff:${hash}`];
-      if (kind === 'password') {
+      // two-step codes (sign-in and step-up) count per account too, whatever address they come from
+      if (kind === 'password' || kind === 'two-factor') {
         // FL-850: a password guesser behind a trusted proxy can send a new forwarded address with every try, so
         // wrong passwords for one account also count from every address. This wait holds back only further
         // passwords for that account: passkeys and Frameleaf sign-in are never behind it. Both locks are held on
@@ -116,11 +114,11 @@ export class SignInSecurityService extends BaseService {
       await this.sessionRepository.observeKnownDevice(user.id, Buffer.from(fingerprint, 'base64url'), async () => {
         const home = !isRemoteVia(details.via) && isHomeAddress(clientIp, frameleafCloud.trustedLanCidrs);
         // Browser and OS families come from the UA parser, not the arbitrary device request headers.
-        const device = [details.browserFamily, details.deviceOSFamily].filter(Boolean).join(' on ') || 'Unknown device';
         const alert = await this.prepareAlert(user, {
           kind: 'new-device',
-          device,
-          place: home ? 'Home network' : 'Away',
+          browser: details.browserFamily,
+          os: details.deviceOSFamily,
+          home,
           time: new Date().toISOString(),
         });
         return alert ? (db) => this.jobRepository.queueInTransaction(db, alert) : undefined;
@@ -146,8 +144,8 @@ export class SignInSecurityService extends BaseService {
           userId: user.id,
           type: NotificationType.Custom,
           level: NotificationLevel.Warning,
-          title: SIGN_IN_FAILURE_TITLE,
-          description: SIGN_IN_FAILURE_DESCRIPTION,
+          title: emailText(localeOf(user.metadata), 'sign_in_failure_title'),
+          description: emailText(localeOf(user.metadata), 'sign_in_failure_notice'),
           data: { link: SIGN_IN_SECURITY_URL },
         },
         db,
@@ -166,8 +164,21 @@ export class SignInSecurityService extends BaseService {
 
   private async prepareAlert(
     user: AlertUser,
-    data: { kind: 'attempts' } | { kind: 'new-device'; device: string; place: string; time: string },
+    alert: { kind: 'attempts' } | { kind: 'new-device'; browser?: string; os?: string; home: boolean; time: string },
   ) {
+    const locale = localeOf(user.metadata);
+    const data =
+      alert.kind === 'attempts'
+        ? alert
+        : {
+            kind: alert.kind,
+            device:
+              alert.browser && alert.os
+                ? emailText(locale, 'device_on_os', { browser: alert.browser, os: alert.os })
+                : alert.browser || alert.os || emailText(locale, 'unknown_device'),
+            place: emailText(locale, alert.home ? 'home_network' : 'away'),
+            time: alert.time,
+          };
     const preferences = getPreferences(user.metadata).emailNotifications;
     if (!preferences.enabled || (data.kind === 'new-device' && !preferences.newSignIn)) return;
     const { notifications, server, templates } = await this.getConfig({ withCache: false });
@@ -177,6 +188,7 @@ export class SignInSecurityService extends BaseService {
       template: EmailTemplate.NEW_SIGN_IN,
       data: {
         ...data,
+        locale,
         baseUrl,
         showBranding: templates.email.showBranding,
       },
@@ -185,7 +197,7 @@ export class SignInSecurityService extends BaseService {
       name: JobName.SendMail as const,
       data: {
         to: user.email,
-        subject: data.kind === 'new-device' ? NEW_SIGN_IN_TITLE : SIGN_IN_FAILURE_TITLE,
+        subject: emailText(locale, data.kind === 'new-device' ? 'new_sign_in_title' : 'sign_in_failure_title'),
         html,
         text,
       },

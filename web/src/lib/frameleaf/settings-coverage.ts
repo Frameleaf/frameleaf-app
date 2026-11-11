@@ -1426,6 +1426,18 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'passwordLogin.enabled',
   },
   {
+    pattern: 'signInPolicy.applyToOlderApps',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
+    evidence: 'signInPolicy?.applyToOlderApps',
+  },
+  {
+    pattern: 'signInPolicy.require',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
+    evidence: 'signInPolicy?.require',
+  },
+  {
     pattern: 'reverseGeocoding.enabled',
     kind: 'control',
     file: 'src/routes/admin/system-settings/MapSettings.svelte',
@@ -1749,7 +1761,7 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
     evidence: 'memories.sidebarWeb',
   },
-  // FL-329: origin-server preference API only; client language controls/adoption remain pending.
+  // Per-device notification overrides remain API-only; the language picker saves the account locale.
   {
     pattern: 'notifications.devices',
     kind: 'api-only',
@@ -1758,9 +1770,9 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
   },
   {
     pattern: 'notifications.locale',
-    kind: 'api-only',
-    file: '../server/src/utils/notification-locale.ts',
-    evidence: 'locale: NotificationLocaleSchema.optional(),',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: 'saveNotificationLanguage(value)',
   },
   {
     pattern: 'people.enabled',

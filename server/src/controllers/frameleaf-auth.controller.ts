@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
-import { ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiExtraModels, ApiResponse, ApiTags, getSchemaPath } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
@@ -13,8 +13,10 @@ import {
   FrameleafLinkConfirmDto,
   FrameleafLinkDto,
   FrameleafLinkResponseDto,
+  FrameleafStepUpDto,
   FrameleafTokenExchangeDto,
   FrameleafTokenExchangeErrorDto,
+  VerificationRequiredResponseDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { ApiTag, AuthCookie, AuthType, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
@@ -70,6 +72,12 @@ export class FrameleafAuthController {
       'Exchanges the authorization code, requires a verified email, links or creates the account Frameleaf Cloud authorized, and signs in with a session Frameleaf Cloud can end.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
+  @ApiResponse({
+    status: 403,
+    type: VerificationRequiredResponseDto,
+    description:
+      'verification_required (a client that declared the verification capability): more is needed, with the methods and transaction that complete it',
+  })
   async callback(
     @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
@@ -104,10 +112,17 @@ export class FrameleafAuthController {
     description:
       'frameleaf_exchange_invalid, frameleaf_exchange_wrong_audience, frameleaf_exchange_expired or frameleaf_exchange_replayed',
   })
+  @ApiExtraModels(FrameleafTokenExchangeErrorDto, VerificationRequiredResponseDto)
   @ApiResponse({
     status: 403,
-    type: FrameleafTokenExchangeErrorDto,
-    description: 'frameleaf_exchange_no_access: the account has no access to this server, or it was removed',
+    description:
+      'frameleaf_exchange_no_access: the account has no access to this server, or it was removed; or verification_required (a client that declared the verification capability): more is needed, with the methods and transaction that complete it',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(FrameleafTokenExchangeErrorDto) },
+        { $ref: getSchemaPath(VerificationRequiredResponseDto) },
+      ],
+    },
   })
   async exchange(
     @Res({ passthrough: true }) res: Response,
@@ -115,6 +130,26 @@ export class FrameleafAuthController {
     @GetLoginDetails() loginDetails: LoginDetails,
   ): Promise<LoginResponseDto> {
     const body = await this.service.exchangeToken(dto, loginDetails);
+    return this.signedIn(res, body, loginDetails, dto.rememberMe);
+  }
+
+  @Post('step-up')
+  @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    operationId: 'stepUpFrameleafSignIn',
+    summary: 'Finish a Sign in with Frameleaf that needs the local password or authenticator',
+    description:
+      'A Sign in with Frameleaf (callback or exchange) can answer 403 verification_required with a transaction. Send the transaction with the local password and/or authenticator code (or recovery code) it asked for and receive the session, as the exchange would have returned it.',
+    history: new HistoryBuilder().added('v3.5.0').beta('v3.5.0'),
+  })
+  async stepUp(
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: FrameleafStepUpDto,
+    @GetLoginDetails() loginDetails: LoginDetails,
+  ): Promise<LoginResponseDto> {
+    const body = await this.service.stepUp(dto, loginDetails);
     return this.signedIn(res, body, loginDetails, dto.rememberMe);
   }
 

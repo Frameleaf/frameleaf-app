@@ -25,7 +25,7 @@
   import type { CellGridOptions, TileLayout } from '$lib/frameleaf/library-grid';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { AssetVisibility } from '@frameleaf/sdk';
-  import type { Snippet } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
 
   type Props = {
     /** The results, in the order the page loaded them. */
@@ -81,6 +81,8 @@
      * per section on this one selection and selection bar. `assets` stays the whole list.
      */
     sections?: { assets: TimelineAsset[]; header: Snippet }[];
+    /** A bulk action finished on these items (FL-1452: Change date moves a date to check). */
+    onApplied?: (action: BulkActionId, ids: string[]) => void;
   };
 
   let {
@@ -109,7 +111,37 @@
     header,
     empty,
     sections,
+    onApplied,
   }: Props = $props();
+  let selectionBar = $state<SelectionBar>();
+
+  /**
+   * FL-1452 "Fix dates" where the photos are not a timeline (a mixed album): these photos are selected
+   * and Change date opens on them, as `LibraryView.fixDates` does. They need not be loaded here.
+   */
+  let restoreOnCancel: string[] | null = null;
+  export const changeDates = async (ids: string[]) => {
+    const before = [...session.selection];
+    session.dispatch({ type: 'selection', ids });
+    await tick();
+    if (selectionBar?.canPerform('change-date')) {
+      restoreOnCancel = before;
+      selectionBar.performAction('change-date');
+    }
+  };
+  /** Change date cancelled from Fix dates: the selection goes back to what it was, as `LibraryView` does. */
+  const onDialogSettled = (_id: BulkActionId, submitted: boolean) => {
+    const restore = restoreOnCancel;
+    restoreOnCancel = null;
+    if (submitted || !restore) {
+      return;
+    }
+    if (restore.length > 0) {
+      session.dispatch({ type: 'selection', ids: restore });
+    } else {
+      session.clearSelection();
+    }
+  };
 
   const currentUserId = $derived(authManager.authenticated ? authManager.user.id : undefined);
   const byId = $derived(new Map(assets.map((asset) => [asset.id, asset])));
@@ -136,6 +168,7 @@
 
   const bulk = new BulkController({
     dispatch,
+    applied: (action, ids) => onApplied?.(action, ids),
     context: () => ({
       currentUserId,
       ownerById: Object.fromEntries(
@@ -246,6 +279,8 @@
 
   {#if !noSelectionBar}
     <SelectionBar
+      bind:this={selectionBar}
+      {onDialogSettled}
       count={session.selection.length}
       total={selectAllMode === 'matching' ? session.total : assets.length}
       assets={selectedAssets}

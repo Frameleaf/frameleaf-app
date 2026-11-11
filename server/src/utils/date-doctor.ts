@@ -176,7 +176,7 @@ const zonesAt = (latitude: number, longitude: number): string[] => {
   // the exact position: two fixes either side of a border must not share an answer
   const key = `${latitude},${longitude}`;
   if (!gpsZones.has(key)) {
-    // ponytail: unbounded memo, one entry per distinct position in the scan (6,600 in the 14,500-photo demo library)
+    // one entry per distinct position, for one scan only (`detectDateFindings` clears it)
     // eslint-disable-next-line import-x/no-named-as-default-member
     gpsZones.set(key, geotz.find(latitude, longitude));
   }
@@ -377,6 +377,8 @@ const finding = (
 
 /** What the Doctor finds in one owner's photos. `rows` may come in any order. */
 export const detectDateFindings = (input: DateScanRow[], now: Date = new Date()): DateFinding[] => {
+  // the positions of one owner's photos (6,600 in the 14,500-photo demo library), never carried to the next scan
+  gpsZones.clear();
   const rows = input.toSorted((a, b) => a.localDateTime.getTime() - b.localDateTime.getTime());
   const trusted = rows.map((row) => trustedZone(row));
   const findings: DateFinding[] = [];

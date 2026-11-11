@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Section, Text } from 'react-email';
 import type { RestoreReportEmailProps } from 'src/repositories/email.repository.js';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { useEmailText } from 'src/emails/components/email-locale.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 
 /**
@@ -10,38 +11,43 @@ import ImmichLayout from 'src/emails/components/immich.layout.js';
  * backup could not be unlocked).
  */
 export const RestoreReportEmail = ({ baseUrl, showBranding, ...data }: RestoreReportEmailProps) => {
+  const t = useEmailText();
   const passed = data.result === 'passed';
   return (
     <ImmichLayout
       baseUrl={baseUrl}
       showBranding={showBranding}
-      preview={passed ? 'Your backup restored correctly' : 'Your backup didn’t restore'}
+      preview={t(passed ? 'restore_passed_preview' : 'restore_failed_preview')}
     >
-      <Text className="text-xl font-bold">{passed ? 'Your backup works' : 'Your backup didn’t restore'}</Text>
+      <Text className="text-xl font-bold">{t(passed ? 'restore_passed_heading' : 'restore_failed_preview')}</Text>
       <Text>
-        {passed
-          ? `Last night Frameleaf took ${data.sample} photos and videos back from your ${data.source} backup and checked them against your library. All of them matched.`
-          : `Last night Frameleaf tried to take a sample back from your ${data.source} backup. ${data.failure ?? ''} Your backups are still running.`}
+        {t(passed ? 'restore_passed_body' : 'restore_failed_body', {
+          sample: data.sample,
+          source: data.source,
+          failure: data.failure ?? '',
+        })}
       </Text>
       <Text>
-        Drill: {data.ranAt} (every 30 days)
+        {t('restore_drill', { ranAt: data.ranAt })}
         <br />
-        Backup: {data.source}
-        {data.backupFrom ? `, ${data.backupFrom}` : ''} (the newest one)
+        {t('restore_backup', {
+          source: data.source,
+          backupFrom: data.backupFrom ? t('restore_backup_from', { date: data.backupFrom }) : '',
+        })}
         <br />
-        Result: {passed ? `${data.matched} of ${data.sample} matched` : `Stopped at “${data.stoppedAt}”`} (took{' '}
-        {data.duration})
+        {t('restore_result', {
+          result: passed
+            ? t('restore_matched', { matched: data.matched, sample: data.sample })
+            : t('restore_stopped', { step: data.stoppedAt ?? '' }),
+          duration: data.duration,
+        })}
       </Text>
       {baseUrl && (
         <Section className="my-6">
-          <ImmichButton href={`${baseUrl}${data.link}`}>
-            {passed ? 'See the report' : 'Check the recovery key'}
-          </ImmichButton>
+          <ImmichButton href={`${baseUrl}${data.link}`}>{t(passed ? 'see_report' : 'check_recovery_key')}</ImmichButton>
         </Section>
       )}
-      <Text className="text-sm">
-        You get this because you look after this server. Turn emails off in your account’s notification settings.
-      </Text>
+      <Text className="text-sm">{t('restore_footer')}</Text>
     </ImmichLayout>
   );
 };

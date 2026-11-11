@@ -619,9 +619,10 @@ describe(AuthService.name, () => {
           expect.any(Date),
         );
         const [, until] = mocks.frameleafAccount.revokeSignIns.mock.calls[0];
-        // as long as an exchange token minted before now could still be accepted
-        expect(until.getTime()).toBeGreaterThanOrEqual(Date.now() + 2 * 60 * 1000);
-        expect(until.getTime()).toBeLessThanOrEqual(Date.now() + 3 * 60 * 1000);
+        // as long as an exchange token minted before now could still be accepted, and as long as a pending
+        // step-up (verification_required, 10 minutes) could still be completed
+        expect(until.getTime()).toBeGreaterThanOrEqual(Date.now() + 10 * 60 * 1000);
+        expect(until.getTime()).toBeLessThanOrEqual(Date.now() + 11 * 60 * 1000);
       });
 
       it('records the revocation before it looks for sessions, and fails when it cannot (FL-230)', async () => {
@@ -1676,6 +1677,7 @@ describe(AuthService.name, () => {
         'https://photos.example.test/immich/api/oauth/frameleaf-mobile-redirect/',
         undefined,
         undefined,
+        {},
       );
     });
 
@@ -1692,6 +1694,7 @@ describe(AuthService.name, () => {
         'http://mobile-redirect',
         undefined,
         undefined,
+        {},
       );
     });
 
@@ -1705,6 +1708,21 @@ describe(AuthService.name, () => {
         'frameleaf-auth:///oauth-callback',
         undefined,
         undefined,
+        {},
+      );
+    });
+
+    it('asks the provider to authenticate again when the person needs a recent sign-in (unified sign-in)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+
+      await sut.authorize({ redirectUri: 'http://127.0.0.1:2283/auth/login', reauthenticate: true });
+
+      expect(mocks.oauth.authorize).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'http://127.0.0.1:2283/auth/login',
+        undefined,
+        undefined,
+        { maxAge: 0 },
       );
     });
   });
@@ -1833,6 +1851,31 @@ describe(AuthService.name, () => {
         expect.objectContaining({ oauthSid: 'oauth-sid', oauthBearerToken: 'oauth-bearer-token' }),
         undefined,
         expect.objectContaining({ methods: [], source: 'local' }),
+      );
+    });
+
+    it.each([
+      ['the provider’s auth_time', { auth_time: 1_794_000_000 }, new Date(1_794_000_000_000)],
+      ['an unknown time (never recent) without one', {}, new Date(0)],
+    ])('records %s as when the person authenticated', async (_name, idClaims, authTime) => {
+      const user = UserFactory.create();
+      const profile = OAuthProfileFactory.create({ email: user.email });
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile, sid: 'oauth-sid', idClaims } as never);
+      mocks.user.getByEmail.mockResolvedValue(user);
+      mocks.user.update.mockResolvedValue(user);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await sut.callback(
+        { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foobar' },
+        {},
+        loginDetails,
+      );
+
+      expect(mocks.session.create).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        expect.objectContaining({ source: 'local', methods: [], authTime }),
       );
     });
 
@@ -2781,6 +2824,8 @@ describe(AuthService.name, () => {
 
   describe('remote access (FL-161)', () => {
     const user = UserFactory.create();
+    // how the session under test was made; these tests stand for sessions that predate the unified rule
+    let signIn: { source: string; methods: string[]; level: string; legacy: boolean } | null = null;
     const sessionRow = () => ({
       id: 'session-1',
       updatedAt: new Date(),
@@ -2788,6 +2833,7 @@ describe(AuthService.name, () => {
       pinExpiresAt: null,
       appVersion: null,
       oauthSid: null,
+      signIn,
     });
     const sessionRequest = (via: 'lan' | 'wan' | 'relay' | null) => ({
       headers: { authorization: 'Bearer auth_token' },
@@ -2811,24 +2857,17 @@ describe(AuthService.name, () => {
 
     describe('authenticate', () => {
       it.each([null, 'lan'] as const)('never checks a request that arrived %s', async (via) => {
-        mocks.session.getByToken.mockResolvedValue(sessionRow());
+        mocks.session.getByToken.mockImplementation(() => Promise.resolve(sessionRow() as never));
 
         await expect(sut.authenticate(sessionRequest(via))).resolves.toMatchObject({ user });
-        expect(mocks.session.getSignIn).not.toHaveBeenCalled();
         expect(mocks.frameleafAccount.getLinkByUser).not.toHaveBeenCalled();
       });
 
       it.each(['wan', 'relay'] as const)(
         'refuses a Frameleaf session whose tag was removed by unlinking, arriving %s',
         async (via) => {
-          mocks.session.getByToken.mockResolvedValue(sessionRow());
-          mocks.session.getSignIn.mockResolvedValue({
-            source: 'frameleaf',
-            methods: [],
-            level: 'basic',
-            legacy: false,
-            authTime: new Date(),
-          } as never);
+          mocks.session.getByToken.mockImplementation(() => Promise.resolve(sessionRow() as never));
+          signIn = { source: 'frameleaf', methods: [], level: 'basic', legacy: true };
           mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
           mocks.systemMetadata.get.mockResolvedValue(null as never);
 
@@ -2837,23 +2876,16 @@ describe(AuthService.name, () => {
       );
 
       it.each(['wan', 'relay'] as const)('accepts a Frameleaf session arriving %s', async (via) => {
-        mocks.session.getByToken.mockResolvedValue(sessionRow());
-        mocks.session.getSignIn.mockResolvedValue({
-          source: 'frameleaf',
-          methods: [],
-          level: 'basic',
-          legacy: false,
-          authTime: new Date(),
-        } as never);
+        mocks.session.getByToken.mockImplementation(() => Promise.resolve(sessionRow() as never));
+        signIn = { source: 'frameleaf', methods: [], level: 'basic', legacy: true };
         mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
 
         await expect(sut.authenticate(sessionRequest(via))).resolves.toMatchObject({ user });
-        expect(mocks.session.getSignIn).toHaveBeenCalledWith('session-1');
       });
 
       it('judges a session with no sign-in record as before: by its Frameleaf tag, then its passkey link', async () => {
-        mocks.session.getByToken.mockResolvedValue(sessionRow());
-        mocks.session.getSignIn.mockResolvedValue(undefined);
+        mocks.session.getByToken.mockImplementation(() => Promise.resolve(sessionRow() as never));
+        signIn = null;
         mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
         await expect(sut.authenticate(sessionRequest('relay'))).resolves.toMatchObject({ user });
 
@@ -2867,28 +2899,16 @@ describe(AuthService.name, () => {
       });
 
       it.each(['wan', 'relay'] as const)('refuses a password session arriving %s', async (via) => {
-        mocks.session.getByToken.mockResolvedValue(sessionRow());
-        mocks.session.getSignIn.mockResolvedValue({
-          source: 'local',
-          methods: ['pwd'],
-          level: 'basic',
-          legacy: false,
-          authTime: new Date(),
-        } as never);
+        mocks.session.getByToken.mockImplementation(() => Promise.resolve(sessionRow() as never));
+        signIn = { source: 'local', methods: ['pwd'], level: 'basic', legacy: true };
         mocks.systemMetadata.get.mockResolvedValue(null as never);
 
         await signInRequired(sut.authenticate(sessionRequest(via)));
       });
 
       it('lets any valid session sign out over the relay', async () => {
-        mocks.session.getByToken.mockResolvedValue(sessionRow());
-        mocks.session.getSignIn.mockResolvedValue({
-          source: 'local',
-          methods: ['pwd'],
-          level: 'basic',
-          legacy: false,
-          authTime: new Date(),
-        } as never);
+        mocks.session.getByToken.mockImplementation(() => Promise.resolve(sessionRow() as never));
+        signIn = { source: 'local', methods: ['pwd'], level: 'basic', legacy: true };
 
         await expect(
           sut.authenticate({
@@ -2896,18 +2916,11 @@ describe(AuthService.name, () => {
             metadata: { ...sessionRequest('relay').metadata, uri: '/api/auth/logout', remoteSignInExempt: true },
           }),
         ).resolves.toMatchObject({ user });
-        expect(mocks.session.getSignIn).not.toHaveBeenCalled();
       });
 
       it('accepts a password session over the relay when an administrator allowed passwords there', async () => {
-        mocks.session.getByToken.mockResolvedValue(sessionRow());
-        mocks.session.getSignIn.mockResolvedValue({
-          source: 'local',
-          methods: ['pwd'],
-          level: 'basic',
-          legacy: false,
-          authTime: new Date(),
-        } as never);
+        mocks.session.getByToken.mockImplementation(() => Promise.resolve(sessionRow() as never));
+        signIn = { source: 'local', methods: ['pwd'], level: 'basic', legacy: true };
         allowPassword();
 
         await expect(sut.authenticate(sessionRequest('relay'))).resolves.toMatchObject({ user });
@@ -2923,7 +2936,6 @@ describe(AuthService.name, () => {
             metadata: { adminRoute: false, sharedLinkRoute: true, uri: '/api/assets', via },
           }),
         ).resolves.toMatchObject({ sharedLink: expect.anything() });
-        expect(mocks.session.getSignIn).not.toHaveBeenCalled();
       });
 
       it.each(['wan', 'relay'] as const)(
@@ -3043,15 +3055,9 @@ describe(AuthService.name, () => {
               : null) as never,
           ),
         );
+        mocks.session.getByToken.mockImplementation(() => Promise.resolve(sessionRow() as never));
+        signIn = { source: 'frameleaf', methods: [], level: 'basic', legacy: true };
         mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
-        mocks.session.getByToken.mockResolvedValue(sessionRow());
-        mocks.session.getSignIn.mockResolvedValue({
-          source: 'frameleaf',
-          methods: [],
-          level: 'basic',
-          legacy: false,
-          authTime: new Date(),
-        } as never);
       });
 
       it('refuses a page from another origin before reading the session', async () => {
@@ -3083,17 +3089,10 @@ describe(AuthService.name, () => {
             'x-frameleaf-via-auth': secret,
           }),
         ).resolves.toMatchObject({ auth: { user }, via: 'relay' });
-        expect(mocks.session.getSignIn).toHaveBeenCalledWith('session-1');
       });
 
       it('applies the remote rule to a relayed handshake', async () => {
-        mocks.session.getSignIn.mockResolvedValue({
-          source: 'local',
-          methods: ['pwd'],
-          level: 'basic',
-          legacy: false,
-          authTime: new Date(),
-        } as never);
+        signIn = { source: 'local', methods: ['pwd'], level: 'basic', legacy: true };
 
         await signInRequired(
           sut.authenticateWebsocket({

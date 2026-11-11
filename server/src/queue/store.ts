@@ -13,6 +13,7 @@ import {
   processingFailureSteps,
   processingIsSetAside,
   queuedProcessingIsSetAside,
+  rearmProcessingFailures,
   recordProcessingFailure,
 } from 'src/queue/processing-failure.js';
 import { listRecentWork } from 'src/queue/recent-work.js';
@@ -1199,24 +1200,30 @@ export class SqlQueueStore {
     let total = 0;
     const photos = new Set<string>();
     for (;;) {
+      // A person asked for this, so work set aside goes back too (its failure records re-armed below); a job
+      // blocked only because its file was set aside goes back like a failed one.
       const { rows } = await sql<{ id: string; root: string | null }>`WITH RECURSIVE eligible AS (
-        SELECT j.id,j."parentId",j.state FROM job j
+        SELECT j.id,j."parentId",j.state,(${queuedProcessingIsSetAside}) "setAside" FROM job j
         WHERE j."runId"=${runId}::uuid AND j."safeToRetry" AND j.data->>'operationId' IS NULL
           ${roots ? sql`AND j."rootItemKey" = any(${roots}::text[])` : sql``}
           ${jobIds ? sql`AND j.id = any(${jobIds}::uuid[])` : sql``}
           AND j.id <> all(${exclude}::uuid[])
-          AND j.state IN ('failed','blocked') AND NOT (${queuedProcessingIsSetAside})
+          AND j.state IN ('failed','blocked')
           AND (j."dedupKey" IS NULL OR NOT EXISTS (
             SELECT 1 FROM job d WHERE d.queue=j.queue AND d."dedupKey"=j."dedupKey" AND d.id<>j.id
               AND (d.state IN ('pending','waiting','active') OR (d.state IN ('failed','blocked')
                 AND (d."createdAt",d.id)<(j."createdAt",j.id)))))
       ), recoverable AS (
-        SELECT e.id FROM eligible e WHERE (e.state='failed' AND e."parentId" IS NULL) OR EXISTS (
+        SELECT e.id FROM eligible e WHERE ((e.state='failed' OR e."setAside") AND e."parentId" IS NULL) OR EXISTS (
           SELECT 1 FROM job p WHERE p.id=e."parentId" AND p.state IN ('pending','waiting','active','completed'))
         UNION SELECT e.id FROM eligible e JOIN recoverable p ON p.id=e."parentId"
       ) UPDATE job j SET state='pending',"availableAt"=${availability(sql`j."runId"`, sql`j.name`)},"finishedAt"=NULL,error=NULL,
         "retryBaseAttempt"=attempt,"cancelRequestedAt"=NULL,"cancelReason"=NULL
         WHERE id IN (SELECT id FROM recoverable LIMIT 1000) RETURNING id, "rootItemKey" root`.execute(db);
+      await rearmProcessingFailures(
+        db,
+        rows.map(({ id }) => id),
+      );
       total += rows.length;
       for (const { root } of rows) if (root) photos.add(root);
       if (rows.length < 1000) break;
@@ -1230,7 +1237,7 @@ export class SqlQueueStore {
 
   /**
    * FL-1349 Try again now: one cause's left-over photos (stopped ones aside) go back, their processing failures
-   * re-armed first (set aside work is never put back otherwise). Returns how many photos went back (tasks, in a run
+   * re-armed as they go back (`putBackRunWork`). Returns how many photos went back (tasks, in a run
    * that counts tasks), or undefined for an unknown run.
    */
   /**
@@ -1253,12 +1260,6 @@ export class SqlQueueStore {
       const items = only?.items ?? (await runFailureRoots(tx, runId, cause, countsPhotos));
       const exclude = only?.exclude ?? [];
       if (items.length === 0) return 0;
-      await sql`update asset_processing_failure f set "quarantinedAt" = null, attempts = 0 from job j
-        where j."runId" = ${runId}::uuid and j.state = 'failed'
-          and ${countsPhotos ? sql`j."rootItemKey" = any(${items}::text[])` : sql`j.id = any(${items}::uuid[])`}
-          and j.id <> all(${exclude}::uuid[])
-          and f."assetId" = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end
-          and f.step = j.name and f."dismissedAt" is null`.execute(tx);
       const { jobs, photos } = await this.putBackRunWork(
         runId,
         tx,
@@ -1326,7 +1327,11 @@ export class SqlQueueStore {
     return rows[0];
   }
 
-  /** Puts failed jobs back with their saved data: every one in the queue, or only `jobId`. */
+  /**
+   * Puts failed jobs back with their saved data: every one in the queue, or only `jobId`. Whatever they failed of:
+   * work set aside, and jobs blocked only because their file was set aside, go back with their failure records
+   * re-armed (`rearmProcessingFailures`), so a file type that opens since an update is read again.
+   */
   async retryFailed(queue: string, jobId?: string) {
     let total = 0;
     for (;;) {
@@ -1336,13 +1341,18 @@ export class SqlQueueStore {
           "retryBaseAttempt" = attempt
           where id in (
             select id from (select id, "dedupKey", row_number() over (partition by coalesce("dedupKey", id::text) order by "createdAt", id) ordinal
-              from job j where queue = ${queue} and state = 'failed' and "safeToRetry"
-                and not (${queuedProcessingIsSetAside})
+              from job j where queue = ${queue} and "safeToRetry"
+                and (state = 'failed' or (state = 'blocked' and ${queuedProcessingIsSetAside}
+                  and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))))
                 ${jobId ? sql`and id = ${jobId}::uuid` : sql``}) candidates
             where ordinal = 1 and (candidates."dedupKey" is null or not exists (
               select 1 from job d where d.queue = ${queue} and d."dedupKey" = candidates."dedupKey"
                 and d.state in ('pending','waiting','active'))) limit 1000
           ) returning id, "runId"`.execute(tx);
+        await rearmProcessingFailures(
+          tx,
+          rows.map(({ id }) => id),
+        );
         const runIds = [...new Set(rows.flatMap(({ runId }) => (runId ? [runId] : [])))];
         if (runIds.length > 0) {
           await sql`update job_run set "finishedAt" = null where id = any(${runIds}::uuid[])`.execute(tx);

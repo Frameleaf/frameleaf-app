@@ -4,10 +4,11 @@ import { Settings } from 'luxon';
 import { tick } from 'svelte';
 import { locale } from 'svelte-i18n';
 import { readable } from 'svelte/store';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DRAG_SELECT_EVENT } from '$lib/components/timeline/drag-select';
 import { clearLocksRevealed, markLocksRevealed } from '$lib/components/timeline/lock-reveal';
 import { thumbnailFailures } from '$lib/frameleaf/thumbnail-state.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
 import { bucketTimelineAssets } from '$lib/managers/timeline-manager/timeline-month.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -511,6 +512,19 @@ describe('AssetTile for a photo with no thumbnail (FL-1409)', () => {
     vi.spyOn(thumbnailFailures, 'check').mockImplementation(() => {});
     await fireEvent.error(container.querySelector('img')!);
   };
+
+  beforeEach(() => {
+    vi.spyOn(authManager, 'authenticated', 'get').mockReturnValue(true);
+    vi.spyOn(authManager, 'user', 'get').mockReturnValue({ id: 'owner-1', isAdmin: false } as never);
+  });
+
+  it('shows the broken tile, not the placeholder, for somebody else’s photo it can’t ask about (FL-1456)', async () => {
+    const { container } = render(AssetTile, { asset: asset({ ownerId: 'partner-1' }), width: 200, height: 133 });
+    await fail(container);
+
+    expect(container.querySelector('[data-thumbnail-pending]')).toBeNull();
+    expect(container.querySelector('[data-broken-asset]')).not.toBeNull();
+  });
 
   it('shows the calm placeholder while the photo waits for its thumbnail', async () => {
     const { container } = render(AssetTile, { asset: asset(), width: 200, height: 133 });

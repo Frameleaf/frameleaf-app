@@ -6,7 +6,8 @@
    *
    * Everything here but "Show albums", "Show archived photos in search" and "Let uploads bring back
    * deleted photos" is kept on this device and applies as it is chosen, as it always has. Those three
-   * are account preferences and keep the Save bar. ACCOUNT-P3 added "Use less movement", "Open the library in", "Show file names in Work view"
+   * are account preferences and keep the Save bar. Language also saves the account's notification language immediately.
+   * ACCOUNT-P3 added "Use less movement", "Open the library in", "Show file names in Work view"
    * and "Show archived photos in search", and moved "Dates and numbers" up to Appearance.
    */
   import { invalidateAll } from '$app/navigation';
@@ -26,6 +27,7 @@
     type LibraryLayout,
   } from '$lib/frameleaf/library-session';
   import type { DisplayFormat } from '$lib/frameleaf/date-format';
+  import { saveNotificationLanguage } from '$lib/frameleaf/notification-language';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -42,6 +44,7 @@
   } from '$lib/stores/preferences.store';
   import { reduceMotion } from '$lib/stores/reduce-motion.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
+  import { handleError } from '$lib/utils/handle-error';
   import { convertBCP47, languageChoices, languageCodeFor } from '$lib/utils/i18n';
   import { AssetOrder } from '@frameleaf/sdk';
   import { ThemePreference, themeManager } from '@frameleaf/ui';
@@ -66,15 +69,36 @@
   const languageOptions = $derived(
     languageChoices(language).map((entry) => ({ label: entry.name, value: convertBCP47(entry.code) })),
   );
+  let languageSelection = $derived(
+    languageOptions.some((option) => option.value === language) ? (language ?? 'en') : 'en',
+  );
+  let savingLanguage = $state(false);
   const onLanguage = async (value: string) => {
-    $lang = value;
-    await i18nLocale.set(convertBCP47(value));
-    await invalidateAll();
+    if (savingLanguage) {
+      return;
+    }
+    const previousSelection = languageSelection;
+    languageSelection = value;
+    savingLanguage = true;
+    try {
+      await saveNotificationLanguage(value);
+      $lang = value;
+      await i18nLocale.set(convertBCP47(value));
+      await invalidateAll();
+    } catch (error) {
+      languageSelection = language ?? previousSelection;
+      handleError(error, $t('errors.unable_to_save_settings'));
+    } finally {
+      savingLanguage = false;
+    }
   };
 
-  const localeOptions = locales
-    .filter(({ code }) => Intl.NumberFormat.supportedLocalesOf(code).length > 0)
-    .map(({ name, code }) => ({ label: name, value: code }));
+  const localeOptions = $derived.by(() => {
+    const names = new Intl.DisplayNames([convertBCP47(languageCodeFor($lang) ?? 'en')], { type: 'language' });
+    return locales
+      .filter(({ code }) => Intl.NumberFormat.supportedLocalesOf(code).length > 0)
+      .map(({ name, code }) => ({ label: names.of(code) ?? name, value: code }));
+  });
 
   let editedLocale = $derived(findLocale($locale).code);
   let sample: string = $derived(createDateFormatter(editedLocale).formatDateTime(time));
@@ -137,8 +161,9 @@
       <Row label={$t('frameleaf_prefs_look_language')} help={$t('frameleaf_prefs_look_language_help')}>
         <Select
           label={$t('frameleaf_prefs_look_language')}
-          value={languageOptions.some((option) => option.value === language) ? (language ?? 'en') : 'en'}
+          value={languageSelection}
           options={languageOptions}
+          disabled={savingLanguage}
           onChange={onLanguage}
         />
       </Row>

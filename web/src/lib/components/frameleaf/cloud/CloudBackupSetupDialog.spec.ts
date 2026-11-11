@@ -61,9 +61,17 @@ describe('managed backup recovery authority', () => {
     await fireEvent.click(screen.getByRole('radio', { name: new RegExp(en.frameleaf_cloud_backup_key_own) }));
     if (!stored) {
       await fireEvent.click(screen.getByRole('switch', { name: en.frameleaf_cloud_backup_keep_copy }));
-      await fireEvent.input(screen.getByRole('textbox', { name: en.frameleaf_cloud_backup_acknowledge }), {
-        target: { value: 'I understand' },
-      });
+      await fireEvent.input(
+        screen.getByRole('textbox', {
+          name: en.frameleaf_cloud_backup_acknowledge.replace(
+            '{phrase}',
+            () => en.frameleaf_cloud_backup_acknowledge_phrase,
+          ),
+        }),
+        {
+          target: { value: 'I understand' },
+        },
+      );
     }
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_key_download }));
     const blob = downloadBlob.mock.calls[0][0] as Blob;
@@ -174,4 +182,35 @@ describe('managed backup recovery authority', () => {
       expect(sdkMock.setupCloudBackup).not.toHaveBeenCalled();
     },
   );
+});
+
+it('accepts a localized acknowledgement while sending the unchanged server protocol token', async () => {
+  vi.clearAllMocks();
+  addMessages('dev', en);
+  addMessages('dev', { frameleaf_cloud_backup_acknowledge_phrase: 'Je comprends' });
+  try {
+    render(CloudBackupSetupDialog, {
+      open: true,
+      instanceId: 'f0000000-0000-4000-8000-000000000001',
+      managedAvailable: true,
+      onDone: vi.fn(),
+    });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_continue }));
+    await fireEvent.click(screen.getByRole('radio', { name: new RegExp(en.frameleaf_cloud_backup_key_own) }));
+    await fireEvent.click(screen.getByRole('switch', { name: en.frameleaf_cloud_backup_keep_copy }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_key_download }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_cloud_backup_key_saved_elsewhere }));
+    const input = screen.getByRole('textbox', {
+      name: en.frameleaf_cloud_backup_acknowledge.replace('{phrase}', 'Je comprends'),
+    });
+    await fireEvent.input(input, { target: { value: 'I understand' } });
+    expect(screen.getByRole('button', { name: en.frameleaf_cloud_backup_continue })).toBeDisabled();
+    await fireEvent.input(input, { target: { value: ' JE COMPRENDS ' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_continue }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_turn_on }));
+    await waitFor(() => expect(sdkMock.setupCloudBackup).toHaveBeenCalled());
+    expect(sdkMock.setupCloudBackup.mock.lastCall?.[0].cloudBackupSetupDto.acknowledgement).toBe('i understand');
+  } finally {
+    addMessages('dev', en);
+  }
 });

@@ -494,6 +494,16 @@
     return [`${amount}.`, timed, source].filter(Boolean).join(' ');
   };
 
+  const fixTitleKeys: Partial<Record<ComposeFixId, Translations>> = {
+    'wrong-gpu': 'frameleaf_gpucheck_fix_title_wrong_gpu',
+    'render-group': 'frameleaf_gpucheck_fix_title_render_group',
+    macos: 'frameleaf_gpucheck_fix_title_macos',
+  };
+  const fixTitle = (id: ComposeFixId) => {
+    const key = fixTitleKeys[id];
+    return key ? $t(key) : composeFixes[id].title;
+  };
+
   let copied = $state('');
   const copy = async (key: string, text: string) => {
     await copyToClipboard(text);
@@ -518,7 +528,7 @@
     <div class="code">
       <pre aria-label={$t('frameleaf_gpucheck_fix_lines')}><code>{yaml}</code></pre>
       <Button
-        label={$t('frameleaf_gpucheck_copy_fix', { values: { maker: entry.title } })}
+        label={$t('frameleaf_gpucheck_copy_fix', { values: { maker: fixTitle(fixId) } })}
         onclick={() => void copy(fixId, yaml)}
       >
         <Icon icon={mdiContentCopy} size="16" aria-hidden />
@@ -585,7 +595,7 @@
           </div>
         {/each}
         {#each fixes as entry, index (index)}
-          <Advanced summary={$t('frameleaf_gpucheck_fix_show', { values: { maker: composeFixes[entry.id].title } })}>
+          <Advanced summary={$t('frameleaf_gpucheck_fix_show', { values: { maker: fixTitle(entry.id) } })}>
             {@render fix(entry.id, entry.values)}
             {#each entry.symptoms as symptom (symptom)}
               <p class="hint">{$t('frameleaf_gpucheck_fix_log', { values: { symptom } })}</p>

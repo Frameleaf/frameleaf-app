@@ -13,13 +13,17 @@ import {
 } from 'src/dtos/maintenance.dto.js';
 import { ApiTag, AuthCookie, MaintenanceAction, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { AuthService } from 'src/services/auth.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { respondWithCookie } from 'src/utils/response.js';
 
 @ApiTags(ApiTag.Maintenance)
 @Controller('admin/maintenance')
 export class MaintenanceController {
-  constructor(private service: MaintenanceService) {}
+  constructor(
+    private service: MaintenanceService,
+    private authService: AuthService,
+  ) {}
 
   @Get('status')
   @Endpoint({
@@ -70,8 +74,13 @@ export class MaintenanceController {
     if (dto.action === MaintenanceAction.End) {
       return;
     }
+    // maintenance can lead to restoring a backup, which replaces the whole database: confirmed recently before
+    // any maintenance authority is issued (Start and SelectDatabaseRestore included)
+    await this.authService.requireConfirmedRecently(auth, dto.confirmation, loginDetails);
 
-    const { jwt } = await this.service.startMaintenance(dto, auth.user.name);
+    // the confirmation is checked above and never stored with the maintenance action
+    const { confirmation: _confirmation, ...action } = dto;
+    const { jwt } = await this.service.startMaintenance(action as SetMaintenanceModeDto, auth.user.name);
     return respondWithCookie(res, undefined, {
       isSecure: loginDetails.isSecure,
       values: [{ key: AuthCookie.MaintenanceToken, value: jwt }],

@@ -40,6 +40,11 @@
      * controls reach the edge it sits at.
      */
     clear?: number;
+    /**
+     * FL-1452: the dated months only. The Years and Months cards leave the dates to check out, so their
+     * scrubber has no segment for them.
+     */
+    datedOnly?: boolean;
   };
 
   let {
@@ -54,6 +59,7 @@
     dragging = $bindable(false),
     thin = false,
     clear = 0,
+    datedOnly = false,
   }: Props = $props();
 
   /**
@@ -78,13 +84,21 @@
 
   type Marked = ScrubberMonth & { start: number; end: number; center: number; key: string };
 
-  const total = $derived(Math.max(1, timelineManager.scrubberTimelineHeight));
+  const shownMonths = $derived(
+    datedOnly ? timelineManager.scrubberMonths.filter((month) => !month.toCheck) : timelineManager.scrubberMonths,
+  );
+  const leftOut = $derived(
+    datedOnly
+      ? timelineManager.scrubberMonths.reduce((height, month) => height + (month.toCheck ? month.height : 0), 0)
+      : 0,
+  );
+  const total = $derived(Math.max(1, timelineManager.scrubberTimelineHeight - leftOut));
   const leadIn = $derived(timelineManager.topSectionHeight / total);
 
   /** Months laid along a 0..1 track in proportion to the scroll distance they occupy. */
   const months = $derived.by(() => {
     let offset = timelineManager.topSectionHeight;
-    return timelineManager.scrubberMonths.map((month) => {
+    return shownMonths.map((month) => {
       const start = offset / total;
       offset += month.height;
       const end = offset / total;
@@ -131,10 +145,14 @@
 
   const maxCount = $derived(Math.max(1, ...months.map((month) => month.assetCount)));
 
+  /** FL-1452: scrolled to the very bottom, past the last month: the marker stays at its end. */
+  const atEnd = $derived(viewportTopMonth === 'lead-out');
   const currentKey = $derived(
-    viewportTopMonth && typeof viewportTopMonth === 'object'
-      ? `${viewportTopMonth.year}-${viewportTopMonth.month}`
-      : null,
+    atEnd
+      ? (months.at(-1)?.key ?? null)
+      : viewportTopMonth && typeof viewportTopMonth === 'object'
+        ? `${viewportTopMonth.year}-${viewportTopMonth.month}`
+        : null,
   );
   const currentIndex = $derived(
     Math.max(
@@ -148,7 +166,8 @@
     if (!current) {
       return leadIn + timelineScrollPercent * (1 - leadIn);
     }
-    return current.start + (current.end - current.start) * Math.min(1, Math.max(0, viewportTopMonthScrollPercent));
+    const percent = atEnd ? 1 : viewportTopMonthScrollPercent;
+    return current.start + (current.end - current.start) * Math.min(1, Math.max(0, percent));
   });
 
   const clamp01 = (value: number) => Math.min(1, Math.max(0, value));

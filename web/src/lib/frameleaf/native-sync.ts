@@ -1,4 +1,6 @@
 import { cancelAssetDevelopRender, getAssetDevelop, saveAssetDevelop } from '@frameleaf/sdk';
+import { t } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { initialNativeRecipe, isNativeRecipe, proposeNativeMask, type NativeRecipe } from './native-develop';
 
 export const NATIVE_SYNC_FIELDS = [
@@ -40,7 +42,7 @@ export async function syncNativeRecipes(
   } = {},
 ): Promise<NativeSyncResult[]> {
   if (fields.length === 0 || fields.some((field) => !NATIVE_SYNC_FIELDS.includes(field))) {
-    throw new Error('Choose the native settings to sync');
+    throw new Error(get(t)('frameleaf_photography_sync_choose_settings'));
   }
   const completed = new Map(
     options.completed?.filter((result) => result.status === 'queued').map((result) => [result.assetId, result]),
@@ -57,7 +59,7 @@ export async function syncNativeRecipes(
       const develop = await getAssetDevelop({ id: assetId }, { signal: options.signal });
       const current = develop.revisions.find((revision) => revision.isCurrent);
       if (current && !isNativeRecipe(current.recipe)) {
-        throw new Error('This photo has a quick edit or external version; open RAW development before syncing');
+        throw new Error(get(t)('frameleaf_photography_sync_open_raw'));
       }
       const recipe = current && isNativeRecipe(current.recipe) ? clone(current.recipe) : initialNativeRecipe();
       delete recipe.sensorCanvas;
@@ -76,7 +78,7 @@ export async function syncNativeRecipes(
         for (const original of source.masks ?? []) {
           options.signal?.throwIfAborted();
           if (original.kind === 'brush') {
-            throw new Error('Brush masks are photo-specific; sync other settings or use shape/semantic masks');
+            throw new Error(get(t)('frameleaf_photography_sync_brush_masks'));
           }
           const mask = clone(original);
           mask.id = crypto.randomUUID();
@@ -97,14 +99,19 @@ export async function syncNativeRecipes(
       // Once admitted, retain the result even if cancellation arrives during the HTTP response.
       const revision = await saveAssetDevelop({
         id: assetId,
-        assetDevelopSaveDto: { recipe, replaceRecipe: true, render: true, label: 'Synced RAW settings' },
+        assetDevelopSaveDto: {
+          recipe,
+          replaceRecipe: true,
+          render: true,
+          label: get(t)('frameleaf_photography_sync_version_label'),
+        },
       });
       result = { assetId, status: 'queued', revisionId: revision.id };
     } catch (error) {
       result = {
         assetId,
         status: options.signal?.aborted ? 'cancelled' : 'failed',
-        error: error instanceof Error ? error.message : 'Settings could not be synced',
+        error: error instanceof Error ? error.message : get(t)('frameleaf_photography_sync_failed'),
       };
     }
     results.push(result);
@@ -123,7 +130,7 @@ export async function cancelNativeSync(results: readonly NativeSyncResult[]) {
           await cancelAssetDevelopRender({ id: result.assetId, revisionId: result.revisionId! });
           return { ...result, status: 'cancelled' as const };
         } catch {
-          return { ...result, error: 'Cancellation failed; check the photo’s render in Activity' };
+          return { ...result, error: get(t)('frameleaf_photography_sync_cancel_failed') };
         }
       }),
   );

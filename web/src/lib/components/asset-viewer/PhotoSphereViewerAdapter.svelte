@@ -20,6 +20,7 @@
   import '@photo-sphere-viewer/settings-plugin/index.css';
   import { escape } from 'lodash-es';
   import { onDestroy, onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
 
   // Adapted as well as possible from classlist 'border-solid border-white border-3 rounded-lg'
   const FACE_BOX_SVG_STYLE = {
@@ -184,6 +185,31 @@
 
     viewer = new Viewer({
       adapter,
+      lang: {
+        zoomOut: $t('zoom_out'),
+        zoomIn: $t('zoom_in'),
+        description: $t('description'),
+        download: $t('download'),
+        loading: $t('loading'),
+        menu: $t('menu'),
+        close: $t('close'),
+        resolution: $t('media_chrome.quality'),
+        settings: $t('settings'),
+        videoVolume: $t('media_chrome.volume'),
+        zoom: $t('photo_sphere.zoom'),
+        moveUp: $t('photo_sphere.moveUp'),
+        moveDown: $t('photo_sphere.moveDown'),
+        moveLeft: $t('photo_sphere.moveLeft'),
+        moveRight: $t('photo_sphere.moveRight'),
+        fullscreen: $t('photo_sphere.fullscreen'),
+        twoFingers: $t('photo_sphere.twoFingers'),
+        ctrlZoom: $t('photo_sphere.ctrlZoom'),
+        loadError: $t('photo_sphere.loadError'),
+        webglError: $t('photo_sphere.webglError'),
+        videoPlay: $t('photo_sphere.videoPlay'),
+        markers: $t('photo_sphere.markers'),
+        markersList: $t('photo_sphere.markersList'),
+      },
       plugins: [
         MarkersPlugin,
         SettingsPlugin,
@@ -194,14 +220,14 @@
             resolutions: [
               {
                 id: 'default',
-                label: 'Default',
+                label: $t('photo_sphere.default'),
                 panorama,
               },
               ...(originalPanorama
                 ? [
                     {
                       id: 'original',
-                      label: 'Original',
+                      label: $t('original'),
                       panorama: originalPanorama,
                     },
                   ]

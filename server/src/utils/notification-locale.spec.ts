@@ -16,6 +16,48 @@ import fixtures from 'test/fixtures/system-notification-locale.json' with { type
 const catalogs = { ...NOTIFICATION_CATALOGS, ...fixtures.catalogs } as NotificationCatalogs;
 const sessionId = '11111111-1111-4111-8111-111111111111';
 
+describe('shipped notification translations', () => {
+  const locales = ['fr', 'es', 'de', 'it', 'pt', 'nl', 'pl', 'sv', 'da', 'nb-NO'];
+  const placeholders = ({ title, body }: { title: string; body: string }) =>
+    [...new Set(Array.from(`${title}${body}`.matchAll(/\{(\w+)\}/g), ([, name]) => name))].sort();
+
+  it.each(locales)('%s covers every version-1 template without changing placeholders', (locale) => {
+    const catalogue = NOTIFICATION_CATALOGS[locale];
+    expect(catalogue?.version).toBe(NOTIFICATION_CATALOGS.en.version);
+    expect(Object.keys(catalogue.messages).sort()).toEqual(Object.keys(NOTIFICATION_CATALOGS.en.messages).sort());
+    for (const [key, english] of Object.entries(NOTIFICATION_CATALOGS.en.messages)) {
+      const translated = catalogue.messages[key as SystemNotificationTemplate['key']]!;
+      expect(translated.title.trim(), `${locale}.${key}.title`).not.toBe('');
+      expect(translated.body.trim(), `${locale}.${key}.body`).not.toBe('');
+      expect(placeholders(translated), `${locale}.${key}`).toEqual(placeholders(english));
+      expect(`${translated.title}${translated.body}`.replaceAll(/\{\w+\}/g, '')).not.toMatch(/[{}]/);
+    }
+  });
+
+  it.each(locales)('%s renders supplied values verbatim without parsing them again', (locale) => {
+    const senderName = '<script>{albumName}</script> $&';
+    const albumName = "{senderName} <b>Album</b> $'";
+    const template: SystemNotificationTemplate = { version: 1, key: 'album-invite', args: { senderName, albumName } };
+    const fallback = { title: 'Fallback title', body: 'Fallback body' };
+    const actual = renderSystemNotification(template, locale, fallback);
+    expect(actual).not.toEqual(fallback);
+    expect(actual.body).toContain(senderName);
+    expect(actual.body).toContain(albumName);
+  });
+
+  it('keeps exact locale fallback and supplied prose unchanged', () => {
+    const fallback = { title: 'My title', body: 'My supplied message' };
+    const template: SystemNotificationTemplate = {
+      version: 1,
+      key: 'album-invite',
+      args: { senderName: 'A', albumName: 'B' },
+    };
+    expect(renderSystemNotification(template, 'fr-CA', fallback)).toEqual(fallback);
+    expect(renderSystemNotification(undefined, 'fr', fallback)).toEqual(fallback);
+    expect(notificationLocaleOf({ notifications: { locale: 'nb-NO' } })).toBe('nb-NO');
+  });
+});
+
 describe('origin-only system notification contract (FL-329)', () => {
   it.each(fixtures.cases)('$name', ({ template, locale, fallback, expected }) => {
     const text = renderSystemNotification(template, locale, fallback, catalogs);

@@ -368,6 +368,7 @@ export const layoutPattern = (layout: string, current: string) =>
   layout === KEEP_LAYOUT ? current : (layoutPresets.find((entry) => entry.id === layout) ?? layoutPresets[0]).pattern;
 
 export type SetupChoices = {
+  /** The language picked on the welcome step; empty until one is picked, English included. */
   language: string;
   /** FL-708: always `local` on a new server; an existing library's choice to link a Frameleaf account. */
   signIn: 'frameleaf' | 'local';
@@ -417,7 +418,7 @@ export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
     reached: 0,
     completed: false,
     choices: {
-      language: 'en',
+      language: '',
       // FL-708: every administrator is local first; a Frameleaf account is linked on top, or skipped.
       signIn: 'local',
       linked: false,

@@ -64,6 +64,7 @@
     type SetupState,
     readableModelName,
   } from '$lib/frameleaf/first-run-setup';
+  import { saveNotificationLanguage } from '$lib/frameleaf/notification-language';
   import { renderStorageTemplate } from '$lib/frameleaf/onboarding';
   import '$lib/frameleaf/auth.css';
   import '$lib/frameleaf/first-run-setup.css';
@@ -78,7 +79,7 @@
   import { lang, locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { convertBCP47, languageChoices } from '$lib/utils/i18n';
+  import { convertBCP47, languageChoices, languageCodeFor } from '$lib/utils/i18n';
   import {
     CloudTourEnding,
     finishFrameleafSetup,
@@ -256,6 +257,11 @@
   onMount(() => {
     if (signedIn) {
       void loadServerData();
+    }
+    // A language picked earlier in setup follows the person to this browser, so the picker, the
+    // screen and what is saved at the end are the same language.
+    if (choices.language && choices.language !== languageCodeFor($lang)) {
+      void chooseLanguage(choices.language);
     }
   });
 
@@ -486,6 +492,11 @@
           queueCommandDto: { command: QueueCommand.Start, force: true },
         });
       }
+      // Only a language picked in setup is saved for the account's notifications and emails. An
+      // untouched picker leaves whatever the account already has.
+      if (choices.language) {
+        await saveNotificationLanguage(choices.language);
+      }
       await finishFrameleafSetup();
       if (linked) {
         await coverCloudTour();
@@ -516,6 +527,8 @@
     }
   };
 
+  /** The picker shows the language on screen: a browser's own language until one is picked here. */
+  const shownLanguage = $derived(languageCodeFor($lang) ?? (choices.language || 'en'));
   const chooseLanguage = async (value: string) => {
     choose({ language: value });
     $lang = value;
@@ -680,8 +693,8 @@
   <label class="frs-language">
     <Icon icon={mdiTranslate} size="16" aria-hidden={true} />
     <span class="sr-only">{$t('language')}</span>
-    <select value={choices.language} onchange={(event) => void chooseLanguage(event.currentTarget.value)}>
-      {#each languageChoices(choices.language) as entry (entry.code)}
+    <select value={shownLanguage} disabled={busy} onchange={(event) => void chooseLanguage(event.currentTarget.value)}>
+      {#each languageChoices(shownLanguage) as entry (entry.code)}
         <option value={convertBCP47(entry.code)}>{entry.name}</option>
       {/each}
     </select>

@@ -52,6 +52,7 @@ import {
 } from 'src/enum.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { isServerTimeZone } from 'src/utils/server-time-zone.js';
+import { DEFAULT_SIGN_IN_REQUIREMENT, SIGN_IN_REQUIREMENTS, type SignInRequirement } from 'src/utils/sign-in-policy.js';
 
 const { Admin, User, Public } = ConfigVisibility;
 
@@ -1189,6 +1190,23 @@ const AdminConfigSchemaWithVisibility = z
     passwordLogin: z
       .object({ enabled: configBool.describe('Enabled').meta({ visibility: Public }) })
       .meta({ id: 'AdminConfigPasswordLoginDto' }),
+    // Unified sign-in (spec 2026-11-11): the owner's "Require a passkey or two-step".
+    signInPolicy: z
+      .object({
+        require: z
+          .enum(SIGN_IN_REQUIREMENTS)
+          .meta({ id: 'SignInRequirement' })
+          .optional()
+          .describe(
+            'Who must sign in with a passkey, or with two steps: administrators away from home (default), everyone away from home, or everyone everywhere',
+          ),
+        applyToOlderApps: configBool
+          .optional()
+          .describe('Older apps and sessions that predate this setting follow it too (default off)'),
+      })
+      .meta({ id: 'AdminConfigSignInPolicyDto' })
+      // optional on input: an older settings client that omits it keeps the stored choice
+      .optional(),
     // FL-803: apps people connect to their library (AI assistants, Home Assistant) through OAuth.
     connectedApps: z
       .object({
@@ -1469,7 +1487,14 @@ const AdminConfigSchemaWithVisibility = z
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
 
-export type SystemConfig = z.infer<typeof AdminConfigSchemaWithVisibility>;
+type ParsedSystemConfig = z.infer<typeof AdminConfigSchemaWithVisibility>;
+/**
+ * The stored configuration. `signInPolicy` is optional only on input (an older settings client that omits it
+ * keeps the stored choice); every read merges the installation defaults, so it is always present here.
+ */
+export type SystemConfig = Omit<ParsedSystemConfig, 'signInPolicy'> & {
+  signInPolicy: NonNullable<ParsedSystemConfig['signInPolicy']>;
+};
 export type MachineLearningConfig = SystemConfig['machineLearning'];
 
 const visibilities = [Public, User, Admin];
@@ -1887,6 +1912,10 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   passwordLogin: {
     enabled: true,
+  },
+  signInPolicy: {
+    require: DEFAULT_SIGN_IN_REQUIREMENT as SignInRequirement,
+    applyToOlderApps: false,
   },
   connectedApps: {
     allowMcp: true,

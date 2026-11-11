@@ -1,5 +1,6 @@
 import type {
   PluginMethodResponseDto,
+  WorkflowIssueDto,
   WorkflowCreateDto,
   WorkflowResponseDto,
   WorkflowShareResponseDto,
@@ -10,6 +11,8 @@ import type {
   WorkflowTriggerResponseDto,
   WorkflowUpdateDto,
 } from '@frameleaf/sdk';
+import { t } from 'svelte-i18n';
+import { get } from 'svelte/store';
 
 /**
  * Workflows (FL-82), ported from the design template's `workflow-schema.mjs` and `WorkflowDesigner.jsx`.
@@ -69,6 +72,43 @@ export type WorkflowDraft = {
 
 export type WorkflowProblem = { step?: number; message: string };
 
+/** First-party issue codes translate; local schema validation retains the actionable field detail. */
+export function workflowIssueMessage(issue: WorkflowIssueDto, localProblems: readonly WorkflowProblem[] = []): string {
+  const translate = get(t);
+  const step = translate('frameleaf_workflows.validation_step', { values: { number: (issue.step ?? 0) + 1 } });
+  switch (issue.code) {
+    case 'trigger_unavailable': {
+      return translate('frameleaf_workflows.validation_trigger_unavailable');
+    }
+    case 'method_unavailable': {
+      return translate('frameleaf_workflows.validation_method_unavailable', { values: { step } });
+    }
+    case 'method_incompatible': {
+      return translate('frameleaf_workflows.validation_method_trigger', { values: { step } });
+    }
+    case 'config_invalid': {
+      const local = localProblems.find((problem) => problem.step === issue.step)?.message;
+      if (local) {
+        return local;
+      }
+      // For a step the server names the field at fault ("Step 3 / Album name must be text."): a
+      // general sentence would hide it. It stays in the server's English until both sides share a rule.
+      if (issue.step !== undefined && issue.message) {
+        return issue.message;
+      }
+      return translate(
+        issue.step === undefined
+          ? 'frameleaf_workflows.validation_config'
+          : 'frameleaf_workflows.validation_step_config',
+        { values: { step } },
+      );
+    }
+    default: {
+      return issue.message;
+    }
+  }
+}
+
 const KNOWN_WORKFLOW_KEYS = new Set([
   'source',
   'schedule',
@@ -108,13 +148,20 @@ const split = (value: Record<string, unknown>, known: Set<string>) =>
  */
 export function parseWorkflowDefinition(raw: unknown): Record<string, unknown> & { trigger: string; steps: unknown[] } {
   if (typeof raw === 'string' && raw.length > WORKFLOW_LIMITS.bytes) {
-    throw new Error('Choose a workflow smaller than 256 KB.');
+    throw new Error(get(t)('frameleaf_workflows.validation_definition_size'));
   }
-  const value = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw;
+  let value: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      throw new Error(get(t)('frameleaf_workflows.validation_json_syntax'));
+    }
+  }
   let nodes = 0;
   const check = (item: unknown, depth: number) => {
     if (++nodes > WORKFLOW_LIMITS.nodes || depth > WORKFLOW_LIMITS.depth) {
-      throw new Error('This workflow is too large or deeply nested to edit here.');
+      throw new Error(get(t)('frameleaf_workflows.validation_definition_complexity'));
     }
     if (item === null || typeof item === 'string' || typeof item === 'boolean') {
       return;
@@ -131,13 +178,13 @@ export function parseWorkflowDefinition(raw: unknown): Record<string, unknown> &
     if (isPlainObject(item)) {
       for (const [key, child] of Object.entries(item)) {
         if (UNSAFE_KEYS.has(key)) {
-          throw new Error('Workflow definitions cannot contain prototype keys.');
+          throw new Error(get(t)('frameleaf_workflows.validation_definition_prototype'));
         }
         check(child, depth + 1);
       }
       return;
     }
-    throw new Error('Workflow definitions must contain ordinary JSON values.');
+    throw new Error(get(t)('frameleaf_workflows.validation_definition_json'));
   };
   check(value, 0);
   if (
@@ -147,31 +194,31 @@ export function parseWorkflowDefinition(raw: unknown): Record<string, unknown> &
     !Array.isArray(value.steps) ||
     value.steps.length > WORKFLOW_LIMITS.steps
   ) {
-    throw new Error('Choose a workflow with a trigger and up to 100 ordered steps.');
+    throw new Error(get(t)('frameleaf_workflows.validation_definition_shape'));
   }
   for (const key of ['name', 'description'] as const) {
     if (value[key] !== undefined && value[key] !== null && typeof value[key] !== 'string') {
-      throw new Error(`The workflow ${key} must be text or empty.`);
+      throw new Error(get(t)('frameleaf_workflows.validation_field_text', { values: { field: key } }));
     }
   }
   for (const key of ['enabled', 'logging'] as const) {
     if (value[key] !== undefined && typeof value[key] !== 'boolean') {
-      throw new Error(`${key} must be true or false.`);
+      throw new Error(get(t)('frameleaf_workflows.validation_field_boolean', { values: { field: key } }));
     }
   }
   for (const step of value.steps) {
     if (!isPlainObject(step) || typeof step.method !== 'string' || !step.method.trim()) {
-      throw new Error('Every step needs a method name.');
+      throw new Error(get(t)('frameleaf_workflows.validation_method_required'));
     }
     if (step.config !== undefined && step.config !== null && !isPlainObject(step.config)) {
-      throw new Error('Step parameters must be an object or empty.');
+      throw new Error(get(t)('frameleaf_workflows.validation_parameters_object'));
     }
     if (step.enabled !== undefined && typeof step.enabled !== 'boolean') {
-      throw new Error('Step enabled must be true or false.');
+      throw new Error(get(t)('frameleaf_workflows.validation_step_enabled_boolean'));
     }
   }
   if (JSON.stringify(value).length > WORKFLOW_LIMITS.bytes) {
-    throw new Error('Choose a workflow smaller than 256 KB.');
+    throw new Error(get(t)('frameleaf_workflows.validation_definition_size'));
   }
   return cloneJson(value) as Record<string, unknown> & { trigger: string; steps: unknown[] };
 }
@@ -197,8 +244,7 @@ export function draftFromDocument(raw: unknown, previous?: WorkflowDraft): Workf
       .filter((step) => step.method.endsWith('#webhook') && step.storedSecrets.includes('secret'))
       .map((step) => step.id),
   );
-  const signedStepMessage =
-    'Keep the signed webhook step ID and method, or remove the step using the workflow designer.';
+  const signedStepMessage = get(t)('frameleaf_workflows.validation_signed_step');
   const seenIds = new Set<string>();
   const steps = (value.steps as Record<string, unknown>[]).map((step) => {
     const id = typeof step.id === 'string' ? step.id : undefined;
@@ -383,7 +429,7 @@ export const draftToUpdateDto = (draft: WorkflowDraft): WorkflowUpdateDto => dra
 /** A workflow file chosen for import, as a paused draft. */
 export function importWorkflowFile(text: string, size: number): WorkflowDraft {
   if (size > WORKFLOW_LIMITS.fileBytes) {
-    throw new Error('Choose a workflow file smaller than 100 KB.');
+    throw new Error(get(t)('frameleaf_workflows.validation_file_size'));
   }
   return { ...draftFromDocument(text), enabled: false };
 }
@@ -431,27 +477,37 @@ export const orderedProperties = (schema: WorkflowParameterSchema) =>
     ([, a], [, b]) => (a.uiHint?.order ?? 99) - (b.uiHint?.order ?? 99),
   );
 
-export function validateStepConfig(schema: WorkflowParameterSchema, config: unknown, path = 'Parameters'): string[] {
+export function validateStepConfig(
+  schema: WorkflowParameterSchema,
+  config: unknown,
+  path = get(t)('frameleaf_workflows.parameters'),
+): string[] {
   if (config === undefined) {
-    return [`${path} are missing.`];
+    return [get(t)('frameleaf_workflows.validation_missing', { values: { path } })];
   }
   if (config === null) {
-    return (schema.required ?? []).length > 0 ? [`${path} require configured values.`] : [];
+    return (schema.required ?? []).length > 0
+      ? [get(t)('frameleaf_workflows.validation_required_values', { values: { path } })]
+      : [];
   }
   if (isArraySchema(schema)) {
     if (!Array.isArray(config)) {
-      return [`${path} must be a list.`];
+      return [get(t)('frameleaf_workflows.validation_list', { values: { path } })];
     }
     const child = schema.array ? { ...schema, array: false } : (schema.items ?? {});
     return config.flatMap((value, index) => validateStepConfig(child, value, `${path} ${index + 1}`));
   }
   if (schema.properties || schema.type === 'object') {
     if (!isPlainObject(config)) {
-      return [`${path} must be an object.`];
+      return [get(t)('frameleaf_workflows.validation_object', { values: { path } })];
     }
     const errors = (schema.required ?? [])
       .filter((key) => !Object.hasOwn(config, key))
-      .map((key) => `${path}: ${schema.properties?.[key]?.title ?? key} is required.`);
+      .map((key) =>
+        get(t)('frameleaf_workflows.validation_required', {
+          values: { path, field: schema.properties?.[key]?.title ?? key },
+        }),
+      );
     for (const [key, value] of Object.entries(config)) {
       const property = schema.properties?.[key];
       if (property) {
@@ -462,13 +518,13 @@ export function validateStepConfig(schema: WorkflowParameterSchema, config: unkn
   }
   const errors: string[] = [];
   if (schema.enum && !schema.enum.includes(config)) {
-    errors.push(`${path} is not an available choice.`);
+    errors.push(get(t)('frameleaf_workflows.validation_choice', { values: { path } }));
   }
   if (schema.type === 'string' && typeof config !== 'string') {
-    errors.push(`${path} must be text.`);
+    errors.push(get(t)('frameleaf_workflows.validation_text', { values: { path } }));
   }
   if (schema.type === 'boolean' && typeof config !== 'boolean') {
-    errors.push(`${path} must be on or off.`);
+    errors.push(get(t)('frameleaf_workflows.validation_boolean', { values: { path } }));
   }
   if (schema.type === 'number' || schema.type === 'integer') {
     if (
@@ -476,12 +532,21 @@ export function validateStepConfig(schema: WorkflowParameterSchema, config: unkn
       !Number.isFinite(config) ||
       (schema.type === 'integer' && !Number.isSafeInteger(config))
     ) {
-      errors.push(`${path} must be a valid ${schema.type}.`);
+      errors.push(
+        get(t)('frameleaf_workflows.validation_number', {
+          values: {
+            path,
+            type: get(t)(
+              schema.type === 'integer' ? 'frameleaf_workflows.type_integer' : 'frameleaf_workflows.type_number',
+            ),
+          },
+        }),
+      );
     } else if (
       (schema.minimum !== undefined && config < schema.minimum) ||
       (schema.maximum !== undefined && config > schema.maximum)
     ) {
-      errors.push(`${path} is outside the allowed range.`);
+      errors.push(get(t)('frameleaf_workflows.validation_range', { values: { path } }));
     }
   }
   return errors;
@@ -536,35 +601,38 @@ export function workflowProblems(
   // FL-819: a Frameleaf event feeds only a step that sends it on, the webhook
   const event = eventTriggers.some((item) => item.trigger === draft.trigger);
   if (!trigger && !event) {
-    problems.push({ message: 'This trigger is unavailable.' });
+    problems.push({ message: get(t)('frameleaf_workflows.validation_trigger_unavailable') });
   }
   if (
     trigger &&
     (['Schedule', 'AssetChanged'].includes(draft.trigger) || draft.schedule) &&
     !isPlainObject(draft.source?.filter)
   ) {
-    problems.push({ message: 'Configure matching conditions before enabling this workflow.' });
+    problems.push({ message: get(t)('frameleaf_workflows.validation_filter_required') });
   }
   if (trigger && draft.trigger === 'Schedule' && !draft.schedule) {
-    problems.push({ message: 'Configure a schedule before enabling this workflow.' });
+    problems.push({ message: get(t)('frameleaf_workflows.validation_schedule_required') });
   }
   for (const [index, step] of draft.steps.entries()) {
-    const label = `Step ${index + 1}`;
+    const label = get(t)('frameleaf_workflows.validation_step', { values: { number: index + 1 } });
     const method = findMethod(methods, step.method);
     if (!method) {
       problems.push({
         step: index,
-        message: `${label}: this plugin method is unavailable. Its definition is retained.`,
+        message: get(t)('frameleaf_workflows.validation_method_unavailable', { values: { step: label } }),
       });
       continue;
     }
     if (trigger && method.types.every((type) => !trigger.types.includes(type))) {
-      problems.push({ step: index, message: `${label}: this method cannot run for this trigger.` });
+      problems.push({
+        step: index,
+        message: get(t)('frameleaf_workflows.validation_method_trigger', { values: { step: label } }),
+      });
     }
     if (event && !method.frameleafEvents) {
       problems.push({
         step: index,
-        message: `${label}: Frameleaf events can only send to a web address. Use “Trigger Webhook”.`,
+        message: get(t)('frameleaf_workflows.validation_event_method', { values: { step: label } }),
       });
     }
     // a stored credential is on the server even though the draft does not hold it

@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { addMessages } from 'svelte-i18n';
+import { beforeAll, describe, expect, it } from 'vitest';
+import en from '$i18n/en.json';
 import {
   draftFromDocument,
   draftToCreateDto,
@@ -6,6 +8,8 @@ import {
   importWorkflowFile,
   workflowProblems,
 } from './workflows';
+
+beforeAll(() => addMessages('dev', en));
 
 describe('workflow automation definitions', () => {
   const source = { filter: { rating: { gte: 4 } }, rollingDates: [{ field: 'takenAt', days: 30 }] };

@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { LoginDetails } from 'src/services/auth.service.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AssetStatsDto, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
@@ -18,7 +19,7 @@ import {
   UserAdminUpdateDto,
 } from 'src/dtos/user.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
@@ -114,8 +115,9 @@ export class UserAdminController {
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
     @Body() dto: UserAdminDeleteDto,
+    @GetLoginDetails() loginDetails: LoginDetails,
   ): Promise<UserAdminResponseDto> {
-    return this.service.delete(auth, id, dto);
+    return this.service.delete(auth, id, dto, loginDetails);
   }
 
   @Get(':id/calendar-heatmap')
@@ -204,6 +206,19 @@ export class UserAdminController {
   })
   resetUserTwoFactorAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.resetTwoFactor(auth, id);
+  }
+
+  @Post(':id/reset-sign-in')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Reset sign-in for a user',
+    description:
+      'For someone who can’t get in: emails them a link to choose a new password, removes their authenticator and passkeys, and signs out every session. Needs email set up on this server. Recorded in the account history.',
+    history: new HistoryBuilder().added('v3.5.0').beta('v3.5.0'),
+  })
+  resetUserSignInAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.resetSignIn(auth, id);
   }
 
   @Delete(':id/passkeys')

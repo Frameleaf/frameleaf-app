@@ -55,6 +55,18 @@ export type AuthDto = {
   suppressedContent?: HiddenContentFilter;
 };
 
+/** Unified sign-in "confirmed recently": the proof typed for a sensitive action, when the sign-in is not recent. */
+export const confirmationField = z
+  .object({
+    password: z.string().max(1000).optional().describe('The account password'),
+    code: z.string().regex(pinCodeRegex).optional().describe('The 6-digit code from the authenticator app'),
+    recoveryCode: z.string().min(1).max(32).optional().describe('A recovery code, instead of code'),
+  })
+  .optional()
+  .describe(
+    'Confirm it’s you. Not needed within 10 minutes of a Frameleaf or passkey sign-in; otherwise the password, and the authenticator code when the account has one',
+  );
+
 /** Unified sign-in: what this client can do. `verification`: it can answer `verification_required`. */
 export const capabilitiesField = z
   .array(z.string().max(64))
@@ -63,6 +75,12 @@ export const capabilitiesField = z
   .describe(
     'What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.',
   );
+
+/** Unified sign-in, Contract B: this client reads `status` ("done" or "next") in the login answers. */
+const stepsField = z
+  .boolean()
+  .optional()
+  .describe('Answer in sign-in steps: status "done" with the session, or "next" with a transaction and methods');
 
 const LoginCredentialSchema = z
   .object({
@@ -73,6 +91,7 @@ const LoginCredentialSchema = z
       .optional()
       .describe('Persist authentication cookies across browser sessions (default true)'),
     capabilities: capabilitiesField,
+    steps: stepsField,
     twoFactor: z
       .boolean()
       .optional()
@@ -102,6 +121,21 @@ const LoginResponseSchema = z
       .string()
       .optional()
       .describe('FL-793: proves the password step for five minutes; send it with the code'),
+    status: z
+      .enum(['done', 'next'])
+      .meta({ id: 'SignInStepStatus' })
+      .optional()
+      .describe('Sign in in steps (sent when the request had steps: true): done, or next with a transaction'),
+    transaction: z
+      .string()
+      .optional()
+      .describe(
+        'Sign in in steps: with status next, send it with the proof to POST /auth/login/two-factor as twoFactorToken',
+      ),
+    methods: z
+      .array(z.enum(['totp', 'recovery_code', 'email_code', 'password', 'passkey']).meta({ id: 'SignInStepMethod' }))
+      .optional()
+      .describe('Sign in in steps: with status next, what would complete the step, most preferred first'),
   })
   .meta({ id: 'LoginResponseDto' });
 
@@ -133,11 +167,26 @@ const LoginTwoFactorSchema = z
     recoveryCode: recoveryCode.optional(),
     trustDevice: z.boolean().optional().describe('Skip the code step in this browser for 30 days'),
     capabilities: capabilitiesField,
+    steps: stepsField,
   })
   .meta({ id: 'LoginTwoFactorDto' });
 
+/** Unified sign-in: the local authenticator's answer to a `verification_required`. */
+const StepUpSchema = z
+  .object({
+    transaction: z.string().min(1).max(4000).describe('transaction from the verification_required answer'),
+    code: twoFactorCode.optional(),
+    recoveryCode: recoveryCode.optional(),
+  })
+  .meta({ id: 'StepUpDto' });
+
 const TwoFactorPasswordSchema = z
-  .object({ password: z.string().describe('The account password') })
+  .object({
+    password: z
+      .string()
+      .optional()
+      .describe('The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in'),
+  })
   .meta({ id: 'TwoFactorPasswordDto' });
 
 const TwoFactorSetupResponseSchema = z
@@ -156,12 +205,16 @@ const TwoFactorRecoveryCodesResponseSchema = z
 /** FL-793: the password and a code (or recovery code): turning off, or starting a move to a new phone. */
 const TwoFactorProofSchema = z
   .object({
-    password: z.string().describe('The account password'),
+    password: z
+      .string()
+      .optional()
+      .describe('The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in'),
     code: twoFactorCode.optional(),
     recoveryCode: recoveryCode.optional(),
   })
   .meta({ id: 'TwoFactorProofDto' });
 
+export class StepUpDto extends createZodDto(StepUpSchema) {}
 export class LoginTwoFactorDto extends createZodDto(LoginTwoFactorSchema) {}
 export class TwoFactorPasswordDto extends createZodDto(TwoFactorPasswordSchema) {}
 export class TwoFactorSetupResponseDto extends createZodDto(TwoFactorSetupResponseSchema) {}
@@ -176,7 +229,7 @@ const LogoutResponseSchema = z
   })
   .meta({ id: 'LogoutResponseDto' });
 
-const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true, twoFactor: true, capabilities: true })
+const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true, twoFactor: true, capabilities: true, steps: true })
   .extend({
     name: z.string().describe('User name').meta({ example: 'Admin' }),
   })
@@ -265,6 +318,18 @@ const OAuthConfigSchema = z
     redirectUri: z.string().describe('OAuth redirect URI'),
     state: z.string().optional().describe('OAuth state parameter'),
     codeChallenge: z.string().optional().describe('OAuth code challenge (PKCE)'),
+    reauthenticate: z
+      .boolean()
+      .optional()
+      .describe(
+        "The administrator's own provider only: ask it to authenticate the person again now (max_age=0), so the sign-in counts as recent, for example to set up Two-Step Verification on an account with no password",
+      ),
+    verified: z
+      .boolean()
+      .optional()
+      .describe(
+        'Sign in with Frameleaf only: ask Frameleaf for a passkey or two steps before it returns (acr_values verified)',
+      ),
   })
   .meta({ id: 'OAuthConfigDto' });
 

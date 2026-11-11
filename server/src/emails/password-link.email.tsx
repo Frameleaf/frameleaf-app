@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { PasswordLinkEmailProps } from 'src/repositories/email.repository.js';
 
@@ -13,34 +14,32 @@ export const PasswordLinkEmail = ({
   senderName,
   isNew,
   showBranding,
-}: PasswordLinkEmailProps) => (
-  <ImmichLayout baseUrl={baseUrl} showBranding={showBranding} preview="Choose your Frameleaf password.">
-    <Text className="m-0">
-      Hey <strong>{displayName}</strong>!
-    </Text>
+}: PasswordLinkEmailProps) => {
+  const t = useEmailText();
+  return (
+    <ImmichLayout baseUrl={baseUrl} showBranding={showBranding} preview={t('password_link_preview')}>
+      <Text className="m-0">
+        <EmailMessage id="greeting" values={{ name: <strong>{displayName}</strong> }} />
+      </Text>
 
-    <Text>
-      {isNew
-        ? `${senderName} added you to their Frameleaf server. Choose a password to sign in.`
-        : `${senderName} sent you a link to choose a new password for Frameleaf.`}
-    </Text>
+      <Text>{t(isNew ? 'password_link_new' : 'password_link_reset', { senderName })}</Text>
 
-    <Text>
-      <strong>You sign in with</strong>: {username}
-    </Text>
+      <Text>
+        <strong>{t('you_sign_in_with')}</strong>: {username}
+      </Text>
 
-    <Section className="flex justify-center my-6">
-      <ImmichButton href={link}>Choose a password</ImmichButton>
-    </Section>
+      <Section className="flex justify-center my-6">
+        <ImmichButton href={link}>{t('choose_password')}</ImmichButton>
+      </Section>
 
-    <Text className="text-xs">
-      The link works once and stops working after 7 days. If you cannot click the button, copy this address into your
-      browser:
-      <br />
-      <Link href={link}>{link}</Link>
-    </Text>
-  </ImmichLayout>
-);
+      <Text className="text-xs">
+        {t('password_link_help')}
+        <br />
+        <Link href={link}>{link}</Link>
+      </Text>
+    </ImmichLayout>
+  );
+};
 
 PasswordLinkEmail.PreviewProps = {
   baseUrl: 'https://photos.example.com',

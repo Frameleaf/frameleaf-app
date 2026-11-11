@@ -4,6 +4,7 @@ import { init, register, waitLocale } from 'svelte-i18n';
 import { get, readable } from 'svelte/store';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildFolderTree, folderAt, sortFolders } from '$lib/frameleaf/folder-tree';
+import { readLibraryView } from '$lib/frameleaf/library-session';
 import { foldersView } from '$lib/stores/folders.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import FolderBrowser from './FolderBrowser.svelte';
@@ -325,6 +326,11 @@ describe('FolderBrowser', () => {
       renderBrowser();
       await fireEvent.click(screen.getByRole('button', { name: 'Show in timeline' }));
       expect(navigation.goto).toHaveBeenCalledWith(expect.stringContaining('originalPath'));
+      // FL-1452: the folder and the folders in it, not a sibling that starts the same (`/photos/20260`)
+      const href = vi.mocked(navigation.goto).mock.calls.at(-1)![0] as string;
+      expect(readLibraryView(new URL(href, 'http://localhost'))?.query.filter.originalPath).toEqual({
+        startsWith: '/photos/2026/',
+      });
       expect(screen.getByText('Showing 2026 in the timeline.')).toBeInTheDocument();
     });
   });

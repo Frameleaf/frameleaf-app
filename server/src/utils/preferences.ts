@@ -271,6 +271,9 @@ export const localNotificationText = async (
   return renderSystemNotification(template, notificationLocaleOf(getPreferences(metadata)), fallback);
 };
 
+/** The language a person's emails and notifications use: English until they choose one. */
+export const localeOf = (metadata?: UserMetadataItem[]) => notificationLocaleOf(getPreferences(metadata ?? []));
+
 export const getPreferencesPartial = (newPreferences: UserPreferences) => {
   const defaultPreferences = getDefaultPreferences();
   const partial: DeepPartial<UserPreferences> = {};

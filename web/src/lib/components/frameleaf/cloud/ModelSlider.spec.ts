@@ -122,3 +122,24 @@ describe('ModelSlider (FL-159 §3.3)', () => {
     expect(within(group).getByText('Better results')).toBeInTheDocument();
   });
 });
+
+it('localizes descriptive render names while preserving model identifiers', () => {
+  addMessages('dev', en);
+  addMessages('dev', {
+    frameleaf_model_render_software: 'Encodage logiciel',
+    frameleaf_model_render_hardware: 'Encodage matériel',
+  });
+  try {
+    render(ModelSlider, {
+      workload: 'render',
+      value: 'render-software@1',
+      gpu: rtx4090,
+      route: 'local',
+      label: 'Render',
+    });
+    expect(screen.getByRole('radio', { name: /Encodage logiciel/ })).toHaveAttribute('value', 'render-software@1');
+    expect(screen.getByRole('radio', { name: /Encodage matériel/ })).toHaveAttribute('value', 'render-hardware@1');
+  } finally {
+    addMessages('dev', en);
+  }
+});

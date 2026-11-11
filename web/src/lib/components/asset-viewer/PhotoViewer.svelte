@@ -191,7 +191,7 @@
     try {
       await castManager.loadMedia(fullUrl.href);
     } catch (error) {
-      handleError(error, 'Unable to cast');
+      handleError(error, $t('frameleaf_cast_failed'));
       return;
     }
   };

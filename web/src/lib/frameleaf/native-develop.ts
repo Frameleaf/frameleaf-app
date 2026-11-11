@@ -1,4 +1,6 @@
 import { defaults, getBaseUrl, type AssetDevelopRecipeDto } from '@frameleaf/sdk';
+import { t } from 'svelte-i18n';
+import { get } from 'svelte/store';
 
 export type NativeTone = {
   exposureEV: number;
@@ -84,9 +86,7 @@ export async function proposeNativeMask(assetId: string, target: 'subject' | 'sk
     { method: 'POST', headers, credentials: 'include', signal, body: JSON.stringify({ target }) },
   );
   if (!response.ok) {
-    throw new Error(
-      `Subject/sky detection is unavailable (${response.status}). Draw a manual mask or check the local worker.`,
-    );
+    throw new Error(get(t)('frameleaf_native_mask_unavailable', { values: { status: response.status } }));
   }
   return (await response.json()) as { id: string; width: number; height: number };
 }

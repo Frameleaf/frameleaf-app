@@ -109,6 +109,8 @@ describe('cloud backup keys in the browser (FL-160)', () => {
   it('asks for the typed acknowledgement without case or surrounding spaces', () => {
     expect(isOwnMemoryAcknowledged('  I Understand ')).toBe(true);
     expect(isOwnMemoryAcknowledged('I understood')).toBe(false);
+    expect(isOwnMemoryAcknowledged('  JE COMPRENDS ', 'Je comprends')).toBe(true);
+    expect(isOwnMemoryAcknowledged('I understand', 'Je comprends')).toBe(false);
   });
 
   it('checks your own bucket: HTTPS only, a valid bucket name and both keys', () => {

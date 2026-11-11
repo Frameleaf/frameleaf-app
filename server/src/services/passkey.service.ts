@@ -31,9 +31,11 @@ import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { type LoginDetails, loginEventDetails } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
+import { sessionIsConfirmedRecently } from 'src/utils/confirmed-recently.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
+import { frameleafTrustedOrigins } from 'src/utils/frameleaf-trusted-origins.js';
 import {
   PASSKEY_CEREMONY_TIMEOUT_MS,
   PASSKEY_CHALLENGE_SECONDS,
@@ -121,10 +123,17 @@ export class PasskeyService extends BaseService {
     });
     const services: Record<string, unknown> = (linked ? link?.services : null) ?? {};
     const text = (value: unknown) => (typeof value === 'string' ? value : null);
+    // every https origin this server already trusts for Sign in with Frameleaf: the published addresses, the
+    // enrolled relay name and a verified custom hostname, and the external domain
+    const origins = await frameleafTrustedOrigins(
+      { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository },
+      config,
+    );
     const place = passkeyPlace(requestOrigin(headers, isSecure), [
       config.server.externalDomain,
       text(services.relayOrigin),
       text(services.publicUrl),
+      ...origins,
     ]);
     // the Origin header is the page's word only: the request itself must also have come over https
     // (or through a proxy that says so), else a session token could cross the network in clear
@@ -452,14 +461,9 @@ export class PasskeyService extends BaseService {
     if (await this.passkeyRepository.hasPasswordProof(sessionId)) {
       return;
     }
-    const tag = await this.frameleafAccountRepository.getSession(sessionId);
-    if (
-      tag &&
-      tag.userId === auth.user.id &&
-      // when the person signed in at Frameleaf, kept across handoffs (not when this tag was made)
-      !!tag.authTime &&
-      tag.authTime.getTime() > Date.now() - PASSKEY_PASSWORD_PROOF_SECONDS * 1000
-    ) {
+    // confirmed recently: a Frameleaf sign-in (its auth_time, kept across handoffs) or a local passkey, not older
+    // than 10 minutes
+    if (await sessionIsConfirmedRecently(auth.session, (id) => this.frameleafAccountRepository.getSession(id))) {
       return;
     }
     throw new ForbiddenException({

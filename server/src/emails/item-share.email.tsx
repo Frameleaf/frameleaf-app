@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import { invitationFirstLine } from 'src/emails/components/first-line.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
-import { NO_LINK_ITEM_SHARE } from 'src/emails/components/no-link.js';
 import { ItemShareEmailProps } from 'src/repositories/email.repository.js';
 
 /**
@@ -20,38 +20,40 @@ export const ItemShareEmail = ({
   showBranding,
   firstLine,
 }: ItemShareEmailProps) => {
-  const items = count === 1 ? 'an item' : `${count} items`;
+  const t = useEmailText();
   // FL-426: an invitation's own first line, in place of the standard greeting
   const greeting = invitationFirstLine(firstLine, { recipientName, senderName });
 
   return (
-    <ImmichLayout baseUrl={baseUrl} showBranding={showBranding} preview={`${senderName} shared ${items} with you.`}>
+    <ImmichLayout
+      baseUrl={baseUrl}
+      showBranding={showBranding}
+      preview={t(count === 1 ? 'item_share_preview_one' : 'item_share_preview_many', { senderName, count })}
+    >
       <Text className="m-0">
         {greeting ?? (
           <>
-            Hey <strong>{recipientName}</strong>!
+            <EmailMessage id="greeting" values={{ name: <strong>{recipientName}</strong> }} />
           </>
         )}
       </Text>
 
-      <Text>
-        {senderName} shared {items} with you. You can see {count === 1 ? 'it' : 'them'} in your own Frameleaf.
-      </Text>
+      <Text>{t(count === 1 ? 'item_share_body_one' : 'item_share_body_many', { senderName, count })}</Text>
 
       {link ? (
         <>
           <Section className="flex justify-center my-6">
-            <ImmichButton href={link}>View shared items</ImmichButton>
+            <ImmichButton href={link}>{t('view_shared_items')}</ImmichButton>
           </Section>
 
           <Text className="text-xs">
-            If you cannot click the button use the link below.
+            {t('link_help')}
             <br />
             <Link href={link}>{link}</Link>
           </Text>
         </>
       ) : (
-        <Text>{NO_LINK_ITEM_SHARE}</Text>
+        <Text>{t('no_link_item_share')}</Text>
       )}
     </ImmichLayout>
   );

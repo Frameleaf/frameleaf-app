@@ -1,3 +1,4 @@
+import { UnauthorizedException } from '@nestjs/common';
 import { type JWK, SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, importJWK, jwtVerify } from 'jose';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -11,11 +12,12 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
-import { UNVERIFIED_EMAIL_MESSAGE } from 'src/services/auth.service.js';
+import { type AuthService, UNVERIFIED_EMAIL_MESSAGE } from 'src/services/auth.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
+import { totpCode, totpStep } from 'src/utils/two-factor.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { FakeCloud, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
@@ -437,6 +439,7 @@ describe(FrameleafAuthService.name, () => {
       expect(mocks.user.create).not.toHaveBeenCalled();
       expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
         expect.objectContaining({ userId: existing.id, autoRegistered: false }),
+        undefined,
       );
       expect(response.userId).toBe(existing.id);
     });
@@ -659,6 +662,231 @@ describe(FrameleafAuthService.name, () => {
       });
     });
 
+    describe('proof for a first link and for a local authenticator (unified sign-in)', () => {
+      const capable = { ...loginDetails, capabilities: ['verification'] };
+      const existing = UserFactory.create({ email: 'remote@example.test', password: 'bcrypt-hash' });
+      const verifiedClaims = { amr: ['email_code', 'totp'], acr: 'urn:frameleaf:acr:verified' };
+      const basicClaims = { amr: ['email_code'], acr: 'urn:frameleaf:acr:basic' };
+      let secret: string;
+      const refusal = async (promise: Promise<unknown>) => {
+        const error = await promise.then(() => null).catch((error_: unknown) => error_);
+        expect(error).toMatchObject({ status: 403, response: { code: 'verification_required', statusCode: 403 } });
+        return (error as { response: { methods: string[]; transaction: string } }).response;
+      };
+      const enrol = async () => {
+        const inner = (sut as unknown as { authService: AuthService }).authService;
+        mocks.user.getForChangePassword.mockResolvedValue({ id: existing.id, password: 'bcrypt-hash' });
+        mocks.user.get.mockResolvedValue(existing as never);
+        mocks.user.setPendingTwoFactor.mockResolvedValue({ userId: existing.id });
+        ({ secret } = await inner.setupTwoFactor(AuthFactory.create(existing), { password: 'password' }));
+        mocks.user.getTwoFactor.mockResolvedValue({
+          userId: existing.id,
+          secret: mocks.user.setPendingTwoFactor.mock.calls[0]![1],
+          enabledAt: new Date(),
+          pendingSecret: null,
+        });
+        mocks.user.useTwoFactorStep.mockResolvedValue(true);
+      };
+
+      beforeEach(() => {
+        mocks.crypto.compareBcrypt.mockImplementation((value) => Promise.resolve(value === 'password'));
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+        mocks.frameleafAccount.getLinkByUser.mockResolvedValue(void 0);
+        mocks.user.getByEmail.mockResolvedValue(existing as never);
+        mocks.user.getTwoFactor.mockResolvedValue(void 0);
+        mocks.user.get.mockResolvedValue(existing as never);
+        mocks.user.getForChangePassword.mockResolvedValue({ id: existing.id, password: 'bcrypt-hash' });
+        mocks.frameleafAccount.isSignInRevoked.mockResolvedValue(false);
+      });
+
+      it('links by email match today for a client that does not declare verification', async () => {
+        await sut.exchangeToken({ token: await mint({ jti: 'j1', claims: basicClaims }) }, loginDetails);
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalled();
+      });
+
+      it('needs a Verified Frameleaf sign-in or the local password to link by email match, once', async () => {
+        const body = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j2', claims: basicClaims }) }, capable),
+        );
+        expect(body.methods).toEqual(['frameleaf', 'password']);
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.session.create).not.toHaveBeenCalled();
+
+        // Cloud's own step-up: a Verified sign-in links without asking more
+        await sut.exchangeToken({ token: await mint({ jti: 'j3', claims: verifiedClaims }) }, capable);
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledTimes(1);
+      });
+
+      it('links with the local password through step-up, and the session is Verified', async () => {
+        const { transaction } = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j4', claims: basicClaims }) }, capable),
+        );
+        await expect(sut.stepUp({ transaction, password: 'wrong' }, capable)).rejects.toMatchObject({ status: 401 });
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+
+        await sut.stepUp({ transaction, password: 'password' }, capable);
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledTimes(1);
+        // fenced: the session is created only while the password is still the one that was checked
+        expect(mocks.session.create).toHaveBeenCalledWith(
+          expect.anything(),
+          'bcrypt-hash',
+          expect.objectContaining({
+            level: 'verified',
+            methods: ['email_code', 'pwd'],
+            source: 'frameleaf',
+            legacy: false,
+          }),
+        );
+        await expect(sut.stepUp({ transaction: 'forged', password: 'password' }, capable)).rejects.toMatchObject({
+          status: 401,
+        });
+      });
+
+      it('refuses a pending sign-in after the Cloud link changed, or once its account changed', async () => {
+        const { transaction } = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j8', claims: basicClaims }) }, capable),
+        );
+        // the email moved to another account in the meantime: the proof was for the first one
+        const other = UserFactory.create({ email: 'remote@example.test', password: 'bcrypt-hash' });
+        mocks.user.getByEmail.mockResolvedValue(other as never);
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({
+          status: 401,
+        });
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.session.create).not.toHaveBeenCalled();
+
+        // relinked to another Cloud account: the pending sign-in belongs to the old authority
+        mocks.user.getByEmail.mockResolvedValue(existing as never);
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), instanceId: 'instance-2' });
+        clearConfigCache();
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({
+          status: 403,
+        });
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      });
+
+      it('links nothing when the password changed after it was proved', async () => {
+        const { transaction } = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j10', claims: basicClaims }) }, capable),
+        );
+        // checked against bcrypt-hash, then changed before the link is written
+        mocks.user.getForChangePassword
+          .mockResolvedValueOnce({ id: existing.id, password: 'bcrypt-hash' })
+          .mockResolvedValue({ id: existing.id, password: 'new-hash' });
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({ status: 401 });
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      });
+
+      it('creates neither link nor session when the password changes right after the early check', async () => {
+        const { transaction } = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j12', claims: basicClaims }) }, capable),
+        );
+        // the account's password as the database holds it; the repositories fence on it (proved in the medium spec)
+        let current = 'bcrypt-hash';
+        const links: unknown[] = [];
+        mocks.user.getForChangePassword.mockImplementation(() => {
+          const answer = { id: existing.id, password: current };
+          // the step-up's proof and its early check both read 'bcrypt-hash'; the change lands after the early check
+          if (mocks.user.getForChangePassword.mock.calls.length >= 2) {
+            current = 'changed-hash';
+          }
+          return Promise.resolve(answer);
+        });
+        mocks.frameleafAccount.upsertLink.mockImplementation((row, expected) => {
+          if (expected !== undefined && expected !== current) {
+            return Promise.reject(new UnauthorizedException('This sign-in expired'));
+          }
+          links.push(row);
+          return Promise.resolve({ ...row, access: null, linkedAt: new Date(), lastSignInAt: null } as never);
+        });
+        mocks.session.create.mockImplementation((row, expected) =>
+          expected !== undefined && expected !== current
+            ? Promise.reject(new UnauthorizedException('Incorrect email or password'))
+            : Promise.resolve({ id: 'session-1', ...row } as never),
+        );
+
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({ status: 401 });
+
+        expect(current).toBe('changed-hash');
+        // the early check passed; the link write's own fence refused the changed password
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(expect.anything(), 'bcrypt-hash');
+        expect(links).toEqual([]);
+        expect(mocks.session.create).not.toHaveBeenCalled();
+        expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
+      });
+
+      it('keeps the exchange token’s issue time in the pending sign-in, so a logout after it is always seen', async () => {
+        const token = await mint({ jti: 'j13', claims: basicClaims });
+        const { iat } = JSON.parse(Buffer.from(token.split('.', 2)[1]!, 'base64url').toString()) as { iat: number };
+        const { transaction } = await refusal(sut.exchangeToken({ token }, capable));
+        const pending = JSON.parse(Buffer.from(transaction.split('.', 1)[0]!, 'base64url').toString()) as {
+          iat: number;
+          exp: number;
+        };
+        expect(pending.iat).toBeLessThanOrEqual(iat);
+        expect(pending.exp).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) + 590);
+
+        // logged out at Cloud after the refusal: the step-up's revocation check uses that issue time and refuses
+        mocks.frameleafAccount.isSignInRevoked.mockImplementation(({ issuedAt }) =>
+          Promise.resolve(issuedAt.getTime() <= iat * 1000),
+        );
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({
+          status: 403,
+        });
+        expect(mocks.frameleafAccount.isSignInRevoked).toHaveBeenLastCalledWith(
+          expect.objectContaining({ issuedAt: new Date(pending.iat * 1000) }),
+        );
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      });
+
+      it('fences the link write itself with the proved password', async () => {
+        const { transaction } = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j11', claims: basicClaims }) }, capable),
+        );
+        // the password changes after the early check: the link write's own check refuses it
+        mocks.frameleafAccount.upsertLink.mockRejectedValueOnce(new UnauthorizedException('This sign-in expired'));
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({ status: 401 });
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: existing.id }),
+          'bcrypt-hash',
+        );
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      });
+
+      it('lets an older client link by email match as today, even when the account has an authenticator', async () => {
+        await enrol();
+        await sut.exchangeToken({ token: await mint({ jti: 'j9', claims: basicClaims }) }, loginDetails);
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledTimes(1);
+        expect(mocks.session.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('never skips a local authenticator after a Basic Frameleaf sign-in', async () => {
+        await enrol();
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: existing.id, sub: 'fl-sub' } as never);
+        const body = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j5', claims: basicClaims }) }, capable),
+        );
+        expect(body.methods).toEqual(['frameleaf', 'totp', 'recovery_code']);
+        expect(mocks.session.create).not.toHaveBeenCalled();
+
+        await sut.stepUp({ transaction: body.transaction, code: totpCode(secret, totpStep(new Date())) }, capable);
+        expect(mocks.session.create).toHaveBeenCalledWith(
+          expect.anything(),
+          undefined,
+          expect.objectContaining({ level: 'verified', methods: ['email_code', 'totp'] }),
+        );
+      });
+
+      it('asks nothing more after a Verified Frameleaf sign-in, and nothing of a legacy client', async () => {
+        await enrol();
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: existing.id, sub: 'fl-sub' } as never);
+        await sut.exchangeToken({ token: await mint({ jti: 'j6', claims: verifiedClaims }) }, capable);
+        await sut.exchangeToken({ token: await mint({ jti: 'j7', claims: basicClaims }) }, loginDetails);
+        expect(mocks.session.create).toHaveBeenCalledTimes(2);
+      });
+    });
+
     describe('a server set up from the Frameleaf app (FL-292)', () => {
       beforeEach(() => {
         mocks.user.getAdmin.mockResolvedValue(void 0);
@@ -810,6 +1038,7 @@ describe(FrameleafAuthService.name, () => {
       expect(mocks.user.create).not.toHaveBeenCalled();
       expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
         expect.objectContaining({ userId: existing.id, autoRegistered: false }),
+        undefined,
       );
     });
 

@@ -73,7 +73,7 @@
     <TagPageHeader
       {node}
       {tree}
-      datesToCheck={timelineManager?.datesToCheck?.count}
+      datesToCheck={timelineManager?.datesToCheckCount}
       onFixDates={() => void libraryView?.fixDates()}
     />
 

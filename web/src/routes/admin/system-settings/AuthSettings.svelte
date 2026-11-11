@@ -36,6 +36,7 @@
     checkOAuthProvider,
     ConfigCredential,
     OAuthTokenEndpointAuthMethod,
+    SignInRequirement,
     unlinkAllOAuthAccountsAdmin,
     type OAuthCheckResponseDto,
   } from '@frameleaf/sdk';
@@ -214,6 +215,31 @@
           >{$t('frameleaf_signin_password_off_body')}</Notice
         >
       {/if}
+    </Section>
+
+    <Section title={$t('frameleaf_signin_require_title')} description={$t('frameleaf_signin_require_description')}>
+      <Row label={$t('frameleaf_signin_require_who')} help={$t('frameleaf_signin_require_who_help')}>
+        <Select
+          label={$t('frameleaf_signin_require_who')}
+          value={configToEdit.signInPolicy?.require ?? SignInRequirement.AdministratorsAway}
+          {disabled}
+          options={[
+            { value: SignInRequirement.AdministratorsAway, label: $t('frameleaf_signin_require_administrators_away') },
+            { value: SignInRequirement.EveryoneAway, label: $t('frameleaf_signin_require_everyone_away') },
+            { value: SignInRequirement.Everyone, label: $t('frameleaf_signin_require_everyone') },
+          ]}
+          onChange={(value) =>
+            (configToEdit.signInPolicy = { ...configToEdit.signInPolicy, require: value as SignInRequirement })}
+        />
+      </Row>
+      <Row label={$t('frameleaf_signin_require_older_apps')} help={$t('frameleaf_signin_require_older_apps_help')}>
+        <Switch
+          label={$t('frameleaf_signin_require_older_apps')}
+          checked={configToEdit.signInPolicy?.applyToOlderApps ?? false}
+          held={disabled}
+          onChange={(value) => (configToEdit.signInPolicy = { ...configToEdit.signInPolicy, applyToOlderApps: value })}
+        />
+      </Row>
     </Section>
 
     {#if configToEdit.oauth.enabled}
@@ -513,7 +539,7 @@
       </Advanced>
     </Section>
 
-    <SettingActions keys={['passwordLogin', 'oauth', 'connectedApps']} {disabled} />
+    <SettingActions keys={['passwordLogin', 'signInPolicy', 'oauth', 'connectedApps']} {disabled} />
   </KitPage>
 </form>
 

@@ -216,9 +216,29 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // A partner copy shows its source's picture (FL-1287), so it takes the source's embedding instead of
+    // encoding the same preview again. A source without one yet hands it over once it has (postprocess).
+    const sourceId = await this.partnerOriginRepository.getLiveSourceId(id);
+    if (sourceId) {
+      const source = await this.searchRepository.getEmbedding(sourceId);
+      if (!source) {
+        return JobStatus.Skipped;
+      }
+      await this.searchRepository.upsert(
+        id,
+        source.producerModelKey ? { embedding: source.embedding, modelKey: source.producerModelKey } : source.embedding,
+      );
+      await this.jobRepository.collectFollowups(() =>
+        this.jobRepository.queue({ name: JobName.SmartSearchPostprocess, data: { id } }),
+      );
+      return JobStatus.Success;
+    }
+
     if (asset.files.length !== 1) {
       if (await this.jobRepository.previewMayArrive(id)) deferJobUntilDependency('source-unavailable');
-      return JobStatus.Failed;
+      // No preview is coming: the thumbnail step already listed the photo (Library care, RAW support). Skipped,
+      // not failed; a later preview's follow-ups encode it.
+      return JobStatus.Skipped;
     }
 
     // FL-455: routed to Frameleaf Cloud, the photo waits for a batch; one job never sends one photo. A
@@ -313,6 +333,14 @@ export class SmartInfoService extends BaseService {
     const { reverseGeocoding } = await this.getConfig({ withCache: true });
     if (reverseGeocoding.enabled) {
       await this.jobRepository.queue({ name: JobName.LandmarkInfer, data: { id, trigger: 'embedding' } });
+    }
+    // each partner copy of this photo takes the embedding (`handleEncodeClip`), and hands it on to its own;
+    // outside any run, since the copy may already have been skipped in this one before the source had it
+    const copies = await this.partnerOriginRepository.getLiveCopyIds(id);
+    if (copies.length > 0) {
+      await this.jobRepository.queueOutsideRun(
+        copies.map((copyId) => ({ name: JobName.SmartSearch, data: { id: copyId } })),
+      );
     }
     return JobStatus.Success;
   }

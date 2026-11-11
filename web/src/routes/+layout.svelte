@@ -30,8 +30,15 @@
   import { applyThemeColor } from '$lib/frameleaf/theme-color';
   import { viewerZoomTransition } from '$lib/frameleaf/viewer-zoom';
   import { getServerConfig } from '@frameleaf/sdk';
-  import { modalManager, setLocale, setTranslations, Theme, themeManager, TooltipProvider } from '@frameleaf/ui';
-  import { En } from 'media-chrome/lang/en';
+  import {
+    modalManager,
+    setLocale,
+    setTranslations,
+    Theme,
+    themeManager,
+    TooltipProvider,
+    type Translations as UiTranslations,
+  } from '@frameleaf/ui';
   import { addTranslation } from 'media-chrome/utils/i18n';
   import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -59,38 +66,6 @@
     children?: Snippet;
   }
 
-  const MediaChromeDefaultKeys = [
-    'Start airplay',
-    'Stop airplay',
-    'Audio',
-    'Start casting',
-    'Stop casting',
-    'Enter picture in picture mode',
-    'Exit picture in picture mode',
-    'Seek backward',
-    'Seek forward',
-    'audio player',
-    'seek',
-    'audio tracks',
-    'chapter: {chapterName}',
-    'live',
-    'start airplay',
-    'stop airplay',
-    'start casting',
-    'stop casting',
-    'enter picture in picture mode',
-    'exit picture in picture mode',
-    'seek to live',
-    'playing live',
-    'seek back {seekOffset} seconds',
-    'seek forward {seekOffset} seconds',
-    'Encryption Error',
-    'The media is encrypted and there are no keys to decrypt it.',
-  ] as const satisfies Array<keyof typeof En>;
-  const MediaChromeDefaults = Object.fromEntries(MediaChromeDefaultKeys.map((key) => [key, key])) as {
-    [K in (typeof MediaChromeDefaultKeys)[number]]: K;
-  };
-
   $effect(() => {
     setTranslations({
       cancel: $t('cancel'),
@@ -98,6 +73,8 @@
       confirm: $t('confirm'),
       expand: $t('expand'),
       collapse: $t('collapse'),
+      code_copy: $t('copy_to_clipboard'),
+      code_copied: $t('copied_to_clipboard'),
       search_placeholder: $t('search'),
       search_no_results: $t('no_results'),
       prompt_default: $t('are_you_sure_to_do_this'),
@@ -119,10 +96,39 @@
       toast_danger_title: $t('error'),
       save: $t('save'),
       supporter: $t('supporter'),
-    });
+    } satisfies UiTranslations);
 
     addTranslation($lang, {
-      ...MediaChromeDefaults,
+      'Start airplay': $t('media_chrome.start_airplay'),
+      'Stop airplay': $t('media_chrome.stop_airplay'),
+      Audio: $t('media_chrome.audio'),
+      'Start casting': $t('media_chrome.start_casting'),
+      'Stop casting': $t('stop_casting'),
+      'Enter picture in picture mode': $t('media_chrome.enter_picture_in_picture_mode'),
+      'Exit picture in picture mode': $t('media_chrome.exit_picture_in_picture_mode'),
+      'Seek backward': $t('media_chrome.seek_backward'),
+      'Seek forward': $t('media_chrome.seek_forward'),
+      'audio player': $t('media_chrome.audio_player'),
+      seek: $t('media_chrome.seek'),
+      'audio tracks': $t('media_chrome.audio_tracks'),
+      'chapter: {chapterName}': $t('media_chrome.chapter', { values: { chapterName: '{chapterName}' } }),
+      live: $t('media_chrome.live'),
+      'start airplay': $t('media_chrome.start_airplay'),
+      'stop airplay': $t('media_chrome.stop_airplay'),
+      'start casting': $t('media_chrome.start_casting'),
+      'stop casting': $t('stop_casting'),
+      'enter picture in picture mode': $t('media_chrome.enter_picture_in_picture_mode'),
+      'exit picture in picture mode': $t('media_chrome.exit_picture_in_picture_mode'),
+      'seek to live': $t('media_chrome.seek_to_live'),
+      'playing live': $t('media_chrome.playing_live'),
+      'seek back {seekOffset} seconds': $t('media_chrome.seek_back_seconds', {
+        values: { seekOffset: '{seekOffset}' },
+      }),
+      'seek forward {seekOffset} seconds': $t('media_chrome.seek_forward_seconds', {
+        values: { seekOffset: '{seekOffset}' },
+      }),
+      'Encryption Error': $t('media_chrome.encryption_error'),
+      'The media is encrypted and there are no keys to decrypt it.': $t('media_chrome.encryption_error_description'),
       Captions: $t('media_chrome.captions'),
       'Enable captions': $t('media_chrome.enable_captions'),
       'Disable captions': $t('media_chrome.disable_captions'),
@@ -134,7 +140,9 @@
       Play: $t('play'),
       Pause: $t('pause'),
       'Playback rate': $t('media_chrome.playback_rate'),
-      'Playback rate {playbackRate}': $t('media_chrome.playback_rate_value'),
+      'Playback rate {playbackRate}': $t('media_chrome.playback_rate_value', {
+        values: { playbackRate: '{playbackRate}' },
+      }),
       Quality: $t('media_chrome.quality'),
       Settings: $t('settings'),
       Auto: $t('media_chrome.auto'),
@@ -168,8 +176,10 @@
       minutes: $t('minutes'),
       second: $t('media_chrome.second'),
       seconds: $t('media_chrome.seconds'),
-      '{time} remaining': $t('media_chrome.time_value_remaining'),
-      '{currentTime} of {totalTime}': $t('media_chrome.time_value_of_total_time'),
+      '{time} remaining': $t('media_chrome.time_value_remaining', { values: { time: '{time}' } }),
+      '{currentTime} of {totalTime}': $t('media_chrome.time_value_of_total_time', {
+        values: { currentTime: '{currentTime}', totalTime: '{totalTime}' },
+      }),
       'video not loaded, unknown time.': $t('media_chrome.video_not_loaded_unknown_time'),
     });
   });
@@ -182,6 +192,17 @@
   // Settings waits for its settings before it draws: its shape shows meanwhile (approved design, 2026-11-04).
   const SETTINGS_ROUTE = '/(user)/user-settings';
   const openingSettings = $derived(navigating.to?.route.id === SETTINGS_ROUTE && page.route.id !== SETTINGS_ROUTE);
+
+  // FL-1437: an account that never chose a language for its emails takes the one the app is shown in.
+  // Background work, so it is loaded after the page rather than with it.
+  $effect(() => {
+    if (authManager.authenticated) {
+      const language = $lang;
+      void import('$lib/frameleaf/notification-language').then(({ adoptNotificationLanguage }) =>
+        adoptNotificationLanguage(language),
+      );
+    }
+  });
 
   onMount(() => {
     const element = document.querySelector('#stencil');

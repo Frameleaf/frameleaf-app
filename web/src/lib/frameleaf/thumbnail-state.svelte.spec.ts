@@ -21,6 +21,15 @@ describe('a photo with no thumbnail yet (FL-1409)', () => {
     expect(cantShowPhoto(photo)).toBe(false);
   });
 
+  it('is never getting ready when it is somebody else’s photo the viewer can’t ask about (FL-1456)', () => {
+    vi.spyOn(authManager, 'user', 'get').mockReturnValue({ id: 'me', isAdmin: false } as never);
+    expect(isGettingReady({ ...photo, ownerId: 'me' })).toBe(true);
+    expect(isGettingReady({ ...photo, ownerId: 'partner' })).toBe(false);
+    // An administrator's list holds every account's failures.
+    vi.spyOn(authManager, 'user', 'get').mockReturnValue({ id: 'me', isAdmin: true } as never);
+    expect(isGettingReady({ ...photo, ownerId: 'partner' })).toBe(true);
+  });
+
   it('is ready once it has a thumbhash', () => {
     expect(isGettingReady({ ...photo, thumbhash: 'abc' })).toBe(false);
   });

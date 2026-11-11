@@ -25,6 +25,7 @@ import {
   UserAdminUpdateDto,
   mapUserAdmin,
 } from 'src/dtos/user.dto.js';
+import { emailText } from 'src/emails/components/email-locale.js';
 import {
   AccountEventAction,
   AdminAuditAction,
@@ -36,6 +37,7 @@ import {
 import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
+import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
@@ -43,7 +45,7 @@ import { DecimalSize } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { findOrFail } from 'src/utils/misc.js';
-import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences.js';
+import { getPreferences, getPreferencesPartial, localeOf, mergePreferences } from 'src/utils/preferences.js';
 
 /** One entry for the administrator audit trail about an account (FL-76). */
 const accountEvent = (
@@ -68,6 +70,10 @@ const PASSWORD_LINK_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class UserAdminService extends BaseService {
+  /** Unified sign-in: "confirmed recently" before removing a person. */
+  @Inject(AuthService)
+  private authService!: AuthService;
+
   /** FL-721: an administrator can't clear or change the PIN of someone with Locked encryption on. */
   @Inject(LockedEncryptionService)
   private lockedEncryption!: LockedEncryptionService;
@@ -157,7 +163,7 @@ export class UserAdminService extends BaseService {
 
   private async emailPasswordLink(
     auth: AuthDto,
-    user: { id: string; name: string; email: string },
+    user: Pick<UserAdmin, 'id' | 'name' | 'email' | 'metadata'>,
     baseUrl: string,
     isNew: boolean,
   ) {
@@ -170,9 +176,11 @@ export class UserAdminService extends BaseService {
     );
     if (!issued) throw new ConflictException('This account changed; send a new password link');
     const { templates } = await this.getConfig({ withCache: true });
+    const locale = localeOf(user.metadata);
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.PASSWORD_LINK,
       data: {
+        locale,
         baseUrl,
         displayName: user.name,
         username: user.email,
@@ -186,7 +194,7 @@ export class UserAdminService extends BaseService {
       name: JobName.SendMail,
       data: {
         to: user.email,
-        subject: isNew ? 'Choose your Frameleaf password' : 'Choose a new Frameleaf password',
+        subject: emailText(locale, isNew ? 'password_link_new_subject' : 'password_link_reset_subject'),
         html,
         text,
       },
@@ -323,8 +331,17 @@ export class UserAdminService extends BaseService {
     return events;
   }
 
-  async delete(auth: AuthDto, id: string, dto: UserAdminDeleteDto): Promise<UserAdminResponseDto> {
+  async delete(
+    auth: AuthDto,
+    id: string,
+    dto: UserAdminDeleteDto,
+    details?: LoginDetails,
+  ): Promise<UserAdminResponseDto> {
     const { force, confirmEmail } = dto;
+    // removing a person: confirmed recently (a session that predates the unified rule keeps today's rights)
+    if (details) {
+      await this.authService.requireConfirmedRecently(auth, dto.confirmation, details);
+    }
     const target = await this.findOrFail(id, {});
     if (auth.user.id === id) {
       throw new ForbiddenException('Cannot delete your own account');
@@ -435,6 +452,25 @@ export class UserAdminService extends BaseService {
     }
     // the password-change handler is what signs an account out everywhere (and drops Locked access)
     await this.eventRepository.emit('AuthChangePassword', { userId: id, invalidateSessions: true });
+  }
+
+  /**
+   * Unified sign-in "Reset sign-in": one action for a person who can't get in. Emails them a link to choose a
+   * new password (the old one stops working), removes their authenticator and passkeys, and signs out every
+   * session. The three separate
+   * actions remain for precision. The link comes first: with no email set up it is refused before anything is
+   * removed, so nobody is left with no way back in.
+   */
+  async resetSignIn(auth: AuthDto, id: string): Promise<void> {
+    const user = await this.findOrFail(id, {});
+    const base = await this.requirePasswordLinkBase();
+    await this.emailPasswordLink(auth, user, base, false);
+    await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.PasswordReset, 'link')]);
+    // the old password stops working too: only the emailed link sets a new one
+    await this.userRepository.update(id, { password: '' });
+    await this.removeAllPasskeys(auth, user);
+    // removes the authenticator and signs the account out everywhere
+    await this.resetTwoFactor(auth, id);
   }
 
   /**

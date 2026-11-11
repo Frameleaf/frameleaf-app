@@ -766,7 +766,7 @@
       return;
     }
     // FL-1410: a date set by hand is no longer one to check; the server says where each photo belongs now.
-    if (action === 'change-date' && manager.datesToCheck) {
+    if (action === 'change-date' && manager.datesToCheckCount > 0) {
       void manager.refresh();
       return;
     }
@@ -1439,12 +1439,13 @@
    * FL-1412 (M13): an empty page shows its empty state and nothing to arrange it with: no layout tabs,
    * no toolbar, no Thumbnail size bar. That is any signed-in view with nothing in it and nothing
    * narrowing it (Favorites, Best Photos, an album), the new library included. The one exception is
-   * FL-1398's: the owner's timeline with partner photos switched off keeps its toolbar. A view a filter
+   * FL-1398's: a library page (the timeline, a Map area) with partner photos switched off keeps its toolbar,
+   * so the View menu that brings them back stays in reach. A view a filter
    * has emptied keeps its toolbar too, since Filter is how to change it; the status bar (the count and
    * Thumbnail size) goes whenever there is nothing to count or size.
    */
   const bare = $derived(
-    !publicView && !selectionMode && !session.filterActive && resultCount === 0 && (!ownTimeline || view.partnerPhotos),
+    !publicView && !selectionMode && !session.filterActive && resultCount === 0 && (!libraryRoot || view.partnerPhotos),
   );
   /** Selected items this view does not show (chosen elsewhere with the same session), App.jsx's "outside". */
   const selectedOutside = $derived(snapshot ? 0 : session.selection.filter((id) => !findAsset(id)).length);
@@ -1561,21 +1562,39 @@
    */
   const canFixDates = $derived(libraryChrome && !selectionBar && !noSelectionBar && !options?.isTrashed);
   export const fixDates = async () => {
-    const group = manager.months.find((month) => month.toCheck);
-    if (!group || !canFixDates) {
+    // FL-1452: a new filter the timeline has not taken yet leaves the old view's group here; not its photos
+    if (!manager.settled || manager.datesToCheckCount === 0 || !canFixDates) {
       return;
     }
-    try {
-      await manager.loadTimelineMonth(group.yearMonth, { cancelable: false });
-    } catch (error) {
-      handleError(error, $t('errors.failed_to_load_assets'));
-      return;
+    const pages = manager.months.filter((month) => month.toCheck);
+    // FL-1452: the group is read a page at a time, and a page out of view may be released: take each
+    // page's photos as it loads. ponytail: every page in turn, which a group of thousands takes a moment over.
+    // Sorted by date added, name or rating there is no group: the server says which they are.
+    const ids: string[] = [];
+    if (pages.length === 0) {
+      try {
+        ids.push(...(await manager.readDatesToCheckIds()));
+      } catch (error) {
+        handleError(error, $t('errors.failed_to_load_assets'));
+        return;
+      }
+      if (!manager.settled) {
+        return;
+      }
     }
-    // The view moved on while the group loaded (a filter, a refresh): its photos are not this view's.
-    if (!manager.months.includes(group)) {
-      return;
+    for (const page of pages) {
+      try {
+        await manager.loadTimelineMonth(page.yearMonth, { cancelable: false });
+      } catch (error) {
+        handleError(error, $t('errors.failed_to_load_assets'));
+        return;
+      }
+      // The view moved on while the group loaded (a filter, a refresh): its photos are not this view's.
+      if (!manager.settled || !manager.months.includes(page)) {
+        return;
+      }
+      ids.push(...page.getAssets().map(({ id }) => id));
     }
-    const ids = group.getAssets().map(({ id }) => id);
     if (ids.length === 0) {
       return;
     }
@@ -1588,7 +1607,9 @@
       selectionBarRef.performAction('change-date');
       return;
     }
-    manager.scrollTo(group.top);
+    if (pages[0]) {
+      manager.scrollTo(pages[0].top);
+    }
   };
 
   /** The bar's dialog closed: a cancelled action started from a key or a tile leaves nothing selected. */

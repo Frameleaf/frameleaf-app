@@ -7,8 +7,10 @@ import en from '$i18n/en.json';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import FirstRunSetup from '$lib/components/frameleaf/setup/FirstRunSetup.svelte';
 import { createSetup } from '$lib/frameleaf/first-run-setup';
+import { saveNotificationLanguage } from '$lib/frameleaf/notification-language';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }));
+vi.mock('$lib/frameleaf/notification-language', () => ({ saveNotificationLanguage: vi.fn() }));
 
 describe('first-run progress save ownership', () => {
   beforeAll(() => addMessages('dev', en));
@@ -45,7 +47,7 @@ describe('first-run progress save ownership', () => {
           step: 'admin-sign-in',
           reached: 0,
           choices: {
-            language: 'en',
+            language: '',
             signIn: 'local',
             linked: false,
             accountCreated: false,
@@ -152,6 +154,34 @@ describe('first-run progress save ownership', () => {
     expect(goto).toHaveBeenCalledWith('/photos', { invalidateAll: true });
     await vi.advanceTimersByTimeAsync(1000);
     expect(sdkMock.updateFrameleafSetup).not.toHaveBeenCalled();
+  });
+
+  // FL-1437: a language picked in setup, English included, is the account's; an untouched picker
+  // leaves the account's own language alone.
+  it.each([
+    ['English when English was picked', 'en', ['en']],
+    ['nothing when no language was picked', '', []],
+  ])('saves %s for notifications and emails', async (_, language, saved) => {
+    sdkMock.getConfig.mockResolvedValue({
+      storageTemplate: { enabled: false, template: '{{y}}/{{MM}}/{{filename}}' },
+      machineLearning: { clip: { enabled: true, modelName: 'ViT-B-16-SigLIP2__webli' } },
+      backup: { database: { enabled: true, cronExpression: '0 02 * * *', keepLastAmount: 14 } },
+      newVersionCheck: { enabled: true },
+      map: { enabled: true },
+    } as never);
+    sdkMock.finishFrameleafSetup.mockResolvedValue({ completed: true, completedAt: null, flow: 'existing' } as never);
+    sdkMock.setUserOnboarding.mockResolvedValue({ isOnboarded: true });
+    const initial = createSetup('existing');
+    render(FirstRunSetup, {
+      initial: { ...initial, step: 9, reached: 9, choices: { ...initial.choices, signedIn: true, language } },
+      authenticated: true,
+    });
+    await tick();
+    await vi.advanceTimersByTimeAsync(200);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Frameleaf' }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(goto).toHaveBeenCalledWith('/photos', { invalidateAll: true });
+    expect(vi.mocked(saveNotificationLanguage).mock.calls.map(([value]) => value)).toEqual(saved);
   });
 
   describe('finishing on a library with an unlisted search model', () => {

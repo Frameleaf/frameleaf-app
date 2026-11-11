@@ -189,7 +189,16 @@ describe('administrative iCloud edit authority', () => {
       const prior = await publish(row);
       const authService = newMediumService(AuthService, {
         database: db,
-        real: [CryptoRepository, SessionRepository, UserRepository, ApiKeyRepository, SharedLinkRepository],
+        // the sign-in rule reads the server's settings on every session request
+        real: [
+          CryptoRepository,
+          SessionRepository,
+          UserRepository,
+          ApiKeyRepository,
+          SharedLinkRepository,
+          ConfigRepository,
+          SystemMetadataRepository,
+        ],
         mock: [LoggingRepository],
       }).sut;
       const relations = new ICloudRelationsService(new ICloudRelationsRepository(db), {
@@ -501,7 +510,16 @@ describe('administrative iCloud edit authority', () => {
         row = await resource(f, 'http-token');
       const authService = newMediumService(AuthService, {
         database: db,
-        real: [CryptoRepository, SessionRepository, UserRepository, ApiKeyRepository, SharedLinkRepository],
+        // the sign-in rule reads the server's settings on every session request
+        real: [
+          CryptoRepository,
+          SessionRepository,
+          UserRepository,
+          ApiKeyRepository,
+          SharedLinkRepository,
+          ConfigRepository,
+          SystemMetadataRepository,
+        ],
         mock: [LoggingRepository],
       }).sut;
       const relations = new ICloudRelationsService(new ICloudRelationsRepository(db), {

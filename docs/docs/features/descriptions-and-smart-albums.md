@@ -516,7 +516,7 @@ Open the smart album, select the asset and choose **Remove from album**. The exc
 
 **Try it on a few photos → Try it** (Descriptions & tags) opens **Try an enrichment change** in three steps:
 
-1. **Choose sample** — up to six of your own photos or videos, and the processing destination to run on. The destination is always named: the default is the one routed under Processing destinations, and nothing ever falls back to another destination.
+1. **Choose sample** — up to six of your own photos or videos, and the processing destination to run on. The destination is always named: the default is the one chosen in Where work runs, and nothing ever falls back to another destination.
 2. **Compare** — the model and prompt you are editing, saved or not, run on each sample one at a time. The current description and the candidate appear side by side, with the tags, any names the check removed and, for a video, how many frames it saw. **Nothing is written**: descriptions, tags, the Locked state, search embeddings and frames are unchanged. A video without frames is cut into a temporary folder for the preview and the folder is removed afterwards.
 3. **Scope** — choose the stages a plan runs on the samples:
    - **Descriptions and tags**, and the **Locked-content check** for photos;

@@ -138,6 +138,9 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'trash.days': { label: 'frameleaf_deleted_keep_photos', values: count('frameleaf_deleted_days') },
   'trash.enabled': { label: 'trash' },
   'user.deleteDelay': { label: 'frameleaf_deleted_keep_account', values: count('frameleaf_deleted_days') },
+  // Your server › Who can sign in › Require a passkey or two-step (unified sign-in)
+  'signInPolicy.require': { label: 'frameleaf_signin_require_who' },
+  'signInPolicy.applyToOlderApps': { label: 'frameleaf_signin_require_older_apps' },
   // Storage & originals › Folder layout
   'storageTemplate.enabled': { label: 'frameleaf_layout_sort' },
   // FL-1333: a retired switch the server ignores (every copy is checked); the promise is said on Folder layout only
@@ -249,6 +252,8 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'emailNotifications.newSignIn': { label: 'frameleaf_notify_yours_new_sign_in' },
   'avatar.color': { label: 'frameleaf_prefs_colour' },
   'purchase.showSupportBadge': { label: 'frameleaf_words_support_badge' },
+  // FL-1437: the language picker saves the account's language for notifications and emails
+  'notifications.locale': { label: 'frameleaf_prefs_look_language' },
 });
 
 /** The page a personal preference lives on, by the first part of its path. */
@@ -256,6 +261,7 @@ const PREFERENCE_PAGES: Record<string, { area: SettingsAreaId; section: string }
   albums: { area: 'preferences', section: 'app-settings' },
   download: { area: 'preferences', section: 'download-settings' },
   emailNotifications: { area: 'notifications', section: 'email-preferences' },
+  notifications: { area: 'preferences', section: 'app-settings' },
   avatar: { area: 'preferences', section: 'account' },
   purchase: { area: 'preferences', section: 'user-purchase-settings' },
   cast: { area: 'preferences', section: 'feature' },

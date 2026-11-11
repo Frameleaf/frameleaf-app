@@ -9,7 +9,6 @@ import {
   frameRateLabel,
   megapixels,
   viewerHeadline,
-  viewerHeadlineText,
   viewerWhenWhere,
 } from '$lib/frameleaf/viewer-headline';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -154,15 +153,6 @@ describe('viewerHeadline', () => {
 
   it('is empty when the asset carries no metadata at all', () => {
     expect(viewerHeadline(still({ width: null, height: null, exifInfo: undefined, duration: null }))).toEqual([]);
-    expect(viewerHeadlineText(still({ width: null, height: null, exifInfo: undefined, duration: null }))).toBe('');
-  });
-
-  it('joins the parts with a middle dot', () => {
-    expect(
-      viewerHeadlineText(
-        still({ exifInfo: { make: 'Fujifilm', model: 'X-T5', lensModel: 'XF 23mm F1.4' }, width: null, height: null }),
-      ),
-    ).toBe('Fujifilm X-T5 · XF 23mm F1.4');
   });
 });
 
