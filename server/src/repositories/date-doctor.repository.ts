@@ -6,7 +6,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { hasDateToCheck } from 'src/utils/date-sanity.js';
-import { isDefaultVisible, isNotLocked } from 'src/utils/locked.js';
+import { isDefaultVisible } from 'src/utils/locked.js';
 
 export type DateFindingRow = DateFinding & { createdAt: Date };
 
@@ -94,9 +94,9 @@ export class DateDoctorRepository {
         .where('asset.ownerId', '=', ownerId)
         .where('asset.deletedAt', 'is', null)
         .where('asset_date_finding.dismissedAt', 'is', null)
-        // a photo locked since the scan stays out until the next one drops it
-        .where(isNotLocked('asset'))
-        .orderBy(sql`split_part(asset_date_finding."groupKey", '|', 2)`, 'desc')
+        // a photo locked or hidden since the scan stays out until the next one drops it
+        .where(isDefaultVisible('asset'))
+        .orderBy(sql`right(asset_date_finding."groupKey", 10)`, 'desc')
         .orderBy('asset_date_finding.groupKey')
         .orderBy('asset_date_finding.currentDate')
         .orderBy('asset_date_finding.assetId')

@@ -37,7 +37,10 @@ export class DateDoctorService {
     for (const row of rows) {
       let group = groups.get(row.groupKey);
       if (!group) {
-        const [camera, day] = row.groupKey.split('|', 2);
+        // the key ends with `|` and the day: a camera's name may hold a `|` of its own
+        const separator = row.groupKey.lastIndexOf('|');
+        const camera = row.groupKey.slice(0, separator);
+        const day = row.groupKey.slice(separator + 1);
         group = { groupKey: row.groupKey, camera: camera === 'unknown' ? null : camera, day, findings: [] };
         groups.set(row.groupKey, group);
       }

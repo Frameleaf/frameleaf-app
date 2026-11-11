@@ -159,7 +159,7 @@ describe('Date & Time Doctor scan (FL-912)', () => {
     ]);
   });
 
-  it('leaves out a photo locked before the scan, and hides one locked after it', async () => {
+  it('leaves out a photo locked before the scan, and hides one locked or hidden after it', async () => {
     const { ctx, doctor } = setup();
     const { user } = await ctx.newUser();
     const auth = factory.auth({ user });
@@ -175,6 +175,10 @@ describe('Date & Time Doctor scan (FL-912)', () => {
 
     await lock(lockedAfter.id);
     expect((await findingsOf(doctor, auth)).map(({ assetId }) => assetId)).toEqual([open.id]);
+
+    // the hidden half of a Live Photo, found after the scan, is not listed either
+    await db.updateTable('asset').set({ visibility: AssetVisibility.Hidden }).where('id', '=', open.id).execute();
+    await expect(findingsOf(doctor, auth)).resolves.toEqual([]);
   });
 
   it('stores both offsets when metadata is read again, and keeps them through writes that do not read them', async () => {

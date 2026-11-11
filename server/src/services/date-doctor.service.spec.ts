@@ -207,9 +207,10 @@ describe(DateDoctorService.name, () => {
       row('a', 'Nikon D90|2022-07-03'),
       row('b', 'Nikon D90|2022-07-03'),
       row('c', 'unknown|2022-07-01'),
+      row('d', 'Brand Series|X|2022-06-30'),
     ]);
     await expect(sut.getFindings(authStub.admin)).resolves.toEqual({
-      total: 3,
+      total: 4,
       groups: [
         expect.objectContaining({
           camera: 'Nikon D90',
@@ -221,6 +222,8 @@ describe(DateDoctorService.name, () => {
           day: '2022-07-01',
           findings: [expect.objectContaining({ assetId: 'c', proposedDate: '2022-07-01T08:03:00.000Z' })],
         }),
+        // a camera name may hold a `|`
+        expect.objectContaining({ camera: 'Brand Series|X', day: '2022-06-30' }),
       ],
     });
   });

@@ -169,13 +169,14 @@ export const offsetZone = (offset: string): string | undefined => {
 
 const gpsZones = new Map<string, string[]>();
 /**
- * The zones at a place, from the bundled time zone map, remembered per ~1 km. Some places have more than one
+ * The zones at a place, from the bundled time zone map, remembered per position. Some places have more than one
  * (`Asia/Shanghai` and `Asia/Urumqi` in Ürümqi): any of them is right there.
  */
 const zonesAt = (latitude: number, longitude: number): string[] => {
-  const key = `${latitude.toFixed(2)},${longitude.toFixed(2)}`;
+  // the exact position: two fixes either side of a border must not share an answer
+  const key = `${latitude},${longitude}`;
   if (!gpsZones.has(key)) {
-    // ponytail: unbounded memo; a library spans few distinct ~1 km cells. Bound it if one ever does not.
+    // ponytail: unbounded memo, one entry per distinct position in the scan (6,600 in the 14,500-photo demo library)
     // eslint-disable-next-line import-x/no-named-as-default-member
     gpsZones.set(key, geotz.find(latitude, longitude));
   }
@@ -320,13 +321,27 @@ const findDrift = (
     return undefined;
   }
   // The exact shift: the median, over the shots near the best minute, of the photos' own offset to their anchor.
+  // One value per shot (its first photo), the anchor nearest the best minute: as many values as shots.
   const exact: number[] = [];
+  const seen = new Set<number>();
   for (const photo of group) {
+    const shot = Math.round(photo.localDateTime.getTime() / MINUTE);
+    if (seen.has(shot)) {
+      continue;
+    }
+    seen.add(shot);
+    let nearest: number | undefined;
     for (const anchor of anchorRows) {
       const delta = anchor.localDateTime.getTime() - photo.localDateTime.getTime();
-      if (Math.abs(delta - shift) <= MINUTE) {
-        exact.push(delta);
+      if (
+        Math.abs(delta - shift) <= MINUTE &&
+        (nearest === undefined || Math.abs(delta - shift) < Math.abs(nearest - shift))
+      ) {
+        nearest = delta;
       }
+    }
+    if (nearest !== undefined) {
+      exact.push(nearest);
     }
   }
   exact.sort((a, b) => a - b);
