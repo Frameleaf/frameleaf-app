@@ -80,7 +80,7 @@
   import { hasRouterStarted } from '$lib/utils/router-started';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { SvelteSet } from 'svelte/reactivity';
+  import { MediaQuery, SvelteSet } from 'svelte/reactivity';
 
   /**
    * The Albums page (FL-52). Collections are shelves with their albums beneath;
@@ -124,6 +124,11 @@
 
   const currentUserId = $derived(authManager.user.id);
   const view = $derived(normalizeAlbumDirectoryView($albumDirectoryView));
+  /**
+   * At 700px and under the tools fill the page's width and sort is at their start edge, so its menu opens
+   * from that edge; hung from the end of a 48px trigger it would open off the screen.
+   */
+  const stacked = new MediaQuery('max-width: 700px');
 
   let search = $state('');
   /** The persistent line under the filters: a drag hint, or that the directory was reloaded. */
@@ -771,7 +776,7 @@
       </label>
       <!-- The prototype's sort menu (Collections.jsx:672-683), plus "Custom order" (FL-52). -->
       <div class="sort">
-        <Menu label={$t('frameleaf_albums_sort')} align="end">
+        <Menu label={$t('frameleaf_albums_sort')} align={stacked.current ? 'start' : 'end'}>
           {#snippet trigger()}
             <Icon icon={mdiSortVariant} size="17" aria-hidden={true} />
             <span aria-hidden="true">{sortLabels[view.sort]()}</span>
