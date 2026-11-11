@@ -1919,6 +1919,7 @@
           showFileNames={captions.names}
           showTimes={captions.time}
           hideScrubber={gridLayout === 'timeline' && !view.scrubber}
+          keepThinScrubber={publicView}
           sections={sectionGrouping(view, { layout: tileLayout, ordered: !!sortedOptions?.orderedBy })}
           onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
           showDayHeaders={gridLayout === 'timeline'}

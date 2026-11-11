@@ -939,6 +939,13 @@
     .fl-filter-more {
       display: none;
     }
+    /* View keeps its name on phones, as the prototype's does: the narrow-library rule above takes it. */
+    .fl-view-button {
+      gap: 6px;
+      min-width: 0;
+      padding: 0 11px;
+      font-size: var(--fl-font-size, 14px);
+    }
     /* Sort is its icon; the select covers it, invisible, so a tap opens the native picker. */
     .fl-sort {
       position: relative;
