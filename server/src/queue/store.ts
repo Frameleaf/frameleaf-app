@@ -1342,7 +1342,8 @@ export class SqlQueueStore {
           where id in (
             select id from (select id, "dedupKey", row_number() over (partition by coalesce("dedupKey", id::text) order by "createdAt", id) ordinal
               from job j where queue = ${queue} and "safeToRetry"
-                and (state = 'failed' or (state = 'blocked' and "parentId" is null and ${queuedProcessingIsSetAside}))
+                and (state = 'failed' or (state = 'blocked' and ${queuedProcessingIsSetAside}
+                  and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))))
                 ${jobId ? sql`and id = ${jobId}::uuid` : sql``}) candidates
             where ordinal = 1 and (candidates."dedupKey" is null or not exists (
               select 1 from job d where d.queue = ${queue} and d."dedupKey" = candidates."dedupKey"
