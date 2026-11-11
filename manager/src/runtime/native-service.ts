@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { constants } from 'node:fs';
 import { access, lstat, open, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve, join } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import { digest, Refusal, releaseTag } from '../contracts.js';
@@ -116,8 +116,13 @@ const Bootstrap = Configuration.extend({
 })
   .strict()
   .refine((value) => value.backupKey !== value.password)
-  .refine((value) => !value.mediaMoveQualification ||
-    value.mediaMoveQualification.manifestSha256 === value.installation.manifestSha256);
+  .refine((value) => !value.mediaMoveQualification || (
+    process.platform === 'win32' &&
+    value.mediaMoveQualification.manifestSha256 === value.installation.manifestSha256 &&
+    basename(value.installation.state) === 'state' &&
+    /^Frameleaf Media Move Qualification [a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
+      .test(basename(dirname(value.installation.state)))
+  ));
 export type NativeBootstrap = z.infer<typeof Bootstrap>;
 
 /** One private inherited pipe from the desktop supervisor; never HTTP, argv, env or a state file. */
@@ -565,6 +570,7 @@ export class NativeService {
       process.platform === 'win32' && !runtime && supplied instanceof NativeHost
         ? supplied.mediaMoveAuthority()
         : undefined;
+    const qualifyMediaMove = Boolean(mediaOwner && mediaMoveQualification);
     this.lifecycle = new NativeOperations(
       store,
       this.runtime,
@@ -574,7 +580,7 @@ export class NativeService {
               store,
               this.runtime,
               backups,
-              context,
+              { ...context, retainMediaQualificationSafety: qualifyMediaMove },
               operation,
             )
         : undefined,

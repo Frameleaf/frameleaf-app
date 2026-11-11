@@ -58,7 +58,7 @@ export function desktopApi(
   const router = express.Router({ caseSensitive: true, strict: true });
   const mediaPaths = new Set(
     recovery?.mediaMove
-      ? ['review-media-move', 'confirm-media-move', 'media-move-operation', 'resume-media-move'].map((name) => NATIVE + name)
+      ? ['media-move-safety', 'review-media-move', 'confirm-media-move', 'media-move-operation', 'resume-media-move'].map((name) => NATIVE + name)
       : [],
   );
   const bodies = new WeakMap<Request, Buffer>();
@@ -330,6 +330,11 @@ export function desktopApi(
         throw new Refusal('desktop_operation_not_authorized', 403);
       return found;
     };
+    router.post(NATIVE + 'media-move-safety', (request, response) => {
+      authorize(request, 'move-library');
+      const { id } = Id.parse(request.body);
+      response.json(mediaMove.safety(id));
+    });
     router.post(NATIVE + 'review-media-move', async (request, response) => {
       authorize(request, 'move-library');
       response.json(await mediaMove.review(MediaMoveReviewRequest.parse(request.body), randomUUID()));

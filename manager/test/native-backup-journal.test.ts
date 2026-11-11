@@ -628,3 +628,22 @@ test('cleanup journal markers without a verified snapshot fail before checkpoint
     assert.deepEqual(await readFile(join(f.owner, 'database.dump')), f.bytes);
   });
 });
+
+test('disposable media qualification retains the exact verified copy in host state', async () => {
+  await fixture(async (f) => {
+    const result = await createNativeDatabaseBackup(
+      f.store,
+      f.runtime,
+      f.engine,
+      { ...f.context, retainMediaQualificationSafety: true },
+      f.operation,
+    );
+    const safety = join(f.context.installation.state, 'restore-safety', f.operation.id);
+    assert.deepEqual(await readFile(join(safety, 'database.dump')), f.bytes);
+    assert.deepEqual(
+      JSON.parse(await readFile(join(safety, 'recovery.json'), 'utf8')),
+      result.recovery,
+    );
+    assert.equal(f.calls.restore, 1);
+  });
+});

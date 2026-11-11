@@ -139,6 +139,7 @@ export function nativeMediaMoveAdmission(
   }
 
   return {
+    safety: verifyBackup,
     async review(input: z.infer<typeof MediaMoveReviewRequest>, reviewId: string) {
       const safety = verifyBackup(input.backupOperationId);
       const review = MediaMoveReview.parse({
