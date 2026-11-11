@@ -89,6 +89,22 @@ const FrameleafTokenExchangeSchema = z
   })
   .meta({ id: 'FrameleafTokenExchangeDto' });
 
+/** Unified sign-in: the local proof a `verification_required` from the exchange or callback asked for. */
+const FrameleafStepUpSchema = z
+  .object({
+    transaction: z.string().min(1).max(4000).describe('transaction from the verification_required answer'),
+    password: z.string().max(1000).optional().describe('The local password, when methods lists password'),
+    code: z
+      .string()
+      .regex(/^\d{6}$/)
+      .optional()
+      .describe('The 6-digit code from the authenticator app'),
+    recoveryCode: z.string().min(1).max(32).optional().describe('One of the recovery codes, instead of code'),
+    rememberMe: z.boolean().optional(),
+    capabilities: capabilitiesField,
+  })
+  .meta({ id: 'FrameleafStepUpDto' });
+
 const FrameleafTokenExchangeErrorSchema = z
   .object({
     message: z.string(),
@@ -102,6 +118,7 @@ export class FrameleafAccountLinkResponseDto extends createZodDto(FrameleafAccou
 export class FrameleafHandoffResponseDto extends createZodDto(FrameleafHandoffResponseSchema) {}
 export class FrameleafHandoffCreateDto extends createZodDto(FrameleafHandoffCreateSchema) {}
 export class FrameleafHandoffRedeemDto extends createZodDto(FrameleafHandoffRedeemSchema) {}
+export class FrameleafStepUpDto extends createZodDto(FrameleafStepUpSchema) {}
 export class FrameleafTokenExchangeDto extends createZodDto(FrameleafTokenExchangeSchema) {}
 export class FrameleafTokenExchangeErrorDto extends createZodDto(FrameleafTokenExchangeErrorSchema) {}
 

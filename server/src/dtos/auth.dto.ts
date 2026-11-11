@@ -62,6 +62,12 @@ export const capabilitiesField = z
   .optional()
   .describe('What this client can do; "verification" means it can answer verification_required (default: none)');
 
+/** Unified sign-in, Contract B: this client reads `status` ("done" or "next") in the login answers. */
+const stepsField = z
+  .boolean()
+  .optional()
+  .describe('Answer in sign-in steps: status "done" with the session, or "next" with a transaction and methods');
+
 const LoginCredentialSchema = z
   .object({
     email: toEmail.describe('User email').meta({ example: 'testuser@email.com' }),
@@ -71,6 +77,7 @@ const LoginCredentialSchema = z
       .optional()
       .describe('Persist authentication cookies across browser sessions (default true)'),
     capabilities: capabilitiesField,
+    steps: stepsField,
     twoFactor: z
       .boolean()
       .optional()
@@ -100,6 +107,20 @@ const LoginResponseSchema = z
       .string()
       .optional()
       .describe('FL-793: proves the password step for five minutes; send it with the code'),
+    status: z
+      .enum(['done', 'next'])
+      .optional()
+      .describe('Sign in in steps (sent when the request had steps: true): done, or next with a transaction'),
+    transaction: z
+      .string()
+      .optional()
+      .describe(
+        'Sign in in steps: with status next, send it with the proof to POST /auth/login/two-factor as twoFactorToken',
+      ),
+    methods: z
+      .array(z.enum(['totp', 'recovery_code', 'email_code', 'password', 'passkey']))
+      .optional()
+      .describe('Sign in in steps: with status next, what would complete the step, most preferred first'),
   })
   .meta({ id: 'LoginResponseDto' });
 
@@ -131,8 +152,18 @@ const LoginTwoFactorSchema = z
     recoveryCode: recoveryCode.optional(),
     trustDevice: z.boolean().optional().describe('Skip the code step in this browser for 30 days'),
     capabilities: capabilitiesField,
+    steps: stepsField,
   })
   .meta({ id: 'LoginTwoFactorDto' });
+
+/** Unified sign-in: the local authenticator's answer to a `verification_required`. */
+const StepUpSchema = z
+  .object({
+    transaction: z.string().min(1).max(4000).describe('transaction from the verification_required answer'),
+    code: twoFactorCode.optional(),
+    recoveryCode: recoveryCode.optional(),
+  })
+  .meta({ id: 'StepUpDto' });
 
 const TwoFactorPasswordSchema = z
   .object({ password: z.string().describe('The account password') })
@@ -160,6 +191,7 @@ const TwoFactorProofSchema = z
   })
   .meta({ id: 'TwoFactorProofDto' });
 
+export class StepUpDto extends createZodDto(StepUpSchema) {}
 export class LoginTwoFactorDto extends createZodDto(LoginTwoFactorSchema) {}
 export class TwoFactorPasswordDto extends createZodDto(TwoFactorPasswordSchema) {}
 export class TwoFactorSetupResponseDto extends createZodDto(TwoFactorSetupResponseSchema) {}

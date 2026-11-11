@@ -83,6 +83,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       cronExpression: '',
     },
   },
+  signInPolicy: { require: 'administrators-away', applyToOlderApps: false },
   connectedApps: { allowMcp: true, allowRegistration: true },
   analytics: {
     enabled: true,

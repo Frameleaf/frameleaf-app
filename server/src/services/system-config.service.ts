@@ -2,12 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { cloneDeep, get, isEqual, omit, set } from 'lodash-es';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import { ConfigCredentialResponseDto, ConfigCredentialUpdateDto } from 'src/dtos/config-credential.dto.js';
@@ -152,6 +154,9 @@ const copyCredentials = (target: AdminConfigDto, source: AdminConfigDto) => {
 
 @Injectable()
 export class SystemConfigService extends BaseService {
+  @Inject(PasskeyRepository)
+  private passkeyRepository!: PasskeyRepository;
+
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.SystemConfig })
   async onBootstrap() {
     await initializeEffectiveConfig(this.configRepos);
@@ -443,6 +448,27 @@ export class SystemConfigService extends BaseService {
   }
 
   /**
+   * Unified sign-in: the strictest "Require a passkey or two-step" setting, everyone everywhere, can only
+   * be chosen by an account that meets it without Frameleaf Cloud (a local authenticator or a local passkey),
+   * so choosing it never locks the person choosing it out. `reset-sign-in-policy` on the CLI undoes it.
+   */
+  private async requireOwnerCanMeetPolicy(incoming: AdminConfigDto, auth?: AuthDto) {
+    if (!auth || incoming.signInPolicy?.require !== 'everyone') {
+      return;
+    }
+    const current = await this.getConfig({ withCache: false });
+    if (current.signInPolicy.require === 'everyone') {
+      return;
+    }
+    const authenticator = (await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt;
+    if (!authenticator && (await this.passkeyRepository.countByUser(auth.user.id)) === 0) {
+      throw new BadRequestException(
+        'Set up Two-Step Verification or add a passkey to your own account here first, so you can still sign in to this server without Frameleaf.',
+      );
+    }
+  }
+
+  /**
    * One settings save (FL-66). The transaction boundary is the configuration itself.
    *
    * 1. The save is prepared and validated against the saved settings. Validators may reach the
@@ -466,6 +492,7 @@ export class SystemConfigService extends BaseService {
 
     const incoming = cloneDeep(toPlainObject(dto));
     delete incoming.metrics;
+    await this.requireOwnerCanMeetPolicy(incoming, auth);
     let prepared = await this.prepareAdminConfig(cloneDeep(incoming), expectedRevision);
 
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
@@ -539,6 +566,9 @@ export class SystemConfigService extends BaseService {
 
     // Older admin clients omit these fields. A settings save keeps the stored choice.
     dto.connectedApps.allowMcp ??= oldConfig.connectedApps.allowMcp;
+    dto.signInPolicy ??= oldConfig.signInPolicy;
+    dto.signInPolicy.require ??= oldConfig.signInPolicy.require;
+    dto.signInPolicy.applyToOlderApps ??= oldConfig.signInPolicy.applyToOlderApps;
     dto.metadata.faces.write ??= oldConfig.metadata.faces.write;
 
     // FL-165: remote access itself (the switch, connection, port, published address and custom

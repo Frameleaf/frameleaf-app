@@ -1,4 +1,5 @@
 import { schemaDiff } from '@frameleaf/sql-tools';
+import { DEFAULT_SIGN_IN_REQUIREMENT } from 'src/utils/sign-in-policy.js';
 import { Injectable } from '@nestjs/common';
 import { isAbsolute, join } from 'node:path';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -79,6 +80,16 @@ export class CliService extends BaseService {
     await this.updateConfigExclusively(
       (config) => {
         config.passwordLogin.enabled = false;
+      },
+      { source: 'server-cli' },
+    );
+  }
+
+  /** Unified sign-in: back to "administrators away from home", for an owner who locked themselves out. */
+  async resetSignInPolicy(): Promise<void> {
+    await this.updateConfigExclusively(
+      (config) => {
+        config.signInPolicy.require = DEFAULT_SIGN_IN_REQUIREMENT;
       },
       { source: 'server-cli' },
     );

@@ -13,6 +13,7 @@ import {
   FrameleafLinkConfirmDto,
   FrameleafLinkDto,
   FrameleafLinkResponseDto,
+  FrameleafStepUpDto,
   FrameleafTokenExchangeDto,
   FrameleafTokenExchangeErrorDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
@@ -115,6 +116,26 @@ export class FrameleafAuthController {
     @GetLoginDetails() loginDetails: LoginDetails,
   ): Promise<LoginResponseDto> {
     const body = await this.service.exchangeToken(dto, loginDetails);
+    return this.signedIn(res, body, loginDetails, dto.rememberMe);
+  }
+
+  @Post('step-up')
+  @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    operationId: 'stepUpFrameleafSignIn',
+    summary: 'Finish a Sign in with Frameleaf that needs the local password or authenticator',
+    description:
+      'A Sign in with Frameleaf (callback or exchange) can answer 403 verification_required with a transaction. Send the transaction with the local password and/or authenticator code (or recovery code) it asked for and receive the session, as the exchange would have returned it.',
+    history: new HistoryBuilder().added('v3.5.0').beta('v3.5.0'),
+  })
+  async stepUp(
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: FrameleafStepUpDto,
+    @GetLoginDetails() loginDetails: LoginDetails,
+  ): Promise<LoginResponseDto> {
+    const body = await this.service.stepUp(dto, loginDetails);
     return this.signedIn(res, body, loginDetails, dto.rememberMe);
   }
 

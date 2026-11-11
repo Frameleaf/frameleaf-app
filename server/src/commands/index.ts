@@ -12,6 +12,7 @@ import {
 import { DisableOAuthLogin, EnableOAuthLogin } from 'src/commands/oauth-login.js';
 import { DisablePasswordLoginCommand, EnablePasswordLoginCommand } from 'src/commands/password-login.js';
 import { PromptPasswordResetQuestions, ResetAdminPasswordCommand } from 'src/commands/reset-admin-password.command.js';
+import { ResetSignInPolicyCommand } from 'src/commands/reset-sign-in-policy.command.js';
 import { RestoreStateCommand } from 'src/commands/restore-state.command.js';
 import { SchemaCheck } from 'src/commands/schema-check.js';
 import { ValidateRestoreCommand } from 'src/commands/validate-restore.command.js';
@@ -27,6 +28,7 @@ export const commandsAndQuestions = [
   ...cloudBackupCommands,
   ResetAdminPasswordCommand,
   PromptPasswordResetQuestions,
+  ResetSignInPolicyCommand,
   PromptEmailQuestion,
   EnablePasswordLoginCommand,
   DisablePasswordLoginCommand,

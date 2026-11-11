@@ -17,7 +17,7 @@ import {
   MOBILE_REDIRECT,
   SALT_ROUNDS,
 } from 'src/constants.js';
-import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
+import { AuthSession, AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import {
   AuthDto,
   AuthOAuthApp,
@@ -26,6 +26,7 @@ import {
   LoginCredentialDto,
   LoginResponseDto,
   LoginTwoFactorDto,
+  StepUpDto,
   LogoutResponseDto,
   OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
@@ -88,7 +89,14 @@ import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
-import { createSession, withCapabilities } from 'src/utils/session.js';
+import { createSession, VERIFICATION_CAPABILITY, withCapabilities } from 'src/utils/session.js';
+import { DEFAULT_SIGN_IN_REQUIREMENT, evaluateSession } from 'src/utils/sign-in-policy.js';
+import {
+  twoFactorSetupRequired,
+  VERIFICATION_TRANSACTION_SECONDS,
+  verificationRequired,
+  type VerificationMethod,
+} from 'src/utils/verification-required.js';
 import { requireSharedLinkUnlocked } from 'src/utils/shared-link.js';
 import {
   type ServerMac,
@@ -200,6 +208,12 @@ const frameleafSignInRequired = () =>
     code: FRAMELEAF_SIGN_IN_REQUIRED,
   });
 
+/** The state a `verification_required` transaction stands for (signed, 10 minutes). */
+type VerificationTransaction = { k: 'session'; sid: string; sub: string; exp: number };
+
+/** Routes a person needs to set up their authenticator, open to a session that must set it up first. */
+const SETUP_ROUTES = /\/auth\/(two-factor|status|logout)/;
+
 const FRAMELEAF_CALLBACK = /frameleaf-auth:\/+oauth-callback/;
 
 /** FL-158: the refusal for an email the identity provider has not verified (every provider). */
@@ -309,10 +323,15 @@ export class AuthService extends BaseService {
       return { user, password: user.password };
     });
     const twoFactor = await this.userRepository.getTwoFactor(user.id);
+    if (isRemoteVia(details.via) && !(await this.isLegacyClient(details)) && !twoFactor?.enabledAt) {
+      // away from home a capable client's password counts only together with the authenticator
+      this.logger.warn(`Refused a password sign-in without two-step over remote access (${details.via})`);
+      throw frameleafSignInRequired();
+    }
     if (twoFactor?.enabledAt && !(await this.isTrustedBrowser(user.id, password, twoFactor.enabledAt, trustToken))) {
       // FL-793: a client that can't show the code step gets a clear refusal, never an empty session
       // (403, not 401: today's apps read 401 as a wrong password)
-      if (!dto.twoFactor) {
+      if (!dto.twoFactor && !dto.steps) {
         throw new ForbiddenException({
           message: TWO_FACTOR_REQUIRED_MESSAGE,
           error: 'Forbidden',
@@ -326,16 +345,79 @@ export class AuthService extends BaseService {
         exp: epochSeconds(new Date()) + TWO_FACTOR_CHALLENGE_SECONDS,
       };
       // FL-793: no session yet, until the code step
+      const twoFactorToken = await signToken(this.twoFactorMac('challenge'), challenge, password);
       return {
         ...mapLoginResponse(user, ''),
         twoFactorRequired: true,
-        twoFactorToken: await signToken(this.twoFactorMac('challenge'), challenge, password),
+        twoFactorToken,
+        // Contract B: the same two-factor token is the transaction
+        ...(dto.steps && {
+          status: 'next' as const,
+          transaction: twoFactorToken,
+          methods: ['totp', 'recovery_code' as const],
+        }),
       };
     }
 
     // the 30-day trusted-browser cookie counts as password plus authenticator (spec: Verified)
     const methods = twoFactor?.enabledAt ? ['pwd', 'totp'] : ['pwd'];
-    return this.createLoginResponse(user, details, { passwordHash: password }, 'password', methods);
+    const response = await this.createLoginResponse(user, details, { passwordHash: password }, 'password', methods);
+    return dto.steps ? { ...response, status: 'done' as const } : response;
+  }
+
+  /**
+   * Unified sign-in: proof of the local password and/or authenticator for a Frameleaf sign-in that needs it
+   * (first link by email match; a local authenticator after a Basic Frameleaf sign-in). Wrong answers count
+   * against the usual sign-in limits (401). Returns the methods proved, as `amr` names.
+   */
+  async verifyLocalProof(
+    user: { id: string; name: string; email: string },
+    proof: { password?: string; code?: string; recoveryCode?: string },
+    details: LoginDetails,
+    need: { password: boolean; authenticator: boolean },
+  ): Promise<string[]> {
+    if (need.authenticator) {
+      requireOneSecondFactor(proof);
+    }
+    const now = new Date();
+    const proved: string[] = [];
+    const twoFactor = await this.userRepository.getTwoFactor(user.id);
+    const ok = await this.signInSecurity.attempt('two-factor', user.id, details, async (backoff) => {
+      proved.length = 0;
+      if (need.password) {
+        const { password } = await this.userRepository.getForChangePassword(user.id);
+        if (!password || !proof.password || !(await this.cryptoRepository.compareBcrypt(proof.password, password))) {
+          await this.signInSecurity.failed(backoff, user as never);
+          return false;
+        }
+        proved.push('pwd');
+      }
+      if (need.authenticator) {
+        if (!twoFactor?.enabledAt || !(await this.checkSecondFactor(user.id, twoFactor.secret, proof, now))) {
+          await this.signInSecurity.failed(backoff, user as never);
+          return false;
+        }
+        proved.push(proof.recoveryCode ? 'recovery_code' : 'totp');
+      }
+      await this.signInSecurity.succeeded(backoff);
+      return true;
+    });
+    if (!ok) {
+      throw new UnauthorizedException(
+        need.authenticator && !need.password
+          ? proof.code
+            ? TWO_FACTOR_WRONG_CODE
+            : TWO_FACTOR_WRONG_RECOVERY_CODE
+          : 'That didn’t work. Check your password and your authenticator code and try again.',
+      );
+    }
+    return proved;
+  }
+
+  /** Unified sign-in rollout: a client that does not declare `verification` keeps today's rights. */
+  private async isLegacyClient(details: LoginDetails) {
+    const { signInPolicy } = await this.getConfig({ withCache: true });
+    return !details.capabilities?.includes(VERIFICATION_CAPABILITY) && !signInPolicy.applyToOlderApps;
   }
 
   private async requirePasswordLogin(details: LoginDetails) {
@@ -398,13 +480,14 @@ export class AuthService extends BaseService {
       throw new UnauthorizedException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
     }
 
-    const response = await this.createLoginResponse(
+    const created = await this.createLoginResponse(
       user,
       details,
       { passwordHash: password },
       'two-factor',
       dto.recoveryCode ? ['pwd', 'recovery_code'] : ['pwd', 'totp'],
     );
+    const response = dto.steps ? { ...created, status: 'done' as const } : created;
     const trust: TwoFactorTrust = {
       sub: user.id,
       en: twoFactor.enabledAt.getTime(),
@@ -576,7 +659,7 @@ export class AuthService extends BaseService {
   }
 
   /** HMACs for two-step sign-in tokens, under the server's own key file (never in the database). */
-  private twoFactorMac(purpose: 'challenge' | 'trust'): ServerMac {
+  private twoFactorMac(purpose: 'challenge' | 'trust' | 'verification'): ServerMac {
     const directory = identityDirectory(this.configRepository);
     return (value) => this.cryptoRepository.serverKeyedHash(directory, `two-factor-${purpose}`, value);
   }
@@ -1004,8 +1087,8 @@ export class AuthService extends BaseService {
       throw new ForbiddenException('Connected apps can’t use this');
     }
 
-    if (isRemoteVia(metadata.via) && !metadata.remoteSignInExempt) {
-      await this.requireRemoteSignIn(authDto, metadata.via, uri);
+    if (!metadata.remoteSignInExempt) {
+      await this.applySessionPolicy(authDto, { via: metadata.via, adminRoute: !!adminRoute, uri });
     }
 
     if (!authDto.user.isAdmin && adminRoute) {
@@ -1056,9 +1139,7 @@ export class AuthService extends BaseService {
     if (oauthApp?.resource !== resource) {
       throw new UnauthorizedException();
     }
-    if (isRemoteVia(via)) {
-      await this.requireRemoteSignIn(auth, via, MCP_PATH);
-    }
+    await this.applySessionPolicy(auth, { via, adminRoute: false, uri: MCP_PATH });
     return this.applyHiddenContent({ ...auth, oauthApp });
   }
 
@@ -1080,32 +1161,117 @@ export class AuthService extends BaseService {
   }
 
   /**
-   * FL-161 (instance contract "Via-header contract"): a request arriving through remote access
-   * (`relay` or `wan`) must come from a Frameleaf sign-in. A public shared link passes; a session
-   * passes when a Frameleaf sign-in or a passkey created it (`session_sign_in`), or when an
-   * administrator allowed password sign-in over remote access; an API key passes only when its
-   * owner's account here is linked to a Frameleaf account. Everything else is refused with 403
-   * `frameleaf_sign_in_required`. Requests from the home network never reach this check.
+   * FL-161 (instance contract "Via-header contract") and unified sign-in (spec 2026-11-11): the one place a
+   * request's sign-in is judged. A public shared link passes. A session is judged by `evaluateSession` against
+   * how it was made (`session_sign_in`): away from home it must come from Frameleaf or a passkey (or an
+   * allowed password with the authenticator), administrator routes need a Verified sign-in, and a person's
+   * local authenticator is never skipped after a Basic Frameleaf sign-in. An API key passes away from home
+   * only when its owner's account here is linked to a Frameleaf account. Refusals are 403
+   * `frameleaf_sign_in_required` or `verification_required`; at home sessions are judged only by the rules
+   * that apply there.
    */
-  private async requireRemoteSignIn(auth: AuthDto, via: FrameleafVia, uri: string): Promise<void> {
+  private async applySessionPolicy(
+    auth: AuthDto,
+    { via, adminRoute, uri }: { via: FrameleafVia | null | undefined; adminRoute: boolean; uri: string },
+  ): Promise<void> {
+    const away = isRemoteVia(via);
     if (auth.sharedLink) {
       return;
     }
-    if (auth.session) {
-      // FL-836: a passkey sign-in is accepted away from home like a Frameleaf one (owner, 2026-11-07)
-      const signIn = await this.sessionRepository.getSignIn(auth.session.id);
-      if (signIn && (signIn.source === 'frameleaf' || signIn.methods.includes('passkey'))) {
-        return;
+    if (!auth.session) {
+      if (away && !(auth.apiKey && (await this.frameleafAccountRepository.getLinkByUser(auth.user.id)))) {
+        this.logger.warn(`Denied remote access (${via}) without a Frameleaf sign-in: ${uri}`);
+        throw frameleafSignInRequired();
       }
-      const config = await this.getConfig({ withCache: true });
-      if (config.frameleafCloud.remoteAccess.allowPasswordOverRelay) {
-        return;
-      }
-    } else if (auth.apiKey && (await this.frameleafAccountRepository.getLinkByUser(auth.user.id))) {
       return;
     }
-    this.logger.warn(`Denied remote access (${via}) without a Frameleaf sign-in: ${uri}`);
-    throw frameleafSignInRequired();
+    const record = auth.session.signIn ?? undefined;
+    const { frameleafCloud, signInPolicy } = await this.getConfig({ withCache: true });
+    // the authenticator matters only after a Basic Frameleaf sign-in: look it up only then
+    const hasAuthenticator =
+      record?.source === 'frameleaf' && record.level === 'basic'
+        ? !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt
+        : false;
+    const decision = evaluateSession({
+      away,
+      isAdmin: auth.user.isAdmin,
+      adminRoute,
+      record,
+      requirement: signInPolicy.require ?? DEFAULT_SIGN_IN_REQUIREMENT,
+      applyToOlderApps: !!signInPolicy.applyToOlderApps,
+      allowPasswordOverRelay: frameleafCloud.remoteAccess.allowPasswordOverRelay,
+      hasAuthenticator,
+    });
+    if (decision.ok) {
+      return;
+    }
+    if (decision.code === 'frameleaf_sign_in_required') {
+      this.logger.warn(`Denied remote access (${via}) without a Frameleaf sign-in: ${uri}`);
+      throw frameleafSignInRequired();
+    }
+    if (decision.code === 'two_factor_setup_required') {
+      if (SETUP_ROUTES.test(uri)) {
+        return;
+      }
+      throw twoFactorSetupRequired();
+    }
+    throw await this.sessionVerificationRequired(auth, record?.source === 'frameleaf');
+  }
+
+  /** The `verification_required` answer for a session: Cloud's step-up, or the local authenticator code. */
+  private async sessionVerificationRequired(auth: AuthDto, viaFrameleaf: boolean) {
+    const twoFactor = await this.userRepository.getTwoFactor(auth.user.id);
+    const methods: VerificationMethod[] = [];
+    if (viaFrameleaf) methods.push('frameleaf');
+    if (twoFactor?.enabledAt) methods.push('totp', 'recovery_code');
+    const payload: VerificationTransaction = {
+      k: 'session',
+      sid: auth.session!.id,
+      sub: auth.user.id,
+      exp: epochSeconds(new Date()) + VERIFICATION_TRANSACTION_SECONDS,
+    };
+    return verificationRequired(methods, await signToken(this.twoFactorMac('verification'), payload, auth.session!.id));
+  }
+
+  /**
+   * `POST auth/step-up`: answer a `verification_required` with the local authenticator (a code or a recovery
+   * code). The session then counts as Verified. Cloud's own step-up is answered with a new exchange token
+   * instead (`POST oauth/frameleaf/exchange`).
+   */
+  async stepUp(auth: AuthDto, dto: StepUpDto, loginDetails: LoginDetails): Promise<void> {
+    if (!auth.session) {
+      throw new BadRequestException('This endpoint can only be used with a session token');
+    }
+    requireOneSecondFactor(dto);
+    const now = new Date();
+    const transaction = await verifyToken<VerificationTransaction>(
+      this.twoFactorMac('verification'),
+      dto.transaction,
+      auth.session.id,
+      now,
+    );
+    const twoFactor = await this.userRepository.getTwoFactor(auth.user.id);
+    if (
+      transaction?.k !== 'session' ||
+      transaction.sid !== auth.session.id ||
+      transaction.sub !== auth.user.id ||
+      !twoFactor?.enabledAt
+    ) {
+      throw new UnauthorizedException(TWO_FACTOR_EXPIRED);
+    }
+    const user = await this.userRepository.get(auth.user.id, {});
+    const verified = await this.signInSecurity.attempt('two-factor', auth.user.id, loginDetails, async (backoff) => {
+      if (!(await this.checkSecondFactor(auth.user.id, twoFactor.secret, dto, now))) {
+        await this.signInSecurity.failed(backoff, user);
+        return false;
+      }
+      await this.signInSecurity.succeeded(backoff);
+      return true;
+    });
+    if (!verified) {
+      throw new UnauthorizedException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
+    }
+    await this.sessionRepository.raiseSignIn(auth.session.id, dto.recoveryCode ? 'recovery_code' : 'totp');
   }
 
   /**
@@ -1619,6 +1785,7 @@ export class AuthService extends BaseService {
         session: {
           id: session.id,
           hasElevatedPermission,
+          signIn: session.signIn as AuthSession['signIn'],
         },
       };
     }
