@@ -4,6 +4,7 @@ import { type AddressInfo } from 'node:net';
 import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 import type { RequestHandler } from 'express';
 import { JobName, QueueName } from 'src/enum.js';
+import { assistantSwitchBack } from 'src/utils/assistant-switch-back.js';
 import { claimsFrameleafVia, isHomeAddress } from 'src/utils/frameleaf-sign-in.js';
 
 type QueueCounts = { waiting: number; active: number; failed: number };
@@ -58,6 +59,7 @@ export class MetricsRepository {
 
   constructor(sources?: MetricsSources) {
     collectDefaultMetrics({ register: this.registry, prefix });
+    assistantSwitchBack.register(this.registry);
     if (!sources) return;
 
     const gauge = (name: string, help: string, labelNames: string[]) =>
