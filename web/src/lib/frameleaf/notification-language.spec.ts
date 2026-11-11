@@ -82,6 +82,26 @@ describe('notification language', () => {
       expect(updateMyPreferences).not.toHaveBeenCalled();
     });
 
+    it('lets a choice made while it is saving win, on the server and here', async () => {
+      unchosen();
+      let answerFirst!: (value: unknown) => void;
+      vi.mocked(updateMyPreferences)
+        .mockImplementationOnce(() => new Promise((done) => (answerFirst = done)) as never)
+        .mockResolvedValueOnce({ notifications: { locale: 'de' } } as never);
+      const adopted = adoptNotificationLanguage('fr');
+      const chosen = saveNotificationLanguage('de');
+      await vi.waitFor(() => expect(updateMyPreferences).toHaveBeenCalledTimes(1));
+      await new Promise((done) => setTimeout(done, 0));
+      // the choice waits for the save already on its way
+      expect(updateMyPreferences).toHaveBeenCalledTimes(1);
+      answerFirst({ notifications: { locale: 'fr' } });
+      await Promise.all([adopted, chosen]);
+      expect(
+        vi.mocked(updateMyPreferences).mock.calls.map(([dto]) => dto.userPreferencesUpdateDto.notifications?.locale),
+      ).toEqual(['fr', 'de']);
+      expect(authManager.setPreferences).toHaveBeenLastCalledWith({ notifications: { locale: 'de' } });
+    });
+
     it('lets a failed save pass quietly, to try again next time', async () => {
       unchosen();
       vi.mocked(updateMyPreferences).mockRejectedValue(new Error('offline'));
