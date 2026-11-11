@@ -17,6 +17,10 @@ import { sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { notLockedOrOwnedBy } from 'src/utils/locked.js';
 
+/** FL-1439: frames sampled for what an unrelated frame scores, and the fewest that say anything. */
+const UNRELATED_FRAME_SAMPLE = 1000;
+const UNRELATED_FRAME_MIN_SAMPLE = 30;
+
 export type VideoMomentIndex = Selectable<VideoMomentIndexTable>;
 export type VideoMomentFrame = Selectable<VideoMomentFrameTable>;
 export type VideoMoment = Selectable<VideoMomentTable>;
@@ -627,6 +631,8 @@ export class VideoMomentRepository {
     const rows = await this.db.transaction().execute(async (trx) => {
       // Like every other vector search, set HNSW search breadth here rather than relying on a database default.
       await sql`set local hnsw.ef_search = 100`.execute(trx);
+      // FL-1439: a text search reads every matching frame, more than one HNSW pass returns.
+      await sql`set local hnsw.iterative_scan = strict_order`.execute(trx);
       return trx
         .selectFrom('video_moment_frame_embedding')
         .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
@@ -659,6 +665,53 @@ export class VideoMomentRepository {
         .execute();
     });
     return rows.map((row) => ({ ...row, distance: Number(row.distance) }));
+  }
+
+  /**
+   * FL-1439: what an unrelated frame of this library scores for a search, the far end of the
+   * close-match line (`frameMatchLimit`): the 90th percentile over a sample of the frames a search
+   * may return. Null while the index is too small to say.
+   */
+  @GenerateSql({
+    params: [
+      DummyValue.VECTOR,
+      DummyValue.STRING,
+      { ownerId: DummyValue.UUID, lockedOwnerId: DummyValue.UUID, limit: 1 },
+    ],
+  })
+  async getUnrelatedFrameDistance(
+    embedding: string,
+    modelName: string,
+    scope: VideoMomentSearchScope,
+  ): Promise<number | null> {
+    const { unrelated, count } = await this.db
+      // Materialized, so only the sampled frames' embeddings are read.
+      .with(
+        (cte) => cte('sample').materialized(),
+        (qb) =>
+          qb
+            .selectFrom('video_moment_frame_embedding')
+            .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
+            .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
+            .select('video_moment_frame_embedding.embedding')
+            .where('video_moment_frame_embedding.modelName', '=', modelName)
+            .where('asset.ownerId', '=', asUuid(scope.ownerId))
+            .where('asset.status', '=', AssetStatus.Active)
+            .where('asset.deletedAt', 'is', null)
+            .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+            .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+            .orderBy('video_moment_frame_embedding.frameId')
+            .limit(UNRELATED_FRAME_SAMPLE),
+      )
+      .selectFrom('sample')
+      .select([
+        sql<number | null>`percentile_cont(0.9) within group (order by sample.embedding <=> ${embedding})`.as(
+          'unrelated',
+        ),
+        (eb) => eb.fn.countAll<number>().as('count'),
+      ])
+      .executeTakeFirstOrThrow();
+    return unrelated === null || Number(count) < UNRELATED_FRAME_MIN_SAMPLE ? null : Number(unrelated);
   }
 
   /** Moments whose caption or typed transcript mentions the text, under the same visibility rules. */

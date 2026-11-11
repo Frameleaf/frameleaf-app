@@ -1,4 +1,4 @@
-import { VideoMomentMatch, type AssetResponseDto, type VideoMomentSearchHitDto } from '@frameleaf/sdk';
+import { VideoMomentMatch, type AssetResponseDto, type VideoMomentSearchVideoDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
@@ -12,14 +12,20 @@ vi.mock('$lib/utils/navigation', async (original) => ({ ...(await original<objec
 const LAKE = '00000000-0000-4000-8000-0000000000a1';
 const DRIVE = '00000000-0000-4000-8000-0000000000a2';
 
-const hit = (assetId: string, timestampMs: number, frameId: string | null = null): VideoMomentSearchHitDto => ({
+/** One video of the server's answer (FL-1439: the server groups and counts). */
+const found = (assetId: string, momentCount: number, firstMs: number): VideoMomentSearchVideoDto => ({
   assetId,
-  timestampMs,
-  frameId,
-  momentId: null,
-  caption: null,
-  match: VideoMomentMatch.Visual,
-  score: 0.5,
+  momentCount,
+  firstMs,
+  first: {
+    assetId,
+    timestampMs: firstMs,
+    frameId: null,
+    momentId: null,
+    caption: null,
+    match: VideoMomentMatch.Visual,
+    score: 0.5,
+  },
 });
 const video = (id: string, localDateTime: string, city?: string) =>
   ({ id, localDateTime, exifInfo: { city } }) as AssetResponseDto;
@@ -33,17 +39,7 @@ describe('VideoMomentResults (FL-1393)', () => {
   });
 
   it('shows one tile per video, with how many moments match and the time of the first', async () => {
-    // The review's case: four near-identical frames of one video two seconds apart, and a later one.
-    sdkMock.searchVideoMoments.mockResolvedValue({
-      hits: [
-        hit(LAKE, 44_000),
-        hit(LAKE, 42_000),
-        hit(DRIVE, 9000),
-        hit(LAKE, 46_000),
-        hit(LAKE, 48_000),
-        hit(LAKE, 95_000),
-      ],
-    });
+    sdkMock.searchVideoMoments.mockResolvedValue({ hits: [], videos: [found(LAKE, 2, 42_000), found(DRIVE, 1, 9000)] });
     render(VideoMomentResults, { query: 'lake', assets: [video(LAKE, '2019-08-12T09:00:00.000Z', 'Lake Louise')] });
 
     const strip = await screen.findByRole('region', { name: 'Moments in your videos' });
@@ -61,7 +57,7 @@ describe('VideoMomentResults (FL-1393)', () => {
   });
 
   it('opens the video at its first matching moment', async () => {
-    sdkMock.searchVideoMoments.mockResolvedValue({ hits: [hit(LAKE, 44_000), hit(LAKE, 12_000)] });
+    sdkMock.searchVideoMoments.mockResolvedValue({ hits: [], videos: [found(LAKE, 2, 12_000)] });
     render(VideoMomentResults, { query: 'lake', assets: [video(LAKE, '2019-08-12T09:00:00.000Z')] });
 
     await fireEvent.click(await screen.findByRole('button', { name: /Opens at 0:12/ }));
@@ -71,7 +67,7 @@ describe('VideoMomentResults (FL-1393)', () => {
   });
 
   it('shows no strip when no video matches, or when moment search fails', async () => {
-    sdkMock.searchVideoMoments.mockResolvedValueOnce({ hits: [] });
+    sdkMock.searchVideoMoments.mockResolvedValueOnce({ hits: [], videos: [] });
     const view = render(VideoMomentResults, { query: 'lake' });
     await waitFor(() => expect(sdkMock.searchVideoMoments).toHaveBeenCalledOnce());
     expect(screen.queryByTestId('search-moments')).toBeNull();

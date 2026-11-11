@@ -26,6 +26,7 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import { VIDEO_MOMENT_FRAME_COUNT, sourceFingerprint } from 'src/utils/enrichment-plan.js';
+import { NONSENSE_SEARCH_TEXTS } from 'src/utils/search-relevance.js';
 import { useRealJobPublication } from 'test/fixtures/job-publication.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -184,6 +185,39 @@ const setup = () => {
     momentsOf,
     indexOf,
   };
+};
+
+/** A 512-dimension vector along `axis`, leaning `lean` towards axis 1. */
+const vector = (axis: number, lean = 0) => {
+  const values = Array.from({ length: 512 }, () => 0);
+  values[axis] = 1;
+  values[1] += lean;
+  return `[${values}]`;
+};
+
+/**
+ * Indexes a video with one vector per frame: `byFrame[frameIndex]`, or a vector of its own far
+ * from every other for frames not named.
+ */
+const indexWith = async (
+  { sut, machineLearning }: ReturnType<typeof setup>,
+  assetId: string,
+  byFrame: Record<number, string>,
+) => {
+  machineLearning.encodeImage.mockImplementation((_selection, path) => {
+    const match = /([\da-f-]{36})_moment_[^_]+_(\d+)\.jpeg$/.exec(path as string);
+    const frameIndex = Number(match?.[2]);
+    if (match?.[1] !== assetId) {
+      throw new Error(`unexpected frame ${path as string}`);
+    }
+    return Promise.resolve(byFrame[frameIndex] ?? vector(100 + Math.floor(Math.random() * 400)));
+  });
+  await expect(sut.runIndexStage(assetId)).resolves.toMatchObject({ state: EnrichmentItemState.Completed });
+};
+
+const frameAt = async (context: ReturnType<typeof setup>, assetId: string, frameIndex: number) => {
+  const frames = await context.framesOf(assetId);
+  return frames.find((frame) => frame.frameIndex === frameIndex)!;
 };
 
 describe(VideoMomentIndexService.name, () => {
@@ -447,10 +481,13 @@ describe(VideoMomentIndexService.name, () => {
       const visible = await newVideo(user.id);
       const locked = await newVideo(user.id, AssetVisibility.Locked);
 
-      // Every frame of both videos, and the search text, encode to the same vector.
+      // Every frame of both videos, and the search text, encode to the same vector; nonsense words
+      // to another, so the frames count as matches (FL-1439).
       const embedding = newEmbedding();
       machineLearning.encodeImage.mockResolvedValue(embedding);
-      machineLearning.encodeText.mockResolvedValue(embedding);
+      machineLearning.encodeText.mockImplementation((_selection, text) =>
+        Promise.resolve(NONSENSE_SEARCH_TEXTS.includes(text) ? vector(50) : embedding),
+      );
       await expect(sut.runIndexStage(visible.id)).resolves.toMatchObject({ state: EnrichmentItemState.Completed });
       await expect(sut.runIndexStage(locked.id)).resolves.toMatchObject({ state: EnrichmentItemState.Completed });
 
@@ -486,42 +523,55 @@ describe(VideoMomentIndexService.name, () => {
         hits: [{ assetId: video.id, match: VideoMomentMatch.Transcript }],
       });
     });
+
+    it('answers one entry per matching video with its full count and first time, the limit in videos (FL-1439)', async () => {
+      const context = setup();
+      const { sut, machineLearning, newOwner, newVideo, framesOf } = context;
+      const { user, auth } = await newOwner();
+      const busy = await newVideo(user.id);
+      const quiet = await newVideo(user.id);
+      const third = await newVideo(user.id);
+      const unrelated = await newVideo(user.id);
+      // Every frame of the busy video is nearer than the quiet video's one matching frame.
+      await indexWith(
+        context,
+        busy.id,
+        Object.fromEntries(
+          Array.from({ length: VIDEO_MOMENT_FRAME_COUNT }, (_, index) => [index, vector(0, 0.01 * index)]),
+        ),
+      );
+      await indexWith(context, quiet.id, { 2: vector(0, 0.3) });
+      await indexWith(context, third.id, { 4: vector(0, 0.6) });
+      await indexWith(context, unrelated.id, {});
+      machineLearning.encodeText.mockImplementation((_selection, text) =>
+        Promise.resolve(NONSENSE_SEARCH_TEXTS.includes(text) ? vector(50) : text === 'waves' ? vector(0) : vector(60)),
+      );
+      const busyFrames = await framesOf(busy.id);
+      const quietFrames = await framesOf(quiet.id);
+
+      const { videos } = await sut.search(auth, { query: 'waves', limit: 2 });
+
+      expect(videos).toEqual([
+        expect.objectContaining({
+          assetId: busy.id,
+          momentCount: busyFrames.length,
+          firstMs: Math.min(...busyFrames.map(({ timestampMs }) => timestampMs)),
+        }),
+        expect.objectContaining({
+          assetId: quiet.id,
+          momentCount: 1,
+          firstMs: quietFrames.find(({ frameIndex }) => frameIndex === 2)!.timestampMs,
+        }),
+      ]);
+      const all = await sut.search(auth, { query: 'waves', limit: 100 });
+      expect(all.videos?.map(({ assetId }) => assetId)).toEqual([busy.id, quiet.id, third.id]);
+
+      // Words no frame shows any more than nonsense does: no strip.
+      await expect(sut.search(auth, { query: 'zebra' })).resolves.toEqual({ hits: [], videos: [] });
+    });
   });
 
   describe('searchSimilar (frame-to-moment search)', () => {
-    /** A 512-dimension vector along `axis`, leaning `lean` towards axis 1. */
-    const vector = (axis: number, lean = 0) => {
-      const values = Array.from({ length: 512 }, () => 0);
-      values[axis] = 1;
-      values[1] += lean;
-      return `[${values}]`;
-    };
-
-    /**
-     * Indexes a video with one vector per frame: `byFrame[frameIndex]`, or a vector of its own far
-     * from every other for frames not named.
-     */
-    const indexWith = async (
-      { sut, machineLearning }: ReturnType<typeof setup>,
-      assetId: string,
-      byFrame: Record<number, string>,
-    ) => {
-      machineLearning.encodeImage.mockImplementation((_selection, path) => {
-        const match = /([\da-f-]{36})_moment_[^_]+_(\d+)\.jpeg$/.exec(path as string);
-        const frameIndex = Number(match?.[2]);
-        if (match?.[1] !== assetId) {
-          throw new Error(`unexpected frame ${path as string}`);
-        }
-        return Promise.resolve(byFrame[frameIndex] ?? vector(100 + Math.floor(Math.random() * 400)));
-      });
-      await expect(sut.runIndexStage(assetId)).resolves.toMatchObject({ state: EnrichmentItemState.Completed });
-    };
-
-    const frameAt = async (context: ReturnType<typeof setup>, assetId: string, frameIndex: number) => {
-      const frames = await context.framesOf(assetId);
-      return frames.find((frame) => frame.frameIndex === frameIndex)!;
-    };
-
     it('ranks the most similar frame first, across videos and other times in the same video, never the frame itself', async () => {
       const context = setup();
       const { sut, newOwner, newVideo } = context;

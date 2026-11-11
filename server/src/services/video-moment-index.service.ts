@@ -69,6 +69,7 @@ import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isImageDescriptionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
 import { clipTextDestinationId, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
+import { NONSENSE_SEARCH_TEXTS, frameMatchLimit } from 'src/utils/search-relevance.js';
 import { FrameCutOutcome, VideoFrameDeps, ensureVideoFrames } from 'src/utils/video-moment-frames.js';
 
 /** What one stage of an enrichment plan did to one video. */
@@ -122,6 +123,48 @@ const uniqueMoments = <T extends { assetId: string; timestampMs: number }>(hits:
 };
 
 /**
+ * FL-1439: the most caption, transcript and frame matches one search reads. Six frames a video,
+ * so this counts every moment of 100 videos (the most a search returns).
+ * ponytail: a fixed cap; past it the furthest matching frames are not counted, page the frames if
+ * libraries get there.
+ */
+const MATCHING_HITS_CAP = 600;
+
+/** Hits this close together are one moment: neighbouring frames of one scene are not separate things to find. */
+export const SAME_MOMENT_MS = 5000;
+
+type MomentSearchHit = VideoMomentSearchResponseDto['hits'][number];
+type MomentSearchVideo = NonNullable<VideoMomentSearchResponseDto['videos']>[number];
+
+/**
+ * FL-1439 (was the web's `momentsByVideo`, FL-1393): one entry per video, in the order the hits
+ * rank the videos (by each video's best hit), with how many moments match and the earliest.
+ */
+export const momentsByVideo = (hits: MomentSearchHit[]): MomentSearchVideo[] => {
+  const byVideo = new Map<string, MomentSearchHit[]>();
+  for (const hit of hits) {
+    const group = byVideo.get(hit.assetId);
+    if (group) {
+      group.push(hit);
+    } else {
+      byVideo.set(hit.assetId, [hit]);
+    }
+  }
+  return [...byVideo].map(([assetId, group]) => {
+    const ordered = group.toSorted((a, b) => a.timestampMs - b.timestampMs);
+    let momentCount = 0;
+    let last = -Infinity;
+    for (const { timestampMs } of ordered) {
+      if (timestampMs - last > SAME_MOMENT_MS) {
+        momentCount++;
+      }
+      last = timestampMs;
+    }
+    return { assetId, momentCount, firstMs: ordered[0].timestampMs, first: ordered[0] };
+  });
+};
+
+/**
  * The timestamped moment index of videos (FL-59, `REC-101`).
  *
  * - **Reusable frames.** Six evenly spaced, ranked frames per video, cut once and reused by the
@@ -142,6 +185,8 @@ const uniqueMoments = <T extends { assetId: string; timestampMs: number }>(hits:
 export class VideoMomentIndexService {
   private readonly promptAssembler = new ImageDescriptionPromptAssembler();
   private readonly identityPostValidator = new IdentityPostValidator();
+  /** FL-1439: `NONSENSE_SEARCH_TEXTS` encoded, by model. */
+  private readonly nonsenseEmbeddings = new Map<string, string[]>();
 
   constructor(
     private logger: LoggingRepository,
@@ -522,7 +567,8 @@ export class VideoMomentIndexService {
    */
   async search(auth: AuthDto, dto: VideoMomentSearchDto): Promise<VideoMomentSearchResponseDto> {
     const limit = dto.limit ?? 24;
-    const scope = this.searchScope(auth, limit);
+    // FL-1439: every match is read, so each video is counted from all of its moments.
+    const scope = this.searchScope(auth, MATCHING_HITS_CAP);
     const config = await this.config();
 
     const textHits = await this.moments.searchMomentText(dto.query, scope);
@@ -549,7 +595,14 @@ export class VideoMomentIndexService {
         const modelName = config.machineLearning.clip.modelName;
         const read = await this.machineLearning.captureClipRead();
         const embedding = await this.machineLearning.encodeText(selection, dto.query, { modelName });
-        const frameHits = await this.moments.searchFrames(embedding, modelName, scope);
+        const found = await this.moments.searchFrames(embedding, modelName, scope);
+        // FL-1439: only frames that match, so words no video shows find no frames.
+        const [unrelated, nonsense] = await Promise.all([
+          this.moments.getUnrelatedFrameDistance(embedding, modelName, scope),
+          this.nonsenseDistance(selection, modelName, scope),
+        ]);
+        const cutOff = frameMatchLimit(found[0]?.distance, unrelated, nonsense);
+        const frameHits = cutOff === undefined ? [] : found.filter(({ distance }) => distance < cutOff);
         const staleFrameCaptions = await this.staleCaptionIds(frameHits.flatMap(({ momentId }) => momentId ?? []));
         await read.assertCurrent();
         for (const hit of frameHits) {
@@ -569,7 +622,31 @@ export class VideoMomentIndexService {
       }
     }
 
-    return { hits: uniqueMoments(hits).slice(0, limit) };
+    const matched = uniqueMoments(hits);
+    return { hits: matched.slice(0, limit), videos: momentsByVideo(matched).slice(0, limit) };
+  }
+
+  /**
+   * FL-1439: how close nonsense words get to this library's frames (`NONSENSE_SEARCH_TEXTS`), the
+   * nearest of them. Their embeddings are encoded once per model.
+   */
+  private async nonsenseDistance(
+    selection: MlSelection,
+    modelName: string,
+    scope: VideoMomentSearchScope,
+  ): Promise<number | null> {
+    let anchors = this.nonsenseEmbeddings.get(modelName);
+    if (!anchors) {
+      anchors = await Promise.all(
+        NONSENSE_SEARCH_TEXTS.map((text) => this.machineLearning.encodeText(selection, text, { modelName })),
+      );
+      this.nonsenseEmbeddings.set(modelName, anchors);
+    }
+    const nearest = await Promise.all(
+      anchors.map((anchor) => this.moments.searchFrames(anchor, modelName, { ...scope, limit: 1 })),
+    );
+    const distances = nearest.flatMap((hits) => hits.map(({ distance }) => distance));
+    return distances.length > 0 ? Math.min(...distances) : null;
   }
 
   /**

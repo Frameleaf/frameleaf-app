@@ -15,6 +15,8 @@ where
 begin
 set
   local hnsw.ef_search = 100
+set
+  local hnsw.iterative_scan = strict_order
 select
   "video_moment_frame"."assetId",
   "video_moment_frame"."id" as "frameId",
@@ -62,6 +64,46 @@ order by
 limit
   $11
 commit
+
+-- VideoMomentRepository.getUnrelatedFrameDistance
+with
+  "sample" as materialized (
+    select
+      "video_moment_frame_embedding"."embedding"
+    from
+      "video_moment_frame_embedding"
+      inner join "video_moment_frame" on "video_moment_frame"."id" = "video_moment_frame_embedding"."frameId"
+      inner join "asset" on "asset"."id" = "video_moment_frame"."assetId"
+    where
+      "video_moment_frame_embedding"."modelName" = $1
+      and "asset"."ownerId" = $2::uuid
+      and "asset"."status" = $3
+      and "asset"."deletedAt" is null
+      and "asset"."visibility" in ($4, $5)
+      and (
+        not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        or "asset"."ownerId" = $6::uuid
+      )
+    order by
+      "video_moment_frame_embedding"."frameId"
+    limit
+      $7
+  )
+select
+  percentile_cont(0.9) within group (
+    order by
+      sample.embedding <=> $8
+  ) as "unrelated",
+  count(*) as "count"
+from
+  "sample"
 
 -- VideoMomentRepository.searchMomentText
 select

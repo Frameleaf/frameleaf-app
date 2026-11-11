@@ -9542,8 +9542,18 @@ export type VideoMomentSearchHitDto = {
     score: number;
     timestampMs: number;
 };
+export type VideoMomentSearchVideoDto = {
+    assetId: string;
+    first: VideoMomentSearchHitDto;
+    /** Where the first matching moment starts */
+    firstMs: number;
+    /** How many separate moments match: hits within five seconds are one */
+    momentCount: number;
+};
 export type VideoMomentSearchResponseDto = {
     hits: VideoMomentSearchHitDto[];
+    /** FL-1439: one entry per matching video, best first, counted from all of its matching hits; `limit` counts videos here */
+    videos?: VideoMomentSearchVideoDto[];
 };
 export type VideoMomentSearchDto = {
     limit?: number;
