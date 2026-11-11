@@ -76,6 +76,11 @@
     /** Rendered above the grid. */
     header?: Snippet;
     empty?: Snippet;
+    /**
+     * FL-1393: the results under headings (a search's "Best matches" and "More results"), one grid
+     * per section on this one selection and selection bar. `assets` stays the whole list.
+     */
+    sections?: { assets: TimelineAsset[]; header: Snippet }[];
   };
 
   let {
@@ -103,10 +108,12 @@
     offlineFor,
     header,
     empty,
+    sections,
   }: Props = $props();
 
   const currentUserId = $derived(authManager.authenticated ? authManager.user.id : undefined);
   const byId = $derived(new Map(assets.map((asset) => [asset.id, asset])));
+  const rangeIds = $derived(assets.map((asset) => asset.id));
 
   /** The one place a session action is applied here, so the list and the session drop the same ids. */
   const dispatch = (action: LibrarySessionAction) => {
@@ -213,25 +220,29 @@
 </script>
 
 <div class="frameleaf fl-results" data-testid="frameleaf-results">
-  <AssetGrid
-    {items}
-    {preferences}
-    {onOpenBookmark}
-    {assets}
-    {session}
-    {onEndReached}
-    {onOpen}
-    {selectionMode}
-    {singleSelect}
-    {onSelect}
-    {tileOverlay}
-    {cellOptions}
-    {layout}
-    {caption}
-    {offlineFor}
-    {header}
-    {empty}
-  />
+  <!-- Each section's grid is given the whole order, so a shift-click range can cross the headings. -->
+  {#each sections ?? [{ assets, header }] as section, index (index)}
+    <AssetGrid
+      items={sections ? undefined : items}
+      {preferences}
+      {onOpenBookmark}
+      assets={section.assets}
+      {session}
+      onEndReached={index === (sections?.length ?? 1) - 1 ? onEndReached : undefined}
+      {onOpen}
+      {selectionMode}
+      {singleSelect}
+      {onSelect}
+      {tileOverlay}
+      {cellOptions}
+      {layout}
+      {caption}
+      {offlineFor}
+      header={section.header}
+      rangeIds={sections ? rangeIds : undefined}
+      {empty}
+    />
+  {/each}
 
   {#if !noSelectionBar}
     <SelectionBar

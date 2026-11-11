@@ -57,6 +57,29 @@ describe('Studio captions on Frameleaf Cloud', () => {
     expect(order).toEqual(['save', 'confirm']);
   });
 
+  it('does not request an estimate if the project did not save', async () => {
+    const confirm = vi.fn(() => Promise.resolve(ID));
+    const services = make({ save: () => Promise.resolve(false), confirm });
+    await expect(services.startCloudCaptions(request)).resolves.toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('resumes a confirmation that settled after a project switch only in its saved project', async () => {
+    let project = 'original';
+    const storage = memory();
+    const confirm = vi.fn(async () => {
+      project = 'copy';
+      return ID;
+    });
+    const services = make({ storage, projectId: () => project, confirm });
+    await expect(services.startCloudCaptions(request)).resolves.toBeNull();
+    expect(confirm).toHaveBeenCalledWith(request, 'original');
+    await expect(services.pendingCloudCaptions()).resolves.toEqual([]);
+
+    project = 'original';
+    await expect(services.pendingCloudCaptions()).resolves.toEqual([{ ...request, id: ID }]);
+  });
+
   it('reads a job resumed after a reload under its own project, even after Save as copy', async () => {
     const storage = memory();
     await make({ storage, projectId: () => 'original' }).startCloudCaptions(request);

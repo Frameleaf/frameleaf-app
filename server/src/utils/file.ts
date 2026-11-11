@@ -56,6 +56,7 @@ export class FileDownloadResponse {
   public readonly contentType!: string;
   public readonly cacheControl!: CacheControl;
   public readonly fileName?: string;
+  public readonly attachment?: boolean;
   /** called once the file has been sent or the send failed, e.g. to let a temporary copy go (FL-54) */
   public readonly release?: () => void | Promise<void>;
   /**
@@ -109,6 +110,7 @@ export const sendFile = async (
     // and if one that can be a document (SVG, XML, HTML) is opened, keep script and network loads off.
     res.header('X-Content-Type-Options', 'nosniff');
     if (
+      file.attachment ||
       ACTIVE_DOCUMENT_TYPE.test(file.contentType) ||
       ACTIVE_DOCUMENT_EXTENSIONS.has(extname(file.path).toLowerCase())
     ) {
@@ -116,7 +118,10 @@ export const sendFile = async (
       res.append('Content-Security-Policy', DOCUMENT_CONTENT_SECURITY_POLICY);
     }
     if (file.fileName) {
-      res.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
+      res.header(
+        'Content-Disposition',
+        `${file.attachment ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
+      );
     }
 
     const path = file.path;

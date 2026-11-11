@@ -56,7 +56,7 @@ const sameItems = (a: FlowItem[], b: FlowItem[]) =>
 
 /**
  * Whether the month at `index` may run on from the month before it: both loaded, in one group. The
- * Browse and Work grids are one group over the whole library.
+ * Browse and Work grids are one group over the whole library unless they are in sections (`dayRows`).
  */
 function canRunOn(manager: TimelineManager, index: number) {
   const month = manager.months[index];
@@ -64,7 +64,12 @@ function canRunOn(manager: TimelineManager, index: number) {
   if (!manager.continuousGroups || !month || !previous || !month.isLoaded || !previous.isLoaded) {
     return false;
   }
-  return !!manager.cells || manager.grouping === 'all' || previous.yearMonth.year === month.yearMonth.year;
+  if ((manager.cells && !manager.dayRows) || manager.grouping === 'all') {
+    return true;
+  }
+  // FL-1398: a cell grid in sections is one grid per month or year group.
+  const sameYear = previous.yearMonth.year === month.yearMonth.year;
+  return manager.grouping === 'months' ? sameYear && previous.yearMonth.month === month.yearMonth.month : sameYear;
 }
 
 /** The row gap inside the flow: the grid's gutter, or the justified rows' spacing. */

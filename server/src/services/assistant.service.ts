@@ -344,6 +344,10 @@ export class AssistantService {
     language?: string,
   ): Promise<{ assets: AssetResponseDto[]; hits: SpeechHits }> {
     const filter = this.toFilter(plan);
+    if (auth.oauthApp) {
+      filter.visibility = { in: [AssetVisibility.Timeline, AssetVisibility.Archive] };
+      filter.trashedAt = { eq: null };
+    }
     const hits: SpeechHits = new Map();
     if (plan.filters.spoken) {
       const { items } = await this.speech.search(auth, {

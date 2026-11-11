@@ -22,6 +22,7 @@ vi.mock('@frameleaf/sdk', async () => {
     ...sdk,
     deleteUserSessionAdmin: vi.fn(),
     getUserPinCodeStateAdmin: vi.fn(),
+    resetUserTwoFactorAdmin: vi.fn(),
     sendUserPasswordLinkAdmin: vi.fn(),
   };
 });
@@ -195,5 +196,26 @@ describe('AccountSecurityPanel (FL-76)', () => {
       expect(screen.queryByText(en.frameleaf_users_pin_is_set)).toBeNull();
       expect(screen.queryByText(en.frameleaf_users_pin_not_set)).toBeNull();
     });
+  });
+
+  it('turns off two-step sign-in for someone who lost their phone, after a confirmation (FL-831)', async () => {
+    const { modalManager, toastManager } = await import('@frameleaf/ui');
+    const { getUserPinCodeStateAdmin, resetUserTwoFactorAdmin } = await import('@frameleaf/sdk');
+    vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: false, twoFactorEnabled: true, passkeys: 0 });
+    vi.mocked(modalManager.show).mockResolvedValue(true as never);
+
+    render(AccountSecurityPanel, { user, sessions: [] });
+
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_two_step_admin_open }));
+    expect(modalManager.show).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ title: 'Turn off two-step sign-in for Grace Hopper?', danger: true }),
+    );
+    await waitFor(() => expect(resetUserTwoFactorAdmin).toHaveBeenCalledWith({ id: 'target-id' }));
+    expect(toastManager.primary).toHaveBeenCalledWith(
+      expect.stringContaining('Two-step sign-in is off for Grace Hopper'),
+    );
+    expect(await screen.findByText(/^Off\. Only Grace Hopper can turn it on/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.frameleaf_two_step_admin_open })).toBeNull();
   });
 });

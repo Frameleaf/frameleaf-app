@@ -1189,6 +1189,7 @@ const AdminConfigSchemaWithVisibility = z
     // FL-803: apps people connect to their library (AI assistants, Home Assistant) through OAuth.
     connectedApps: z
       .object({
+        allowMcp: configBool.optional().describe('Let AI agents connect to the library through MCP'),
         allowRegistration: configBool.describe(
           'Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything.',
         ),
@@ -1884,6 +1885,7 @@ export const defaults = Object.freeze<SystemConfig>({
     enabled: true,
   },
   connectedApps: {
+    allowMcp: true,
     allowRegistration: true,
   },
   analytics: {

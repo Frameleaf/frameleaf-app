@@ -45,8 +45,8 @@ import {
   writeAssetUploadPart,
 } from 'src/utils/asset-upload-resource.js';
 import { captureActor } from 'src/utils/capture.js';
-import { getFilenameExtension } from 'src/utils/file.js';
 import { parseCloudIdentifier } from 'src/utils/icloud-identity.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 
 type UploadAdmissionCheck = (tx?: Transaction<DB>) => Promise<void>;
 
@@ -686,7 +686,7 @@ export class AssetUploadResourceService {
           parts.map((part) => ({ path: part.path, size: part.size, offset: part.offset, interrupted: false })),
           initial.offset,
           initial.expectedChecksum,
-          getFilenameExtension(initial.metadata.filename!),
+          mimeTypes.uploadExtension(initial.metadata.filename!),
         );
       } catch (error) {
         if (['ENOSPC', 'EDQUOT'].includes((error as NodeJS.ErrnoException)?.code ?? '')) {

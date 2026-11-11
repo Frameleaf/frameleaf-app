@@ -6,7 +6,13 @@
    * card that lists the earlier nights. Resume or Release sits beside the reason when the work waits on it; paused work
    * the card can't resume links to the task list instead.
    */
-  import { isHttpError, listDurableJobRuns, releaseJobRun, type DurableJobRun } from '@frameleaf/sdk';
+  import {
+    isHttpError,
+    listDurableJobRuns,
+    releaseJobRun,
+    type DurableJobRun,
+    type JobRunPageDto,
+  } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiPlay } from '@mdi/js';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -16,6 +22,7 @@
   import { isRunSettled, matchesRunFilter, runTitleKey, settledItems } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
+  import { fileCheckView } from '$lib/frameleaf/file-check';
   import { CAUSE_VIEW, knowsCauses, leftOver, runCauses } from '$lib/frameleaf/run-failures';
   import { runHeadline } from '$lib/frameleaf/run-headline';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -32,6 +39,8 @@
   const PAGE_SIZE = 25;
   const headingId = $props.id();
   let runs = $state<DurableJobRun[]>([]);
+  /** FL-1430: Library care's checks for missing and damaged files, running now or just finished (first page only). */
+  let fileCheck = $state<JobRunPageDto['fileCheck']>();
   let offset = $state(0);
   let hasNext = $state(false);
   let loading = $state(false);
@@ -74,17 +83,21 @@
   const title = (run: DurableJobRun) =>
     run.nightly
       ? $t('frameleaf_job_runs_kind_nightly')
-      : $t(runTitleKey(run.kind, ownQueue(run)?.key, 'frameleaf_job_runs_server_work'));
+      : run.kind === 'library_scan' && run.libraryName
+        ? $t('frameleaf_job_runs_kind_library_scan_named', { values: { name: run.libraryName } })
+        : $t(runTitleKey(run.kind, ownQueue(run)?.key, 'frameleaf_job_runs_server_work'));
   /** Photos when the work is one per photo, tasks otherwise. */
   const photos = (run: DurableJobRun) => run.countsPhotos !== false;
+  /** FL-1430: a night whose photos couldn't be counted once each counts its tasks. */
+  const progressInPhotos = (run: DurableJobRun) => photos(run) && run.countedOnce !== false;
   const howFar = (run: DurableJobRun) => {
     const done = settledItems(run);
     if (!run.enumerationDone) {
-      return $t(photos(run) ? 'frameleaf_job_runs_photos_so_far' : 'frameleaf_job_runs_tasks_so_far', {
+      return $t(progressInPhotos(run) ? 'frameleaf_job_runs_photos_so_far' : 'frameleaf_job_runs_tasks_so_far', {
         values: { count: done },
       });
     }
-    return $t(photos(run) ? 'frameleaf_job_runs_photos' : 'frameleaf_job_runs_tasks', {
+    return $t(progressInPhotos(run) ? 'frameleaf_job_runs_photos' : 'frameleaf_job_runs_tasks', {
       values: { count: run.total, done: number(done) },
     });
   };
@@ -117,6 +130,7 @@
     try {
       const page = await listDurableJobRuns({ take: PAGE_SIZE, skip, foldNightly: true });
       runs = page.items;
+      fileCheck = page.fileCheck;
       hasNext = page.hasNextPage;
       offset = skip;
       unavailable = false;
@@ -175,7 +189,7 @@
     untrack(() => void load(0));
   });
   /** Unfinished work is read every 5 seconds, finished work every 30; the timer restarts only when that changes. */
-  const live = $derived(runs.some((run) => !isRunSettled(run)));
+  const live = $derived(runs.some((run) => !isRunSettled(run)) || fileCheck?.running === true);
   $effect(() => {
     // A hidden tab is not polled; the next tick after it shows again catches up.
     const timer = setInterval(
@@ -197,8 +211,44 @@
   </header>
   {#if unavailable}<p class="note" role="status">{$t('frameleaf_job_runs_unavailable')}</p>{/if}
   {#if notice}<p class="note" role="status">{notice}</p>{/if}
-  {#if !loading && runs.length === 0 && !unavailable}<p class="note">{$t('frameleaf_job_runs_empty')}</p>{/if}
+  {#if !loading && runs.length === 0 && !fileCheck && !unavailable}<p class="note">
+      {$t('frameleaf_job_runs_empty')}
+    </p>{/if}
   <ol>
+    {#if fileCheck && (filter === 'all' || filter === fileCheckView(fileCheck).bucket)}
+      {@const check = fileCheck}
+      {@const view = fileCheckView(check)}
+      <li class="run" data-tone={view.tone}>
+        <div class="head">
+          <strong>{$t('frameleaf_job_runs_file_check')}</strong>
+          <span class="status"><Pill tone={view.tone}>{$t(view.status)}</Pill></span>
+        </div>
+        {#if check.total > 0}
+          <p class="far">
+            {$t('frameleaf_job_runs_files', { values: { count: check.total, done: number(check.checked) } })}
+          </p>
+          {#if check.running}
+            <span class="bar" aria-hidden="true">
+              <span style:width="{Math.min(100, Math.max(1, (check.checked / check.total) * 100))}%"></span>
+            </span>
+          {/if}
+        {/if}
+        {#if view.note}
+          <div class="why"><p>{$t(view.note.key, { values: view.note.values })}</p></div>
+        {/if}
+        {#if view.found}
+          <div class="why"><p>{$t(view.found.key, { values: view.found.values })}</p></div>
+        {/if}
+        <div class="foot">
+          <time datetime={check.finishedAt ?? check.startedAt}>
+            {check.finishedAt
+              ? $t('frameleaf_job_runs_finished_at', { values: { time: when(check.finishedAt) } })
+              : $t('frameleaf_job_runs_started_at', { values: { time: when(check.startedAt) } })}
+          </time>
+          <a class="link" href={commandCenterUrl('care', 'files')}>{$t('frameleaf_job_runs_file_check_open')}</a>
+        </div>
+      </li>
+    {/if}
     {#each visible as run (run.id)}
       {@const headline = runHeadline(run)}
       {@const over = leftOver(run)}
@@ -208,7 +258,10 @@
           <strong>{title(run)}</strong>
           <span class="status"><Pill tone={headline.tone}>{$t(headline.status)}</Pill></span>
         </div>
-        <p class="far">{howFar(run)}</p>
+        <!-- FL-1430: a scan refused before it found any work has nothing to count -->
+        {#if !(isRunSettled(run) && run.total === 0 && run.reasons.includes('source-unavailable'))}
+          <p class="far">{howFar(run)}</p>
+        {/if}
         {#if run.enumerationDone && run.total > 0 && !isRunSettled(run)}
           <span class="bar" aria-hidden="true"><span style:width="{percent(run)}%"></span></span>
         {/if}

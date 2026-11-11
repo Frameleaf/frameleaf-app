@@ -329,6 +329,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'libraryCare.rawRecovery',
   },
   {
+    pattern: 'connectedApps.allowMcp',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
+    evidence: 'connectedApps?.allowMcp',
+  },
+  {
     pattern: 'connectedApps.allowRegistration',
     // FL-860: Sign-in › Connected apps
     kind: 'control',
@@ -1641,6 +1647,18 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'cast.gCastEnabled',
   },
   {
+    pattern: 'display.dateFormat',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: "'display.dateFormat'",
+  },
+  {
+    pattern: 'display.hourCycle',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: "'display.hourCycle'",
+  },
+  {
     pattern: 'download.archiveSize',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',
@@ -1827,6 +1845,97 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
     evidence: 'ratings.enabled',
+  },
+  // FL-1398: the Library View menu. Time taken and File name are one pair of switches kept per layout.
+  {
+    pattern: 'libraryView.archived',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/LibraryViewMenu.svelte',
+    evidence: 'archived',
+  },
+  {
+    pattern: 'libraryView.badges',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/LibraryViewMenu.svelte',
+    evidence: 'badges',
+  },
+  {
+    pattern: 'libraryView.browseNames',
+    kind: 'control',
+    file: 'src/lib/frameleaf/library-view.ts',
+    evidence: 'browseNames',
+  },
+  {
+    pattern: 'libraryView.browseTime',
+    kind: 'control',
+    file: 'src/lib/frameleaf/library-view.ts',
+    evidence: 'browseTime',
+  },
+  {
+    pattern: 'libraryView.crop',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/LibraryViewMenu.svelte',
+    evidence: 'crop',
+  },
+  {
+    pattern: 'libraryView.favorites',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/LibraryViewMenu.svelte',
+    evidence: 'favorites',
+  },
+  {
+    pattern: 'libraryView.groupBy',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/LibraryViewMenu.svelte',
+    evidence: 'groupBy',
+  },
+  {
+    pattern: 'libraryView.partnerPhotos',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/LibraryViewMenu.svelte',
+    evidence: 'partnerPhotos',
+  },
+  {
+    pattern: 'libraryView.ratings',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/LibraryViewMenu.svelte',
+    evidence: 'ratings',
+  },
+  {
+    pattern: 'libraryView.scrubber',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/LibraryViewMenu.svelte',
+    evidence: 'scrubber',
+  },
+  {
+    pattern: 'libraryView.stacksTogether',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/LibraryViewMenu.svelte',
+    evidence: 'stacksTogether',
+  },
+  {
+    pattern: 'libraryView.timelineNames',
+    kind: 'control',
+    file: 'src/lib/frameleaf/library-view.ts',
+    evidence: 'timelineNames',
+  },
+  {
+    pattern: 'libraryView.timelineTime',
+    kind: 'control',
+    file: 'src/lib/frameleaf/library-view.ts',
+    evidence: 'timelineTime',
+  },
+  {
+    pattern: 'libraryView.workNames',
+    kind: 'control',
+    file: 'src/lib/frameleaf/library-view.ts',
+    evidence: 'workNames',
+  },
+  {
+    pattern: 'libraryView.workTime',
+    kind: 'control',
+    file: 'src/lib/frameleaf/library-view.ts',
+    evidence: 'workTime',
   },
   {
     pattern: 'lockedPin.relockMinutes',

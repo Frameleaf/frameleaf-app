@@ -273,6 +273,26 @@ describe(OAuthAppService.name, () => {
     });
   });
 
+  it('keeps original downloads outside the MCP resource and consent', async () => {
+    expect(sut.getProtectedResourceMetadata(ISSUER, '/api/mcp').scopes_supported).not.toContain('library:download');
+    expect(sut.getProtectedResourceMetadata(ISSUER, '').scopes_supported).toContain('library:download');
+    const client = repo.addClient([CLAUDE_REDIRECT]);
+    const { dto } = request(client);
+    const url = await sut.authorizeRedirect(
+      {
+        response_type: 'code',
+        client_id: client.id,
+        redirect_uri: CLAUDE_REDIRECT,
+        scope: 'library:read library:download',
+        resource: `${ISSUER}/api/mcp`,
+        code_challenge: dto.codeChallenge,
+        code_challenge_method: 'S256',
+      },
+      ISSUER,
+    );
+    expect(new URL(url).searchParams.get('error')).toBe('invalid_scope');
+  });
+
   describe('start and authorize', () => {
     it('shows a verified app by the name Frameleaf knows', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT], 'Totally Claude');

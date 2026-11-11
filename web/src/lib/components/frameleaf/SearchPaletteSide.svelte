@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDate as formatDisplayDate } from '$lib/frameleaf/date-format';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import { motionFade } from '$lib/frameleaf/motion';
   import { DURATION } from '$lib/frameleaf/tokens';
@@ -122,7 +123,7 @@
   );
 
   const formatDate = (value: string | undefined) =>
-    value ? new Date(value).toLocaleDateString($locale ?? undefined, { dateStyle: 'medium', timeZone: 'UTC' }) : '';
+    value ? formatDisplayDate(value, { dateStyle: 'medium', timeZone: 'UTC' }, $locale ?? undefined) : '';
 
   const thumbnail = (asset: AssetResponseDto) =>
     getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash });

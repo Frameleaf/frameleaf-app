@@ -1107,11 +1107,11 @@
     box-shadow: inset 0 0 0 2px var(--fl-accent);
     background: color-mix(in srgb, var(--fl-accent) 10%, transparent);
   }
+  /* Its height is the shared control floor (44px, 48px on touch), like the controls beside it. */
   .select-toggle {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    min-height: 44px;
     padding: 0 0.875rem;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-pill);
@@ -1310,6 +1310,11 @@
     height: 1px;
     margin: 0.25rem 0.375rem;
     background: var(--fl-border);
+  }
+  /* Pills throughout, as the search, Select and the view switch are (collections.css `.al-tools`). */
+  .sort :global(.menu-root > button),
+  .new-menu :global(.menu-root > button) {
+    border-radius: var(--fl-radius-pill);
   }
   /* The prototype's primary New menu trigger (Collections.jsx:702, Menu primary). */
   .new-menu :global(.menu-root > button) {

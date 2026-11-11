@@ -13,6 +13,7 @@
    * Keyboard, as `SearchAsk.svelte`: Enter asks, Escape clears the field, Tab moves from the field to Clear,
    * the switch, then the results.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import AssistantModeSwitch from '$lib/components/frameleaf/AssistantModeSwitch.svelte';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
@@ -103,7 +104,7 @@
     if (reason.kind === 'date') {
       const date = DateTime.fromISO(reason.value, { zone: 'utc' });
       const value = date.isValid
-        ? date.toLocaleString({ month: 'short', day: 'numeric', year: 'numeric' }, { locale: $locale })
+        ? formatLuxon(date, { month: 'short', day: 'numeric', year: 'numeric' }, $locale)
         : reason.value;
       return $t(reason.key, { values: { value } });
     }

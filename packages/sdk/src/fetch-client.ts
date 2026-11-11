@@ -1589,6 +1589,8 @@ export type AdminConfigBackupsDto = {
     schedule: AdminConfigBackupScheduleDto;
 };
 export type AdminConfigConnectedAppsDto = {
+    /** Let AI agents connect to the library through MCP */
+    allowMcp?: boolean;
     /** Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything. */
     allowRegistration: boolean;
 };
@@ -4066,6 +4068,10 @@ export type ClientsResponse = {
     /** Whether Clients is in use and shown in the top bar */
     enabled: boolean;
 };
+export type DisplayPreferencesResponse = {
+    dateFormat: DisplayDateFormat;
+    hourCycle: DisplayHourCycle;
+};
 export type DownloadResponse = {
     /** Maximum archive size in bytes */
     archiveSize: number;
@@ -4089,6 +4095,38 @@ export type FoldersResponse = {
     enabled: boolean;
     /** Whether folders appear in web sidebar */
     sidebarWeb: boolean;
+};
+export type LibraryViewResponse = {
+    /** Whether the Library also shows archived items */
+    archived: boolean;
+    /** Whether photos show video length and badges */
+    badges: boolean;
+    /** Browse: whether photos show the file name */
+    browseNames: boolean;
+    /** Browse: whether photos show the time taken */
+    browseTime: boolean;
+    /** Whether Browse and Work crop each photo to fill its tile; off shows the whole photo */
+    crop: boolean;
+    /** Whether favorite photos show a heart */
+    favorites: boolean;
+    /** How Browse and Work group photos into sections: none, day, month or year */
+    groupBy: string;
+    /** Whether the Library also shows photos a partner shares */
+    partnerPhotos: boolean;
+    /** Whether photos show their rating */
+    ratings: boolean;
+    /** Whether the Timeline shows the year scrubber */
+    scrubber: boolean;
+    /** Whether a stack shows as one photo with a count; off shows every photo in it */
+    stacksTogether: boolean;
+    /** Timeline: whether photos show the file name */
+    timelineNames: boolean;
+    /** Timeline: whether photos show the time taken */
+    timelineTime: boolean;
+    /** Work: whether photos show the file name */
+    workNames: boolean;
+    /** Work: whether photos show the time taken */
+    workTime: boolean;
 };
 export type LockedPinResponse = {
     /** How long Locked photos stay open after the PIN unlocks them, in minutes */
@@ -4179,9 +4217,11 @@ export type UserPreferencesResponseDto = {
     albums: AlbumsResponse;
     cast: CastResponse;
     clients?: ClientsResponse;
+    display?: DisplayPreferencesResponse;
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
+    libraryView?: LibraryViewResponse;
     lockedPin?: LockedPinResponse;
     /** Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67) */
     lockedRulesRevealed: boolean;
@@ -4228,6 +4268,10 @@ export type ClientsUpdate = {
     /** Whether Clients is in use and shown in the top bar */
     enabled?: boolean;
 };
+export type DisplayPreferencesUpdate = {
+    dateFormat?: DisplayDateFormat;
+    hourCycle?: DisplayHourCycle;
+};
 export type DownloadUpdate = {
     /** Maximum archive size in bytes */
     archiveSize?: number;
@@ -4251,6 +4295,38 @@ export type FoldersUpdate = {
     enabled?: boolean;
     /** Whether folders appear in web sidebar */
     sidebarWeb?: boolean;
+};
+export type LibraryViewUpdate = {
+    /** Whether the Library also shows archived items */
+    archived?: boolean;
+    /** Whether photos show video length and badges */
+    badges?: boolean;
+    /** Browse: whether photos show the file name */
+    browseNames?: boolean;
+    /** Browse: whether photos show the time taken */
+    browseTime?: boolean;
+    /** Whether Browse and Work crop each photo to fill its tile; off shows the whole photo */
+    crop?: boolean;
+    /** Whether favorite photos show a heart */
+    favorites?: boolean;
+    /** How Browse and Work group photos into sections: none, day, month or year */
+    groupBy?: string;
+    /** Whether the Library also shows photos a partner shares */
+    partnerPhotos?: boolean;
+    /** Whether photos show their rating */
+    ratings?: boolean;
+    /** Whether the Timeline shows the year scrubber */
+    scrubber?: boolean;
+    /** Whether a stack shows as one photo with a count; off shows every photo in it */
+    stacksTogether?: boolean;
+    /** Timeline: whether photos show the file name */
+    timelineNames?: boolean;
+    /** Timeline: whether photos show the time taken */
+    timelineTime?: boolean;
+    /** Work: whether photos show the file name */
+    workNames?: boolean;
+    /** Work: whether photos show the time taken */
+    workTime?: boolean;
 };
 export type LockedPinUpdate = {
     /** How long Locked photos stay open after the PIN unlocks them: 5, 15 or 60 minutes */
@@ -4334,11 +4410,13 @@ export type UserPreferencesUpdateDto = {
     avatar?: AvatarUpdate;
     cast?: CastUpdate;
     clients?: ClientsUpdate;
+    display?: DisplayPreferencesUpdate;
     download?: DownloadUpdate;
     emailNotifications?: EmailNotificationsUpdate;
     /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
     expectedRevision?: string;
     folders?: FoldersUpdate;
+    libraryView?: LibraryViewUpdate;
     lockedPin?: LockedPinUpdate;
     memories?: MemoriesUpdate;
     /** Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision. */
@@ -7273,6 +7351,8 @@ export type SearchAlbumResponseDto = {
     total: number;
 };
 export type SearchAssetResponseDto = {
+    /** How many of the leading items are close matches for the search; the rest are looser. Only on the first page of a search ranked by meaning, and absent when the search cannot tell close from loose */
+    closeMatches?: number;
     /** Number of assets in this page */
     count: number;
     facets: SearchFacetResponseDto[];
@@ -7300,8 +7380,14 @@ export type AssistantAskResponseDto = {
     results: SearchResponseDto;
     /** One line describing what was searched */
     summary: string;
+    /** Opaque token for reporting a switch to Classic search from this answer */
+    switchBackToken?: string;
     /** Parts of the question that could not be used */
     warnings: string[];
+};
+export type AssistantSwitchBackDto = {
+    /** The switch-back token from the Assistant answer */
+    token: string;
 };
 export type SignUpDto = {
     /** User email */
@@ -9360,7 +9446,7 @@ export type EagleLibraryResponseDto = {
     items: EagleItemDto[];
     name: string;
     smartFolders: string[];
-    /** File types this import brings over (lower case, no dot) */
+    /** File extensions this import accepts (lower case, no dot). * includes downloadable originals. */
     supported: string[];
     tagGroups: string[];
 };
@@ -9492,6 +9578,8 @@ export type EnrichmentPreviewRequestDto = {
     /** Destination to run on; the routed one when omitted */
     destinationId?: string;
     fallbackModelName?: string;
+    /** Require this Library server at final admission; refuse LAN and cloud */
+    localOnly?: boolean;
     /** Draft model; the saved one when omitted */
     modelName?: string;
     /** Draft prompt; the saved one when omitted */
@@ -10286,6 +10374,8 @@ export type JobRunResponseDto = {
     canRelease?: boolean;
     cancelled: number;
     completed: number;
+    /** With foldNightly, on the night card: false when its photos could not be counted once each (too many, or their tasks are pruned); its numbers are then tasks (stageTotals) */
+    countedOnce?: boolean;
     /** The counts are photos; when false they are tasks (the run works on something other than photos) */
     countsPhotos?: boolean;
     createdAt: string;
@@ -10326,6 +10416,8 @@ export type JobRunResponseDto = {
         /** Photos this run left over (stopped ones aside) */
         photos: number;
     };
+    /** A folder scan's library, while it exists */
+    libraryName?: string;
     needsAttention: number;
     /** The overnight schedule's work */
     nightly?: boolean;
@@ -10438,6 +10530,24 @@ export type RunningJobsResponseDto = {
     queues: QueueRunDto[];
 };
 export type JobRunPageDto = {
+    /** With foldNightly, on the first page: Library care's checks for missing and damaged files, running now or finished in the last 12 hours */
+    fileCheck?: {
+        /** Files checked so far; while a check runs this is often still 0 */
+        checked: number;
+        /** Files the finished checks found damaged */
+        damaged: number;
+        /** A finished check failed or was cancelled: it didn't finish its work */
+        failed?: boolean;
+        /** When the last one finished; null while any still runs */
+        finishedAt: string | null;
+        /** Files the finished checks found missing */
+        missing: number;
+        /** Some of the checks are still going */
+        running: boolean;
+        startedAt: string;
+        /** Files to check; 0 when not known yet */
+        total: number;
+    };
     hasNextPage: boolean;
     items: JobRunResponseDto[];
 };
@@ -10475,6 +10585,8 @@ export type JobRunFailuresResponseDto = {
     countsPhotos: boolean;
     /** Photos left over, stopped ones included */
     photos: number;
+    /** With foldNightly: photos left over here that newer work left over again; they are counted on its card, not here */
+    superseded?: number;
 };
 export type JobRunFailureActionDto = {
     action: JobRunFailureAction;
@@ -16819,6 +16931,8 @@ export type WarmLibrarySetupDto = {
     reset?: boolean;
 };
 export type ServerMediaTypesResponseDto = {
+    /** Boards accepts other files as downloadable originals */
+    boardsOriginals?: boolean;
     /** Font file extensions an upload into Boards (libraryScope=design) accepts */
     font: string[];
     /** Supported image MIME types */
@@ -20695,6 +20809,10 @@ export type IntegrityGetReportDto = {
 export type IntegrityReportDto = {
     "type": IntegrityReport;
 };
+export type JobRunFailuresSearchDto = {
+    /** As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again */
+    foldNightly?: boolean;
+};
 export type JobRunItemSearchDto = {
     skip?: number;
     take?: number;
@@ -21077,7 +21195,11 @@ export type PreservationRestoreItemsQueryDto = {
     take?: number;
 };
 export type ProcessingFailureQueryDto = {
+    /** Also list failures someone chose to keep as they are or to stop trying (FL-1409) */
+    includeDismissed?: boolean;
     skip?: number;
+    /** Only failures of this step */
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 };
@@ -26118,8 +26240,10 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
 /**
  * List asset processing failures
  */
-export function getProcessingFailures({ skip, take, userId }: {
+export function getProcessingFailures({ includeDismissed, skip, step, take, userId }: {
+    includeDismissed?: boolean;
     skip?: number;
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -26127,7 +26251,9 @@ export function getProcessingFailures({ skip, take, userId }: {
         status: 200;
         data: ProcessingFailureResponseDto[];
     }>(`/assets/processing-failures${QS.query(QS.explode({
+        includeDismissed,
         skip,
+        step,
         take,
         userId
     }))}`, {
@@ -27399,6 +27525,18 @@ export function askAssistant({ assistantAskDto }: {
         ...opts,
         method: "POST",
         body: assistantAskDto
+    })));
+}
+/**
+ * Record a switch to Classic search
+ */
+export function recordAssistantSwitchBack({ assistantSwitchBackDto }: {
+    assistantSwitchBackDto: AssistantSwitchBackDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assistant/classic", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantSwitchBackDto
     })));
 }
 /**
@@ -29984,7 +30122,8 @@ export function getJobRuns({ foldNightly, skip, take }: {
 /**
  * Review a job run's left-over photos
  */
-export function getJobRunFailures({ id }: {
+export function getJobRunFailures({ foldNightly, id }: {
+    foldNightly?: boolean;
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -29992,14 +30131,17 @@ export function getJobRunFailures({ id }: {
         data: JobRunFailuresResponseDto;
     } | {
         status: 404;
-    }>(`/jobs/runs/${encodeURIComponent(id)}/failures`, {
+    }>(`/jobs/runs/${encodeURIComponent(id)}/failures${QS.query(QS.explode({
+        foldNightly
+    }))}`, {
         ...opts
     }));
 }
 /**
  * Act on a job run's left-over photos
  */
-export function actOnJobRunFailures({ id, jobRunFailureActionDto }: {
+export function actOnJobRunFailures({ foldNightly, id, jobRunFailureActionDto }: {
+    foldNightly?: boolean;
     id: string;
     jobRunFailureActionDto: JobRunFailureActionDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -30010,7 +30152,9 @@ export function actOnJobRunFailures({ id, jobRunFailureActionDto }: {
         status: 400;
     } | {
         status: 404;
-    }>(`/jobs/runs/${encodeURIComponent(id)}/failures`, oazapfts.json({
+    }>(`/jobs/runs/${encodeURIComponent(id)}/failures${QS.query(QS.explode({
+        foldNightly
+    }))}`, oazapfts.json({
         ...opts,
         method: "POST",
         body: jobRunFailureActionDto
@@ -40120,6 +40264,17 @@ export enum AdminAuditAction {
 export enum AssetOrder {
     Asc = "asc",
     Desc = "desc"
+}
+export enum DisplayDateFormat {
+    Auto = "auto",
+    Iso = "iso",
+    Dmy = "dmy",
+    Mdy = "mdy"
+}
+export enum DisplayHourCycle {
+    Auto = "auto",
+    H12 = "h12",
+    H23 = "h23"
 }
 export enum SuppressionScope {
     Owned = "owned",

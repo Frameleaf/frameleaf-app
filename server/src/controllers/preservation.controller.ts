@@ -4,21 +4,25 @@ import {
   Delete,
   Get,
   Header,
+  Headers,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   Post,
   Put,
   Query,
+  Req,
   StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
+import type { Request } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';
@@ -38,10 +42,19 @@ import {
   PreservationUploadCreateDto,
 } from 'src/dtos/preservation.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, AuthRequest, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
+import {
+  Auth,
+  AuthRequest,
+  Authenticated,
+  FileResponse,
+  HomeNetworkOnly,
+  OriginalTransfer,
+} from 'src/middleware/auth.guard.js';
+import { DESKTOP_COPY_TOKEN_HEADER } from 'src/middleware/frameleaf-via.middleware.js';
 import { preservationUploadFolder } from 'src/repositories/preservation-files.repository.js';
 import { PreservationService } from 'src/services/preservation.service.js';
 import { asStreamableFile } from 'src/utils/file.js';
+import { localDesktopCopyHost } from 'src/utils/preservation-desktop-grant.js';
 import { PRESERVATION_UPLOAD_MAX_BYTES } from 'src/utils/preservation.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
@@ -68,6 +81,14 @@ const packageUploadStorage = diskStorage({
 });
 
 const history = () => new HistoryBuilder().added('v3.0.0').alpha('v3.0.0');
+
+const desktopCopyHost = (request: Request) => {
+  const host = localDesktopCopyHost(request.headers.host, request.socket.remoteAddress);
+  if (!host) {
+    throw new NotFoundException('Desktop copy unavailable');
+  }
+  return host;
+};
 
 /**
  * Preservation packages (FL-74, `IMP-006`).
@@ -202,6 +223,40 @@ export class PreservationController {
   })
   downloadPreservationManifest(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<StreamableFile> {
     return this.service.downloadManifest(auth, id).then(asStreamableFile);
+  }
+
+  @Post('packages/:id/desktop-copy-grant')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.AssetDownload })
+  @HomeNetworkOnly()
+  @ApiExcludeEndpoint()
+  grantDesktopCopy(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto, @Req() request: Request) {
+    const host = desktopCopyHost(request);
+    if (request.headers.origin !== `http://${host}`) {
+      throw new NotFoundException('Desktop copy unavailable');
+    }
+    return this.service.grantDesktopCopy(auth, id, host);
+  }
+
+  @Post('packages/:id/desktop-copy')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ public: true })
+  @HomeNetworkOnly()
+  @OriginalTransfer()
+  @FileResponse()
+  @ApiExcludeEndpoint()
+  redeemDesktopCopy(
+    @Param() { id }: UUIDv7ParamDto,
+    @Req() request: Request,
+    @Headers(DESKTOP_COPY_TOKEN_HEADER) token: string | undefined,
+  ): Promise<StreamableFile> {
+    const host = desktopCopyHost(request);
+    if (request.headers.origin) {
+      throw new NotFoundException('Desktop copy unavailable');
+    }
+    return this.service.redeemDesktopCopy(id, host, token).then(asStreamableFile);
   }
 
   @Delete('packages/:id')

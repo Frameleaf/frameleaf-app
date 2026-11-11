@@ -26,18 +26,19 @@ import { TakeoutStagingError, TakeoutStagingRepository } from 'src/repositories/
 import { EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
 import { requireUploadsNotPaused } from 'src/utils/access.js';
 import { asDateTimeString } from 'src/utils/date.js';
-import { BOARDS_EXTENSIONS, EagleServerLibrary, buildEagleLibrary, eagleFolders } from 'src/utils/eagle-library.js';
+import { EagleServerLibrary, buildEagleLibrary, eagleFolders } from 'src/utils/eagle-library.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 type EagleImportRow = Selectable<EagleImportTable>;
 
 /** File types the server import brings over: the ones Boards holds that this server takes. */
 export const eagleServerSupported = () =>
-  new Set(
-    BOARDS_EXTENSIONS.filter(
-      (extension) => mimeTypes.isAsset(`file.${extension}`) || mimeTypes.isFont(`file.${extension}`),
+  new Set([
+    '*',
+    ...[...Object.keys(mimeTypes.image), ...Object.keys(mimeTypes.video), ...Object.keys(mimeTypes.font)].map(
+      (extension) => extension.slice(1),
     ),
-  );
+  ]);
 
 export const isLibraryFolder = (folder: string) => path.basename(folder).toLowerCase().endsWith('.library');
 

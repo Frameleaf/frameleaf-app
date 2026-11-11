@@ -706,4 +706,111 @@ describe('Frameleaf Activity page', () => {
     answer(undefined);
     expect(await screen.findByRole('heading', { name: 'Everything is up to date' })).toBeInTheDocument();
   });
+
+  // FL-1409: Activity agrees with Recent work.
+  it('counts finished work that left photos over, and opens its review (FL-1409)', async () => {
+    sdkMock.getRunningJobs.mockResolvedValue({
+      operations: [],
+      memoryExports: [],
+      canManageQueues: true,
+      canReadJobRuns: true,
+      queues: [],
+      durableRuns: [
+        durableRun({
+          state: 'completed_with_errors',
+          finishedAt: '2026-11-10T04:06:00.000Z',
+          active: 0,
+          total: 15_000,
+          completed: 14_688,
+          failed: 312,
+          needsAttention: 0,
+          leftOver: 312,
+          failureCauses: [
+            { cause: 'drive', count: 300 },
+            { cause: 'damaged', count: 12 },
+          ],
+        } as never),
+      ],
+    });
+    sdkMock.getJobRunFailures.mockResolvedValue({ photos: 312, countsPhotos: true, causes: [] });
+    try {
+      await mount([]);
+
+      // Never "Everything is up to date" beside Recent work's "312 photos need a look".
+      expect(await screen.findByRole('heading', { name: '1 thing needs a look' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Everything is up to date' })).not.toBeInTheDocument();
+      const section = screen.getByRole('region', { name: /Needs a look/ });
+      const card = within(section).getByRole('article', { name: 'Thumbnails' });
+      // Recent work's state, count and plain causes.
+      expect(card).toHaveTextContent('Finished, with photos left over · 312 photos need a look');
+      expect(card).toHaveTextContent('A drive can’t be reached · 300, Damaged file · 12');
+      expect(screen.getByRole('button', { name: 'Failed 1 job' })).toBeInTheDocument();
+
+      await fireEvent.click(within(card).getByRole('button', { name: 'Review what failed' }));
+      await vi.waitFor(() =>
+        expect(sdkMock.getJobRunFailures).toHaveBeenCalledWith(expect.objectContaining({ id: expect.any(String) })),
+      );
+    } finally {
+      runningJobsSession.summary = idle;
+    }
+  });
+
+  it('shows an interrupted scan in plain words, and starts it again (FL-1409)', async () => {
+    sdkMock.getAllLibraries.mockResolvedValue([
+      { id: 'library-1', name: 'Family archive', assetCount: 7103, scan: { operationId: 'scan-1' } },
+    ] as never);
+    sdkMock.scanLibrary.mockResolvedValue(undefined as never);
+    sdkMock.dismissMediaOperation.mockResolvedValue(undefined as never);
+    await mount([
+      operation({
+        id: 'scan-1',
+        kind: MediaOperationKind.LibraryScan,
+        status: MediaOperationStatus.Failed,
+        destination: MediaOperationDestination.Local,
+        label: 'Family archive',
+        error: 'The library queue attempt was interrupted',
+        errorCode: 'library_scan_interrupted',
+        finishedAt: '2026-11-10T09:20:00.000Z',
+      }),
+    ]);
+
+    const section = await screen.findByRole('region', { name: /Needs a look/ });
+    const card = within(section).getByRole('article', { name: 'The scan of “Family archive” was interrupted' });
+    expect(card).toHaveTextContent('The server restarted while it was reading the folder. Nothing was lost');
+    // Not the old row: "Failed", the raw message in the main line and only a dismiss button.
+    expect(within(card).queryByText('Failed')).not.toBeInTheDocument();
+    expect(within(card).getByText('The library queue attempt was interrupted').closest('details')).not.toBeNull();
+
+    await fireEvent.click(await within(card).findByRole('button', { name: 'Scan again' }));
+    await vi.waitFor(() => expect(sdkMock.scanLibrary).toHaveBeenCalledWith({ id: 'library-1' }));
+    await vi.waitFor(() => expect(sdkMock.dismissMediaOperation).toHaveBeenCalledWith({ id: 'scan-1' }));
+  });
+
+  it('still reads the new scan when only clearing the stopped one fails (FL-1409)', async () => {
+    sdkMock.getAllLibraries.mockResolvedValue([
+      { id: 'library-1', name: 'Family archive', assetCount: 7103, scan: { operationId: 'scan-1' } },
+    ] as never);
+    sdkMock.scanLibrary.mockResolvedValue(undefined as never);
+    sdkMock.dismissMediaOperation.mockRejectedValue(new Error('offline'));
+    await mount([
+      operation({
+        id: 'scan-1',
+        kind: MediaOperationKind.LibraryScan,
+        status: MediaOperationStatus.Failed,
+        destination: MediaOperationDestination.Local,
+        label: 'Family archive',
+        error: 'The library queue attempt was interrupted',
+        errorCode: 'library_scan_interrupted',
+        finishedAt: '2026-11-10T09:20:00.000Z',
+      }),
+    ]);
+    const reads = sdkMock.searchMediaOperations.mock.calls.length;
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Scan again' }));
+    await vi.waitFor(() => expect(sdkMock.dismissMediaOperation).toHaveBeenCalled());
+    // The scan was asked for once, the list is read again, and the card can still be cleared.
+    await vi.waitFor(() => expect(sdkMock.searchMediaOperations.mock.calls.length).toBeGreaterThan(reads));
+    expect(sdkMock.scanLibrary).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument();
+  });
 });
