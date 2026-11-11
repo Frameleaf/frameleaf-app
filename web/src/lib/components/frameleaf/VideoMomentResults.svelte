@@ -36,10 +36,10 @@
      * FL-1457 (N2): how many videos the strip shows, so a page with no photo results can point at them; undefined
      * while the moments for the current query are still on their way.
      */
-    found?: number;
+    onFound?: (count: number | undefined) => void;
   };
 
-  let { query, assets = [], found = $bindable() }: Props = $props();
+  let { query, assets = [], onFound }: Props = $props();
 
   let hits = $state<VideoMomentSearchHitDto[]>([]);
   let searching = $state(false);
@@ -86,7 +86,7 @@
 
   const videos = $derived(momentsByVideo(hits));
   $effect(() => {
-    found = searching ? undefined : videos.length;
+    onFound?.(searching ? undefined : videos.length);
   });
 
   /** Videos that are not among the results on the page, looked up once for their date and place. */

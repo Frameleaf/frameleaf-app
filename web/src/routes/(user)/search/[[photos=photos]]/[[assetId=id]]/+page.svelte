@@ -1071,7 +1071,11 @@
       {/if}
       {#if typeof terms.query === 'string' && terms.query.trim()}
         <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
-        <VideoMomentResults query={terms.query} assets={searchResultAssets} bind:found={momentsFound} />
+        <VideoMomentResults
+          query={terms.query}
+          assets={searchResultAssets}
+          onFound={(count) => (momentsFound = count)}
+        />
       {/if}
       {#if discoveryQuery?.mode === 'speech'}
         <SpokenWordsResults query={discoveryQuery} />

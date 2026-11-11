@@ -87,16 +87,7 @@ describe('VideoMomentResults (FL-1393)', () => {
   it('reports how many videos match, and nothing for a new query until its own answer comes', async () => {
     sdkMock.searchVideoMoments.mockResolvedValueOnce({ hits: [hit(LAKE, 44_000)] });
     let found: number | undefined = -1;
-    const props = {
-      query: 'lake',
-      get found() {
-        return found;
-      },
-      set found(value) {
-        found = value;
-      },
-    };
-    const view = render(VideoMomentResults, props);
+    const view = render(VideoMomentResults, { query: 'lake', onFound: (count) => (found = count) });
     await waitFor(() => expect(found).toBe(1));
 
     let answer: (value: { hits: VideoMomentSearchHitDto[] }) => void = () => {};
@@ -128,15 +119,7 @@ describe('VideoMomentResults (FL-1393)', () => {
   it('asks with a time limit, and reports no videos when it runs out', async () => {
     sdkMock.searchVideoMoments.mockRejectedValueOnce(new DOMException('The operation timed out.', 'TimeoutError'));
     let found: number | undefined = -1;
-    render(VideoMomentResults, {
-      query: 'lake',
-      get found() {
-        return found;
-      },
-      set found(value) {
-        found = value;
-      },
-    });
+    render(VideoMomentResults, { query: 'lake', onFound: (count) => (found = count) });
 
     await waitFor(() => expect(found).toBe(0));
     expect(sdkMock.searchVideoMoments.mock.calls[0][1]).toEqual({ signal: expect.any(AbortSignal) });

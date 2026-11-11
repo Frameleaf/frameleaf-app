@@ -1,8 +1,8 @@
 <script lang="ts">
   import { moments } from './video-moments.svelte';
 
-  let { found = $bindable() }: { found?: number } = $props();
+  let { onFound }: { onFound?: (count: number | undefined) => void } = $props();
   $effect(() => {
-    found = moments.found;
+    onFound?.(moments.found);
   });
 </script>
