@@ -2236,6 +2236,12 @@ export type AdminConfigServerDto = {
     /** Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on */
     timeZone?: string;
 };
+export type AdminConfigSignInPolicyDto = {
+    /** Older apps and sessions that predate this setting follow it too (default off) */
+    applyToOlderApps?: boolean;
+    /** Who must sign in with a passkey, or with two steps: administrators away from home (default), everyone away from home, or everyone everywhere */
+    "require"?: SignInRequirement;
+};
 export type AdminConfigSmartAlbumKindDto = {
     /** CLIP query phrases used when no tag trigger matches */
     clipQueries: string[];
@@ -2340,6 +2346,7 @@ export type AdminConfigDto = {
     passwordLogin: AdminConfigPasswordLoginDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
+    signInPolicy?: AdminConfigSignInPolicyDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
     storageWarning?: AdminConfigStorageWarningDto;
@@ -2375,6 +2382,7 @@ export type AdminConfigDtoRead = {
     passwordLogin: AdminConfigPasswordLoginDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
+    signInPolicy?: AdminConfigSignInPolicyDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
     storageWarning?: AdminConfigStorageWarningDto;
@@ -3061,6 +3069,15 @@ export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** A verified, locally staged Buddy recovery */
     buddyRecoveryId?: string;
+    /** Confirm it’s you. Not needed within 10 minutes of a Frameleaf or passkey sign-in; otherwise the password, and the authenticator code when the account has one */
+    confirmation?: {
+        /** The 6-digit code from the authenticator app */
+        code?: string;
+        /** The account password */
+        password?: string;
+        /** A recovery code, instead of code */
+        recoveryCode?: string;
+    };
     /** Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails */
     keepSafetyBackup?: boolean;
     /** Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters). Omit to keep the current reason; null or an empty string clears it */
@@ -3982,6 +3999,15 @@ export type UserAdminCreateDto = {
 export type UserAdminDeleteDto = {
     /** The account's email as the administrator typed it to confirm; when sent, the delete is refused unless it matches (case-insensitive) */
     confirmEmail?: string;
+    /** Confirm it’s you. Not needed within 10 minutes of a Frameleaf or passkey sign-in; otherwise the password, and the authenticator code when the account has one */
+    confirmation?: {
+        /** The 6-digit code from the authenticator app */
+        code?: string;
+        /** The account password */
+        password?: string;
+        /** A recovery code, instead of code */
+        recoveryCode?: string;
+    };
     /** Force delete even if user has assets */
     force?: boolean;
 };
@@ -7414,6 +7440,8 @@ export type LoginCredentialDto = {
     password: string;
     /** Persist authentication cookies across browser sessions (default true) */
     rememberMe?: boolean;
+    /** Answer in sign-in steps: status "done" with the session, or "next" with a transaction and methods */
+    steps?: boolean;
     /** FL-793: this client can show the two-step code step. Without it, an account with two-step sign-in is refused (403, code two_factor_required) instead of answered with twoFactorRequired. */
     twoFactor?: boolean;
 };
@@ -7424,12 +7452,18 @@ export type LoginResponseDto = {
     isAdmin: boolean;
     /** Is onboarded */
     isOnboarded: boolean;
+    /** Sign in in steps: with status next, what would complete the step, most preferred first */
+    methods?: Methods[];
     /** User name */
     name: string;
     /** Profile image path */
     profileImagePath: string;
     /** Should change password */
     shouldChangePassword: boolean;
+    /** Sign in in steps (sent when the request had steps: true): done, or next with a transaction */
+    status?: Status3;
+    /** Sign in in steps: with status next, send it with the proof to POST /auth/login/two-factor as twoFactorToken */
+    transaction?: string;
     /** FL-793: the password was right and the account uses two-step sign-in. No session was created and accessToken is empty: send the code to POST /auth/login/two-factor with twoFactorToken. */
     twoFactorRequired?: boolean;
     /** FL-793: proves the password step for five minutes; send it with the code */
@@ -7446,6 +7480,8 @@ export type LoginTwoFactorDto = {
     code?: string;
     /** One of the recovery codes, as written down */
     recoveryCode?: string;
+    /** Answer in sign-in steps: status "done" with the session, or "next" with a transaction and methods */
+    steps?: boolean;
     /** Skip the code step in this browser for 30 days */
     trustDevice?: boolean;
     /** twoFactorToken from POST /auth/login */
@@ -7583,11 +7619,19 @@ export type AuthStatusResponseDto = {
     /** FL-793: two-step sign-in is on */
     twoFactorEnabled: boolean;
 };
+export type StepUpDto = {
+    /** The 6-digit code from the authenticator app */
+    code?: string;
+    /** One of the recovery codes, as written down */
+    recoveryCode?: string;
+    /** transaction from the verification_required answer */
+    transaction: string;
+};
 export type TwoFactorProofDto = {
     /** The 6-digit code from the authenticator app */
     code?: string;
-    /** The account password */
-    password: string;
+    /** The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in */
+    password?: string;
     /** One of the recovery codes, as written down */
     recoveryCode?: string;
 };
@@ -7606,8 +7650,8 @@ export type TwoFactorSetupResponseDto = {
     secret: string;
 };
 export type TwoFactorPasswordDto = {
-    /** The account password */
-    password: string;
+    /** The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in */
+    password?: string;
 };
 export type ValidateAccessTokenResponseDto = {
     /** Authentication status */
@@ -12100,6 +12144,8 @@ export type OAuthConfigDto = {
     redirectUri: string;
     /** OAuth state parameter */
     state?: string;
+    /** Sign in with Frameleaf only: ask Frameleaf for a passkey or two steps before it returns (acr_values verified) */
+    verified?: boolean;
 };
 export type OAuthAuthorizeResponseDto = {
     /** OAuth authorization URL */
@@ -12224,6 +12270,19 @@ export type FrameleafLinkResponseDto = {
 export type FrameleafLinkConfirmDto = {
     /** The token a preview returned */
     confirmToken: string;
+};
+export type FrameleafStepUpDto = {
+    /** What this client can do; "verification" means it can answer verification_required (default: none) */
+    capabilities?: string[];
+    /** The 6-digit code from the authenticator app */
+    code?: string;
+    /** The local password, when methods lists password */
+    password?: string;
+    /** One of the recovery codes, instead of code */
+    recoveryCode?: string;
+    rememberMe?: boolean;
+    /** transaction from the verification_required answer */
+    transaction: string;
 };
 export type PartnerBackfillDto = {
     /** Items copied so far */
@@ -12866,7 +12925,7 @@ export type PhotographyGalleryDto = {
         readyCount: number;
         recipientId: string;
         roundId: string | null;
-        status: Status3;
+        status: Status4;
         terms: string;
         total: number;
     }[];
@@ -12898,7 +12957,7 @@ export type PhotographyGalleryDto = {
             url: string;
         }[];
         previewUrl: string;
-        status: Status4;
+        status: Status5;
         thumbnailUrl: string;
     }[];
     presentation: {
@@ -12942,7 +13001,7 @@ export type PhotographyGalleryDto = {
         error: string | null;
         failedCaptureId: string | null;
         id: string;
-        status: Status5;
+        status: Status6;
         total: number;
     } | null;
     publishedGenerationId: string | null;
@@ -13048,7 +13107,7 @@ export type PhotographyZipDto = {
 };
 export type PhotographyZipResponseDto = {
     id: string;
-    status: Status6;
+    status: Status7;
     url: string;
 };
 export type PhotographyCallbackDto = {
@@ -13981,7 +14040,7 @@ export type PhotographyWorkflowDto = {
         readyCount: number;
         recipientId: string;
         roundId: string | null;
-        status: Status7;
+        status: Status8;
         terms: string;
         total: number;
     }[];
@@ -14133,7 +14192,7 @@ export type PhotographyWorkflowDto = {
         error: string | null;
         failedCaptureId: string | null;
         id: string;
-        status: Status8;
+        status: Status9;
         total: number;
     } | null;
     receipts: {
@@ -14814,7 +14873,7 @@ export type PhotographyInvitationDto = {
             readyCount: number;
             recipientId: string;
             roundId: string | null;
-            status: Status9;
+            status: Status10;
             terms: string;
             total: number;
         }[];
@@ -14966,7 +15025,7 @@ export type PhotographyInvitationDto = {
             error: string | null;
             failedCaptureId: string | null;
             id: string;
-            status: Status10;
+            status: Status11;
             total: number;
         } | null;
         receipts: {
@@ -15905,7 +15964,7 @@ export type RenderWorkerProgressDto = {
     processedUnits: number;
     /** Actual Studio export phase; never advances the publication state */
     stage?: StudioRenderStage;
-    status: Status11;
+    status: Status12;
     totalUnits: number | null;
     /** Present only when counted units are actual rendered frames */
     unit?: Unit2;
@@ -21684,7 +21743,7 @@ export type SyncAssetTrashStateV1 = {
     assetId: string;
     deletedAt: string;
     isOffline: boolean;
-    status: Status12;
+    status: Status13;
 };
 export type SyncAssetV1 = {
     /** Checksum */
@@ -25082,6 +25141,17 @@ export function updateUserPreferencesAdmin({ id, userPreferencesUpdateDto }: {
     })));
 }
 /**
+ * Reset sign-in for a user
+ */
+export function resetUserSignInAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/reset-sign-in`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Restore a deleted user
  */
 export function restoreUserAdmin({ id }: {
@@ -27814,6 +27884,18 @@ export function getAuthStatus(opts?: Oazapfts.RequestOpts) {
     }>("/auth/status", {
         ...opts
     }));
+}
+/**
+ * Answer a verification_required with the authenticator
+ */
+export function stepUp({ stepUpDto }: {
+    stepUpDto: StepUpDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/auth/step-up", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: stepUpDto
+    })));
 }
 /**
  * Turn off two-step sign-in
@@ -31916,6 +31998,21 @@ export function confirmFrameleafAccountLink({ frameleafLinkConfirmDto }: {
         ...opts,
         method: "POST",
         body: frameleafLinkConfirmDto
+    })));
+}
+/**
+ * Finish a Sign in with Frameleaf that needs the local password or authenticator
+ */
+export function stepUpFrameleafSignIn({ frameleafStepUpDto }: {
+    frameleafStepUpDto: FrameleafStepUpDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LoginResponseDto;
+    }>("/oauth/frameleaf/step-up", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafStepUpDto
     })));
 }
 /**
@@ -39779,6 +39876,11 @@ export enum LoginPageMessageFormat {
     Plain = "plain",
     Html = "html"
 }
+export enum SignInRequirement {
+    AdministratorsAway = "administrators-away",
+    EveryoneAway = "everyone-away",
+    Everyone = "everyone"
+}
 export enum ClassificationRuleAction {
     Review = "review",
     Tag = "tag"
@@ -41261,6 +41363,17 @@ export enum AssistantMediaType {
     Image = "IMAGE",
     Video = "VIDEO"
 }
+export enum Methods {
+    Totp = "totp",
+    RecoveryCode = "recovery_code",
+    EmailCode = "email_code",
+    Password = "password",
+    Passkey = "passkey"
+}
+export enum Status3 {
+    Done = "done",
+    Next = "next"
+}
 export enum BrowserExtensionClient {
     Chrome = "chrome",
     Edge = "edge"
@@ -42153,7 +42266,7 @@ export enum PaymentTiming {
     BeforeEditing = "before-editing",
     AfterApproval = "after-approval"
 }
-export enum Status3 {
+export enum Status4 {
     Quoted = "quoted",
     Accepted = "accepted",
     Settled = "settled",
@@ -42161,7 +42274,7 @@ export enum Status3 {
     Refunded = "refunded",
     Cancelled = "cancelled"
 }
-export enum Status4 {
+export enum Status5 {
     Imported = "imported",
     Selected = "selected",
     ApprovalRequested = "approval-requested",
@@ -42206,13 +42319,13 @@ export enum Template {
     FineArt = "fine-art",
     Proofing = "proofing"
 }
-export enum Status5 {
+export enum Status6 {
     Queued = "queued",
     Rendering = "rendering",
     Ready = "ready",
     Failed = "failed"
 }
-export enum Status6 {
+export enum Status7 {
     Ready = "ready"
 }
 export enum Alignment {
@@ -42446,7 +42559,7 @@ export enum Ordering {
     Manual = "manual",
     Chapters = "chapters"
 }
-export enum Status7 {
+export enum Status8 {
     Quoted = "quoted",
     Accepted = "accepted",
     Settled = "settled",
@@ -42477,7 +42590,7 @@ export enum Type12 {
     Logo = "logo",
     Both = "both"
 }
-export enum Status8 {
+export enum Status9 {
     Queued = "queued",
     Rendering = "rendering",
     Ready = "ready",
@@ -42566,7 +42679,7 @@ export enum Type18 {
     Logo = "logo",
     Both = "both"
 }
-export enum Status9 {
+export enum Status10 {
     Quoted = "quoted",
     Accepted = "accepted",
     Settled = "settled",
@@ -42597,7 +42710,7 @@ export enum Type20 {
     Logo = "logo",
     Both = "both"
 }
-export enum Status10 {
+export enum Status11 {
     Queued = "queued",
     Rendering = "rendering",
     Ready = "ready",
@@ -42912,7 +43025,7 @@ export enum QueueJobWorkerKind {
     Lan = "lan",
     FrameleafCloud = "frameleaf-cloud"
 }
-export enum Status11 {
+export enum Status12 {
     Preparing = "preparing",
     Rendering = "rendering"
 }
@@ -43909,7 +44022,7 @@ export enum StudioImportPublicationState {
     Published = "published",
     Aborted = "aborted"
 }
-export enum Status12 {
+export enum Status13 {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"

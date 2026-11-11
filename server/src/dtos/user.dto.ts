@@ -3,7 +3,7 @@ import z from 'zod';
 import type { MaybeDehydrated, UserMetadataItem } from 'src/types.js';
 import { User, UserAdmin } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
-import { pinCodeRegex } from 'src/dtos/auth.dto.js';
+import { confirmationField, pinCodeRegex } from 'src/dtos/auth.dto.js';
 import {
   AdminAuditActionSchema,
   ServerRole,
@@ -142,6 +142,7 @@ const UserAdminDeleteSchema = z
         "The account's email as the administrator typed it to confirm; when sent, the delete is refused unless it matches (case-insensitive)",
       )
       .meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
+    confirmation: confirmationField,
   })
   .meta({ id: 'UserAdminDeleteDto' });
 

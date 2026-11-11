@@ -36,6 +36,7 @@ import {
 import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
+import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
@@ -68,6 +69,10 @@ const PASSWORD_LINK_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class UserAdminService extends BaseService {
+  /** Unified sign-in: "confirmed recently" before removing a person. */
+  @Inject(AuthService)
+  private authService!: AuthService;
+
   /** FL-721: an administrator can't clear or change the PIN of someone with Locked encryption on. */
   @Inject(LockedEncryptionService)
   private lockedEncryption!: LockedEncryptionService;
@@ -323,8 +328,17 @@ export class UserAdminService extends BaseService {
     return events;
   }
 
-  async delete(auth: AuthDto, id: string, dto: UserAdminDeleteDto): Promise<UserAdminResponseDto> {
+  async delete(
+    auth: AuthDto,
+    id: string,
+    dto: UserAdminDeleteDto,
+    details?: LoginDetails,
+  ): Promise<UserAdminResponseDto> {
     const { force, confirmEmail } = dto;
+    // removing a person: confirmed recently (a session that predates the unified rule keeps today's rights)
+    if (details) {
+      await this.authService.requireConfirmedRecently(auth, dto.confirmation, details);
+    }
     const target = await this.findOrFail(id, {});
     if (auth.user.id === id) {
       throw new ForbiddenException('Cannot delete your own account');

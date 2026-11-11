@@ -1397,6 +1397,17 @@
   "server.timeZone": {
     "type": "string"
   },
+  "signInPolicy.applyToOlderApps": {
+    "type": "boolean"
+  },
+  "signInPolicy.require": {
+    "type": "string",
+    "enum": [
+      "administrators-away",
+      "everyone-away",
+      "everyone"
+    ]
+  },
   "smartAlbums.builtIn.documents.clipQueries": {
     "type": "array"
   },

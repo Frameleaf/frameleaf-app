@@ -31,9 +31,11 @@ import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { type LoginDetails, loginEventDetails } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
+import { signInIsRecent } from 'src/utils/confirmed-recently.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
+import { frameleafTrustedOrigins } from 'src/utils/frameleaf-trusted-origins.js';
 import {
   PASSKEY_CEREMONY_TIMEOUT_MS,
   PASSKEY_CHALLENGE_SECONDS,
@@ -48,7 +50,6 @@ import {
   requestOrigin,
 } from 'src/utils/passkey.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
-import { frameleafTrustedOrigins } from 'src/utils/frameleaf-trusted-origins.js';
 import { createSession, withCapabilities } from 'src/utils/session.js';
 
 /** FL-836: the error code of adding a passkey without a recent password check. */
@@ -460,14 +461,9 @@ export class PasskeyService extends BaseService {
     if (await this.passkeyRepository.hasPasswordProof(sessionId)) {
       return;
     }
-    const tag = await this.frameleafAccountRepository.getSession(sessionId);
-    if (
-      tag &&
-      tag.userId === auth.user.id &&
-      // when the person signed in at Frameleaf, kept across handoffs (not when this tag was made)
-      !!tag.authTime &&
-      tag.authTime.getTime() > Date.now() - PASSKEY_PASSWORD_PROOF_SECONDS * 1000
-    ) {
+    // confirmed recently: a Frameleaf sign-in (its auth_time, kept across handoffs) or a local passkey, not older
+    // than 10 minutes
+    if (signInIsRecent(auth.session?.signIn)) {
       return;
     }
     throw new ForbiddenException({

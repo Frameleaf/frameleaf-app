@@ -246,7 +246,13 @@ export type AuthSession = {
   id: string;
   hasElevatedPermission: boolean;
   /** How the session was made (unified sign-in); none for a session older than the record. */
-  signIn?: { methods: string[]; level: 'verified' | 'basic'; source: 'local' | 'frameleaf'; legacy: boolean } | null;
+  signIn?: {
+    methods: string[];
+    level: 'verified' | 'basic';
+    source: 'local' | 'frameleaf';
+    legacy: boolean;
+    authTime?: Date | string;
+  } | null;
 };
 
 export type Partner = {

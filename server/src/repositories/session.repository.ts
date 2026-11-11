@@ -4,7 +4,7 @@ import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable, Kysely, Transaction, Updateable } from 'kysely';
-import { columns, type AuthSession } from 'src/database.js';
+import { type AuthSession, columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { SessionSignInTable } from 'src/schema/tables/session-sign-in.table.js';
@@ -155,6 +155,7 @@ export class SessionRepository {
               'session_sign_in.level',
               'session_sign_in.source',
               'session_sign_in.legacy',
+              'session_sign_in.authTime',
             ])
             .whereRef('session_sign_in.sessionId', '=', 'session.id'),
         ).as('signIn'),

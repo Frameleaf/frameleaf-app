@@ -14,23 +14,27 @@ describe(PrivateLogsService.name, () => {
     await expect(sut.authorize({ ...admin, session: undefined }, 'lan')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('requires fresh, matching Frameleaf authority over remote access and rechecks active tails', async () => {
-    const getSession = vi.fn().mockResolvedValue({ userId: admin.user.id, authTime: new Date(Date.now() - 60_000) });
+  it('requires a recent Frameleaf or passkey sign-in over remote access and rechecks active tails', async () => {
+    const signedIn = (source: 'local' | 'frameleaf', methods: string[], ageMs: number) => ({
+      ...admin,
+      session: {
+        ...admin.session!,
+        signIn: { methods, level: 'basic' as const, source, legacy: false, authTime: new Date(Date.now() - ageMs) },
+      },
+    });
     const sessions = { get: vi.fn().mockResolvedValue({ expiresAt: null }) };
     const users = { get: vi.fn().mockResolvedValue(admin.user) };
-    const sut = new PrivateLogsService(
-      {} as never,
-      sessions as never,
-      { getSession } as never,
-      users as never,
-      {} as never,
-    );
-    await expect(sut.authorizeLive(admin, 'relay')).resolves.toBeUndefined();
+    const sut = new PrivateLogsService({} as never, sessions as never, {} as never, users as never, {} as never);
+    const recent = signedIn('frameleaf', ['email_code'], 60_000);
+    await expect(sut.authorizeLive(recent, 'relay')).resolves.toBeUndefined();
     sessions.get.mockResolvedValueOnce(undefined);
-    await expect(sut.authorizeLive(admin, 'relay')).rejects.toBeInstanceOf(ForbiddenException);
-    getSession.mockResolvedValueOnce({ userId: 'other', authTime: new Date() });
-    await expect(sut.authorize(admin, 'wan')).rejects.toBeInstanceOf(ForbiddenException);
-    getSession.mockResolvedValueOnce({ userId: admin.user.id, authTime: new Date(Date.now() - 16 * 60_000) });
+    await expect(sut.authorizeLive(recent, 'relay')).rejects.toBeInstanceOf(ForbiddenException);
+    // older than 10 minutes, or not a Frameleaf or passkey sign-in at all
+    await expect(sut.authorize(signedIn('frameleaf', [], 11 * 60_000), 'relay')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(sut.authorize(signedIn('local', ['pwd'], 1000), 'wan')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(sut.authorize(signedIn('local', ['passkey'], 1000), 'wan')).resolves.toBeUndefined();
     await expect(sut.authorize(admin, 'relay')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

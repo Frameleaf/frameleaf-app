@@ -11363,6 +11363,57 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/admin/users/{id}/reset-sign-in": {
+      "post": {
+        "description": "For someone who can’t get in: emails them a link to choose a new password, removes their authenticator and passkeys, and signs out every session. Needs email set up on this server. Recorded in the account history.",
+        "operationId": "resetUserSignInAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reset sign-in for a user",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminUser.update",
+        "x-immich-state": "Beta"
+      }
+    },
     "/admin/users/{id}/restore": {
       "post": {
         "description": "Restore a previously deleted user.",
@@ -22847,6 +22898,54 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/auth/step-up": {
+      "post": {
+        "description": "A request answered 403 verification_required lists the methods that would complete it. Send the transaction from that answer with an authenticator code (or a recovery code); the session then counts as verified. Cloud's own step-up is answered with a new exchange token instead.",
+        "operationId": "stepUp",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepUpDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Answer a verification_required with the authenticator",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
       }
     },
     "/auth/two-factor": {
@@ -39269,6 +39368,50 @@
         ],
         "x-immich-permission": "frameleafAccount.update",
         "x-immich-state": "Alpha"
+      }
+    },
+    "/oauth/frameleaf/step-up": {
+      "post": {
+        "description": "A Sign in with Frameleaf (callback or exchange) can answer 403 verification_required with a transaction. Send the transaction with the local password and/or authenticator code (or recovery code) it asked for and receive the session, as the exchange would have returned it.",
+        "operationId": "stepUpFrameleafSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafStepUpDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Finish a Sign in with Frameleaf that needs the local password or authenticator",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
       }
     },
     "/oauth/link": {
@@ -69989,6 +70132,9 @@
           "server": {
             "$ref": "#/components/schemas/AdminConfigServerDto"
           },
+          "signInPolicy": {
+            "$ref": "#/components/schemas/AdminConfigSignInPolicyDto"
+          },
           "smartAlbums": {
             "$ref": "#/components/schemas/AdminConfigSmartAlbumsDto"
           },
@@ -72143,6 +72289,19 @@
           "name",
           "publicUsers"
         ],
+        "type": "object"
+      },
+      "AdminConfigSignInPolicyDto": {
+        "properties": {
+          "applyToOlderApps": {
+            "description": "Older apps and sessions that predate this setting follow it too (default off)",
+            "type": "boolean"
+          },
+          "require": {
+            "$ref": "#/components/schemas/SignInRequirement",
+            "description": "Who must sign in with a passkey, or with two steps: administrators away from home (default), everyone away from home, or everyone everywhere"
+          }
+        },
         "type": "object"
       },
       "AdminConfigSmartAlbumBuiltInDto": {
@@ -99766,6 +99925,48 @@
         ],
         "type": "object"
       },
+      "FrameleafStepUpDto": {
+        "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none)",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
+          "code": {
+            "description": "The 6-digit code from the authenticator app",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "password": {
+            "description": "The local password, when methods lists password",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "recoveryCode": {
+            "description": "One of the recovery codes, instead of code",
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rememberMe": {
+            "type": "boolean"
+          },
+          "transaction": {
+            "description": "transaction from the verification_required answer",
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "transaction"
+        ],
+        "type": "object"
+      },
       "FrameleafTokenExchangeDto": {
         "properties": {
           "capabilities": {
@@ -110354,6 +110555,10 @@
             "description": "Persist authentication cookies across browser sessions (default true)",
             "type": "boolean"
           },
+          "steps": {
+            "description": "Answer in sign-in steps: status \"done\" with the session, or \"next\" with a transaction and methods",
+            "type": "boolean"
+          },
           "twoFactor": {
             "description": "FL-793: this client can show the two-step code step. Without it, an account with two-step sign-in is refused (403, code two_factor_required) instead of answered with twoFactorRequired.",
             "type": "boolean"
@@ -110387,6 +110592,20 @@
             "description": "Is onboarded",
             "type": "boolean"
           },
+          "methods": {
+            "description": "Sign in in steps: with status next, what would complete the step, most preferred first",
+            "items": {
+              "enum": [
+                "totp",
+                "recovery_code",
+                "email_code",
+                "password",
+                "passkey"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
           "name": {
             "description": "User name",
             "type": "string"
@@ -110398,6 +110617,18 @@
           "shouldChangePassword": {
             "description": "Should change password",
             "type": "boolean"
+          },
+          "status": {
+            "description": "Sign in in steps (sent when the request had steps: true): done, or next with a transaction",
+            "enum": [
+              "done",
+              "next"
+            ],
+            "type": "string"
+          },
+          "transaction": {
+            "description": "Sign in in steps: with status next, send it with the proof to POST /auth/login/two-factor as twoFactorToken",
+            "type": "string"
           },
           "twoFactorRequired": {
             "description": "FL-793: the password was right and the account uses two-step sign-in. No session was created and accessToken is empty: send the code to POST /auth/login/two-factor with twoFactorToken.",
@@ -110453,6 +110684,10 @@
             "maxLength": 32,
             "minLength": 1,
             "type": "string"
+          },
+          "steps": {
+            "description": "Answer in sign-in steps: status \"done\" with the session, or \"next\" with a transaction and methods",
+            "type": "boolean"
           },
           "trustDevice": {
             "description": "Skip the code step in this browser for 30 days",
@@ -117544,6 +117779,10 @@
           "state": {
             "description": "OAuth state parameter",
             "type": "string"
+          },
+          "verified": {
+            "description": "Sign in with Frameleaf only: ask Frameleaf for a passkey or two steps before it returns (acr_values verified)",
+            "type": "boolean"
           }
         },
         "required": [
@@ -147672,6 +147911,28 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "confirmation": {
+            "description": "Confirm it’s you. Not needed within 10 minutes of a Frameleaf or passkey sign-in; otherwise the password, and the authenticator code when the account has one",
+            "properties": {
+              "code": {
+                "description": "The 6-digit code from the authenticator app",
+                "pattern": "^\\d{6}$",
+                "type": "string"
+              },
+              "password": {
+                "description": "The account password",
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "recoveryCode": {
+                "description": "A recovery code, instead of code",
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "keepSafetyBackup": {
             "description": "Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails",
             "type": "boolean"
@@ -148646,6 +148907,14 @@
           "role"
         ],
         "type": "object"
+      },
+      "SignInRequirement": {
+        "enum": [
+          "administrators-away",
+          "everyone-away",
+          "everyone"
+        ],
+        "type": "string"
       },
       "SignUpDto": {
         "properties": {
@@ -150878,6 +151147,31 @@
             "x-immich-state": "Deprecated"
           }
         },
+        "type": "object"
+      },
+      "StepUpDto": {
+        "properties": {
+          "code": {
+            "description": "The 6-digit code from the authenticator app",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "recoveryCode": {
+            "description": "One of the recovery codes, as written down",
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "transaction": {
+            "description": "transaction from the verification_required answer",
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "transaction"
+        ],
         "type": "object"
       },
       "StorageFolder": {
@@ -162953,13 +163247,10 @@
       "TwoFactorPasswordDto": {
         "properties": {
           "password": {
-            "description": "The account password",
+            "description": "The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in",
             "type": "string"
           }
         },
-        "required": [
-          "password"
-        ],
         "type": "object"
       },
       "TwoFactorProofDto": {
@@ -162970,7 +163261,7 @@
             "type": "string"
           },
           "password": {
-            "description": "The account password",
+            "description": "The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in",
             "type": "string"
           },
           "recoveryCode": {
@@ -162980,9 +163271,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "password"
-        ],
         "type": "object"
       },
       "TwoFactorRecoveryCodesResponseDto": {
@@ -163365,6 +163653,28 @@
                 "state": "Added"
               }
             ]
+          },
+          "confirmation": {
+            "description": "Confirm it’s you. Not needed within 10 minutes of a Frameleaf or passkey sign-in; otherwise the password, and the authenticator code when the account has one",
+            "properties": {
+              "code": {
+                "description": "The 6-digit code from the authenticator app",
+                "pattern": "^\\d{6}$",
+                "type": "string"
+              },
+              "password": {
+                "description": "The account password",
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "recoveryCode": {
+                "description": "A recovery code, instead of code",
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "type": "object"
           },
           "force": {
             "description": "Force delete even if user has assets",

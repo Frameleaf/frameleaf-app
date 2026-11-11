@@ -26,7 +26,6 @@ import {
   LoginCredentialDto,
   LoginResponseDto,
   LoginTwoFactorDto,
-  StepUpDto,
   LogoutResponseDto,
   OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
@@ -39,6 +38,7 @@ import {
   PinCodeSetupDto,
   SessionUnlockDto,
   SignUpDto,
+  StepUpDto,
   TwoFactorCodeDto,
   TwoFactorPasswordDto,
   TwoFactorProofDto,
@@ -68,6 +68,7 @@ import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { DecimalSize } from 'src/utils/bytes.js';
+import { CONFIRMATION_REQUIRED, signInIsRecent } from 'src/utils/confirmed-recently.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { mailSealKey, openMailSecret, sealMailSecret } from 'src/utils/frameleaf-mail.js';
 import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
@@ -89,15 +90,9 @@ import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
-import { createSession, VERIFICATION_CAPABILITY, withCapabilities } from 'src/utils/session.js';
-import { DEFAULT_SIGN_IN_REQUIREMENT, evaluateSession } from 'src/utils/sign-in-policy.js';
-import {
-  twoFactorSetupRequired,
-  VERIFICATION_TRANSACTION_SECONDS,
-  verificationRequired,
-  type VerificationMethod,
-} from 'src/utils/verification-required.js';
+import { VERIFICATION_CAPABILITY, createSession, withCapabilities } from 'src/utils/session.js';
 import { requireSharedLinkUnlocked } from 'src/utils/shared-link.js';
+import { DEFAULT_SIGN_IN_REQUIREMENT, evaluateSession } from 'src/utils/sign-in-policy.js';
 import {
   type ServerMac,
   TWO_FACTOR_CHALLENGE_SECONDS,
@@ -111,6 +106,12 @@ import {
   signToken,
   verifyToken,
 } from 'src/utils/two-factor.js';
+import {
+  VERIFICATION_TRANSACTION_SECONDS,
+  type VerificationMethod,
+  twoFactorSetupRequired,
+  verificationRequired,
+} from 'src/utils/verification-required.js';
 import { allowedOrigins, requestHosts, websocketOriginAllowed } from 'src/utils/websocket-origin.js';
 
 const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
@@ -414,6 +415,39 @@ export class AuthService extends BaseService {
     return proved;
   }
 
+  /**
+   * Unified sign-in "confirmed recently" for the actions that had no check before (restore from a backup,
+   * removing a person): a recent Frameleaf or passkey sign-in, or the password (and authenticator code) typed
+   * now. A session that is legacy keeps today's rights until "Apply to older apps too".
+   */
+  async requireConfirmedRecently(
+    auth: AuthDto,
+    proof: { password?: string; code?: string; recoveryCode?: string } | undefined,
+    details: LoginDetails,
+  ): Promise<void> {
+    if (!auth.session) {
+      return;
+    }
+    const signIn = auth.session.signIn;
+    const { signInPolicy } = await this.getConfig({ withCache: true });
+    if (!signIn || (signIn.legacy && !signInPolicy.applyToOlderApps)) {
+      return;
+    }
+    if (signInIsRecent(signIn)) {
+      return;
+    }
+    const enrolled = !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt;
+    if (proof?.password === undefined || (enrolled && !proof.code && !proof.recoveryCode)) {
+      throw new ForbiddenException({
+        message: 'Confirm it’s you: sign in again, or enter your password',
+        error: 'Forbidden',
+        statusCode: 403,
+        code: CONFIRMATION_REQUIRED,
+      });
+    }
+    await this.verifyLocalProof(auth.user, proof, details, { password: true, authenticator: enrolled });
+  }
+
   /** Unified sign-in rollout: a client that does not declare `verification` keeps today's rights. */
   private async isLegacyClient(details: LoginDetails) {
     const { signInPolicy } = await this.getConfig({ withCache: true });
@@ -499,7 +533,7 @@ export class AuthService extends BaseService {
 
   /** FL-793: start setting up two-step sign-in; the new key is confirmed with `enableTwoFactor`. */
   async setupTwoFactor(auth: AuthDto, dto: TwoFactorPasswordDto): Promise<TwoFactorSetupResponseDto> {
-    await this.requireAccountPassword(auth.user.id, dto.password);
+    await this.requireAccountPassword(auth.user.id, dto.password, auth.session);
     const secret = newTotpSecret();
     const sealed = sealMailSecret(await this.twoFactorSealKey(), `two-factor:${auth.user.id}`, secret);
     if (!(await this.userRepository.setPendingTwoFactor(auth.user.id, sealed))) {
@@ -546,7 +580,7 @@ export class AuthService extends BaseService {
 
   /** FL-793: turn two-step sign-in off with the password and a code (or a recovery code). */
   async disableTwoFactor(auth: AuthDto, dto: TwoFactorProofDto): Promise<void> {
-    await this.requireTwoFactorProof(auth.user.id, dto);
+    await this.requireTwoFactorProof(auth.user.id, dto, auth.session);
     await this.userRepository.deleteTwoFactor(auth.user.id);
     await this.recordTwoFactorChange(auth, 'disabled');
   }
@@ -556,7 +590,7 @@ export class AuthService extends BaseService {
    * when it is gone). Returns the new phone's key; the old phone keeps working until it is confirmed.
    */
   async startTwoFactorMove(auth: AuthDto, dto: TwoFactorProofDto): Promise<TwoFactorSetupResponseDto> {
-    await this.requireTwoFactorProof(auth.user.id, dto);
+    await this.requireTwoFactorProof(auth.user.id, dto, auth.session);
     const secret = newTotpSecret();
     const sealed = sealMailSecret(await this.twoFactorSealKey(), `two-factor:${auth.user.id}`, secret);
     if (!(await this.userRepository.setPendingTwoFactorMove(auth.user.id, sealed))) {
@@ -595,8 +629,8 @@ export class AuthService extends BaseService {
   }
 
   /** The password, two-step sign-in on, and exactly one right second factor (a recovery code is spent). */
-  private async requireTwoFactorProof(userId: string, dto: TwoFactorProofDto) {
-    await this.requireAccountPassword(userId, dto.password);
+  private async requireTwoFactorProof(userId: string, dto: TwoFactorProofDto, session?: AuthSession) {
+    await this.requireAccountPassword(userId, dto.password, session);
     const row = await this.userRepository.getTwoFactor(userId);
     if (!row?.enabledAt) {
       throw new BadRequestException('Two-step sign-in is not on');
@@ -609,7 +643,7 @@ export class AuthService extends BaseService {
 
   /** FL-793: replace every recovery code with ten new ones, shown once. */
   async regenerateRecoveryCodes(auth: AuthDto, dto: TwoFactorPasswordDto): Promise<TwoFactorRecoveryCodesResponseDto> {
-    await this.requireAccountPassword(auth.user.id, dto.password);
+    await this.requireAccountPassword(auth.user.id, dto.password, auth.session);
     const row = await this.userRepository.getTwoFactor(auth.user.id);
     if (!row?.enabledAt) {
       throw new BadRequestException('Two-step sign-in is not on');
@@ -622,7 +656,22 @@ export class AuthService extends BaseService {
     return { recoveryCodes };
   }
 
-  private async requireAccountPassword(userId: string, password: string) {
+  /**
+   * "Confirmed recently" for a two-step change: the password typed for the action, or (with none sent) a
+   * Frameleaf or passkey sign-in from the last 10 minutes (`signInIsRecent`).
+   */
+  private async requireAccountPassword(userId: string, password: string | undefined, session?: AuthSession) {
+    if (password === undefined) {
+      if (signInIsRecent(session?.signIn)) {
+        return;
+      }
+      throw new ForbiddenException({
+        message: 'Confirm it’s you: sign in again, or enter your password',
+        error: 'Forbidden',
+        statusCode: 403,
+        code: CONFIRMATION_REQUIRED,
+      });
+    }
     const user = await this.userRepository.getForChangePassword(userId);
     if (!user.password) {
       throw new BadRequestException('Two-step sign-in protects signing in with a password; this account has none');

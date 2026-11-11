@@ -262,4 +262,72 @@ describe('AuthService unified sign-in rule', () => {
       expect(done).toMatchObject({ status: 'done', userId: user.id });
     });
   });
+
+  describe('confirmed recently', () => {
+    const sessionAuth = (record: Record_ & { authTime?: Date }) => {
+      const auth = AuthFactory.from(user).session({ id: 'session-1' }).build();
+      return { ...auth, session: { ...auth.session!, signIn: record } };
+    };
+    const password: Record_ = { source: 'local', methods: ['pwd'], level: 'basic', legacy: false };
+
+    it('lets a session that predates the rule through, until "Apply to older apps too"', async () => {
+      await expect(
+        sut.requireConfirmedRecently(sessionAuth({ ...password, legacy: true }), undefined, details),
+      ).resolves.toBeUndefined();
+      config({ signInPolicy: { applyToOlderApps: true } });
+      expect(
+        await refusal(sut.requireConfirmedRecently(sessionAuth({ ...password, legacy: true }), undefined, details)),
+      ).toMatchObject({ code: 'confirmation_required' });
+    });
+
+    it('accepts a recent Frameleaf or passkey sign-in with nothing more, and a typed password otherwise', async () => {
+      const fresh = {
+        source: 'frameleaf' as const,
+        methods: [],
+        level: 'basic' as const,
+        legacy: false,
+        authTime: new Date(),
+      };
+      await expect(sut.requireConfirmedRecently(sessionAuth(fresh), undefined, capable)).resolves.toBeUndefined();
+      const stale = { ...fresh, authTime: new Date(Date.now() - 11 * 60_000) };
+      expect(await refusal(sut.requireConfirmedRecently(sessionAuth(stale), undefined, capable))).toMatchObject({
+        code: 'confirmation_required',
+      });
+      await expect(
+        sut.requireConfirmedRecently(sessionAuth(stale), { password: 'password' }, capable),
+      ).resolves.toBeUndefined();
+      await expect(
+        sut.requireConfirmedRecently(sessionAuth(stale), { password: 'wrong' }, capable),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('asks for the authenticator code too when the person has one, and never counts a trusted browser', async () => {
+      enrol();
+      const trusted = { ...password, methods: ['pwd', 'totp'], level: 'verified' as const, authTime: new Date() };
+      expect(
+        await refusal(sut.requireConfirmedRecently(sessionAuth(trusted), { password: 'password' }, capable)),
+      ).toMatchObject({
+        code: 'confirmation_required',
+      });
+      await sut.requireConfirmedRecently(
+        sessionAuth(trusted),
+        { password: 'password', code: totpCode(secret, totpStep(new Date())) },
+        capable,
+      );
+    });
+
+    it('lets two-step changes skip the password within 10 minutes of a Frameleaf sign-in', async () => {
+      const fresh = {
+        source: 'frameleaf' as const,
+        methods: [],
+        level: 'basic' as const,
+        legacy: false,
+        authTime: new Date(),
+      };
+      await expect(sut.setupTwoFactor(sessionAuth(fresh), {})).resolves.toMatchObject({ secret: expect.any(String) });
+      expect(await refusal(sut.setupTwoFactor(sessionAuth(password), {}))).toMatchObject({
+        code: 'confirmation_required',
+      });
+    });
+  });
 });

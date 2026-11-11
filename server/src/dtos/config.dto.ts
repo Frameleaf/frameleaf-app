@@ -1192,6 +1192,7 @@ const AdminConfigSchemaWithVisibility = z
       .object({
         require: z
           .enum(SIGN_IN_REQUIREMENTS)
+          .meta({ id: 'SignInRequirement' })
           .optional()
           .describe(
             'Who must sign in with a passkey, or with two steps: administrators away from home (default), everyone away from home, or everyone everywhere',
@@ -1200,6 +1201,7 @@ const AdminConfigSchemaWithVisibility = z
           .optional()
           .describe('Older apps and sessions that predate this setting follow it too (default off)'),
       })
+      .default({ require: DEFAULT_SIGN_IN_REQUIREMENT, applyToOlderApps: false })
       .meta({ id: 'AdminConfigSignInPolicyDto' }),
     // FL-803: apps people connect to their library (AI assistants, Home Assistant) through OAuth.
     connectedApps: z

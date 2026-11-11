@@ -55,6 +55,18 @@ export type AuthDto = {
   suppressedContent?: HiddenContentFilter;
 };
 
+/** Unified sign-in "confirmed recently": the proof typed for a sensitive action, when the sign-in is not recent. */
+export const confirmationField = z
+  .object({
+    password: z.string().max(1000).optional().describe('The account password'),
+    code: z.string().regex(pinCodeRegex).optional().describe('The 6-digit code from the authenticator app'),
+    recoveryCode: z.string().min(1).max(32).optional().describe('A recovery code, instead of code'),
+  })
+  .optional()
+  .describe(
+    'Confirm it’s you. Not needed within 10 minutes of a Frameleaf or passkey sign-in; otherwise the password, and the authenticator code when the account has one',
+  );
+
 /** Unified sign-in: what this client can do. `verification`: it can answer `verification_required`. */
 export const capabilitiesField = z
   .array(z.string().max(64))
@@ -166,7 +178,12 @@ const StepUpSchema = z
   .meta({ id: 'StepUpDto' });
 
 const TwoFactorPasswordSchema = z
-  .object({ password: z.string().describe('The account password') })
+  .object({
+    password: z
+      .string()
+      .optional()
+      .describe('The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in'),
+  })
   .meta({ id: 'TwoFactorPasswordDto' });
 
 const TwoFactorSetupResponseSchema = z
@@ -185,7 +202,10 @@ const TwoFactorRecoveryCodesResponseSchema = z
 /** FL-793: the password and a code (or recovery code): turning off, or starting a move to a new phone. */
 const TwoFactorProofSchema = z
   .object({
-    password: z.string().describe('The account password'),
+    password: z
+      .string()
+      .optional()
+      .describe('The account password; may be left out within 10 minutes of a Frameleaf or passkey sign-in'),
     code: twoFactorCode.optional(),
     recoveryCode: recoveryCode.optional(),
   })
@@ -206,7 +226,7 @@ const LogoutResponseSchema = z
   })
   .meta({ id: 'LogoutResponseDto' });
 
-const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true, twoFactor: true, capabilities: true })
+const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true, twoFactor: true, capabilities: true, steps: true })
   .extend({
     name: z.string().describe('User name').meta({ example: 'Admin' }),
   })

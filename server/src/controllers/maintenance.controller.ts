@@ -13,13 +13,17 @@ import {
 } from 'src/dtos/maintenance.dto.js';
 import { ApiTag, AuthCookie, MaintenanceAction, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { AuthService } from 'src/services/auth.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { respondWithCookie } from 'src/utils/response.js';
 
 @ApiTags(ApiTag.Maintenance)
 @Controller('admin/maintenance')
 export class MaintenanceController {
-  constructor(private service: MaintenanceService) {}
+  constructor(
+    private service: MaintenanceService,
+    private authService: AuthService,
+  ) {}
 
   @Get('status')
   @Endpoint({
@@ -69,6 +73,10 @@ export class MaintenanceController {
   ): Promise<void> {
     if (dto.action === MaintenanceAction.End) {
       return;
+    }
+    if (dto.action === MaintenanceAction.RestoreDatabase) {
+      // restoring a backup replaces the whole database: confirmed recently
+      await this.authService.requireConfirmedRecently(auth, dto.confirmation, loginDetails);
     }
 
     const { jwt } = await this.service.startMaintenance(dto, auth.user.name);

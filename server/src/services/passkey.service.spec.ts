@@ -268,29 +268,39 @@ describe(PasskeyService.name, () => {
     });
 
     it('counts a Frameleaf sign-in as the check only by when the person signed in, not when the session was made', async () => {
-      const old = new Date(Date.now() - 60 * 60 * 1000);
-      mocks.frameleafAccount.getSession.mockResolvedValue({
-        sessionId: auth.session!.id,
-        userId: user.id,
-        sid: null,
-        sub: 'sub',
-        authTime: old,
-        createdAt: new Date(),
-        handoffCodeHash: null,
-        handoffExpiresAt: null,
+      const signedIn = (authTime: Date) => ({
+        ...auth,
+        session: {
+          ...auth.session!,
+          signIn: {
+            methods: ['email_code'],
+            level: 'basic' as const,
+            source: 'frameleaf' as const,
+            legacy: false,
+            authTime,
+          },
+        },
       });
-      await expect(sut.getRegistrationOptions(auth, {}, headers(), details)).rejects.toBeInstanceOf(ForbiddenException);
-      mocks.frameleafAccount.getSession.mockResolvedValue({
-        sessionId: auth.session!.id,
-        userId: user.id,
-        sid: null,
-        sub: 'sub',
-        authTime: new Date(),
-        createdAt: new Date(),
-        handoffCodeHash: null,
-        handoffExpiresAt: null,
+      await expect(
+        sut.getRegistrationOptions(signedIn(new Date(Date.now() - 60 * 60 * 1000)), {}, headers(), details),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.getRegistrationOptions(signedIn(new Date()), {}, headers(), details)).resolves.toMatchObject({
+        passkeysAvailable: true,
       });
-      await expect(sut.getRegistrationOptions(auth, {}, headers(), details)).resolves.toMatchObject({
+    });
+
+    it('counts a local passkey sign-in from the last 10 minutes, and never a password one', async () => {
+      const signedIn = (methods: string[]) => ({
+        ...auth,
+        session: {
+          ...auth.session!,
+          signIn: { methods, level: 'basic' as const, source: 'local' as const, legacy: false, authTime: new Date() },
+        },
+      });
+      await expect(
+        sut.getRegistrationOptions(signedIn(['pwd', 'totp']), {}, headers(), details),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.getRegistrationOptions(signedIn(['passkey']), {}, headers(), details)).resolves.toMatchObject({
         passkeysAvailable: true,
       });
     });

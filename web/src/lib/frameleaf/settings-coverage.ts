@@ -1419,6 +1419,18 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'passwordLogin.enabled',
   },
   {
+    pattern: 'signInPolicy.applyToOlderApps',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
+    evidence: 'signInPolicy?.applyToOlderApps',
+  },
+  {
+    pattern: 'signInPolicy.require',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
+    evidence: 'signInPolicy?.require',
+  },
+  {
     pattern: 'reverseGeocoding.enabled',
     kind: 'control',
     file: 'src/routes/admin/system-settings/MapSettings.svelte',
