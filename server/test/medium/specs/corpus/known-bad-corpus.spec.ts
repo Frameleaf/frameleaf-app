@@ -178,11 +178,12 @@ const runStep = async (
     jobs.queue.mockClear();
     try {
       const status = await run();
+      // Metadata extraction returns nothing when it is done; only Failed and a throw are failures.
       if (status !== JobStatus.Failed) {
         const handedToCare = jobs.queue.mock.calls.some(
           ([item]) => item.name === JobName.MediaHealthFixAsset && (item.data as { id?: string }).id === assetId,
         );
-        return { facts: { outcome: handedToCare ? 'library-care' : status === JobStatus.Success ? 'ok' : 'skipped' } };
+        return { facts: { outcome: handedToCare ? 'library-care' : status === JobStatus.Skipped ? 'skipped' : 'ok' } };
       }
       reason = 'The job reported a failure';
     } catch (error) {
