@@ -41,6 +41,7 @@ import {
   LibraryViewScope,
   StudioExportVersionState,
   TimeBucketDateType,
+  TimelineDatesToCheck,
 } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -90,6 +91,7 @@ import {
   withTagId,
   withTags,
 } from 'src/utils/database.js';
+import { hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
 import { lockDerivedResults, releaseDerivedResults } from 'src/utils/derivative-locks.js';
 import { normalizeImportPath } from 'src/utils/library-paths.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
@@ -302,6 +304,8 @@ export interface TimeBucketOptions extends AssetBuilderOptions {
   withChildTags?: boolean;
   /** Partner sharing: false hides partner copies, except those in an album the partner made */
   withPartners?: boolean;
+  /** FL-1410: leave out, or keep only, the photos whose date cannot be right (`utils/date-sanity.ts`) */
+  datesToCheck?: TimelineDatesToCheck;
   /** LIB-P3: only this owner's own Best Photos; set by the service for the caller only */
   bestPhotos?: TimelineBestPhotos;
   /**
@@ -469,6 +473,9 @@ const timelineVisibility = (options: AssetBuilderOptions) => {
  * the viewer: one `personId`, or the Filters panel's people ("all of", "any of", "none of", FL-425).
  * A Locked request never does: Locked media is owner-private, so other members' items never join it.
  */
+/** FL-1410: the timeline request's `datesToCheck`, as the shared rule's SQL. */
+const datesToCheckPredicate = (datesToCheck: TimelineDatesToCheck) =>
+  datesToCheck === TimelineDatesToCheck.Only ? hasDateToCheck() : hasGoodDate();
 const widensToSharedAlbums = (options: TimeBucketOptions) =>
   (!!options.personId || filterNamesPeople(options.filter)) && options.visibility !== AssetVisibility.Locked;
 /**
@@ -2710,6 +2717,7 @@ export class AssetRepository {
         .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
         .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
         .$if(options.withPartners === false, (qb) => qb.where((eb) => eb.not(isHiddenPartnerCopy)))
+        .$if(!!options.datesToCheck, (qb) => qb.where(datesToCheckPredicate(options.datesToCheck!)))
     );
   }
   private timelineBucketDate(options: TimeBucketOptions, size: 'MONTH' | 'YEAR' = 'MONTH') {
@@ -3206,6 +3214,7 @@ export class AssetRepository {
           .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
           .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
           .$if(options.withPartners === false, (qb) => qb.where((eb) => eb.not(isHiddenPartnerCopy)))
+          .$if(!!options.datesToCheck, (qb) => qb.where(datesToCheckPredicate(options.datesToCheck!)))
           .$if(!page, (qb) =>
             qb
               .orderBy(orderDate, calendarOrder)

@@ -80,6 +80,34 @@ describe('YearScrubber', () => {
     expect(screen.queryByText('July 2026')).not.toBeInTheDocument();
   });
 
+  // FL-1410: a phone set to 2031 never puts "2031" on the scrubber; those photos wait in one group at the end.
+  it('labels the years of the dated months only, and names the dates to check when on them', async () => {
+    const timelineManager = {
+      scrubberTimelineHeight: 1000,
+      topSectionHeight: 0,
+      scrubberMonths: [
+        { year: 2026, month: 8, title: 'August 2026', assetCount: 3, height: 400 },
+        { year: 2024, month: 7, title: 'July 2024', assetCount: 1, height: 400 },
+        { year: 1, month: 1, title: 'Dates to check', assetCount: 55, height: 200, toCheck: true },
+      ],
+    } as unknown as TimelineManager;
+    const { container } = render(YearScrubber, {
+      timelineManager,
+      height: 600,
+      thin: true,
+      viewportTopMonth: { year: 1, month: 1 },
+    });
+    expect([...container.querySelectorAll('.fl-scrub-year')].map((label) => label.textContent)).toEqual([
+      '2026',
+      '2024',
+    ]);
+    expect(container.querySelectorAll('.fl-scrub-yeartick')).toHaveLength(2);
+    // it keeps its place on the track
+    expect(container.querySelectorAll('.fl-scrub-tick')).toHaveLength(3);
+    await fireEvent.focus(screen.getByRole('slider'));
+    expect(screen.getByText('Dates to check')).toBeInTheDocument();
+  });
+
   // LIB-P4: the header block spans the scrubber's own column too, so the track keeps clear of it there.
   it('keeps its track clear of the page header in its own column as well', () => {
     render(YearScrubber, { timelineManager: new TimelineManager(), clear: 120 });

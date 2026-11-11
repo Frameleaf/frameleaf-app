@@ -98,6 +98,8 @@
       : data.workspaceTrees[0],
   );
   let timelineManager = $state<TimelineManager>() as TimelineManager;
+  /** The album's photos, for the header's "dates to check" (FL-1410). */
+  let libraryView = $state<LibraryView>();
   let viewerInvisible = $state(false);
   let activityOpen = $state(false);
   let tagOptions = $state<{ id: string; name: string }[]>([]);
@@ -696,6 +698,8 @@
       onSlideshow={() => handlePromiseError(handleStartSlideshow(view))}
       onToggleActivity={() => (activityOpen = !activityOpen)}
       onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
+      datesToCheck={timelineManager?.datesToCheck?.count}
+      onFixDates={() => void libraryView?.fixDates()}
       onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
       {addMenu}
     />
@@ -773,6 +777,7 @@
     {/key}
   {:else}
     <LibraryView
+      bind:this={libraryView}
       enableRouting
       selectAll={isSpace ? 'matching' : 'loaded'}
       bind:timelineManager

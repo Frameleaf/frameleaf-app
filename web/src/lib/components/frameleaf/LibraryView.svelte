@@ -1535,6 +1535,34 @@
     selectionBarRef.performAction(id);
   };
 
+  /**
+   * FL-1410 "Fix dates": the photos whose date cannot be right (the "Dates to check" group at the end
+   * of the timeline) are selected and "Change date" opens on them. The prototype opens its Date & Time
+   * Doctor here, which the app does not have yet; Change date is what sets a date by hand, and a date
+   * set by hand is no longer one to check. Where these photos' dates are not the viewer's to change,
+   * they are left selected and brought into view.
+   */
+  const canFixDates = $derived(libraryChrome && !selectionBar && !noSelectionBar && !options?.isTrashed);
+  export const fixDates = async () => {
+    const group = manager.months.find((month) => month.toCheck);
+    if (!group || !canFixDates) {
+      return;
+    }
+    await manager.loadTimelineMonth(group.yearMonth, { cancelable: false });
+    const ids = group.getAssets().map(({ id }) => id);
+    if (ids.length === 0) {
+      return;
+    }
+    session.dispatch({ type: 'selection', ids });
+    await tick();
+    if (selectionBarRef?.canPerform('change-date')) {
+      barSelectedIds = ids;
+      selectionBarRef.performAction('change-date');
+      return;
+    }
+    manager.scrollTo(group.top);
+  };
+
   /** The bar's dialog closed: a cancelled action started from a key or a tile leaves nothing selected. */
   const onBarDialogSettled = (submitted: boolean) => {
     const selected = barSelectedIds;
@@ -1937,6 +1965,7 @@
           quickActions={quickActionsFor}
           timelineCaptions={gridLayout === 'timeline' && (captions.time || captions.names)}
           empty={emptyState}
+          onFixDates={canFixDates ? () => void fixDates() : undefined}
           {gutter}
           groupingInHeader={!publicView && !firstRun && mainWidth >= GROUPING_IN_TOOLBAR}
         >

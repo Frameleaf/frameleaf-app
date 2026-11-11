@@ -479,6 +479,8 @@
 
   /** Run an action as if chosen from the bar, for the library's keyboard shortcuts and tile actions. */
   export const performAction = (id: BulkActionId) => perform(id);
+  /** Whether the selection allows this action now, so a caller can do something else when it does not. */
+  export const canPerform = (id: BulkActionId) => !!byId[id]?.available;
 
   /** Escape closes the menu before it clears the selection, as the prototype does. */
   const handleEscape = () => (menuOpen ? closeMenu() : onClear());

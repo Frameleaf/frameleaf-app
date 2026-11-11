@@ -157,6 +157,10 @@ export const setupTimelineMockApiRoutes = async (
       }
       return route.fulfill({ status: 200, contentType: 'application/json', json: summaries });
     }
+    if (pathname === '/api/timeline/dates-to-check') {
+      // FL-1410: the generated library's dates are all right, so nothing waits at the end of the timeline
+      return route.fulfill({ json: { count: 0, years: [], timeBuckets: [] } });
+    }
     if (pathname === '/api/timeline/highlights') {
       const param = (name: string) => url.searchParams.get(name);
       return route.fulfill({

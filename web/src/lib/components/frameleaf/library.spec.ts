@@ -615,6 +615,29 @@ describe('LibraryDayGroup', () => {
     expect(screen.queryByText('Tue, Sep 22')).toBeNull();
   });
 
+  // FL-1410: the photos whose date cannot be right are one group, not a day in 1970 or 2031.
+  it('names the dates to check and says why they wait, in place of a date and its places', () => {
+    const group = {
+      ...(day(['a', 'b']) as object),
+      cities: ['Banff'],
+      timelineMonth: {
+        yearMonth: { year: 1, month: 1 },
+        toCheck: true,
+        timelineManager: { placeLineHeight: 0 },
+      },
+    } as never;
+    render(LibraryDayGroup, { timelineDay: group, selection: [], selecting: false });
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('frameleaf_library_dates_to_check');
+    expect(screen.getByTestId('frameleaf-group-flag').textContent).toBe('frameleaf_library_dates_to_check_reason');
+    expect(screen.queryByTestId('frameleaf-group-places')).toBeNull();
+    expect(screen.getByRole('region', { name: 'frameleaf_library_dates_to_check' })).toBeTruthy();
+  });
+
+  it('draws no such mark on an ordinary day', () => {
+    render(LibraryDayGroup, { timelineDay: day(['a']), selection: [], selecting: false });
+    expect(screen.queryByTestId('frameleaf-group-flag')).toBeNull();
+  });
+
   it('hides the day header for Browse', () => {
     render(LibraryDayGroup, { timelineDay: day(['a']), selection: [], selecting: false, showHeader: false });
     expect(screen.queryByRole('checkbox', { name: 'frameleaf_library_select_all_in_group' })).toBeNull();

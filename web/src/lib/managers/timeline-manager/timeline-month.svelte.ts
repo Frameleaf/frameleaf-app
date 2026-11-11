@@ -85,6 +85,16 @@ export class TimelineMonth {
   flowContentWidth = $state(0);
   flowContentHeight = $state(0);
 
+  /**
+   * FL-1410: set on the one group that holds the photos whose date cannot be right, which waits at the
+   * end of a dated timeline: the time buckets (`datesToCheck=only`) its photos are read from. It is not
+   * a calendar month; its photos keep the wrong dates they claim.
+   */
+  toCheckBuckets: string[] | undefined = undefined;
+  get toCheck(): boolean {
+    return this.toCheckBuckets !== undefined;
+  }
+
   constructor(
     timelineManager: TimelineManager,
     yearMonth: TimelineYearMonth,
@@ -237,12 +247,13 @@ export class TimelineMonth {
 
   /**
    * One page of a flat order (S-15): every asset in one group, in exactly the order the server sent
-   * them. Nothing is regrouped by date or re-sorted.
+   * them. Nothing is regrouped by date or re-sorted. The dates to check (FL-1410) are one such group,
+   * under this month's title.
    */
   addOrderedAssets(bucketAssets: TimeBucketAssetResponseDto) {
     let timelineDay = this.timelineDays[0];
     if (!timelineDay) {
-      timelineDay = new TimelineDay(this, 0, 1, '', this.#dateType);
+      timelineDay = new TimelineDay(this, 0, 1, this.toCheck ? this.title : '', this.#dateType);
       this.timelineDays.push(timelineDay);
     }
     for (const timelineAsset of bucketTimelineAssets(bucketAssets)) {
@@ -367,7 +378,8 @@ export class TimelineMonth {
       return true;
     }
     const index = this.#index;
-    if (index <= 0) {
+    // FL-1410: the dates to check are a group of their own, whatever the grouping
+    if (index <= 0 || this.toCheck) {
       return true;
     }
     if (grouping === 'months') {

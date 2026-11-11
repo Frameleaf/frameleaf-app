@@ -159,6 +159,42 @@ describe('folder covers and dates', () => {
     expect(folderAt(repeated, '/a')!.coverAssetIds).toEqual(['one', 'two', 'three', 'four']);
   });
 
+  // FL-1410: the server leaves wrong dates out of a folder's range unless every date in it is wrong.
+  it('adds the dates to check up the tree, and takes no range from a folder whose every date is wrong', () => {
+    const messy = buildFolderTree([
+      {
+        path: '/p/camera',
+        count: 4,
+        size: 1,
+        startDate: day('2024-06-01'),
+        endDate: day('2025-07-04'),
+        datesToCheck: 2,
+      },
+      {
+        path: '/p/old-phone',
+        count: 3,
+        size: 1,
+        startDate: day('2031-06-02'),
+        endDate: day('2031-06-03'),
+        datesToCheck: 3,
+      },
+      { path: '/p/tidy', count: 1, size: 1, startDate: day('2026-03-09'), endDate: day('2026-03-09') },
+    ]);
+    expect(folderAt(messy, '/p/camera')).toMatchObject({
+      startDate: day('2024-06-01'),
+      endDate: day('2025-07-04'),
+      datesToCheck: 2,
+    });
+    expect(folderAt(messy, '/p/old-phone')).toMatchObject({ startDate: null, endDate: null, datesToCheck: 3 });
+    expect(folderAt(messy, '/p/tidy')).toMatchObject({ datesToCheck: 0 });
+    // no "2024 – 2031" above them
+    expect(folderAt(messy, '/p')).toMatchObject({
+      startDate: day('2024-06-01'),
+      endDate: day('2026-03-09'),
+      datesToCheck: 5,
+    });
+  });
+
   it('leaves the cover empty and the dates unknown for a server that sends neither', () => {
     const old = buildFolderTree(rows);
     expect(folderAt(old, '/data/library/2026')).toMatchObject({ coverAssetIds: [], startDate: null, endDate: null });

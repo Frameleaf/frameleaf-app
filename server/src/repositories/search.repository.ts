@@ -53,6 +53,7 @@ import {
   withHiddenContentFilter,
   withSearchOrder,
 } from 'src/utils/database.js';
+import { hasGoodDate } from 'src/utils/date-sanity.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, isTimelineVisible } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
@@ -1045,7 +1046,9 @@ export class SearchRepository {
    * its tree. A suppressed tag, and every tag under one, is left out.
    *
    * Each tag also gets what its card shows of the `total` items: the newest few by capture time for a
-   * cover, and the first and last capture day, read as an album's start and end dates are.
+   * cover, and the first and last capture day, read as an album's start and end dates are. FL-1410: a
+   * date that cannot be right (`utils/date-sanity.ts`) is left out of that range; a tag whose every date
+   * is one keeps the range it had, since the response always carries both dates.
    */
   async searchTagStatistics(
     options: AssetSearchOptions,
@@ -1065,9 +1068,9 @@ export class SearchRepository {
       startDate: Date;
       endDate: Date;
     }>`
-      with matched as materialized (${matched.select(['asset.id', 'asset.localDateTime'])}),
+      with matched as materialized (${matched.select(['asset.id', 'asset.localDateTime', hasGoodDate().as('goodDate')])}),
       ranked as (
-        select t.id as "tagId", m.id as "assetId", m."localDateTime", (ta."tagId" = t.id) as direct,
+        select t.id as "tagId", m.id as "assetId", m."localDateTime", m."goodDate", (ta."tagId" = t.id) as direct,
           dense_rank() over newest as rank,
           (row_number() over newest = rank() over newest) as first
         from matched m
@@ -1083,8 +1086,10 @@ export class SearchRepository {
         array_agg(r."assetId"::text order by r.rank) filter (
           where r.first and r.rank <= ${sql.lit(TAG_COVER_ASSETS)}
         ) as "coverAssetIds",
-        (min(r."localDateTime") at time zone 'UTC')::date as "startDate",
-        (max(r."localDateTime") at time zone 'UTC')::date as "endDate"
+        (coalesce(min(r."localDateTime") filter (where r."goodDate"), min(r."localDateTime")) at time zone 'UTC')::date
+          as "startDate",
+        (coalesce(max(r."localDateTime") filter (where r."goodDate"), max(r."localDateTime")) at time zone 'UTC')::date
+          as "endDate"
       from ranked r
       group by r."tagId"
       order by r."tagId"

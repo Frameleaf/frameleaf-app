@@ -13,6 +13,7 @@
    * Browse and Work layouts show the same state without rebuilding it.
    */
   import { afterNavigate, beforeNavigate } from '$app/navigation';
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import LibraryDayGroup from '$lib/components/frameleaf/LibraryDayGroup.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
   import TimelineCards from '$lib/components/frameleaf/TimelineCards.svelte';
@@ -52,6 +53,8 @@
   import { isAssetViewerRoute } from '$lib/utils/navigation';
   import { hasRouterStarted } from '$lib/utils/router-started';
   import { fromTimelinePlainYearMonth, type ScrubberListener } from '$lib/utils/timeline-util';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiCalendarAlert } from '@mdi/js';
   import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
   import { locale, t, type Translations } from 'svelte-i18n';
@@ -133,6 +136,11 @@
     groupingInHeader?: boolean;
     empty?: Snippet;
     /**
+     * FL-1410: the page can fix dates here. The Timeline then says, above its photos, how many have a
+     * date that cannot be right and which years they claim, and offers this ("Fix dates").
+     */
+    onFixDates?: () => void;
+    /**
      * The page gutter in pixels, kept inside the scroll area on both sides (LIB-P4). The scroll area
      * then reaches the page's edges, so the frosted toolbar band in `header` can span them, while
      * the header, the rows and the scrubber keep this much room from them.
@@ -169,6 +177,7 @@
     header,
     groupingInHeader = false,
     empty,
+    onFixDates,
     gutter = 0,
   }: Props = $props();
 
@@ -512,7 +521,7 @@
   let cardsHost = $state<HTMLElement>();
   let cardsClear = $state(0);
   const measureCardsClear = () => {
-    const end = cardsHost?.querySelector('.fl-grouping');
+    const end = cardsHost?.querySelector('.fl-dates-notice') ?? cardsHost?.querySelector('.fl-grouping');
     if (!root || !end) {
       cardsClear = 0;
       return;
@@ -558,6 +567,21 @@
   });
 
   const groupable = $derived(!!onGroupingChange && showDayHeaders);
+
+  /**
+   * FL-1410: what the Timeline says of the photos whose date cannot be right: how many, and the years
+   * those dates claim ("1970 and 2031"). Only where the page can fix them, and only over the Timeline.
+   */
+  const datesNotice = $derived.by(() => {
+    const toCheck = timelineManager.datesToCheck;
+    if (!toCheck || !onFixDates || tileLayout !== 'timeline') {
+      return null;
+    }
+    const years = new Intl.ListFormat($locale ?? undefined, { style: 'long', type: 'conjunction' }).format(
+      toCheck.years.map(String),
+    );
+    return { count: toCheck.count, years };
+  });
   const groupingHint = $derived(
     $t(isMacPlatform() ? 'frameleaf_library_grouping_hint_mac' : 'frameleaf_library_grouping_hint'),
   );
@@ -800,7 +824,7 @@
    * manager lays the group out as one flow that runs on across its months (FL-143) and reserves the
    * header's space above the group's first month (`TimelineMonth.startsGroup`).
    */
-  type DisplayGroup = { key: string; title: string; months: TimelineMonth[]; day?: number };
+  type DisplayGroup = { key: string; title: string; months: TimelineMonth[]; day?: number; toCheck?: boolean };
   const dayGroup = (day: TimelineDay): DisplayGroup => {
     const { year, month } = day.timelineMonth.yearMonth;
     return {
@@ -830,6 +854,16 @@
     }
     const groups: DisplayGroup[] = [];
     for (const month of timelineManager.months) {
+      // FL-1410: the photos whose date cannot be right are one group of their own, after every other
+      if (month.toCheck) {
+        groups.push({
+          key: 'dates-to-check',
+          title: $t('frameleaf_library_dates_to_check'),
+          months: [month],
+          toCheck: true,
+        });
+        continue;
+      }
       const { year } = month.yearMonth;
       const key =
         effectiveGrouping === 'all'
@@ -1456,12 +1490,28 @@
   {@render header?.(groupable && groupingInHeader ? groupingModes : undefined)}
   {#if groupable}
     <!-- Kept, empty, when the control is in the header: it marks where the header block ends. -->
-    <div class="fl-grouping" class:is-flow={!curated} class:is-in-header={groupingInHeader}>
+    <div
+      class="fl-grouping"
+      class:is-flow={!curated}
+      class:is-in-header={groupingInHeader}
+      class:has-notice={!!datesNotice}
+    >
       {#if !groupingInHeader}
         <span class="fl-grouping-hint">{groupingHint}</span>
         {@render groupingModes()}
       {/if}
     </div>
+  {/if}
+  {#if datesNotice}
+    <!-- messy-1110.css M4 `.tl-dates-notice`: wrong clocks never lead the timeline; this says where they went. -->
+    <p class="fl-dates-notice" class:is-flow={!curated} class:is-lone={!groupable} data-testid="frameleaf-dates-notice">
+      <Icon icon={mdiCalendarAlert} size="18" aria-hidden />
+      <span>
+        <strong>{$t('frameleaf_library_dates_notice', { values: datesNotice })}</strong>
+        {$t('frameleaf_library_dates_notice_wait', { values: datesNotice })}
+      </span>
+      <Button onclick={onFixDates}>{$t('frameleaf_library_dates_fix')}</Button>
+    </p>
   {/if}
 {/snippet}
 
@@ -1572,6 +1622,7 @@
               <LibraryGroupHeader
                 id={groupHeadingId(group)}
                 title={group.title}
+                flag={group.toCheck ? $t('frameleaf_library_dates_to_check_reason') : ''}
                 count={group.months.reduce((total, groupMonth) => total + groupMonth.assetsCount, 0)}
                 state={displayGroupState(group)}
                 {selecting}
@@ -1816,6 +1867,60 @@
   }
   .fl-grouping.is-in-header.is-flow {
     margin-block-end: 0;
+  }
+  /* messy-1110.css M4: one quiet row above the photos, its action at the end. */
+  .fl-dates-notice {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-3);
+    margin: 0 0 var(--fl-space-4);
+    padding: 10px var(--fl-space-3) 10px var(--fl-space-4);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    box-shadow: inset 0 0 0 1px var(--fl-border);
+    color: var(--fl-muted);
+    font-size: 13px;
+  }
+  /* Over photos the first group header's own lead is most of the room under the notice. */
+  .fl-dates-notice.is-flow {
+    margin-block-end: var(--fl-space-2);
+  }
+  /* The notice starts 20px under the toolbar band, or 12px under the grouping row when that is drawn. */
+  .fl-dates-notice.is-lone {
+    margin-block-start: var(--fl-space-5);
+  }
+  .fl-grouping.has-notice {
+    margin-block-end: var(--fl-space-3);
+  }
+  .fl-grouping.is-in-header.has-notice {
+    margin-block-end: var(--fl-space-5);
+  }
+  .fl-dates-notice > :global(svg) {
+    flex: none;
+    color: var(--fl-warning);
+  }
+  .fl-dates-notice > span {
+    flex: 1;
+    min-width: 0;
+  }
+  .fl-dates-notice strong {
+    color: var(--fl-text);
+    font-weight: 600;
+  }
+  .fl-dates-notice > :global(button) {
+    flex: none;
+  }
+  @container fl-timeline (max-width: 760px) {
+    .fl-dates-notice {
+      flex-wrap: wrap;
+      padding: var(--fl-space-3) var(--fl-space-4);
+    }
+    .fl-dates-notice > span {
+      flex: 1 1 calc(100% - 40px);
+    }
+    .fl-dates-notice > :global(button) {
+      margin-inline-start: 30px;
+    }
   }
   .fl-grouping-hint {
     /* On the line of the toolbar's count and the photos' edge. */

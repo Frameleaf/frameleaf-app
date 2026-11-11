@@ -14,6 +14,7 @@ import {
   ImageEnrichmentFilterSchema,
   LibraryViewScopeSchema,
   TimeBucketDateTypeSchema,
+  TimelineDatesToCheckSchema,
 } from 'src/enum.js';
 import { stringToBool } from 'src/validation.js';
 
@@ -60,6 +61,9 @@ const TimeBucketQueryBaseSchema = z
     ),
     dateType: TimeBucketDateTypeSchema.optional().describe(
       'Date source for timeline bucket grouping. Defaults to taken date.',
+    ),
+    datesToCheck: TimelineDatesToCheckSchema.optional().describe(
+      'Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned.',
     ),
     suppressedOnly: stringToBool.optional().describe('Return only suppressed content. Requires an elevated session.'),
     orderBy: AssetOrderBySchema.optional().describe(
@@ -392,6 +396,28 @@ const TimelineHighlightResponseSchema = z
   })
   .meta({ id: 'TimelineHighlightResponseDto' });
 
+/**
+ * FL-1410: what a timeline says of its photos whose date cannot be right (`utils/date-sanity.ts`), for the
+ * same filters as its time buckets.
+ */
+const TimelineDatesToCheckQuerySchema = TimeBucketQueryBaseSchema.omit({ datesToCheck: true }).meta({
+  id: 'TimelineDatesToCheckDto',
+});
+const TimelineDatesToCheckResponseSchema = z
+  .object({
+    count: z.int().min(0).describe('Photos whose date cannot be right'),
+    years: z
+      .array(z.int())
+      .describe('The years those dates claim, oldest first, for one short sentence ("1970 and 2031")'),
+    timeBuckets: z
+      .array(z.string())
+      .describe(
+        'The months those dates claim, as GET /timeline/buckets names them and in the order asked for. Read the photos of each with GET /timeline/bucket and datesToCheck=only',
+      )
+      .meta({ example: ['2031-06-01', '1970-01-01'] }),
+  })
+  .meta({ id: 'TimelineDatesToCheckResponseDto' });
+
 export class TimeBucketDto extends createZodDto(TimeBucketSchema) {}
 export class TimeBucketAssetDto extends createZodDto(TimeBucketAssetSchema) {}
 export class TimelineOrderedDto extends createZodDto(TimelineOrderedSchema) {}
@@ -399,3 +425,5 @@ export class TimeBucketAssetResponseDto extends createZodDto(TimeBucketAssetResp
 export class TimeBucketsResponseDto extends createZodDto(TimeBucketsResponseSchema) {}
 export class TimelineHighlightsDto extends createZodDto(TimelineHighlightsSchema) {}
 export class TimelineHighlightResponseDto extends createZodDto(TimelineHighlightResponseSchema) {}
+export class TimelineDatesToCheckDto extends createZodDto(TimelineDatesToCheckQuerySchema) {}
+export class TimelineDatesToCheckResponseDto extends createZodDto(TimelineDatesToCheckResponseSchema) {}
