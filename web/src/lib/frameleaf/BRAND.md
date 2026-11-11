@@ -185,7 +185,7 @@ All in `$lib/components/frameleaf/`. Text is always passed in translated.
 | `ConfirmDialog` | The one confirmation; open with `confirmFrameleaf()` | `title`, `prompt`, `confirmText`, `cancelText`, `danger`, `disabled` |
 | `Toast` | Rendered by `toastManager`; do not mount directly.  | |
 | `InlineError` | A section failed; the page stays | `message`, `title`, `onRetry`, `retryLabel`, `retrying`, `compact`, `icon`, children for extra actions |
-| `EmptyState` | Nothing here yet. Full size: the icon sits on a soft accent plate. `compact`: plain | `message`, `icon`, `title`, `action`, `secondaryAction` (`{ label, onClick?, href?, icon? }`), `compact`, children |
+| `EmptyState` | Nothing here yet: an icon, what will be here, how it gets here, at most one action. Every empty page uses it and shows no toolbar or Thumbnail size bar. Full size: the icon sits on a soft accent plate. `compact`: plain, for a panel | `message`, `icon`, `title`, `action`, `secondaryAction` (`{ label, onClick?, href?, icon? }`), `compact`, children |
 | `Skeleton` | Loading placeholder | `variant` (`text`, `block`, `tile`, `circle`), `lines`, `width`, `height`, `aspect`, `thumbhash` |
 | `Spinner` | The one ring spinner | `size` (icon size name or px), `label`, `decorative`, `delay` |
 | `CountUp` | A number that counts up | `value`, `format`, `duration`, `delay` |

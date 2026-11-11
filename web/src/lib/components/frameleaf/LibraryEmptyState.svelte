@@ -13,8 +13,8 @@
    * hidden person keeps out of view, so an empty page reveals nothing about those items.
    *
    * A brand-new library is the one empty state that leads somewhere: give it a `primary` action
-   * ("Upload photos"), a `secondaryAction` and a `hint`. That state is one of the three places the
-   * hero type step is used (BRAND.md), and it arrives on Reveal (one fade under Reduce Motion).
+   * ("Add photos") and a `secondaryAction`. FL-1412 (M13): it is the same pattern as every other
+   * empty page, so it has no larger title and no third line.
    */
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
 
@@ -28,45 +28,15 @@
     /** Draw `action` as the filled primary button: the way forward out of a first-run state. */
     primary?: boolean;
     secondaryAction?: Action;
-    /** A quiet last line, such as "or drop files anywhere". */
-    hint?: string;
   };
 
-  let { icon, title, message, action, primary = false, secondaryAction, hint }: Props = $props();
+  let { icon, title, message, action, primary = false, secondaryAction }: Props = $props();
 
   // EmptyState fills its first action; an action that is not the way forward takes the quiet slot.
   const filled = $derived(primary ? action : undefined);
   const quiet = $derived(primary ? secondaryAction : (action ?? secondaryAction));
 </script>
 
-<div class="fl-library-empty fl-reveal" class:is-welcome={primary} data-testid="frameleaf-library-empty">
-  <EmptyState {icon} {title} {message} action={filled} secondaryAction={quiet}>
-    {#if hint}
-      <p class="fl-library-empty-hint">{hint}</p>
-    {/if}
-  </EmptyState>
+<div class="fl-library-empty fl-reveal" data-testid="frameleaf-library-empty">
+  <EmptyState {icon} {title} {message} action={filled} secondaryAction={quiet} />
 </div>
-
-<style>
-  .fl-library-empty.is-welcome {
-    padding-block-start: max(var(--fl-space-4), 8vh);
-  }
-  /* The first-run title is the screen's one hero line; it steps down where it would wrap. */
-  .fl-library-empty.is-welcome :global(h2) {
-    margin-block: var(--fl-space-2) var(--fl-space-1);
-    font: var(--fl-type-hero);
-    letter-spacing: var(--fl-tracking-hero);
-    text-wrap: balance;
-  }
-  @media (max-width: 700px) {
-    .fl-library-empty.is-welcome :global(h2) {
-      font: var(--fl-type-display);
-      letter-spacing: var(--fl-tracking-display);
-    }
-  }
-  .fl-library-empty-hint {
-    margin: var(--fl-space-3) 0 0;
-    color: var(--fl-muted);
-    font: var(--fl-type-caption);
-  }
-</style>

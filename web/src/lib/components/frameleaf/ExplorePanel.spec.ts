@@ -212,10 +212,15 @@ describe('ExplorePanel', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('points an empty library at uploading, in the prototype empty-state pattern', () => {
+  it('says what an empty library will show, in the one empty-page pattern (FL-1412)', () => {
     render(ExplorePanel, props({ libraryTotal: 0 }));
-    expect(screen.getByRole('status')).toHaveTextContent('Nothing to explore yet');
-    expect(screen.getByRole('status')).toHaveTextContent('Upload photos and videos');
+    const empty = screen.getByTestId('frameleaf-empty-state');
+    expect(empty).toHaveAttribute('role', 'status');
+    expect(empty.querySelector('h2')).toHaveTextContent('Nothing to explore yet');
+    expect(empty.querySelector('p')).toHaveTextContent('People, places and things appear here once you have photos.');
+    // the icon sits on its plate above the words, never beside them
+    expect(empty.firstElementChild).toHaveClass('icon', 'framed');
+    expect(empty.querySelector('button, a')).toBeNull();
     expect(screen.queryByRole('region', { name: 'People' })).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { PersonMergeVerdict, PersonSplitVerdict, QueueName, type DurableQueueRun } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
@@ -301,7 +301,7 @@ describe('People library with nobody found', () => {
       'href',
       expect.stringContaining('intelligence'),
     );
-    expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_people_empty_title')).not.toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sdkMock.getMergeSuggestions).not.toHaveBeenCalled();
     expect(sdkMock.getSplitSuggestions).not.toHaveBeenCalled();
@@ -337,7 +337,7 @@ describe('People library with nobody found', () => {
 
     expect(await screen.findByRole('heading', { name: 'frameleaf_people_scanning_title' })).toBeInTheDocument();
     expect(screen.getByText('frameleaf_people_scanning_description')).toBeInTheDocument();
-    expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_people_empty_title')).not.toBeInTheDocument();
   });
 
   it('says paused, not working, while Background work says Paused, and offers its settings', async () => {
@@ -374,7 +374,7 @@ describe('People library with nobody found', () => {
     expect(await screen.findByRole('heading', { name: 'frameleaf_people_scan_pending_title' })).toBeInTheDocument();
     expect(screen.getByText('frameleaf_people_scan_pending_description')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'frameleaf_people_scanning_title' })).not.toBeInTheDocument();
-    expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_people_empty_title')).not.toBeInTheDocument();
   });
 
   // FL-1419: the waiting page updates by itself, with or without queue state
@@ -399,8 +399,8 @@ describe('People library with nobody found', () => {
     sdkMock.getAllPeople.mockResolvedValue({ people: [], total: 0, hidden: 0, hasNextPage: false });
     render(PeoplePage, { data: nobody(true) });
 
-    expect(await screen.findByText('frameleaf_people_none_assigned')).toBeInTheDocument();
-    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_empty_title' })).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_people_empty_description')).toBeInTheDocument();
   });
 
   it('keeps the notice, and says nothing, when a re-read fails', async () => {
@@ -439,11 +439,19 @@ describe('People library with nobody found', () => {
     expect(sdkMock.getAllPeople).not.toHaveBeenCalled();
   });
 
-  it('keeps "No people yet" for a library that has been looked through', () => {
+  it('says "No people yet" in the one empty-page pattern, with no controls and no action (FL-1412)', () => {
     render(PeoplePage, { data: nobody(false) });
 
-    expect(screen.getByText('frameleaf_people_none_assigned')).toBeInTheDocument();
-    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+    const empty = screen.getByTestId('frameleaf-empty-state');
+    expect(within(empty).getByRole('heading', { name: 'frameleaf_people_empty_title' })).toBeInTheDocument();
+    expect(empty).toHaveTextContent('frameleaf_people_empty_description');
+    expect(within(empty).queryByRole('button')).toBeNull();
+    expect(within(empty).queryByRole('link')).toBeNull();
+    // Nobody to find, sort, show or hide.
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'frameleaf_people_show_hidden' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'frameleaf_people_choose_who_appears' })).toBeNull();
   });
 
   it('keeps the people it has when face recognition is turned off later', () => {
