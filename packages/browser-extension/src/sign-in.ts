@@ -50,6 +50,8 @@ export function allowPageUrl(
     state: string;
     client: BrowserClient;
     installationId: string;
+    /** FL-1427: asked for only when media downloads are, so saving alone is unchanged. */
+    grant?: 'media';
   },
 ) {
   const url = new URL(
@@ -62,6 +64,7 @@ export function allowPageUrl(
     state: request.state,
     client: request.client,
     installation: request.installationId,
+    ...(request.grant && { grant: request.grant }),
   }).toString();
   return url.href;
 }
@@ -115,7 +118,9 @@ const publicFetch = (
 
 /**
  * Checks the address before the sign-in window opens: it must answer as Frameleaf, and be new
- * enough to sign in from the browser. Otherwise the problem says what to change.
+ * enough to sign in from the browser. Otherwise the problem says what to change. Answers with
+ * what an extension can ask to be allowed there (FL-1427); a server from before media downloads
+ * lists nothing, and is only ever asked to save.
  */
 export async function checkServer(origin: string, transport: Transport) {
   const base = normalizeServerAddress(origin, true) + '/api';
@@ -143,14 +148,18 @@ export async function checkServer(origin: string, transport: Transport) {
   } catch {
     throw new SignInFailure('unreachable');
   }
-  let supported = false;
+  let found: { version?: unknown; grants?: unknown } | undefined;
   try {
-    supported =
-      info.ok && ((await info.json()) as { version?: unknown }).version === 1;
+    found = info.ok ? ((await info.json()) as typeof found) : undefined;
   } catch {
-    supported = false;
+    found = undefined;
   }
-  if (!supported) throw new SignInFailure('old-server');
+  if (found?.version !== 1) throw new SignInFailure('old-server');
+  return {
+    grants: Array.isArray(found.grants)
+      ? found.grants.filter((item): item is string => typeof item === 'string')
+      : [],
+  };
 }
 
 export type ExchangedAccess = {
@@ -158,6 +167,8 @@ export type ExchangedAccess = {
   apiKeyId: string;
   userId: string;
   serverId: string;
+  /** What the server allowed; a server from before media downloads only ever allows saving. */
+  grant: 'capture' | 'media';
 };
 
 /** Exchanges the code and the secret verifier for this browser's access. */
@@ -201,6 +212,7 @@ export async function exchangeCode(
     apiKeyId: value.apiKeyId,
     userId: value.userId,
     serverId: value.serverId,
+    grant: value.grant === 'media' ? 'media' : 'capture',
   };
 }
 

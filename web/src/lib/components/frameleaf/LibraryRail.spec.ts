@@ -1,10 +1,17 @@
-import { LibraryViewScope, AlbumKind, AlbumUserRole } from '@frameleaf/sdk';
+import {
+  LibraryViewScope,
+  AlbumKind,
+  AlbumUserRole,
+  MediaConnectionStatus,
+  MediaSubscriptionState,
+} from '@frameleaf/sdk';
 import { mdiCameraBurst, mdiFolderOutline, mdiHeartOutline } from '@mdi/js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
+import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
 import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
 import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import { RAIL_CLOSED_SECTIONS_KEY } from '$lib/frameleaf/navigation';
@@ -18,6 +25,7 @@ import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import LibraryRail from './LibraryRail.svelte';
+import { creatorFixture } from './creators/creators.fixture';
 
 const app = vi.hoisted(() => ({
   page: { url: new URL('http://localhost/photos'), route: { id: '/(user)/photos' }, params: {} },
@@ -587,6 +595,74 @@ describe('LibraryRail in Boards', () => {
     expect(key.getAttribute('href')).toContain('section=api-keys');
     expect(dialog.queryByText('Paste it into the extension')).toBeNull();
     expect(dialog.queryByRole('link', { name: 'Make a browser key' })).toBeNull();
+  });
+
+  it('offers Boards’ two areas as tabs, with Items current', () => {
+    render(LibraryRail);
+    const areas = within(screen.getByRole('navigation', { name: 'Boards areas' }));
+    expect(areas.getByRole('link', { name: 'Items' })).toHaveAttribute('aria-current', 'page');
+    const creators = areas.getByRole('link', { name: 'Creators' });
+    expect(creators).toHaveAttribute('href', '/pro?area=creators');
+    expect(creators).not.toHaveAttribute('aria-current');
+    expect(sdkMock.getMediaCreators).not.toHaveBeenCalled();
+  });
+
+  it('lists creators by folder in the Creators area, with what is new and who needs a sign-in (FL-1448)', async () => {
+    const creator = (id: string, name: string, change: object = {}) =>
+      ({ ...creatorFixture({ id, name, parentAlbumId: null }), ...change }) as never;
+    creatorsStore.reset();
+    app.page.url = new URL('http://localhost/pro?area=creators&creator=valley');
+    sdkMock.getMediaCapabilities.mockResolvedValue({ available: true, authentication: [], reason: null } as never);
+    sdkMock.getMediaConnections.mockResolvedValue({
+      connections: [{ id: 'c', status: MediaConnectionStatus.Connected, domains: ['bsky.app'] }],
+    } as never);
+    sdkMock.getAllAlbums.mockResolvedValue([]);
+    sdkMock.getMediaCreators.mockResolvedValue({
+      creators: [
+        creator('mara', 'Mara Ellis', { parentAlbumId: 'brand', newCount: 3 }),
+        creator('north', 'North Timber', {
+          parentAlbumId: 'brand',
+          provider: 'twitter',
+          subscription: { ...creatorFixture().subscription, status: MediaSubscriptionState.Attention },
+        }),
+        creator('valley', 'Valley Light', { provider: 'pinterest' }),
+        creator('ridge', 'Ridgeline Films', { following: false, subscription: null }),
+      ],
+    });
+    render(LibraryRail);
+
+    const areas = within(screen.getByRole('navigation', { name: 'Boards areas' }));
+    expect(areas.getByRole('link', { name: 'Creators' })).toHaveAttribute('aria-current', 'page');
+    expect(areas.getByRole('link', { name: 'Items' })).not.toHaveAttribute('aria-current');
+    expect(screen.queryByRole('navigation', { name: 'Boards items' })).toBeNull();
+
+    const folder = within(await screen.findByRole('navigation', { name: 'Brand refresh' }));
+    expect(folder.getByRole('link', { name: /Mara Ellis/ })).toHaveTextContent('3 new');
+    expect(folder.getByRole('link', { name: /North Timber/ })).toHaveTextContent('Needs you');
+    const loose = within(screen.getByRole('navigation', { name: 'Not in a folder' }));
+    const valley = loose.getByRole('link', { name: /Valley Light/ });
+    expect(valley).toHaveAttribute('href', '/pro?area=creators&creator=valley');
+    expect(valley).toHaveAttribute('aria-current', 'page');
+    expect(loose.getByRole('link', { name: /Ridgeline Films/ })).toBeInTheDocument();
+
+    const top = within(screen.getByRole('navigation', { name: 'Creators' }));
+    expect(top.getByRole('link', { name: /Home/ })).toHaveTextContent('3 new');
+    // Three are followed; Ridgeline Films was only saved from.
+    expect(top.getByRole('link', { name: /Subscriptions/ })).toHaveTextContent('3');
+    expect(top.getByRole('link', { name: /Subscriptions/ })).toHaveAttribute(
+      'href',
+      '/pro?area=creators&view=subscriptions',
+    );
+
+    creatorsStore.focusAdd = 0;
+    const add = screen.getByRole('link', { name: 'Add from the web…' });
+    expect(add).toHaveAttribute('href', '/pro?area=creators');
+    add.addEventListener('click', (event) => event.preventDefault());
+    await fireEvent.click(add);
+    expect(creatorsStore.focusAdd).toBe(1);
+    await fireEvent.click(await screen.findByRole('button', { name: /Connected sites/ }));
+    expect(creatorsStore.connectionsOpen).toBe(true);
+    creatorsStore.reset();
   });
 
   it('turns the drawer into the "Collections and filters" sheet only in Boards', () => {

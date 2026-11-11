@@ -16,6 +16,9 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 /** Which browser Save to Frameleaf signed in from (FL-655). */
 export type BrowserExtensionClient = 'chrome' | 'edge';
 
+/** What a sign-in allows (FL-1427): saving into Boards, or media downloads, sites and subscriptions too. */
+export type BrowserExtensionGrant = 'capture' | 'media';
+
 /**
  * FL-655: a single-use sign-in code for Save to Frameleaf, made when you press Allow. Only its
  * SHA-256 is kept. It is bound to the account and session that allowed it, the extension's exact
@@ -26,6 +29,10 @@ export type BrowserExtensionClient = 'chrome' | 'edge';
 @Index({ columns: ['expiresAt'] })
 @Check({ name: 'browser_extension_sign_in_code_hash_check', expression: 'octet_length("codeHash") = 32' })
 @Check({ name: 'browser_extension_sign_in_code_client_check', expression: `"client" IN ('chrome', 'edge')` })
+@Check({
+  name: 'browser_extension_sign_in_code_grant_check',
+  expression: `"accessGrant" IN ('capture', 'media')`,
+})
 export class BrowserExtensionSignInCodeTable {
   @PrimaryColumn({ type: 'bytea' }) codeHash!: Buffer;
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) userId!: string;
@@ -35,6 +42,8 @@ export class BrowserExtensionSignInCodeTable {
   @Column() client!: BrowserExtensionClient;
   @Column() installationId!: string;
   @Column() serverId!: string;
+  /** FL-1427: what Allow was pressed for; the exchange issues exactly this, whatever it is sent. */
+  @Column({ default: 'capture' }) accessGrant!: Generated<BrowserExtensionGrant>;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
   @Column({ type: 'timestamp with time zone' }) expiresAt!: Timestamp;
 }

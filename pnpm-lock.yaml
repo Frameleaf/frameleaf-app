@@ -969,6 +969,9 @@ importers:
       thumbhash:
         specifier: ^0.1.1
         version: 0.1.1
+      tldts:
+        specifier: 6.1.86
+        version: 6.1.86
       transformation-matrix:
         specifier: ^3.1.0
         version: 3.1.0
@@ -25560,13 +25563,11 @@ snapshots:
 
   tinyrainbow@3.2.0: {}
 
-  tldts-core@6.1.86:
-    optional: true
+  tldts-core@6.1.86: {}
 
   tldts@6.1.86:
     dependencies:
       tldts-core: 6.1.86
-    optional: true
 
   tmp@0.2.7: {}
 

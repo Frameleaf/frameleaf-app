@@ -315,6 +315,7 @@ describe(ApiKeyService.name, () => {
       await expect(sut.getById(auth, apiKey.id)).resolves.toMatchObject({
         permissions: [Permission.AssetRead],
         designPermissions: [Permission.CaptureCreate, Permission.CaptureCatalogRead],
+        mediaPermissions: [],
       });
     });
   });

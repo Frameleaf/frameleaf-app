@@ -115,6 +115,7 @@ describe('ApiKeyDialog (FL-67)', () => {
         name: 'Browser',
         permissions: [],
         designPermissions: [...PURPOSE_PERMISSIONS.capture],
+        mediaPermissions: [],
       },
       secret: 'synthetic-capture-key',
     } as never);
@@ -158,6 +159,7 @@ describe('ApiKeyDialog (FL-67)', () => {
       name: 'Script',
       permissions: [ApiKeyResponsePermission.AssetRead],
       designPermissions: [],
+      mediaPermissions: [],
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
       lastUsedAt: null,

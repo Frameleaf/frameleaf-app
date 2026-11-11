@@ -18,7 +18,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createNativeService } from './runtime/native-service.js';
 import { chmod, mkdir, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { isIP } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z, ZodError } from 'zod';
@@ -50,6 +49,7 @@ import { log, print, renderBanner, requestLog } from './banner.js';
 import { connectionChecks, redactPaths, redactionRoots, renderReport } from './troubleshooting.js';
 import { visibility } from './mounts.js';
 import { measurableBy, readStorage, storagePlaces } from './storage-drives.js';
+import { selfSignedCertificateArguments } from './tls-certificate.js';
 
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
 // Docker only: these are Linux paths, and a native Windows path has a colon of its own.
@@ -739,25 +739,7 @@ async function main() {
       await stat(cert);
       await stat(key);
     } catch {
-      const host = origin ? new URL(origin).hostname.replace(/^\[|\]$/g, '') : 'localhost';
-      if (!/^[A-Za-z0-9.:-]+$/.test(host)) throw new Error('Invalid HTTPS hostname');
-      await command('openssl', [
-        'req',
-        '-x509',
-        '-newkey',
-        'rsa:3072',
-        '-nodes',
-        '-days',
-        '365',
-        '-keyout',
-        key,
-        '-out',
-        cert,
-        '-subj',
-        `/CN=${host}`,
-        '-addext',
-        `subjectAltName=${isIP(host) ? 'IP' : 'DNS'}:${host}`,
-      ]);
+      await command('openssl', selfSignedCertificateArguments(origin, key, cert));
       await chmod(key, 0o600);
     }
   }

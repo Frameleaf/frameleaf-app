@@ -13,6 +13,15 @@ type MetricsSources = {
   assets?: () => Promise<{ type: string; count: number }[]>;
   queues?: () => Promise<{ queue: string; counts: QueueCounts }[]>;
   database: () => { reserved: number; waiting: number; capacity: number };
+  media?: () => Promise<{
+    queueAge: number;
+    bytes: number;
+    failures: number;
+    authenticationFailures: number;
+    retries: number;
+    subscriptionLag: number;
+    providers: { provider: string; failures: number }[];
+  }>;
 };
 
 const prefix = 'frameleaf_';
@@ -64,6 +73,27 @@ export class MetricsRepository {
 
     const gauge = (name: string, help: string, labelNames: string[]) =>
       new Gauge({ name: `${prefix}${name}`, help, labelNames, registers: [this.registry] });
+    if (sources.media) {
+      const read = sources.media;
+      const counters = {
+        queueAge: gauge('media_queue_age_seconds', 'Age of oldest queued media import', []),
+        bytes: gauge('media_download_bytes', 'Downloaded bytes retained in media receipts', []),
+        failures: gauge('media_failed_items', 'Media items with extraction or publication failures', []),
+        authenticationFailures: gauge('media_expired_connections', 'Site connections requiring refreshed access', []),
+        retries: gauge('media_retries', 'Automatic and requested media retry attempts', []),
+        subscriptionLag: gauge('media_subscription_lag_seconds', 'Delay of the oldest due subscription', []),
+      };
+      const providers = gauge('media_provider_failed_items', 'Failed media items by extractor provider', ['provider']);
+      this.collectors.push(
+        refresh(async () => {
+          const values = await read().catch(() => null);
+          providers.reset();
+          if (!values) return;
+          for (const key of Object.keys(counters) as (keyof typeof counters)[]) counters[key].set(values[key]);
+          for (const { provider, failures } of values.providers) providers.set({ provider }, failures);
+        }, 30_000),
+      );
+    }
     const pool = gauge('database_pool_connections', 'Connections in use, waiting, and pool capacity', ['state']);
     this.collectors.push(() => {
       const state = sources.database();

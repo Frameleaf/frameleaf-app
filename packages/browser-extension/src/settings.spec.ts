@@ -160,6 +160,20 @@ describe('trusted connection storage', () => {
       expect.objectContaining({ token: 'signed-in-key', method: 'sign-in' }),
     );
   });
+  it('remembers what an access was allowed; one from before that is saving only (FL-1427)', async () => {
+    const settings = await import('./settings');
+    await settings.saveConnection(binding, 'older-key', { method: 'sign-in' });
+    expect(await settings.connectionStatus()).not.toHaveProperty('grant');
+
+    await settings.saveConnection(binding, 'media-key', {
+      method: 'sign-in',
+      grant: 'media',
+    });
+    expect((await settings.connectionStatus())?.grant).toBe('media');
+    await settings.pauseConnection(binding);
+    expect((await settings.connectionStatus())?.grant).toBe('media');
+  });
+
   it('lists recently used servers newest first, without duplicates (FL-655)', async () => {
     const settings = await import('./settings');
     vi.spyOn(Date, 'now')

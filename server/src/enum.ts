@@ -261,6 +261,13 @@ export enum Permission {
   BookmarkUpdate = 'bookmark.update',
   BookmarkDelete = 'bookmark.delete',
 
+  MediaImportRead = 'media-import.read',
+  MediaImportCreate = 'media-import.create',
+  MediaImportUpdate = 'media-import.update',
+  MediaConnectionRead = 'media-connection.read',
+  MediaConnectionWrite = 'media-connection.write',
+  MediaSubscriptionRead = 'media-subscription.read',
+  MediaSubscriptionWrite = 'media-subscription.write',
   CaptureCreate = 'capture.create',
   CaptureCatalogRead = 'capture.catalog.read',
 
@@ -2319,6 +2326,7 @@ export const QueueJobWorkerKindSchema = z
   .meta({ id: 'QueueJobWorkerKind' });
 
 export enum JobName {
+  MediaImport = 'media-import',
   ICloudSync = 'ICloudSync',
   ICloudRelations = 'ICloudRelations',
   /** FL-79: the nightly local analytics collector, with its retention and downsampling. */
@@ -2549,6 +2557,8 @@ export const JobNameSchema = z
     JobName.MediaHealthFixAsset,
     JobName.WorkflowEventDispatch,
     JobName.WorkflowEventTrigger,
+    // the member's key: its value is 'media-import', unlike the names above
+    'MediaImport',
   ])
   .describe('Job name')
   .meta({ id: 'JobName' });

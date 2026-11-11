@@ -35,6 +35,7 @@ WHAT YOU CAN SAVE
 • Whole pages as links, with their title, so your board shows more than a bare address.
 • Screenshots: what you can see, an area you select, or the whole page in one picture (a very tall page is cut short, and you're told where).
 • Right-click any image or page and save it to Frameleaf.
+• Video, audio and galleries: ask your Frameleaf server to download a page's media, choose from what a page plays, or follow a creator so new posts keep arriving. Your server does the downloading, so it carries on with the browser closed.
 
 ORGANISED AS YOU SAVE
 • Choose a collection, or make a new one, without leaving the page.
@@ -52,6 +53,7 @@ PRIVATE BY DESIGN
 • What you save goes only to your own Frameleaf server, at home or on Frameleaf Cloud.
 • No analytics, no ads, no third-party services.
 • The extension only reads a page when you choose to save from it.
+• A site's sign-in is shared with your server only when you press Connect for that site, and only for that site. The extension keeps no copy.
 
 WHAT YOU NEED
 A Frameleaf server of your own, running at home or with Frameleaf Cloud. Boards is free with every Frameleaf library.
@@ -66,7 +68,7 @@ Learn more at https://frameleaf.app
 ## Privacy practices tab
 
 **Single purpose:**
-Save images, pages and screenshots from the browser into the user's own Frameleaf library.
+Save images, pages, screenshots and media from the browser into the user's own Frameleaf library.
 
 **Permission reasons** (one per permission, as the dashboard asks):
 
@@ -78,14 +80,17 @@ Save images, pages and screenshots from the browser into the user's own Framelea
 | `alarms`                                  | Retries saving items that are waiting when your server was offline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `contextMenus`                            | Adds "Save image to Frameleaf" (on images) and "Save page bookmark to Frameleaf" (on pages) to the right-click menu. They only start a save when you pick one.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `identity`                                | Opens Chrome's sign-in window, so you sign in to your Frameleaf server instead of pasting a key.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Optional host access (`https://*/*`, `http://*/*`) | Nothing is granted when the extension is added. It asks for your Frameleaf server's address when you connect it, and for a site's address the first time you save images from that site, so it can show previews of a page's images, download the ones you save from the site that hosts them (over `https` or plain `http`), and send what you save to your Frameleaf server, which lives at an address each person chooses. Previews and downloads go without cookies or a referrer, and nothing is saved until you choose Save. Connecting to your Frameleaf server over plain `http` is only allowed for a server on your own computer, when you turn that on. |
+| Optional host access (`https://*/*`, `http://*/*`) | Nothing is granted when the extension is added. It asks for your Frameleaf server's address when you connect it, and for a site's address the first time you save images from that site, so it can show previews of a page's images, download the ones you save from the site that hosts them (over `https` or plain `http`), and send what you save to your Frameleaf server, which lives at an address each person chooses. Previews and downloads go without cookies or a referrer, and nothing is saved until you choose Save. Connecting to your Frameleaf server over plain `http` is only allowed for a server on your own computer, when you turn that on. When you use media downloads, it also asks for the address of the one site you are on: to share that site's sign-in with your Frameleaf server when you press Connect, or to list the media that page requests when you press Watch this tab (and, only if you allow it, the other sites that page loads media from). |
+| `cookies` (optional)                      | Not granted when the extension is added. Asked for when you press Connect for a site, together with that site's address. It reads the cookies the browser would send to that one site, shows you the domains, and sends them once, over HTTPS, to your own Frameleaf server so the server can download media you can only see when signed in. They are never stored in the extension, and no other site's cookies are read. |
+| `webRequest` (optional)                   | Not granted when the extension is added. Asked for when you press Watch this tab on the Page tab. It lists the addresses of video and audio the tab you chose requests (playlists and files; stream fragments are grouped, never listed as videos), so you can choose which to send to your Frameleaf server. Requests are only observed, never changed; no headers or cookies are read; the list is kept in memory and cleared when the tab goes to another page. |
 
 **Remote code:** No. All code is in the package; nothing is downloaded and run.
 
 **Data use** (tick the categories that apply):
 
-- **Website content:** yes. The images, page addresses and titles you choose to save are sent to your own Frameleaf server.
-- **Authentication information:** yes. The access the extension gets when you sign in is stored in the browser and sent only to your server.
+- **Website content:** yes. The images, page addresses and titles you choose to save, and the addresses of media you choose to download, are sent to your own Frameleaf server.
+- **Authentication information:** yes. The access the extension gets when you sign in is stored in the browser and sent only to your server. When you press Connect for a site, that site's cookies are sent once to your own Frameleaf server and are not stored by the extension.
+- **Web history:** no. Watching a tab for media lists only media addresses for the tab you chose, in memory, until that tab navigates.
 - All other categories: no.
 
 Certify that the data is:
@@ -114,5 +119,6 @@ Capture the screenshots from the real extension against a test server, not the p
 ## Before the first upload
 
 - Walk through the extension in a normal Chrome window: connect, sign in, save images, save a page, take each kind of screenshot, and use Open in the save list.
+- Walk through media too, from the Page tab: allow media downloads, follow a channel or account, download one video or post (with and without following its creator too), download media from any other site with and without watching the tab, and connect, refresh and disconnect a site. Check each browser permission prompt names only the site you are on.
 - Make sure `frameleaf.app/legal` covers the extension's data use as described above.
 - After the first upload, the store assigns the extension's permanent id. The server's sign-in accepts any `https://<id>.chromiumapp.org/` return address, so no server change is needed.

@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { BrowserExtensionGrant } from 'src/schema/tables/browser-extension-sign-in.table.js';
 import {
   BrowserExtensionSignInAuthorizeDto,
   BrowserExtensionSignInAuthorizeResponseDto,
@@ -27,6 +28,24 @@ import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
 /** The "Browser extension" key purpose: save into Boards and list collections and tags, nothing else. */
 export const BROWSER_EXTENSION_PERMISSIONS = [Permission.CaptureCreate, Permission.CaptureCatalogRead];
 
+/**
+ * FL-1427: what each grant issues, exactly. `capture` is all an older extension asks for and all a
+ * key issued before media downloads holds; `media` adds the seven media permissions and nothing else.
+ */
+export const BROWSER_EXTENSION_GRANTS: Record<BrowserExtensionGrant, Permission[]> = {
+  capture: BROWSER_EXTENSION_PERMISSIONS,
+  media: [
+    ...BROWSER_EXTENSION_PERMISSIONS,
+    Permission.MediaImportRead,
+    Permission.MediaImportCreate,
+    Permission.MediaImportUpdate,
+    Permission.MediaConnectionRead,
+    Permission.MediaConnectionWrite,
+    Permission.MediaSubscriptionRead,
+    Permission.MediaSubscriptionWrite,
+  ],
+};
+
 const INVALID_MESSAGE = 'This sign-in can’t be used. Sign in again from Save to Frameleaf.';
 const EXPIRED_MESSAGE = 'This sign-in took too long. Sign in again from Save to Frameleaf.';
 
@@ -48,7 +67,7 @@ const exchangeError = (code: 'expired' | 'invalid') =>
  * (S256) and a state. A signed-in person presses Allow, which makes a single-use code bound to them,
  * their session, the challenge, the exact return address and this server, valid five minutes. The
  * extension exchanges the code with its verifier for a new API key that can only save captures and
- * list collections and tags, named "Save to Frameleaf · Chrome" (or Edge). No new account system:
+ * list collections and tags (and, when Allow was pressed for media downloads, use those), named "Save to Frameleaf · Chrome" (or Edge). No new account system:
  * the person's own session approves and the existing API keys carry the access.
  */
 @Injectable()
@@ -62,14 +81,19 @@ export class BrowserExtensionSignInService {
 
   /** `GET browser-extension/sign-in`: tells the extension this server can sign in from the browser. */
   info(): BrowserExtensionSignInInfoDto {
-    return { version: 1 };
+    return { version: 1, grants: ['capture', 'media'] };
   }
 
   /** `POST browser-extension/sign-in/start`: checks the request behind the Allow page. */
   async start(auth: AuthDto, dto: BrowserExtensionSignInStartDto): Promise<BrowserExtensionSignInStartResponseDto> {
     const { origin } = this.check(auth, dto);
     const existing = await this.repository.getAccess(auth.user.id, dto.client, origin, dto.installationId);
-    return { accessName: accessName(dto.client), alreadyAllowed: !!existing };
+    // Allow is skipped only when this installation's key already holds everything now asked for.
+    const held = new Set<string>(existing?.permissions);
+    const alreadyAllowed =
+      !!existing &&
+      (held.has(Permission.All) || BROWSER_EXTENSION_GRANTS[dto.grant ?? 'capture'].every((item) => held.has(item)));
+    return { accessName: accessName(dto.client), alreadyAllowed };
   }
 
   /**
@@ -93,6 +117,7 @@ export class BrowserExtensionSignInService {
       redirectUri,
       client: dto.client,
       installationId: dto.installationId,
+      accessGrant: dto.grant ?? 'capture',
       serverId: await stableServerId({ systemMetadataRepository: this.systemMetadataRepository }),
       expiresAt: new Date(Date.now() + SIGN_IN_CODE_TTL_SECONDS * 1000),
     });
@@ -125,6 +150,8 @@ export class BrowserExtensionSignInService {
       throw exchangeError('invalid');
     }
 
+    // The scope comes from the code alone: nothing the exchange is sent can widen it.
+    const grant: BrowserExtensionGrant = found.accessGrant === 'media' ? 'media' : 'capture';
     const secret = this.cryptoRepository.randomBytesAsText(32);
     const name = accessName(found.client);
     const apiKey = await this.repository.replaceAccess({
@@ -134,9 +161,9 @@ export class BrowserExtensionSignInService {
       installationId: found.installationId,
       name,
       key: this.cryptoRepository.hashSha256(secret),
-      permissions: BROWSER_EXTENSION_PERMISSIONS,
+      permissions: BROWSER_EXTENSION_GRANTS[grant],
     });
-    return { secret, apiKeyId: apiKey.id, name: apiKey.name, userId: user.id, serverId };
+    return { secret, apiKeyId: apiKey.id, name: apiKey.name, userId: user.id, serverId, grant };
   }
 
   /** `DELETE browser-extension/sign-in`: Sign out in the extension removes its own access. */

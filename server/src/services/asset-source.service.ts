@@ -12,6 +12,7 @@ type SourceRow = Awaited<ReturnType<AssetSourceRepository['getAll']>>[number];
 
 const toResponse = (source: SourceRow): AssetSourceResponseDto => ({
   ...source,
+  publishedAt: source.publishedAt ? asDateTimeString(source.publishedAt) : null,
   capturedAt: asDateTimeString(source.capturedAt),
   createdAt: asDateTimeString(source.createdAt),
   importedFrom: source.importedFrom ?? null,

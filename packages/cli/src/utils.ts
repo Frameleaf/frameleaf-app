@@ -44,9 +44,12 @@ export const authenticate = async (options: BaseOptions): Promise<AuthDto> => {
 export const s = (count: number) => (count === 1 ? '' : 's');
 
 /** Every permission a key holds; the server lists design permissions in their own field. */
-export const keyPermissions = (key: Pick<ApiKeyResponseDto, 'permissions' | 'designPermissions'>): Permission[] => [
+export const keyPermissions = (
+  key: Pick<ApiKeyResponseDto, 'permissions' | 'designPermissions' | 'mediaPermissions'>,
+): Permission[] => [
   ...(key.permissions as string[] as Permission[]),
   ...((key.designPermissions ?? []) as string[] as Permission[]),
+  ...((key.mediaPermissions ?? []) as string[] as Permission[]),
 ];
 
 export const requirePermissions = async (permissions: Permission[]) => {

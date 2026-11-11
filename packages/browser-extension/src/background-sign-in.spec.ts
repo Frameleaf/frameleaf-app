@@ -466,6 +466,299 @@ describe('Sign in with your Frameleaf account (FL-655)', () => {
     expect(values.frameleafConnectionV1).toBeUndefined();
   });
 
+  describe('allowing media downloads (FL-1427)', () => {
+    /** A Library that knows media downloads, and allows what the Allow page was opened for. */
+    const newerLibrary = () => {
+      const plain = fetchMock.getMockImplementation() as (
+        url: string,
+        init?: RequestInit,
+      ) => Promise<Response>;
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (
+          url.endsWith('/api/browser-extension/sign-in') &&
+          init?.method !== 'DELETE'
+        )
+          return json({ version: 1, grants: ['capture', 'media'] });
+        if (url.endsWith('/exchange'))
+          return json({
+            secret: 'media-key',
+            apiKeyId: 'access-2',
+            userId: binding.userId,
+            serverId: 'server-a',
+            grant: new URL(launch.mock.calls.at(-1)![0].url).searchParams.get(
+              'grant',
+            )
+              ? 'media'
+              : 'capture',
+          });
+        return plain(url, init);
+      });
+    };
+    const signIn = async () => {
+      const { handleMessage } = await import('./background');
+      await handleMessage(
+        { type: 'sign-in', address: 'https://photos.example' },
+        popup,
+      );
+      return handleMessage;
+    };
+    const stored = () =>
+      values.frameleafConnectionV1 as {
+        token: string;
+        grant?: string;
+        apiKeyId?: string;
+      };
+
+    it('signing in asks only to save, exactly as before', async () => {
+      newerLibrary();
+      await signIn();
+
+      const opened = new URL(launch.mock.calls[0][0].url);
+      expect(opened.searchParams.has('grant')).toBe(false);
+      expect(stored().grant).toBe('capture');
+    });
+
+    it('asks on the Library’s own page, bound to its own secret, and keeps what the Library allowed', async () => {
+      newerLibrary();
+      const handleMessage = await signIn();
+
+      const reply = await handleMessage(
+        { type: 'sign-in', address: 'https://photos.example', grant: 'media' },
+        popup,
+      );
+
+      expect(reply).toEqual(
+        expect.objectContaining({
+          ok: true,
+          connection: expect.objectContaining({
+            status: 'connected',
+            grant: 'media',
+          }),
+        }),
+      );
+      const [first, second] = launch.mock.calls.map(
+        ([{ url }]) => new URL(url).searchParams,
+      );
+      expect(second.get('grant')).toBe('media');
+      // each request has its own challenge and state, and the same installation
+      expect(second.get('code_challenge')).toMatch(/^[\w-]{43}$/);
+      expect(second.get('code_challenge')).not.toBe(
+        first.get('code_challenge'),
+      );
+      expect(second.get('state')).not.toBe(first.get('state'));
+      expect(second.get('installation')).toBe(first.get('installation'));
+      // the scope is never sent to the exchange: the code alone carries it
+      const exchanges = fetchMock.mock.calls
+        .filter(([url]) => String(url).endsWith('/exchange'))
+        .map(([, init]) => JSON.parse(String((init as RequestInit).body)));
+      expect(exchanges).toHaveLength(2);
+      expect(Object.keys(exchanges[1]).sort()).toEqual([
+        'code',
+        'codeVerifier',
+        'redirectUri',
+      ]);
+      expect(exchanges[1].codeVerifier).not.toBe(exchanges[0].codeVerifier);
+      expect(stored()).toEqual(
+        expect.objectContaining({
+          token: 'media-key',
+          grant: 'media',
+          apiKeyId: 'access-2',
+        }),
+      );
+      // no "You're signed in" again: you never signed out
+      const state = await handleMessage({ type: 'sign-in-state' }, popup);
+      expect(state).toEqual(expect.objectContaining({ notice: null }));
+    });
+
+    it('keeps what the Library says it allowed, not what was asked for', async () => {
+      newerLibrary();
+      const handleMessage = await signIn();
+      const plain = fetchMock.getMockImplementation() as (
+        url: string,
+        init?: RequestInit,
+      ) => Promise<Response>;
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+        url.endsWith('/exchange')
+          ? json({
+              secret: 'still-capture',
+              apiKeyId: 'access-3',
+              userId: binding.userId,
+              serverId: 'server-a',
+              grant: 'capture',
+            })
+          : plain(url, init),
+      );
+
+      await handleMessage(
+        { type: 'sign-in', address: 'https://photos.example', grant: 'media' },
+        popup,
+      );
+
+      expect(stored().grant).toBe('capture');
+    });
+
+    it('never asks a Library from before media downloads, and stays signed in to it', async () => {
+      const handleMessage = await signIn();
+      const before = stored().token;
+
+      const reply = await handleMessage(
+        { type: 'sign-in', address: 'https://photos.example', grant: 'media' },
+        popup,
+      );
+
+      expect(reply).toEqual(
+        expect.objectContaining({
+          ok: false,
+          error: expect.stringContaining('needs an update'),
+          connection: expect.objectContaining({ status: 'connected' }),
+        }),
+      );
+      // no second window, no stored sign-in problem, the same access
+      expect(launch).toHaveBeenCalledTimes(1);
+      expect(stored().token).toBe(before);
+      expect(values.frameleafSignInNoticeV1).toEqual({ kind: 'welcome' });
+    });
+
+    it('is only kept for the same server and account, and the stray access is removed', async () => {
+      newerLibrary();
+      const handleMessage = await signIn();
+      // "Not you?" on the Allow page: someone else allowed it
+      vi.mocked(connectServer).mockResolvedValue({
+        ...binding,
+        userId: '99999999-9999-4999-8999-999999999999',
+      });
+      const plain = fetchMock.getMockImplementation() as (
+        url: string,
+        init?: RequestInit,
+      ) => Promise<Response>;
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+        url.endsWith('/exchange')
+          ? json({
+              secret: 'someone-elses-key',
+              apiKeyId: 'access-9',
+              userId: '99999999-9999-4999-8999-999999999999',
+              serverId: 'server-a',
+              grant: 'media',
+            })
+          : plain(url, init),
+      );
+
+      const reply = await handleMessage(
+        { type: 'sign-in', address: 'https://photos.example', grant: 'media' },
+        popup,
+      );
+
+      // a sign-in that failed, said as one: not "nothing changed"
+      expect(reply).toEqual(
+        expect.objectContaining({
+          ok: false,
+          problem: 'failed',
+          error: 'failed',
+        }),
+      );
+      expect(stored().token).not.toBe('someone-elses-key');
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith('/api/browser-extension/sign-in') &&
+            (init as RequestInit)?.method === 'DELETE' &&
+            new Headers((init as RequestInit).headers).get('x-api-key') ===
+              'someone-elses-key',
+        ),
+      ).toBe(true);
+    });
+
+    it('keeps the new access when the last check fails: the server already replaced the old one', async () => {
+      newerLibrary();
+      const handleMessage = await signIn();
+      // the exchange succeeded, then the server stopped answering
+      vi.mocked(connectServer).mockRejectedValueOnce(new Error('timed out'));
+
+      const reply = await handleMessage(
+        { type: 'sign-in', address: 'https://photos.example', grant: 'media' },
+        popup,
+      );
+
+      expect(reply).toEqual(
+        expect.objectContaining({
+          ok: true,
+          connection: expect.objectContaining({
+            status: 'connected',
+            grant: 'media',
+          }),
+        }),
+      );
+      expect(stored()).toEqual(
+        expect.objectContaining({
+          token: 'media-key',
+          apiKeyId: 'access-2',
+          grant: 'media',
+        }),
+      );
+      // same server and account, but a new access is a new credential
+      const kept = (values.frameleafConnectionV1 as { binding: typeof binding })
+        .binding;
+      expect(kept).toEqual(
+        expect.objectContaining({
+          serverId: binding.serverId,
+          userId: binding.userId,
+          origin: binding.origin,
+        }),
+      );
+      expect(kept.credentialId).not.toBe(binding.credentialId);
+      // and the only access that still works was not removed
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith('/api/browser-extension/sign-in') &&
+            (init as RequestInit)?.method === 'DELETE' &&
+            new Headers((init as RequestInit).headers).get('x-api-key') ===
+              'media-key',
+        ),
+      ).toBe(false);
+      expect(values.frameleafPendingRemovalsV1).toBeUndefined();
+    });
+
+    it('can’t be asked for a server this browser isn’t signed in to', async () => {
+      newerLibrary();
+      const { handleMessage } = await import('./background');
+
+      const reply = await handleMessage(
+        { type: 'sign-in', address: 'https://photos.example', grant: 'media' },
+        popup,
+      );
+
+      expect(reply).toEqual(expect.objectContaining({ ok: false }));
+      expect(launch).not.toHaveBeenCalled();
+      expect(values.frameleafConnectionV1).toBeUndefined();
+    });
+
+    it('cancelling on the Allow page changes nothing', async () => {
+      newerLibrary();
+      const handleMessage = await signIn();
+      const before = stored().token;
+      launch.mockImplementationOnce(async ({ url }: { url: string }) => {
+        const state = new URL(url).searchParams.get('state');
+        return `${REDIRECT}?error=access_denied&state=${state}`;
+      });
+
+      const reply = await handleMessage(
+        { type: 'sign-in', address: 'https://photos.example', grant: 'media' },
+        popup,
+      );
+
+      expect(reply).toEqual(
+        expect.objectContaining({
+          ok: false,
+          connection: expect.objectContaining({ status: 'connected' }),
+        }),
+      );
+      expect(stored()).toEqual(
+        expect.objectContaining({ token: before, grant: 'capture' }),
+      );
+    });
+  });
+
   it('only the popup and options page can start a sign-in', async () => {
     const { handleMessage } = await import('./background');
     const page = {
