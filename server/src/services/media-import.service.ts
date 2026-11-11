@@ -32,7 +32,7 @@ import {
   type MediaDownloadInspection,
   MediaDownloaderRepository,
 } from 'src/repositories/media-downloader.repository.js';
-import { MediaImportRepository } from 'src/repositories/media-import.repository.js';
+import { MediaImportRepository, MediaItemConflict } from 'src/repositories/media-import.repository.js';
 import { MediaSessionRepository } from 'src/repositories/media-session.repository.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { mediaSourceKey, subscriptionSince } from 'src/utils/media-import.js';
@@ -482,8 +482,11 @@ export class MediaImportService {
           itemAuthority,
           'failed',
           undefined,
-          error instanceof MediaDownloadError ? error.message : 'Media could not be saved',
+          error instanceof MediaDownloadError || error instanceof MediaItemConflict
+            ? error.message
+            : 'Media could not be saved',
         );
+        if (error instanceof MediaItemConflict) continue;
         if (!(error instanceof MediaDownloadError) || ['authentication_required', 'rate_limited'].includes(error.code))
           throw error;
       } finally {

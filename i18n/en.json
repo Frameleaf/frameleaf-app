@@ -8294,6 +8294,7 @@
   "frameleaf_extension_allow_cancelled_body": "Save to Frameleaf can’t save anything. You can close this window.",
   "frameleaf_extension_allow_cancelled_title": "Nothing was allowed",
   "frameleaf_extension_allow_cant_change": "Change or delete anything",
+  "frameleaf_extension_allow_cant_change_media": "Change or delete anything already in your library",
   "frameleaf_extension_allow_cant_photos": "See your photos, videos or albums",
   "frameleaf_extension_allow_cant_read": "Read a page until you save from it",
   "frameleaf_extension_allow_cant_title": "It won’t be able to",

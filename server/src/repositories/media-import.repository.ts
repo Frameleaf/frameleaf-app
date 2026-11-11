@@ -56,6 +56,9 @@ export type MediaImportAuthority = {
 const active = ['inspecting', 'queued', 'downloading', 'assembling', 'importing'] as const;
 const hash = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
 
+/** One item cannot be published; the rest of its import carries on. */
+export class MediaItemConflict extends ConflictException {}
+
 @Injectable()
 export class MediaImportRepository {
   constructor(
@@ -698,7 +701,7 @@ export class MediaImportRepository {
       .forUpdate()
       .executeTakeFirstOrThrow();
     if (item.state === 'saved') return item.assetId!;
-    if (await this.suppressed(row, item, tx)) throw new ConflictException('This media was removed locally');
+    if (await this.suppressed(row, item, tx)) throw new MediaItemConflict('This media was removed locally');
     if (row.overrideSuppression && !row.subscriptionId) await lockEditFamilyAssets(tx, row.ownerId);
     const result = await publish();
     const asset = await tx
@@ -710,10 +713,10 @@ export class MediaImportRepository {
       .where(sql<boolean>`not ${hiddenFromOthers(undefined)}`)
       .forUpdate()
       .executeTakeFirst();
-    if (!asset) throw new ConflictException('Existing media is in Trash or unavailable');
+    if (!asset) throw new MediaItemConflict('Existing media is in Trash or unavailable');
     if (asset.deletedAt) {
       if (!row.overrideSuppression || row.subscriptionId || asset.status !== AssetStatus.Trashed)
-        throw new ConflictException('Existing media is in Trash or unavailable');
+        throw new MediaItemConflict('Existing media is in Trash or unavailable');
       const seeds = await associatedSeeds(tx, row.ownerId, [asset.id]);
       const binding = requireEditFamilyCoverage(
         tx,
@@ -730,7 +733,7 @@ export class MediaImportRepository {
         {},
         (rows) => rows.length === 1 && rows[0].id === asset.id,
       );
-      if (restored?.length !== 1) throw new ConflictException('Existing media cannot be restored');
+      if (restored?.length !== 1) throw new MediaItemConflict('Existing media cannot be restored');
       await trash.appendStatusEffects(tx, row.ownerId, restored, AssetStatus.Active, binding.family.assetIds);
       await this.assertAuthority(authority, tx);
     }
