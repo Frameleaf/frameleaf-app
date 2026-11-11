@@ -1175,6 +1175,23 @@
   "preferences.clients.enabled": {
     "type": "boolean"
   },
+  "preferences.display.dateFormat": {
+    "type": "string",
+    "enum": [
+      "auto",
+      "iso",
+      "dmy",
+      "mdy"
+    ]
+  },
+  "preferences.display.hourCycle": {
+    "type": "string",
+    "enum": [
+      "auto",
+      "h12",
+      "h23"
+    ]
+  },
   "preferences.download.archiveSize": {
     "type": "integer",
     "minimum": 1,
