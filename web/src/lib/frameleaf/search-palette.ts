@@ -21,6 +21,7 @@ import {
   type DiscoverySearchDto,
   type DiscoveryTextField,
 } from '$lib/components/discovery/query';
+import { formatDate } from '$lib/frameleaf/date-format';
 import { mediaKindInfo } from '$lib/frameleaf/media-kinds';
 import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
 
@@ -925,10 +926,11 @@ export const histogramBarLabel = (bar: HistogramBar, unit: HistogramUnit, locale
   if (unit === 'year') {
     return String(date.getUTCFullYear());
   }
-  return date.toLocaleDateString(locale, {
-    timeZone: 'UTC',
-    ...(unit === 'day' ? { month: 'short', day: 'numeric' } : { month: 'short', year: 'numeric' }),
-  });
+  return formatDate(
+    date,
+    { timeZone: 'UTC', ...(unit === 'day' ? { month: 'short', day: 'numeric' } : { month: 'short', year: 'numeric' }) },
+    locale,
+  );
 };
 
 const DATE_TOKEN = /^-?(after|before|year|month):/i;

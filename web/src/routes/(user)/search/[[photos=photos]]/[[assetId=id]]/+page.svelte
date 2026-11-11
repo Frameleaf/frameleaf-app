@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -631,14 +632,7 @@
 
   function getHumanReadableDate(dateString: string) {
     const date = parseUtcDate(dateString).startOf('day');
-    return date.toLocaleString(
-      {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      },
-      { locale: $locale },
-    );
+    return formatLuxon(date, { year: 'numeric', month: 'long', day: 'numeric' }, $locale);
   }
 
   function getHumanReadableSearchKey(key: keyof SearchTerms): string {
