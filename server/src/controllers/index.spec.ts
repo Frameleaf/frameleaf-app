@@ -254,6 +254,9 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST oauth/apps/token': RATE_LIMITS.oauthAppToken,
   'POST oauth/apps/revoke': RATE_LIMITS.oauthAppToken,
   'POST oauth/apps/register': RATE_LIMITS.oauthAppRegister,
+  'GET mcp': RATE_LIMITS.mcp,
+  'POST mcp': RATE_LIMITS.mcp,
+  'GET mcp/preview': RATE_LIMITS.mcp,
   'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
   // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
   'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },

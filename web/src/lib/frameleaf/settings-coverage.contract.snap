@@ -21,6 +21,9 @@
   "backup.schedule.cronExpression": {
     "type": "unknown"
   },
+  "connectedApps.allowMcp": {
+    "type": "boolean"
+  },
   "connectedApps.allowRegistration": {
     "type": "boolean"
   },

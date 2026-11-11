@@ -473,7 +473,17 @@
           label={$t('frameleaf_apps_admin_allow_registration')}
           checked={configToEdit.connectedApps?.allowRegistration ?? true}
           held={disabled}
-          onChange={(value) => (configToEdit.connectedApps = { allowRegistration: value })}
+          onChange={(value) =>
+            (configToEdit.connectedApps = { ...configToEdit.connectedApps, allowRegistration: value })}
+        />
+      </Row>
+      <Row label={$t('frameleaf_apps_admin_allow_mcp')} help={$t('frameleaf_apps_admin_allow_mcp_description')}>
+        <Switch
+          label={$t('frameleaf_apps_admin_allow_mcp')}
+          checked={configToEdit.connectedApps?.allowMcp ?? true}
+          held={disabled}
+          onChange={(value) =>
+            (configToEdit.connectedApps = { allowRegistration: true, ...configToEdit.connectedApps, allowMcp: value })}
         />
       </Row>
       <RegisteredApps />
