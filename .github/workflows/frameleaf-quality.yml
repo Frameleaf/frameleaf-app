@@ -182,7 +182,7 @@ jobs:
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
       - name: Build ML runtime with locked fork dependencies
-        run: docker build --build-arg DEVICE=${{ matrix.device }} --build-arg CPU_IMAGE="$FRAMELEAF_CI_PYTHON_IMAGE" --build-arg CUDA_IMAGE="$FRAMELEAF_CI_CUDA_IMAGE" --target prod --build-context frameleaf=. -t fork-ml-test machine-learning
+        run: docker build --build-arg UBUNTU_MIRROR=http://mirrors.edge.kernel.org/ubuntu/ --build-arg DEVICE=${{ matrix.device }} --build-arg CPU_IMAGE="$FRAMELEAF_CI_PYTHON_IMAGE" --build-arg CUDA_IMAGE="$FRAMELEAF_CI_CUDA_IMAGE" --target prod --build-context frameleaf=. -t fork-ml-test machine-learning
       - name: Verify runtime imports without downloading models
         run: |
           docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import frameleaf_ml.models.image_description'
@@ -224,6 +224,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
         if: inputs.raw_engine == 'libraw'
+      - name: Route runner apt off ubuntu.com (FL-1453)
+        run: bash scripts/ci-ubuntu-mirror.sh
       - name: Build the candidate's pinned LibRaw source and CLI
         if: inputs.raw_engine == 'libraw'
         working-directory: server/base-image/sources
@@ -366,6 +368,8 @@ jobs:
           pnpm --dir packages/browser-extension test --run
           pnpm --dir packages/browser-extension check
           pnpm --dir packages/browser-extension build
+      - name: Route runner apt off ubuntu.com (FL-1453)
+        run: bash scripts/ci-ubuntu-mirror.sh
       - name: Install bundled Chromium for extension fixtures
         run: pnpm --dir packages/browser-extension exec playwright install --with-deps chromium
       - name: Test packaged extension against the synthetic server
