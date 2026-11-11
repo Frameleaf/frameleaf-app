@@ -308,7 +308,7 @@
       "file": "formats/jxl/16bit-HDR-P3-nclx.jxl",
       "root": "test-assets",
       "type": "image",
-      "note": "16-bit HDR JPEG XL",
+      "note": "16-bit HDR JPEG XL: today its thumbnail goes to Library care (follow-up under FL-883)",
       "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
       "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
       "reproduces": [
@@ -457,10 +457,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
         }
       }
     },
@@ -476,10 +484,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
         }
       }
     },
@@ -495,10 +511,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
         }
       }
     },
@@ -514,10 +538,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
         }
       }
     },
@@ -533,10 +565,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
         }
       }
     },
@@ -552,10 +592,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
         }
       }
     },
@@ -571,10 +619,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
         }
       }
     },
@@ -590,10 +646,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
         }
       }
     },
@@ -609,10 +673,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 96,
+          "height": 72,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "96x72",
+          "thumbnail": "96x72"
         }
       }
     },
@@ -628,10 +700,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 96,
+          "height": 72,
+          "orientation": "1"
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "96x72",
+          "thumbnail": "96x72"
         }
       }
     },
@@ -647,10 +727,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 96,
+          "height": 72,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "96x72",
+          "thumbnail": "96x72"
         }
       }
     },
@@ -666,10 +754,18 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 96,
+          "height": 72,
+          "orientation": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
         }
       }
     },
@@ -677,7 +773,7 @@
       "file": "known-bad/panorama-72mp.jpg",
       "root": "fixtures",
       "type": "image",
-      "note": "Very wide 24000x3000 panorama",
+      "note": "Very wide 24000x3000 panorama: the preview keeps its 1440 px height, so it comes out 11520 px wide",
       "source": "server/test/fixtures/known-bad/generate.sh (FL-883)",
       "licence": "No third-party rights: generated from a test pattern",
       "reproduces": [
@@ -704,7 +800,7 @@
       "file": "formats/video/h264-no-index.mp4",
       "root": "fixtures",
       "type": "video",
-      "note": "Truncated MP4: the moov index is gone",
+      "note": "Truncated MP4: the moov index is gone, so every step fails and FL-845 sets it aside as unreadable",
       "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
       "licence": "No third-party rights: generated from a test pattern",
       "reproduces": [
@@ -712,13 +808,27 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "set-aside",
+          "cause": "unreadable",
+          "dateTimeOriginal": null,
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": null,
+          "height": null,
+          "orientation": null,
+          "videoCodec": null
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "set-aside",
+          "cause": "unreadable",
+          "preview": null,
+          "thumbnail": null
         },
         "encode": {
-          "outcome": "ok"
+          "outcome": "set-aside",
+          "cause": "unreadable",
+          "videoCodec": null,
+          "size": null
         }
       }
     },
@@ -734,13 +844,24 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": "hevc"
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "160x120",
+          "thumbnail": "160x120"
         },
         "encode": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "160x120"
         }
       }
     },
@@ -823,13 +944,24 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": "av1"
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "160x120",
+          "thumbnail": "160x120"
         },
         "encode": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "160x120"
         }
       }
     },
@@ -845,13 +977,24 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": "prores"
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "160x120",
+          "thumbnail": "160x120"
         },
         "encode": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "160x120"
         }
       }
     },
@@ -867,13 +1010,24 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": "vp9"
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "160x120",
+          "thumbnail": "160x120"
         },
         "encode": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "160x120"
         }
       }
     },
@@ -889,13 +1043,24 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 720,
+          "height": 576,
+          "orientation": "1",
+          "videoCodec": "dvvideo"
         },
         "thumbnail": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "preview": "720x576",
+          "thumbnail": "312x250"
         },
         "encode": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "768x576"
         }
       }
     },
@@ -903,7 +1068,7 @@
       "file": "formats/video/cinema-raw-standin.braw",
       "root": "fixtures",
       "type": "video",
-      "note": "Cinema RAW stand-in no decoder opens",
+      "note": "Cinema RAW stand-in no decoder opens. Today the thumbnail is skipped but the playback encode fails until it is set aside (FL-1357 intends both skipped; follow-up under FL-883)",
       "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
       "licence": "No third-party rights: generated from a test pattern",
       "reproduces": [
@@ -911,13 +1076,25 @@
       ],
       "expect": {
         "metadata": {
-          "outcome": "ok"
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": null
         },
         "thumbnail": {
-          "outcome": "skipped"
+          "outcome": "skipped",
+          "preview": null,
+          "thumbnail": null
         },
         "encode": {
-          "outcome": "skipped"
+          "outcome": "set-aside",
+          "cause": "unreadable",
+          "videoCodec": null,
+          "size": null
         }
       }
     }
