@@ -20,7 +20,9 @@ const Result = z
     recovery: NativeRecovery,
   })
   .strict();
-type Context = Omit<Parameters<typeof createNativeRecovery>[0], 'operation'>;
+type Context = Omit<Parameters<typeof createNativeRecovery>[0], 'operation'> & {
+  retainMediaQualificationSafety?: boolean;
+};
 type Engine = Pick<Backups, 'initialize' | 'snapshot' | 'restore'>;
 const invalid = () => new Refusal('native_backup_journal_invalid');
 const verificationFailed = () =>
@@ -223,13 +225,12 @@ export async function createNativeDatabaseBackup(
     );
   }
   const pending = result(encrypted);
-  const parentDirectory =
-    operation.kind === 'restore' ? context.installation.state : store.directory;
+  const retainSafety =
+    operation.kind === 'restore' || context.retainMediaQualificationSafety === true;
+  const parentDirectory = retainSafety ? context.installation.state : store.directory;
   const root = join(
     parentDirectory,
-    operation.kind === 'restore'
-      ? 'restore-safety'
-      : 'native-backup-verification',
+    retainSafety ? 'restore-safety' : 'native-backup-verification',
   );
   const cache = join(root, operation.id);
   const intent = {
@@ -260,7 +261,7 @@ export async function createNativeDatabaseBackup(
       if (
         !parent.isDirectory() ||
         parent.isSymbolicLink() ||
-        (operation.kind === 'restore' &&
+        (retainSafety &&
           process.platform !== 'win32' &&
           (parent.mode & 0o077) !== 0) ||
         (await realpath(root)) !== root
@@ -283,8 +284,8 @@ export async function createNativeDatabaseBackup(
         await backups.restore(pending.snapshotId, cache);
         await verifyNativeBackupDirectory(cache, pending.recovery);
       } finally {
-        // Retain restore readback for the private controller's independent admission check.
-        if (operation.kind === 'backup') await clearVerificationCache(cache);
+        // Restore and disposable media qualification require native rereading of the retained copy.
+        if (!retainSafety) await clearVerificationCache(cache);
       }
       return pending;
     } catch {

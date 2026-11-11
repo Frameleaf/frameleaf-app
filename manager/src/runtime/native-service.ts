@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { constants } from 'node:fs';
 import { access, lstat, open, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve, join } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import { digest, Refusal, releaseTag } from '../contracts.js';
@@ -18,6 +18,11 @@ import { command } from '../docker.js';
 import { Backups } from '../backups.js';
 import { runNativeDatabaseBackup } from './native-backup-operation.js';
 import { runNativeRestore } from './native-restore-operation.js';
+import {
+  completeNativeMediaCutover,
+  nativeActiveMediaIdentity,
+  nativeMediaMoveAdmission,
+} from './native-media-cutover.js';
 import {
   prepareNativeRestoreReview,
   nativeRestoreReviewStatus,
@@ -104,9 +109,20 @@ const Bootstrap = Configuration.extend({
     .max(256)
     .regex(/^[^\r\n\0]+$/),
   installationTransition: Transition.optional(),
+  // Only the installed qualification supervisor may opt in through bootstrap.
+  mediaMoveQualification: z.strictObject({
+    manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).optional(),
 })
   .strict()
-  .refine((value) => value.backupKey !== value.password);
+  .refine((value) => value.backupKey !== value.password)
+  .refine((value) => !value.mediaMoveQualification || (
+    process.platform === 'win32' &&
+    value.mediaMoveQualification.manifestSha256 === value.installation.manifestSha256 &&
+    basename(value.installation.state) === 'state' &&
+    /^Frameleaf Media Move Qualification [a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
+      .test(basename(dirname(value.installation.state)))
+  ));
 export type NativeBootstrap = z.infer<typeof Bootstrap>;
 
 /** One private inherited pipe from the desktop supervisor; never HTTP, argv, env or a state file. */
@@ -463,6 +479,7 @@ export class NativeService {
   private readonly updateApproval: (
     input: unknown,
   ) => ReturnType<typeof approveNativeUpdate>;
+  readonly mediaMove?: ReturnType<typeof nativeMediaMoveAdmission>;
   private reviewPending = false;
   private activeReview?: string;
   readonly runtime: NativeRuntime;
@@ -492,6 +509,7 @@ export class NativeService {
       backupKey,
       tls,
       installationTransition,
+      mediaMoveQualification,
       ...configuration
     } = bootstrap;
     this.backupPassword = async () => backupKey;
@@ -510,6 +528,7 @@ export class NativeService {
         bootstrap.installation,
         async () => password,
         () => verifyInstalledController(bootstrap),
+        () => nativeActiveMediaIdentity(store, bootstrap.installation),
       );
     if (supplied.identity.installationId !== bootstrap.installation.id)
       throw new Refusal('native_installation_changed');
@@ -545,6 +564,13 @@ export class NativeService {
       libraryId,
       release: context.release,
     };
+    // Recovery only: until Windows qualification there is no Manager or Desktop
+    // entry point to admit a new move.
+    const mediaOwner =
+      process.platform === 'win32' && !runtime && supplied instanceof NativeHost
+        ? supplied.mediaMoveAuthority()
+        : undefined;
+    const qualifyMediaMove = Boolean(mediaOwner && mediaMoveQualification);
     this.lifecycle = new NativeOperations(
       store,
       this.runtime,
@@ -554,7 +580,7 @@ export class NativeService {
               store,
               this.runtime,
               backups,
-              context,
+              { ...context, retainMediaQualificationSafety: qualifyMediaMove },
               operation,
             )
         : undefined,
@@ -562,7 +588,23 @@ export class NativeService {
         ? (operation) =>
             runNativeRestore(store, this.runtime, backups, context, operation)
         : undefined,
+      mediaOwner
+        ? (operation) =>
+            completeNativeMediaCutover(
+              store,
+              mediaOwner,
+              context.installation,
+              operation,
+              () => this.runtime.start(),
+            )
+        : undefined,
     );
+    if (mediaOwner && mediaMoveQualification) {
+      this.mediaMove = nativeMediaMoveAdmission(
+        store, mediaOwner, context.installation, libraryId,
+        (key, input) => this.lifecycle.admitMediaMove(key, input),
+      );
+    }
     this.publicInstallation = Object.freeze({
       id: bootstrap.installation.id,
       name: bootstrap.name,
