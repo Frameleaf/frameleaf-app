@@ -174,7 +174,7 @@
 >
   <header>
     <h2>{$t('frameleaf_album_comments_title')}</h2>
-    <button type="button" aria-label={$t('frameleaf_album_comments_close')} onclick={onClose}>
+    <button type="button" class="fl-control" aria-label={$t('frameleaf_album_comments_close')} onclick={onClose}>
       <Icon icon={mdiClose} size="18" />
     </button>
   </header>
@@ -182,7 +182,7 @@
   <div class="likes">
     <button
       type="button"
-      class="like"
+      class="like fl-control"
       class:on={liked}
       aria-pressed={liked}
       disabled={!enabled}
@@ -194,7 +194,7 @@
     {#if canOpenLikers}
       <button
         type="button"
-        class="count likers-toggle"
+        class="count likers-toggle fl-control"
         aria-expanded={likersOpen}
         aria-controls="activity-likers"
         onclick={() => (likersOpen = !likersOpen)}
@@ -316,7 +316,7 @@
         }}></textarea>
       <button
         type="submit"
-        class="send"
+        class="send fl-control"
         aria-label={$t('frameleaf_album_activity_send')}
         disabled={sending || !draft.trim()}
       >

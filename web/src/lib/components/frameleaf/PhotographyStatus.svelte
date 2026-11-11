@@ -142,7 +142,7 @@
     <Icon icon={mdiCheck} size="14" aria-hidden={true} />{savedLabel}
   {:else if state === 'error'}
     <Icon icon={mdiAlertCircleOutline} size="14" aria-hidden={true} />{errorLabel}
-    {#if onRetry}<button type="button" class="phs-retry" onclick={onRetry}>{retryLabel}</button>{/if}
+    {#if onRetry}<button type="button" class="phs-retry fl-control" onclick={onRetry}>{retryLabel}</button>{/if}
   {/if}
 </span>
 

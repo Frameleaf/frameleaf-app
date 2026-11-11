@@ -231,7 +231,7 @@
   <div class="actions">
     {#if !fontMode}<button
         type="button"
-        class="action"
+        class="action fl-control"
         onclick={() =>
           void downloadAssetFile({
             id: item.id,
@@ -244,7 +244,7 @@
       </button>{/if}
     {#if isOwner && onTrash && asset}
       {@const shown = asset}
-      <button type="button" class="action danger" onclick={() => onTrash(shown)}>
+      <button type="button" class="action danger fl-control" onclick={() => onTrash(shown)}>
         <Icon icon={mdiTrashCanOutline} size="18" aria-hidden />{$t('frameleaf_boards_move_to_trash')}
       </button>
     {/if}
@@ -408,7 +408,7 @@
         <Icon icon={mdiClose} size="18" aria-hidden />
       </IconButton>
     {:else}
-      <button type="button" class="icon" aria-label={$t('frameleaf_work_inspector_close')} onclick={onClose}>
+      <button type="button" class="icon fl-control" aria-label={$t('frameleaf_work_inspector_close')} onclick={onClose}>
         <Icon icon={mdiClose} size="18" aria-hidden />
       </button>
     {/if}

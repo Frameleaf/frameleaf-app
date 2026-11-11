@@ -98,7 +98,7 @@
     <button
       bind:this={trigger}
       type="button"
-      class="action"
+      class="action fl-control"
       class:open
       aria-haspopup="dialog"
       aria-expanded={open}

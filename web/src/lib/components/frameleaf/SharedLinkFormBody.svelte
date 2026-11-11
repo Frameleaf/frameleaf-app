@@ -580,7 +580,7 @@
           />
           <button
             type="button"
-            class="icon"
+            class="icon fl-control"
             aria-pressed={showPassword}
             aria-label={showPassword ? $t('hide_password') : $t('show_password')}
             title={showPassword ? $t('hide_password') : $t('show_password')}

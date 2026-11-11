@@ -193,17 +193,17 @@
   </div>
 
   <div class="actions" role="toolbar" aria-label={$t('frameleaf_tags_actions')}>
-    <button type="button" class="action primary" onclick={() => void tagPhotos()}>
+    <button type="button" class="action primary fl-control" onclick={() => void tagPhotos()}>
       <Icon icon={mdiPlus} size="18" aria-hidden />
       <span>{$t('frameleaf_tags_tag_photos')}</span>
     </button>
     {#if !compact}
       <TagColourPicker color={node.color} variant="button" onChange={(color, hex) => void recolor(color, hex)} />
-      <button type="button" class="action" onclick={() => (request = { type: 'move', node })}>
+      <button type="button" class="action fl-control" onclick={() => (request = { type: 'move', node })}>
         <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden />
         <span>{$t('move')}</span>
       </button>
-      <button type="button" class="action" onclick={() => (request = { type: 'merge', node })}>
+      <button type="button" class="action fl-control" onclick={() => (request = { type: 'merge', node })}>
         <Icon icon={mdiCallMerge} size="18" aria-hidden />
         <span>{$t('merge')}</span>
       </button>

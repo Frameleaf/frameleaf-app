@@ -138,8 +138,8 @@
       <span>{$t('frameleaf_album_cover_follow_newest')}</span>
     </label>
     <div class="buttons">
-      <button type="button" disabled={saving} onclick={() => (open = false)}>{$t('cancel')}</button>
-      <button type="button" class="primary" disabled={saving} onclick={() => void save()}>
+      <button type="button" class="fl-control" disabled={saving} onclick={() => (open = false)}>{$t('cancel')}</button>
+      <button type="button" class="primary fl-control" disabled={saving} onclick={() => void save()}>
         {$t('frameleaf_album_cover_use')}
       </button>
     </div>

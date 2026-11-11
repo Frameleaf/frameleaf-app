@@ -155,7 +155,7 @@
        the input so a click here never reads as leaving the editor (which cancels). -->
   <button
     type="submit"
-    class="icon"
+    class="icon fl-control"
     aria-label={$t('frameleaf_people_save_name')}
     onmousedown={(event) => event.preventDefault()}
   >
@@ -163,7 +163,7 @@
   </button>
   <button
     type="button"
-    class="icon"
+    class="icon fl-control"
     aria-label={$t('frameleaf_people_cancel_rename')}
     onmousedown={(event) => event.preventDefault()}
     onclick={() => onCancel()}
