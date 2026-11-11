@@ -9,7 +9,13 @@
   import SettingsPanel from "./SettingsPanel.svelte";
   import SignedOut from "./SignedOut.svelte";
   import type { IconName } from "./icons";
-  import { openOptions, sendRequest, watchConnection } from "./platform";
+  import { pageChoice } from "./media-panel";
+  import {
+    activeTabAddress,
+    openOptions,
+    sendRequest,
+    watchConnection,
+  } from "./platform";
   import { hostOf } from "./sign-in-words";
   import { settledView } from "./views";
   import type {
@@ -31,12 +37,11 @@
   let tab = $state<Tab>("images");
   let unfinished = $state(0);
   let showWaiting = $state(false);
-  // FL-1427: media is looked up only once the Page tab is opened, and takes it over while in use
-  let pageOpened = $state(false);
-  let mediaOpen = $state(false);
-  $effect(() => {
-    if (tab === "page") pageOpened = true;
-  });
+  // FL-1449: the Page tab saves the link or the page's media. Its media half is named from the
+  // tab's address alone; your Library is asked about the page only once that half is chosen.
+  let pageHalf = $state<"link" | "media">("link");
+  let tabAddress = $state<string | null>(null);
+  const mediaChoice = $derived(pageChoice(tabAddress));
   // FL-655: sign-in state, Settings and Switch server live in the popup too
   let recent = $state<RecentServer[]>([]);
   let notice = $state<SignInNotice | null>(null);
@@ -113,6 +118,9 @@
             "Could not read the connection. Open Settings to try again.";
         });
     });
+    void activeTabAddress()
+      .then((address) => (tabAddress = address))
+      .catch(() => {});
     void sendRequest({ type: "refresh" })
       .then(accept)
       .catch(() => {
@@ -288,7 +296,24 @@
       aria-labelledby="tab-page"
       hidden={tab !== "page"}
     >
-      {#if !mediaOpen}
+      <div class="shot-choice two" role="group" aria-label="Link or media">
+        <button
+          type="button"
+          aria-pressed={pageHalf === "link"}
+          onclick={() => (pageHalf = "link")}
+          ><Icon name="linkVariant" size={22} /><strong>Save the link</strong
+          ><small>Address, title and preview</small></button
+        >
+        <button
+          type="button"
+          aria-pressed={pageHalf === "media"}
+          onclick={() => (pageHalf = "media")}
+          ><Icon name={mediaChoice.icon} size={22} /><strong
+            >{mediaChoice.title}</strong
+          ><small>{mediaChoice.hint}</small></button
+        >
+      </div>
+      {#if pageHalf === "link"}
         <p class="lead">
           Save this page as a link in Boards. You can check its title and
           address first. The page itself isn’t copied.
@@ -299,12 +324,14 @@
           disabled={discovering}
           onclick={() => void discover("bookmark")}>Save this page</button
         >
-      {/if}
-      {#if pageOpened}
+      {:else}
+        <!-- Leaving this half puts the panel away: a reply still on its way changes nothing. -->
         <MediaPanel
           {connection}
-          bind:open={mediaOpen}
-          onQueued={() => (tab = "saving")}
+          onQueued={() => {
+            pageHalf = "link";
+            tab = "saving";
+          }}
         />
       {/if}
     </div>

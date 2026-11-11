@@ -33,6 +33,8 @@ export type MediaProblem =
   | 'unsupported'
   /** The Library answered and said no. */
   | 'refused'
+  /** FL-1449: the Library is from before what this download or follow asks for. */
+  | 'outdated'
   /** Site access is only ever sent over HTTPS. */
   | 'https';
 const messages: Record<MediaProblem, string> = {
@@ -43,6 +45,8 @@ const messages: Record<MediaProblem, string> = {
   unsupported:
     'Your Library needs an update before it can download media. Saving images, links and screenshots still works.',
   refused: 'Your Library couldn’t do that. Check the details and try again.',
+  outdated:
+    'Your Library needs an update for this. Saving images, links and screenshots still works.',
   https:
     'Site access can only be shared with a Library opened over HTTPS. Sign in using its https:// address.',
 };
@@ -70,21 +74,30 @@ async function call<T>(
   let capabilities = false;
   /** The Library said this access lacks the permission, as opposed to refusing for another reason. */
   let notAllowed = false;
+  /** The Library did not understand a new download or follow: it predates what was asked for. */
+  let notUnderstood = false;
   const transport: typeof globalThis.fetch = async (input, init) => {
     const response = await fetch(input, init);
     const path = new URL(String(input)).pathname;
     if (/\/api\/media-/.test(path)) {
       status = response.status;
       capabilities = path.endsWith('/api/media-imports/capabilities');
+      const said = async () =>
+        (
+          await response
+            .clone()
+            .text()
+            .catch(() => '')
+        ).slice(0, 2000);
       if (status === 403)
-        notAllowed = /Missing required permission/i.test(
-          (
-            await response
-              .clone()
-              .text()
-              .catch(() => '')
-          ).slice(0, 2000),
-        );
+        notAllowed = /Missing required permission/i.test(await said());
+      // Only the two requests that start work carry choices an older Library may not know
+      // (quality, a recent reach, what to save, no collection).
+      notUnderstood =
+        status === 400 &&
+        init?.method === 'POST' &&
+        /\/api\/media-(imports|subscriptions)$/.test(path) &&
+        /"message"\s*:\s*"Validation failed"/.test(await said());
     }
     return response;
   };
@@ -100,6 +113,7 @@ async function call<T>(
     // one download or inspection means that one is gone.
     if (status === 404 && capabilities)
       throw new LibraryFailure('unsupported', status);
+    if (notUnderstood) throw new LibraryFailure('outdated', status);
     if (status !== undefined && status !== 401)
       throw new LibraryFailure('refused', status);
     if (error.code === 'connection') throw new LibraryFailure('unreachable');
@@ -143,6 +157,8 @@ export interface MediaOperationView {
   kind: 'item' | 'feed' | null;
   provider: string | null;
   creator: string | null;
+  /** The site's own public name for the account (a channel id or handle), when it has one. */
+  creatorId: string | null;
   complete: boolean;
   limitation: string | null;
   error: string | null;
@@ -168,6 +184,7 @@ export function checkedOperation(value: unknown): MediaOperationView {
     kind: raw.kind === 'item' || raw.kind === 'feed' ? raw.kind : null,
     provider: text(raw.provider, 100),
     creator: text(raw.creator, 300),
+    creatorId: text(raw.creatorId, 300),
     complete: raw.complete === true,
     limitation: text(raw.limitation, 1000),
     error: text(raw.error, 1000),

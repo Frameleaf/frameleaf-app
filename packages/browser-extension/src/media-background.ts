@@ -25,14 +25,18 @@ import {
   type MediaDownloadRequest,
   type MediaSubscriptionRequest,
 } from './media-queue';
+import { creatorAddress } from './media-panel';
 import { QueueFailure, sameDestination } from './queue';
 import { readSiteAccess, siteOf, sitePatterns } from './site-access';
 
 /**
  * FL-1427: what the popup's Media tab asks the background to do. Everything here is started by a
  * press in the popup, acts on the tab you are looking at, and talks only to your own Library.
+ *
+ * FL-1449: `creator` previews the account behind the one video or post in the tab, for "Follow them
+ * too". Its address is worked out here, from the tab's own address, never taken from the popup.
  */
-export type MediaMode = 'page' | 'found' | 'subscribe';
+export type MediaMode = 'page' | 'found' | 'subscribe' | 'creator';
 export type MediaRequest =
   | {
       type:
@@ -44,6 +48,7 @@ export type MediaRequest =
     }
   | { type: 'media-inspect'; mode: 'page' | 'subscribe' }
   | { type: 'media-inspect'; mode: 'found'; urls: string[] }
+  | { type: 'media-inspect'; mode: 'creator'; creatorId?: string }
   | { type: 'media-poll'; id: string }
   | ({ type: 'media-download'; label: string } & MediaDownloadRequest)
   | ({ type: 'media-subscribe'; label: string } & MediaSubscriptionRequest)
@@ -79,12 +84,18 @@ export interface MediaReplyData {
   draft?: { mode: MediaMode; label: string; operation: MediaOperationView };
   found?: FoundView;
   site?: SiteView;
+  /** FL-1449: the tab the panel is about. Absent when the tab is not a web page. */
+  page?: { url: string; title: string; host: string };
+  /** Whether your Library is signed in to this tab's site. No sign-in is read to answer this. */
+  siteStatus?: { host: string; connected: boolean };
 }
 export type MediaContext = {
   binding: ServerBinding;
   token: string;
   /** Wakes the saving list so a new receipt is handed to the Library straight away. */
   wake: () => void;
+  /** This access covers media downloads; without it only the capability question is asked. */
+  granted?: boolean;
 };
 
 const uuid =
@@ -276,6 +287,8 @@ let draft:
       label: string;
       id: string;
       at: number;
+      /** The page it was about: another page never picks it up. */
+      url: string;
     }
   | undefined;
 const DRAFT_MS = 10 * 60 * 1000;
@@ -292,17 +305,41 @@ export async function handleMedia(
       return { capability: await mediaCapabilities(binding, token) };
     case 'media-state': {
       const capability = await mediaCapabilities(binding, token);
+      const page = await activePage().catch(() => null);
       const kept =
         draft &&
         sameDestination(draft.binding, binding) &&
+        draft.url === page?.url &&
         Date.now() - draft.at < DRAFT_MS
           ? draft
           : undefined;
+      const host = page && siteOf(page.url)?.host;
+      // Names and domains only; a media request that fails here never hides the panel.
+      const connected =
+        host && context.granted && capability.available && capability.cookies
+          ? await siteConnections(binding, token)
+              .then((list) =>
+                list.some(
+                  (item) =>
+                    item.status === 'connected' &&
+                    covers(item, new URL(page.url).hostname.toLowerCase()),
+                ),
+              )
+              .catch(() => false)
+          : false;
       const operation = kept
         ? await readOperation(binding, token, kept.id).catch(() => undefined)
         : undefined;
       return {
         capability,
+        ...(page && {
+          page: {
+            url: page.url,
+            title: page.title,
+            host: new URL(page.url).hostname.replace(/^www\./, ''),
+          },
+        }),
+        ...(host && { siteStatus: { host, connected } }),
         ...(kept &&
           operation && {
             draft: { mode: kept.mode, label: kept.label, operation },
@@ -320,6 +357,16 @@ export async function handleMedia(
         );
         if (urls.length === 0 || urls.length > 20 || chosen.length > 20)
           throw new QueueFailure('Choose between 1 and 20 things to check.');
+      } else if (request.mode === 'creator') {
+        const address = creatorAddress(
+          page.url,
+          typeof request.creatorId === 'string' ? request.creatorId : null,
+        );
+        if (!address)
+          throw new QueueFailure(
+            'Your Library can’t tell whose page this is from here. Open their own page to follow them.',
+          );
+        urls = [address];
       } else if (request.mode !== 'page' && request.mode !== 'subscribe')
         throw new QueueFailure(NOT_A_PAGE);
       // A site you connected is used only for addresses on that site's own domains.
@@ -331,15 +378,20 @@ export async function handleMedia(
       const operation = await inspect(binding, token, {
         urls,
         connectionId: connection?.id,
-        subscription: request.mode === 'subscribe',
+        subscription:
+          request.mode === 'subscribe' || request.mode === 'creator',
       });
-      draft = {
-        binding,
-        mode: request.mode,
-        label: page.title,
-        id: operation.id,
-        at: Date.now(),
-      };
+      // What the page itself is about is picked up again by a reopened popup; a check made on a
+      // press (found media, a creator to follow too) is asked for again by that press.
+      if (request.mode === 'page' || request.mode === 'subscribe')
+        draft = {
+          binding,
+          mode: request.mode,
+          label: page.title,
+          id: operation.id,
+          at: Date.now(),
+          url: page.url,
+        };
       return { operation };
     }
     case 'media-poll': {
@@ -370,6 +422,7 @@ export async function handleMedia(
               albumId: request.albumId,
               tagIds: request.tagIds,
               overrideSuppression: request.overrideSuppression,
+              quality: request.quality,
             },
           })
         : addMediaReceipt({
@@ -381,6 +434,8 @@ export async function handleMedia(
               parentId: request.parentId,
               history: request.history,
               intervalMinutes: request.intervalMinutes,
+              saves: request.saves,
+              quality: request.quality,
             },
           }));
       draft = undefined;
@@ -426,6 +481,8 @@ export async function handleMedia(
             label: view.host.slice(0, 255),
             session: access.session,
           });
+      // The page is looked at again, this time signed in.
+      draft = undefined;
       return {
         site: {
           ...view,
@@ -439,6 +496,7 @@ export async function handleMedia(
       if (!uuid.test(String(request.id)))
         throw new QueueFailure('Choose a connected site.');
       await disconnectSite(binding, token, request.id);
+      draft = undefined;
       return {};
     }
     default:

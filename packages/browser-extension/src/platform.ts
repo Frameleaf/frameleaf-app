@@ -246,3 +246,15 @@ export const requestMediaHosts = (origins: string[]) =>
 /** Opens your Library's own address in a tab, so the browser can show (and you can accept) its certificate. */
 export const openLibrary = (origin: string) =>
   chrome.tabs.create({ url: `${normalizeServerAddress(origin, true)}/` });
+/**
+ * FL-1449: the address of the tab the popup was opened on, so the Page tab can say what it would do
+ * with it (follow this channel, download this video). The browser's own record of the tab: the page
+ * is not read, and the address goes nowhere.
+ */
+export async function activeTabAddress(): Promise<string | null> {
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  return tab?.url ?? null;
+}

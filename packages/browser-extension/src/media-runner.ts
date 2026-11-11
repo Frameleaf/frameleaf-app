@@ -1,4 +1,7 @@
-import type { MediaSubscriptionCreateDto } from '@frameleaf/sdk';
+import type {
+  MediaImportCreateDto,
+  MediaSubscriptionCreateDto,
+} from '@frameleaf/sdk';
 import type { ServerBinding } from './api';
 import * as library from './media-api';
 import { LibraryFailure, type MediaOperationView } from './media-api';
@@ -31,6 +34,8 @@ const NEEDS_PERMISSION =
 const WAITING = 'Waiting for your Library. This is sent again automatically.';
 const REFUSED =
   'Your Library couldn’t accept this. Start it again from the page.';
+const NEEDS_UPDATE =
+  'Your Library needs an update for this. Update it, then start again from the page.';
 const GONE = 'Your Library no longer lists this download.';
 const UNSURE =
   'Cancelled here before your Library confirmed it. If it shows up in Boards anyway, stop it there.';
@@ -98,6 +103,8 @@ async function settle(
     if (receipt.kind === 'download') {
       const operation = await api.startDownload(binding, token, {
         ...receipt.request,
+        // the same words the Library uses, checked when the receipt was made
+        quality: receipt.request.quality as MediaImportCreateDto['quality'],
         streamMp4: false,
         idempotencyKey: receipt.id,
       });
@@ -109,6 +116,8 @@ async function settle(
         ...receipt.request,
         history: receipt.request
           .history as MediaSubscriptionCreateDto['history'],
+        quality: receipt.request
+          .quality as MediaSubscriptionCreateDto['quality'],
         idempotencyKey: receipt.id,
       });
       await save((value) => {
@@ -188,7 +197,12 @@ export async function syncMediaReceipts(
         else {
           // The Library said no for good: nothing more is sent for this receipt.
           value.state = 'failed';
-          value.error = sent && error.status === 404 ? GONE : REFUSED;
+          value.error =
+            sent && error.status === 404
+              ? GONE
+              : error.problem === 'outdated'
+                ? NEEDS_UPDATE
+                : REFUSED;
           delete value.cancelRequested;
           delete value.retryKey;
         }

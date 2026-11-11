@@ -128,6 +128,13 @@ const MEDIA_WORDS: Record<string, string> = {
   assembling: 'Your Library is putting the video together',
   importing: 'Your Library is adding it to Boards',
 };
+/** FL-1449: "Following · your Library checks every hour". */
+const MEDIA_INTERVAL_WORDS = {
+  15: 'every 15 minutes',
+  60: 'every hour',
+  360: 'every 6 hours',
+  1440: 'once a day',
+} as const;
 const plural = (count: number, word: string) =>
   `${count} ${word}${count === 1 ? '' : 's'}`;
 /** FL-1427: a media receipt as a line in the saving list. */
@@ -151,11 +158,17 @@ function mediaQueueItem(receipt: MediaReceipt, paused: boolean): QueueItem {
       .join(' · '),
     saved: `Saved by your Library${counts ? ` · ${counts}` : ''}`,
     partial: `Finished with errors${counts ? ` · ${counts}` : ''}`,
-    failed: `Couldn’t download · ${receipt.error ?? 'Your Library couldn’t finish it.'}`,
+    failed:
+      receipt.kind === 'download' && receipt.remoteId
+        ? `Your Library couldn’t download this.${receipt.error ? ` ${receipt.error}` : ''}`
+        : (receipt.error ?? 'Your Library couldn’t accept this.'),
     cancelled: receipt.error ?? 'Cancelled',
     paused: `Paused on your Library${receipt.error ? ` · ${receipt.error}` : ''}`,
-    subscribed:
-      'Subscribed · your Library saves new posts to this creator’s collection. Manage it in Boards.',
+    subscribed: `Following · your Library checks ${
+      receipt.kind === 'subscription'
+        ? MEDIA_INTERVAL_WORDS[receipt.request.intervalMinutes]
+        : 'for new posts'
+    }`,
   }[receipt.state];
   const state = (
     {
@@ -302,6 +315,7 @@ async function runMedia(message: { type: string }): Promise<ExtensionReply> {
       binding: current.binding,
       token: await credentialFor(current.binding),
       wake,
+      granted,
     });
     return {
       ok: true,

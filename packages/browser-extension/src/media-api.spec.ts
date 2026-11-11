@@ -7,6 +7,8 @@ import {
   LibraryFailure,
   mediaCapabilities,
   readOperation,
+  startDownload,
+  subscribe,
 } from './media-api';
 
 const binding = {
@@ -206,6 +208,68 @@ describe('asking your Library for media (FL-1427)', () => {
       library(() => json({ message: 'Conflict' }, 409)) as never,
     ).catch((reason: unknown) => reason);
     expect(error).toMatchObject({ problem: 'refused', status: 409 });
+  });
+
+  it('a Library from before quality, a recent reach or creator filing does not understand the request: it needs an update (FL-1449)', async () => {
+    const validation = () =>
+      json(
+        {
+          message: 'Validation failed',
+          errors: [{ code: 'unrecognized_keys', keys: ['quality'] }],
+        },
+        400,
+      );
+    const download = await startDownload(
+      binding,
+      'access-key',
+      {
+        inspectionId: ID,
+        itemIds: [ID],
+        quality: '720',
+        idempotencyKey: 'k',
+      } as never,
+      library(validation) as never,
+    ).catch((reason: unknown) => reason);
+    expect(download).toMatchObject({ problem: 'outdated', status: 400 });
+    expect((download as Error).message).toContain(
+      'Your Library needs an update for this',
+    );
+    await expect(
+      problem(
+        subscribe(
+          binding,
+          'access-key',
+          {
+            inspectionId: ID,
+            history: { mode: 'recent', count: 20 },
+            idempotencyKey: 'k',
+          } as never,
+          library(validation) as never,
+        ),
+      ),
+    ).resolves.toBe('outdated');
+  });
+
+  it('a download a current Library refuses for another reason is not "needs an update"', async () => {
+    // no creator to file it under, an inspection that is not ready…
+    const refused = await startDownload(
+      binding,
+      'access-key',
+      { inspectionId: ID, itemIds: [ID], idempotencyKey: 'k' } as never,
+      library(() => json({ message: 'Choose a collection' }, 400)) as never,
+    ).catch((reason: unknown) => reason);
+    expect(refused).toMatchObject({ problem: 'refused', status: 400 });
+    // and a request that starts nothing is never read that way
+    await expect(
+      problem(
+        inspect(
+          binding,
+          'access-key',
+          { urls: ['https://video.example/watch?v=1'] },
+          library(() => json({ message: 'Validation failed' }, 400)) as never,
+        ),
+      ),
+    ).resolves.toBe('refused');
   });
 
   it('only ever shares a site’s sign-in over HTTPS', async () => {

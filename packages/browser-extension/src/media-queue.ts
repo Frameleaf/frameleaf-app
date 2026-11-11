@@ -29,18 +29,44 @@ export type MediaReceiptState =
   | 'paused'
   /** A subscription the Library accepted. */
   | 'subscribed';
+export const MEDIA_QUALITIES = ['best', '1080', '720', 'audio'] as const;
+export type MediaQualityChoice = (typeof MEDIA_QUALITIES)[number];
+/** FL-1449: the "What to save" switches a Library knows. */
+export const MEDIA_SAVES = [
+  'videos',
+  'shorts',
+  'live',
+  'images',
+  'replies',
+  'reposts',
+  'pins',
+  'photos',
+  'reels',
+] as const;
+export type MediaSaveChoices = Partial<
+  Record<(typeof MEDIA_SAVES)[number], boolean>
+>;
 export type MediaDownloadRequest = {
   inspectionId: string;
   itemIds: string[];
-  albumId: string;
+  /** FL-1449: left out, your Library files the items under their creator. */
+  albumId?: string;
   tagIds: string[];
   overrideSuppression: boolean;
+  quality?: MediaQualityChoice;
 };
+/** How far back a subscription reaches: always chosen by the person, never assumed. */
+export type MediaHistoryChoice =
+  | { mode: 'all' | 'new' }
+  | { mode: 'since'; since: string }
+  | { mode: 'recent'; count: number };
 export type MediaSubscriptionRequest = {
   inspectionId: string;
   parentId?: string;
-  history: { mode: 'all' | 'new' } | { mode: 'since'; since: string };
+  history: MediaHistoryChoice;
   intervalMinutes: 15 | 60 | 360 | 1440;
+  saves?: MediaSaveChoices;
+  quality?: MediaQualityChoice;
 };
 interface ReceiptBase {
   version: 1;
@@ -95,6 +121,8 @@ const invalid = () =>
   new QueueFailure(
     'This request’s details are incomplete. Start it again from the page.',
   );
+const quality = (value: unknown) =>
+  value === undefined || MEDIA_QUALITIES.includes(value as MediaQualityChoice);
 const ids = (value: unknown, max: number): value is string[] =>
   Array.isArray(value) &&
   value.length <= max &&
@@ -104,35 +132,55 @@ function downloadCopy(value: MediaDownloadRequest): MediaDownloadRequest {
   if (
     !value ||
     !uuid.test(value.inspectionId) ||
-    !uuid.test(value.albumId) ||
+    !(value.albumId === undefined || uuid.test(value.albumId)) ||
     !ids(value.itemIds, 500) ||
     value.itemIds.length === 0 ||
-    !ids(value.tagIds, 500)
+    !ids(value.tagIds, 500) ||
+    !quality(value.quality)
   )
     throw invalid();
   return {
     inspectionId: value.inspectionId,
     itemIds: [...new Set(value.itemIds)],
-    albumId: value.albumId,
+    ...(value.albumId && { albumId: value.albumId }),
     tagIds: [...new Set(value.tagIds)],
     // Restoring something you removed is only ever your explicit choice.
     overrideSuppression: value.overrideSuppression === true,
+    ...(value.quality && { quality: value.quality }),
   };
+}
+function savesCopy(value: MediaSaveChoices): MediaSaveChoices {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw invalid();
+  const copy: MediaSaveChoices = {};
+  for (const [id, on] of Object.entries(value)) {
+    if (
+      !MEDIA_SAVES.includes(id as (typeof MEDIA_SAVES)[number]) ||
+      typeof on !== 'boolean'
+    )
+      throw invalid();
+    copy[id as (typeof MEDIA_SAVES)[number]] = on;
+  }
+  return copy;
 }
 function subscriptionCopy(
   value: MediaSubscriptionRequest,
 ): MediaSubscriptionRequest {
   const mode = value?.history?.mode;
   const since = mode === 'since' ? value.history.since : undefined;
+  const count = mode === 'recent' ? value.history.count : undefined;
   if (
     !value ||
     !uuid.test(value.inspectionId) ||
     !(value.parentId === undefined || uuid.test(value.parentId)) ||
     ![15, 60, 360, 1440].includes(value.intervalMinutes) ||
     // History is always a choice made by the person, never a default.
-    !['all', 'since', 'new'].includes(mode) ||
+    !['recent', 'all', 'since', 'new'].includes(mode) ||
     (mode === 'since' &&
-      (typeof since !== 'string' || !Number.isFinite(Date.parse(since))))
+      (typeof since !== 'string' || !Number.isFinite(Date.parse(since)))) ||
+    (mode === 'recent' &&
+      !(Number.isSafeInteger(count) && count! >= 1 && count! <= 200)) ||
+    !quality(value.quality)
   )
     throw invalid();
   return {
@@ -141,8 +189,12 @@ function subscriptionCopy(
     history:
       mode === 'since'
         ? { mode, since: new Date(since!).toISOString() }
-        : { mode },
+        : mode === 'recent'
+          ? { mode, count: count! }
+          : { mode },
     intervalMinutes: value.intervalMinutes,
+    ...(value.saves !== undefined && { saves: savesCopy(value.saves) }),
+    ...(value.quality && { quality: value.quality }),
   };
 }
 /** A stored receipt is read like outside input; one that no longer makes sense is left out. */
@@ -230,7 +282,8 @@ export async function addMediaReceipt(
           kind: 'subscription',
           request: subscriptionCopy(input.request),
         };
-  if (receipt.kind === 'download') receipt.albumId = receipt.request.albumId;
+  if (receipt.kind === 'download' && receipt.request.albumId)
+    receipt.albumId = receipt.request.albumId;
   await transaction(['media'], 'readwrite', async (tx) => {
     await request(tx.objectStore('media').add(receipt));
     await prune(tx, receipt.binding);

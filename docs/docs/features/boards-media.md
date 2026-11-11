@@ -1,26 +1,28 @@
-# Media downloads in Boards
+# Creators in Boards
 
-Library can save media from a page URL and check a creator's feed for new posts. Downloads run on Library and continue after you close the browser. The original post, creator, publication time, capture time and post text remain available in the saved item's source details.
+Boards has two areas: **Items**, your collections, and **Creators**, where Library saves media from the web. Follow a channel or account and Library keeps its own copy of what they post. Downloads run on Library and continue after you close the browser.
 
-## Download a post
+## Add from the web
 
-Choose **Download media** from Boards' Add menu, enter one or more URLs, and inspect them. Select the attachments, destination collection and tags before starting. A post with several attachments creates separate items. A playlist or account opens a preview so you can choose what to save.
+Open **Creators** and paste an address into the box. Library reads the address and chooses for you:
 
-Ordinary downloads preserve the best available original format. Segmented HLS/DASH streams, MPEG-TS and separate tracks are assembled into an MP4, keeping the original codecs where MP4 supports them. Separate videos stay separate items. Active livestreams and DRM-protected playback are unsupported.
+- **A whole channel, account, profile or page is followed.** Choose what to save, the video quality, how far back to go and how often to look for new posts. How far back is always asked; nothing is chosen for you. You can change all of it later on the creator's page.
+- **One video or post is downloaded.** It comes with its title, description, tags and posting date. Its creator is added under Creators so the item has a home, but you are not following them unless you turn on **Follow them too**.
+- **Any other page** lists the media Library found on it, for you to choose from.
 
-Progress remains available after closing the download sheet. You can cancel unfinished work, retry failed items, and open saved results. Expired source links may require inspecting the page again.
+Ordinary downloads keep the best available original format unless you pick a lower quality. Segmented HLS/DASH streams, MPEG-TS and separate tracks are assembled into an MP4, keeping the original codecs where MP4 supports them. Active livestreams and DRM-protected playback are unsupported.
 
-## Creator subscriptions
+## A creator's page
 
-Choose a creator URL and inspect it before subscribing. Select **All accessible history**, **Since a date**, or **New posts only**. Library creates a private Boards collection named `Creator · Site`; an optional parent must also be private. The collection uses normal Library storage and sharing permissions.
+Each creator has a page laid out for their platform: YouTube has Videos, Shorts, Live and Playlists; X has Posts, Media and Videos; Pinterest has Boards and All pins; Facebook has Posts, Photos, Videos and Reels. Other sites get a general layout.
 
-Checks run hourly by default. You can choose 15 minutes, hourly, every six hours, or daily, and use Check now, Pause, Resume, Change connection, or Unsubscribe. Unsubscribing retains the collection and its saved media.
+Filter by videos or pictures and by **Not watched yet**, sort, and search within the creator. Open an item to see its details: the title, description, tags and posting date from the post, who posted it, and whether it came from your subscription or a single download. Library remembers what you have watched and where you stopped.
 
-Library includes creator-authored media posts and replies where the extractor supports them. Likes, unrelated reposts, comments and text-only posts are excluded by default. YouTube checks include completed uploads, Shorts and archived livestreams. An active stream waits for a downloadable recording.
+For a creator you follow, **Check now**, **Pause** and **Subscription** are on the page. Unfollowing keeps everything already saved. Removing or deleting an item means it is not downloaded again.
 
-Backfill resumes in batches. A login error, rate limit, truncated list or uncertain empty response does not mean that all history was saved. Discovery and saved counts are separate. Overlapping checks and weekly reconciliation look for delayed or newly accessible media without replacing your edited titles, notes, tags or collection names.
+Creators can be put in folders. A folder is a private Boards collection. A creator's collection starts private; sharing it later never shares your connection to the site.
 
-Removing an item from a subscription collection prevents that subscription from adding it again. Trashing or deleting saved media prevents automatic re-import for the same Library owner and source. Explicit manual re-import can override that removal decision.
+Checks run hourly by default; you can choose 15 minutes, hourly, every six hours or daily. A login error, rate limit, truncated list or uncertain empty response does not mean that all history was saved.
 
 ## Connected sites
 
@@ -34,17 +36,19 @@ Partitioned cookies are not converted into unrestricted cookies. If a connection
 
 ## Coverage
 
-Individual media uses the installed yt-dlp extractors, including generic extraction, and gallery-dl for image and gallery coverage. Creator-feed support is checked separately for the supplied URL. There is no fixed list restricting individual URLs to four providers.
+Individual media uses the installed yt-dlp extractors, including generic extraction, and gallery-dl for image and gallery coverage. Creator-feed support is checked separately for the supplied URL. There is no fixed list restricting individual URLs to these providers.
 
 The bundled versions for capability format 1 are yt-dlp **2026.10.26**, gallery-dl **1.32.19**, yt-dlp-ejs **0.8.0**, and curl-cffi **0.17.0**. The Library API reports the installed engine versions and whether its isolated runtime is available.
 
-| Provider                   | Individual media path               | Creator feed path                              | Live account qualification |
-| -------------------------- | ----------------------------------- | ---------------------------------------------- | -------------------------- |
-| YouTube                    | yt-dlp                              | Videos, Shorts and archived streams            | Pending                    |
-| X                          | gallery-dl, yt-dlp where applicable | Authored posts and replies                     | Pending                    |
-| Reddit                     | gallery-dl, yt-dlp where applicable | Creator submissions                            | Pending                    |
-| Bluesky                    | gallery-dl                          | Authored posts and replies                     | Pending                    |
-| Other supported extractors | Per-URL inspection                  | Offered when an identifiable feed is available | Provider dependent         |
+| Provider                   | Single items                        | Following a creator                            | Tried on the real site |
+| -------------------------- | ----------------------------------- | ---------------------------------------------- | ---------------------- |
+| YouTube                    | yt-dlp                              | Videos, Shorts and archived streams            | Not yet                |
+| X                          | gallery-dl, yt-dlp where applicable | Authored posts and replies                     | Not yet                |
+| Facebook                   | yt-dlp, gallery-dl                  | Where the extractor offers a feed              | Not yet                |
+| Pinterest                  | gallery-dl                          | Profiles and boards                            | Not yet                |
+| Reddit                     | gallery-dl, yt-dlp where applicable | Creator submissions                            | Not yet                |
+| Bluesky                    | gallery-dl                          | Authored posts and replies                     | Not yet                |
+| Other supported extractors | Per-URL inspection                  | Offered when an identifiable feed is available | Provider dependent     |
 
 Extractor catalogue presence is not a successful live account test. Sites change, accounts have different access, and providers can cap history. Consult the upstream [yt-dlp supported-site guidance](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) and [gallery-dl capabilities](https://gdl-org.github.io/docs/supportedsites.html); Library's actual inspection and error state determine what can be saved now.
 

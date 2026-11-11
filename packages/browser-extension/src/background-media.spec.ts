@@ -730,6 +730,204 @@ describe('media downloads from the popup (FL-1427)', () => {
     ).toEqual(expect.objectContaining({ cancelling: true, canCancel: false }));
   });
 
+  it('says what the tab is and whether its site is connected, without reading a sign-in (FL-1449)', async () => {
+    signedIn('media');
+    connections = [connected];
+
+    const reply = await handleMessage({ type: 'media-state' }, popup);
+
+    expect(reply).toEqual(
+      expect.objectContaining({
+        ok: true,
+        media: expect.objectContaining({
+          page: {
+            url: 'https://www.video.example/watch?v=1',
+            title: 'A clip',
+            host: 'video.example',
+          },
+          siteStatus: { host: 'video.example', connected: true },
+        }),
+      }),
+    );
+    expect(cookies).not.toHaveBeenCalled();
+    expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
+
+    // an access that can only save is not asked about connected sites at all
+    fetchMock.mockClear();
+    signedIn('capture');
+    const limited = await handleMessage({ type: 'media-state' }, popup);
+    expect(limited).toEqual(
+      expect.objectContaining({
+        media: expect.objectContaining({
+          granted: false,
+          siteStatus: { host: 'video.example', connected: false },
+        }),
+      }),
+    );
+    expect(mediaCalls().map((call) => call.path)).toEqual([
+      '/api/media-imports/capabilities',
+    ]);
+  });
+
+  it('a check started for one page is never picked up on another (FL-1449)', async () => {
+    signedIn('media');
+    await handleMessage({ type: 'media-inspect', mode: 'page' }, popup);
+    await expect(
+      handleMessage({ type: 'media-state' }, popup),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        media: expect.objectContaining({
+          draft: expect.objectContaining({ mode: 'page' }),
+        }),
+      }),
+    );
+
+    tab = { id: 7, url: 'https://www.video.example/watch?v=2', title: 'Other' };
+    const moved = await handleMessage({ type: 'media-state' }, popup);
+
+    expect((moved as unknown as { media: object }).media).not.toHaveProperty(
+      'draft',
+    );
+  });
+
+  it('"Follow them too" previews the creator’s own page, worked out here from the tab (FL-1449)', async () => {
+    signedIn('media');
+    tab = {
+      id: 7,
+      url: 'https://x.com/northtimber/status/184',
+      title: 'North Timber on X',
+    };
+
+    const reply = await handleMessage(
+      {
+        type: 'media-inspect',
+        mode: 'creator',
+        // nothing the popup sends can point the Library somewhere else
+        urls: ['https://elsewhere.example/'],
+        url: 'https://elsewhere.example/',
+        creatorId: 'https://elsewhere.example/@a',
+      },
+      popup,
+    );
+
+    expect(reply).toEqual(expect.objectContaining({ ok: true }));
+    const sent = mediaCalls().find((call) => call.method === 'POST')!;
+    expect(sent.path).toBe('/api/media-subscriptions/preview');
+    expect(JSON.parse(String(sent.body))).toEqual({
+      urls: ['https://x.com/northtimber'],
+    });
+    // the page's own check is what a reopened popup carries on with, not this one
+    const state = await handleMessage({ type: 'media-state' }, popup);
+    expect((state as unknown as { media: object }).media).not.toHaveProperty(
+      'draft',
+    );
+
+    // a page that does not say whose it is offers nothing to follow
+    fetchMock.mockClear();
+    tab = { id: 7, url: 'https://www.youtube.com/watch?v=abc', title: 'A' };
+    await expect(
+      handleMessage({ type: 'media-inspect', mode: 'creator' }, popup),
+    ).resolves.toEqual(expect.objectContaining({ ok: false }));
+    expect(mediaCalls().filter((call) => call.method === 'POST')).toEqual([]);
+  });
+
+  it('a creator download is kept without a collection, and a follow reads as Following (FL-1449)', async () => {
+    signedIn('media');
+    await expect(
+      handleMessage(
+        {
+          type: 'media-download',
+          label: 'Building the loft',
+          inspectionId: INSPECTION,
+          itemIds: [ITEM],
+          tagIds: [],
+          overrideSuppression: false,
+          quality: '720',
+        },
+        popup,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ ok: true }));
+    await expect(
+      handleMessage(
+        {
+          type: 'media-subscribe',
+          label: 'Mara Ellis · YouTube',
+          inspectionId: INSPECTION,
+          history: { mode: 'recent', count: 20 },
+          saves: { videos: true, shorts: false },
+          quality: '1080',
+          intervalMinutes: 60,
+        },
+        popup,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ ok: true }));
+    const queue = await import('./media-queue');
+    const receipts = await queue.listMediaReceipts(binding);
+    // made in the same millisecond, so found by what they are, never by position
+    const download = receipts.find((item) => item.kind === 'download')!;
+    const follow = receipts.find((item) => item.kind === 'subscription')!;
+    expect(download.request).toEqual({
+      inspectionId: INSPECTION,
+      itemIds: [ITEM],
+      tagIds: [],
+      overrideSuppression: false,
+      quality: '720',
+    });
+    expect(follow.request).toEqual({
+      inspectionId: INSPECTION,
+      history: { mode: 'recent', count: 20 },
+      saves: { videos: true, shorts: false },
+      quality: '1080',
+      intervalMinutes: 60,
+    });
+
+    // as your Library reports back
+    await queue.changeMediaReceipt(follow.id, binding, (value) => {
+      value.state = 'subscribed';
+      value.remoteId = CONNECTION;
+    });
+    await queue.changeMediaReceipt(download.id, binding, (value) => {
+      value.state = 'active';
+      value.remoteId = INSPECTION;
+      value.remoteState = 'assembling';
+    });
+    const list = await handleMessage({ type: 'queue' }, popup);
+    const items = (
+      list as unknown as {
+        queue: { items: { id: string; detail: string; state: string }[] };
+      }
+    ).queue.items;
+    expect(items.find((item) => item.id === follow.id)).toEqual(
+      expect.objectContaining({
+        kind: 'subscription',
+        detail: 'Following · your Library checks every hour',
+      }),
+    );
+    expect(items.find((item) => item.id === download.id)).toEqual(
+      expect.objectContaining({
+        kind: 'media',
+        detail: 'Your Library is putting the video together',
+        canCancel: true,
+      }),
+    );
+
+    await queue.changeMediaReceipt(download.id, binding, (value) => {
+      value.state = 'failed';
+      value.error = 'X asked for a sign-in.';
+    });
+    const failed = await handleMessage({ type: 'queue' }, popup);
+    expect(
+      (
+        failed as unknown as { queue: { items: { id: string }[] } }
+      ).queue.items.find((item) => item.id === download.id),
+    ).toEqual(
+      expect.objectContaining({
+        detail: 'Your Library couldn’t download this. X asked for a sign-in.',
+        canRetry: true,
+      }),
+    );
+  });
+
   it('a subscription needs the history you chose', async () => {
     signedIn('media');
     await expect(

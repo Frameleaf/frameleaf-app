@@ -39,6 +39,7 @@ const remote = (
   kind: 'item',
   provider: 'example',
   creator: null,
+  creatorId: null,
   complete: true,
   limitation: null,
   error: null,
@@ -493,6 +494,130 @@ describe('media receipts in the saving list (FL-1427)', () => {
         albumId: ALBUM,
       }),
     );
+  });
+
+  it('a creator download names no collection, and carries the quality chosen (FL-1449)', async () => {
+    const added = await queue.addMediaReceipt(
+      download({ albumId: undefined, quality: '720' }),
+    );
+    expect(added.request).not.toHaveProperty('albumId');
+    expect(added).not.toHaveProperty('albumId');
+    const library = api();
+    library.startDownload.mockResolvedValue(
+      remote('queued', { albumId: null }),
+    );
+
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+
+    const sent = library.startDownload.mock.calls[0][2];
+    expect(sent).toEqual({
+      inspectionId: INSPECTION,
+      itemIds: [ITEM],
+      tagIds: [],
+      overrideSuppression: false,
+      quality: '720',
+      streamMp4: false,
+      idempotencyKey: added.id,
+    });
+    expect(sent).not.toHaveProperty('albumId');
+    // the collection your Library made for the creator is linked once it says which
+    library.readOperation.mockResolvedValue(remote('downloading'));
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+    const receipts = await queue.listMediaReceipts(binding);
+    expect(receipts.find((item) => item.id === added.id)).toEqual(
+      expect.objectContaining({ albumId: ALBUM, state: 'active' }),
+    );
+    await expect(
+      queue.addMediaReceipt(download({ quality: '4k' })),
+    ).rejects.toThrow();
+  });
+
+  it('a follow carries a recent reach, what to save and the quality, under one stable key (FL-1449)', async () => {
+    const request = {
+      inspectionId: INSPECTION,
+      history: { mode: 'recent' as const, count: 20 },
+      saves: { videos: true, shorts: false },
+      quality: '1080' as const,
+      intervalMinutes: 360 as const,
+    };
+    const added = await queue.addMediaReceipt({
+      kind: 'subscription',
+      binding,
+      label: 'Mara Ellis · YouTube',
+      request,
+    });
+    const library = api();
+    library.subscribe.mockRejectedValueOnce(new failure('unreachable'));
+    library.subscribe.mockResolvedValue({
+      id: REMOTE,
+      creator: 'Mara Ellis',
+      provider: 'youtube',
+      albumId: ALBUM,
+    });
+
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+    await restart();
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+
+    // sent twice, the same request under the same key, so it is made once
+    expect(library.subscribe.mock.calls.map((call) => call[2])).toEqual([
+      { ...request, idempotencyKey: added.id },
+      { ...request, idempotencyKey: added.id },
+    ]);
+    for (const history of [
+      { mode: 'recent' },
+      { mode: 'recent', count: 0 },
+      { mode: 'recent', count: 500 },
+    ])
+      await expect(
+        queue.addMediaReceipt({
+          kind: 'subscription',
+          binding,
+          label: 'x',
+          request: { ...request, history } as never,
+        }),
+      ).rejects.toThrow();
+    await expect(
+      queue.addMediaReceipt({
+        kind: 'subscription',
+        binding,
+        label: 'x',
+        request: { ...request, saves: { cookies: true } } as never,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('an older Library that does not understand the request is told apart from a refusal, and is not asked again (FL-1449)', async () => {
+    const old = await queue.addMediaReceipt(download({ albumId: undefined }));
+    const refused = await queue.addMediaReceipt(download());
+    const library = api();
+    library.startDownload.mockImplementation(async (_binding, _token, dto) => {
+      throw new failure(
+        dto.idempotencyKey === old.id ? 'outdated' : 'refused',
+        400,
+      );
+    });
+
+    await expect(
+      runner.syncMediaReceipts(binding, 'key', live, library),
+    ).resolves.toBe(false);
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+
+    // two receipts made in the same millisecond have no fixed order: found by id
+    const receipts = await queue.listMediaReceipts(binding);
+    expect(receipts.find((item) => item.id === old.id)).toEqual(
+      expect.objectContaining({
+        state: 'failed',
+        error: expect.stringContaining('Your Library needs an update for this'),
+      }),
+    );
+    expect(receipts.find((item) => item.id === refused.id)).toEqual(
+      expect.objectContaining({
+        state: 'failed',
+        error: expect.stringContaining('couldn’t accept this'),
+      }),
+    );
+    expect(library.startDownload).toHaveBeenCalledTimes(2);
   });
 
   it('restoring something you removed is off unless you chose it', async () => {
