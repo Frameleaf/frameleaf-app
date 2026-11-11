@@ -332,3 +332,59 @@ it('records real decoder failures and an expired worker claim without changing e
   expect(await readFile(imagePath)).toEqual(image);
   expect(await readFile(videoPath)).toEqual(video);
 }, 20_000);
+
+it('Retry puts set-aside work back whatever set it aside, and re-arms it', async () => {
+  const db = await getKyselyDB();
+  onTestFinished(() => db.destroy());
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const { asset: unsupported } = await ctx.newAsset({ ownerId: user.id });
+  const { asset: stopped } = await ctx.newAsset({ ownerId: user.id });
+  const store = new SqlQueueStore(db);
+  const queue = QueueName.ThumbnailGeneration;
+  const step = JobName.AssetGenerateThumbnails;
+  const worker = randomUUID();
+  await store.initialize([queue], worker);
+  const enqueue = (id: string) =>
+    store.enqueue([{ queue, name: step, data: { id }, safeToRetry: true, sensitive: false, deadlineMs: 30_000 }]);
+  await enqueue(unsupported.id);
+  await enqueue(stopped.id);
+  // a file type no decoder opened then is set aside at once; the other was queued again, then set aside before its turn
+  const [first] = await store.claim(queue, worker, 1);
+  expect(first.data.id).toBe(unsupported.id);
+  expect(await store.fail(first, 'Unsupported image: no decoder could open it')).toBe(true);
+  await db
+    .insertInto('asset_processing_failure')
+    .values({
+      assetId: stopped.id,
+      step,
+      attempts: 1,
+      lastError: 'unreadable',
+      lastFailedAt: new Date(),
+      dismissedAt: new Date(),
+    })
+    .execute();
+  expect(await store.claim(queue, worker, 1)).toEqual([]);
+  const { rows: before } = await sql<{ id: string; state: string; error: string }>`select data->>'id' id, state, error
+    from job where queue = ${queue} order by state`.execute(db);
+  expect(before).toEqual([
+    { id: stopped.id, state: 'blocked', error: 'Processing set aside' },
+    { id: unsupported.id, state: 'failed', error: 'Unsupported image: no decoder could open it' },
+  ]);
+
+  expect(await store.retryFailed(queue)).toBe(2);
+  expect(
+    await db.selectFrom('asset_processing_failure').select(['attempts', 'quarantinedAt', 'dismissedAt']).execute(),
+  ).toEqual([
+    { attempts: 0, quarantinedAt: null, dismissedAt: null },
+    { attempts: 0, quarantinedAt: null, dismissedAt: null },
+  ]);
+  await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+  const ran: unknown[] = [];
+  for (let next = await store.claim(queue, worker, 1); next.length > 0; next = await store.claim(queue, worker, 1)) {
+    ran.push(next[0].data.id);
+    expect(await store.complete(next[0], [])).toBe(true);
+  }
+  expect(new Set(ran)).toEqual(new Set([unsupported.id, stopped.id]));
+  expect(ran).toHaveLength(2);
+});
