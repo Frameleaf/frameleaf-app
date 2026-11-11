@@ -80,8 +80,10 @@
     captionHeight?: number;
     /** Added dates are UTC instants; taken dates are the photo’s wall clock. */
     dateType?: TimeBucketDateType;
-    /** Work: show the file name in the caption (a per-device toggle, off by default). */
+    /** The caption names the file (the View menu's "File name" for this layout, FL-1398). */
     showFileName?: boolean;
+    /** The caption shows the time taken (the View menu's "Time taken" for this layout). */
+    showTime?: boolean;
     onOpen?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onToggleSelect?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onFocus?: (asset: TimelineAsset) => void;
@@ -119,6 +121,7 @@
     captionHeight = 0,
     dateType = TimeBucketDateType.Taken,
     showFileName = false,
+    showTime = true,
     onOpen,
     onToggleSelect,
     onFocus,
@@ -200,13 +203,13 @@
     stars !== 0 && layout !== 'browse' && (layout === 'work' || hovered || selected || !!previewMode),
   );
   const title = $derived($getAltText(asset));
-  const withCaption = $derived(layout !== 'browse' && captionHeight > 0);
+  const withCaption = $derived(layout !== 'list' && captionHeight > 0);
   /** Template `assetTitle`: the file name without its extension. A Locked item's name is never shown. */
   const fileName = $derived(
     asset.originalFileName && !isLocked ? asset.originalFileName.replace(/\.[^.]+$/, '') : null,
   );
-  /** The Timeline caption always names the item; Work names it only on request. */
-  const captionName = $derived(layout === 'timeline' || showFileName ? fileName : null);
+  /** The caption names the item only on request (FL-1398: the View menu's "File name"). */
+  const captionName = $derived(showFileName ? fileName : null);
   const hasQuickActions = $derived(
     !!quickActions && !!(quickActions.onFavorite || quickActions.onEdit || quickActions.onShare || quickActions.onMore),
   );
@@ -472,7 +475,7 @@
     style:height={withCaption || listed ? `${imageHeight}px` : undefined}
     style:width={listed ? `${imageWidth}px` : undefined}
     {tabindex}
-    title={layout === 'work' && fileName && !showFileName ? (asset.originalFileName ?? undefined) : undefined}
+    title={layout !== 'browse' && fileName && !showFileName ? (asset.originalFileName ?? undefined) : undefined}
     aria-label={jobLabel ? `${title}, ${jobLabel}` : title}
     aria-pressed={selecting ? selected : undefined}
     onclick={activate}
@@ -687,11 +690,11 @@
 
   {#if withCaption}
     <!-- Template `.at-caption`: the name and the capture time, inset from the tile edges. -->
-    <div class="fl-tile-caption" style:height="{captionHeight}px">
+    <div class="fl-tile-caption" class:is-time-only={!captionName} style:height="{captionHeight}px">
       {#if captionName}
         <span title={captionName}>{captionName}</span>
       {/if}
-      {#if captureTime}
+      {#if showTime && captureTime}
         <time datetime={displayDateTime?.toISO({ includeOffset: dateType === TimeBucketDateType.Added }) ?? undefined}
           >{captureTime}</time
         >
@@ -725,6 +728,10 @@
     bottom: auto;
     border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
+  }
+  /* Browse keeps its square corners when the View menu gives it captions (FL-1398). */
+  .fl-tile[data-layout='browse'].has-caption .fl-tile-open {
+    border-radius: 0;
   }
   .fl-tile-open {
     position: absolute;
@@ -1103,6 +1110,27 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
     font-variant-numeric: tabular-nums;
+  }
+  /* review-1110.css `.at-caption.is-time-only`: a time on its own starts under the photo's edge. */
+  .fl-tile-caption.is-time-only {
+    padding-top: 4px;
+  }
+  .fl-tile-caption.is-time-only time {
+    margin-inline-start: 0;
+  }
+  /*
+   * FL-1398 (library-view-menu.css "What the switches hide"): the View menu's "Show on photos" and
+   * "Crop photos to fit", set once on the library root. Plain descendant selectors: nothing here
+   * re-styles as tiles mount (FL-1331).
+   */
+  :global([data-view-hide~='ratings']) .fl-tile-rating,
+  :global([data-view-hide~='favorites']) .fl-badge.fl-favorite,
+  :global([data-view-hide~='badges']) .fl-badge:not(.fl-favorite) {
+    display: none;
+  }
+  :global([data-view-fit='whole']) .fl-tile:is([data-layout='browse'], [data-layout='work']) :global(.fl-tile-image) {
+    object-fit: contain;
+    background: var(--fl-panel);
   }
   .fl-sr {
     position: absolute;

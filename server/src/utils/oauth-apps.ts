@@ -19,6 +19,8 @@ export const OAUTH_DYNAMIC_CLIENT_LIMIT = 500;
  * Prefixes that tell app tokens apart from session tokens, which are base64 without `_`. An
  * `Authorization: Bearer fla_…` is always checked as an app's access token, never as a session.
  */
+export const MCP_PATH = '/api/mcp';
+export const MCP_RESOURCE_METADATA_PATH = `/.well-known/oauth-protected-resource${MCP_PATH}`;
 export const OAUTH_ACCESS_TOKEN_PREFIX = 'fla_';
 export const OAUTH_REFRESH_TOKEN_PREFIX = 'flr_';
 

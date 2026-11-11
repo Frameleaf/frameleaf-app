@@ -12,7 +12,7 @@ import PeoplePage from './+page.svelte';
 import { PEOPLE_CAP, PEOPLE_PAGE_SIZE } from './people-page';
 
 // Small page and cap sizes keep the rendered grid cheap; the page reads both from this module.
-vi.mock(import('./people-page'), () => ({ PEOPLE_PAGE_SIZE: 2, PEOPLE_CAP: 6 }));
+vi.mock(import('./people-page'), () => ({ PEOPLE_PAGE_SIZE: 2, PEOPLE_CAP: 6, WAITING_REFRESH_MS: 25 }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/people') } }));
 const flags = vi.hoisted(() => ({ facialRecognition: true }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: flags } }));
@@ -281,6 +281,8 @@ describe('People library with nobody found', () => {
     sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [] });
     sdkMock.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
     sdkMock.getAssetStatistics.mockResolvedValue({ images: 12, videos: 0, total: 12 });
+    // the waiting page re-reads People; by default it still finds nobody and photos still wait
+    sdkMock.getAllPeople.mockResolvedValue({ people: [], total: 0, hidden: 0, hasNextPage: false, scanning: true });
     flags.facialRecognition = true;
     authManager.setUser(userAdminFactory.build({ isAdmin: true }));
   });
@@ -373,6 +375,68 @@ describe('People library with nobody found', () => {
     expect(screen.getByText('frameleaf_people_scan_pending_description')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'frameleaf_people_scanning_title' })).not.toBeInTheDocument();
     expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+  });
+
+  // FL-1419: the waiting page updates by itself, with or without queue state
+  it('shows the first people as soon as they are found, without a reload', async () => {
+    work([], false);
+    const ada = peopleListItemFactory.build({ id: 'ada', name: 'Ada', isHidden: false });
+    sdkMock.getAllPeople.mockResolvedValue({ people: [ada], total: 1, hidden: 0, hasNextPage: false });
+    const { container } = render(PeoplePage, { data: nobody(true) });
+
+    expect(screen.getByTestId('frameleaf-empty-state')).toBeInTheDocument();
+    await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(1));
+    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+
+    // nothing waits any more, so it stops asking
+    const asked = sdkMock.getAllPeople.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(sdkMock.getAllPeople.mock.calls.length).toBe(asked);
+  });
+
+  it('says "No people yet" once everything has been looked through and nobody was found', async () => {
+    work([], false);
+    sdkMock.getAllPeople.mockResolvedValue({ people: [], total: 0, hidden: 0, hasNextPage: false });
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByText('frameleaf_people_none_assigned')).toBeInTheDocument();
+    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+  });
+
+  it('keeps the notice, and says nothing, when a re-read fails', async () => {
+    work([], false);
+    sdkMock.getAllPeople.mockRejectedValue(new Error('offline'));
+    render(PeoplePage, { data: nobody(true) });
+
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole('heading', { name: 'frameleaf_people_scan_pending_title' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('waits for a slow answer instead of asking again and discarding it', async () => {
+    work([], false);
+    const ada = peopleListItemFactory.build({ id: 'ada', name: 'Ada', isHidden: false });
+    let answer: (value: never) => void = () => {};
+    sdkMock.getAllPeople.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    const { container } = render(PeoplePage, { data: nobody(true) });
+
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledOnce());
+    // several turns pass while the server is still thinking
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(sdkMock.getAllPeople).toHaveBeenCalledOnce();
+    // a background read gives up by itself, so a stalled one cannot block the page for good
+    expect(sdkMock.getAllPeople.mock.calls[0][1]).toEqual({ signal: expect.any(AbortSignal) });
+
+    answer({ people: [ada], total: 1, hidden: 0, hasNextPage: false } as never);
+    await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(1));
+  });
+
+  it('does not re-read a page that is not waiting', async () => {
+    render(PeoplePage, { data: nobody(false) });
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(sdkMock.getAllPeople).not.toHaveBeenCalled();
   });
 
   it('keeps "No people yet" for a library that has been looked through', () => {

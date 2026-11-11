@@ -213,17 +213,26 @@ export const isWebhookAddressAllowed = (address: string, allowHomeNetwork: boole
   return allowHomeNetwork && family !== 0 && homeNetwork.check(plain, family === 4 ? 'ipv4' : 'ipv6');
 };
 
+const plainHttpError = 'Plain http only reaches devices on your network; use an https address for anything else';
+
 const webhookLookup =
-  (allowHomeNetwork: boolean) => (hostname: string, options: { all?: boolean }, callback: LookupCallback) => {
+  (allowHomeNetwork: boolean, homeOnly = false) =>
+  (hostname: string, options: { all?: boolean }, callback: LookupCallback) => {
     dnsLookup(hostname, { all: true }, (error, addresses) => {
       if (error) {
         return callback(error, []);
       }
       if (
         addresses.length === 0 ||
-        addresses.some(({ address }) => !isWebhookAddressAllowed(address, allowHomeNetwork))
+        addresses.some(
+          ({ address }) =>
+            !isWebhookAddressAllowed(address, allowHomeNetwork) || (homeOnly && isPublicAddress(address)),
+        )
       ) {
-        return callback(new PublicFetchError(`${hostname} is not an address automations can reach`), []);
+        return callback(
+          new PublicFetchError(homeOnly ? plainHttpError : `${hostname} is not an address automations can reach`),
+          [],
+        );
       }
       if (options.all) {
         return callback(null, addresses);
@@ -239,6 +248,11 @@ const webhookAgents = {
     bodyTimeout: 10_000,
   }),
   home: new Agent({ connect: { lookup: webhookLookup(true) as never }, headersTimeout: 10_000, bodyTimeout: 10_000 }),
+  plainHttp: new Agent({
+    connect: { lookup: webhookLookup(true, true) as never },
+    headersTimeout: 10_000,
+    bodyTimeout: 10_000,
+  }),
 };
 
 /** Names cloud providers give their metadata services; refused before any lookup. */
@@ -277,9 +291,7 @@ const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
   const host = url.hostname.replaceAll(/^\[|\]$/g, '');
   if (url.protocol === 'http:' && !isHomeDestination(host)) {
     // anything sent over plain http can be read on the way, so outside the home it goes encrypted
-    throw new PublicFetchError(
-      'Plain http only reaches devices on your network; use an https address for anything else',
-    );
+    throw new PublicFetchError(plainHttpError);
   }
   if (isIP(host) && !isWebhookAddressAllowed(host, allowHomeNetwork)) {
     throw new PublicFetchError(`${host} is not an address automations can reach`);
@@ -337,7 +349,7 @@ export const readAutomationAnswer = async (response: { body: AsyncIterable<Uint8
   return Buffer.concat(chunks).toString('utf8');
 };
 
-/** Sends one automation message: no redirects, bounded in size and time, never to a private address. */
+/** Sends one bounded automation message without redirects, using plain HTTP only on the home network. */
 export const sendWebhook = async (
   address: string,
   { method = 'POST', headers, body = '' }: { method?: string; headers: Headers; body?: string },
@@ -350,13 +362,16 @@ export const sendWebhook = async (
   if (Buffer.byteLength(body, 'utf8') > WEBHOOK_REQUEST_BYTES) {
     throw new PublicFetchError('The message is too large to send');
   }
+  const secureDispatcher = allowHomeNetwork ? webhookAgents.home : webhookAgents.public;
   const response = await fetch(url, {
-    dispatcher: allowHomeNetwork ? webhookAgents.home : webhookAgents.public,
+    dispatcher: url.protocol === 'http:' ? webhookAgents.plainHttp : secureDispatcher,
     method: method.toUpperCase(),
     redirect: 'manual',
     signal: AbortSignal.timeout(15_000),
     headers: Object.fromEntries(headers.entries()),
     body,
+  }).catch((error: unknown) => {
+    throw error instanceof TypeError && error.cause instanceof PublicFetchError ? error.cause : error;
   });
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel();

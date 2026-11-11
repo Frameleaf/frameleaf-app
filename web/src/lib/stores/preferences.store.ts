@@ -156,9 +156,6 @@ export const placesViewSettings = persisted<PlacesViewSettings>('places-view-set
   collapsedGroups: {},
 });
 
-/** Partner sharing: the library timeline's View › Partner photos switch. */
-export const showPartnerPhotos = persisted<boolean>('timeline-show-partner-photos', true, {});
-
 export const showDeleteModal = persisted<boolean>('delete-confirm-dialog', true, {});
 
 export const alwaysLoadOriginalFile = persisted<boolean>('always-load-original-file', false, {});

@@ -235,6 +235,42 @@ const PetsUpdateSchema = z
   .optional()
   .meta({ id: 'PetsUpdate' });
 
+const LIBRARY_VIEW_GROUPS = new Set(['none', 'day', 'month', 'year']);
+
+/** FL-1398: the Library View menu's choices. Stored only; every client applies them itself. */
+const LibraryViewUpdateSchema = z
+  .object({
+    scrubber: z.boolean().optional().describe('Whether the Timeline shows the year scrubber'),
+    crop: z
+      .boolean()
+      .optional()
+      .describe('Whether Browse and Work crop each photo to fill its tile; off shows the whole photo'),
+    // validated here, but a plain string in the API like the response's: no enum for a client to pin
+    groupBy: z
+      .string()
+      .refine((value) => LIBRARY_VIEW_GROUPS.has(value), { message: 'groupBy must be none, day, month or year' })
+      .optional()
+      .describe('How Browse and Work group photos into sections: none, day, month or year'),
+    stacksTogether: z
+      .boolean()
+      .optional()
+      .describe('Whether a stack shows as one photo with a count; off shows every photo in it'),
+    partnerPhotos: z.boolean().optional().describe('Whether the Library also shows photos a partner shares'),
+    archived: z.boolean().optional().describe('Whether the Library also shows archived items'),
+    ratings: z.boolean().optional().describe('Whether photos show their rating'),
+    favorites: z.boolean().optional().describe('Whether favorite photos show a heart'),
+    badges: z.boolean().optional().describe('Whether photos show video length and badges'),
+    timelineTime: z.boolean().optional().describe('Timeline: whether photos show the time taken'),
+    timelineNames: z.boolean().optional().describe('Timeline: whether photos show the file name'),
+    browseTime: z.boolean().optional().describe('Browse: whether photos show the time taken'),
+    browseNames: z.boolean().optional().describe('Browse: whether photos show the file name'),
+    workTime: z.boolean().optional().describe('Work: whether photos show the time taken'),
+    workNames: z.boolean().optional().describe('Work: whether photos show the file name'),
+  })
+  .optional()
+  .describe('Library View menu choices')
+  .meta({ id: 'LibraryViewUpdate' });
+
 /** FL-49: limits for saved searches, kept small because every preferences read carries them */
 export const SAVED_SEARCH_MAX_COUNT = 50;
 export const SAVED_SEARCH_NAME_MAX_LENGTH = 100;
@@ -285,6 +321,7 @@ const UserPreferencesUpdateSchema = z
     sharedLinks: SharedLinksUpdateSchema,
     tags: TagsUpdateSchema,
     recentlyAdded: RecentlyAddedUpdateSchema,
+    libraryView: LibraryViewUpdateSchema.meta(new HistoryBuilder().added('v3.5.0').getExtensions()),
     pets: PetsUpdateSchema,
     lockedPin: LockedPinUpdateSchema,
     savedSearches: SavedSearchesUpdateSchema.meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
@@ -447,6 +484,30 @@ const PetsResponseSchema = z
   })
   .meta({ id: 'PetsResponse' });
 
+const LibraryViewResponseSchema = z
+  .object({
+    scrubber: z.boolean().describe('Whether the Timeline shows the year scrubber'),
+    crop: z.boolean().describe('Whether Browse and Work crop each photo to fill its tile; off shows the whole photo'),
+    // a plain string, not an enum: a response enum can never gain a value without breaking the native apps
+    groupBy: z.string().describe('How Browse and Work group photos into sections: none, day, month or year'),
+    stacksTogether: z
+      .boolean()
+      .describe('Whether a stack shows as one photo with a count; off shows every photo in it'),
+    partnerPhotos: z.boolean().describe('Whether the Library also shows photos a partner shares'),
+    archived: z.boolean().describe('Whether the Library also shows archived items'),
+    ratings: z.boolean().describe('Whether photos show their rating'),
+    favorites: z.boolean().describe('Whether favorite photos show a heart'),
+    badges: z.boolean().describe('Whether photos show video length and badges'),
+    timelineTime: z.boolean().describe('Timeline: whether photos show the time taken'),
+    timelineNames: z.boolean().describe('Timeline: whether photos show the file name'),
+    browseTime: z.boolean().describe('Browse: whether photos show the time taken'),
+    browseNames: z.boolean().describe('Browse: whether photos show the file name'),
+    workTime: z.boolean().describe('Work: whether photos show the time taken'),
+    workNames: z.boolean().describe('Work: whether photos show the file name'),
+  })
+  .describe('Library View menu choices')
+  .meta({ id: 'LibraryViewResponse' });
+
 const LockedPinResponseSchema = z
   .object({
     relockMinutes: z.int().describe('How long Locked photos stay open after the PIN unlocks them, in minutes'),
@@ -473,6 +534,8 @@ const UserPreferencesResponseSchema = z
     trash: TrashResponseSchema,
     cast: CastResponseSchema,
     recentlyAdded: RecentlyAddedResponseSchema,
+    // always sent; optional in the schema so clients built before FL-1398 keep compiling
+    libraryView: LibraryViewResponseSchema.optional().meta(new HistoryBuilder().added('v3.5.0').getExtensions()),
     // always sent; optional in the schema so clients built before it existed keep compiling
     pets: PetsResponseSchema.optional(),
     // always sent; optional in the schema so older clients keep compiling (FL-517)

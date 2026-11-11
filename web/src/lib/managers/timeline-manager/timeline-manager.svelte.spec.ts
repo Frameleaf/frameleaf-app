@@ -1874,6 +1874,77 @@ describe('TimelineManager', () => {
       expect(february.flowClosed).toBe(true);
       expect(december.height).toBe(browse.gap + cellGrid(7, 1000, browse).height);
     });
+
+    describe('in sections (FL-1398 "Group by")', () => {
+      const HEADER = 64;
+      const inSections = (grouping: 'days' | 'months' | 'years') => {
+        timelineManager.setLayoutOptions({
+          headerHeight: HEADER,
+          gap: browse.gap,
+          fillRowWidth: true,
+          cells: browse,
+          dayRows: true,
+        });
+        timelineManager.grouping = grouping;
+      };
+
+      it('by month: every month is a grid of its own under its header', async () => {
+        inSections('months');
+        const [march, february] = timelineManager.months;
+        await timelineManager.loadTimelineMonth(february.yearMonth, { cancelable: false });
+        await settle();
+        expect(february.flowLinkedTo).toBeUndefined();
+        expect(february.groupHeaderHeight).toBe(HEADER);
+        expectOneGrid(timelineManager, [march]);
+        expectOneGrid(timelineManager, [february]);
+        expect(march.height).toBe(HEADER + cellGrid(200, 1000, browse).height);
+      });
+
+      it('by year: a year is one grid across its months, and the next year starts another', async () => {
+        inSections('years');
+        const [march, february, december] = timelineManager.months;
+        await timelineManager.loadTimelineMonth(february.yearMonth, { cancelable: false });
+        await timelineManager.loadTimelineMonth(december.yearMonth, { cancelable: false });
+        await settle();
+        expectOneGrid(timelineManager, [march, february]);
+        expect(february.groupHeaderHeight).toBe(browse.gap);
+        expect(december.flowLinkedTo).toBeUndefined();
+        expect(december.groupHeaderHeight).toBe(HEADER);
+        expectOneGrid(timelineManager, [december]);
+      });
+
+      it('by day: every day is a grid of its own, one under the other', () => {
+        inSections('days');
+        const [march] = timelineManager.months;
+        expect(timelineManager.continuousGroups).toBe(false);
+        let top = 0;
+        for (const day of march.timelineDays) {
+          const grid = cellGrid(day.viewerAssets.length, 1000, browse);
+          expect(day.top).toBe(top);
+          expect(day.viewerAssets.map((viewerAsset) => viewerAsset.position)).toEqual(
+            day.viewerAssets.map((_, index) => grid.position(index)),
+          );
+          top += grid.height + HEADER;
+        }
+        expect(march.height).toBe(top);
+      });
+
+      it('goes back to one grid over everything when the sections are turned off', async () => {
+        inSections('months');
+        const [march, february] = timelineManager.months;
+        await timelineManager.loadTimelineMonth(february.yearMonth, { cancelable: false });
+        await settle();
+        timelineManager.setLayoutOptions({
+          headerHeight: browse.gap,
+          gap: browse.gap,
+          fillRowWidth: true,
+          cells: browse,
+        });
+        timelineManager.grouping = 'days';
+        await settle();
+        expectOneGrid(timelineManager, [march, february]);
+      });
+    });
   });
 
   describe('a month of the Browse grid loading above what is on screen (FL-143)', () => {

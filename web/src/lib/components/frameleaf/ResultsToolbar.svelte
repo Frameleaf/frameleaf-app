@@ -18,6 +18,7 @@
    */
   import FilterChip from '$lib/components/frameleaf/FilterChip.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import LibraryViewMenu from '$lib/components/frameleaf/LibraryViewMenu.svelte';
   import { SORT_OPTIONS } from '$lib/components/frameleaf/results-sort';
   import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
   import { activeFilterFields, withoutDiscoveryFilters } from '$lib/components/discovery/query';
@@ -25,6 +26,8 @@
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { resolveEntityName } from '$lib/frameleaf/filter-entity-names';
   import { describeFilterFields, filterFieldEntityIds } from '$lib/frameleaf/library-filters';
+  import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+  import type { LibraryViewMenuOptions } from '$lib/frameleaf/library-view';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibrarySort } from '$lib/frameleaf/library-session';
   import {
@@ -68,9 +71,8 @@
     /** Whether the information panel is shown; undefined draws no toggle. */
     inspectorOpen?: boolean;
     onToggleInspector?: () => void;
-    /** Whether partner-shared photos are shown (the library timeline); undefined draws no switch. */
-    partnerPhotos?: boolean;
-    onTogglePartnerPhotos?: () => void;
+    /** The library's View menu (FL-1398); without it the menu holds the information panel switch alone. */
+    viewMenu?: LibraryViewMenuOptions;
     /**
      * The sorts this view's source can apply. The toolbar lists the prototype's five; the ones the
      * source cannot order by are shown but not offered. Undefined draws no Sort control.
@@ -119,8 +121,7 @@
     onSlideshow,
     inspectorOpen,
     onToggleInspector,
-    partnerPhotos,
-    onTogglePartnerPhotos,
+    viewMenu,
     sorts,
     sort,
     onSortChange,
@@ -248,14 +249,20 @@
     }),
   );
 
-  /** FL-707 item 10: the View menu (Information panel, partner photos). */
+  /** FL-707 item 10, FL-1398: the View menu. */
   const showInspectorSwitch = $derived(inspectorOpen !== undefined && !!onToggleInspector);
-  const showPartnerSwitch = $derived(partnerPhotos !== undefined && !!onTogglePartnerPhotos);
   let viewMenuOpen = $state(false);
   let viewControl = $state<HTMLElement>();
   let viewButton = $state<HTMLButtonElement>();
-  let viewSwitch = $state<HTMLInputElement>();
-  let partnerSwitch = $state<HTMLInputElement>();
+  let viewMenuElement = $state<HTMLElement>();
+  /** Phones: the full menu is a sheet at the library root (the frosted toolbar would trap it). */
+  const viewSheetRoot = $derived(
+    viewMenuOpen && viewMenu && libraryGridPreferences.phone
+      ? (viewControl?.closest<HTMLElement>('.fl-library') ?? null)
+      : null,
+  );
+  const inViewMenu = (node: EventTarget | null) =>
+    node instanceof Node && (!!viewControl?.contains(node) || !!viewMenuElement?.contains(node));
   const closeViewMenu = (focus = true) => {
     viewMenuOpen = false;
     if (focus) {
@@ -270,8 +277,9 @@
       closeViewMenu();
     }
   };
+  /* Only focus that goes somewhere else closes it: a switch or a page change inside keeps it open. */
   const onViewFocusOut = (event: FocusEvent) => {
-    if (viewMenuOpen && !viewControl?.contains(event.relatedTarget as Node | null)) {
+    if (viewMenuOpen && event.relatedTarget && !inViewMenu(event.relatedTarget)) {
       closeViewMenu(false);
     }
   };
@@ -279,9 +287,11 @@
     if (!viewMenuOpen) {
       return;
     }
-    (viewSwitch ?? partnerSwitch)?.focus();
+    viewMenuElement?.querySelector<HTMLElement>('input, button')?.focus();
+    // Where the menu starts, so it can stop short of the window's edge and scroll instead.
+    viewControl?.style.setProperty('--fl-view-top', `${Math.round(viewControl.getBoundingClientRect().bottom)}px`);
     const onPointerDown = (event: PointerEvent) => {
-      if (!viewControl?.contains(event.target as Node)) {
+      if (!inViewMenu(event.target)) {
         closeViewMenu(false);
       }
     };
@@ -511,10 +521,10 @@
       </button>
     {/if}
 
-    {#if showInspectorSwitch || showPartnerSwitch}
+    {#if showInspectorSwitch || viewMenu}
       <!--
-        FL-707 item 10: a labelled "View" menu in place of the unlabelled sliders icon, holding the
-        Information panel switch. Thumbnail size stays in the floating bar (owner, 2026-10-30).
+        FL-707 item 10, FL-1398: a labelled "View" menu holding how the library looks. Thumbnail size
+        stays in the floating bar (owner, 2026-10-30); the menu's Size presets set the same value.
       -->
       <span class="fl-slot fl-slot-info">
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -535,33 +545,15 @@
           </button>
           {#if viewMenuOpen}
             <!-- Escape closes the menu and returns to View, as the filter menu does. -->
-            <div class="fl-view-menu fl-pop" role="group" aria-label={$t('frameleaf_library_view_menu')} out:pop>
-              {#if showInspectorSwitch}
-                <label class="fl-view-row">
-                  <span>{$t('frameleaf_library_information_panel')}</span>
-                  <input
-                    bind:this={viewSwitch}
-                    type="checkbox"
-                    role="switch"
-                    aria-label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
-                    checked={inspectorOpen}
-                    onchange={onToggleInspector}
-                  />
-                </label>
-              {/if}
-              {#if showPartnerSwitch}
-                <label class="fl-view-row">
-                  <span>{$t('frameleaf_library_partner_photos')}</span>
-                  <input
-                    bind:this={partnerSwitch}
-                    type="checkbox"
-                    role="switch"
-                    checked={partnerPhotos}
-                    onchange={onTogglePartnerPhotos}
-                  />
-                </label>
-              {/if}
-            </div>
+            <LibraryViewMenu
+              bind:element={viewMenuElement}
+              options={viewMenu}
+              inspectorOpen={showInspectorSwitch ? inspectorOpen : undefined}
+              {onToggleInspector}
+              sheetRoot={viewSheetRoot}
+              onkeydown={viewSheetRoot ? onViewKeydown : undefined}
+              onfocusout={viewSheetRoot ? onViewFocusOut : undefined}
+            />
           {/if}
         </span>
       </span>
@@ -874,37 +866,6 @@
   }
   .fl-view-button.is-open {
     background: var(--fl-raised);
-  }
-  .fl-view-menu {
-    position: absolute;
-    z-index: 5;
-    inset-inline-end: 0;
-    top: calc(100% + var(--fl-space-2));
-    display: flex;
-    flex-direction: column;
-    gap: var(--fl-space-3);
-    min-width: 260px;
-    padding: 8px 12px;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card, 12px);
-    background: var(--fl-panel);
-    box-shadow: var(--fl-shadow-2);
-  }
-  .fl-view-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--fl-space-3);
-    min-height: 36px;
-    color: var(--fl-text);
-    font-size: 13px;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-  .fl-view-row input {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--fl-accent);
   }
   /*
    * Phones (UI review 2026-10-30 #7, review-1030-shell.css): the toolbar is one line, so the photos

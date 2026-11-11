@@ -93,6 +93,7 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'logging.level': { label: 'frameleaf_srvadv_trouble_amount', values: LEVELS },
   'analytics.enabled': { label: 'frameleaf_srvadv_trouble_analytics_keep' },
   // FL-860: Sign-in › Connected apps
+  'connectedApps.allowMcp': { label: 'frameleaf_apps_admin_allow_mcp' },
   'connectedApps.allowRegistration': { label: 'frameleaf_apps_admin_allow_registration' },
   'analytics.historyDays': {
     label: 'frameleaf_srvadv_trouble_analytics_for',
@@ -220,6 +221,25 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
   'albums.showPartnerAlbums': { label: 'frameleaf_sharing_partner_albums' },
   'albums.cleanupBannerDismissed': { label: 'frameleaf_album_cleanup_banner_setting' },
+  // FL-1398: the Library View menu. Time taken and File name are one pair of switches kept per layout.
+  'libraryView.scrubber': { label: 'frameleaf_library_view_scrubber' },
+  'libraryView.crop': { label: 'frameleaf_library_view_crop' },
+  'libraryView.groupBy': {
+    label: 'frameleaf_library_view_group_by',
+    values: { none: 'none', day: 'day', month: 'month', year: 'year' },
+  },
+  'libraryView.stacksTogether': { label: 'frameleaf_library_view_stacks_together' },
+  'libraryView.partnerPhotos': { label: 'frameleaf_library_partner_photos' },
+  'libraryView.archived': { label: 'frameleaf_library_view_also_archived' },
+  'libraryView.ratings': { label: 'frameleaf_library_view_rating' },
+  'libraryView.favorites': { label: 'frameleaf_library_view_favorite' },
+  'libraryView.badges': { label: 'frameleaf_library_view_badges' },
+  'libraryView.timelineTime': { label: 'frameleaf_library_view_time_timeline' },
+  'libraryView.timelineNames': { label: 'frameleaf_library_view_file_name_timeline' },
+  'libraryView.browseTime': { label: 'frameleaf_library_view_time_browse' },
+  'libraryView.browseNames': { label: 'frameleaf_library_view_file_name_browse' },
+  'libraryView.workTime': { label: 'frameleaf_library_view_time_work' },
+  'libraryView.workNames': { label: 'frameleaf_prefs_look_file_names' },
   'emailNotifications.enabled': { label: 'frameleaf_notify_yours_send' },
   'emailNotifications.albumInvite': { label: 'frameleaf_notify_yours_shares' },
   'emailNotifications.albumUpdate': { label: 'frameleaf_notify_yours_updates' },

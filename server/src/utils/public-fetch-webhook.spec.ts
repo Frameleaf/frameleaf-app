@@ -1,10 +1,15 @@
 import { PublicFetchError, isWebhookAddressAllowed, sendWebhook } from 'src/utils/public-fetch.js';
 
-const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
+const { fetchMock, lookupMock } = vi.hoisted(() => ({ fetchMock: vi.fn(), lookupMock: vi.fn() }));
+
+vi.mock('node:dns', () => ({ lookup: lookupMock }));
 
 vi.mock('undici', async (importOriginal) => ({
   ...(await importOriginal<typeof import('undici')>()),
   fetch: fetchMock,
+  Agent: class {
+    constructor(readonly options: { connect: { lookup: typeof lookupMock } }) {}
+  },
 }));
 
 /** FL-819: the webhook step of a workflow that runs on a Frameleaf event. */
@@ -43,6 +48,24 @@ describe('sendWebhook', () => {
       PublicFetchError,
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects plain http when a home-network name resolves outside the home network', async () => {
+    lookupMock.mockImplementationOnce((_hostname, _options, callback) =>
+      callback(null, [{ address: '93.184.216.34', family: 4 }]),
+    );
+    fetchMock.mockImplementationOnce(
+      (url: URL, { dispatcher }: { dispatcher: { options: { connect: { lookup: typeof lookupMock } } } }) =>
+        new Promise((resolve, reject) => {
+          dispatcher.options.connect.lookup(url.hostname, { all: true }, (error?: Error) =>
+            error ? reject(new TypeError('fetch failed', { cause: error })) : resolve(new Response('ok')),
+          );
+        }),
+    );
+
+    await expect(sendWebhook('http://printer.local/hook', message, { allowHomeNetwork: true })).rejects.toThrow(
+      'Plain http only reaches devices on your network',
+    );
   });
 
   it.each(['http://192.168.1.20/hook', 'http://homeassistant.local:8123/api/webhook/x', 'http://homeassistant/hook'])(

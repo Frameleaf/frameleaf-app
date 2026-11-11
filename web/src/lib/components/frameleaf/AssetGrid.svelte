@@ -29,6 +29,7 @@
     type TileLayout,
   } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences, type LibraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+  import { libraryView } from '$lib/frameleaf/library-view.svelte';
   import { animateFlip } from '$lib/frameleaf/motion';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -340,7 +341,9 @@
               rating={ratingFor?.(asset)}
               captionHeight={cellOptions ? 0 : (cells?.captionHeight ?? 0)}
               offline={offlineFor?.(asset) ?? false}
-              showFileName={preferences.showFileNames}
+              showFileName={preferences === libraryGridPreferences
+                ? libraryView.value.workNames
+                : preferences.showFileNames}
               onOpen={handleOpen}
               onToggleSelect={toggleSelect}
               onFocus={(focused) => session.setScrollAnchor(focused.id)}

@@ -537,7 +537,8 @@ export class SystemConfigService extends BaseService {
 
     resolveCredentials(dto, oldConfig);
 
-    // Older admin clients can save their settings without sending the XMP export preference.
+    // Older admin clients omit these fields. A settings save keeps the stored choice.
+    dto.connectedApps.allowMcp ??= oldConfig.connectedApps.allowMcp;
     dto.metadata.faces.write ??= oldConfig.metadata.faces.write;
 
     // FL-165: remote access itself (the switch, connection, port, published address and custom
