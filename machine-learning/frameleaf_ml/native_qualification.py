@@ -101,7 +101,10 @@ def preprocessing_identity(engine: str = "onnx") -> str:
         root / name for name in ("main.py", "schemas.py", "config.py", "producer_binding.py")
     ]
     if engine == "qwen-gguf":
-        files.extend(root / name for name in ("native_qwen.py", "native_binding.py", "native_runtime.py"))
+        files.extend(
+            root / name
+            for name in ("native_qwen.py", "native_qwen_windows.py", "native_binding.py", "native_runtime.py")
+        )
     digest = hashlib.sha256()
     for path in files:
         digest.update(path.relative_to(root).as_posix().encode() + b"\0" + path.read_bytes())
