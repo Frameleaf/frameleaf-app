@@ -7,9 +7,11 @@ import { test } from 'node:test';
 import { digest, Refusal } from '../src/contracts.js';
 import {
   runNativeMediaCutover,
+  completeNativeMediaCutover,
+  nativeActiveMediaIdentity,
   type NativeMediaMoveAuthority,
 } from '../src/runtime/native-media-cutover.js';
-import { NativeInstallationSchema } from '../src/runtime/native.js';
+import { NativeHost, NativeInstallationSchema, NativeOperations } from '../src/runtime/native.js';
 import { Store } from '../src/store.js';
 
 const intentKey = 'native-media-cutover-intent';
@@ -214,5 +216,53 @@ test('a wrong post-activation media identity never becomes a durable final recei
     assert.equal(f.calls(), 1);
     assert.equal(f.store.locked()?.receipts[resultKey], undefined);
     assert.ok(f.store.locked()?.receipts[intentKey]);
+  });
+});
+
+
+test('recovery keeps the operation lock until exact relocated readiness and retains the expected root for later starts', async () => {
+  await fixture('target', async (f) => {
+    const runtime = new NativeHost(f.installation, async () => '');
+    const exact = f.finalized.activeMediaIdentity;
+    let actual: string | undefined;
+    let starts = 0;
+    const lifecycle = new NativeOperations(
+      f.store, runtime, undefined, undefined,
+      (operation) => completeNativeMediaCutover(f.store, f.owner, f.installation, operation, async () => {
+        assert.equal(nativeActiveMediaIdentity(f.store, f.installation), exact);
+        assert.equal(f.store.locked()?.id, operation.id);
+        starts++;
+        return {
+          protocolVersion: 1,
+          state: 'running',
+          secureInstallationId: f.installation.secureInstallationId,
+          manifestSha256: f.installation.manifestSha256,
+          sourceRevision: f.installation.sourceRevision,
+          certified: f.installation.certified,
+          ...(actual ? { activeMediaIdentity: actual } : {}),
+        };
+      }),
+    );
+    f.store.interrupt();
+    for (const identity of [undefined, f.selection.binding.sourceIdentity]) {
+      actual = identity;
+      lifecycle.resume(f.operation.id);
+      const refused = await lifecycle.wait(f.operation.id);
+      assert.equal(refused.state, 'failed');
+      assert.equal(refused.error, 'native_media_startup_unconfirmed');
+      assert.equal(f.store.locked()?.id, f.operation.id);
+      assert.equal(f.store.locked()?.receipts['native-media-cutover-startup'], undefined);
+    }
+    // The native generation changes on startup. The final cutover receipt was
+    // persisted before the first startup, so recovery cannot inspect it again.
+    f.owner.inspect = async () => { throw new Error('owner no longer quiescent'); };
+    actual = exact;
+    lifecycle.resume(f.operation.id);
+    const complete = await lifecycle.wait(f.operation.id);
+    assert.equal(complete.state, 'complete');
+    assert.equal(f.store.locked(), null);
+    assert.equal(starts, 3);
+    assert.equal(f.calls(), 1);
+    assert.equal(nativeActiveMediaIdentity(f.store, f.installation), exact);
   });
 });

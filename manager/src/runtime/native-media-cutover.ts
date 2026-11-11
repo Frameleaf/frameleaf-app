@@ -60,8 +60,8 @@ const Finalized = MoveRequest.extend({
   generation: operationId,
 });
 
-type MoveRequest = z.infer<typeof MoveRequest>;
-type FencedSelection = z.infer<typeof FencedSelection>;
+export type MoveRequest = z.infer<typeof MoveRequest>;
+export type FencedSelection = z.infer<typeof FencedSelection>;
 type Finalized = z.infer<typeof Finalized>;
 type Decision = z.infer<typeof MoveInput>['decision'];
 
@@ -83,6 +83,21 @@ export interface NativeMediaMoveAuthority {
 
 const intentKey = 'native-media-cutover-intent';
 const resultKey = 'native-media-cutover-receipt';
+const startupKey = 'native-media-cutover-startup';
+const activeMediaKey = (installation: NativeInstallation) =>
+  `native-active-media:${installation.secureInstallationId}`;
+
+export function nativeActiveMediaIdentity(
+  store: Store,
+  installation: NativeInstallation,
+): string | undefined {
+  const value = store.get(activeMediaKey(installation));
+  if (value === null) return undefined;
+  const parsed = sha256.safeParse(value);
+  if (!parsed.success) throw new Refusal('native_media_cutover_journal_invalid');
+  return parsed.data;
+}
+
 const invalid = () => new Refusal('native_media_cutover_journal_invalid');
 
 /** Reconcile the writer-fenced move without releasing Manager's operation lock. */
@@ -170,12 +185,16 @@ export async function runNativeMediaCutover(
   )
     throw invalid();
 
+  // A journaled receipt predates startup. Once the host runs, its source generation
+  // can no longer be inspected through the quiescent controller.
+  if (previousResult !== undefined) return finalReceipt(previousResult);
+
   const current = await owner.inspect(request, signal);
   owned();
   const selected = FencedSelection.safeParse(current);
   let receipt: Finalized;
   if (selected.success) {
-    if (previousResult !== undefined || !matchesRequest(selected.data))
+    if (!matchesRequest(selected.data))
       throw new Refusal('native_media_cutover_unconfirmed');
     if (previousIntent === undefined) record(intentKey, intent);
     receipt = finalReceipt(await owner.apply(selected.data, decision, signal));
@@ -186,9 +205,53 @@ export async function runNativeMediaCutover(
   }
 
   owned();
-  if (previousResult === undefined) record(resultKey, receipt);
-  else if (!isDeepStrictEqual(previousResult, receipt))
-    throw new Refusal('native_media_cutover_unconfirmed');
-  // Starting the host and checking its reported media identity remain separate.
+  record(resultKey, receipt);
   return receipt;
+}
+
+
+/** Finish only a previously admitted private operation. The lifecycle releases its lock on return. */
+export async function completeNativeMediaCutover(
+  store: Store,
+  owner: NativeMediaMoveAuthority,
+  installation: NativeInstallation,
+  operation: Operation,
+  start: NativeRuntime['start'],
+): Promise<void> {
+  const receipt = await runNativeMediaCutover(
+    store,
+    owner,
+    installation,
+    operation,
+  );
+  if (!isDeepStrictEqual(store.locked(), operation)) throw invalid();
+  const expected =
+    receipt.state === 'target-admitted' ? receipt.activeMediaIdentity : undefined;
+  const recorded = nativeActiveMediaIdentity(store, installation);
+  if (recorded !== undefined && recorded !== expected) throw invalid();
+  // Persist the expected target before any startup. Ordinary starts after Manager
+  // recovery also require that identity, including after the move operation completes.
+  if (
+    expected !== undefined &&
+    recorded === undefined &&
+    !store.createOnce(activeMediaKey(installation), expected)
+  )
+    throw invalid();
+
+  const ready = await start();
+  if (
+    ready.protocolVersion !== 1 ||
+    ready.state !== 'running' ||
+    ready.secureInstallationId !== installation.secureInstallationId ||
+    ready.manifestSha256 !== installation.manifestSha256 ||
+    ready.sourceRevision !== installation.sourceRevision ||
+    ready.certified !== installation.certified ||
+    ready.activeMediaIdentity !== expected
+  )
+    throw new Refusal('native_media_startup_unconfirmed');
+  if (!isDeepStrictEqual(store.locked(), operation)) throw invalid();
+  operation.step = startupKey;
+  operation.receipts[startupKey] = ready;
+  if (!operation.completed.includes(startupKey)) operation.completed.push(startupKey);
+  store.save(operation);
 }

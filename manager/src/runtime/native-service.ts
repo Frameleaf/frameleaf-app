@@ -19,6 +19,10 @@ import { Backups } from '../backups.js';
 import { runNativeDatabaseBackup } from './native-backup-operation.js';
 import { runNativeRestore } from './native-restore-operation.js';
 import {
+  completeNativeMediaCutover,
+  nativeActiveMediaIdentity,
+} from './native-media-cutover.js';
+import {
   prepareNativeRestoreReview,
   nativeRestoreReviewStatus,
 } from './native-restore-review.js';
@@ -510,6 +514,7 @@ export class NativeService {
         bootstrap.installation,
         async () => password,
         () => verifyInstalledController(bootstrap),
+        () => nativeActiveMediaIdentity(store, bootstrap.installation),
       );
     if (supplied.identity.installationId !== bootstrap.installation.id)
       throw new Refusal('native_installation_changed');
@@ -545,6 +550,12 @@ export class NativeService {
       libraryId,
       release: context.release,
     };
+    // Recovery only: until Windows qualification there is no Manager or Desktop
+    // entry point to admit a new move.
+    const mediaOwner =
+      process.platform === 'win32' && !runtime && supplied instanceof NativeHost
+        ? supplied.mediaMoveAuthority()
+        : undefined;
     this.lifecycle = new NativeOperations(
       store,
       this.runtime,
@@ -561,6 +572,16 @@ export class NativeService {
       backups
         ? (operation) =>
             runNativeRestore(store, this.runtime, backups, context, operation)
+        : undefined,
+      mediaOwner
+        ? (operation) =>
+            completeNativeMediaCutover(
+              store,
+              mediaOwner,
+              context.installation,
+              operation,
+              () => this.runtime.start(),
+            )
         : undefined,
     );
     this.publicInstallation = Object.freeze({

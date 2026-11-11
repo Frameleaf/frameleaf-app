@@ -3,12 +3,14 @@ import { mkdtemp, rm, writeFile, chmod, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { randomUUID } from 'node:crypto';
 import { NativeHost, type NativeInstallation } from '../src/runtime/native.js';
 
 const password = 'synthetic-private-controller-password';
 async function fixture(
   run: (host: NativeHost, descriptor: NativeInstallation) => Promise<void>,
   scenario = 'normal',
+  expectedMediaIdentity?: string,
 ) {
   const root = await mkdtemp(
     join(await realpath(tmpdir()), 'frameleaf-controller-adapter-'),
@@ -33,6 +35,21 @@ async function fixture(
 import { createInterface } from 'node:readline';
 const lines=createInterface({input:process.stdin})[Symbol.asyncIterator]();
 const config=JSON.parse((await lines.next()).value);
+if(process.argv[2]==='--media-move-owner'){
+ const exact={
+  installationId:${JSON.stringify(installation.id)},secureInstallationId:${JSON.stringify(installation.secureInstallationId)},
+  candidate:${JSON.stringify(installation.candidate)},state:${JSON.stringify(installation.state)},manifestSha256:${JSON.stringify(installation.manifestSha256)}
+ };
+ const {request,decision,...envelope}=config;
+ if(!Object.entries(exact).every(([key,value])=>envelope[key]===value) || Object.keys(envelope).length!==5 ||
+  Object.keys(request).sort().join(',')!=='binding,operationId,protocolVersion' ||
+  process.argv.length!==3 || Object.values(process.env).includes(request.binding.approvalSha256))process.exit(9);
+ const reply=decision==='target'
+  ? {...request,state:'target-admitted',writerFence:'released',activeMediaIdentity:request.binding.stagedIdentity,generation:'22222222-2222-4222-8222-222222222222'}
+  : {...request,state:'selected-fenced',writerFence:'held'};
+ await new Promise(resolve=>process.stdout.write(JSON.stringify(reply)+'\\n',resolve));
+ process.exit(0);
+}
 if(process.argv[2]==='--inspect-owner'){
  if('password' in config || config.secureInstallationId!==${JSON.stringify(installation.secureInstallationId)} || process.argv.includes(config.secureInstallationId) || Object.values(process.env).includes(config.secureInstallationId))process.exit(9);
  const fs=await import('node:fs/promises');
@@ -62,6 +79,7 @@ if(scenario==='no-ready'){
  }
 }
 const ready={protocolVersion:1,state:'running',secureInstallationId:config.secureInstallationId,manifestSha256:config.manifestSha256,sourceRevision:${JSON.stringify(installation.sourceRevision)},certified:false};
+if(scenario==='media-ready')ready.activeMediaIdentity='e'.repeat(64);
 if(scenario==='identity')ready.manifestSha256='d'.repeat(64);
 if(scenario==='secure-identity')ready.secureInstallationId='22222222-2222-4222-8222-222222222222';
 if(scenario==='missing-secure-identity')delete ready.secureInstallationId;
@@ -78,7 +96,9 @@ for await(const line of {[Symbol.asyncIterator]:()=>lines}){
 `,
   );
   await chmod(controller, 0o700);
-  const host = new NativeHost(installation, async () => password);
+  const host = new NativeHost(
+    installation, async () => password, async () => {}, () => expectedMediaIdentity,
+  );
   try {
     await run(host, installation);
   } finally {
@@ -316,3 +336,50 @@ test(
     }, 'bad-exit');
   },
 );
+
+
+test('media owner transport binds the signed candidate and strips selection-only fields', async () => {
+  await fixture(async (host, installation) => {
+    const owner = host.mediaMoveAuthority();
+    const request = {
+      protocolVersion: 1 as const,
+      operationId: randomUUID(),
+      binding: {
+        moveId: randomUUID(),
+        secureInstallationId: installation.secureInstallationId,
+        manifestSha256: installation.manifestSha256,
+        libraryId: installation.id,
+        profileIdentity: '1'.repeat(64),
+        sourceGeneration: randomUUID(),
+        sourceIdentity: '2'.repeat(64),
+        targetIdentity: '3'.repeat(64),
+        stagedIdentity: '4'.repeat(64),
+        approvalSha256: '5'.repeat(64),
+        copyReceiptSha256: '6'.repeat(64),
+      },
+    };
+    const selection = { ...request, state: 'selected-fenced' as const, writerFence: 'held' as const };
+    assert.deepEqual(await owner.inspect(request), selection);
+    assert.deepEqual(await owner.apply(selection, 'target'), {
+      ...request, state: 'target-admitted', writerFence: 'released',
+      activeMediaIdentity: request.binding.stagedIdentity,
+      generation: '22222222-2222-4222-8222-222222222222',
+    });
+    await assert.rejects(
+      owner.inspect({ ...request, binding: { ...request.binding, manifestSha256: '0'.repeat(64) } }),
+      /native_media_cutover_unconfirmed/,
+    );
+  });
+});
+
+test('native startup requires the exact expected media identity and refuses unsolicited identity', async () => {
+  await fixture(async (host) => {
+    assert.equal((await host.start()).activeMediaIdentity, 'e'.repeat(64));
+  }, 'media-ready', 'e'.repeat(64));
+  await fixture(async (host) => {
+    await assert.rejects(host.start(), /native_media_startup_unconfirmed/);
+  }, 'media-ready');
+  await fixture(async (host) => {
+    await assert.rejects(host.start(), /native_media_startup_unconfirmed/);
+  }, 'media-ready', 'f'.repeat(64));
+});
