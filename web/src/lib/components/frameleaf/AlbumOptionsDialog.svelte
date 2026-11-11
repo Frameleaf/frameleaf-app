@@ -96,7 +96,9 @@
 
     <div class="buttons">
       <button type="button" class="fl-control" disabled={saving} onclick={() => (open = false)}>{$t('cancel')}</button>
-      <button type="button" class="primary fl-control" disabled={saving} onclick={() => void save()}>{$t('save')}</button>
+      <button type="button" class="primary fl-control" disabled={saving} onclick={() => void save()}
+        >{$t('save')}</button
+      >
     </div>
   </div>
 </Dialog>

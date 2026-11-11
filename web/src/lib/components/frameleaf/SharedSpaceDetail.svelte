@@ -566,12 +566,22 @@
         {/if}
 
         <!-- The space's own map and conversation are its Places and Comments panels. -->
-        <button type="button" class="action fl-control" disabled={space.assetCount === 0} onclick={() => choosePanel('places')}>
+        <button
+          type="button"
+          class="action fl-control"
+          disabled={space.assetCount === 0}
+          onclick={() => choosePanel('places')}
+        >
           <Icon icon={mdiMapOutline} size="18" />
           <span>{$t('map')}</span>
         </button>
 
-        <button type="button" class="action fl-control" disabled={space.assetCount === 0} onclick={() => void startSlideshow()}>
+        <button
+          type="button"
+          class="action fl-control"
+          disabled={space.assetCount === 0}
+          onclick={() => void startSlideshow()}
+        >
           <Icon icon={mdiPlayCircleOutline} size="18" />
           <span>{$t('slideshow')}</span>
         </button>
