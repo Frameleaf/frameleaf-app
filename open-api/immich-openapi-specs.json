@@ -16298,6 +16298,15 @@
         "operationId": "getProcessingFailures",
         "parameters": [
           {
+            "name": "includeDismissed",
+            "required": false,
+            "in": "query",
+            "description": "Also list failures someone chose to keep as they are or to stop trying (FL-1409)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "skip",
             "required": false,
             "in": "query",
@@ -16306,6 +16315,15 @@
               "maximum": 9007199254740991,
               "default": 0,
               "type": "integer"
+            }
+          },
+          {
+            "name": "step",
+            "required": false,
+            "in": "query",
+            "description": "Only failures of this step",
+            "schema": {
+              "$ref": "#/components/schemas/ProcessingFailureStep"
             }
           },
           {
@@ -21792,6 +21810,55 @@
           }
         ],
         "summary": "Ask the Library Assistant",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/assistant/classic": {
+      "post": {
+        "description": "Record a local switch to Classic search from an Assistant answer. Expired, previously used, and other-session tokens are ignored.",
+        "operationId": "recordAssistantSwitchBack",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSwitchBackDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record a switch to Classic search",
         "tags": [
           "Search"
         ],
@@ -83781,6 +83848,12 @@
             "description": "One line describing what was searched",
             "type": "string"
           },
+          "switchBackToken": {
+            "description": "Opaque token for reporting a switch to Classic search from this answer",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "warnings": {
             "description": "Parts of the question that could not be used",
             "items": {
@@ -83947,6 +84020,21 @@
         "required": [
           "kind",
           "text"
+        ],
+        "type": "object"
+      },
+      "AssistantSwitchBackDto": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "The switch-back token from the Assistant answer",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
         ],
         "type": "object"
       },
@@ -139789,11 +139877,19 @@
       },
       "ProcessingFailureQueryDto": {
         "properties": {
+          "includeDismissed": {
+            "description": "Also list failures someone chose to keep as they are or to stop trying (FL-1409)",
+            "type": "boolean"
+          },
           "skip": {
             "default": 0,
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "step": {
+            "$ref": "#/components/schemas/ProcessingFailureStep",
+            "description": "Only failures of this step"
           },
           "take": {
             "default": 100,
@@ -145972,6 +146068,12 @@
       },
       "SearchAssetResponseDto": {
         "properties": {
+          "closeMatches": {
+            "description": "How many of the leading items are close matches for the search; the rest are looser. Only on the first page of a search ranked by meaning, and absent when the search cannot tell close from loose",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "count": {
             "description": "Number of assets in this page",
             "maximum": 9007199254740991,

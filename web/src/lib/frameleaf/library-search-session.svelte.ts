@@ -1,6 +1,7 @@
 import {
   askAssistant,
   askSearch,
+  recordAssistantSwitchBack,
   searchLibraryItems,
   LibraryAssetItemKind,
   LibraryItemSearchMode,
@@ -56,6 +57,12 @@ export class LibrarySearchSession {
   countCapped = $state(false);
   /** FL-1403: these results were matched by text, because search by meaning was off or did not answer. */
   textFallback = $state(false);
+  /**
+   * FL-1393: how many of the leading `assets` are close matches, from the first page of a search by
+   * meaning. Null when the server gave no count (a text search, an older server), so the page shows
+   * one undivided grid.
+   */
+  closeMatches = $state<number | null>(null);
   assets = $state<AssetResponseDto[]>([]);
   albums = $state<AlbumResponseDto[]>([]);
   askResponse = $state<AskSearchResponseDto>();
@@ -66,6 +73,7 @@ export class LibrarySearchSession {
   #destroyed = false;
   #query: LibrarySearchQuery | null = null;
   #request?: AbortController;
+  #switchBack?: { token: string; isCurrent: () => boolean };
 
   reset(query: LibrarySearchQuery | null = null) {
     this.#request?.abort();
@@ -75,10 +83,12 @@ export class LibrarySearchSession {
     this.count = null;
     this.countCapped = false;
     this.textFallback = false;
+    this.closeMatches = null;
     this.assets = [];
     this.albums = [];
     this.askResponse = undefined;
     this.assistantResponse = undefined;
+    this.#switchBack = undefined;
     this.nextPage = query ? 1 : null;
     this.nextCursor = null;
     this.loading = false;
@@ -87,6 +97,23 @@ export class LibrarySearchSession {
   destroy() {
     this.#destroyed = true;
     this.reset();
+  }
+
+  /** Drop results that left the search (deleted, or moved out of what it matches), keeping the close-match count true. */
+  removeAssets(ids: string[]) {
+    const gone = new Set(ids);
+    if (this.closeMatches !== null) {
+      this.closeMatches -= this.assets.slice(0, this.closeMatches).filter(({ id }) => gone.has(id)).length;
+    }
+    this.assets = this.assets.filter(({ id }) => !gone.has(id));
+  }
+
+  async reportSwitchBack() {
+    const pending = this.#switchBack;
+    this.#switchBack = undefined;
+    if (pending?.isCurrent()) {
+      await recordAssistantSwitchBack({ assistantSwitchBackDto: { token: pending.token } }).catch(() => {});
+    }
   }
 
   /**
@@ -118,7 +145,7 @@ export class LibrarySearchSession {
   }
 
   /** `smartSearch`: the server's feature flag; false sends a search by meaning straight to text. */
-  async loadNextPage(options: { language: string; smartSearch?: boolean }) {
+  async loadNextPage(options: { language: string; smartSearch?: boolean; isCurrent?: () => boolean }) {
     const query = this.#query;
     if (this.#destroyed || !query || (!this.nextPage && !this.nextCursor) || this.loading) {
       return;
@@ -172,6 +199,9 @@ export class LibrarySearchSession {
         }
         this.assets = answer.results.assets.items;
         this.assistantResponse = answer;
+        if (answer.switchBackToken && options.isCurrent) {
+          this.#switchBack = { token: answer.switchBackToken, isCurrent: options.isCurrent };
+        }
         this.nextPage = null;
         this.nextCursor = null;
         return;
@@ -219,6 +249,9 @@ export class LibrarySearchSession {
       // Abort is advisory: a completed response can still arrive after a scope switch.
       if (this.#request !== request) {
         return;
+      }
+      if (this.assets.length === 0) {
+        this.closeMatches = (!byText && search.kind === 'smart' && response.assets.closeMatches) || null;
       }
       const known = new Set(this.assets.map(({ id }) => id));
       for (const asset of response.assets.items) {

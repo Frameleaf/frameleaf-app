@@ -597,6 +597,13 @@ const SearchAssetResponseSchema = z
     facets: z.array(SearchFacetResponseSchema),
     nextPage: z.string().nullable().describe('Next page token').meta(DEPRECATED_FLAT_FIELD),
     nextCursor: z.string().nullable().describe('Cursor for the next page of results').meta(ADDED_V3_2),
+    closeMatches: z
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'How many of the leading items are close matches for the search; the rest are looser. Only on the first page of a search ranked by meaning, and absent when the search cannot tell close from loose',
+      ),
   })
   .meta({ id: 'SearchAssetResponseDto' });
 

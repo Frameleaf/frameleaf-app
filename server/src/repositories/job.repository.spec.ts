@@ -9,6 +9,8 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MetricsRepository, setWorkerMetrics, workerMetrics } from 'src/repositories/metrics.repository.js';
+import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import * as attemptEvidence from 'src/utils/attempt-evidence.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { LockedKeyUnavailableError, clearLockedDeferrals, deferForLockedKey } from 'src/utils/locked-read.js';
@@ -521,6 +523,88 @@ describe(JobRepository.name, () => {
     );
     expect(notify).toHaveBeenCalledOnce();
   });
+
+  it.each(['committed', 'stale claim', 'rolled back'] as const)(
+    'counts Desktop inference only after committed queue adoption (%s)',
+    async (outcome) => {
+      const previousMetrics = workerMetrics;
+      const metrics = new MetricsRepository();
+      const observe = vi.spyOn(metrics, 'observeDesktopResultAdoption');
+      setWorkerMetrics(metrics);
+      const recordStopped = vi.spyOn(attemptEvidence, 'recordStoppedAttempt').mockResolvedValue(undefined);
+      try {
+        const repository = {
+          create: vi.fn().mockResolvedValue({ id: 'task' }),
+          result: vi.fn().mockResolvedValue({
+            state: 'completed',
+            modelKey: 'model',
+            authorityKey: 'authority',
+            result: { clip: [1, 2] },
+          }),
+          assertAdoption: vi.fn().mockResolvedValue(undefined),
+          discard: vi.fn().mockResolvedValue(undefined),
+          cancel: vi.fn().mockResolvedValue(undefined),
+        };
+        const desktop = new DesktopMlService(repository as never, {} as never);
+        const dispatch = () =>
+          desktop.dispatch({
+            request: {
+              ownerId: 'owner',
+              modelKey: 'model',
+              authorityKey: 'authority',
+              config: {},
+              input: Buffer.from('fixture'),
+              inputKind: 'text',
+              deadlineAt: new Date(Date.now() + 60_000),
+            },
+            assertAuthority: () => Promise.resolve(),
+            decodeResult: (value) => value,
+          });
+        // A non-queue caller can read valid worker output but has no durable job adoption.
+        await expect(dispatch()).resolves.toEqual({ clip: [1, 2] });
+        expect(observe).not.toHaveBeenCalled();
+        repository.assertAdoption.mockClear();
+        repository.discard.mockClear();
+
+        sut['eventRepository'].emit = vi.fn().mockImplementation(async () => {
+          await expect(dispatch()).resolves.toEqual({ clip: [1, 2] });
+          expect(observe).not.toHaveBeenCalled();
+          expect(repository.assertAdoption).not.toHaveBeenCalled();
+        });
+        sut['store'].complete = vi.fn().mockImplementation(async (_claim, _followups, adopt) => {
+          if (outcome === 'stale claim') return false;
+          await adopt('publication-transaction');
+          expect(repository.assertAdoption).toHaveBeenCalledWith('task', { id: 'task' }, 'publication-transaction');
+          expect(observe).not.toHaveBeenCalled();
+          if (outcome === 'rolled back') throw new Error('Publication lease expired before commit');
+          return true;
+        });
+        sut['store'].fail = vi.fn().mockResolvedValue(true);
+        const claim = {
+          ...context().claim,
+          name: JobName.VersionCheck,
+          queue: QueueName.BackgroundTask,
+          data: {},
+          startedAt: new Date(),
+        };
+
+        await sut['execute'](claim, new AbortController());
+        expect(sut['store'].complete).toHaveBeenCalledOnce();
+        if (outcome === 'committed') {
+          await vi.waitFor(() => expect(observe).toHaveBeenCalledOnce());
+          expect(repository.discard).toHaveBeenCalledOnce();
+          expect(sut['store'].fail).not.toHaveBeenCalled();
+        } else {
+          expect(observe).not.toHaveBeenCalled();
+          expect(repository.discard).not.toHaveBeenCalled();
+          expect(sut['store'].fail).toHaveBeenCalledOnce();
+        }
+      } finally {
+        recordStopped.mockRestore();
+        setWorkerMetrics(previousMetrics);
+      }
+    },
+  );
 
   it.each([
     ['Prepared output source changed', 'prepared_output_source_changed'],

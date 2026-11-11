@@ -1493,11 +1493,14 @@
   }
   /* Prototype `.pro-head` and `.pro-toolbar`: the page's 24px gutter on a desktop (16px on phones, below). */
   .fl-items-heading {
+    /* Named for an album's header here, which folds its actions by its width with the gutters. */
+    --fl-library-gutter-start: var(--fl-space-6);
+    --fl-library-gutter-end: var(--fl-space-6);
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--fl-space-4);
-    padding: var(--fl-space-6) var(--fl-space-6) var(--fl-space-3);
+    padding: var(--fl-space-6) var(--fl-library-gutter-end) var(--fl-space-3) var(--fl-library-gutter-start);
   }
   .fl-items-add :global(.menu-root > button) {
     font-weight: 600;
@@ -1872,9 +1875,11 @@
   }
   @media (max-width: 700px) {
     .fl-items-heading {
+      --fl-library-gutter-start: var(--fl-space-4);
+      --fl-library-gutter-end: var(--fl-space-4);
       align-items: start;
       flex-wrap: wrap;
-      padding: var(--fl-space-4) var(--fl-space-4) var(--fl-space-3);
+      padding: var(--fl-space-4) var(--fl-library-gutter-end) var(--fl-space-3) var(--fl-library-gutter-start);
     }
     .fl-items-scroll {
       padding: var(--fl-space-4);

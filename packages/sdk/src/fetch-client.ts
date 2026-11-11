@@ -7361,6 +7361,8 @@ export type SearchAlbumResponseDto = {
     total: number;
 };
 export type SearchAssetResponseDto = {
+    /** How many of the leading items are close matches for the search; the rest are looser. Only on the first page of a search ranked by meaning, and absent when the search cannot tell close from loose */
+    closeMatches?: number;
     /** Number of assets in this page */
     count: number;
     facets: SearchFacetResponseDto[];
@@ -7388,8 +7390,14 @@ export type AssistantAskResponseDto = {
     results: SearchResponseDto;
     /** One line describing what was searched */
     summary: string;
+    /** Opaque token for reporting a switch to Classic search from this answer */
+    switchBackToken?: string;
     /** Parts of the question that could not be used */
     warnings: string[];
+};
+export type AssistantSwitchBackDto = {
+    /** The switch-back token from the Assistant answer */
+    token: string;
 };
 export type SignUpDto = {
     /** User email */
@@ -21353,7 +21361,11 @@ export type PreservationRestoreItemsQueryDto = {
     take?: number;
 };
 export type ProcessingFailureQueryDto = {
+    /** Also list failures someone chose to keep as they are or to stop trying (FL-1409) */
+    includeDismissed?: boolean;
     skip?: number;
+    /** Only failures of this step */
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 };
@@ -26394,8 +26406,10 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
 /**
  * List asset processing failures
  */
-export function getProcessingFailures({ skip, take, userId }: {
+export function getProcessingFailures({ includeDismissed, skip, step, take, userId }: {
+    includeDismissed?: boolean;
     skip?: number;
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -26403,7 +26417,9 @@ export function getProcessingFailures({ skip, take, userId }: {
         status: 200;
         data: ProcessingFailureResponseDto[];
     }>(`/assets/processing-failures${QS.query(QS.explode({
+        includeDismissed,
         skip,
+        step,
         take,
         userId
     }))}`, {
@@ -27675,6 +27691,18 @@ export function askAssistant({ assistantAskDto }: {
         ...opts,
         method: "POST",
         body: assistantAskDto
+    })));
+}
+/**
+ * Record a switch to Classic search
+ */
+export function recordAssistantSwitchBack({ assistantSwitchBackDto }: {
+    assistantSwitchBackDto: AssistantSwitchBackDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assistant/classic", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantSwitchBackDto
     })));
 }
 /**
