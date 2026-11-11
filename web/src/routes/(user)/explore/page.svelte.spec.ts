@@ -1,4 +1,4 @@
-import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
+import { getAssetInfo, MemoryType, type AssetResponseDto, type MemoryResponseDto } from '@frameleaf/sdk';
 import { render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -10,7 +10,7 @@ import type { PageData } from './$types';
 import ExplorePage from './+page.svelte';
 
 const callbacks = vi.hoisted(() => ({
-  panel: undefined as { onViewAsset: (id: string) => Promise<void> } | undefined,
+  panel: undefined as { onViewAsset: (id: string) => Promise<void>; memories: { title: string }[] } | undefined,
   viewer: undefined as
     | {
         onNavigateToAsset: (asset: { id: string }) => Promise<void>;
@@ -39,7 +39,7 @@ vi.mock('$lib/utils/handle-error', async (original) => ({
   ...(await original<object>()),
   handleError: vi.fn(),
 }));
-const data = (recentCaptures: AssetResponseDto[] = []) =>
+const data = (recentCaptures: AssetResponseDto[] = [], memories: MemoryResponseDto[] = []) =>
   ({
     error: undefined,
     asset: undefined,
@@ -53,7 +53,7 @@ const data = (recentCaptures: AssetResponseDto[] = []) =>
       failed: { people: false, places: false },
     }),
     landmarkSection: Promise.resolve({ cards: [], albumSuggestion: null, failed: false }),
-    memories: [],
+    memories,
     albums: [],
     recentCaptures,
     shortcutCounts: { favorites: 0, photos: 0, videos: 0 },
@@ -132,4 +132,19 @@ it('uses a cached recent capture and retires a pending neighbour when the viewer
   old.resolve(assetFactory.build({ id: 'outside-row' }));
   await pending;
   expect(assetViewerManager.isViewing).toBe(false);
+});
+
+// FL-1457 (N3): Explore names a memory as the Memories page does, with how long ago and where.
+it('titles an on-this-day memory as Memories does', () => {
+  const memory = {
+    id: 'memory-1',
+    type: MemoryType.OnThisDay,
+    title: null,
+    memoryAt: '2026-11-11T00:00:00.000Z',
+    data: { year: 2025, places: ['Jasper'] },
+    assets: [assetFactory.build()],
+  } as unknown as MemoryResponseDto;
+  render(ExplorePage, { data: data([], [memory]) });
+
+  expect(callbacks.panel!.memories[0].title).toBe('frameleaf_memories_years_ago_in');
 });
