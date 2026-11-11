@@ -4,8 +4,8 @@
  * native tools, and what happened is compared with the manifest. A step that fails is retried the way the queue
  * retries it, and FL-845 decides whether the file is set aside.
  *
- * Runs as its own medium suite (`FRAMELEAF_MEDIUM_SUITE=corpus`, `mise run //server:corpus`), in CI before an
- * upstream sync merges (.github/workflows/known-bad-corpus.yml). It writes two reports to
+ * Runs as its own medium suite (`FRAMELEAF_MEDIUM_SUITE=corpus`, `mise run //server:corpus`), in CI on every pull
+ * request that changes the media pipeline (.github/workflows/known-bad-corpus.yml). It writes two reports to
  * `FRAMELEAF_CORPUS_REPORT_DIR` (default: a folder in the system temp directory): known-bad-corpus-diff.md,
  * every difference from the manifest, and known-bad-corpus-actual.json, what each step did for every file.
  */
