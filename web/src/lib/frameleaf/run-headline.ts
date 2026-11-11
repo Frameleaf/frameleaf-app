@@ -63,6 +63,17 @@ export const runHeadline = (run: DurableJobRun): Headline => {
         action: null,
       };
     }
+    // FL-1430: a folder scan refused because its folder is empty or gone; nothing of the library was changed
+    if (has('source-unavailable')) {
+      const name = run.unreachableLibraries?.[0];
+      return {
+        status: 'frameleaf_job_runs_status_unreachable',
+        tone: 'warn',
+        why: name ? 'frameleaf_job_runs_why_scan_unreachable' : 'frameleaf_job_runs_why_scan_unreachable_unnamed',
+        ...(name && { values: { name } }),
+        action: null,
+      };
+    }
     if (leftOver(run) > 0) {
       return {
         status: photos ? 'frameleaf_job_runs_status_left_over' : 'frameleaf_job_runs_status_left_over_tasks',

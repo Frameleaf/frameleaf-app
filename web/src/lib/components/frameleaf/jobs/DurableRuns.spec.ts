@@ -69,7 +69,10 @@ describe('recent work', () => {
     sdkMock.getJobRunFailures.mockResolvedValue({ photos: 0, countsPhotos: true, causes: [] });
     await fireEvent.click(screen.getByRole('button', { name: 'Review what failed' }));
     expect(await screen.findByText('What failed in Thumbnails')).toBeInTheDocument();
-    expect(sdkMock.getJobRunFailures).toHaveBeenCalledWith({ id: '0195e2a0-0000-7000-8000-000000000001' });
+    expect(sdkMock.getJobRunFailures).toHaveBeenCalledWith({
+      id: '0195e2a0-0000-7000-8000-000000000001',
+      foldNightly: true,
+    });
   });
   it('a paused run shows Paused and one reason, not Running', async () => {
     sdkMock.listDurableJobRuns.mockResolvedValue({
@@ -216,6 +219,51 @@ describe('recent work', () => {
         'The same 863 photos have been left over 2 nights in a row. Sorting them out once stops them coming back.',
       ),
     ).toBeInTheDocument();
+  });
+  it('names the library a folder scan is of; one whose library is gone keeps the plain title (FL-1430)', async () => {
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [
+        durableRun({ id: '0195e2a0-0000-7000-8000-00000000000a', kind: 'library_scan', libraryName: 'Family archive' }),
+        durableRun({ id: '0195e2a0-0000-7000-8000-00000000000b', kind: 'library_scan' }),
+      ],
+      hasNextPage: false,
+    });
+    render(DurableRuns);
+    expect(await screen.findByText('Library folder scan · Family archive')).toBeInTheDocument();
+    expect(screen.getByText('Library folder scan')).toBeInTheDocument();
+  });
+  it("shows Library care's file check while it runs, without a number it doesn't have yet (FL-1430)", async () => {
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [],
+      hasNextPage: false,
+      fileCheck: { running: true, startedAt: '2026-11-11T02:35:39.000Z', finishedAt: null, checked: 0, total: 0 },
+    });
+    render(DurableRuns);
+    const card = within((await screen.findByText('Checking files for damage')).closest('li')!);
+    expect(card.getByText('Running')).toBeInTheDocument();
+    expect(card.queryByText(/of 0 files/)).not.toBeInTheDocument();
+    expect(card.getByRole('link', { name: 'Open Damaged and missing files' })).toHaveAttribute(
+      'href',
+      commandCenterUrl('care', 'files'),
+    );
+    expect(screen.queryByText(en.frameleaf_job_runs_empty)).not.toBeInTheDocument();
+  });
+  it('a finished file check says how many files it checked', async () => {
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [],
+      hasNextPage: false,
+      fileCheck: {
+        running: false,
+        startedAt: '2026-11-11T02:35:39.000Z',
+        finishedAt: '2026-11-11T02:57:03.000Z',
+        checked: 16_074,
+        total: 16_074,
+      },
+    });
+    render(DurableRuns);
+    const card = within((await screen.findByText('Checking files for damage')).closest('li')!);
+    expect(card.getByText('Finished')).toBeInTheDocument();
+    expect(card.getByText('16,074 of 16,074 files')).toBeInTheDocument();
   });
   it('counts tasks when the work is not about photos', async () => {
     sdkMock.listDurableJobRuns.mockResolvedValue({

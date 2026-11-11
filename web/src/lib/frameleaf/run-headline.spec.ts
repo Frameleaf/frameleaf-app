@@ -79,6 +79,27 @@ describe('one state and one reason per piece of work (FL-1349)', () => {
     // Work that counts tasks says tasks.
     expect(runHeadline({ ...run, countsPhotos: false }).status).toBe('frameleaf_job_runs_status_left_over_tasks');
   });
+  it('a scan refused for an empty or missing folder reads Couldn’t reach the drive, by name (FL-1430)', () => {
+    const refused = durableRun({
+      ...settled,
+      kind: 'library_scan',
+      state: 'completed',
+      total: 0,
+      reasons: ['source-unavailable'],
+      unreachableLibraries: ['Jamie’s phone'],
+    });
+    expect(runHeadline(refused)).toEqual({
+      status: 'frameleaf_job_runs_status_unreachable',
+      tone: 'warn',
+      why: 'frameleaf_job_runs_why_scan_unreachable',
+      values: { name: 'Jamie’s phone' },
+      action: null,
+    });
+    expect(runHeadline({ ...refused, unreachableLibraries: undefined }).why).toBe(
+      'frameleaf_job_runs_why_scan_unreachable_unnamed',
+    );
+    expect(en.frameleaf_job_runs_why_scan_unreachable).toMatch(/untouched/);
+  });
   it('a stopped run with photos left over reads Stopped, not Finished', () => {
     const run = durableRun({
       ...settled,
