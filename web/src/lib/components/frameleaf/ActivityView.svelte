@@ -177,6 +177,12 @@
   /** FL-1388: the same work as people know it, one row for each feature of Settings › Background work. */
   const features = $derived(buildWorkFeatureRows(serverWork));
   /**
+   * FL-1457: features whose work can't go on by itself need a look. The banner counts them, and so does the Failed
+   * chip, whose filter lists them under Needs a look (All shows them under In progress, where their row warns).
+   */
+  const stuckRows = $derived(stuckWorkRows(features));
+  const stuckShown = $derived(filter === 'failed' ? stuckRows : []);
+  /**
    * FL-1409: finished work that left photos over. Recent work says "312 photos need a look" for it, so this page
    * counts it too and never says "Everything is up to date" beside that card. Shown under All and Needs a look.
    */
@@ -193,7 +199,7 @@
     name === 'done'
       ? finishedCount
       : name === 'failed'
-        ? counts.failed + leftOverCount
+        ? counts.failed + leftOverCount + stuckRows.length
         : (name === 'all' ? counts.all - counts.done + finishedCount + leftOverCount : counts.running) + busyServer;
   const hasFinished = $derived(items.some((item) => item.canDismiss));
 
@@ -241,7 +247,7 @@
           warn: true,
           icon: mdiAlertCircleOutline,
           title: $t('frameleaf_activity_work_attention', {
-            values: { count: counts.failed + leftOverCount + stuckWorkRows(features).length },
+            values: { count: counts.failed + leftOverCount + stuckRows.length },
           }),
           body: $t('frameleaf_activity_work_attention_body'),
         };
@@ -696,7 +702,7 @@
 
   {#if activitySession.loading && items.length === 0}
     <p class="fla-empty" role="status" aria-busy="true">{$t('loading')}</p>
-  {:else if !showProgress && visible.length + leftOver.length === 0}
+  {:else if !showProgress && visible.length + leftOver.length + stuckShown.length === 0}
     <EmptyState
       icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock}
       title={filter === 'done' ? $t('frameleaf_activity_empty_done') : undefined}
@@ -881,12 +887,22 @@
     </article>
   {/snippet}
 
-  {#if needsLook.length + leftOver.length > 0}
+  {#if needsLook.length + leftOver.length + stuckShown.length > 0}
     <section class="fla-section" aria-labelledby="{rowIdPrefix}-needs-look">
       <h2 id="{rowIdPrefix}-needs-look" class="fla-section-title">
         {$t('frameleaf_activity_section_needs_look')}
-        <span class="fla-count">{needsLook.length + leftOver.length}</span>
+        <span class="fla-count">{needsLook.length + leftOver.length + stuckShown.length}</span>
       </h2>
+      {#if stuckShown.length > 0}
+        <ActivityWorkFeatures
+          rows={stuckShown}
+          others={[]}
+          cloudStatus={null}
+          canPause={canManage}
+          busy={pausing}
+          onPause={pauseFeature}
+        />
+      {/if}
       <div class="fla-list">
         {#each needsLook as item (item.id)}
           {@render card(item, visible.indexOf(item), 'h3')}

@@ -495,6 +495,35 @@ describe('Frameleaf Activity page', () => {
   });
   const idle = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
 
+  // FL-1457: a feature waiting for another step needs a look: the banner and the Failed chip count it, and that
+  // filter shows its row under Needs a look.
+  it('counts blocked work as needing a look, and lists it under the Failed filter', async () => {
+    sdkMock.getRunningJobs.mockResolvedValue({
+      operations: [],
+      memoryExports: [],
+      canManageQueues: true,
+      canReadJobRuns: true,
+      queues: [queue(QueueName.FaceDetection, { state: 'blocked', waiting: 5, total: 5 } as Partial<QueueRunDto>)],
+      durableRuns: [],
+    });
+    try {
+      const view = await mount([]);
+      expect(await screen.findByRole('heading', { name: '1 thing needs a look' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: /Working through/ })).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('group', { name: 'Filter jobs' })).getByRole('button', { name: /Failed/ }),
+      ).toHaveTextContent('1');
+      view.unmount();
+
+      render(ActivityView, { props: { filter: 'failed' } });
+      const section = await screen.findByRole('region', { name: /Needs a look/ });
+      expect(within(section).getByText('Faces & identity')).toBeInTheDocument();
+      expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+    } finally {
+      runningJobsSession.summary = idle;
+    }
+  });
+
   it('shows busy server work by feature, never by the server’s own names (FL-1388)', async () => {
     sdkMock.getRunningJobs.mockResolvedValue({
       operations: [],
