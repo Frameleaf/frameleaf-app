@@ -117,7 +117,6 @@ describe('AlbumHeader', () => {
         await fireEvent.click(more.getByRole('menuitem', { name: 'Keep Offline' }));
         expect(fetch).toHaveBeenCalledWith('/api/albums/album-1/desktop-offline-grant', {
           method: 'POST',
-          credentials: 'same-origin',
           cache: 'no-store',
           signal: expect.any(AbortSignal),
         });
