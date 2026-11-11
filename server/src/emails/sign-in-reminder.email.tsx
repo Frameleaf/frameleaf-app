@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import { Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
@@ -11,29 +12,28 @@ export const SignInReminderEmail = ({
   senderName,
   link,
   showBranding,
-}: SignInReminderEmailProps) => (
-  <ImmichLayout baseUrl={baseUrl} showBranding={showBranding} preview="Link your Frameleaf account.">
-    <Text className="m-0">
-      Hey <strong>{displayName}</strong>!
-    </Text>
+}: SignInReminderEmailProps) => {
+  const t = useEmailText();
+  return (
+    <ImmichLayout baseUrl={baseUrl} showBranding={showBranding} preview={t('sign_in_reminder_preview')}>
+      <Text className="m-0">
+        <EmailMessage id="greeting" values={{ name: <strong>{displayName}</strong> }} />
+      </Text>
 
-    <Text>
-      {senderName} asked you to link your Frameleaf account. Once it is linked, you can sign in to your photos away from
-      home. At home, your password keeps working.
-    </Text>
+      <Text>{t('sign_in_reminder_body', { senderName })}</Text>
 
-    <Section className="flex justify-center my-6">
-      <ImmichButton href={link}>Link my Frameleaf account</ImmichButton>
-    </Section>
+      <Section className="flex justify-center my-6">
+        <ImmichButton href={link}>{t('link_frameleaf_account')}</ImmichButton>
+      </Section>
 
-    <Text className="text-xs">
-      Sign in with your password first if you are asked. If you cannot click the button, copy this address into your
-      browser:
-      <br />
-      <Link href={link}>{link}</Link>
-    </Text>
-  </ImmichLayout>
-);
+      <Text className="text-xs">
+        {t('sign_in_reminder_help')}
+        <br />
+        <Link href={link}>{link}</Link>
+      </Text>
+    </ImmichLayout>
+  );
+};
 
 SignInReminderEmail.PreviewProps = {
   baseUrl: 'https://photos.example.com',

@@ -4,6 +4,9 @@ import {
   type PluginMethodResponseDto,
   type WorkflowTriggerResponseDto,
 } from '@frameleaf/sdk';
+import { addMessages } from 'svelte-i18n';
+import { beforeAll } from 'vitest';
+import en from '$i18n/en.json';
 import {
   draftFromDocument,
   draftToCreateDto,
@@ -17,6 +20,7 @@ import {
   updateWorkflowParameter,
   sampleEventMessage,
   workflowProblems,
+  workflowIssueMessage,
   workflowStatus,
   type WorkflowDraft,
 } from '$lib/frameleaf/workflows';
@@ -342,4 +346,25 @@ describe('workflowStatus', () => {
     );
     expect(workflowStatus({ enabled: false, issues: [] })).toBe('paused');
   });
+});
+
+beforeAll(() => addMessages('dev', en));
+
+it('uses the translated JSON syntax error for malformed workflow imports', () => {
+  expect(() => parseWorkflowDefinition('{')).toThrow(en.frameleaf_workflows.validation_json_syntax);
+});
+
+it('translates first-party workflow issue codes while retaining local field validation', () => {
+  expect(workflowIssueMessage({ code: 'method_unavailable' as never, step: 1, message: 'server text' })).toBe(
+    'Step 2: this plugin method is unavailable. Its definition is retained.',
+  );
+  expect(
+    workflowIssueMessage({ code: 'config_invalid' as never, step: 0, message: 'server text' }, [
+      { step: 0, message: 'URL is required' },
+    ]),
+  ).toBe('URL is required');
+  expect(workflowIssueMessage({ code: 'config_invalid' as never, message: 'server text' })).toBe(
+    en.frameleaf_workflows.validation_config,
+  );
+  expect(workflowIssueMessage({ code: 'future-plugin-code' as never, message: 'plugin detail' })).toBe('plugin detail');
 });

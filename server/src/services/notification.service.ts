@@ -45,7 +45,8 @@ import {
   renderSystemNotification,
 } from 'src/utils/notification-locale.js';
 import { isEqualObject } from 'src/utils/object.js';
-import { getPreferences } from 'src/utils/preferences.js';
+import { type EmailMessageKey, emailLocale, emailText } from 'src/emails/components/email-locale.js';
+import { getPreferences, localeOf } from 'src/utils/preferences.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 /** The notice, and its dedupe key, for a library data snapshot that didn't finish (FL-657). */
@@ -363,9 +364,11 @@ export class NotificationService extends BaseService {
     }
 
     const { server, templates } = await this.getConfig({ withCache: false });
+    const locale = localeOf(recipient.metadata);
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.ITEM_SHARE,
       data: {
+        locale,
         baseUrl: await this.getPublicUrl(server),
         senderName,
         recipientName: recipient.name,
@@ -381,7 +384,10 @@ export class NotificationService extends BaseService {
       name: JobName.SendMail,
       data: {
         to: recipient.email,
-        subject: count === 1 ? `${senderName} shared an item with you` : `${senderName} shared ${count} items with you`,
+        subject: emailText(locale, count === 1 ? 'item_share_subject_one' : 'item_share_subject_many', {
+          senderName,
+          count,
+        }),
         html,
         text,
       },
@@ -526,46 +532,46 @@ export class NotificationService extends BaseService {
       }
       const baseUrl = await this.getPublicUrl(server);
       const timeZone = serverTimeZone(server);
-      const when = (iso: string) =>
-        new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone }).format(new Date(iso));
       const minutes = Math.floor(drill.durationSeconds / 60);
       const seconds = drill.durationSeconds % 60;
-      const duration = [
-        minutes > 0 ? `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}` : '',
-        `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`,
-      ]
-        .filter(Boolean)
-        .join(' ');
       const passed = drill.result === 'passed';
-      const { html, text } = await this.emailRepository.renderEmail({
-        template: EmailTemplate.RESTORE_REPORT,
-        data: {
-          baseUrl,
-          showBranding: templates.email.showBranding,
-          result: drill.result,
-          source: drill.target === 'managed' ? 'Frameleaf Cloud' : 'own storage',
-          ranAt: when(drill.startedAt),
-          backupFrom: drill.backupFrom ? when(drill.backupFrom) : null,
-          sample: drill.sample,
-          matched: drill.matched,
-          duration,
-          failure: drill.failure,
-          stoppedAt: drill.failedStep ? (RESTORE_DRILL_STEP_WORDS[drill.failedStep] ?? null) : null,
-          link:
-            passed || drill.failedStep !== 'unlock'
-              ? `/user-settings?area=backups&section=restore&drill=${encodeURIComponent(drill.reportId)}`
-              : '/user-settings?area=backups&section=cloud',
-        },
-      });
+      const step = drill.failedStep && RESTORE_DRILL_STEPS[drill.failedStep];
       for (const admin of await this.userRepository.getAdmins()) {
         if (!getPreferences(admin.metadata).emailNotifications.enabled) {
           continue;
         }
+        // dates and durations follow the language the email is written in
+        const locale = emailLocale(localeOf(admin.metadata));
+        const when = (iso: string) =>
+          new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'short', timeZone }).format(new Date(iso));
+        const span = (value: number, unit: 'minute' | 'second') =>
+          new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(value);
+        const { html, text } = await this.emailRepository.renderEmail({
+          template: EmailTemplate.RESTORE_REPORT,
+          data: {
+            locale,
+            baseUrl,
+            showBranding: templates.email.showBranding,
+            result: drill.result,
+            source: drill.target === 'managed' ? 'Frameleaf Cloud' : emailText(locale, 'own_storage'),
+            ranAt: when(drill.startedAt),
+            backupFrom: drill.backupFrom ? when(drill.backupFrom) : null,
+            sample: drill.sample,
+            matched: drill.matched,
+            duration: [minutes > 0 ? span(minutes, 'minute') : '', span(seconds, 'second')].filter(Boolean).join(' '),
+            failure: drill.failure,
+            stoppedAt: step ? emailText(locale, step) : null,
+            link:
+              passed || drill.failedStep !== 'unlock'
+                ? `/user-settings?area=backups&section=restore&drill=${encodeURIComponent(drill.reportId)}`
+                : '/user-settings?area=backups&section=cloud',
+          },
+        });
         await this.jobRepository.queue({
           name: JobName.SendMail,
           data: {
             to: admin.email,
-            subject: passed ? 'Your backup restored correctly' : 'Your backup didn’t restore: please look',
+            subject: emailText(locale, passed ? 'restore_passed_preview' : 'restore_failed_subject'),
             html,
             text,
           },
@@ -598,6 +604,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.TEST_EMAIL,
       data: {
+        locale: localeOf(user.metadata),
         baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
         showBranding: templates.email.showBranding,
@@ -606,7 +613,7 @@ export class NotificationService extends BaseService {
     });
     const { messageId } = await this.emailRepository.sendEmail({
       to: user.email,
-      subject: 'Test email from Frameleaf',
+      subject: emailText(localeOf(user.metadata), 'test_subject'),
       html,
       text,
       from: dto.from,
@@ -628,6 +635,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.WELCOME,
       data: {
+        locale: localeOf(user.metadata),
         baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
         username: user.email,
@@ -641,7 +649,7 @@ export class NotificationService extends BaseService {
       name: JobName.SendMail,
       data: {
         to: user.email,
-        subject: 'Welcome to Frameleaf',
+        subject: emailText(localeOf(user.metadata), 'welcome_subject'),
         html,
         text,
       },
@@ -726,7 +734,9 @@ export class NotificationService extends BaseService {
       ? undefined
       : await this.getAlbumThumbnailAttachment(album, await this.getEmailHiddenContentFilter(recipient), recipient);
     const { server, templates } = await this.getConfig({ withCache: false });
+    const locale = localeOf(recipient.metadata);
     const data = {
+      locale,
       baseUrl: await this.getPublicUrl(server),
       albumId: album.id,
       albumName: album.albumName,
@@ -747,9 +757,9 @@ export class NotificationService extends BaseService {
     return {
       albumMailContext: context,
       to: recipient.email,
-      subject: invite
-        ? `You have been added to a shared album - ${album.albumName}`
-        : `New media has been added to an album - ${album.albumName}`,
+      subject: emailText(locale, invite ? 'album_invite_subject' : 'album_update_subject', {
+        albumName: album.albumName,
+      }),
       html,
       text,
       imageAttachments: attachment ? [attachment] : undefined,
@@ -944,9 +954,9 @@ export class NotificationService extends BaseService {
 }
 
 /** FL-900: the drill's steps as the report names them (FL-879). */
-const RESTORE_DRILL_STEP_WORDS: Record<string, string> = {
-  fetch: 'Fetch a sample from your backup',
-  unlock: 'Unlock it with your recovery key',
-  rebuild: 'Rebuild the library data in a scratch copy',
-  compare: 'Compare the photos and videos with the originals',
+const RESTORE_DRILL_STEPS: Record<string, EmailMessageKey> = {
+  fetch: 'restore_step_fetch',
+  unlock: 'restore_step_unlock',
+  rebuild: 'restore_step_rebuild',
+  compare: 'restore_step_compare',
 };

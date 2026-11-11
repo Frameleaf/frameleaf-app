@@ -64,6 +64,7 @@
     type SetupState,
     readableModelName,
   } from '$lib/frameleaf/first-run-setup';
+  import { saveNotificationLanguage } from '$lib/frameleaf/notification-language';
   import { renderStorageTemplate } from '$lib/frameleaf/onboarding';
   import '$lib/frameleaf/auth.css';
   import '$lib/frameleaf/first-run-setup.css';
@@ -486,6 +487,7 @@
           queueCommandDto: { command: QueueCommand.Start, force: true },
         });
       }
+      await saveNotificationLanguage(choices.language);
       await finishFrameleafSetup();
       if (linked) {
         await coverCloudTour();

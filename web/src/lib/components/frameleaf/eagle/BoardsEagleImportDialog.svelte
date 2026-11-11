@@ -33,7 +33,7 @@
   import EagleNamedList from '$lib/components/frameleaf/eagle/EagleNamedList.svelte';
   import { EAGLE_ANNOTATIONS_AVAILABLE } from '$lib/frameleaf/eagle/eagle-annotations';
   import {
-    EAGLE_DEFAULT_COLLECTION,
+    defaultEagleCollectionName,
     eagleImportKey,
     importResult,
     isComing,
@@ -418,8 +418,8 @@
   );
   const insideName = $derived(
     target.inside === 'new'
-      ? EAGLE_DEFAULT_COLLECTION
-      : (albums.find(({ id }) => id === target.inside)?.albumName ?? EAGLE_DEFAULT_COLLECTION),
+      ? defaultEagleCollectionName()
+      : (albums.find(({ id }) => id === target.inside)?.albumName ?? defaultEagleCollectionName()),
   );
   const preview = $derived(library ? previewTarget(library, chosenTarget, insideName, existingTop) : undefined);
 
@@ -1034,7 +1034,7 @@
             onclick={() => (target.inside = 'new')}
           >
             <Icon icon={mdiFolderPlusOutline} size="17" aria-hidden />
-            <span>{$t('frameleaf_eagle_new_collection', { values: { name: EAGLE_DEFAULT_COLLECTION } })}</span>
+            <span>{$t('frameleaf_eagle_new_collection', { values: { name: defaultEagleCollectionName() } })}</span>
           </button>
           {#if albumsFailed}<InlineError
               compact

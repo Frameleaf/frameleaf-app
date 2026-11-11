@@ -1,3 +1,6 @@
+import { addMessages } from 'svelte-i18n';
+import { beforeAll } from 'vitest';
+import en from '$i18n/en.json';
 import { importResult, planEagleImport, reconciles, type EagleLibrary } from '$lib/frameleaf/eagle/eagle-import';
 import type { EagleImportApi } from '$lib/frameleaf/eagle/eagle-import-api';
 import { memoryEagleImportStore, type EagleImportStore } from '$lib/frameleaf/eagle/eagle-import-record';
@@ -539,3 +542,5 @@ describe('EagleImportRun', () => {
     expect(Object.keys(saved!.outcomes)).toHaveLength(6);
   });
 });
+
+beforeAll(() => addMessages('dev', en));

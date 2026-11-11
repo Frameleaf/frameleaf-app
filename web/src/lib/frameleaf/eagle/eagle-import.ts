@@ -1,3 +1,6 @@
+import { t } from 'svelte-i18n';
+import { get } from 'svelte/store';
+
 /**
  * Import from Eagle (FL-653, approved prototype `boards-eagle.mjs`, README points 35-41).
  *
@@ -440,7 +443,7 @@ export type EaglePlan = ReturnType<typeof planEagleImport>;
 /* ------------------------------------------------------------------ */
 
 /** The default new collection the import goes into. */
-export const EAGLE_DEFAULT_COLLECTION = 'Studio References';
+export const defaultEagleCollectionName = () => get(t)('frameleaf_eagle_default_collection');
 
 export type EagleTarget = { mode: 'top' } | { mode: 'inside'; inside: 'new' | string };
 

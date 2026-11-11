@@ -1,7 +1,7 @@
 import { SvelteSet } from 'svelte/reactivity';
 import { EAGLE_ANNOTATIONS_AVAILABLE, eagleAnnotations } from '$lib/frameleaf/eagle/eagle-annotations';
 import {
-  EAGLE_DEFAULT_COLLECTION,
+  defaultEagleCollectionName,
   eagleAddedDate,
   eagleColour,
   eagleFileName,
@@ -247,7 +247,7 @@ export class EagleImportRun implements EagleRunStatus {
     const { target } = record;
     if (target.mode === 'inside') {
       if (target.inside === 'new') {
-        record.rootAlbumId ??= await this.#write(() => api.createCollection({ name: EAGLE_DEFAULT_COLLECTION }));
+        record.rootAlbumId ??= await this.#write(() => api.createCollection({ name: defaultEagleCollectionName() }));
       } else {
         record.rootAlbumId = target.inside;
       }
@@ -275,7 +275,7 @@ export class EagleImportRun implements EagleRunStatus {
       this.collections = Object.keys(record.albums).length;
     }
     if (target.mode === 'inside') {
-      this.#collectionNames.set('', insideName ?? EAGLE_DEFAULT_COLLECTION);
+      this.#collectionNames.set('', insideName ?? defaultEagleCollectionName());
     }
   }
 

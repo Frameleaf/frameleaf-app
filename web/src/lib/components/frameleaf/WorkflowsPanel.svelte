@@ -16,6 +16,8 @@
     exportFileName,
     importWorkflowFile,
     workflowStatus,
+    workflowProblems,
+    workflowIssueMessage,
     type WorkflowDraft,
   } from '$lib/frameleaf/workflows';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -224,7 +226,17 @@
               {$t(`frameleaf_workflows.status_${status}`)} ·
               {workflow.logging ? $t('frameleaf_workflows.history_on') : $t('frameleaf_workflows.history_off')}
             </small>
-            {#if workflow.issues.length > 0}<small class="issue">{workflow.issues[0].message}</small>{/if}
+            {#if workflow.issues.length > 0}<small class="issue"
+                >{workflowIssueMessage(
+                  workflow.issues[0],
+                  workflowProblems(
+                    draftFromWorkflow(workflow),
+                    pluginManager.methods,
+                    pluginManager.triggers,
+                    pluginManager.eventTriggers,
+                  ),
+                )}</small
+              >{/if}
           </div>
           <Button onclick={() => openDesigner(workflow)}>
             {$t('frameleaf_workflows.open')}

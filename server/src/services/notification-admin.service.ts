@@ -3,7 +3,9 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SystemConfigSmtpDto } from 'src/dtos/config.dto.js';
 import { NotificationCreateDto, mapNotification } from 'src/dtos/notification.dto.js';
 import { NotificationLevel, NotificationType } from 'src/enum.js';
+import { emailText } from 'src/emails/components/email-locale.js';
 import { EmailTemplate, MailApiError } from 'src/repositories/email.repository.js';
+import { localeOf } from 'src/utils/preferences.js';
 import { BaseService } from 'src/services/base.service.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import {
@@ -52,6 +54,7 @@ export class NotificationAdminService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.TEST_EMAIL,
       data: {
+        locale: localeOf(user.metadata),
         baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
         showBranding: templates.email.showBranding,
@@ -60,7 +63,7 @@ export class NotificationAdminService extends BaseService {
     });
     const message = {
       to: user.email,
-      subject: 'Test email from Frameleaf',
+      subject: emailText(localeOf(user.metadata), 'test_subject'),
       html,
       text,
       from: dto.from,

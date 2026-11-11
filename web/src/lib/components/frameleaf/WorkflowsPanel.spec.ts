@@ -62,7 +62,9 @@ describe('WorkflowsPanel', () => {
     });
 
     expect(screen.getByText(/Blocked/)).toBeInTheDocument();
-    expect(screen.getByText('Step 1: this plugin method is unavailable.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Step 1: this plugin method is unavailable. Its definition is retained.'),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^Paused/)).toBeInTheDocument();
     expect(screen.getByText(/Taylor · Photo or video uploaded · 1 step/)).toBeInTheDocument();
   });

@@ -1,6 +1,6 @@
 import { render as renderComponent, toPlainText } from '@react-email/render';
 import { createTransport } from 'nodemailer';
-import { NO_LINK_ALBUM, NO_LINK_SIGN_IN, NO_LINK_TEST } from 'src/emails/components/no-link.js';
+import english from 'src/emails/translations/en.json' with { type: 'json' };
 import { EmailRenderRequest, EmailRepository, EmailTemplate } from 'src/repositories/email.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { automock } from 'test/utils.js';
@@ -220,13 +220,13 @@ describe(EmailRepository.name, () => {
     it('should send no link, and say to open Frameleaf, when the server has no public address (FL-190)', async () => {
       const album = { albumName: 'Holiday', albumId: '123', recipientName: 'Jane' };
       for (const [request, notice] of [
-        [{ template: EmailTemplate.TEST_EMAIL, data: { displayName: 'Alen Turing' } }, NO_LINK_TEST],
+        [{ template: EmailTemplate.TEST_EMAIL, data: { displayName: 'Alen Turing' } }, english.no_link_test],
         [
           { template: EmailTemplate.WELCOME, data: { displayName: 'Alen Turing', username: 'turing' } },
-          NO_LINK_SIGN_IN,
+          english.no_link_sign_in,
         ],
-        [{ template: EmailTemplate.ALBUM_INVITE, data: { ...album, senderName: 'John' } }, NO_LINK_ALBUM],
-        [{ template: EmailTemplate.ALBUM_UPDATE, data: album }, NO_LINK_ALBUM],
+        [{ template: EmailTemplate.ALBUM_INVITE, data: { ...album, senderName: 'John' } }, english.no_link_album],
+        [{ template: EmailTemplate.ALBUM_UPDATE, data: album }, english.no_link_album],
       ] as [EmailRenderRequest, string][]) {
         const { html, text } = await sut.renderEmail({ ...request, customTemplate: '' });
 
@@ -248,7 +248,7 @@ describe(EmailRepository.name, () => {
 
       expect(text).toContain('John shared Holiday: /albums/123');
       expect(html).not.toContain('{baseUrl}');
-      expect(text).toContain(NO_LINK_ALBUM);
+      expect(text).toContain(english.no_link_album);
     });
 
     describe('the emails themselves (FL-426)', () => {

@@ -82,7 +82,7 @@
     try {
       return await getAllAlbums({ assetId: asset.id });
     } catch (error) {
-      handleError(error, 'Error getting asset album membership');
+      handleError(error, $t('frameleaf_preservation_albums_error'));
       return [];
     }
   };

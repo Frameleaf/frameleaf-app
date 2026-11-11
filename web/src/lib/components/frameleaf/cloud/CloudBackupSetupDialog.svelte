@@ -29,6 +29,7 @@
     createBackupKey,
     isEscrowPassphraseValid,
     isOwnMemoryAcknowledged,
+    OWN_MEMORY_ACKNOWLEDGEMENT,
     keyFileName,
     managedBucketName,
     type BackupKey,
@@ -135,7 +136,10 @@
       case 'key': {
         return (
           serverKey ||
-          (downloaded && savedKey && (keyMode !== CloudBackupKeyMode.OwnMemory || isOwnMemoryAcknowledged(typed)))
+          (downloaded &&
+            savedKey &&
+            (keyMode !== CloudBackupKeyMode.OwnMemory ||
+              isOwnMemoryAcknowledged(typed, $t('frameleaf_cloud_backup_acknowledge_phrase'))))
         );
       }
       case 'kit': {
@@ -252,7 +256,7 @@
             : { target: CloudBackupTarget.ByoS3, s3: s3() }),
           keyMode,
           key,
-          ...(keyMode === CloudBackupKeyMode.OwnMemory && { acknowledgement: typed }),
+          ...(keyMode === CloudBackupKeyMode.OwnMemory && { acknowledgement: OWN_MEMORY_ACKNOWLEDGEMENT }),
         },
       });
       let message = managed ? $t('frameleaf_cloud_backup_turned_on') : $t('frameleaf_cloud_backup_claimed');
@@ -423,7 +427,9 @@
         />
         {#if keyMode === CloudBackupKeyMode.OwnMemory}
           <label class="fc-stack">
-            {$t('frameleaf_cloud_backup_acknowledge')}
+            {$t('frameleaf_cloud_backup_acknowledge', {
+              values: { phrase: $t('frameleaf_cloud_backup_acknowledge_phrase') },
+            })}
             <input value={typed} autocomplete="off" oninput={(event) => (typed = event.currentTarget.value)} />
           </label>
         {/if}

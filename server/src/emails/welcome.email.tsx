@@ -1,9 +1,9 @@
 import { toPlainText } from '@react-email/render';
 import * as React from 'react';
+import { EmailMessage, useEmailText } from 'src/emails/components/email-locale.js';
 import { Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
-import { NO_LINK_SIGN_IN } from 'src/emails/components/no-link.js';
 import { WelcomeEmailProps } from 'src/repositories/email.repository.js';
 import { replaceTemplateTags } from 'src/utils/replace-template-tags.js';
 
@@ -15,6 +15,7 @@ export const WelcomeEmail = ({
   customTemplate,
   showBranding,
 }: WelcomeEmailProps) => {
+  const t = useEmailText();
   const usableTemplateVariables = {
     displayName,
     username,
@@ -27,17 +28,17 @@ export const WelcomeEmail = ({
   ) : (
     <>
       <Text className="m-0">
-        Hey <strong>{displayName}</strong>!
+        <EmailMessage id="greeting" values={{ name: <strong>{displayName}</strong> }} />
       </Text>
 
-      <Text>A new account has been created for you.</Text>
+      <Text>{t('welcome_body')}</Text>
 
       <Text>
-        <strong>Username</strong>: {username}
+        <strong>{t('username')}</strong>: {username}
         {password && (
           <>
             <br />
-            <strong>Password</strong>: {password}
+            <strong>{t('password')}</strong>: {password}
           </>
         )}
       </Text>
@@ -48,7 +49,7 @@ export const WelcomeEmail = ({
     <ImmichLayout
       baseUrl={baseUrl}
       showBranding={showBranding}
-      preview={customTemplate ? toPlainText(emailContent.toString()) : 'You have been invited to a Frameleaf server.'}
+      preview={customTemplate ? toPlainText(emailContent.toString()) : t('welcome_preview')}
     >
       {customTemplate && (
         <Text className="m-0">
@@ -61,17 +62,17 @@ export const WelcomeEmail = ({
       {baseUrl ? (
         <>
           <Section className="flex justify-center my-6">
-            <ImmichButton href={`${baseUrl}/auth/login`}>Login</ImmichButton>
+            <ImmichButton href={`${baseUrl}/auth/login`}>{t('login')}</ImmichButton>
           </Section>
 
           <Text className="text-xs">
-            If you cannot click the button use the link below to proceed with first login.
+            {t('welcome_link_help')}
             <br />
             <Link href={baseUrl}>{baseUrl}</Link>
           </Text>
         </>
       ) : (
-        <Text>{NO_LINK_SIGN_IN}</Text>
+        <Text>{t('no_link_sign_in')}</Text>
       )}
     </ImmichLayout>
   );

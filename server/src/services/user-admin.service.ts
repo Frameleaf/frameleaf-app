@@ -33,6 +33,7 @@ import {
   UserMetadataKey,
   UserStatus,
 } from 'src/enum.js';
+import { emailText } from 'src/emails/components/email-locale.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
@@ -43,7 +44,7 @@ import { DecimalSize } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { findOrFail } from 'src/utils/misc.js';
-import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences.js';
+import { getPreferences, getPreferencesPartial, localeOf, mergePreferences } from 'src/utils/preferences.js';
 
 /** One entry for the administrator audit trail about an account (FL-76). */
 const accountEvent = (
@@ -157,7 +158,7 @@ export class UserAdminService extends BaseService {
 
   private async emailPasswordLink(
     auth: AuthDto,
-    user: { id: string; name: string; email: string },
+    user: Pick<UserAdmin, 'id' | 'name' | 'email' | 'metadata'>,
     baseUrl: string,
     isNew: boolean,
   ) {
@@ -170,9 +171,11 @@ export class UserAdminService extends BaseService {
     );
     if (!issued) throw new ConflictException('This account changed; send a new password link');
     const { templates } = await this.getConfig({ withCache: true });
+    const locale = localeOf(user.metadata);
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.PASSWORD_LINK,
       data: {
+        locale,
         baseUrl,
         displayName: user.name,
         username: user.email,
@@ -186,7 +189,7 @@ export class UserAdminService extends BaseService {
       name: JobName.SendMail,
       data: {
         to: user.email,
-        subject: isNew ? 'Choose your Frameleaf password' : 'Choose a new Frameleaf password',
+        subject: emailText(locale, isNew ? 'password_link_new_subject' : 'password_link_reset_subject'),
         html,
         text,
       },

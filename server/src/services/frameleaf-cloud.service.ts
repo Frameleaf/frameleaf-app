@@ -51,7 +51,9 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { emailText } from 'src/emails/components/email-locale.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
+import { localeOf } from 'src/utils/preferences.js';
 import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
@@ -1295,9 +1297,11 @@ export class FrameleafCloudService extends BaseService {
       throw new BadRequestException('Email and a public address are needed to send a reminder');
     }
     const { templates } = await this.getConfig({ withCache: true });
+    const locale = localeOf(user.metadata);
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.FRAMELEAF_SIGN_IN_REMINDER,
       data: {
+        locale,
         baseUrl: base,
         displayName: user.name,
         senderName: auth.user.name,
@@ -1308,7 +1312,7 @@ export class FrameleafCloudService extends BaseService {
     });
     await this.jobRepository.queue({
       name: JobName.SendMail,
-      data: { to: user.email, subject: 'Link your Frameleaf account to sign in away from home', html, text },
+      data: { to: user.email, subject: emailText(locale, 'sign_in_reminder_subject'), html, text },
     });
   }
 

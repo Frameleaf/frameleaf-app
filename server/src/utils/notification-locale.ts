@@ -1,5 +1,6 @@
 import z from 'zod';
 import type { UserPreferences } from 'src/types.js';
+import translations from 'src/utils/notification-translations.json' with { type: 'json' };
 
 /** Origin-only descriptors. These never enter NotificationDto or the encrypted push wire payload. */
 const name = z.string();
@@ -112,8 +113,9 @@ export type NotificationCatalogs = Record<
   { version: number; messages: Partial<Record<TemplateKey, NotificationText>> }
 >;
 
-/** Add exact locale catalogs only after FC-109 decisions and FC-110 source-version signoff. */
+/** Exact locale catalogs share the English version-1 source and stay on the origin server. */
 export const NOTIFICATION_CATALOGS: NotificationCatalogs = {
+  ...translations,
   en: {
     version: 1,
     messages: {

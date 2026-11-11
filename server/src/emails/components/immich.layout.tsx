@@ -15,6 +15,7 @@ import {
 } from 'react-email';
 import { ImmichFooter } from 'src/emails/components/footer.template.js';
 import { getFrameleafEmailLogoUrl } from 'src/emails/components/frameleaf-logo.js';
+import { EmailLocaleContext } from 'src/emails/components/email-locale.js';
 
 interface ImmichLayoutProps {
   children: React.ReactNode;
@@ -25,7 +26,7 @@ interface ImmichLayoutProps {
 }
 
 export const ImmichLayout = ({ children, preview, baseUrl, showBranding = true }: ImmichLayoutProps) => (
-  <Html>
+  <Html lang={React.useContext(EmailLocaleContext)}>
     <Tailwind
       config={{
         presets: [pixelBasedPreset],

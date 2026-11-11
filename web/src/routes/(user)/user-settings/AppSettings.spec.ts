@@ -1,12 +1,14 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { addMessages } from 'svelte-i18n';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { addMessages, locale as i18nLocale } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { libraryView } from '$lib/frameleaf/library-view.svelte';
+import { saveNotificationLanguage } from '$lib/frameleaf/notification-language';
 import {
   alwaysLoadOriginalFile,
   alwaysLoadOriginalVideo,
   autoPlayVideo,
+  lang,
   libraryStartLayout,
   locale,
   loopVideo,
@@ -14,6 +16,7 @@ import {
   showDeleteModal,
 } from '$lib/stores/preferences.store';
 import { reduceMotion } from '$lib/stores/reduce-motion.store';
+import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../i18n/en.json';
 import AppSettings from './AppSettings.svelte';
 
@@ -36,6 +39,8 @@ const albums = vi.hoisted(() => ({
   loadLatest: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn(), beforeNavigate: vi.fn(), goto: vi.fn() }));
+vi.mock('$lib/frameleaf/notification-language', () => ({ saveNotificationLanguage: vi.fn() }));
+vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('$lib/frameleaf/own-preferences-draft', () => ({ createOwnPreferencesDraft: () => albums }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { preferences: {}, user: {} } }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
@@ -58,6 +63,54 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     ]);
     expect(screen.getByRole('combobox', { name: 'Language' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Light or dark' })).toBeInTheDocument();
+  });
+
+  it('waits for the notification locale save before switching language and blocks overlapping choices', async () => {
+    const previousLanguage = get(lang);
+    const previousLocale = get(i18nLocale);
+    lang.set('en');
+    addMessages('fr', en);
+    let resolve!: () => void;
+    vi.mocked(saveNotificationLanguage).mockImplementationOnce(() => new Promise<void>((done) => (resolve = done)));
+    const { unmount } = render(AppSettings);
+    const picker = screen.getByRole('combobox', { name: 'Language' });
+    try {
+      await fireEvent.change(picker, { target: { value: 'fr' } });
+      expect(saveNotificationLanguage).toHaveBeenLastCalledWith('fr');
+      expect(picker).toBeDisabled();
+      expect(get(lang)).toBe('en');
+      expect(get(i18nLocale)).toBe(previousLocale);
+      resolve();
+      await waitFor(() => expect(get(lang)).toBe('fr'));
+      await waitFor(() => expect(picker).not.toBeDisabled());
+      expect(get(i18nLocale)).toBe('fr');
+    } finally {
+      unmount();
+      lang.set(previousLanguage);
+      await i18nLocale.set(previousLocale);
+    }
+  });
+
+  it('keeps the previous language and picker choice when the notification save fails', async () => {
+    const previousLanguage = get(lang);
+    const previousLocale = get(i18nLocale);
+    lang.set('en');
+    const error = new Error('offline');
+    vi.mocked(saveNotificationLanguage).mockRejectedValueOnce(error);
+    const { unmount } = render(AppSettings);
+    const picker = screen.getByRole('combobox', { name: 'Language' });
+    try {
+      await fireEvent.change(picker, { target: { value: 'fr' } });
+      await waitFor(() => expect(handleError).toHaveBeenCalledWith(error, expect.any(String)));
+      expect(get(lang)).toBe('en');
+      expect(get(i18nLocale)).toBe(previousLocale);
+      expect(picker).not.toBeDisabled();
+      expect(picker).toHaveValue('en');
+    } finally {
+      unmount();
+      lang.set(previousLanguage);
+      await i18nLocale.set(previousLocale);
+    }
   });
 
   it('makes the date format one choice, with the region only once a region is asked for', async () => {
@@ -168,4 +221,30 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     expect(screen.getByRole('switch', { name: 'Let uploads bring back deleted photos' })).toBeInTheDocument();
     albums.draft['trash.reuploadUntil'] = '';
   });
+});
+
+it.each([
+  ['nb_NO', 'nb-NO'],
+  ['pt_BR', 'pt-BR'],
+  ['dev', 'en'],
+])('normalizes stored %s when localizing region names', (stored, displayLocale) => {
+  const previousLanguage = get(lang);
+  const previousLocale = get(locale);
+  addMessages('dev', en);
+  lang.set(stored);
+  locale.set('en-US');
+  const { unmount } = render(AppSettings);
+  try {
+    const label = new Intl.DisplayNames([displayLocale], { type: 'language' }).of('en-US');
+    expect(within(screen.getByRole('combobox', { name: 'Region' })).getByRole('option', { name: label })).toHaveValue(
+      'en-US',
+    );
+    if (stored === 'nb_NO') {
+      expect(screen.getByRole('combobox', { name: 'Language' })).toHaveValue('nb-NO');
+    }
+  } finally {
+    unmount();
+    lang.set(previousLanguage);
+    locale.set(previousLocale);
+  }
 });

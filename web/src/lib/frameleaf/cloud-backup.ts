@@ -22,7 +22,8 @@ export const KEY_FILE_FORMAT = 'frameleaf-backup-key';
 /** What own-memory mode asks the administrator to type, compared without case or surrounding spaces. */
 export const OWN_MEMORY_ACKNOWLEDGEMENT = 'i understand';
 
-export const isOwnMemoryAcknowledged = (typed: string) => typed.trim().toLowerCase() === OWN_MEMORY_ACKNOWLEDGEMENT;
+export const isOwnMemoryAcknowledged = (typed: string, phrase = OWN_MEMORY_ACKNOWLEDGEMENT) =>
+  typed.trim().toLowerCase() === phrase.trim().toLowerCase();
 
 const toBase64 = (bytes: Uint8Array) => {
   let binary = '';

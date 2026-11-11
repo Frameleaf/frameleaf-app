@@ -5,8 +5,14 @@ Frameleaf translations are contributed by pull request to the [Frameleaf reposit
 ## Contributing translations
 
 1. Copy the repository to your GitHub account and create a branch for your translation.
-2. Add or update the file for your language in `i18n/`, using the keys from `i18n/en.json`. Keys missing from your file fall back to English.
+2. Add or update the file for your language in `i18n/`, using the keys from `i18n/en.json`. The languages offered in Settings must contain every English key: `en`, `fr`, `es`, `de`, `it`, `pt`, `nl`, `pl`, `sv`, `da` and `nb_NO`. Add translations for all of these when adding a message. Other language files may be incomplete and fall back to English.
 3. Open a pull request against the repository describing the language and what changed.
+
+Keep argument names, rich-text tags and select values unchanged. Translate complete messages rather than joining translated fragments, and use the target language's plural forms. Preserve product names, URLs and code examples. Portuguese (`pt`) uses European Portuguese; `nb_NO` uses Norwegian Bokmål.
+
+Run `pnpm --filter frameleaf-web exec vitest run src/lib/i18n.spec.ts src/lib/i18n-catalogues.spec.ts` to check language loading, completeness and message compatibility. These checks also run in the web test suite.
+
+Server-generated account notifications use the English templates in `server/src/utils/notification-locale.ts` and the translated templates in `server/src/utils/notification-translations.json`. Add every offered language when adding a notification template, using `nb-NO` for Bokmål. These templates use simple `{argument}` replacement, not ICU. Keep their placeholders unchanged and run the server's `notification-locale.spec.ts` tests. Choosing a language in setup or Settings also saves the language for future account notifications; device-specific notification preferences remain separate.
 
 ## International message format
 

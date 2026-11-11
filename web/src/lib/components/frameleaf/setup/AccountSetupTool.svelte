@@ -27,6 +27,7 @@
   import '$lib/frameleaf/auth.css';
   import '$lib/frameleaf/first-run-setup.css';
   import '$lib/frameleaf/tokens.css';
+  import { saveNotificationLanguage } from '$lib/frameleaf/notification-language';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { lang } from '$lib/stores/preferences.store';
@@ -61,6 +62,7 @@
   let theme = $state<'dark' | 'light'>(themeManager.value === 'light' ? 'light' : 'dark');
   // The saved language may be a regional tag (en-US) the language files don't have; match its base.
   let language = $state(languageCodeFor($lang) ?? 'en');
+  let savingAppearance = $state(false);
   let albums = $state(preferences.emailNotifications.albumUpdate);
   let email = $state(preferences.emailNotifications.enabled);
   let memories = $state(preferences.memories.enabled);
@@ -110,11 +112,22 @@
       await updateMyUser({ userUpdateMeDto: { name: name.trim() } });
       await authManager.load();
     });
-  const saveAppearance = () =>
-    save('appearance', async () => {
-      $lang = language;
-      await i18nLocale.set(convertBCP47(language));
-    });
+  const saveAppearance = async () => {
+    if (savingAppearance) {
+      return;
+    }
+    const selectedLanguage = language;
+    savingAppearance = true;
+    try {
+      await save('appearance', async () => {
+        await saveNotificationLanguage(selectedLanguage);
+        $lang = selectedLanguage;
+        await i18nLocale.set(convertBCP47(selectedLanguage));
+      });
+    } finally {
+      savingAppearance = false;
+    }
+  };
   const savePrivacy = () =>
     save('privacy', () =>
       updateMyPreferences({
@@ -155,7 +168,12 @@
     </header>
     <div class="frs-tool-body">{@render body()}</div>
     <footer>
-      <button type="button" class="button" onclick={onsave} disabled={isDone(id)}>
+      <button
+        type="button"
+        class="button"
+        onclick={onsave}
+        disabled={isDone(id) || (id === 'appearance' && savingAppearance)}
+      >
         {isDone(id) ? $t('frameleaf_setup_tool_saved') : action}
       </button>
     </footer>
@@ -180,7 +198,13 @@
     <span>{$t('theme')}</span>
     {#each [['dark', 'dark', mdiMoonWaningCrescent], ['light', 'light', mdiWhiteBalanceSunny]] as const as [value, label, icon] (value)}
       <label class:checked={theme === value}>
-        <input type="radio" name="frs-tool-theme" checked={theme === value} onchange={() => (theme = value)} />
+        <input
+          type="radio"
+          name="frs-tool-theme"
+          checked={theme === value}
+          onchange={() => (theme = value)}
+          disabled={savingAppearance}
+        />
         <Icon {icon} size="16" aria-hidden={true} />{$t(label)}
       </label>
     {/each}
@@ -188,7 +212,7 @@
   <p class="auth-note">{$t('frameleaf_setup_tool_theme_note')}</p>
   <div class="auth-field">
     <label for="frs-tool-language">{$t('language')}</label>
-    <select id="frs-tool-language" bind:value={language}>
+    <select id="frs-tool-language" bind:value={language} disabled={savingAppearance}>
       {#each languageChoices($lang, language) as entry (entry.code)}
         <option value={convertBCP47(entry.code)}>{entry.name}</option>
       {/each}

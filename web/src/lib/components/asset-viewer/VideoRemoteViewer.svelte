@@ -77,7 +77,7 @@
       }
     } catch (error) {
       if (isCurrent()) {
-        handleError(error, 'Unable to cast');
+        handleError(error, $t('frameleaf_cast_failed'));
       }
       return;
     }
@@ -108,7 +108,7 @@
       variant="ghost"
       icon={castManager.castState === CastState.PLAYING ? mdiPause : mdiPlay}
       onclick={() => handlePlayPauseButton()}
-      aria-label={castManager.castState === CastState.PLAYING ? 'Pause' : 'Play'}
+      aria-label={$t(castManager.castState === CastState.PLAYING ? 'pause' : 'play')}
     />
   {/if}
 

@@ -1,3 +1,6 @@
+import { t } from 'svelte-i18n';
+import { get } from 'svelte/store';
+
 /**
  * Integrity report viewer adapter for the Frameleaf Maintenance area (FL-81).
  *
@@ -66,9 +69,9 @@ export const maintenanceReportText = ({
   paths: readonly string[];
 }): string =>
   [
-    `Frameleaf integrity report · ${title}`,
-    `Last run: ${lastRunAt ?? 'never'}`,
-    `Findings: ${paths.length}`,
+    get(t)('frameleaf_maintenance_report_download_title', { values: { title } }),
+    get(t)('frameleaf_maintenance_report_download_last_run', { values: { date: lastRunAt ?? get(t)('never') } }),
+    get(t)('frameleaf_maintenance_report_download_findings', { values: { count: paths.length } }),
     '',
     ...paths,
   ].join('\n') + '\n';

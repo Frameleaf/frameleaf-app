@@ -1,4 +1,7 @@
+import { addMessages } from 'svelte-i18n';
+import { beforeAll } from 'vitest';
 import { describe, expect, it } from 'vitest';
+import en from '$i18n/en.json';
 import {
   filterMaintenanceReportItems,
   MAINTENANCE_REPORT_QUERY_MAX_LENGTH,
@@ -69,7 +72,7 @@ describe('maintenanceReportText (FL-81 CC-23, maintenance-data.mjs:657-674)', ()
   });
 
   it('says when the check never ran', () => {
-    expect(maintenanceReportText({ title: 'Missing Files', lastRunAt: null, paths: [] })).toContain('Last run: never');
+    expect(maintenanceReportText({ title: 'Missing Files', lastRunAt: null, paths: [] })).toContain('Last run: Never');
   });
 
   it('names the file after the check and the moment', () => {
@@ -78,3 +81,5 @@ describe('maintenanceReportText (FL-81 CC-23, maintenance-data.mjs:657-674)', ()
     );
   });
 });
+
+beforeAll(() => addMessages('dev', en));

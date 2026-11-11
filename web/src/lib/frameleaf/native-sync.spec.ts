@@ -1,5 +1,8 @@
 import { getAssetDevelop, saveAssetDevelop, cancelAssetDevelopRender } from '@frameleaf/sdk';
+import { addMessages } from 'svelte-i18n';
+import { beforeAll } from 'vitest';
 import { vi, it, expect, beforeEach } from 'vitest';
+import en from '$i18n/en.json';
 import { initialNativeRecipe, newNativeMask } from './native-develop';
 import { proposeNativeMask } from './native-develop';
 import { syncNativeRecipes, cancelNativeSync } from './native-sync';
@@ -84,3 +87,5 @@ it('detaches nested source settings and each destination recipe before admission
   expect(current.crop.x).toBe(0.1);
   expect(current.sensorCanvas).toBe(true);
 });
+
+beforeAll(() => addMessages('dev', en));
