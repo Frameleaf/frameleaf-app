@@ -575,6 +575,26 @@ describe(SearchService.name, () => {
         expect(assets).not.toHaveProperty('closeMatches');
       });
 
+      it('leaves the count out when a first page that continues is close all through', async () => {
+        mocks.search.searchSmart.mockResolvedValue({ ...ranked(0.9, 0.91), hasNextPage: true } as never);
+        mocks.search.getUnrelatedSearchDistance.mockResolvedValue(1);
+
+        const { assets } = await sut.searchSmart(authStub.user1, { query: 'lake' });
+        expect(assets).not.toHaveProperty('closeMatches');
+        expect(assets.nextPage).toBe('2');
+
+        mocks.search.searchSmart.mockResolvedValue(ranked(0.9, 0.91) as never);
+        await expect(sut.searchSmart(authStub.user1, { query: 'lake' })).resolves.toMatchObject({
+          assets: { closeMatches: 2 },
+        });
+
+        // A continuing page with a line on it keeps its count.
+        mocks.search.searchSmart.mockResolvedValue({ ...ranked(0.9, 0.99), hasNextPage: true } as never);
+        await expect(sut.searchSmart(authStub.user1, { query: 'lake', size: 2 })).resolves.toMatchObject({
+          assets: { closeMatches: 1, nextPage: '2' },
+        });
+      });
+
       it('counts on the first page only, and never for a similar-photo search', async () => {
         mocks.search.searchSmart.mockResolvedValue(ranked(0.9, 0.99) as never);
         mocks.search.getUnrelatedSearchDistance.mockResolvedValue(1);

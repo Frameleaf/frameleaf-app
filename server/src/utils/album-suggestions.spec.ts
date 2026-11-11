@@ -103,6 +103,19 @@ describe('describeTrip', () => {
       describeTrip([...rockies, photo('today', '2026-08-16T20:00:00')], at('2026-08-16T12:00:00Z'))?.photoIds,
     ).toContain('today');
   });
+
+  it('keeps a reset date somebody set by hand, as the timeline does', () => {
+    const scans = ['1999-12-31T20:00:00', '1999-12-31T23:00:00', '2000-01-01T00:30:00', '2000-01-01T02:00:00'].map(
+      (iso, index) => ({ ...photo(`scan${index}`, iso), localDateTime: at(`${iso}Z`), dateSetByHand: true }),
+    );
+    expect(describeTrip(scans, now)?.photoIds).toEqual(['scan0', 'scan1', 'scan2', 'scan3']);
+    expect(
+      describeTrip(
+        scans.map((scan) => ({ ...scan, dateSetByHand: false })),
+        now,
+      )?.photoIds,
+    ).toBeUndefined();
+  });
 });
 
 describe('matchTripCandidate', () => {

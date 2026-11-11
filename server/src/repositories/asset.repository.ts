@@ -1140,6 +1140,8 @@ export class AssetRepository {
                   ),
                 )
                 .where('asset.deletedAt', 'is', null)
+                // FL-1410: a camera's reset day is not a day to look back on
+                .where(hasGoodDate('asset'))
                 .orderBy(sql`(asset."localDateTime" at time zone 'UTC')::date`, 'desc')
                 .limit(20)
                 .as('a'),
