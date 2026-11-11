@@ -55,6 +55,7 @@ const setup = (db?: Kysely<DB>) => {
   jobs.queue.mockResolvedValue();
   jobs.queueAll.mockResolvedValue();
   jobs.queueInTransaction.mockResolvedValue();
+  jobs.hasDedupJob.mockResolvedValue(false);
   return {
     ...services,
     runs: BaseService.create(AlbumChangeRunService, services.sut),
