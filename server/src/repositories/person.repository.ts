@@ -37,6 +37,8 @@ const faceBoxHeight = sql<number>`(asset_face."boundingBoxY2" - asset_face."boun
 const faceLooksSidewaysSql = sql<boolean>`(${faceBoxWidth} > ${sql.lit(FACE_SIDEWAYS_RATIO)} * ${faceBoxHeight})`;
 /** The face's longer side as a share of the frame's longer side. */
 const faceFrameShare = sql<number>`(greatest(${faceBoxWidth}, ${faceBoxHeight})::float8 / greatest(asset_face."imageWidth", asset_face."imageHeight", 1))`;
+/** FL-1385: a candidate the owner has not answered, or answered "later" long enough ago. */
+const splitCandidateIsOpen = sql<boolean>`(person_split_candidate."dismissedUntil" is null or person_split_candidate."dismissedUntil" < now())`;
 /** FL-1384: how many of a person's faces their centre is read from when people are compared. */
 const MERGE_CENTRE_FACES = 10;
 /** Sideways, cut off by the frame, or tiny. */
@@ -1106,8 +1108,9 @@ export class PersonRepository {
    */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   getBestFace(personGroupId: string, ownerId: string) {
-    // ponytail: the centre is read from 500 of the person's faces and the ranking from their 200 best
-    // boxes, so a person with 50,000 faces costs the same as one with 500; widen both if picks look off.
+    // ponytail: the centre is read from 500 of the person's faces (the same ones on every run) and the
+    // ranking from their 200 best boxes, so a person with 50,000 faces costs the same as one with 500;
+    // widen both if picks look off.
     const centre = sql`(
       select avg(sample.embedding) from (
         select face_search.embedding
@@ -1116,6 +1119,7 @@ export class PersonRepository {
         where member."personGroupId" = ${personGroupId}
           and member."deletedAt" is null
           and member."isVisible" is true
+        order by member.id
         limit 500
       ) as sample
     )`;
@@ -1402,6 +1406,7 @@ export class PersonRepository {
               where asset_face."personGroupId" = person."personGroupId"
                 and asset_face."deletedAt" is null
                 and asset_face."isVisible" is true
+              order by asset_face.id
               limit ${sql.lit(MERGE_CENTRE_FACES)}
             ) as member
           ) as sample
@@ -1432,6 +1437,191 @@ export class PersonRepository {
       .limit(1)
       .executeTakeFirst();
     return !!row;
+  }
+  /**
+   * FL-1385: the people worth checking for two different people held as one: at least `minFaces` visible
+   * faces with an embedding and, with `since`, a face added, moved or changed after it. A person who
+   * already has a candidate is always checked again, since faces moved away from them no longer count
+   * as theirs.
+   */
+  @GenerateSql({ params: [6] })
+  getPeopleForSplitCheck(minFaces: number, since?: Date) {
+    const enoughFaces = sql<boolean>`(
+      select count(*)
+      from asset_face
+      inner join face_search on face_search."faceId" = asset_face.id
+      where asset_face."personGroupId" = person."personGroupId"
+        and asset_face."deletedAt" is null
+        and asset_face."isVisible" is true
+    ) >= ${minFaces}`;
+    const changed = since
+      ? sql<boolean>`exists (
+          select 1 from asset_face
+          where asset_face."personGroupId" = person."personGroupId" and asset_face."updatedAt" > ${since}
+        )`
+      : sql<boolean>`true`;
+    const hasCandidate = sql<boolean>`exists (
+      select 1 from person_split_candidate
+      where person_split_candidate."ownerId" = person."ownerId"
+        and person_split_candidate."personId" = person."personGroupId"
+    )`;
+    return this.db
+      .selectFrom('person')
+      .select(['person.ownerId', 'person.personGroupId'])
+      .where(sql<boolean>`(${hasCandidate} or (${changed} and ${enoughFaces}))`)
+      .execute();
+  }
+  /** FL-1385: up to `limit` of a person's visible faces with their embeddings (`[0.1,0.2,…]` text). */
+  @GenerateSql({ params: [DummyValue.UUID, 200] })
+  getFaceEmbeddings(personGroupId: string, limit: number) {
+    return (
+      this.db
+        .selectFrom('asset_face')
+        .innerJoin('face_search', 'face_search.faceId', 'asset_face.id')
+        .select(['asset_face.id', 'face_search.embedding'])
+        .where('asset_face.personGroupId', '=', personGroupId)
+        .where('asset_face.deletedAt', 'is', null)
+        .where('asset_face.isVisible', 'is', true)
+        // a stable order, so the same faces are read on every run
+        .orderBy('asset_face.id')
+        .limit(limit)
+        .execute()
+    );
+  }
+  /**
+   * FL-1385: the person's visible faces that look more like `nearer` than like `than` (two embeddings,
+   * the centres of the two groups a sample of the faces fell into). At most `limit` faces.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.VECTOR, DummyValue.VECTOR] })
+  async getFacesNearerTo(personGroupId: string, nearer: string, than: string, limit = 5000): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('asset_face')
+      .innerJoin('face_search', 'face_search.faceId', 'asset_face.id')
+      .select('asset_face.id')
+      .where('asset_face.personGroupId', '=', personGroupId)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .where(sql<boolean>`(face_search.embedding <=> ${nearer}::vector) < (face_search.embedding <=> ${than}::vector)`)
+      .limit(limit)
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+  /** FL-1385: stores what the nightly check found for a person. An answer the owner gave stays. */
+  async upsertSplitCandidate(candidate: { ownerId: string; personId: string; faceIds: string[]; distance: number }) {
+    const faceIds = sql<string[]>`${`{${candidate.faceIds}}`}::uuid[]`;
+    await this.db
+      .insertInto('person_split_candidate')
+      .values({ ...candidate, faceIds })
+      .onConflict((oc) => oc.columns(['ownerId', 'personId']).doUpdateSet({ faceIds, distance: candidate.distance }))
+      .execute();
+  }
+  /**
+   * FL-1385: forgets a candidate. With `keepAnswered`, one the owner answered "same person" or "later"
+   * stays, so the answer still stands if the same faces are found again.
+   */
+  async deleteSplitCandidate(ownerId: string, personId: string, { keepAnswered = false } = {}): Promise<void> {
+    await this.db
+      .deleteFrom('person_split_candidate')
+      .where('ownerId', '=', ownerId)
+      .where('personId', '=', personId)
+      .$if(keepAnswered, (qb) => qb.where(splitCandidateIsOpen))
+      .execute();
+  }
+  /** FL-1385: a person's candidate; `open` is false once the owner answered "same person", or "later" not long ago. */
+  getSplitCandidate(ownerId: string, personId: string) {
+    return this.db
+      .selectFrom('person_split_candidate')
+      .selectAll()
+      .select(splitCandidateIsOpen.as('open'))
+      .where('ownerId', '=', ownerId)
+      .where('personId', '=', personId)
+      .executeTakeFirst();
+  }
+  /** FL-1385: the candidates the owner has not answered (or answered "later" long enough ago), clearest first. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getSplitCandidates(ownerId: string, limit = 20) {
+    return this.db
+      .selectFrom('person_split_candidate')
+      .innerJoin('person', (join) =>
+        join
+          .onRef('person.ownerId', '=', 'person_split_candidate.ownerId')
+          .onRef('person.personGroupId', '=', 'person_split_candidate.personId'),
+      )
+      .select(['person_split_candidate.personId', 'person_split_candidate.faceIds', 'person_split_candidate.distance'])
+      .where('person_split_candidate.ownerId', '=', ownerId)
+      .where('person.isHidden', '=', false)
+      .where(splitCandidateIsOpen)
+      .orderBy('person_split_candidate.distance', 'desc')
+      .limit(limit)
+      .execute();
+  }
+  /**
+   * FL-1385: the owner's answer to a candidate: not asked again before `until` (`'infinity'` is "same
+   * person", null asks again). True when there was a candidate to answer.
+   */
+  async setSplitDismissal(ownerId: string, personId: string, until: Date | 'infinity' | null): Promise<boolean> {
+    const result = await this.db
+      .updateTable('person_split_candidate')
+      .set({ dismissedUntil: until === 'infinity' ? sql<Date>`'infinity'::timestamptz` : until })
+      .where('ownerId', '=', ownerId)
+      .where('personId', '=', personId)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
+  /** FL-1385: which of `faceIds` are still visible faces of the person, and how many faces the person has. */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  async getSplitFaceCounts(personGroupId: string, faceIds: string[]) {
+    const rows = await this.db
+      .selectFrom('asset_face')
+      .select(['asset_face.id', sql<boolean>`asset_face.id = ${anyUuid(faceIds)}`.as('other')])
+      .where('asset_face.personGroupId', '=', personGroupId)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .execute();
+    return { total: rows.length, faceIds: rows.filter(({ other }) => other).map(({ id }) => id) };
+  }
+  /**
+   * FL-1385: a few of the person's faces to show beside the question, from the faces in `faceIds`
+   * (`other`) or from the rest, the larger faces first. Only media the viewer may be shown qualifies, as
+   * for `getReferenceFaces`.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, [DummyValue.UUID], true] })
+  getSplitEvidence(
+    viewerId: string,
+    personGroupId: string,
+    faceIds: string[],
+    other: boolean,
+    options: HiddenContentQueryOptions = {},
+    limit = 3,
+  ): Promise<ReferenceFace[]> {
+    return this.db
+      .selectFrom('asset_face')
+      .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+      .select([
+        sql<string>`asset_face."personGroupId"`.as('personGroupId'),
+        'asset_face.id as faceId',
+        'asset_face.assetId',
+        'asset_face.imageWidth',
+        'asset_face.imageHeight',
+        'asset_face.boundingBoxX1',
+        'asset_face.boundingBoxY1',
+        'asset_face.boundingBoxX2',
+        'asset_face.boundingBoxY2',
+      ])
+      .where('asset_face.personGroupId', '=', personGroupId)
+      .where(sql<boolean>`(asset_face.id = ${anyUuid(faceIds)}) = ${other}`)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .where('asset.ownerId', '=', viewerId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Archive)])
+      .where(revealedLockScope(options.revealLockedOwnerId, 'asset'))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .orderBy(sql`${faceFrameShare} desc`)
+      .orderBy('asset_face.id')
+      .limit(limit)
+      .execute();
   }
   /**
    * FL-57: the face that stands for each person in a merge suggestion, with its complete photo. Only

@@ -178,6 +178,7 @@ import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonMergeCandidateTable } from 'src/schema/tables/person-merge-candidate.table.js';
+import { PersonSplitCandidateTable } from 'src/schema/tables/person-split-candidate.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
 import { PetObservationAuditTable } from 'src/schema/tables/pet-observation-audit.table.js';
@@ -457,6 +458,7 @@ export class ImmichDatabase {
     PhysicalFileTable,
     PersonGroupTable,
     PersonMergeCandidateTable,
+    PersonSplitCandidateTable,
     PersonGroupAuditTable,
     PetAuditTable,
     PetObservationAuditTable,
@@ -732,6 +734,7 @@ export interface DB extends QueueDatabase {
   person_audit: PersonAuditTable;
   person_group: PersonGroupTable;
   person_merge_candidate: PersonMergeCandidateTable;
+  person_split_candidate: PersonSplitCandidateTable;
   person_group_audit: PersonGroupAuditTable;
 
   pet_audit: PetAuditTable;
