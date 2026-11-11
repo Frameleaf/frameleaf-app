@@ -316,6 +316,16 @@ describe('LibraryRail', () => {
     }
   });
 
+  it('leaves out Pets when the account hid it from the sidebar', () => {
+    authManager.setPreferences(
+      preferencesFactory.build({ ...prototypeDefaults, pets: { sidebarWeb: false } } as never),
+    );
+    render(LibraryRail);
+
+    expect(screen.queryByRole('link', { name: 'Pets' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+  });
+
   it('leaves out Recently added, Tags and Folders when the account or an administrator hid them', () => {
     authManager.setPreferences(
       preferencesFactory.build({

@@ -228,6 +228,12 @@ const RecentlyAddedUpdateSchema = z
   })
   .optional()
   .meta({ id: 'RecentlyAddedUpdate' });
+const PetsUpdateSchema = z
+  .object({
+    sidebarWeb: z.boolean().optional().describe('Whether pets appear in web sidebar'),
+  })
+  .optional()
+  .meta({ id: 'PetsUpdate' });
 
 /** FL-49: limits for saved searches, kept small because every preferences read carries them */
 export const SAVED_SEARCH_MAX_COUNT = 50;
@@ -279,6 +285,7 @@ const UserPreferencesUpdateSchema = z
     sharedLinks: SharedLinksUpdateSchema,
     tags: TagsUpdateSchema,
     recentlyAdded: RecentlyAddedUpdateSchema,
+    pets: PetsUpdateSchema,
     lockedPin: LockedPinUpdateSchema,
     savedSearches: SavedSearchesUpdateSchema.meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
     expectedRevision: z
@@ -434,6 +441,11 @@ const RecentlyAddedResponseSchema = z
     sidebarWeb: z.boolean().describe('Whether the recently added page appears in the web sidebar'),
   })
   .meta({ id: 'RecentlyAddedResponse' });
+const PetsResponseSchema = z
+  .object({
+    sidebarWeb: z.boolean().describe('Whether pets appear in web sidebar'),
+  })
+  .meta({ id: 'PetsResponse' });
 
 const LockedPinResponseSchema = z
   .object({
@@ -461,6 +473,8 @@ const UserPreferencesResponseSchema = z
     trash: TrashResponseSchema,
     cast: CastResponseSchema,
     recentlyAdded: RecentlyAddedResponseSchema,
+    // always sent; optional in the schema so clients built before it existed keep compiling
+    pets: PetsResponseSchema.optional(),
     // always sent; optional in the schema so older clients keep compiling (FL-517)
     lockedPin: LockedPinResponseSchema.optional(),
     // always sent; optional in the schema so clients built before FL-49 keep compiling

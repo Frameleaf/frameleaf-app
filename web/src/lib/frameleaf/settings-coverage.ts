@@ -1841,6 +1841,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'recentlyAdded.sidebarWeb',
   },
   {
+    pattern: 'pets.sidebarWeb',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
+    evidence: 'pets.sidebarWeb',
+  },
+  {
     pattern: 'savedSearches',
     kind: 'control',
     file: 'src/lib/components/frameleaf/RailSavedSearches.svelte',

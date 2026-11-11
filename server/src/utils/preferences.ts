@@ -204,6 +204,9 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     recentlyAdded: {
       sidebarWeb: true,
     },
+    pets: {
+      sidebarWeb: true,
+    },
     lockedPin: {
       relockMinutes: LOCKED_RELOCK_MINUTES_DEFAULT,
     },
