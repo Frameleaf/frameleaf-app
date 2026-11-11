@@ -683,6 +683,10 @@ export const newTestService = <T extends BaseService>(
     } else if (type === SignInSecurityService) {
       Object.assign(sut, { [key]: overrides.signInSecurity ?? mocks.signInSecurity });
     }
+    // unified sign-in: Sign in with Frameleaf checks local proof through AuthService, on the same mocks
+    if (type === AuthService) {
+      Object.assign(sut, { [key]: newTestService(AuthService, mocks as Partial<ServiceOverrides>).sut });
+    }
     if (type === MediaHealthRepository) {
       Object.assign(sut, { [key]: mocks.mediaHealth });
     }
