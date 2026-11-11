@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
@@ -97,6 +98,29 @@ static int safe_stdio(void) {
     return 1;
 }
 
+/* Every descriptor above stdio, read from the kernel's own list rather than guessed from a limit. */
+static int close_inherited(void) {
+    DIR *open_files = opendir("/proc/self/fd");
+    if (!open_files) {
+        return 0;
+    }
+    int listing = dirfd(open_files);
+    struct dirent *entry;
+    errno = 0;
+    while ((entry = readdir(open_files))) {
+        char *end;
+        long fd = strtol(entry->d_name, &end, 10);
+        if (*end || fd < 3 || fd == listing) {
+            continue;
+        }
+        close((int)fd);
+        errno = 0;
+    }
+    int complete = errno == 0;
+    closedir(open_files);
+    return complete;
+}
+
 int main(int argc, char **argv) {
     if (argc < 4 || argv[3][0] != '/') {
         return 125;
@@ -122,11 +146,6 @@ int main(int argc, char **argv) {
          setresgid(runner, runner, runner) || setresuid(runner, runner, runner))) {
         return 125;
     }
-    /* Inherited descriptors are bounded by the limit in force before it is lowered. */
-    struct rlimit inherited;
-    if (getrlimit(RLIMIT_NOFILE, &inherited)) {
-        return 125;
-    }
     struct rlimit core = {0, 0};
     struct rlimit files = {256, 256};
     if (!getuid() || !geteuid() || setrlimit(RLIMIT_CORE, &core) ||
@@ -138,12 +157,9 @@ int main(int argc, char **argv) {
         if (errno != ENOSYS && errno != EPERM) {
             return 125;
         }
-        /* 1048576 is the kernel's default per-process descriptor ceiling (fs.nr_open). */
-        rlim_t limit = inherited.rlim_max == RLIM_INFINITY || inherited.rlim_max > 1048576
-                           ? 1048576
-                           : inherited.rlim_max;
-        for (rlim_t fd = 3; fd < limit; fd++) {
-            close((int)fd);
+        /* Close exactly what is open, whatever its number; without that list, do not run. */
+        if (!close_inherited()) {
+            return 125;
         }
     }
     if (lock_network()) {
