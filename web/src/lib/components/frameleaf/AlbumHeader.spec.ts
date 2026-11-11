@@ -157,6 +157,12 @@ describe('AlbumHeader', () => {
     expect(more.queryByRole('menuitem', { name: /Leave album/ })).toBeNull();
   });
 
+  it('hides preservation export for a Locked album', async () => {
+    renderHeader(albumAs(AlbumUserRole.Owner, { kind: AlbumKind.Album, isLocked: true }));
+    const more = await openMore();
+    expect(more.queryByRole('menuitem', { name: 'Export originals and metadata…' })).toBeNull();
+  });
+
   it('lets an editor add, upload and edit, but not invite, manage links or delete', async () => {
     renderHeader(albumAs(AlbumUserRole.Editor));
 

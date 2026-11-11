@@ -317,6 +317,7 @@
   /** Make a movie (FL-561): beside Slideshow, in the "…" menu on phones. */
   let movieOpen = $state(false);
   let preservationExportOpen = $state(false);
+  const canExportAlbum = $derived(owner && album.kind === AlbumKind.Album && !album.isLocked);
   let shareOpen = $state(false);
   let shareSection = $state<'people' | 'links'>('people');
   const openShare = (section: 'people' | 'links' = 'people') => {
@@ -936,7 +937,7 @@
           {/if}
           <div class="menu-separator" role="separator"></div>
         {/if}
-        {#if owner && album.kind === AlbumKind.Album}
+        {#if canExportAlbum}
           <MenuItem disabled={assetCount === 0} onSelect={() => (preservationExportOpen = true)}>
             <Icon icon={mdiDownloadOutline} size="18" />
             {$t('frameleaf_preservation_album_export')}
@@ -1112,7 +1113,7 @@
 <AlbumCoverDialog {album} albumIds={coverSourceIds} bind:open={coverOpen} onUpdated={onCoverChange} />
 <AlbumOptionsDialog {album} bind:open={optionsOpen} onUpdated={onAlbumChange} />
 
-{#if owner && album.kind === AlbumKind.Album && preservationExportOpen}
+{#if canExportAlbum && preservationExportOpen}
   {#key album.id}
     {#await import('$lib/components/frameleaf/PreservationExportDialog.svelte') then { default: PreservationExportDialog }}
       <PreservationExportDialog
