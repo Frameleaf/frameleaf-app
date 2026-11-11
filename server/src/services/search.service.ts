@@ -50,6 +50,7 @@ import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-v
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
+import { countCloseMatches } from 'src/utils/search-relevance.js';
 import {
   applyLockedVisibilityPolicy,
   collectFilterIds,
@@ -414,7 +415,15 @@ export class SearchService extends BaseService {
     );
 
     await read.assertCurrent();
-    return this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
+    return this.mapResponse(
+      items,
+      { auth },
+      {
+        nextPage: hasNextPage ? (page + 1).toString() : null,
+        // only a first page starts at the best result
+        closeMatches: page === 1 ? await this.closeMatches(dto, embedding, userIds, items) : undefined,
+      },
+    );
   }
 
   async getAssetsByCity(auth: AuthDto): Promise<AssetResponseDto[]> {
@@ -597,7 +606,31 @@ export class SearchService extends BaseService {
     );
 
     await read.assertCurrent();
-    return this.mapResponse(items, { auth });
+    return this.mapResponse(
+      items,
+      { auth },
+      { closeMatches: await this.closeMatches(dto, embedding, scope.userIds, items) },
+    );
+  }
+
+  /**
+   * FL-1393: how many of a typed search's leading results are close matches (`countCloseMatches`).
+   * A similar-photo search has no words to be a close match for, so it gets no count.
+   */
+  private async closeMatches(
+    dto: SmartSearchDto,
+    embedding: string,
+    userIds: string[],
+    items: { searchDistance: number }[],
+  ): Promise<number | undefined> {
+    if (!dto.query || items.length === 0) {
+      return undefined;
+    }
+    const unrelated = await this.searchRepository.getUnrelatedSearchDistance(embedding, userIds);
+    return countCloseMatches(
+      items.map(({ searchDistance }) => Number(searchDistance)),
+      unrelated,
+    );
   }
 
   async resolveSearchScopeV3(
@@ -683,7 +716,7 @@ export class SearchService extends BaseService {
   private mapResponse(
     assets: MapAsset[],
     options: AssetMapOptions,
-    page: { nextPage?: string | null; nextCursor?: string | null } = {},
+    page: { nextPage?: string | null; nextCursor?: string | null; closeMatches?: number } = {},
   ): SearchResponseDto {
     const items = assets.map((asset) => mapAsset(asset, options));
     return {
@@ -695,6 +728,7 @@ export class SearchService extends BaseService {
         facets: [],
         nextPage: page.nextPage ?? null,
         nextCursor: page.nextCursor ?? null,
+        ...(page.closeMatches !== undefined && { closeMatches: page.closeMatches }),
       },
     };
   }

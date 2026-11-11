@@ -76,6 +76,11 @@
     /** Rendered above the grid. */
     header?: Snippet;
     empty?: Snippet;
+    /**
+     * FL-1393: the results under headings (a search's "Best matches" and "More results"), one grid
+     * per section on this one selection and selection bar. `assets` stays the whole list.
+     */
+    sections?: { assets: TimelineAsset[]; header: Snippet }[];
   };
 
   let {
@@ -103,6 +108,7 @@
     offlineFor,
     header,
     empty,
+    sections,
   }: Props = $props();
 
   const currentUserId = $derived(authManager.authenticated ? authManager.user.id : undefined);
@@ -213,25 +219,28 @@
 </script>
 
 <div class="frameleaf fl-results" data-testid="frameleaf-results">
-  <AssetGrid
-    {items}
-    {preferences}
-    {onOpenBookmark}
-    {assets}
-    {session}
-    {onEndReached}
-    {onOpen}
-    {selectionMode}
-    {singleSelect}
-    {onSelect}
-    {tileOverlay}
-    {cellOptions}
-    {layout}
-    {caption}
-    {offlineFor}
-    {header}
-    {empty}
-  />
+  <!-- ponytail: a shift-click range stays inside its section; pass the whole order down if ranges must cross headings. -->
+  {#each sections ?? [{ assets, header }] as section, index (index)}
+    <AssetGrid
+      items={sections ? undefined : items}
+      {preferences}
+      {onOpenBookmark}
+      assets={section.assets}
+      {session}
+      onEndReached={index === (sections?.length ?? 1) - 1 ? onEndReached : undefined}
+      {onOpen}
+      {selectionMode}
+      {singleSelect}
+      {onSelect}
+      {tileOverlay}
+      {cellOptions}
+      {layout}
+      {caption}
+      {offlineFor}
+      header={section.header}
+      {empty}
+    />
+  {/each}
 
   {#if !noSelectionBar}
     <SelectionBar

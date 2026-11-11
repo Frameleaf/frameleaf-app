@@ -211,17 +211,18 @@ it('draws the palette-style chips on the results page and removes one condition 
   await waitFor(() => expect(document.querySelector('#search-chips')).not.toBeNull());
   const chips = document.querySelector('#search-chips')!;
   expect(chips).toHaveClass('frameleaf');
-  expect(chips.querySelectorAll('.search-chip')).toHaveLength(3);
+  // FL-1393: the search text is the page's title, so only the two conditions are chips.
+  expect(chips.querySelectorAll('.search-chip')).toHaveLength(2);
   const remove = [...chips.querySelectorAll(':scope .search-chip button:not(.open)')];
-  expect(remove).toHaveLength(3);
+  expect(remove).toHaveLength(2);
   // The chips sit in the Library's row with Clear all, above the Library's own toolbar (Filter with
   // its badge counting the text and both conditions, Save search).
   expect(within(chips as HTMLElement).getByRole('button', { name: 'clear_all' })).toBeInTheDocument();
   expect(screen.getByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /^filter/ })).toHaveTextContent('3');
   expect(screen.getByRole('button', { name: 'frameleaf_search_save_search' })).toBeInTheDocument();
-  // The search text leads, as in the Library; then the filter chips in field order (city, isFavorite)
-  await fireEvent.click(remove[1]);
+  // The filter chips in field order (city, isFavorite)
+  await fireEvent.click(remove[0]);
   const url = new URL(navigation.goto.mock.calls.at(-1)![0] as string, 'http://localhost');
   const next = JSON.parse(url.searchParams.get('dq')!);
   expect(next.filter).toEqual({ isFavorite: { eq: true } });
@@ -367,6 +368,117 @@ it('shows results in the Library frame with its title, not a bar of its own with
   expect(await screen.findByRole('heading', { level: 1, name: en.library })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: en.back })).toBeNull();
   expect(document.querySelector('.search-bar')).toBeNull();
+});
+
+// FL-1393 (UI review 11-10, B4): the page is titled with the search, and close matches come first.
+describe('search results for words (FL-1393)', () => {
+  const wordSearch = (text: string, filter = {}) => {
+    const query = emptyDiscoveryQuery();
+    query.text = text;
+    query.mode = 'smart';
+    query.filter = filter;
+    state.url = new URL(discoveryUrl(query), 'http://localhost');
+  };
+  const ranked = (ids: string[], closeMatches?: number) => {
+    const response = result(ids);
+    return { ...response, assets: { ...response.assets, closeMatches } };
+  };
+  beforeAll(() => addMessages('dev', en));
+  beforeEach(() => {
+    flags.smartSearch = true;
+  });
+
+  it('titles the page with the search and drops its chip, keeping the other chips', async () => {
+    wordSearch('lake', { city: { eq: 'Banff' } });
+    vi.mocked(searchSmart).mockResolvedValue(ranked(['a']));
+    render(SearchPage);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Results for “lake”' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: en.library })).toBeNull();
+    const chips = document.querySelector('#search-chips')!;
+    expect(chips.querySelectorAll('.search-chip')).toHaveLength(1);
+    expect(chips).not.toHaveTextContent('lake');
+  });
+
+  it('clears the words and keeps the filters; with nothing else it goes back to the whole Library', async () => {
+    wordSearch('lake', { city: { eq: 'Banff' } });
+    vi.mocked(searchSmart).mockResolvedValue(ranked(['a']));
+    const view = render(SearchPage);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Clear search' }));
+    const url = new URL(navigation.goto.mock.calls.at(-1)![0] as string, 'http://localhost');
+    expect(JSON.parse(url.searchParams.get('dq')!)).toMatchObject({ text: '', filter: { city: { eq: 'Banff' } } });
+    view.unmount();
+
+    wordSearch('lake');
+    render(SearchPage);
+    // No chips are left, so the chip row and its Clear all go too.
+    await screen.findByRole('heading', { level: 1, name: 'Results for “lake”' });
+    expect(document.querySelector('#search-chips')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(navigation.goto).toHaveBeenLastCalledWith(Route.photos());
+  });
+
+  it('titles an old-style link the same way', async () => {
+    setQuery({ query: 'lake' });
+    vi.mocked(searchSmart).mockResolvedValue(ranked(['a']));
+    render(SearchPage);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Results for “lake”' })).toBeInTheDocument();
+    expect(document.querySelector('#search-chips')).toBeNull();
+  });
+
+  it('puts close matches under Best matches and the rest under More results with their count', async () => {
+    wordSearch('lake');
+    vi.mocked(searchSmart).mockResolvedValue(ranked(['a', 'b', 'c', 'd', 'e'], 2));
+    render(SearchPage);
+
+    const [best, more] = await screen.findAllByTestId('search-section');
+    expect(within(best).getByRole('heading', { level: 2 })).toHaveTextContent(/^Best matches\s*2$/);
+    expect(
+      within(best)
+        .getAllByTestId('search-result')
+        .map((item) => item.textContent),
+    ).toEqual(['a', 'b']);
+    expect(within(more).getByRole('heading', { level: 2 })).toHaveTextContent(/^More results\s*3 looser matches$/);
+    expect(
+      within(more)
+        .getAllByTestId('search-result')
+        .map((item) => item.textContent),
+    ).toEqual(['c', 'd', 'e']);
+  });
+
+  it('shows one undivided grid when the server gives no count, as a text search does', async () => {
+    wordSearch('lake');
+    vi.mocked(searchSmart).mockResolvedValue(ranked(['a', 'b', 'c']));
+    render(SearchPage);
+
+    expect(await screen.findAllByTestId('search-result')).toHaveLength(3);
+    expect(screen.queryByTestId('search-section')).toBeNull();
+    expect(screen.queryByText('Best matches')).toBeNull();
+  });
+
+  it('shows no More results heading when everything is a close match', async () => {
+    wordSearch('lake');
+    vi.mocked(searchSmart).mockResolvedValue(ranked(['a', 'b', 'c'], 3));
+    render(SearchPage);
+
+    expect(await screen.findAllByTestId('search-result')).toHaveLength(3);
+    expect(screen.queryByText('More results')).toBeNull();
+    expect(screen.queryByText('Best matches')).toBeNull();
+  });
+
+  it('keeps one undivided grid when the search fell back to text', async () => {
+    wordSearch('lake');
+    vi.mocked(searchSmart).mockRejectedValueOnce(
+      Object.assign(new Error('Smart search is not enabled'), { status: 400 }),
+    );
+    vi.mocked(searchAssets).mockResolvedValue(ranked(['a', 'b', 'c'], 1));
+    render(SearchPage);
+
+    expect(await screen.findAllByTestId('search-result')).toHaveLength(3);
+    expect(screen.queryByTestId('search-section')).toBeNull();
+  });
 });
 
 // FL-31: the Ask panel on the empty search page.

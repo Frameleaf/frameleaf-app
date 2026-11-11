@@ -1,16 +1,15 @@
 <script lang="ts">
   /**
-   * A strip of moments inside videos (FL-59, `REC-101`): the presentation shared by moment search
-   * (`VideoMomentResults`) and frame-to-moment search (`VideoMomentsPanel`). Each hit is a time in
-   * one of the person's own videos, shown by its frame when it has one. Choosing a hit is the
-   * caller's; the default opens the video at that moment instead of at its start.
+   * A strip of moments inside videos (FL-59, `REC-101`), for frame-to-moment search
+   * (`VideoMomentsPanel`). Each hit is a time in one of the person's own videos, shown by its frame
+   * when it has one. Choosing a hit is the caller's; the default opens the video at that moment
+   * instead of at its start. A library search shows one tile per video instead (`SearchMoments`).
    */
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { formatMomentTime, frameImagePath } from '$lib/frameleaf/enrichment';
+  import { formatMomentTime } from '$lib/frameleaf/enrichment';
+  import { momentImageUrl } from '$lib/frameleaf/video-moment-image';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
-  import { getAssetMediaUrl } from '$lib/utils';
   import { navigate } from '$lib/utils/navigation';
-  import { AssetMediaSize, getBaseUrl, VideoMomentMatch, type VideoMomentSearchHitDto } from '@frameleaf/sdk';
+  import { VideoMomentMatch, type VideoMomentSearchHitDto } from '@frameleaf/sdk';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -25,20 +24,6 @@
   };
 
   let { hits, title, actions, children, onopen }: Props = $props();
-
-  const frameUrl = (frameId: string) => {
-    const search = new URLSearchParams();
-    for (const [key, value] of Object.entries(authManager.params)) {
-      if (value) {
-        search.set(key, value);
-      }
-    }
-    const text = search.toString();
-    return `${getBaseUrl()}${frameImagePath(frameId)}${text ? `?${text}` : ''}`;
-  };
-
-  const imageFor = (hit: VideoMomentSearchHitDto) =>
-    hit.frameId ? frameUrl(hit.frameId) : getAssetMediaUrl({ id: hit.assetId, size: AssetMediaSize.Thumbnail });
 
   const matchKey = (hit: VideoMomentSearchHitDto) =>
     hit.match === VideoMomentMatch.Visual
@@ -71,7 +56,7 @@
             onclick={() => open(hit)}
             aria-label={$t('frameleaf_moments_play_from', { values: { time: formatMomentTime(hit.timestampMs) } })}
           >
-            <img src={imageFor(hit)} alt="" loading="lazy" />
+            <img src={momentImageUrl(hit)} alt="" loading="lazy" />
             <span class="time">{formatMomentTime(hit.timestampMs)}</span>
           </button>
           <p class="caption">{hit.caption ?? $t(matchKey(hit))}</p>

@@ -60,6 +60,7 @@
     type SearchContextKey,
   } from '$lib/frameleaf/search-chips';
   import { describeFilterChips } from '$lib/frameleaf/search-filters';
+  import { searchSplit } from '$lib/frameleaf/search-results';
   import { withArchivePreference } from '$lib/frameleaf/search-palette';
   import { requestFilterPanel, SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -311,14 +312,13 @@
       });
   });
 
-  const onAssetDelete = (assetIds: string[]) => {
-    const assetIdSet = new Set(assetIds);
-    searchSession.assets = searchResultAssets.filter((asset: AssetResponseDto) => !assetIdSet.has(asset.id));
-  };
+  const onAssetDelete = (assetIds: string[]) => searchSession.removeAssets(assetIds);
 
   const handleSelectAll = () => librarySession.selectAll(searchResultAssets.map((asset) => asset.id));
 
   const timelineAssets = $derived(searchResultAssets.map((asset) => toTimelineAsset(asset)));
+  /** FL-1393: close matches first, looser ones under their own heading; null for one undivided grid. */
+  const split = $derived(searchSplit(timelineAssets, searchSession.closeMatches));
 
   /**
    * FL-45: a short, sanitized summary of what was searched for, so a search download is not just
@@ -529,6 +529,49 @@
     void goto(Route.photos());
   };
 
+  /**
+   * FL-1393 (prototype `searchTitle`): a search for words is titled with them ("Results for “lake”"),
+   * and the words leave the chip row. A spoken-words search keeps its chip, which says what kind it is.
+   */
+  const titleText = $derived(
+    discoveryQuery
+      ? discoveryQuery.mode === 'speech'
+        ? ''
+        : discoveryQuery.text.trim()
+      : typeof terms.query === 'string'
+        ? terms.query.trim()
+        : '',
+  );
+  /** The chips beside the filters: every part of a search from the dialog but the words in the title. */
+  const contextChips = $derived(
+    discoveryQuery ? discoveryContextChips(discoveryQuery).filter((chip) => !(titleText && chip.key === 'text')) : [],
+  );
+  /** An old-style link's own fields, each a chip, again without the words in the title. */
+  const legacyKeys = $derived(
+    discoveryQuery ? [] : getObjectKeys(terms).filter((key) => key !== 'filter' && !(titleText && key === 'query')),
+  );
+  /** Clear search: the same search without its words; with nothing else narrowing it, the whole Library. */
+  const clearSearchText = () => {
+    if (discoveryQuery) {
+      const rest = withoutDiscoveryContext(discoveryQuery, 'text');
+      if (isEmptyDiscoverySearch(rest)) {
+        clearSearch();
+        return;
+      }
+      librarySession.clearSelection();
+      void goto(discoveryUrl(rest));
+      return;
+    }
+    const rest = { ...terms };
+    delete rest.query;
+    if (Object.keys(rest).length === 0) {
+      clearSearch();
+      return;
+    }
+    librarySession.clearSelection();
+    void goto(Route.search(rest));
+  };
+
   /** How many things narrow the results, for the Filter badge (the Library counts the search text too). */
   const chipCount = $derived(
     filterChips.length +
@@ -728,8 +771,7 @@
     librarySession.clearSelection();
 
     if (terms.isNotInAlbum || terms.filter?.hasAlbums?.eq === false) {
-      const assetIdSet = new Set(assetIds);
-      searchSession.assets = searchResultAssets.filter((asset) => !assetIdSet.has(asset.id));
+      searchSession.removeAssets(assetIds);
     }
   };
 
@@ -808,7 +850,15 @@
         chip, Clear all at the end), then the results toolbar over the grid.
       -->
       <header class="search-head">
-        <h1 class="search-title">{$t('library')}</h1>
+        {#if titleText}
+          <!-- FL-1393: a search for words is titled with what was asked, Clear search beside it. -->
+          <h1 class="search-title">{$t('frameleaf_search_results_for', { values: { query: titleText } })}</h1>
+          <button type="button" class="search-clear-text" onclick={clearSearchText}>
+            {$t('frameleaf_search_results_clear')}
+          </button>
+        {:else}
+          <h1 class="search-title">{$t('library')}</h1>
+        {/if}
       </header>
       <!-- FL-707 P2/12 (LibraryView `.fl-library-layouts`): the layout tabs and what each is for. -->
       <div class="frameleaf search-layouts" data-theme={appTheme}>
@@ -816,81 +866,83 @@
         <LibraryLayoutSwitch session={librarySession} />
       </div>
       <!-- Prototype `.active-filter-bar`; the Library's chips (FilterChip); an old-style link keeps the palette's SearchChip. -->
-      <section
-        id="search-chips"
-        class="frameleaf search-chips"
-        data-theme={appTheme}
-        aria-label={$t('frameleaf_search_active_filters')}
-      >
-        <div class="search-chip-list">
-          {#if discoveryQuery}
-            <!-- FL-48: the text, the similar-photo reference and the space are chips of their own; the
-                 search text leads, as in the Library. -->
-            {#each discoveryContextChips(discoveryQuery) as chip (chip.key)}
-              <!-- Prototype: the search text is its own words beside the magnifier ("lake"). -->
-              {@const label =
-                chip.key === 'text' && discoveryQuery.mode !== 'speech' && chip.value
-                  ? chip.value
-                  : chip.value
-                    ? `${$t(chip.labelKey)}: ${chip.value}`
-                    : $t(chip.labelKey)}
+      {#if contextChips.length + filterChips.length + legacyKeys.length > 0}
+        <section
+          id="search-chips"
+          class="frameleaf search-chips"
+          data-theme={appTheme}
+          aria-label={$t('frameleaf_search_active_filters')}
+        >
+          <div class="search-chip-list">
+            {#if discoveryQuery}
+              <!-- FL-48: the similar-photo reference and the space are chips of their own, and so are the
+                 words of a spoken-words search; other words are the page's title (FL-1393). -->
+              {#each contextChips as chip (chip.key)}
+                <!-- Prototype: the search text is its own words beside the magnifier ("lake"). -->
+                {@const label =
+                  chip.key === 'text' && discoveryQuery.mode !== 'speech' && chip.value
+                    ? chip.value
+                    : chip.value
+                      ? `${$t(chip.labelKey)}: ${chip.value}`
+                      : $t(chip.labelKey)}
+                <FilterChip
+                  {label}
+                  icon={chip.key === 'text' ? mdiMagnify : undefined}
+                  removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: label } })}
+                  onRemove={() => removeContext(chip.key)}
+                />
+              {/each}
+            {/if}
+            {#each filterChips as chip (chip.field)}
               <FilterChip
-                {label}
-                icon={chip.key === 'text' ? mdiMagnify : undefined}
-                removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: label } })}
-                onRemove={() => removeContext(chip.key)}
+                label={chip.label}
+                removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: chip.label } })}
+                onRemove={() => removeFilterCondition(chip.field)}
+                onOpen={discoveryQuery ? () => requestFilterPanel(filterSectionForField(chip.field)) : undefined}
               />
             {/each}
-          {/if}
-          {#each filterChips as chip (chip.field)}
-            <FilterChip
-              label={chip.label}
-              removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: chip.label } })}
-              onRemove={() => removeFilterCondition(chip.field)}
-              onOpen={discoveryQuery ? () => requestFilterPanel(filterSectionForField(chip.field)) : undefined}
-            />
-          {/each}
-          {#if !discoveryQuery}
-            {#each getObjectKeys(terms).filter((key) => key !== 'filter') as searchKey (searchKey)}
-              {@const value = terms[searchKey]}
-              {@const name = getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
-              <SearchChip
-                removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: name } })}
-                onRemove={() => removeFilter(searchKey as keyof SearchTerms)}
-              >
-                {name}{#if value !== true && searchKey !== 'queryAssetId'}:
-                  {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
-                    {getHumanReadableDate(value)}
-                  {:else if searchKey === 'personIds' && Array.isArray(value)}
-                    {#key personNamesVersion}
-                      {#await getPersonName(value) then personName}
-                        {personName}
+            {#if !discoveryQuery}
+              {#each legacyKeys as searchKey (searchKey)}
+                {@const value = terms[searchKey]}
+                {@const name = getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
+                <SearchChip
+                  removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: name } })}
+                  onRemove={() => removeFilter(searchKey as keyof SearchTerms)}
+                >
+                  {name}{#if value !== true && searchKey !== 'queryAssetId'}:
+                    {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
+                      {getHumanReadableDate(value)}
+                    {:else if searchKey === 'personIds' && Array.isArray(value)}
+                      {#key personNamesVersion}
+                        {#await getPersonName(value) then personName}
+                          {personName}
+                        {/await}
+                      {/key}
+                    {:else if searchKey === 'petIds' && Array.isArray(value)}
+                      {#await getPetNames(value) then petNames}
+                        {petNames}
                       {/await}
-                    {/key}
-                  {:else if searchKey === 'petIds' && Array.isArray(value)}
-                    {#await getPetNames(value) then petNames}
-                      {petNames}
-                    {/await}
-                  {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
-                    {#await getTagNames(value) then tagNames}
-                      {tagNames}
-                    {/await}
-                  {:else if searchKey === 'rating'}
-                    {$t('rating_count', { values: { count: value ?? 0 } })}
-                  {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
-                    {getHumanReadableImageEnrichmentFilter(value)}
-                  {:else if value === null || value === ''}
-                    {$t('unknown')}
-                  {:else}
-                    {value}
+                    {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
+                      {#await getTagNames(value) then tagNames}
+                        {tagNames}
+                      {/await}
+                    {:else if searchKey === 'rating'}
+                      {$t('rating_count', { values: { count: value ?? 0 } })}
+                    {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
+                      {getHumanReadableImageEnrichmentFilter(value)}
+                    {:else if value === null || value === ''}
+                      {$t('unknown')}
+                    {:else}
+                      {value}
+                    {/if}
                   {/if}
-                {/if}
-              </SearchChip>
-            {/each}
-          {/if}
-        </div>
-        <button type="button" class="search-clear" onclick={clearSearch}>{$t('clear_all')}</button>
-      </section>
+                </SearchChip>
+              {/each}
+            {/if}
+          </div>
+          <button type="button" class="search-clear" onclick={clearSearch}>{$t('clear_all')}</button>
+        </section>
+      {/if}
       <!-- Prototype `.results-toolbar`: the Library's own toolbar (LibraryView), over this search. -->
       <div class="frameleaf search-toolbar" data-theme={appTheme}>
         <ResultsToolbar
@@ -922,6 +974,17 @@
       </div>
     {/if}
 
+    <!-- FL-1393 (prototype `.search-section`): close matches first, the looser ones under their own heading. -->
+    {#snippet bestHeading()}
+      <h2 class="search-section">{$t('frameleaf_search_results_best')} <small>{split?.best.length}</small></h2>
+    {/snippet}
+    {#snippet moreHeading()}
+      <h2 class="search-section">
+        {$t('frameleaf_search_results_more')}
+        <small>{$t('frameleaf_search_results_looser', { values: { count: split?.rest.length ?? 0 } })}</small>
+      </h2>
+    {/snippet}
+
     {#snippet loadedCount()}
       <!-- More results are still to load: the count says so ("48+ items"). -->
       <p class="search-count" role="status">
@@ -945,7 +1008,7 @@
       {/if}
       {#if typeof terms.query === 'string' && terms.query.trim()}
         <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
-        <VideoMomentResults query={terms.query} />
+        <VideoMomentResults query={terms.query} assets={searchResultAssets} />
       {/if}
       {#if discoveryQuery?.mode === 'speech'}
         <SpokenWordsResults query={discoveryQuery} />
@@ -997,6 +1060,12 @@
           <div class="search-grid">
             <ResultsView
               assets={timelineAssets}
+              sections={split
+                ? [
+                    { assets: split.best, header: bestHeading },
+                    { assets: split.rest, header: moreHeading },
+                  ]
+                : undefined}
               layout={listView ? 'list' : undefined}
               downloadFileName={searchDownloadFileName}
               onEndReached={() => void loadNextPage()}
@@ -1177,8 +1246,41 @@
   .search-chips {
     position: relative;
   }
+  /* Prototype `h1.search-title`: the title, and Clear search on its baseline. */
   .search-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--fl-space-1) var(--fl-space-4);
     padding: calc(var(--fl-page-top) - var(--fl-space-2)) 0 var(--fl-space-3);
+  }
+  .search-clear-text {
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--fl-accent);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .search-clear-text:hover {
+    text-decoration: underline;
+  }
+  /* Prototype `.search-section`: a heading over each part of the results, its count beside it. */
+  .search-section {
+    display: flex;
+    align-items: baseline;
+    gap: var(--fl-space-2);
+    margin: 0;
+    padding: var(--fl-space-5) 0 var(--fl-space-3);
+    color: var(--fl-text);
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .search-section small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    font-weight: 400;
   }
   .search-head::after,
   .search-layouts::after,
@@ -1192,7 +1294,9 @@
   }
   /* The Library's title (`.fl-library-title`). */
   .search-title {
+    min-width: 0;
     margin: 0;
+    overflow-wrap: anywhere;
     color: var(--fl-text);
     font-size: 30px;
     font-weight: 700;
@@ -1354,7 +1458,8 @@
   }
   @media (pointer: coarse) {
     .search-tool,
-    .search-clear {
+    .search-clear,
+    .search-clear-text {
       min-height: var(--fl-control-height-touch);
     }
   }

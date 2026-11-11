@@ -229,34 +229,14 @@ select
       asset_lock
     where
       asset_lock."assetId" = "asset"."id"
-  ) as "isLocked"
-from
-  "asset"
-  inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
-  inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
-where
-  "asset"."libraryScope" in ($1, $2)
-  and not exists (
-    select
-      1
-    from
-      asset_lock
-    where
-      asset_lock."assetId" = "asset"."id"
-  )
-  and "asset"."fileCreatedAt" >= $3
-  and "asset_exif"."lensModel" = $4
-  and "asset"."ownerId" = any ($5::uuid[])
-  and "asset"."isFavorite" = $6
-  and "asset"."deletedAt" is null
-order by
+  ) as "isLocked",
   (
-    (smart_search.embedding <=> $7) - $8 * coalesce(
+    (smart_search.embedding <=> $1) - $2 * coalesce(
       greatest(
         0,
-        $9 - (
+        $3 - (
           select
-            embedding <=> $10
+            embedding <=> $4
           from
             smart_search_description
           where
@@ -265,13 +245,70 @@ order by
       ),
       0
     )
-  ),
+  ) as "searchDistance"
+from
+  "asset"
+  inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+  inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
+where
+  "asset"."libraryScope" in ($5, $6)
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+  and "asset"."fileCreatedAt" >= $7
+  and "asset_exif"."lensModel" = $8
+  and "asset"."ownerId" = any ($9::uuid[])
+  and "asset"."isFavorite" = $10
+  and "asset"."deletedAt" is null
+order by
+  "searchDistance",
   "asset"."id" asc
 limit
   $11
 offset
   $12
 commit
+
+-- SearchRepository.getUnrelatedSearchDistance
+with
+  "sample" as materialized (
+    select
+      "asset"."id"
+    from
+      "asset"
+    where
+      "asset"."ownerId" = any ($1::uuid[])
+      and "asset"."deletedAt" is null
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+    order by
+      "asset"."checksum"
+    limit
+      $2
+  )
+select
+  percentile_cont(0.9) within group (
+    order by
+      smart_search.embedding <=> $3
+  ) as "unrelated",
+  count(*) as "count"
+from
+  "sample"
+  inner join "smart_search" on "smart_search"."assetId" = "sample"."id"
 
 -- SearchRepository.getEmbedding
 select
@@ -5138,17 +5175,33 @@ select
       asset_lock
     where
       asset_lock."assetId" = "asset"."id"
-  ) as "isLocked"
+  ) as "isLocked",
+  (
+    (smart_search.embedding <=> $1) - $2 * coalesce(
+      greatest(
+        0,
+        $3 - (
+          select
+            embedding <=> $4
+          from
+            smart_search_description
+          where
+            "assetId" = asset.id
+        )
+      ),
+      0
+    )
+  ) as "searchDistance"
 from
   "asset"
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
-  "asset"."libraryScope" in ($1, $2)
+  "asset"."libraryScope" in ($5, $6)
   and (
-    "asset"."ownerId" = any ($3::uuid[])
+    "asset"."ownerId" = any ($7::uuid[])
     and (
-      "asset"."ownerId" = $4::uuid
+      "asset"."ownerId" = $8::uuid
       or (
         "asset"."deletedAt" is null
         and "asset"."visibility" in ('timeline', 'hidden')
@@ -5164,30 +5217,15 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5::uuid
+    or "asset"."ownerId" = $9::uuid
   )
   and (
-    "asset"."ownerId" = $6::uuid
+    "asset"."ownerId" = $10::uuid
     or "asset"."deletedAt" is null
   )
   and true
 order by
-  (
-    (smart_search.embedding <=> $7) - $8 * coalesce(
-      greatest(
-        0,
-        $9 - (
-          select
-            embedding <=> $10
-          from
-            smart_search_description
-          where
-            "assetId" = asset.id
-        )
-      ),
-      0
-    )
-  ),
+  "searchDistance",
   "asset"."id" asc
 limit
   $11
@@ -5237,17 +5275,33 @@ select
       asset_lock
     where
       asset_lock."assetId" = "asset"."id"
-  ) as "isLocked"
+  ) as "isLocked",
+  (
+    (smart_search.embedding <=> $1) - $2 * coalesce(
+      greatest(
+        0,
+        $3 - (
+          select
+            embedding <=> $4
+          from
+            smart_search_description
+          where
+            "assetId" = asset.id
+        )
+      ),
+      0
+    )
+  ) as "searchDistance"
 from
   "asset"
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
-  "asset"."libraryScope" in ($1, $2)
+  "asset"."libraryScope" in ($5, $6)
   and (
-    "asset"."ownerId" = any ($3::uuid[])
+    "asset"."ownerId" = any ($7::uuid[])
     and (
-      "asset"."ownerId" = $4::uuid
+      "asset"."ownerId" = $8::uuid
       or (
         "asset"."deletedAt" is null
         and "asset"."visibility" in ('timeline', 'hidden')
@@ -5263,33 +5317,18 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5::uuid
+    or "asset"."ownerId" = $9::uuid
   )
   and (
-    "asset"."ownerId" = $6::uuid
+    "asset"."ownerId" = $10::uuid
     or "asset"."deletedAt" is null
   )
   and (
-    "asset"."fileCreatedAt" < $7
-    and "asset"."fileCreatedAt" >= $8
+    "asset"."fileCreatedAt" < $11
+    and "asset"."fileCreatedAt" >= $12
   )
 order by
-  (
-    (smart_search.embedding <=> $9) - $10 * coalesce(
-      greatest(
-        0,
-        $11 - (
-          select
-            embedding <=> $12
-          from
-            smart_search_description
-          where
-            "assetId" = asset.id
-        )
-      ),
-      0
-    )
-  ),
+  "searchDistance",
   "asset"."id" asc
 limit
   $13
@@ -5339,17 +5378,33 @@ select
       asset_lock
     where
       asset_lock."assetId" = "asset"."id"
-  ) as "isLocked"
+  ) as "isLocked",
+  (
+    (smart_search.embedding <=> $1) - $2 * coalesce(
+      greatest(
+        0,
+        $3 - (
+          select
+            embedding <=> $4
+          from
+            smart_search_description
+          where
+            "assetId" = asset.id
+        )
+      ),
+      0
+    )
+  ) as "searchDistance"
 from
   "asset"
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
-  "asset"."libraryScope" in ($1, $2)
+  "asset"."libraryScope" in ($5, $6)
   and (
-    "asset"."ownerId" = any ($3::uuid[])
+    "asset"."ownerId" = any ($7::uuid[])
     and (
-      "asset"."ownerId" = $4::uuid
+      "asset"."ownerId" = $8::uuid
       or (
         "asset"."deletedAt" is null
         and "asset"."visibility" in ('timeline', 'hidden')
@@ -5365,30 +5420,15 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5::uuid
+    or "asset"."ownerId" = $9::uuid
   )
   and (
-    "asset"."ownerId" = $6::uuid
+    "asset"."ownerId" = $10::uuid
     or "asset"."deletedAt" is null
   )
   and true
 order by
-  (
-    (smart_search.embedding <=> $7) - $8 * coalesce(
-      greatest(
-        0,
-        $9 - (
-          select
-            embedding <=> $10
-          from
-            smart_search_description
-          where
-            "assetId" = asset.id
-        )
-      ),
-      0
-    )
-  ),
+  "searchDistance",
   "asset"."id" asc
 limit
   $11
