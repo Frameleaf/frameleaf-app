@@ -42,7 +42,7 @@ export function offlineAlbumHost(request: Request, browser: boolean): string {
   if (
     !host ||
     !/^127\.0\.0\.1(?::[1-9][0-9]{0,4})?$/.test(host) ||
-    Number(host.split(':')[1] ?? 80) > 65_535 ||
+    Number(host.split(':', 2)[1] ?? 80) > 65_535 ||
     (peer !== '127.0.0.1' && peer !== '::ffff:127.0.0.1') ||
     hasSessionHeader ||
     Object.keys(request.query).length > 0 ||
