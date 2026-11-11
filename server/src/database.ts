@@ -286,10 +286,13 @@ export type Session = {
   isPendingSyncReset: boolean;
 };
 
-/** FL-1196's capture details stay out: only the library's own reports read them. */
+/**
+ * FL-1196's capture details stay out: only the library's own reports read them. So do FL-912's two EXIF offsets,
+ * which only the Date & Time Doctor reads.
+ */
 export type Exif = Omit<
   Selectable<AssetExifTable>,
-  'updatedAt' | 'updateId' | 'lockedProperties' | keyof CaptureDetails
+  'updatedAt' | 'updateId' | 'lockedProperties' | 'offsetTimeOriginal' | 'offsetTime' | keyof CaptureDetails
 >;
 
 export type Person = {
