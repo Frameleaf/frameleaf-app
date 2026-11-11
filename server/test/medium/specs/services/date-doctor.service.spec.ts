@@ -1,21 +1,21 @@
 import { Kysely, sql } from 'kysely';
+import { vi } from 'vitest';
+import type { JobRepository } from 'src/repositories/job.repository.js';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
-import type { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { DB } from 'src/schema/index.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
 import { TimelineService } from 'src/services/timeline.service.js';
-import { DateFindingCause, type DateFinding } from 'src/utils/date-doctor.js';
+import { type DateFinding, DateFindingCause } from 'src/utils/date-doctor.js';
 import { TimelineDatesToCheck } from 'src/utils/date-sanity.js';
-import { buildDateDoctorFixture, scoreFindings, type FixturePhoto } from 'test/fixtures/date-doctor.fixture.js';
+import { type FixturePhoto, buildDateDoctorFixture, scoreFindings } from 'test/fixtures/date-doctor.fixture.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
-import { vi } from 'vitest';
 
 /** FL-912: the Date & Time Doctor's scan, on a real database. */
 let db: Kysely<DB>;

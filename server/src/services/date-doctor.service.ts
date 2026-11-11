@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { OnJob } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { DateDoctorFindingsResponseDto, DateDoctorGroup } from 'src/dtos/date-doctor.dto.js';
+import type { JobOf } from 'src/types.js';
+import { OnJob } from 'src/decorators.js';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
 import { publishJobResult } from 'src/queue/context.js';
 import { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import type { JobOf } from 'src/types.js';
 import { detectDateFindings } from 'src/utils/date-doctor.js';
 
 /**
@@ -37,7 +37,7 @@ export class DateDoctorService {
     for (const row of rows) {
       let group = groups.get(row.groupKey);
       if (!group) {
-        const [camera, day] = row.groupKey.split('|');
+        const [camera, day] = row.groupKey.split('|', 2);
         group = { groupKey: row.groupKey, camera: camera === 'unknown' ? null : camera, day, findings: [] };
         groups.set(row.groupKey, group);
       }
@@ -51,7 +51,7 @@ export class DateDoctorService {
         confidence: row.confidence,
       });
     }
-    return { total: rows.length, groups: [...groups.values()] };
+    return { total: rows.length, groups: groups.values().toArray() };
   }
 
   @OnJob({ name: JobName.DateDoctorScanQueueAll, queue: QueueName.IntegrityCheck })

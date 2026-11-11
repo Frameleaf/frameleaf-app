@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { DateFinding, DateScanRow } from 'src/utils/date-doctor.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
-import type { DateFinding, DateScanRow } from 'src/utils/date-doctor.js';
 import { hasDateToCheck } from 'src/utils/date-sanity.js';
 import { isDefaultVisible, isNotLocked } from 'src/utils/locked.js';
 

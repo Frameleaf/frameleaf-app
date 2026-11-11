@@ -1,7 +1,6 @@
 import { AccountEventService } from 'src/services/account-event.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumChangeRunService } from 'src/services/album-change-run.service.js';
-import { DateDoctorService } from 'src/services/date-doctor.service.js';
 import { AlbumCleanupService } from 'src/services/album-cleanup.service.js';
 import { AlbumDateHealService } from 'src/services/album-date-heal.service.js';
 import { AlbumItemsService } from 'src/services/album-items.service.js';
@@ -52,6 +51,7 @@ import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { DateDoctorService } from 'src/services/date-doctor.service.js';
 import { DescriptionTagCleanupService } from 'src/services/description-tag-cleanup.service.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';

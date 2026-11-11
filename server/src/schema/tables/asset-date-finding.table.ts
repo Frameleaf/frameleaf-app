@@ -1,7 +1,7 @@
 import { Column, ForeignKeyColumn, PrimaryColumn, Table } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
-import { AssetTable } from 'src/schema/tables/asset.table.js';
 import type { DateFindingCause } from 'src/utils/date-doctor.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 /**
  * FL-912: what the Date & Time Doctor found wrong with a photo's date or zone, and what it proposes, one row per

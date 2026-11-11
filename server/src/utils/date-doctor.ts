@@ -240,9 +240,17 @@ const neighbourZone = (rows: DateScanRow[], trusted: (string | undefined)[], ind
   }
   let best: Majority | undefined;
   for (const [offset, zones] of byOffset) {
-    const count = [...zones.values()].reduce((sum, n) => sum + n, 0);
+    let count = 0;
+    let zone = '';
+    let most = 0;
+    for (const [name, n] of zones) {
+      count += n;
+      if (n > most) {
+        zone = name;
+        most = n;
+      }
+    }
     if (!best || count > best.count) {
-      const zone = [...zones.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))[0];
       best = { zone, offset, count, share: 0 };
     }
   }
@@ -358,7 +366,7 @@ export const detectDateFindings = (input: DateScanRow[], now: Date = new Date())
   const trusted = rows.map((row) => trustedZone(row));
   const findings: DateFinding[] = [];
 
-  rows.forEach((row, index) => {
+  for (const [index, row] of rows.entries()) {
     const named = dateFromFileName(row.originalFileName, now);
     const fromNameDate = named ? namedDate(named, row.timeZone) : null;
 
@@ -380,7 +388,7 @@ export const detectDateFindings = (input: DateScanRow[], now: Date = new Date())
     }
 
     if (row.dateLocked || row.zoneLocked) {
-      return;
+      continue;
     }
 
     // (e) the name holds a date far from the stored one: the stored one is a file date
@@ -402,10 +410,10 @@ export const detectDateFindings = (input: DateScanRow[], now: Date = new Date())
       if (places.length > 0 && stored !== undefined && places.every((zone) => offsetAt(zone, row.takenAt) !== stored)) {
         findings.push(finding(row, DateFindingCause.GpsZoneMismatch, row.takenAt, places[0], 0.85));
       }
-      return;
+      continue;
     }
     if (hasGps(row)) {
-      return;
+      continue;
     }
 
     // (a) the offsets disagree, and the photos around it side with `OffsetTime`: same wall time, their zone
@@ -425,7 +433,7 @@ export const detectDateFindings = (input: DateScanRow[], now: Date = new Date())
           ),
         );
       }
-      return;
+      continue;
     }
 
     // (c) no zone and no GPS: the zone of the photos around it
@@ -443,7 +451,7 @@ export const detectDateFindings = (input: DateScanRow[], now: Date = new Date())
         );
       }
     }
-  });
+  }
 
   // (d) clock drift, per camera without GPS and local day, against the other cameras' GPS-anchored photos
   const anchors = rows.filter((row) => hasGps(row) && row.timeZone && !row.toCheck);
@@ -451,7 +459,12 @@ export const detectDateFindings = (input: DateScanRow[], now: Date = new Date())
   for (const row of rows) {
     if (!hasGps(row) && cameraKey(row) && !row.toCheck && !row.dateLocked && !row.zoneLocked) {
       const key = groupKeyOf(row);
-      groups.set(key, [...(groups.get(key) ?? []), row]);
+      const group = groups.get(key);
+      if (group) {
+        group.push(row);
+      } else {
+        groups.set(key, [row]);
+      }
     }
   }
   for (const group of groups.values()) {

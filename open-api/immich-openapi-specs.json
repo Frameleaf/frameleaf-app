@@ -26029,6 +26029,91 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/date-doctor/findings": {
+      "get": {
+        "description": "Your photos whose date or time zone looks wrong, with what the Doctor proposes and why, grouped by camera and day.",
+        "operationId": "getDateDoctorFindings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DateDoctorFindingsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Date & Time Doctor findings",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/date-doctor/scan": {
+      "post": {
+        "description": "Look through your photos for wrong dates and time zones now. Nothing changes; the findings update when it ends.",
+        "operationId": "scanDateDoctor",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check dates again",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/desktop/accounts/{id}/approval": {
       "get": {
         "operationId": "readDesktopMemberApproval",
@@ -73343,6 +73428,10 @@
       },
       "AdminConfigMetadataDto": {
         "properties": {
+          "dateFromFileName": {
+            "description": "When a file has no date of its own, use the one in its name (IMG_20230512_134501, a screenshot)",
+            "type": "boolean"
+          },
           "faces": {
             "$ref": "#/components/schemas/AdminConfigFacesDto"
           }
@@ -95520,6 +95609,106 @@
         },
         "type": "object"
       },
+      "DateDoctorFindingDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "cause": {
+            "$ref": "#/components/schemas/DateFindingCause"
+          },
+          "confidence": {
+            "description": "How sure the Doctor is, 0 to 1",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "currentDate": {
+            "description": "When the photo is dated now",
+            "type": "string"
+          },
+          "currentZone": {
+            "description": "Its time zone now",
+            "nullable": true,
+            "type": "string"
+          },
+          "proposedDate": {
+            "description": "When it should be dated; null when there is nothing to go on",
+            "nullable": true,
+            "type": "string"
+          },
+          "proposedZone": {
+            "description": "The time zone it should have",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "cause",
+          "confidence",
+          "currentDate",
+          "currentZone",
+          "proposedDate",
+          "proposedZone"
+        ],
+        "type": "object"
+      },
+      "DateDoctorFindingsResponseDto": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/DateDoctorGroupDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Findings in all groups",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "groups",
+          "total"
+        ],
+        "type": "object"
+      },
+      "DateDoctorGroupDto": {
+        "properties": {
+          "camera": {
+            "description": "The camera, when the photos say",
+            "nullable": true,
+            "type": "string"
+          },
+          "day": {
+            "description": "The local day, YYYY-MM-DD",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/DateDoctorFindingDto"
+            },
+            "type": "array"
+          },
+          "groupKey": {
+            "description": "Camera and local day",
+            "type": "string"
+          }
+        },
+        "required": [
+          "camera",
+          "day",
+          "findings",
+          "groupKey"
+        ],
+        "type": "object"
+      },
       "DateFilter": {
         "properties": {
           "eq": {
@@ -95603,6 +95792,19 @@
           }
         },
         "type": "object"
+      },
+      "DateFindingCause": {
+        "description": "Why the date or zone looks wrong",
+        "enum": [
+          "offset-mismatch",
+          "gps-zone-mismatch",
+          "missing-zone",
+          "burst-drift",
+          "filename-date",
+          "future-date",
+          "epoch-date"
+        ],
+        "type": "string"
       },
       "DecodeRefusal": {
         "description": "Why this server cannot decode a video source",

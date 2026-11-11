@@ -1,6 +1,5 @@
 import { AccountEventAdminController, AccountEventController } from 'src/controllers/account-event.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
-import { DateDoctorController } from 'src/controllers/date-doctor.controller.js';
 import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
 import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
 import { AlbumMergeController } from 'src/controllers/album-merge.controller.js';
@@ -43,6 +42,7 @@ import { ConfigAdminController } from 'src/controllers/config-admin.controller.j
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
+import { DateDoctorController } from 'src/controllers/date-doctor.controller.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { DesktopOfflineAlbumController } from 'src/controllers/desktop-offline-album.controller.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';

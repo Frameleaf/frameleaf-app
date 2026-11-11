@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { DateFindingCause, type DateFinding, type DateScanRow } from 'src/utils/date-doctor.js';
+import { type DateFinding, DateFindingCause, type DateScanRow } from 'src/utils/date-doctor.js';
 import { dateProblem } from 'src/utils/date-sanity.js';
 
 /**
@@ -98,7 +98,9 @@ export const buildDateDoctorFixture = (): FixturePhoto[] => {
   seed = 912;
   counter = 0;
   const photos: FixturePhoto[] = [];
-  const add = (...items: FixturePhoto[]) => photos.push(...items);
+  const add = (...items: FixturePhoto[]) => {
+    photos.push(...items);
+  };
 
   // ---- (f) future dates: a camera clock set years ahead; half carry their real date in the name (40)
   for (let i = 0; i < 40; i++) {

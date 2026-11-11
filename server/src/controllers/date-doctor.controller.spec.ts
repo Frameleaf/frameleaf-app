@@ -1,8 +1,8 @@
 import request from 'supertest';
+import { vi } from 'vitest';
 import { DateDoctorController } from 'src/controllers/date-doctor.controller.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
 import { ControllerContext, controllerSetup } from 'test/utils.js';
-import { vi } from 'vitest';
 
 describe(DateDoctorController.name, () => {
   let ctx: ControllerContext;

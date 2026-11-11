@@ -1,12 +1,12 @@
-import { JobName } from 'src/enum.js';
+import { vi } from 'vitest';
 import type { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { JobName } from 'src/enum.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
-import { DateFindingCause, dateFromFileName, detectDateFindings, type DateScanRow } from 'src/utils/date-doctor.js';
-import { FIXTURE_NOW, buildDateDoctorFixture, scoreFindings } from 'test/fixtures/date-doctor.fixture.js';
+import { DateFindingCause, dateFromFileName, type DateScanRow, detectDateFindings } from 'src/utils/date-doctor.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { vi } from 'vitest';
+import { FIXTURE_NOW, buildDateDoctorFixture, scoreFindings } from 'test/fixtures/date-doctor.fixture.js';
 
 const now = new Date('2026-06-01T12:00:00Z');
 

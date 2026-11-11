@@ -3,7 +3,6 @@ import { AccountEventRepository } from 'src/repositories/account-event.repositor
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
-import { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
 import { AlbumCleanupRepository } from 'src/repositories/album-cleanup.repository.js';
 import { AlbumMergeRepository } from 'src/repositories/album-merge.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
@@ -42,6 +41,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
