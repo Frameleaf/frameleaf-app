@@ -1,0 +1,1019 @@
+diff --git a/src/features/media-library/components/transcribe-dialog.test.tsx b/src/features/media-library/components/transcribe-dialog.test.tsx
+--- a/src/features/media-library/components/transcribe-dialog.test.tsx
++++ b/src/features/media-library/components/transcribe-dialog.test.tsx
+@@ -342,6 +342,34 @@
+     })
+   })
+
++  it('starts a local caption draft with compact Whisper and hybrid weights', () => {
++    const onStart = vi.fn()
++    render(
++      <TranscribeDialog
++        open
++        onOpenChange={vi.fn()}
++        fileName="clip.wav"
++        hasTranscript={false}
++        isRunning={false}
++        progressPercent={null}
++        progressLabel=""
++        captionDraft
++        onStart={onStart}
++        onCancel={vi.fn()}
++      />,
++    )
++
++    fireEvent.click(
++      screen.getByRole('button', { name: /Prepare caption draft|transcript.prepareCaptionDraft/ }),
++    )
++    expect(onStart).toHaveBeenCalledWith(
++      expect.objectContaining({
++        model: 'whisper-tiny',
++        quantization: 'hybrid',
++      }),
++    )
++  })
++
+   it('keeps this device only when the host cannot run Frameleaf Cloud', () => {
+     render(
+       <TranscribeDialog
+diff --git a/src/features/media-library/components/transcribe-dialog.tsx b/src/features/media-library/components/transcribe-dialog.tsx
+--- a/src/features/media-library/components/transcribe-dialog.tsx
++++ b/src/features/media-library/components/transcribe-dialog.tsx
+@@ -58,6 +58,7 @@
+   /** Secondary line: a byte counter while downloading, prose while compiling. */
+   progressDetail?: string | null
+   errorMessage?: string | null
++  captionDraft?: boolean
+   onStart: (values: TranscribeDialogValues) => void
+   onCancel: () => void
+   /** Frameleaf FL-1304: offers Run on → Frameleaf Cloud. `language` is empty for auto-detect. */
+@@ -75,13 +76,17 @@
+   progressLabel,
+   progressDetail = null,
+   errorMessage,
++  captionDraft = false,
+   onStart,
+   onCancel,
+   onStartCloud,
+ }: TranscribeDialogProps) {
+   const { t } = useTranslation()
+-  const defaultModel = useSettingsStore((s) => s.defaultWhisperModel)
+-  const defaultQuantization = useSettingsStore((s) => s.defaultWhisperQuantization)
++  const savedModel = useSettingsStore((s) => s.defaultWhisperModel)
++  const savedQuantization = useSettingsStore((s) => s.defaultWhisperQuantization)
++  // The caption draft defaults to the compact seven-file Whisper profile admitted by Studio.
++  const defaultModel = captionDraft ? 'whisper-tiny' : savedModel
++  const defaultQuantization = captionDraft ? 'hybrid' : savedQuantization
+   const defaultLanguage = useSettingsStore((s) => s.defaultWhisperLanguage)
+   const clearMediaSkimPreview = useEditorStore((s) => s.clearMediaSkimPreview)
+   const clearCompoundClipSkimPreview = useEditorStore((s) => s.clearCompoundClipSkimPreview)
+@@ -183,6 +188,13 @@
+         </DialogHeader>
+
+         <div className="space-y-3">
++          {!onCloud && (
++            <p className="text-sm text-muted-foreground">
++              {t('transcript.localPrivacy', {
++                defaultValue: 'Transcription runs on this device. Model files may be downloaded.',
++              })}
++            </p>
++          )}
+           {onStartCloud && (
+             <div className="space-y-1.5">
+               <Label htmlFor="transcribe-run-on" className="text-sm">
+@@ -355,7 +367,11 @@
+                   {t('transcript.cloud.seePrice')}
+                 </Button>
+               ) : (
+-                <Button onClick={handleStart}>{t('media.transcribe.start')}</Button>
++                <Button onClick={handleStart}>
++                  {captionDraft
++                    ? t('transcript.prepareCaptionDraft', { defaultValue: 'Prepare caption draft' })
++                    : t('media.transcribe.start')}
++                </Button>
+               )}
+             </>
+           )}
+diff --git a/src/features/media-library/services/media-transcription-runner.ts b/src/features/media-library/services/media-transcription-runner.ts
+--- a/src/features/media-library/services/media-transcription-runner.ts
++++ b/src/features/media-library/services/media-transcription-runner.ts
+@@ -18,6 +18,7 @@
+   model?: MediaTranscriptModel
+   quantization?: MediaTranscriptQuantization
+   language?: string
++  draft?: boolean
+   /**
+    * Defaults to true. Keep this centralized so all UI launch paths either get
+    * the same throttled background progress or intentionally opt out.
+@@ -99,6 +100,7 @@
+         model,
+         quantization: options.quantization,
+         language: options.language || undefined,
++        draft: options.draft,
+         onQueueStatusChange: createQueueStatusHandler(mediaId, options.onQueueStatusChange),
+         onProgress: createProgressHandler(mediaId, updateProgress, options.onProgress),
+       })
+@@ -117,7 +119,9 @@
+       transcript = await transcribeWithModel(fallbackModel)
+     }
+
+-    useMediaLibraryStore.getState().setTranscriptStatus(mediaId, 'ready')
++    useMediaLibraryStore
++      .getState()
++      .setTranscriptStatus(mediaId, options.draft ? previousStatus : 'ready')
+     useMediaLibraryStore.getState().clearTranscriptProgress(mediaId)
+     return { status: 'completed', transcript }
+   } catch (error) {
+diff --git a/src/features/media-library/services/media-transcription-service.test.ts b/src/features/media-library/services/media-transcription-service.test.ts
+--- a/src/features/media-library/services/media-transcription-service.test.ts
++++ b/src/features/media-library/services/media-transcription-service.test.ts
+@@ -704,7 +704,7 @@
+     expect(saveTranscriptMock).toHaveBeenCalledTimes(1)
+   })
+
+-  it('refreshes existing canvas captions while preserving clip-owned presentation', async () => {
++  it('leaves existing captions alone until applying the exact reviewed draft', async () => {
+     const sourceFile = new File(['audio'], 'clip.mp3', { type: 'audio/mpeg' })
+     const updateItem = vi.fn()
+     const clip: VideoItem = {
+@@ -725,7 +725,10 @@
+         style: { color: '#ffcc00', fontSize: 48 },
+       },
+     }
+-    useTimelineStoreGetStateMock.mockReturnValue({ items: [clip], updateItem })
++    const timeline = { fps: 30, items: [clip], updateItem }
++    useTimelineStoreGetStateMock.mockReturnValue(timeline)
++    useProjectStoreGetStateMock.mockReturnValue({ currentProject: null })
++    useSelectionStoreGetStateMock.mockReturnValue({ selectedItemIds: [], selectItems: vi.fn() })
+     getMediaMock.mockResolvedValue({
+       id: 'media-1',
+       fileName: 'clip.mp3',
+@@ -736,13 +739,33 @@
+     getMediaFileMock.mockResolvedValue(sourceFile)
+     transcribeCollectMock.mockResolvedValue([{ text: 'Fresh text', start: 0.2, end: 1.4 }])
+
+-    const transcript = await mediaTranscriptionService.transcribeMedia('media-1')
+-
++    const transcript = await mediaTranscriptionService.transcribeMedia('media-1', { draft: true })
++
++    expect(updateItem).not.toHaveBeenCalled()
++    expect(saveTranscriptMock).not.toHaveBeenCalled()
++    expect(removeTimelineItemsExactMock).not.toHaveBeenCalled()
++
++    const draft = mediaTranscriptionService.reviewTranscriptCaptions(
++      'media-1',
++      'clip-1',
++      transcript,
++      true,
++    )
++    expect(draft.lines.map((cue) => cue.text)).toEqual(['Fresh text'])
++    expect(updateItem).not.toHaveBeenCalled()
++    getTranscriptMock.mockResolvedValue({
++      ...transcript,
++      segments: [{ text: 'Another draft', start: 0, end: 1 }],
++    })
++    saveTranscriptMock.mockResolvedValue(transcript)
++    await draft.apply()
++    expect(saveTranscriptMock).toHaveBeenCalledWith(transcript)
++    expect(getTranscriptMock).not.toHaveBeenCalled()
+     expect(updateItem).toHaveBeenCalledWith('clip-1', {
+       transcriptCaptions: expect.objectContaining({
+-        enabled: false,
++        enabled: true,
+         sourceTranscriptUpdatedAt: transcript.updatedAt,
+-        style: { color: '#ffcc00', fontSize: 48 },
++        style: expect.objectContaining({ color: '#ffcc00', fontSize: 48 }),
+         cues: [
+           {
+             id: 'transcript-media-1-0',
+@@ -753,6 +776,46 @@
+         ],
+       }),
+     })
++  })
++
++  it('refuses stale drafts before touching a changed timeline', async () => {
++    const clip: VideoItem = {
++      id: 'clip-1',
++      type: 'video',
++      trackId: 'track',
++      from: 0,
++      durationInFrames: 90,
++      label: 'Clip',
++      mediaId: 'media-1',
++      src: 'blob:test',
++    }
++    const transcript: MediaTranscript = {
++      id: 'media-1',
++      mediaId: 'media-1',
++      model: 'whisper-tiny',
++      quantization: 'hybrid',
++      text: 'Reviewed',
++      segments: [{ text: 'Reviewed', start: 0.2, end: 1.4 }],
++      createdAt: 0,
++      updatedAt: 0,
++    }
++    const updateItem = vi.fn()
++    useTimelineStoreGetStateMock.mockReturnValue({ fps: 30, items: [clip], updateItem })
++    const draft = mediaTranscriptionService.reviewTranscriptCaptions(
++      'media-1',
++      'clip-1',
++      transcript,
++      true,
++    )
++    useTimelineStoreGetStateMock.mockReturnValue({
++      fps: 30,
++      items: [{ ...clip, from: 15 }],
++      updateItem,
++    })
++    await expect(draft.apply()).rejects.toThrow('The timeline changed')
++    expect(saveTranscriptMock).not.toHaveBeenCalled()
++    expect(updateItem).not.toHaveBeenCalled()
++    expect(removeTimelineItemsExactMock).not.toHaveBeenCalled()
+   })
+
+   it('refreshes transcript captions inside nested compositions and navigation stashes', async () => {
+@@ -825,6 +888,10 @@
+     ])
+
+     const transcript = await mediaTranscriptionService.transcribeMedia('media-1')
++
++    expect(updateComposition).not.toHaveBeenCalled()
++    expect(useCompositionNavigationStoreSetStateMock).not.toHaveBeenCalled()
++    mediaTranscriptionService.syncExistingTranscriptCaptions('media-1', transcript)
+
+     expect(updateComposition).toHaveBeenCalledTimes(1)
+     expect(updateComposition).toHaveBeenCalledWith('inner-comp', {
+diff --git a/src/features/media-library/services/media-transcription-service.ts b/src/features/media-library/services/media-transcription-service.ts
+--- a/src/features/media-library/services/media-transcription-service.ts
++++ b/src/features/media-library/services/media-transcription-service.ts
+@@ -108,6 +108,7 @@
+   language?: string
+   model?: MediaTranscriptModel
+   quantization?: TranscribeOptions['quantization']
++  draft?: boolean
+   onProgress?: TranscribeOptions['onProgress']
+   onQueueStatusChange?: (state: QueueState) => void
+ }
+@@ -120,6 +121,7 @@
+ interface QueuedTranscriptionJob {
+   mediaId: string
+   requestKey: string
++  draft: boolean
+   model: MediaTranscriptModel
+   quantization: NonNullable<TranscribeOptions['quantization']>
+   language?: string
+@@ -487,7 +489,8 @@
+     const quantization =
+       options.quantization ?? settings.defaultWhisperQuantization ?? DEFAULT_QUANTIZATION
+     const language = normalizeWhisperLanguage(options.language ?? settings.defaultWhisperLanguage)
+-    const requestKey = `${mediaId}:${model}:${quantization}:${language ?? 'auto'}`
++    const draft = options.draft === true
++    const requestKey = `${mediaId}:${model}:${quantization}:${language ?? 'auto'}:${draft}`
+     const listener: QueuedTranscriptionListener = {
+       onProgress: options.onProgress,
+       onQueueStatusChange: options.onQueueStatusChange,
+@@ -502,6 +505,7 @@
+     const job = this.createJob({
+       mediaId,
+       requestKey,
++      draft,
+       model,
+       quantization,
+       language,
+@@ -550,6 +554,7 @@
+   private createJob({
+     mediaId,
+     requestKey,
++    draft,
+     model,
+     quantization,
+     language,
+@@ -557,6 +562,7 @@
+   }: {
+     mediaId: string
+     requestKey: string
++    draft: boolean
+     model: MediaTranscriptModel
+     quantization: NonNullable<TranscribeOptions['quantization']>
+     language?: string
+@@ -572,6 +578,7 @@
+     return {
+       mediaId,
+       requestKey,
++      draft,
+       model,
+       quantization,
+       language,
+@@ -702,9 +709,10 @@
+       updatedAt: Date.now(),
+     }
+
+-    await saveTranscript(transcript)
+-    this.syncExistingTranscriptCaptions(mediaId, transcript)
+-    this.emitTranscriptChanged(mediaId)
++    if (!job.draft) {
++      await saveTranscript(transcript)
++      this.emitTranscriptChanged(mediaId)
++    }
+     logger.info('Saved transcript', {
+       mediaId,
+       segments: transcript.segments.length,
+@@ -941,12 +949,57 @@
+     }
+   }
+
++  /** Stage the exact cue text/timing for review before allowing a timeline change. */
++  reviewTranscriptCaptions(
++    mediaId: string,
++    clipId: string,
++    transcript: MediaTranscript,
++    replaceExisting: boolean,
++  ) {
++    const { items, fps } = useTimelineStore.getState()
++    const clip = this.resolveCaptionTargetClips(mediaId, [clipId])[0]
++    if (!clip || transcript.mediaId !== mediaId) {
++      throw new Error('The clip changed. Select the clip and generate a new draft.')
++    }
++    const preview = buildSubtitleSegmentForClip({
++      trackId: clip.trackId,
++      cues: buildTimelineTranscriptCaptionCues(mediaId, transcript.segments),
++      clip,
++      timelineFps: fps,
++      canvasWidth: DEFAULT_PROJECT_WIDTH,
++      canvasHeight: DEFAULT_PROJECT_HEIGHT,
++      label: 'Transcript',
++      source: { type: 'transcript', mediaId, clipId },
++    })
++    if (!preview?.cues.length) {
++      throw new Error('No speech was found in the selected clip.')
++    }
++    const requireUnchangedTimeline = () => {
++      const timeline = useTimelineStore.getState()
++      if (timeline.items !== items || timeline.fps !== fps) {
++        throw new Error('The timeline changed. Generate a new draft before applying captions.')
++      }
++    }
++    return {
++      lines: preview.cues,
++      replaceExisting,
++      apply: async () => {
++        requireUnchangedTimeline()
++        const saved = await saveTranscript(transcript)
++        requireUnchangedTimeline()
++        await this.enableTranscriptCaptions(mediaId, { clipIds: [clipId], replaceExisting }, saved)
++        this.emitTranscriptChanged(mediaId)
++      },
++    }
++  }
++
+   async enableTranscriptCaptions(
+     mediaId: string,
+     options: InsertTranscriptAsCaptionsOptions = {},
++    reviewedTranscript?: MediaTranscript,
+   ): Promise<EnableTranscriptCaptionsResult> {
+-    const transcript = await getTranscript(mediaId)
+-    if (!transcript) {
++    const transcript = reviewedTranscript ?? (await getTranscript(mediaId))
++    if (!transcript || transcript.mediaId !== mediaId) {
+       throw new Error('No transcript found for this media item')
+     }
+
+diff --git a/src/features/timeline/components/timeline-item/clip-floating-layer.tsx b/src/features/timeline/components/timeline-item/clip-floating-layer.tsx
+--- a/src/features/timeline/components/timeline-item/clip-floating-layer.tsx
++++ b/src/features/timeline/components/timeline-item/clip-floating-layer.tsx
+@@ -1,4 +1,4 @@
+-import { type ComponentProps, type RefObject } from 'react'
++import type { RefObject } from 'react'
+ import { TrimInfoOverlay } from './trim-info-overlay'
+ import { FloatingReadout } from './floating-readout'
+ import { TrackPushHandle } from './track-push-handle'
+@@ -38,7 +38,6 @@
+   itemMediaId: string | undefined
+   hasGeneratedCaptions: boolean
+   caption: CaptionDialogState
+-  onGenerateCaption: ComponentProps<typeof TranscribeDialogController>['onGenerate']
+ }
+
+ /**
+@@ -71,7 +70,6 @@
+   itemMediaId,
+   hasGeneratedCaptions,
+   caption,
+-  onGenerateCaption,
+ }: ClipFloatingLayerProps) {
+   return (
+     <>
+@@ -120,11 +118,11 @@
+
+       <DragBlockedTooltip hint={pointerHint} />
+       <TranscribeDialogController
++        key={itemMediaId}
+         itemId={itemId}
+         itemMediaId={itemMediaId}
+         hasGeneratedCaptions={hasGeneratedCaptions}
+         caption={caption}
+-        onGenerate={onGenerateCaption}
+       />
+     </>
+   )
+diff --git a/src/features/timeline/components/timeline-item/index.tsx b/src/features/timeline/components/timeline-item/index.tsx
+--- a/src/features/timeline/components/timeline-item/index.tsx
++++ b/src/features/timeline/components/timeline-item/index.tsx
+@@ -41,7 +41,6 @@
+ import { useTimelineItemActions } from './use-timeline-item-actions'
+ import { useTimelineItemDropHandlers } from './use-timeline-item-drop-handlers'
+ import { ItemContextMenu } from './item-context-menu'
+-import { useAutoTranscriptCaptions } from './use-auto-transcript-captions'
+ import { useSmartTrimHover } from './use-smart-trim-hover'
+ import { useContextMenuState } from './use-context-menu-state'
+ import { useTimelineItemOverlayStore } from '../../stores/timeline-item-overlay-store'
+@@ -189,7 +188,6 @@
+     isBroken,
+     linkedItemsForCaptionOwnership,
+   })
+-  useAutoTranscriptCaptions({ item, caption, hasGeneratedCaptions, isBroken })
+   const reverseMenuShowsUnreverse = useMemo(() => {
+     if (item.type !== 'video' && item.type !== 'audio') {
+       return false
+@@ -657,7 +655,6 @@
+     handleBentoLayout,
+     handleFreezeFrame,
+     handleGenerateAudioFromText,
+-    handleCaptionsFromDialog,
+     handleCreatePreComp,
+     handleEnterComposition,
+     handleDissolveComposition,
+@@ -1298,7 +1295,6 @@
+         itemId={item.id}
+         hasGeneratedCaptions={hasGeneratedCaptions}
+         caption={caption}
+-        onGenerateCaption={handleCaptionsFromDialog}
+       />
+     </>
+   )
+diff --git a/src/features/timeline/components/timeline-item/transcribe-dialog-controller.tsx b/src/features/timeline/components/timeline-item/transcribe-dialog-controller.tsx
+--- a/src/features/timeline/components/timeline-item/transcribe-dialog-controller.tsx
++++ b/src/features/timeline/components/timeline-item/transcribe-dialog-controller.tsx
+@@ -1,5 +1,19 @@
+-import { memo } from 'react'
+-import { cancelMediaTranscriptionJob } from '@/features/timeline/deps/media-transcription-service'
++import { memo, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { Button } from '@/components/ui/button'
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogFooter,
++  DialogHeader,
++  DialogTitle,
++} from '@/components/ui/dialog'
++import {
++  cancelMediaTranscriptionJob,
++  mediaTranscriptionService,
++  runMediaTranscriptionJob,
++} from '@/features/timeline/deps/media-transcription-service'
+ import {
+   TranscribeDialog,
+   type TranscribeDialogValues,
+@@ -14,6 +28,7 @@
+   TRANSCRIPTION_OOM_HINT,
+ } from '@/shared/utils/transcription-cancellation'
+ import { getCloudCaptionHost } from '@/shared/state/cloud-caption-host'
++import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+ import type { CaptionDialogState } from './use-caption-dialog-state'
+
+ interface TranscribeDialogControllerProps {
+@@ -21,11 +36,6 @@
+   itemMediaId: string | undefined
+   hasGeneratedCaptions: boolean
+   caption: CaptionDialogState
+-  onGenerate: (
+-    values: TranscribeDialogValues,
+-    hasExistingCaptions: boolean,
+-    onError?: (error: unknown) => void,
+-  ) => void
+ }
+
+ export const TranscribeDialogController = memo(function TranscribeDialogController({
+@@ -33,11 +43,15 @@
+   itemMediaId,
+   hasGeneratedCaptions,
+   caption,
+-  onGenerate,
+ }: TranscribeDialogControllerProps) {
+-  if (!caption.canManageCaptions || !itemMediaId) {
+-    return null
+-  }
++  const { t } = useTranslation()
++  const [draft, setDraft] = useState<ReturnType<
++    typeof mediaTranscriptionService.reviewTranscriptCaptions
++  > | null>(null)
++  const [preparing, setPreparing] = useState(false)
++  const [applying, setApplying] = useState(false)
++  const [reviewError, setReviewError] = useState<string | null>(null)
++  if (!caption.canManageCaptions || !itemMediaId) return null
+
+   const {
+     dialogOpen,
+@@ -48,65 +62,139 @@
+     transcriptProgress,
+     dialogError,
+     setDialogError,
+-    markCaptionStarted,
+-    markCaptionEnded,
+-    markCaptionStopRequested,
+   } = caption
+   const cloudHost = getCloudCaptionHost()
+
++  async function generate(values: TranscribeDialogValues) {
++    if (!itemMediaId || preparing) return
++    setPreparing(true)
++    setDialogError(null)
++    try {
++      const result = await runMediaTranscriptionJob(itemMediaId, { ...values, draft: true })
++      if (result.status === 'cancelled') return
++      setDraft(
++        mediaTranscriptionService.reviewTranscriptCaptions(
++          itemMediaId,
++          itemId,
++          result.transcript,
++          hasGeneratedCaptions,
++        ),
++      )
++      setReviewError(null)
++      setDialogOpen(false)
++    } catch (error) {
++      setDialogError(
++        isTranscriptionOutOfMemoryError(error)
++          ? TRANSCRIPTION_OOM_HINT
++          : error instanceof Error
++            ? error.message
++            : t('timeline.captions.failedGenerateSegment'),
++      )
++    } finally {
++      setPreparing(false)
++    }
++  }
++
++  async function apply() {
++    if (!draft || !itemMediaId || applying) return
++    setApplying(true)
++    try {
++      await draft.apply()
++      useMediaLibraryStore.getState().setTranscriptStatus(itemMediaId, 'ready')
++      setDraft(null)
++    } catch (error) {
++      setReviewError(
++        error instanceof Error ? error.message : t('timeline.captions.failedGenerateSegment'),
++      )
++    } finally {
++      setApplying(false)
++    }
++  }
++
+   return (
+-    <TranscribeDialog
+-      open={dialogOpen}
+-      onOpenChange={(next) => {
+-        if (!next) setDialogError(null)
+-        setDialogOpen(next)
+-      }}
+-      fileName={mediaFileName}
+-      hasTranscript={mediaHasTranscript}
+-      isRunning={transcriptStatus === 'queued' || transcriptStatus === 'transcribing'}
+-      // The bar tracks the *current stage*, not the whole job. Overall percent (which the
+-      // collapsed media-library bar still uses, having room for only one number) would crawl
+-      // across the first tenth of the track for a multi-minute download and read as a hang.
+-      progressPercent={transcriptProgress ? Math.round(transcriptProgress.progress * 100) : null}
+-      progressIndeterminate={
+-        transcriptProgress ? isIndeterminateTranscriptionProgress(transcriptProgress) : false
+-      }
+-      progressLabel={
+-        transcriptProgress ? getTranscriptionProgressLabel(transcriptProgress) : 'Transcribing...'
+-      }
+-      progressDetail={
+-        transcriptProgress ? getTranscriptionProgressDetail(transcriptProgress) : null
+-      }
+-      errorMessage={dialogError}
+-      onStartCloud={
+-        cloudHost
+-          ? (language) => {
+-              setDialogOpen(false)
+-              cloudHost.start({ clipId: itemId, language })
+-            }
+-          : undefined
+-      }
+-      onStart={(values: TranscribeDialogValues) => {
+-        markCaptionStarted()
+-        setDialogError(null)
+-        const handleError = (error: unknown) => {
+-          markCaptionEnded()
+-          const baseMessage = error instanceof Error ? error.message : 'Failed to generate captions'
+-          setDialogError(
+-            isTranscriptionOutOfMemoryError(error) ? TRANSCRIPTION_OOM_HINT : baseMessage,
+-          )
+-        }
+-        try {
+-          onGenerate(values, hasGeneratedCaptions, handleError)
+-          setDialogOpen(false)
+-        } catch (error) {
+-          handleError(error)
+-        }
+-      }}
+-      onCancel={() => {
+-        markCaptionStopRequested()
+-        cancelMediaTranscriptionJob(itemMediaId)
+-      }}
+-    />
++    <>
++      <TranscribeDialog
++        captionDraft
++        open={dialogOpen}
++        onOpenChange={(next) => {
++          if (!next) setDialogError(null)
++          setDialogOpen(next)
++        }}
++        fileName={mediaFileName}
++        hasTranscript={mediaHasTranscript}
++        isRunning={
++          preparing || transcriptStatus === 'queued' || transcriptStatus === 'transcribing'
++        }
++        progressPercent={transcriptProgress ? Math.round(transcriptProgress.progress * 100) : null}
++        progressIndeterminate={
++          transcriptProgress ? isIndeterminateTranscriptionProgress(transcriptProgress) : false
++        }
++        progressLabel={
++          transcriptProgress ? getTranscriptionProgressLabel(transcriptProgress) : 'Transcribing...'
++        }
++        progressDetail={
++          transcriptProgress ? getTranscriptionProgressDetail(transcriptProgress) : null
++        }
++        errorMessage={dialogError}
++        onStartCloud={
++          cloudHost
++            ? (language) => {
++                setDialogOpen(false)
++                cloudHost.start({ clipId: itemId, language })
++              }
++            : undefined
++        }
++        onStart={(values) => {
++          void generate(values)
++        }}
++        onCancel={() => cancelMediaTranscriptionJob(itemMediaId)}
++      />
++      <Dialog
++        open={!!draft}
++        onOpenChange={(open) => {
++          if (!open && !applying) setDraft(null)
++        }}
++      >
++        <DialogContent>
++          <DialogHeader>
++            <DialogTitle>
++              {t('transcript.reviewTitle', { defaultValue: 'Review captions' })}
++            </DialogTitle>
++            <DialogDescription>
++              {draft?.replaceExisting
++                ? t('transcript.reviewReplace', {
++                    defaultValue: 'Applying will replace this clip’s generated captions.',
++                  })
++                : t('transcript.reviewApply', {
++                    defaultValue: 'Check the text before adding captions to this clip.',
++                  })}
++            </DialogDescription>
++          </DialogHeader>
++          <ol className="max-h-[45vh] space-y-2 overflow-y-auto text-sm">
++            {draft?.lines.map((line, index) => (
++              <li key={line.id ?? index}>{line.text}</li>
++            ))}
++          </ol>
++          {reviewError && (
++            <p role="alert" className="text-sm text-destructive">
++              {reviewError}
++            </p>
++          )}
++          <DialogFooter>
++            <Button variant="outline" disabled={applying} onClick={() => setDraft(null)}>
++              {t('common.cancel', { defaultValue: 'Cancel' })}
++            </Button>
++            <Button
++              disabled={applying || !!reviewError}
++              onClick={() => {
++                void apply()
++              }}
++            >
++              {t('transcript.applyCaptions', { defaultValue: 'Apply captions' })}
++            </Button>
++          </DialogFooter>
++        </DialogContent>
++      </Dialog>
++    </>
+   )
+ })
+diff --git a/src/features/timeline/components/timeline-item/use-auto-transcript-captions.ts b/src/features/timeline/components/timeline-item/use-auto-transcript-captions.ts
+deleted file mode 100644
+--- a/src/features/timeline/components/timeline-item/use-auto-transcript-captions.ts
++++ /dev/null
+@@ -1,63 +0,0 @@
+-import { useEffect, useRef } from 'react'
+-import type { TimelineItem as TimelineItemType } from '@/types/timeline'
+-import { mediaTranscriptionService } from '../../deps/media-transcription-service'
+-import type { CaptionDialogState } from './use-caption-dialog-state'
+-
+-interface UseAutoTranscriptCaptionsParams {
+-  item: TimelineItemType
+-  caption: CaptionDialogState
+-  hasGeneratedCaptions: boolean
+-  isBroken: boolean
+-}
+-
+-/**
+- * Auto-enables transcript-backed captions for a video/audio clip the first time
+- * its media has a transcript and no captions yet. Runs once per item+media pair
+- * (tracked by a ref) and stays silent on failure — the explicit "Generate
+- * Captions" action remains the user-facing fallback.
+- */
+-export function useAutoTranscriptCaptions({
+-  item,
+-  caption,
+-  hasGeneratedCaptions,
+-  isBroken,
+-}: UseAutoTranscriptCaptionsParams): void {
+-  const attemptRef = useRef<string | null>(null)
+-
+-  useEffect(() => {
+-    if (
+-      !caption.canManageCaptions ||
+-      !caption.mediaHasTranscript ||
+-      hasGeneratedCaptions ||
+-      isBroken ||
+-      (item.type !== 'video' && item.type !== 'audio') ||
+-      !item.mediaId
+-    ) {
+-      return
+-    }
+-
+-    const attemptKey = `${item.id}:${item.mediaId}`
+-    if (attemptRef.current === attemptKey) {
+-      return
+-    }
+-    attemptRef.current = attemptKey
+-
+-    void mediaTranscriptionService
+-      .enableTranscriptCaptions(item.mediaId, {
+-        clipIds: [item.id],
+-        replaceExisting: false,
+-        selectUpdatedClips: false,
+-      })
+-      .catch(() => {
+-        // Keep this silent: the explicit Generate Captions action remains the user-facing fallback.
+-      })
+-  }, [
+-    caption.canManageCaptions,
+-    caption.mediaHasTranscript,
+-    hasGeneratedCaptions,
+-    isBroken,
+-    item.id,
+-    item.mediaId,
+-    item.type,
+-  ])
+-}
+diff --git a/src/features/timeline/components/timeline-item/use-caption-dialog-state.ts b/src/features/timeline/components/timeline-item/use-caption-dialog-state.ts
+--- a/src/features/timeline/components/timeline-item/use-caption-dialog-state.ts
++++ b/src/features/timeline/components/timeline-item/use-caption-dialog-state.ts
+@@ -1,4 +1,4 @@
+-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
++import { useCallback, useMemo, useState } from 'react'
+ import type { TimelineItem as TimelineItemType } from '@/types/timeline'
+ import { useTimelineStore } from '../../stores/timeline-store'
+ import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+@@ -46,9 +46,6 @@
+   setDialogOpen: (next: boolean) => void
+   setDialogError: (message: string | null) => void
+   dialogError: string | null
+-  markCaptionStarted: () => void
+-  markCaptionEnded: () => void
+-  markCaptionStopRequested: () => void
+   handleExtractEmbeddedSubtitles: (() => Promise<void>) | undefined
+   handleConsolidateCaptionsToSegment: (() => Promise<void>) | undefined
+ }
+@@ -77,19 +74,6 @@
+   const [dialogOpen, setDialogOpen] = useState(false)
+   const [dialogError, setDialogError] = useState<string | null>(null)
+   const mediaHasTranscript = transcriptStatus === 'ready'
+-  const captionStartedRef = useRef(false)
+-  const captionStopRequestedRef = useRef(false)
+-
+-  const captionIsActive = transcriptStatus === 'queued' || transcriptStatus === 'transcribing'
+-  useEffect(() => {
+-    if (captionStartedRef.current && !captionIsActive) {
+-      captionStartedRef.current = false
+-      const keepOpen = captionStopRequestedRef.current || dialogError !== null
+-      captionStopRequestedRef.current = false
+-      setDialogOpen((wasOpen) => wasOpen && keepOpen)
+-    }
+-  }, [captionIsActive, dialogError])
+-
+   const linkedVideoCaptionOwner = useMemo(() => {
+     if (item.type !== 'audio' || !item.mediaId) {
+       return null
+@@ -198,22 +182,8 @@
+   }, [item.id])
+
+   const openDialog = useCallback(() => {
+-    captionStopRequestedRef.current = false
+     setDialogError(null)
+     setDialogOpen(true)
+-  }, [])
+-
+-  const markCaptionStarted = useCallback(() => {
+-    captionStartedRef.current = true
+-    captionStopRequestedRef.current = false
+-  }, [])
+-
+-  const markCaptionEnded = useCallback(() => {
+-    captionStartedRef.current = false
+-  }, [])
+-
+-  const markCaptionStopRequested = useCallback(() => {
+-    captionStopRequestedRef.current = true
+   }, [])
+
+   return {
+@@ -229,9 +199,6 @@
+     setDialogOpen,
+     setDialogError,
+     dialogError,
+-    markCaptionStarted,
+-    markCaptionEnded,
+-    markCaptionStopRequested,
+     handleExtractEmbeddedSubtitles: canExtractEmbeddedSubtitles
+       ? handleExtractEmbeddedSubtitles
+       : undefined,
+diff --git a/src/features/timeline/components/timeline-item/use-timeline-item-actions.ts b/src/features/timeline/components/timeline-item/use-timeline-item-actions.ts
+--- a/src/features/timeline/components/timeline-item/use-timeline-item-actions.ts
++++ b/src/features/timeline/components/timeline-item/use-timeline-item-actions.ts
+@@ -3,22 +3,12 @@
+ import { i18n } from '@/i18n'
+ import type { TimelineItem as TimelineItemType } from '@/types/timeline'
+ import type { AnimatableProperty } from '@/types/keyframe'
+-import type { MediaTranscriptModel, MediaTranscriptQuantization } from '@/types/storage'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { useClearKeyframesDialogStore } from '@/shared/state/clear-keyframes-dialog'
+ import { useTtsGenerateDialogStore } from '@/shared/state/tts-generate-dialog'
+ import { getTextItemPlainText } from '@/shared/utils/text-item-spans'
+-import {
+-  isTranscriptionOutOfMemoryError,
+-  TRANSCRIPTION_OOM_HINT,
+-} from '@/shared/utils/transcription-cancellation'
+ import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+-import {
+-  getMediaTranscriptionModelLabel,
+-  mediaTranscriptionService,
+-  runMediaTranscriptionJob,
+-} from '@/features/timeline/deps/media-transcription-service'
+ import { useTimelineStore } from '../../stores/timeline-store'
+ import { useItemsStore } from '../../stores/items-store'
+ import { useProjectStore } from '../../deps/projects'
+@@ -222,111 +212,6 @@
+     useTtsGenerateDialogStore.getState().open(textContent, item.id)
+   }, [hasSpeakableText, item.id, textContent])
+
+-  const handleCaptionGeneration = useCallback(
+-    (
+-      model: MediaTranscriptModel,
+-      options?: {
+-        forceTranscription?: boolean
+-        replaceExisting?: boolean
+-        quantization?: MediaTranscriptQuantization
+-        language?: string
+-        onError?: (error: unknown) => void
+-      },
+-    ) => {
+-      if ((item.type !== 'video' && item.type !== 'audio') || !item.mediaId || isBroken) {
+-        return
+-      }
+-
+-      const mediaId = item.mediaId
+-      const clipId = item.id
+-      const store = useMediaLibraryStore.getState()
+-      const forceTranscription = options?.forceTranscription ?? false
+-      const replaceExisting = options?.replaceExisting ?? false
+-
+-      const run = async () => {
+-        try {
+-          const existingTranscript = await mediaTranscriptionService.getTranscript(mediaId)
+-          const needsTranscription =
+-            forceTranscription || !existingTranscript || existingTranscript.model !== model
+-
+-          if (needsTranscription) {
+-            const result = await runMediaTranscriptionJob(mediaId, {
+-              model,
+-              quantization: options?.quantization,
+-              language: options?.language || undefined,
+-            })
+-            if (result.status === 'cancelled') {
+-              return
+-            }
+-          } else {
+-            store.setTranscriptStatus(mediaId, 'ready')
+-            store.clearTranscriptProgress(mediaId)
+-          }
+-          const result = await mediaTranscriptionService.enableTranscriptCaptions(mediaId, {
+-            clipIds: [clipId],
+-            replaceExisting,
+-          })
+-
+-          const modelLabel = getMediaTranscriptionModelLabel(model)
+-          const successMessage = replaceExisting
+-            ? result.updatedClipCount > 0
+-              ? result.removedItemCount > 0
+-                ? i18n.t('timeline.captions.updatedWithModel', { model: modelLabel })
+-                : i18n.t('timeline.captions.refreshedWithModel', { model: modelLabel })
+-              : i18n.t('timeline.captions.removedFromSegment')
+-            : i18n.t('timeline.captions.addedWithModel', { model: modelLabel })
+-
+-          store.showNotification({
+-            type: 'success',
+-            message: successMessage,
+-          })
+-        } catch (error) {
+-          const fallbackMessage =
+-            error instanceof Error
+-              ? error.message
+-              : i18n.t('timeline.captions.failedGenerateSegment')
+-          const friendlyMessage = isTranscriptionOutOfMemoryError(error)
+-            ? TRANSCRIPTION_OOM_HINT
+-            : fallbackMessage
+-          options?.onError?.(error)
+-          store.showNotification({
+-            type: 'error',
+-            message: friendlyMessage,
+-          })
+-        }
+-      }
+-
+-      // Start directly rather than via requestAnimationFrame: rAF is suspended while the
+-      // tab is hidden/occluded, which would leave caption generation hung until the tab
+-      // regained focus. Transcription runs in workers, so there's no paint to wait for.
+-      void run()
+-    },
+-    [item.id, item.mediaId, item.type, isBroken],
+-  )
+-
+-  const handleCaptionsFromDialog = useCallback(
+-    (
+-      values: {
+-        model: MediaTranscriptModel
+-        quantization: MediaTranscriptQuantization
+-        language: string
+-      },
+-      hasExistingCaptions: boolean,
+-      onError?: (error: unknown) => void,
+-    ) => {
+-      handleCaptionGeneration(values.model, {
+-        // The dialog path is always "generate fresh captions". Existing
+-        // transcripts are auto-enabled as virtual captions when clips load.
+-        forceTranscription: true,
+-        replaceExisting: hasExistingCaptions,
+-        quantization: values.quantization,
+-        language: values.language,
+-        onError,
+-      })
+-    },
+-    [handleCaptionGeneration],
+-  )
+-
+   const isSceneDetectionActive = segmentOverlays.some(
+     (overlay) => overlay.id === SCENE_DETECTION_OVERLAY_ID,
+   )
+@@ -639,7 +524,6 @@
+     handleBentoLayout,
+     handleFreezeFrame,
+     handleGenerateAudioFromText,
+-    handleCaptionsFromDialog,
+     handleCreatePreComp,
+     handleEnterComposition,
+     handleDissolveComposition,
+diff --git a/src/features/timeline/deps/media-transcription-service-contract.ts b/src/features/timeline/deps/media-transcription-service-contract.ts
+--- a/src/features/timeline/deps/media-transcription-service-contract.ts
++++ b/src/features/timeline/deps/media-transcription-service-contract.ts
+@@ -3,4 +3,3 @@
+   cancelMediaTranscriptionJob,
+   runMediaTranscriptionJob,
+ } from '@/features/media-library/services/media-transcription-runner'
+-export { getMediaTranscriptionModelLabel } from '@/features/media-library/transcription/registry'
+diff --git a/src/features/timeline/deps/media-transcription-service.ts b/src/features/timeline/deps/media-transcription-service.ts
+--- a/src/features/timeline/deps/media-transcription-service.ts
++++ b/src/features/timeline/deps/media-transcription-service.ts
+@@ -1,6 +1,5 @@
+ export {
+   cancelMediaTranscriptionJob,
+-  getMediaTranscriptionModelLabel,
+   mediaTranscriptionService,
+   runMediaTranscriptionJob,
+ } from './media-transcription-service-contract'

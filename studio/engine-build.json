@@ -834,7 +834,12 @@
       "path": "patches/0180-cloud-captions.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "817caf39f59c6f07efc19c78d861da3b6a7107e9e83a1a8cf2c4be1d7631ce9a"
+    },
+    {
+      "path": "patches/0181-review-local-caption-drafts.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "29c588fa0a6948cccb54ae61ce4dd1775fdffdb177fe76f801484d56ada5c28e"
     }
   ],
-  "sourceSha256": "c9be2c718ed8dff077b6cbbba072dd8357cc4417109c3faf4f3a556578cffc66"
+  "sourceSha256": "9515cf5fb9e225d1162e3a4eed20abde0c66a077bc91e48a0bc7d9f1ac684171"
 }
