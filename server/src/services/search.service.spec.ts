@@ -587,6 +587,12 @@ describe(SearchService.name, () => {
         await expect(sut.searchSmart(authStub.user1, { query: 'lake' })).resolves.toMatchObject({
           assets: { closeMatches: 2 },
         });
+
+        // A continuing page with a line on it keeps its count.
+        mocks.search.searchSmart.mockResolvedValue({ ...ranked(0.9, 0.99), hasNextPage: true } as never);
+        await expect(sut.searchSmart(authStub.user1, { query: 'lake', size: 2 })).resolves.toMatchObject({
+          assets: { closeMatches: 1, nextPage: '2' },
+        });
       });
 
       it('counts on the first page only, and never for a similar-photo search', async () => {
