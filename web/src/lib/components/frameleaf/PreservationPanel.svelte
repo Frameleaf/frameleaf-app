@@ -200,7 +200,12 @@
   let openedRequest: string | null = null;
 
   $effect(() => {
-    if (requestedPackage === openedRequest || packages.every((item) => item.id !== requestedPackage)) {
+    if (requestedPackage === openedRequest) {
+      return;
+    }
+    // Away from the package (or not loaded yet): forget it, so coming back to the same link opens it again.
+    if (packages.every((item) => item.id !== requestedPackage)) {
+      openedRequest = null;
       return;
     }
     openedRequest = requestedPackage;
