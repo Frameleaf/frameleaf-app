@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import subprocess
 import sys
 
 import pytest
@@ -22,6 +23,19 @@ def qwen_binding(tmp_path):
     hashes = cache_hashes(directory)
     (directory / RECEIPT).write_text(json.dumps(hashes))
     entries = {native_qwen.TASK: {"visual": {"modelName": native_qwen.MODEL, "options": {}}}}
+    fixture = b"\x89PNG\r\n\x1a\nfixture"
+    (tmp_path / "test.png").write_bytes(fixture)
+    expected = {
+        native_qwen.TASK: {
+            "description": "A red square.",
+            "people": [],
+            "environment": "",
+            "objects": [],
+            "visible_text": [],
+            "context": "",
+            "tags": [],
+        }
+    }
     spec = {
         "engine": "qwen-gguf",
         "protocolVersion": 1,
@@ -32,8 +46,8 @@ def qwen_binding(tmp_path):
         "provider": "CPUExecutionProvider",
         "fixtureFile": "test.png",
         "fixtureKind": "image",
-        "fixtureSha256": "a" * 64,
-        "expectedOutput": {},
+        "fixtureSha256": hashlib.sha256(fixture).hexdigest(),
+        "expectedOutput": expected,
         "minMemoryBytes": 1,
     }
     raw = json.dumps(spec).encode()
@@ -49,6 +63,7 @@ def qwen_binding(tmp_path):
         "fixtureSha256": spec["fixtureSha256"],
         "preprocessingSha256": spec["preprocessingSha256"],
         "runtimeFingerprint": snapshot()["fingerprint"],
+        "qwenExecution": {"build": "b1-7fe450e19", "binarySha256": "a" * 64, "coldMilliseconds": [1, 2]},
     }
     result = tmp_path / "report.json"
     result.write_text(json.dumps(report))
@@ -117,6 +132,23 @@ with socketserver.UnixStreamServer(args[args.index("--host") + 1], Handler) as s
     )
     binary.chmod(0o700)
     monkeypatch.setattr(native_qwen, "BINARY", binary)
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; from pathlib import Path; from frameleaf_ml import native_qwen, native_qualification; "
+        "native_qwen.BINARY = Path(sys.argv.pop(1)); native_qualification.main()",
+        str(binary),
+        "--spec",
+        str(spec),
+        "--cache-dir",
+        str(cache),
+        "--output",
+        str(report),
+    ]
+    subprocess.run(command, check=True, timeout=30)
+    evidence = json.loads(report.read_text())["qwenExecution"]
+    assert evidence["binarySha256"] == hashlib.sha256(binary.read_bytes()).hexdigest()
+    assert len(evidence["coldMilliseconds"]) == 2
     token = "x" * 64
     binding = NativeBinding.load(spec, report, cache, "CPUExecutionProvider")
     with TestClient(NativeScope(create_native_app(binding), token)) as client:
@@ -130,3 +162,6 @@ with socketserver.UnixStreamServer(args[args.index("--host") + 1], Handler) as s
         assert response.json()[native_qwen.TASK]["description"] == "A red square."
         with pytest.raises(ProcessLookupError):
             os.kill(int(binary.with_suffix(".pid").read_text()), 0)
+        with binary.open("a") as stream:
+            stream.write("# changed after qualification\n")
+        assert client.post("/predict", data=body, files=image, headers=headers).status_code == 409

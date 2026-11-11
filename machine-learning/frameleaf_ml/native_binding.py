@@ -13,10 +13,11 @@ from .schemas import InferenceEntries
 
 
 class NativeBinding:
-    def __init__(self, spec: QualificationSpec, cache: Path, fingerprint: str) -> None:
+    def __init__(self, spec: QualificationSpec, cache: Path, fingerprint: str, qwen_binary: str | None = None) -> None:
         self.spec = spec
         self.cache = cache
         self.fingerprint = fingerprint
+        self.qwen_binary = qwen_binary
 
     async def preload(self) -> None:
         from . import main
@@ -62,14 +63,32 @@ class NativeBinding:
             or not re.fullmatch(r"[a-f0-9]{64}", report["runtimeFingerprint"])
         ):
             raise ValueError("native_binding_report_invalid")
-        if spec.engine == "qwen-gguf" and (
-            report.get("protocolVersion") != spec.protocol_version
-            or report.get("state") != "ready-cpu"
-            or report.get("fixtureSha256") != spec.fixture_sha256
-            or report.get("preprocessingSha256") != spec.preprocessing_sha256
-        ):
-            raise ValueError("native_binding_report_invalid")
-        binding = cls(spec, cache, report["runtimeFingerprint"])
+        binary = None
+        if spec.engine == "qwen-gguf":
+            from .native_qwen import BUILD
+
+            execution = report.get("qwenExecution")
+            if (
+                report.get("protocolVersion") != spec.protocol_version
+                or report.get("state") != "ready-cpu"
+                or report.get("fixtureSha256") != spec.fixture_sha256
+                or report.get("preprocessingSha256") != spec.preprocessing_sha256
+                or not isinstance(execution, dict)
+                or set(execution) != {"build", "binarySha256", "coldMilliseconds"}
+                or not isinstance(execution["build"], str)
+                or re.fullmatch(BUILD, execution["build"]) is None
+                or not isinstance(execution["binarySha256"], str)
+                or re.fullmatch(r"[a-f0-9]{64}", execution["binarySha256"]) is None
+                or not isinstance(execution["coldMilliseconds"], list)
+                or len(execution["coldMilliseconds"]) != 2
+                or any(
+                    type(value) not in {int, float} or not 0 <= value <= 600_000
+                    for value in execution["coldMilliseconds"]
+                )
+            ):
+                raise ValueError("native_binding_report_invalid")
+            binary = execution["binarySha256"]
+        binding = cls(spec, cache, report["runtimeFingerprint"], binary)
         binding.check(spec.entries, spec.fixture_kind)
         return binding
 

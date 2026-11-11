@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import re
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
 
 TASK = "image-description-tagging"
 MODEL = "Qwen3.5-4B"
-BUILD = r"b[0-9]+-7fe450e19[a-f0-9]*"
+BUILD = r"b[0-9]+-7fe450e19[a-f0-9]{0,31}"
 ARTIFACTS = ("visual/model.gguf", "visual/mmproj.gguf")
 BINARY = Path(__file__).parent / "native-bin" / "llama-server"
 LIMIT = 64 * 1024
@@ -143,10 +144,17 @@ def request_body(image: bytes) -> dict[str, Any]:
     }
 
 
-async def predict_qwen(cache: Path, image: bytes) -> dict[str, Any]:
-    body = request_body(image)
+def binary_sha256() -> str:
     if os.name != "posix" or BINARY.parent.is_symlink() or BINARY.is_symlink() or not BINARY.is_file():
         raise ValueError("native_qwen_binary_unavailable")
+    with BINARY.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+async def predict_qwen(cache: Path, image: bytes, expected_binary: str) -> tuple[dict[str, Any], str]:
+    body = request_body(image)
+    if binary_sha256() != expected_binary:
+        raise ValueError("native_qwen_binary_changed")
     model, projector = (model_directory(cache) / item for item in ARTIFACTS)
     # A short private directory also fits the macOS Unix socket path limit.
     with tempfile.TemporaryDirectory(prefix="frameleaf-qwen-", dir="/tmp") as scratch:
@@ -235,7 +243,7 @@ async def predict_qwen(cache: Path, image: bytes) -> dict[str, Any]:
                     raw = await response("POST", "/v1/chat/completions", json=body, timeout=30)
                     if process.returncode is not None:
                         raise ValueError("native_qwen_process_exited")
-                    return worker_output(raw)
+                    return worker_output(raw), build
         except (httpx2.HTTPError, OSError, TimeoutError) as error:
             raise ValueError("native_qwen_prediction_failed") from error
         finally:

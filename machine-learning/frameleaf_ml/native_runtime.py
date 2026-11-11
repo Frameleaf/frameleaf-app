@@ -141,8 +141,9 @@ def create_native_app(binding: "NativeBinding | NativeBindingSet | None") -> Fas
             if qwen is not None:
                 from .native_qwen import predict_qwen
 
-                assert image is not None
-                response = JSONResponse(await predict_qwen(qwen.cache, image))
+                assert image is not None and qwen.qwen_binary is not None
+                output, _ = await predict_qwen(qwen.cache, image, qwen.qwen_binary)
+                response = JSONResponse(output)
             else:
                 response = await main.predict(entries=selected, image=image, text=text, mask=None)
             # Recheck before publishing; changed bytes or drivers invalidate the whole result.
