@@ -44,6 +44,29 @@ describe('invoked image discovery', () => {
       ]),
     );
   });
+  it('finds direct image links around previews and filters several formats together', () => {
+    document.head.innerHTML = '<base href="https://images.example.com/">';
+    document.body.innerHTML = `
+      <a href="original.JPG?download=1"><picture><img src="preview.webp"></picture></a>
+      <a href="gallery"><img src="other.png"></a>
+      <a href="https://user:secret@images.example.com/private.jpg"><img src="safe.gif"></a>
+      <a href="unrelated.jpg">Unrelated image link</a>
+    `;
+    for (const image of document.querySelectorAll('img'))
+      Object.defineProperty(image, 'currentSrc', { value: '' });
+    const candidates = collectCandidates(document);
+    expect(candidates.map(({ url }) => url)).toEqual([
+      'https://images.example.com/original.JPG?download=1',
+      'https://images.example.com/preview.webp',
+      'https://images.example.com/other.png',
+      'https://images.example.com/safe.gif',
+    ]);
+    expect(filterCandidates(candidates, { formats: ['jpeg', 'png'] }).map(({ url }) => url)).toEqual([
+      'https://images.example.com/original.JPG?download=1',
+      'https://images.example.com/other.png',
+    ]);
+  });
+
   it('rejects privileged schemes, credentials and oversized inline images', () => {
     for (const url of [
       'javascript:alert(1)',
