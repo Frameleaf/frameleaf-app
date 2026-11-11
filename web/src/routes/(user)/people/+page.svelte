@@ -222,7 +222,11 @@
     }
   };
 
-  /** `quiet`: a background re-read says nothing when it fails; the page keeps what it has. */
+  /**
+   * `quiet`: a background re-read. Its first read gives up after a while and says nothing when it
+   * fails: the page keeps what it has and the next turn asks again. Once that read has replaced the
+   * list, a later page that fails is said as on any other load, since the grid is then incomplete.
+   */
   const reloadPeople = async ({ quiet = false }: { quiet?: boolean } = {}) => {
     if (!isCurrentView()) {
       return;
@@ -230,7 +234,10 @@
     loadRequest?.abort();
     const generation = ++loadGeneration;
     try {
-      const result = await getAllPeople({ withHidden: true, size: PEOPLE_PAGE_SIZE });
+      const result = await getAllPeople(
+        { withHidden: true, size: PEOPLE_PAGE_SIZE },
+        quiet ? { signal: AbortSignal.timeout(WAITING_REFRESH_MS * 2) } : undefined,
+      );
       if (!isCurrentView() || generation !== loadGeneration) {
         return;
       }
@@ -257,10 +264,15 @@
     }
     // untracked: starting the watch registers listeners, which is reactive state of its own
     const stopWatchingWork = untrack(() => runningJobsSession.watch());
+    // One re-read at a time: a turn that started another would discard the answer still on its way,
+    // and a slow server would then never be heard.
+    let asking = false;
     const timer = setInterval(() => {
-      if (document.visibilityState !== 'hidden') {
-        void reloadPeople({ quiet: true });
+      if (asking || document.visibilityState === 'hidden') {
+        return;
       }
+      asking = true;
+      void reloadPeople({ quiet: true }).finally(() => (asking = false));
     }, WAITING_REFRESH_MS);
     return () => {
       clearInterval(timer);

@@ -414,6 +414,24 @@ describe('People library with nobody found', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('waits for a slow answer instead of asking again and discarding it', async () => {
+    work([], false);
+    const ada = peopleListItemFactory.build({ id: 'ada', name: 'Ada', isHidden: false });
+    let answer: (value: never) => void = () => {};
+    sdkMock.getAllPeople.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    const { container } = render(PeoplePage, { data: nobody(true) });
+
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledOnce());
+    // several turns pass while the server is still thinking
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(sdkMock.getAllPeople).toHaveBeenCalledOnce();
+    // a background read gives up by itself, so a stalled one cannot block the page for good
+    expect(sdkMock.getAllPeople.mock.calls[0][1]).toEqual({ signal: expect.any(AbortSignal) });
+
+    answer({ people: [ada], total: 1, hidden: 0, hasNextPage: false } as never);
+    await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(1));
+  });
+
   it('does not re-read a page that is not waiting', async () => {
     render(PeoplePage, { data: nobody(false) });
 
