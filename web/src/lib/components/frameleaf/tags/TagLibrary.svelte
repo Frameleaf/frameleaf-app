@@ -32,6 +32,7 @@
   }
 
   let { node, tree, tagOptions, timelineManager = $bindable(), onMutated }: Props = $props();
+  let libraryView = $state<LibraryView>();
 
   let viewerInvisible = $state(false);
 
@@ -58,6 +59,7 @@
 
 {#key node.id}
   <LibraryView
+    bind:this={libraryView}
     enableRouting
     selectAll="loaded"
     bind:timelineManager
@@ -68,7 +70,12 @@
     {onMutated}
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
-    <TagPageHeader {node} {tree} />
+    <TagPageHeader
+      {node}
+      {tree}
+      datesToCheck={timelineManager?.datesToCheck?.count}
+      onFixDates={() => void libraryView?.fixDates()}
+    />
 
     {#snippet toolbarStart()}
       {#if hasInside}

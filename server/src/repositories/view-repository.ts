@@ -4,6 +4,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid, withExif, withHiddenContentFilter } from 'src/utils/database.js';
+import { hasGoodDate } from 'src/utils/date-sanity.js';
 import { displayPathSql } from 'src/utils/library-path.js';
 import { isLocked, isTimelineVisible } from 'src/utils/locked.js';
 import { escapeLikeTerm } from 'src/utils/trash-review.js';
@@ -21,6 +22,8 @@ export type FolderSummaryRow = {
   coverAssetIds: string[];
   startDate: Date;
   endDate: Date;
+  /** FL-1410: originals in this folder whose date cannot be right (`utils/date-sanity.ts`) */
+  datesToCheck: number;
 };
 
 export class ViewRepository {
@@ -111,6 +114,7 @@ export class ViewRepository {
       .select([
         'asset.id',
         'asset.localDateTime',
+        hasGoodDate().as('goodDate'),
         'asset_exif.fileSizeInByte',
         directoryPath.as('directoryPath'),
         sql<number>`row_number() over (partition by ${directoryPath} order by "asset"."localDateTime" desc, "asset"."id" asc)`.as(
@@ -128,8 +132,17 @@ export class ViewRepository {
         >`array_agg("file"."id"::text order by "file"."rank") filter (where "file"."rank" <= ${sql.lit(COVER_ASSETS)})`.as(
           'coverAssetIds',
         ),
-        eb.fn.min(sql<Date>`("file"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('startDate'),
-        eb.fn.max(sql<Date>`("file"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('endDate'),
+        // FL-1410: a date that cannot be right is left out of the range and counted to be checked; a
+        // folder whose every date is one keeps the range it had, since the response always carries both
+        sql<Date>`coalesce(
+          min(("file"."localDateTime" AT TIME ZONE 'UTC'::text)::date) filter (where "file"."goodDate"),
+          min(("file"."localDateTime" AT TIME ZONE 'UTC'::text)::date)
+        )`.as('startDate'),
+        sql<Date>`coalesce(
+          max(("file"."localDateTime" AT TIME ZONE 'UTC'::text)::date) filter (where "file"."goodDate"),
+          max(("file"."localDateTime" AT TIME ZONE 'UTC'::text)::date)
+        )`.as('endDate'),
+        sql<string>`count(*) filter (where not "file"."goodDate")`.as('datesToCheck'),
       ])
       .groupBy('file.directoryPath')
       .orderBy(sql`"file"."directoryPath" collate "default"`, 'asc')
@@ -142,6 +155,7 @@ export class ViewRepository {
       coverAssetIds: row.coverAssetIds ?? [],
       startDate: row.startDate,
       endDate: row.endDate,
+      datesToCheck: Number(row.datesToCheck),
     }));
   }
 }

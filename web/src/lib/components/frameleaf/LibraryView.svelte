@@ -765,6 +765,11 @@
       void manager.refresh();
       return;
     }
+    // FL-1410: a date set by hand is no longer one to check; the server says where each photo belongs now.
+    if (action === 'change-date' && manager.datesToCheck) {
+      void manager.refresh();
+      return;
+    }
     const patch = ASSET_PATCHES[action];
     if (!patch) {
       return;
@@ -1531,6 +1536,8 @@
 
   /** Items a bar action selected on its own; put back to nothing if that action is cancelled. */
   let barSelectedIds: string[] | null = null;
+  /** What was selected before such an action took the selection over; a cancel puts it back. */
+  let barRestoreIds: string[] = [];
 
   /** Run an action through the bar, on the selection or, with none, on these items selected first. */
   const performOnBar = async (id: BulkActionId, ids: string[]) => {
@@ -1545,12 +1552,57 @@
     selectionBarRef.performAction(id);
   };
 
+  /**
+   * FL-1410 "Fix dates": the photos whose date cannot be right (the "Dates to check" group at the end
+   * of the timeline) are selected and "Change date" opens on them. The prototype opens its Date & Time
+   * Doctor here, which the app does not have yet; Change date is what sets a date by hand, and a date
+   * set by hand is no longer one to check. Where these photos' dates are not the viewer's to change,
+   * they are left selected and brought into view.
+   */
+  const canFixDates = $derived(libraryChrome && !selectionBar && !noSelectionBar && !options?.isTrashed);
+  export const fixDates = async () => {
+    const group = manager.months.find((month) => month.toCheck);
+    if (!group || !canFixDates) {
+      return;
+    }
+    try {
+      await manager.loadTimelineMonth(group.yearMonth, { cancelable: false });
+    } catch (error) {
+      handleError(error, $t('errors.failed_to_load_assets'));
+      return;
+    }
+    // The view moved on while the group loaded (a filter, a refresh): its photos are not this view's.
+    if (!manager.months.includes(group)) {
+      return;
+    }
+    const ids = group.getAssets().map(({ id }) => id);
+    if (ids.length === 0) {
+      return;
+    }
+    const before = session.selection;
+    session.dispatch({ type: 'selection', ids });
+    await tick();
+    if (selectionBarRef?.canPerform('change-date')) {
+      barSelectedIds = ids;
+      barRestoreIds = before;
+      selectionBarRef.performAction('change-date');
+      return;
+    }
+    manager.scrollTo(group.top);
+  };
+
   /** The bar's dialog closed: a cancelled action started from a key or a tile leaves nothing selected. */
   const onBarDialogSettled = (submitted: boolean) => {
     const selected = barSelectedIds;
+    const restore = barRestoreIds;
     barSelectedIds = null;
+    barRestoreIds = [];
     if (!submitted && selected && session.selection.every((id) => selected.includes(id))) {
-      session.clearSelection();
+      if (restore.length > 0) {
+        session.dispatch({ type: 'selection', ids: restore });
+      } else {
+        session.clearSelection();
+      }
     }
   };
 
@@ -1947,6 +1999,7 @@
           quickActions={quickActionsFor}
           timelineCaptions={gridLayout === 'timeline' && (captions.time || captions.names)}
           empty={emptyState}
+          onFixDates={canFixDates ? () => void fixDates() : undefined}
           {gutter}
           groupingInHeader={!publicView && !bare && mainWidth >= GROUPING_IN_TOOLBAR}
         >

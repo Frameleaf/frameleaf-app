@@ -151,8 +151,9 @@ export class TimelineDay {
       const callbackResult = callback(asset);
       let remove = (callbackResult as { remove?: boolean } | undefined)?.remove ?? false;
       const newTime = getOrderingDate(asset, this.dateType);
-      // A flat order (S-15) is not grouped by date: a new date moves nothing.
-      const dated = !this.timelineMonth.timelineManager.ordered;
+      // A flat order (S-15) is not grouped by date: a new date moves nothing. Nor are the dates to
+      // check (FL-1410): only the server knows whether a new date is right, and the refresh reads it.
+      const dated = !this.timelineMonth.timelineManager.ordered && !this.timelineMonth.toCheck;
       if (dated && (oldTime.year !== newTime.year || oldTime.month !== newTime.month || oldTime.day !== newTime.day)) {
         const { year, month, day } = newTime;
         remove = true;
@@ -239,7 +240,8 @@ export class TimelineDay {
   get headerExtra(): number {
     const manager = this.timelineMonth.timelineManager;
     const perDay = manager.dayRows && manager.grouping === 'days' && manager.placeLineHeight > 0;
-    return perDay && this.cities.length > 0 ? manager.placeLineHeight : 0;
+    // FL-1410: the dates to check say why they wait on that line ("The camera's clock was wrong")
+    return perDay && (this.cities.length > 0 || this.timelineMonth.toCheck) ? manager.placeLineHeight : 0;
   }
 
   get absoluteTimelineDayTop() {

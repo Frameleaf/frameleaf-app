@@ -1,11 +1,14 @@
 import {
   AssetLockReason,
   AssetOrder,
+  AssetOrderBy,
   AssetTypeEnum,
   AssetVisibility,
   getAssetInfo,
   getTimeBuckets,
+  getTimelineDatesToCheck,
   TimeBucketDateType,
+  TimelineDatesToCheck,
   type AssetResponseDto,
 } from '@frameleaf/sdk';
 import { clamp, isEqual } from 'lodash-es';
@@ -22,6 +25,7 @@ import { updateTimelineMonthViewportProximity } from '$lib/managers/timeline-man
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
 import {
   clearOrderedPageCursors,
+  loadDatesToCheck,
   loadFromTimeBuckets,
   loadOrderedPage,
   ORDERED_PAGE_SIZE,
@@ -50,6 +54,7 @@ import { TimelineDay } from './timeline-day.svelte';
 import { TimelineMonth } from './timeline-month.svelte';
 import type {
   AssetDescriptor,
+  DatesToCheck,
   Direction,
   MoveAsset,
   ScrubberMonth,
@@ -247,11 +252,47 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   /**
+   * FL-1410: the photos in this view whose date cannot be right (the server's rule,
+   * `utils/date-sanity.ts`): how many, and the years their dates claim. They are left out of the dated
+   * order, the cards and the scrubber's years, and wait in one group at the end.
+   */
+  datesToCheck: DatesToCheck | undefined = $state();
+
+  /** A timeline in capture-date order is where a wrong date would lead; upload dates and flat orders are not. */
+  get #sortsByCaptureDate() {
+    const { orderedBy, dateType, orderBy } = this.#options;
+    return !orderedBy && dateType !== TimeBucketDateType.Added && orderBy !== AssetOrderBy.CreatedAt;
+  }
+
+  /**
+   * Whether this timeline keeps the dates to check apart: one in capture-date order, unless the server
+   * could not say which they are. Then every photo stays in the dated order, as before, sooner than
+   * some go missing.
+   */
+  #datesToCheckApart = false;
+
+  /** The view's options as the time buckets are asked: without the dates to check, where they are kept apart. */
+  get #bucketOptions(): TimelineManagerOptions {
+    return this.#datesToCheckApart ? { ...this.#options, datesToCheck: TimelineDatesToCheck.Exclude } : this.#options;
+  }
+
+  /** The view's filters and the viewer's key alone, as `GET /timeline/dates-to-check` takes them. */
+  get #datesToCheckQuery() {
+    const options = { ...this.#options };
+    delete options.timelineAlbumId;
+    delete options.deferInit;
+    delete options.assetFilter;
+    delete options.orderedBy;
+    delete options.datesToCheck;
+    return { ...authManager.params, ...options };
+  }
+
+  /**
    * The query the time buckets were asked with (the view's filters and the viewer's key), for a
    * request that must cover exactly the same assets — the curated Years and Months cards (FL-33).
    */
   get bucketQuery() {
-    const options = { ...this.#options };
+    const options = { ...this.#bucketOptions };
     delete options.timelineAlbumId;
     delete options.deferInit;
     delete options.assetFilter;
@@ -465,11 +506,31 @@ export class TimelineManager extends VirtualScrollManager {
     const summary = this.#summaryGeneration;
     const options = this.#requestedOptions;
     const revision = sessionAccess.revision;
-    const timebuckets = await getTimeBuckets({
-      ...authManager.params,
-      ...this.#options,
-      ...(!this.ordered && { pageSize: ORDERED_PAGE_SIZE }),
-    });
+    const order = this.#options.order;
+    const readBuckets = () =>
+      getTimeBuckets({
+        ...authManager.params,
+        ...this.#bucketOptions,
+        ...(!this.ordered && { pageSize: ORDERED_PAGE_SIZE }),
+      });
+    // FL-1410: the dates to check: what the notice counts and names, and where the group reads them
+    const readDatesToCheck = async () => {
+      try {
+        return await getTimelineDatesToCheck(this.#datesToCheckQuery);
+      } catch {
+        return null;
+      }
+    };
+    this.#datesToCheckApart = this.#sortsByCaptureDate;
+    let [timebuckets, toCheck] = await Promise.all([
+      readBuckets(),
+      this.#datesToCheckApart ? readDatesToCheck() : undefined,
+    ]);
+    if (toCheck === null && options === this.#requestedOptions) {
+      this.#datesToCheckApart = false;
+      toCheck = undefined;
+      timebuckets = await readBuckets();
+    }
 
     // A load cancelled by newer options, or a session lock, must not replace what replaced it.
     if (
@@ -508,6 +569,7 @@ export class TimelineManager extends VirtualScrollManager {
             '',
           ),
       );
+      this.datesToCheck = undefined;
       this.albumAssets.clear();
       this.updateViewportGeometry(false);
       if (top !== undefined) {
@@ -516,7 +578,7 @@ export class TimelineManager extends VirtualScrollManager {
       return;
     }
 
-    this.months = timebuckets.map((timeBucket) => {
+    const months = timebuckets.map((timeBucket) => {
       const date = new SvelteDate(timeBucket.timeBucket);
       return new TimelineMonth(
         this,
@@ -529,6 +591,26 @@ export class TimelineManager extends VirtualScrollManager {
         timeBucket.page === undefined ? undefined : timeBucket,
       );
     });
+    const count = toCheck?.count ?? 0;
+    if (toCheck && count > 0) {
+      // One group after every dated month, whichever way the timeline runs. Its key is no calendar
+      // month: it sorts past the last real one, as a flat order's pages do.
+      const group = new TimelineMonth(
+        this,
+        order === AssetOrder.Asc ? { year: 9999, month: 12 } : { year: 1, month: 1 },
+        count,
+        false,
+        order,
+        this.#options.dateType,
+        get(t)('frameleaf_library_dates_to_check'),
+      );
+      group.toCheckBuckets = toCheck.timeBuckets;
+      months.push(group);
+      // Only the server knows whether a new or changed date is right: every live change reads it again.
+      this.#calendarPaged = true;
+    }
+    this.datesToCheck = toCheck && count > 0 ? { count, years: toCheck.years } : undefined;
+    this.months = months;
     this.albumAssets.clear();
     this.updateViewportGeometry(false);
     if (top !== undefined) {
@@ -729,6 +811,7 @@ export class TimelineManager extends VirtualScrollManager {
           month: month.yearMonth.month,
           title: month.title,
           height: month.height,
+          ...(month.toCheck && { toCheck: true }),
         });
       }
     }
@@ -752,9 +835,11 @@ export class TimelineManager extends VirtualScrollManager {
         return;
       }
       const executionStatus = await timelineMonth.loader?.execute(async (signal: AbortSignal) => {
-        await (this.#options.orderedBy
-          ? loadOrderedPage(timelineMonth, this.months, this.#options, signal)
-          : loadFromTimeBuckets(this, timelineMonth, this.#options, signal));
+        await (timelineMonth.toCheck
+          ? loadDatesToCheck(this, timelineMonth, this.#options, signal)
+          : this.#options.orderedBy
+            ? loadOrderedPage(timelineMonth, this.months, this.#options, signal)
+            : loadFromTimeBuckets(this, timelineMonth, this.#bucketOptions, signal));
       }, cancelable);
       if (executionStatus === 'LOADED' && this.months.includes(timelineMonth)) {
         updateGeometry(this, timelineMonth, { invalidateHeight: false });
@@ -848,12 +933,23 @@ export class TimelineManager extends VirtualScrollManager {
         const months = this.months;
         const [page] = await getTimeBuckets({
           ...authManager.params,
-          ...this.#options,
+          ...this.#bucketOptions,
           pageSize: ORDERED_PAGE_SIZE,
           locateAssetId: id,
           ...(this.ordered && { sort: this.ordered }),
         });
-        if (overtaken() || !page) {
+        if (overtaken()) {
+          return;
+        }
+        if (!page) {
+          // FL-1410: not in the dated order; it may be waiting among the dates to check
+          const toCheck = months.find((month) => month.toCheck);
+          if (toCheck && months === this.months) {
+            await this.loadTimelineMonth(toCheck.yearMonth, { cancelable: false });
+            if (!overtaken() && toCheck.findAssetById({ id })) {
+              return toCheck;
+            }
+          }
           return;
         }
         if (months !== this.months) {

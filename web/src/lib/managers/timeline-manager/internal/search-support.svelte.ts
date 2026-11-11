@@ -170,9 +170,17 @@ export async function retrieveRange(
   // fileCreatedAt within a day); comparing localDateTime alone is wrong when the
   // two endpoints share a day but have different UTC offsets, and would make the
   // loop below run to the end of the timeline and select every asset.
+  // FL-1410: the dates to check wait after every dated photo, whatever their dates claim.
+  const waiting = new Set(
+    timelineManager.months
+      .find((month) => month.toCheck)
+      ?.getAssets()
+      .map(({ id }) => id),
+  );
   const compare = position
     ? (a: TimelineAsset, b: TimelineAsset) => position(a) - position(b)
-    : (a: TimelineAsset, b: TimelineAsset) => compareTimelineOrder(assetOrder, dateType, a, b);
+    : (a: TimelineAsset, b: TimelineAsset) =>
+        Number(waiting.has(a.id)) - Number(waiting.has(b.id)) || compareTimelineOrder(assetOrder, dateType, a, b);
   if (compare(startAsset, endAsset) > 0) {
     [startAsset, endAsset] = [endAsset, startAsset];
 

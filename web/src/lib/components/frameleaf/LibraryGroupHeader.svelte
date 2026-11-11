@@ -16,6 +16,11 @@
     /** A day's places ("Banff and Lake Louise", FL-1392); empty where the photos have none. */
     places?: string;
     /**
+     * Why this group waits apart ("The camera's clock was wrong", FL-1410), where the places would be:
+     * the group of photos whose date cannot be right.
+     */
+    flag?: string;
+    /**
      * Phones: the date keeps one line with the count at its end, and the places sit on a second line
      * under it (review-1110.css B3). The timeline reserves that line's height for a day with places.
      */
@@ -39,6 +44,7 @@
     id,
     title,
     places = '',
+    flag = '',
     stacked = false,
     count,
     state,
@@ -61,7 +67,7 @@
 <header
   class="fl-group-header"
   class:is-stacked={stacked}
-  class:has-places={!!places}
+  class:has-places={!!places || !!flag}
   style:width="{width}px"
   style:height="{height}px"
 >
@@ -83,7 +89,9 @@
   </label>
   <!-- A long title (a day's full date in a narrow group) is cut short; the tooltip keeps it whole. -->
   <h2 {id} {title}>{title}</h2>
-  {#if places}
+  {#if flag}
+    <span class="fl-group-flag" data-testid="frameleaf-group-flag">{flag}</span>
+  {:else if places}
     <span class="fl-group-places" title={places} data-testid="frameleaf-group-places">{places}</span>
   {/if}
   <span class="fl-group-count">{$t('items_count', { values: { count } })}</span>
@@ -138,6 +146,17 @@
     margin-inline-end: 8px;
     color: var(--fl-muted);
   }
+  /* messy-1110.css M4 `.tl-group-flag`: why these photos wait apart. */
+  .fl-group-flag {
+    flex: none;
+    padding: 2px 8px;
+    border-radius: var(--fl-radius-pill);
+    background: color-mix(in srgb, var(--fl-warning) 16%, transparent);
+    color: var(--fl-warning);
+    font-size: var(--fl-font-micro);
+    line-height: 15px;
+    white-space: nowrap;
+  }
   /* Phones: the date and the count on one line, the places under the date (19px: `PLACE_LINE_HEIGHT`). */
   .fl-group-header.is-stacked {
     display: grid;
@@ -165,6 +184,11 @@
   }
   .is-stacked .fl-group-places::before {
     content: none;
+  }
+  .is-stacked .fl-group-flag {
+    grid-row: 2;
+    grid-column: 2 / 4;
+    justify-self: start;
   }
   .fl-group-select {
     position: relative;

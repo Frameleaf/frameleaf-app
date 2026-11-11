@@ -35,6 +35,8 @@ export interface FolderNode {
   startDate: string | null;
   /** The capture day of the newest original in this folder or under it, or null when unknown. */
   endDate: string | null;
+  /** FL-1410: originals in this folder or under it whose date cannot be right; the dates leave them out. */
+  datesToCheck: number;
 }
 
 export interface FolderTree {
@@ -44,7 +46,7 @@ export interface FolderTree {
 
 /** A summary row. The cover and the dates are optional: a server from before the redesign sends none. */
 export type FolderSummaryRow = Pick<FolderSummaryResponseDto, 'path' | 'count' | 'size'> &
-  Partial<Pick<FolderSummaryResponseDto, 'coverAssetIds' | 'startDate' | 'endDate'>>;
+  Partial<Pick<FolderSummaryResponseDto, 'coverAssetIds' | 'startDate' | 'endDate' | 'datesToCheck'>>;
 
 export const FOLDER_ROOT_PATH = '/';
 
@@ -63,6 +65,7 @@ const newNode = (path: string, name: string, parent: FolderNode | null): FolderN
   coverAssetIds: [],
   startDate: null,
   endDate: null,
+  datesToCheck: 0,
 });
 
 const compareNames = (a: FolderNode, b: FolderNode) => a.name.localeCompare(b.name, undefined, { numeric: true });
@@ -122,11 +125,17 @@ export function buildFolderTree(rows: readonly FolderSummaryRow[]): FolderTree {
     const size = Math.max(0, row.size);
     cursor.directCount += count;
     cursor.coverAssetIds.push(...(row.coverAssetIds ?? []));
-    cursor.startDate = earlier(cursor.startDate, row.startDate);
-    cursor.endDate = later(cursor.endDate, row.endDate);
+    // FL-1410: the server leaves wrong dates out of a row's range, unless every date in it is wrong;
+    // such a row has no range to add, here or to the folders above it.
+    const toCheck = Math.min(count, Math.max(0, row.datesToCheck ?? 0));
+    if (toCheck < count || count === 0) {
+      cursor.startDate = earlier(cursor.startDate, row.startDate);
+      cursor.endDate = later(cursor.endDate, row.endDate);
+    }
     for (let up: FolderNode | null = cursor; up; up = up.parent) {
       up.count += count;
       up.size += size;
+      up.datesToCheck += toCheck;
     }
   }
 
