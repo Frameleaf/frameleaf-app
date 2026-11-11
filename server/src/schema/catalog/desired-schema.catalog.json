@@ -9535,14 +9535,26 @@
           "scope": "row"
         },
         {
-          "name": "media_import_asset_removed",
-          "definition": "CREATE TRIGGER media_import_asset_removed AFTER DELETE OR UPDATE ON public.asset FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed()",
+          "name": "media_import_asset_deleted",
+          "definition": "CREATE TRIGGER media_import_asset_deleted AFTER DELETE ON public.asset FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed()",
           "tableName": "asset",
           "functionName": "media_import_asset_removed",
           "when": null,
           "synchronize": true,
           "actions": [
-            "delete",
+            "delete"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "media_import_asset_trashed",
+          "definition": "CREATE TRIGGER media_import_asset_trashed AFTER UPDATE OF \"deletedAt\" ON public.asset FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed()",
+          "tableName": "asset",
+          "functionName": "media_import_asset_removed",
+          "when": null,
+          "synchronize": true,
+          "actions": [
             "update"
           ],
           "timing": "after",
@@ -51831,11 +51843,6 @@
       "synchronize": true
     },
     {
-      "name": "media_import_collection_removed",
-      "expression": "CREATE OR REPLACE FUNCTION public.media_import_collection_removed()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      UPDATE media_import_item item SET suppression = 'subscription', \"updatedAt\" = clock_timestamp()\n        FROM media_import operation WHERE item.\"importId\" = operation.id\n        AND operation.\"subscriptionId\" IS NOT NULL AND operation.\"albumId\" = OLD.\"albumId\"\n        AND item.\"assetId\" = OLD.\"assetId\" AND item.suppression IS DISTINCT FROM 'owner';\n      RETURN NULL;\n    END;\n    $function$\n",
-      "synchronize": true
-    },
-    {
       "name": "immich_uuid_v7",
       "expression": "CREATE OR REPLACE FUNCTION public.immich_uuid_v7(p_timestamp timestamp with time zone DEFAULT clock_timestamp())\n RETURNS uuid\n LANGUAGE sql\nAS $function$\n    SELECT encode(\n      set_bit(\n        set_bit(\n          overlay(uuid_send(gen_random_uuid())\n                  placing substring(int8send(floor(extract(epoch from p_timestamp) * 1000)::bigint) from 3)\n                  from 1 for 6\n          ),\n          52, 1\n        ),\n        53, 1\n      ),\n      'hex')::uuid;\n  $function$\n",
       "synchronize": true
@@ -51898,6 +51905,11 @@
     {
       "name": "asset_library_scope_refresh",
       "expression": "CREATE OR REPLACE FUNCTION public.asset_library_scope_refresh()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  IF OLD.\"libraryScope\" = 'design' AND NEW.\"libraryScope\" <> 'design' THEN\n    UPDATE asset_exif SET \"updatedAt\" = clock_timestamp() WHERE \"assetId\" = NEW.id;\n    UPDATE asset_edit SET \"updatedAt\" = clock_timestamp() WHERE \"assetId\" = NEW.id;\n    UPDATE asset_face SET \"updatedAt\" = clock_timestamp() WHERE \"assetId\" = NEW.id;\n    UPDATE asset_metadata SET \"updatedAt\" = clock_timestamp() WHERE \"assetId\" = NEW.id;\n    UPDATE asset_ocr SET \"updatedAt\" = clock_timestamp() WHERE \"assetId\" = NEW.id;\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "synchronize": true
+    },
+    {
+      "name": "media_import_collection_removed",
+      "expression": "CREATE OR REPLACE FUNCTION public.media_import_collection_removed()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      UPDATE media_import_item item SET suppression = 'subscription', \"updatedAt\" = clock_timestamp()\n        FROM media_import operation WHERE item.\"importId\" = operation.id\n        AND operation.\"subscriptionId\" IS NOT NULL AND operation.\"albumId\" = OLD.\"albumId\"\n        AND item.\"assetId\" = OLD.\"assetId\" AND item.suppression IS DISTINCT FROM 'owner';\n      RETURN NULL;\n    END;\n    $function$\n",
       "synchronize": true
     },
     {
