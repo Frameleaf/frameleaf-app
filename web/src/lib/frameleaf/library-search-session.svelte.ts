@@ -16,6 +16,7 @@ import {
   type MetadataSearchDto,
   type SmartSearchDto,
 } from '@frameleaf/sdk';
+import { withSearchDefaults } from '$lib/components/discovery/query';
 import { withAllText } from '$lib/frameleaf/search-palette';
 
 export type LibrarySearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
@@ -37,12 +38,14 @@ export const textSearchTerms = (terms: LibrarySearchTerms): LibrarySearchTerms |
   if (!text || rest.queryAssetId) {
     return null;
   }
-  if (rest.filter !== undefined) {
-    const filter = withAllText(rest.filter, text);
+  // A link that is only its text (an old `?query=` address) takes the filter shape, so it is matched
+  // by all text like any other; the filter then carries the defaults the flat request had.
+  if (rest.filter !== undefined || Object.keys(rest).length === 0) {
+    const filter = withAllText(rest.filter ?? withSearchDefaults({}), text);
     return filter ? { ...rest, filter } : null;
   }
-  // ponytail: a link from before filters (flat fields) is matched by file name only; "All text" needs
-  // the filter shape, which flat fields cannot ride beside.
+  // ponytail: an old link with other flat fields is matched by file name only; "All text" needs the
+  // filter shape, which flat fields cannot ride beside.
   return rest.originalFileName ? null : { ...rest, originalFileName: text };
 };
 

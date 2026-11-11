@@ -357,7 +357,13 @@ describe('LibrarySearchSession: search by meaning answered by text (FL-1403)', (
     expect(textSearchTerms({ queryAssetId: 'asset', query: 'beach' })).toBeNull();
   });
 
-  it('matches an old link without a filter by file name', () => {
+  it('matches an old link that is only its text by all text, in the Library, never in Trash', () => {
+    expect(textSearchTerms({ query: ' tree ' })).toEqual({
+      filter: { visibility: { eq: 'timeline' }, trashedAt: { eq: null }, or: allText('tree') },
+    });
+  });
+
+  it('matches an old link with other flat fields by file name', () => {
     expect(textSearchTerms({ query: ' tree ', city: 'Banff' })).toEqual({ city: 'Banff', originalFileName: 'tree' });
   });
 
