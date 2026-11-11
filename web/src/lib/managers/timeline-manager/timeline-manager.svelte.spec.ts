@@ -116,6 +116,8 @@ const expectOneGrid = (timelineManager: TimelineManager, run: TimelineMonth[]) =
 describe('TimelineManager', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    // Live upserts can request a month even when the fixture only seeds it through events.
+    sdkMock.getTimeBucket.mockResolvedValue(toResponseDto());
   });
 
   it('C2 RED: a bucket refresh cannot install a pre-Trash projection after a live removal', async () => {
