@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
+import { lstatSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +23,10 @@ it(
   'evaluates the fixed assistant corpus against a seeded library',
   async () => {
     const options = evaluationOptions();
+    const output = options.mode === 'qualification' ? process.env.FRAMELEAF_ASSISTANT_QUALIFICATION_REPORT : undefined;
+    if (output && lstatSync(output, { throwIfNoEntry: false })) {
+      throw new Error('Provide a fresh FRAMELEAF_ASSISTANT_QUALIFICATION_REPORT path');
+    }
     const identity = options.mode === 'qualification' ? await qualificationIdentity(options.endpoint) : undefined;
     const database = await getActiveForkKyselyDB('assistant_eval');
     try {
@@ -36,7 +41,6 @@ it(
       if (report.mode === 'qualification' && identity && 'plannerAnswers' in report) {
         expect(report.plannerAnswers).toBeGreaterThanOrEqual(Math.ceil(report.cases * thresholds.filterAccuracy));
         expect(report.protectedHits).toBe(0);
-        const output = process.env.FRAMELEAF_ASSISTANT_QUALIFICATION_REPORT;
         if (output) {
           const after = await qualificationIdentity(identity.endpoint);
           expect(after).toEqual(identity);
