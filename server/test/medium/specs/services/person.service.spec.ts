@@ -248,6 +248,25 @@ describe(PersonService.name, () => {
     });
   });
 
+  // FL-1408 (M9): an empty People page can say the first scan is still running
+  describe('getAll before anybody has been found', () => {
+    it('says face recognition is still working until every photo has been looked at', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newJobStatus({ assetId: asset.id, facesRecognizedAt: null });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'waiting-preview.jpg' });
+
+      await expect(sut.getAll(auth, { page: 1, size: 100 })).resolves.toEqual(
+        expect.objectContaining({ total: 0, scanning: true }),
+      );
+
+      await ctx.newJobStatus({ assetId: asset.id, facesRecognizedAt: new Date().toISOString() });
+      await expect(sut.getAll(auth, { page: 1, size: 100 })).resolves.not.toHaveProperty('scanning');
+    });
+  });
+
   describe('Locked media (FL-34)', () => {
     it('never shows Locked (while locked) or foreign media as correction history evidence (FL-57, FL-195)', async () => {
       // its own database: the corrected faces it leaves would outlast the forced recognition tests below

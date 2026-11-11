@@ -467,6 +467,10 @@ const PeopleResponseSchema = z
       .optional()
       .describe('Whether there are more pages')
       .meta(new HistoryBuilder().added('v1.110.0').stable('v2').getExtensions()),
+    scanning: z
+      .boolean()
+      .optional()
+      .describe('Nobody has been found yet and face recognition is still working through this account’s photos'),
   })
   .describe('People response');
 export class PeopleResponseDto extends createZodDto(PeopleResponseSchema) {}

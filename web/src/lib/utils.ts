@@ -34,6 +34,7 @@ import {
   isPetStory,
   isPersonRecap,
   isYearInReview,
+  onThisDayYears,
 } from '$lib/frameleaf/memory-stories';
 import { mayHaveDevelopPlaybackRevision, playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -468,6 +469,10 @@ export const memoryLaneTitle = derived(t, ($t) => {
     }
 
     if (memory.type === MemoryType.OnThisDay) {
+      // FL-1408: several small years share one memory, which no single "N years ago" names
+      if (onThisDayYears(memory).length > 1) {
+        return $t('frameleaf_memories_on_this_day');
+      }
       const now = DateTime.now();
       const memoryDate = DateTime.fromISO(memory.memoryAt, { zone: 'utc' });
 

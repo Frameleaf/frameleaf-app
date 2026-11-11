@@ -140,6 +140,9 @@ class MemoryManager {
 
   memories = $state<MemoryResponseDto[]>([]);
 
+  /** FL-1408: the library has photos and its first memories are a night away (the day after a first import). */
+  preparing = $state(false);
+
   /** FL-62: memories the owner hid, listed only under "Hidden memories" on the index. */
   hidden = $state<MemoryResponseDto[]>([]);
   /** FL-62: the owner's show-less rules (people, pets, days and kinds). */
@@ -608,6 +611,7 @@ class MemoryManager {
     this.#total = undefined;
     this.#received = 0;
     this.memories = [];
+    this.preparing = false;
   }
 
   private initialize() {
@@ -632,9 +636,13 @@ class MemoryManager {
         return;
       }
 
-      const total = this.#total ?? (await memoriesStatistics(this.#filters)).total;
+      const statistics = this.#total === undefined ? await memoriesStatistics(this.#filters) : undefined;
       if (generation !== this.#generation) {
         return;
+      }
+      const total = statistics?.total ?? this.#total ?? 0;
+      if (statistics) {
+        this.preparing = statistics.preparing ?? false;
       }
 
       this.#page++;

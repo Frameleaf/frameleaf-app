@@ -193,6 +193,14 @@ export class PersonService extends BaseService {
       this.personRepository.getNumberOfPeople(auth.user.id, privacyOptions),
     ]);
 
+    // FL-1408 (M9): with nobody found yet, say whether face recognition is still working through
+    // this account's photos, so the page does not read "no people" halfway through a first scan
+    const scanning =
+      total === 0 &&
+      hidden === 0 &&
+      isFacialRecognitionEnabled((await this.getConfig({ withCache: true })).machineLearning) &&
+      (await this.assetJobRepository.hasFacesToDetect(auth.user.id));
+
     return {
       people: items.map((person) => ({
         ...mapPerson(person),
@@ -202,6 +210,7 @@ export class PersonService extends BaseService {
       hasNextPage,
       total,
       hidden,
+      ...(scanning && { scanning }),
     };
   }
 

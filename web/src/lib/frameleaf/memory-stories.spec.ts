@@ -28,6 +28,7 @@ import {
   memoryLocalDay,
   memoryStoryKind,
   moveMemoryItem,
+  onThisDayYears,
   showLessOptions,
   showLessRuleLabel,
 } from '$lib/frameleaf/memory-stories';
@@ -242,6 +243,46 @@ describe('memory stories', () => {
         id,
         showAt: `${date}T00:00:00.000Z`,
       }) as MemoryResponseDto;
+
+    // FL-1408 (M8): the server gives years with a photo or two each one memory to share
+    describe('small years gathered into one memory', () => {
+      const taken = (...years: number[]) =>
+        years.map((year, index) => ({ id: `a${index}`, localDateTime: `${year}-09-25T10:00:00.000Z` }));
+      const gathered = {
+        ...dated('gathered', MemoryType.OnThisDay, { year: 2025 }, '2026-09-25'),
+        assets: taken(2019, 2025, 2023, 2025),
+      } as unknown as MemoryResponseDto;
+      const single = {
+        ...dated('single', MemoryType.OnThisDay, { year: 2024 }, '2026-09-25'),
+        assets: taken(2024, 2024, 2024),
+      } as unknown as MemoryResponseDto;
+
+      it('reads the years from the items, newest first', () => {
+        expect(onThisDayYears(gathered)).toEqual(['2025', '2023', '2019']);
+        expect(onThisDayYears(single)).toEqual(['2024']);
+        expect(onThisDayYears({ ...eventStory, assets: gathered.assets })).toEqual([]);
+      });
+
+      it('names the years instead of counting back to one of them', () => {
+        expect(memoryHeadline(gathered, { t, locale: 'en-GB', today: '2026-09-25' })).toEqual({
+          title: 'On this day',
+          subtitle: 'In 2025, 2023 and 2019',
+        });
+        const two = { ...gathered, assets: taken(2023, 2019) } as unknown as MemoryResponseDto;
+        expect(memoryHeadline(two, { t, locale: 'en-GB', today: '2026-09-25' }).subtitle).toBe('In 2023 and 2019');
+        expect(memoryHeadline(single, { t, locale: 'en-GB', today: '2026-09-25' }).title).toBe('2 years ago');
+      });
+
+      it('goes back to "N years ago" once only one of its years is left', () => {
+        const left = { ...gathered, assets: taken(2025) } as unknown as MemoryResponseDto;
+        expect(memoryHeadline(left, { t, locale: 'en-GB', today: '2026-09-25' }).title).toBe('One year ago');
+      });
+
+      it('leads the day, ahead of a year that kept its own card', () => {
+        const sections = groupMemories([single, gathered], { today: '2026-09-25' });
+        expect(sections.today.map(({ memory }) => memory.id)).toEqual(['gathered', 'single']);
+      });
+    });
 
     it('counts calendar days', () => {
       expect(dayDiff('2026-09-25', '2026-09-26')).toBe(1);

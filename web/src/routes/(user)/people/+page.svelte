@@ -3,6 +3,7 @@
   import { page as appPage } from '$app/state';
   import { scrollMemory } from '$lib/actions/scroll-memory';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import BirthdayDialog from '$lib/components/frameleaf/people/BirthdayDialog.svelte';
   import MergePeopleDialog from '$lib/components/frameleaf/people/MergePeopleDialog.svelte';
   import MergeSuggestionBanner from '$lib/components/frameleaf/people/MergeSuggestionBanner.svelte';
@@ -12,7 +13,9 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter } from '$lib/constants';
   import { filterPeopleByName, isUnnamedPerson, sortPeopleForGrid, type PeopleGridSort } from '$lib/frameleaf/people';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { toastAction, toastUndo } from '$lib/frameleaf/toast';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
@@ -42,7 +45,13 @@
     type PersonSplitSuggestionDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
-  import { mdiAccountMultipleOutline, mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
+  import {
+    mdiAccountMultipleOutline,
+    mdiAccountOffOutline,
+    mdiAccountSearchOutline,
+    mdiEyeOffOutline,
+    mdiEyeOutline,
+  } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
@@ -57,6 +66,10 @@
    * counts, the merge-suggestion banner (FL-57), inline rename, and the Frameleaf merge and
    * date-of-birth dialogs. Sorting and searching run over the whole list, so every page of
    * people is read up front rather than on scroll.
+   *
+   * With nobody to show, the page says why (FL-1408, M9): face recognition is turned off on this
+   * server (with the way to turn it on, for whoever runs it), or it is still working through the
+   * library. While it is off there are no merge or split prompts either.
    */
 
   interface Props {
@@ -70,6 +83,9 @@
 
   let people: PeopleListItemDto[] = $state(untrack(() => data.people.people));
   let nextPage: number | null = $state(untrack(() => (data.people.hasNextPage ? 2 : null)));
+  const facesOff = $derived(!featureFlagsManager.value.facialRecognition);
+  /** The server found nobody yet and still has photos of this account to look through. */
+  let scanning = $state(untrack(() => data.people.scanning ?? false));
   let search = $state(untrack(() => appPage.url.searchParams.get(QueryParameter.SEARCHED_PEOPLE) ?? ''));
   let sort: PeopleGridSort = $state('name');
   let showHidden = $state(false);
@@ -168,6 +184,7 @@
         return;
       }
       people = result.people;
+      scanning = result.scanning ?? false;
       truncated = false;
       nextPage = result.hasNextPage ? 2 : null;
       await loadAllPages();
@@ -198,8 +215,10 @@
   const allLoaded = loadAllPages();
 
   onMount(() => {
-    handlePromiseError(loadMergeSuggestions());
-    handlePromiseError(loadSplitSuggestions());
+    if (!facesOff) {
+      handlePromiseError(loadMergeSuggestions());
+      handlePromiseError(loadSplitSuggestions());
+    }
     handlePromiseError(loadLibrarySize());
 
     return websocketEvents.on('on_person_thumbnail', (personId: string) => {
@@ -600,7 +619,9 @@
         </FrameleafButton>
       </div>
     </header>
-    {#if mergeSuggestions.length > 0}
+    {#if facesOff}
+      <!-- FL-1408: nothing is being compared while face recognition is off, so nothing is asked. -->
+    {:else if mergeSuggestions.length > 0}
       <MergeSuggestionBanner
         suggestion={mergeSuggestions[0]}
         remaining={mergeSuggestions.length - 1}
@@ -643,6 +664,23 @@
           />
         {/snippet}
       </PeopleInfiniteScroll>
+    {:else if !nextPage && people.length === 0 && facesOff}
+      <EmptyState
+        icon={mdiAccountOffOutline}
+        title={$t('frameleaf_people_faces_off_title')}
+        message={authManager.user.isAdmin
+          ? $t('frameleaf_people_faces_off_description')
+          : $t('frameleaf_people_faces_off_description_member')}
+        action={authManager.user.isAdmin
+          ? { label: $t('frameleaf_people_faces_off_action'), href: commandCenterUrl('intelligence', 'faces') }
+          : undefined}
+      />
+    {:else if !nextPage && people.length === 0 && scanning}
+      <EmptyState
+        icon={mdiAccountSearchOutline}
+        title={$t('frameleaf_people_scanning_title')}
+        message={$t('frameleaf_people_scanning_description')}
+      />
     {:else if !nextPage}
       <p class="people-empty" role="status">
         {#if search.trim()}

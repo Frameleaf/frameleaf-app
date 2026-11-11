@@ -4,14 +4,18 @@ import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { peopleListItemFactory } from '@test-data/factories/person-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import PeoplePage from './+page.svelte';
 import { PEOPLE_CAP, PEOPLE_PAGE_SIZE } from './people-page';
 
 // Small page and cap sizes keep the rendered grid cheap; the page reads both from this module.
 vi.mock(import('./people-page'), () => ({ PEOPLE_PAGE_SIZE: 2, PEOPLE_CAP: 6 }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/people') } }));
+const flags = vi.hoisted(() => ({ facialRecognition: true }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: flags } }));
 vi.mock('$lib/components/layouts/UserPageLayout.svelte', async () => {
   return await import('@test-data/mocks/UserPageLayout.mock.svelte');
 });
@@ -261,5 +265,76 @@ describe('People library mixed-person question', () => {
 
     expect(await screen.findByText('frameleaf_people_merge_suggestion_question')).toBeTruthy();
     expect(screen.queryByText('frameleaf_people_split_suggestion_question')).toBeNull();
+  });
+});
+
+// FL-1408 (M9): with nobody to show, the page says why instead of "No people yet".
+describe('People library with nobody found', () => {
+  const nobody = (scanning?: boolean): Data => ({
+    ...data([], false),
+    people: { people: [], total: 0, hidden: 0, hasNextPage: false, scanning },
+  });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [] });
+    sdkMock.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
+    sdkMock.getAssetStatistics.mockResolvedValue({ images: 12, videos: 0, total: 12 });
+    flags.facialRecognition = true;
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+  });
+
+  afterEach(() => {
+    flags.facialRecognition = true;
+  });
+
+  it('says face recognition is turned off, offers the setting, and asks for no merges', async () => {
+    flags.facialRecognition = false;
+    render(PeoplePage, { data: nobody() });
+
+    expect(screen.getByRole('heading', { name: 'frameleaf_people_faces_off_title' })).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_people_faces_off_description')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'frameleaf_people_faces_off_action' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('intelligence'),
+    );
+    expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.getMergeSuggestions).not.toHaveBeenCalled();
+    expect(sdkMock.getSplitSuggestions).not.toHaveBeenCalled();
+  });
+
+  it('tells someone who cannot change the setting who can, with no button', () => {
+    flags.facialRecognition = false;
+    authManager.setUser(userAdminFactory.build({ isAdmin: false }));
+    render(PeoplePage, { data: nobody() });
+
+    expect(screen.getByText('frameleaf_people_faces_off_description_member')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'frameleaf_people_faces_off_action' })).not.toBeInTheDocument();
+  });
+
+  it('says face recognition is still working through the library', () => {
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(screen.getByRole('heading', { name: 'frameleaf_people_scanning_title' })).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_people_scanning_description')).toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+  });
+
+  it('keeps "No people yet" for a library that has been looked through', () => {
+    render(PeoplePage, { data: nobody(false) });
+
+    expect(screen.getByText('frameleaf_people_none_assigned')).toBeInTheDocument();
+    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+  });
+
+  it('keeps the people it has when face recognition is turned off later', () => {
+    flags.facialRecognition = false;
+    const ada = peopleListItemFactory.build({ id: 'ada', name: 'Ada', isHidden: false });
+    const { container } = render(PeoplePage, { data: data([ada], false) });
+
+    expect(container.querySelectorAll('.pl-card')).toHaveLength(1);
+    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
   });
 });

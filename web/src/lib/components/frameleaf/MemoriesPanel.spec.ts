@@ -46,6 +46,7 @@ describe('MemoriesPanel', () => {
   afterEach(() => {
     memoryManager.memories = [];
     memoryManager.hidden = [];
+    memoryManager.preparing = false;
     vi.useRealTimers();
   });
 
@@ -154,6 +155,44 @@ describe('MemoriesPanel', () => {
     render(MemoriesPanel);
     expect(screen.getByText('Nothing from this day yet')).toBeInTheDocument();
     expect(screen.getByText('Memories appear here on the anniversary of your photos and videos.')).toBeInTheDocument();
+  });
+
+  // FL-1408 (M8): the day after a first import the page has one message, and no "No memories yet" under it.
+  it('says the memories are being prepared, and nothing else, before the first overnight run', () => {
+    memoryManager.preparing = true;
+
+    render(MemoriesPanel);
+
+    const today = screen.getByRole('region', { name: 'Today' });
+    expect(within(today).getByText('Your memories are being prepared')).toBeInTheDocument();
+    expect(
+      within(today).getByText(
+        'Frameleaf looks back through new photos overnight. They will be here by tomorrow morning.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Nothing from this day yet')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Earlier' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No memories yet')).not.toBeInTheDocument();
+  });
+
+  // FL-1408 (M8): years with a photo or two each arrive as one memory, named for its years.
+  it('shows small years gathered into one "On this day" card that names them', () => {
+    vi.useFakeTimers({ now: new Date(2026, 8, 25, 12), toFake: ['Date'] });
+    const taken = (id: string, year: number) => ({ ...asset(id), localDateTime: `${year}-09-25T10:00:00.000Z` });
+    memoryManager.memories = [
+      { ...onDay('own', '2026-09-25', 2024), assets: [1, 2, 3].map((n) => taken(`own-${n}`, 2024)) },
+      { ...onDay('gathered', '2026-09-25', 2025), assets: [taken('a', 2025), taken('b', 2023), taken('c', 2019)] },
+    ] as MemoryResponseDto[];
+
+    render(MemoriesPanel);
+
+    const cards = [...screen.getByRole('region', { name: 'Today' }).querySelectorAll('.fm-card')];
+    expect(cards).toHaveLength(2);
+    // the gathered card leads the day; the year with three photos keeps its own
+    expect(within(cards[0] as HTMLElement).getByText('On this day')).toBeInTheDocument();
+    expect(within(cards[0] as HTMLElement).getByText('In 2025, 2023, and 2019')).toBeInTheDocument();
+    expect(within(cards[0] as HTMLElement).getByText('3 items')).toBeInTheDocument();
+    expect(within(cards[1] as HTMLElement).getByText('2 years ago')).toBeInTheDocument();
   });
 
   // MI-1: Hide memory replaces deletion, and Restore brings it back from Hidden memories.
