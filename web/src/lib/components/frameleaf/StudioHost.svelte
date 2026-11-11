@@ -987,8 +987,7 @@
         </Button>
       {/if}
 
-      {#if !accessLost &&
-        ((editorUp && onExportBundle) || (projectAvailable && (onImportRetention || onCloudReceipts)))}
+      {#if !accessLost && ((editorUp && onExportBundle) || (projectAvailable && (onImportRetention || onCloudReceipts)))}
         <!-- Rare actions live here, so the header keeps one primary button at every width. -->
         <Menu label={$t('more')} align="end">
           {#snippet trigger()}

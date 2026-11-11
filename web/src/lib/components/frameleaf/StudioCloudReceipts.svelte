@@ -1,7 +1,12 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { ACTIVITY_STAGE_KEYS, activityCloudJob, formatFinishedTime, mediaOperationStage } from '$lib/frameleaf/activity';
+  import {
+    ACTIVITY_STAGE_KEYS,
+    activityCloudJob,
+    formatFinishedTime,
+    mediaOperationStage,
+  } from '$lib/frameleaf/activity';
   import { cloudCostFacts } from '$lib/frameleaf/cloud-jobs';
   import { MediaOperationKind, searchMediaOperations, type MediaOperationDto } from '@frameleaf/sdk';
   import { onDestroy, untrack } from 'svelte';
@@ -35,7 +40,10 @@
       }
       const page = items.filter(
         (item): item is CloudReceipt =>
-          item.kind === MediaOperationKind.CloudMlJob && item.projectId === project && !item.withheld && !!item.cloudJob,
+          item.kind === MediaOperationKind.CloudMlJob &&
+          item.projectId === project &&
+          !item.withheld &&
+          !!item.cloudJob,
       );
       const known = new Map((offset ? receipts : []).map((item) => [item.id, item]));
       for (const item of page) {
