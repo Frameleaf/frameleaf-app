@@ -64,7 +64,7 @@ export class AssetUploadResourceRepository {
       if (!owner) {
         throw new NotFoundException('Owner unavailable');
       }
-      if (input.metadata.publication === 'capture') {
+      if (['capture', 'media-import'].includes(input.metadata.publication ?? '')) {
         const existing = await tx
           .selectFrom('asset_upload_resource')
           .selectAll()
@@ -73,8 +73,9 @@ export class AssetUploadResourceRepository {
           .executeTakeFirst();
         if (existing) {
           if (
-            existing.metadata.publication !== 'capture' ||
-            existing.metadata.captureActor !== input.metadata.captureActor
+            existing.metadata.publication !== input.metadata.publication ||
+            existing.metadata.captureActor !== input.metadata.captureActor ||
+            existing.metadata.mediaImportItemId !== input.metadata.mediaImportItemId
           ) {
             throw new NotFoundException('Capture unavailable');
           }
@@ -117,7 +118,9 @@ export class AssetUploadResourceRepository {
           maxAppendSize: Math.min(ASSET_UPLOAD_LIMITS.maxAppendSize, input.maxSize ?? ASSET_UPLOAD_LIMITS.maxSize),
           expiresAt: new Date(Date.now() + ASSET_UPLOAD_LIMITS.maxAge * 1000),
         })
-        .$if(input.metadata.publication === 'capture', (qb) => qb.onConflict((oc) => oc.column('id').doNothing()))
+        .$if(['capture', 'media-import'].includes(input.metadata.publication ?? ''), (qb) =>
+          qb.onConflict((oc) => oc.column('id').doNothing()),
+        )
         .returningAll()
         .executeTakeFirst();
       if (!created) throw new ConflictException('Capture upload UUID unavailable');

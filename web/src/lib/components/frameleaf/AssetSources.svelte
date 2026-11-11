@@ -6,13 +6,13 @@
    *
    * Saved sources are private to the owner, so they are only read when `canRead`; anyone else sees
    * when the item was added and nothing about where it was saved from. A saved source came in
-   * through the browser extension, or from an Eagle import (FL-653), which marks its sources as
-   * imported; any other item was uploaded. Stored links are untrusted and only http(s) addresses
+   * through the browser extension, an Eagle import, or a Boards media download. Any other item
+   * was uploaded. Stored links are untrusted and only http(s) addresses
    * become links.
    */
   import { getAssetSources, type AssetSourceResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiFolderZipOutline, mdiPuzzleOutline, mdiTrayArrowUp } from '@mdi/js';
+  import { mdiDownloadOutline, mdiFolderZipOutline, mdiPuzzleOutline, mdiTrayArrowUp } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -91,10 +91,10 @@
     return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`;
   };
   const savedWith = $derived(
-    sources.some((source) => !source.importedFrom)
+    sources.some((source) => !source.importedFrom && !source.provider)
       ? { icon: mdiPuzzleOutline, label: $t('frameleaf_boards_source_via_extension') }
       : sources.some((source) => source.importedFrom === 'eagle')
-        ? { icon: mdiFolderZipOutline, label: $t('frameleaf_boards_source_via_eagle') }
+        ? { icon: mdiDownloadOutline, mdiFolderZipOutline, label: $t('frameleaf_boards_source_via_eagle') }
         : (fallbackVia ?? { icon: mdiTrayArrowUp, label: $t('frameleaf_boards_source_via_upload') }),
   );
 </script>
@@ -117,7 +117,7 @@
         {/if}
         {#each sources as source (source.id)}
           {@const pageUrl = libraryReferenceUrl(source.pageUrl)}
-          {@const mediaUrl = libraryReferenceUrl(source.mediaUrl)}
+          {@const mediaUrl = source.provider ? undefined : libraryReferenceUrl(source.mediaUrl)}
           {@const licenseUrl = libraryReferenceUrl(source.licenseUrl)}
           {#if pageUrl || source.title}
             <dt>{$t('frameleaf_boards_source_page')}</dt>
@@ -131,6 +131,30 @@
             <dt>{$t('frameleaf_boards_source_creator')}</dt>
             <dd>{source.creator}</dd>
           {/if}
+          {#if source.provider}
+            <dt>{$t('frameleaf_boards_source_provider')}</dt>
+            <dd>{source.provider}</dd>
+          {/if}
+          {#if source.creatorId && source.creatorId !== source.creator}
+            <dt>{$t('frameleaf_boards_source_creator_id')}</dt>
+            <dd>{source.creatorId}</dd>
+          {/if}
+          {#if source.postId}
+            <dt>{$t('frameleaf_boards_source_post_id')}</dt>
+            <dd>{source.postId}</dd>
+          {/if}
+          {#if source.attachmentId}
+            <dt>{$t('frameleaf_boards_source_attachment_id')}</dt>
+            <dd>{source.attachmentId}</dd>
+          {/if}
+          {#if source.publishedAt && Number.isFinite(Date.parse(source.publishedAt))}
+            <dt>{$t('frameleaf_boards_source_published')}</dt>
+            <dd><time datetime={source.publishedAt}>{formatDate(source.publishedAt)}</time></dd>
+          {/if}
+          {#if source.postText}
+            <dt>{$t('frameleaf_boards_source_post_text')}</dt>
+            <dd class="post-text">{source.postText}</dd>
+          {/if}
           {#if licenseUrl}
             <dt>{$t('frameleaf_boards_source_licence')}</dt>
             <dd><a href={licenseUrl} target="_blank" rel="noopener noreferrer">{shortUrl(licenseUrl)}</a></dd>
@@ -143,7 +167,7 @@
               <small>{$t('frameleaf_boards_source_private')}</small>
             </dd>
           {/if}
-          {#if source.note}
+          {#if source.note && source.note !== source.postText}
             <dd class="note">{source.note}</dd>
           {/if}
         {/each}
@@ -193,6 +217,9 @@
   }
   dd.note {
     grid-column: 1 / -1;
+  }
+  dd.note,
+  dd.post-text {
     white-space: pre-wrap;
   }
   a {

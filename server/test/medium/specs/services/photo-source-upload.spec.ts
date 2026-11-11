@@ -150,6 +150,7 @@ async function setup() {
     new ICloudIdentityRepository(db),
     sources,
     new CaptureRepository(db),
+    {} as never,
   );
   const identity = { kind: 'folder' as const, sourceId: source.id, runId: run.id, itemId: item.id };
   const headers = {

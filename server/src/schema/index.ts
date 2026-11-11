@@ -23,6 +23,8 @@ import {
   f_unaccent,
   immich_uuid_v7,
   ll_to_earth_public,
+  media_import_asset_removed,
+  media_import_collection_removed,
   memory_asset_delete_audit,
   memory_delete_audit,
   partner_delete_audit,
@@ -147,6 +149,12 @@ import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.j
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
+import {
+  MediaConnectionTable,
+  MediaImportItemTable,
+  MediaImportTable,
+  MediaSubscriptionTable,
+} from 'src/schema/tables/media-import.table.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
@@ -498,6 +506,10 @@ export class ImmichDatabase {
     StudioExportVersionTable,
     StudioExportVersionSourceTable,
     StudioExportRemoteReferenceTable,
+    MediaConnectionTable,
+    MediaSubscriptionTable,
+    MediaImportTable,
+    MediaImportItemTable,
     EagleImportTable,
     EagleImportItemTable,
     TakeoutImportTable,
@@ -568,6 +580,8 @@ export class ImmichDatabase {
     user_delete_audit,
     partner_delete_audit,
     asset_delete_audit,
+    media_import_asset_removed,
+    media_import_collection_removed,
     asset_library_scope_refresh,
     album_library_scope_refresh,
     album_user_after_insert,
@@ -810,6 +824,10 @@ export interface DB extends QueueDatabase {
 
   takeout_album: TakeoutAlbumTable;
   takeout_file: TakeoutFileTable;
+  media_connection: MediaConnectionTable;
+  media_subscription: MediaSubscriptionTable;
+  media_import: MediaImportTable;
+  media_import_item: MediaImportItemTable;
   eagle_import: EagleImportTable;
   eagle_import_item: EagleImportItemTable;
   takeout_import: TakeoutImportTable;

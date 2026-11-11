@@ -23,6 +23,7 @@ import {
   asset_backup_deletion_capture,
   asset_delete_audit,
   asset_library_scope_refresh,
+  media_import_asset_removed,
 } from 'src/schema/functions.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
@@ -44,6 +45,13 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
   actions: ['delete'],
   scope: 'row',
   functionName: asset_backup_deletion_capture.name,
+})
+@Trigger({
+  name: 'media_import_asset_removed',
+  timing: 'after',
+  actions: ['update', 'delete'],
+  scope: 'row',
+  functionName: media_import_asset_removed.name,
 })
 @UpdatedAtTrigger('asset_updatedAt')
 @AfterDeleteTrigger({

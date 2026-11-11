@@ -84,6 +84,34 @@ describe('private asset sources', () => {
     expect(await screen.findByText('Browser extension')).toBeInTheDocument();
     expect(screen.queryByText('Eagle import')).not.toBeInTheDocument();
   });
+  it('shows private social provenance as text without linking to a downloaded media address', async () => {
+    sdkMock.getAssetSources.mockResolvedValue([
+      {
+        ...source,
+        provider: 'Bluesky',
+        creatorId: 'creator-identifier',
+        postId: 'post-identifier',
+        attachmentId: 'attachment-identifier',
+        publishedAt: '2026-10-25T09:00:00Z',
+        pageUrl: 'javascript:alert(1)',
+        mediaUrl: 'https://cdn.example.com/download?secret=fixture',
+        postText: '<img src=x onerror=alert(1)>',
+      },
+    ]);
+    const { container } = render(AssetSources, { assetId: 'asset', canRead: true });
+    expect(await screen.findByText('Media download')).toBeInTheDocument();
+    expect(screen.getByText('creator-identifier')).toBeInTheDocument();
+    expect(screen.getByText('post-identifier')).toBeInTheDocument();
+    expect(screen.getByText('attachment-identifier')).toBeInTheDocument();
+    expect(screen.getByText('Published').nextElementSibling?.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-10-25T09:00:00Z',
+    );
+    expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Original image address' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: source.title })).not.toBeInTheDocument();
+  });
   it('says an item without a saved source was uploaded', async () => {
     sdkMock.getAssetSources.mockResolvedValue([]);
     render(AssetSources, { assetId: 'asset', canRead: true, added: '2026-10-27T10:00:00Z' });

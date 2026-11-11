@@ -42,4 +42,30 @@ describe(MetricsRepository.name, () => {
       expect(body).not.toContain(privateValue);
     }
   });
+  it('exports aggregate download health without site credentials or source URLs', async () => {
+    const media = new MetricsRepository({
+      database: () => ({ reserved: 0, waiting: 0, capacity: 4 }),
+      media: () =>
+        Promise.resolve({
+          queueAge: 10,
+          bytes: 1024,
+          failures: 2,
+          authenticationFailures: 1,
+          retries: 3,
+          subscriptionLag: 30,
+          providers: [{ provider: 'youtube', failures: 2 }],
+        }),
+    });
+    try {
+      const url = await media.listen(0, '127.0.0.1');
+      const body = await (await fetch(url)).text();
+      expect(body).toContain('frameleaf_media_queue_age_seconds 10');
+      expect(body).toContain('frameleaf_media_download_bytes 1024');
+      expect(body).toContain('frameleaf_media_expired_connections 1');
+      expect(body).toContain('frameleaf_media_subscription_lag_seconds 30');
+      expect(body).toContain('frameleaf_media_provider_failed_items{provider="youtube"} 2');
+    } finally {
+      await media.close();
+    }
+  });
 });

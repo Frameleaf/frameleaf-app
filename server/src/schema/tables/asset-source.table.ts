@@ -51,6 +51,13 @@ export class AssetSourceTable {
   @Column({ type: 'character varying', nullable: true })
   importedFrom!: AssetSourceImportedFrom | null;
 
+  @Column({ type: 'text', nullable: true }) provider!: string | null;
+  @Column({ type: 'text', nullable: true }) creatorId!: string | null;
+  @Column({ type: 'text', nullable: true }) postId!: string | null;
+  @Column({ type: 'text', nullable: true }) attachmentId!: string | null;
+  @Column({ type: 'timestamp with time zone', nullable: true }) publishedAt!: Timestamp | null;
+  @Column({ type: 'text', nullable: true }) postText!: string | null;
+
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
 }

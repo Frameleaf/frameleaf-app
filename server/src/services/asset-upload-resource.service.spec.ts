@@ -164,6 +164,7 @@ describe('resumable asset byte commit boundaries', () => {
       { claims: vi.fn().mockResolvedValue([]), recordDevice: vi.fn() } as never,
       sources as never,
       captures as never,
+      {} as never,
     );
     vi.spyOn(service as unknown as { owner: (auth: AuthDto) => Promise<string> }, 'owner').mockResolvedValue('owner');
     vi.spyOn(service as unknown as { folder: (id: string) => string }, 'folder').mockReturnValue(folder);
@@ -533,6 +534,7 @@ describe('resumable asset byte commit boundaries', () => {
       harness.physical as never,
       { warn: vi.fn() } as never,
       harness.rateLimits as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -959,6 +961,7 @@ describe('Live Photo required postcommit ingestion', () => {
       { claims: vi.fn().mockResolvedValue([]), recordDevice: vi.fn() } as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     vi.spyOn(service as unknown as { owner: () => Promise<string> }, 'owner').mockResolvedValue(ownerId);
     vi.spyOn(
@@ -996,6 +999,7 @@ describe('iCloud source identity on resumable uploads (FL-296)', () => {
       logger as never,
       {} as never,
       identities as never,
+      {} as never,
       {} as never,
       {} as never,
     );

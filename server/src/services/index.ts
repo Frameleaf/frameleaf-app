@@ -108,6 +108,7 @@ import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
 import { MediaHealthOperationService } from 'src/services/media-health-operation.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
+import { MediaImportService } from 'src/services/media-import.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaOperationEventService } from 'src/services/media-operation-event.service.js';
 import { MediaOperationSweepService } from 'src/services/media-operation-sweep.service.js';
@@ -210,6 +211,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  MediaImportService,
   PrivateLogsService,
   PrivateMlLogsService,
   PhotoLocationsService,

@@ -632,6 +632,7 @@ export interface JobCounts {
 }
 
 export type JobItem =
+  | { name: JobName.MediaImport; data: IEntityJob }
   | { name: JobName.ICloudSync; data: IEntityJob }
   | { name: JobName.ICloudRelations; data: { id: string; ownerId: string } }
 

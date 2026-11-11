@@ -145,6 +145,7 @@ describe('direct peer and actual native resource publication', () => {
       new ICloudIdentityRepository(db),
       new PhotoSourceRepository(db),
       new CaptureRepository(db),
+      {} as never,
     );
     const startDirect = () => {
       direct = new AssetUploadDirectService(native, authentication, admission);
