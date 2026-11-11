@@ -338,7 +338,9 @@ export class SmartInfoService extends BaseService {
     // outside any run, since the copy may already have been skipped in this one before the source had it
     const copies = await this.partnerOriginRepository.getLiveCopyIds(id);
     if (copies.length > 0) {
-      await this.jobRepository.queueOutsideRun(copies.map((copyId) => ({ name: JobName.SmartSearch, data: { id: copyId } })));
+      await this.jobRepository.queueOutsideRun(
+        copies.map((copyId) => ({ name: JobName.SmartSearch, data: { id: copyId } })),
+      );
     }
     return JobStatus.Success;
   }
