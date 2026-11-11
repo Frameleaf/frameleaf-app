@@ -201,12 +201,13 @@ describe(AnalyticsRepository.name, () => {
     ]);
   });
 
-  it('dates an imported photo taken before the server held anything by when it was taken', async () => {
+  it('dates an imported photo taken before the server started by when it was taken', async () => {
     const { db, ctx, sut } = await setup();
-    const { user } = await ctx.newUser();
     const imported = new Date('2026-09-18T12:00:00.000Z');
-    // the server's first item, then a library imported later that day: photos from 2019 and June 2026
-    await newSizedAsset(ctx, user.id, 10, { createdAt: imported, fileCreatedAt: imported });
+    // the server starts with its first account; a photo taken then, and a library imported later
+    // that day with photos from 2019 and June 2026
+    const { user } = await ctx.newUser({ createdAt: imported });
+    const first = await newSizedAsset(ctx, user.id, 10, { createdAt: imported, fileCreatedAt: imported });
     const old = await newSizedAsset(ctx, user.id, 100, {
       createdAt: new Date('2026-09-18T13:00:00.000Z'),
       fileCreatedAt: new Date('2019-05-01T09:00:00.000Z'),
@@ -220,7 +221,7 @@ describe(AnalyticsRepository.name, () => {
     // uploaded later and taken after the server started: counts from the day it arrived, as before
     await newSizedAsset(ctx, user.id, 5, {
       createdAt: new Date('2026-09-19T08:00:00.000Z'),
-      fileCreatedAt: new Date('2026-09-18T20:00:00.000Z'),
+      fileCreatedAt: new Date('2026-09-18T12:30:00.000Z'),
     });
 
     await expect(sut.getArrivalsByDay(account(user.id), '2026-06-22', '2026-09-19')).resolves.toEqual(
@@ -236,6 +237,11 @@ describe(AnalyticsRepository.name, () => {
       { day: '2026-09-18', items: 1, logicalBytes: 10, physicalBytes: 10 },
       { day: '2026-09-19', items: 1, logicalBytes: 5, physicalBytes: 5 },
     ]);
+    // removing the server's first item never moves anyone else's added day
+    await db.deleteFrom('asset').where('id', '=', first.id).execute();
+    await expect(sut.getArrivalsByDay(account(user.id), '2026-06-22', '2026-09-19')).resolves.toEqual(
+      expect.arrayContaining([{ day: '2026-09-19', photos: 1, videos: 0 }]),
+    );
   });
 
   it('reads albums in scope and whether the viewer may see each one', async () => {

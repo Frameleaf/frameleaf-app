@@ -112,11 +112,12 @@ const scopeCondition = (scope: AnalyticsScope, alias = 'a'): RawBuilder<boolean>
 };
 
 /**
- * The UTC day an item joined the library, for the charts. A photo taken before this server held
- * anything (an imported library) counts from the day it was taken, so a library imported in one go
- * keeps its history; anything newer counts from the day it arrived. Alias `a` is the asset.
+ * The UTC day an item joined the library, for the charts. A photo taken before this server started
+ * (its first account was made) counts from the day it was taken, so a library imported in one go
+ * keeps its history; anything newer counts from the day it arrived. The first account stays when
+ * items are removed, so the dates never move. Alias `a` is the asset.
  */
-const ADDED_DAY = sql<string>`((case when a."fileCreatedAt" < (select min(first."createdAt") from asset first)
+const ADDED_DAY = sql<string>`((case when a."fileCreatedAt" < (select min(first."createdAt") from "user" first)
   then a."fileCreatedAt" else a."createdAt" end) at time zone 'UTC')::date`;
 
 /** FL-79: file extensions per photo format; RAW is decided first with the same pattern as `summary.raw` */

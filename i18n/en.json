@@ -3288,7 +3288,7 @@
   "frameleaf_analytics_coverage_title": "Coverage",
   "frameleaf_analytics_date_range": "Date range",
   "frameleaf_analytics_date_taken": "Date taken",
-  "frameleaf_analytics_date_uploaded": "Date uploaded",
+  "frameleaf_analytics_date_uploaded": "Date added",
   "frameleaf_analytics_days_caption": "Darker squares are busier days. Hover a square for its exact count.",
   "frameleaf_analytics_days_count": "{count, plural, one {# day} other {# days}}",
   "frameleaf_analytics_days_kicker": "Every day",

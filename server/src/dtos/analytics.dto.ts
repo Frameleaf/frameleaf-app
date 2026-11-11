@@ -138,14 +138,22 @@ const AnalyticsBucketSchema = z
     from: day(),
     through: day(),
     partial: z.boolean().describe('Cut short by the edge of the selected dates'),
-    photos: count().describe('Photos added in this period and still in the library'),
-    videos: count().describe('Videos added in this period and still in the library'),
+    photos: count().describe(
+      'Photos added in this period and still in the library (a photo taken before the server started counts from the day it was taken)',
+    ),
+    videos: count().describe(
+      'Videos added in this period and still in the library (a photo taken before the server started counts from the day it was taken)',
+    ),
     completed: count().nullable().describe('Completed processing attempts; null when not available for this scope'),
     failed: count().nullable().describe('Failed processing attempts; null when not available for this scope'),
     items: count().nullable().describe('Library items at the last observation in this period; null when none'),
     logicalBytes: bytes().nullable(),
     physicalBytes: bytes().nullable(),
-    observedAt: dateTime().nullable().describe('When the growth values were read; null for a gap'),
+    observedAt: dateTime()
+      .nullable()
+      .describe(
+        'When the growth values were read, or for a bucket before the first nightly reading, the end of the bucket they were rebuilt for from the items added by then; null for a gap',
+      ),
   })
   .meta({ id: 'AnalyticsBucketDto' });
 
@@ -153,7 +161,9 @@ const AnalyticsDaySchema = z
   .object({
     date: day(),
     captured: count().describe('Items taken on this local date'),
-    uploaded: count().describe('Items added on this UTC date'),
+    uploaded: count().describe(
+      'Items added on this UTC date (a photo taken before the server started counts from the day it was taken)',
+    ),
   })
   .meta({ id: 'AnalyticsDayDto' });
 
