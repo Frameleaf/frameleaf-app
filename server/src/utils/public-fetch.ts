@@ -194,10 +194,11 @@ const unmapped = (address: string): string => {
   return address;
 };
 
-/** Cloud metadata services that sit inside private ranges (Alibaba, AWS over IPv6): never reachable. */
+/** Cloud metadata services that sit inside private ranges (Alibaba, AWS and Google Cloud over IPv6): never reachable. */
 const metadataAddresses = subnets([
   ['100.100.100.200', 32, 'ipv4'],
   ['fd00:ec2::254', 128, 'ipv6'],
+  ['fd20:ce::254', 128, 'ipv6'],
 ]);
 
 /** Whether an automation may send to `address`: anywhere public, a home address only when allowed. */
