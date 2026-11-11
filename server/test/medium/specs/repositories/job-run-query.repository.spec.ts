@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { getRun, listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
+import { getRun, listRunItems, listRuns, observeQueueRun, recentFileCheck } from 'src/queue/run-query.js';
 import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -661,6 +661,25 @@ describe('Recent work (FL-1349)', () => {
       await sql`update library set "deletedAt" = now() where id = ${libraryId}::uuid`.execute(db);
       expect((await read(done)).libraryName).toBeUndefined();
     });
+  });
+
+  it("reads Library care's file checks while they run, and for a while after (FL-1430)", async () => {
+    await sql`truncate asset_health_run cascade`.execute(db);
+    expect(await recentFileCheck(db)).toBeUndefined();
+    const check = (category: string, status: string, finishedAgo: number | null, checked = 0, total = 0) =>
+      sql`insert into asset_health_run(category, status, "startedAt", "finishedAt", "checkedAssets", "totalAssets")
+        values (${category}, ${status}, now() - interval '20 minutes',
+          case when ${finishedAgo}::int is null then null else now() - ${finishedAgo}::int * interval '1 minute' end,
+          ${checked}, ${total})`.execute(db);
+    await check('corrupt', 'completed', 60 * 24, 900, 900);
+    expect(await recentFileCheck(db)).toBeUndefined();
+    await check('missing', 'completed', 5, 1786, 1786);
+    expect(await recentFileCheck(db)).toMatchObject({ running: false, checked: 1786, total: 1786 });
+    await check('corrupt', 'running', null);
+    // a check that is running counts alone, without a number yet
+    expect(await recentFileCheck(db)).toMatchObject({ running: true, finishedAt: null, checked: 0, total: 0 });
+    await check('untracked', 'running', null);
+    expect(await recentFileCheck(db)).toMatchObject({ running: true });
   });
 
   it('without foldNightly the list is unchanged', async () => {

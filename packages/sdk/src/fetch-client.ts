@@ -10508,6 +10508,18 @@ export type RunningJobsResponseDto = {
     queues: QueueRunDto[];
 };
 export type JobRunPageDto = {
+    /** With foldNightly, on the first page: Library care's checks for missing and damaged files, running now or finished in the last 12 hours */
+    fileCheck?: {
+        /** Files checked so far; while a check runs this is often still 0 */
+        checked: number;
+        /** When the last one finished; null while any still runs */
+        finishedAt: string | null;
+        /** Some of the checks are still going */
+        running: boolean;
+        startedAt: string;
+        /** Files to check; 0 when not known yet */
+        total: number;
+    };
     hasNextPage: boolean;
     items: JobRunResponseDto[];
 };

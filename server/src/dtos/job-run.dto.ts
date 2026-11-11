@@ -189,6 +189,18 @@ export class JobRunPageDto extends createZodDto(
     .object({
       items: z.array(JobRunResponseSchema),
       hasNextPage: z.boolean(),
+      fileCheck: z
+        .object({
+          running: z.boolean().describe('Some of the checks are still going'),
+          startedAt: z.iso.datetime(),
+          finishedAt: z.iso.datetime().nullable().describe('When the last one finished; null while any still runs'),
+          checked: z.int().min(0).describe('Files checked so far; while a check runs this is often still 0'),
+          total: z.int().min(0).describe('Files to check; 0 when not known yet'),
+        })
+        .optional()
+        .describe(
+          "With foldNightly, on the first page: Library care's checks for missing and damaged files, running now or finished in the last 12 hours",
+        ),
     })
     .meta({ id: 'JobRunPageDto' }),
 ) {}

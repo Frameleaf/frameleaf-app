@@ -144,6 +144,30 @@ describe('durable run read service', () => {
     expect(plain.items[0]).not.toHaveProperty('leftOverStreak');
     expect(plain.items[0]).not.toHaveProperty('leftOver');
   });
+  it("shows Library care's file checks on Recent work's first page only (FL-1430)", async () => {
+    mocks.job.listRuns.mockResolvedValue([]);
+    mocks.job.recentFileCheck.mockResolvedValue({
+      running: true,
+      startedAt: new Date('2026-11-11T02:35:39.000Z'),
+      finishedAt: null,
+      checked: 0,
+      total: 0,
+    });
+    const first = await sut.getRuns(JobRunSearchDto.schema.parse({ foldNightly: 'true' }));
+    expect(first.fileCheck).toEqual({
+      running: true,
+      startedAt: '2026-11-11T02:35:39.000Z',
+      finishedAt: null,
+      checked: 0,
+      total: 0,
+    });
+    expect(JobRunPageDto.schema.parse(first)).toEqual(first);
+    expect(
+      (await sut.getRuns(JobRunSearchDto.schema.parse({ foldNightly: 'true', skip: '25' }))).fileCheck,
+    ).toBeUndefined();
+    expect((await sut.getRuns(JobRunSearchDto.schema.parse({}))).fileCheck).toBeUndefined();
+    expect(mocks.job.recentFileCheck).toHaveBeenCalledTimes(1);
+  });
   describe('left-over photos (FL-1349)', () => {
     const review = {
       photos: 2,

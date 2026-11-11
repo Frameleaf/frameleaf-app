@@ -139,9 +139,18 @@ const RUN_FAILURE_ACTIONS: Record<'retry' | 'stop', readonly RunFailureCause[]> 
 export class JobService extends BaseService {
   async getRuns({ take, skip, foldNightly }: JobRunSearchDto): Promise<JobRunPageDto> {
     const rows = await this.jobRepository.listRuns(take + 1, skip, foldNightly ?? false);
+    // FL-1430: Recent work's first page also shows Library care's file checks
+    const fileCheck = foldNightly && skip === 0 ? await this.jobRepository.recentFileCheck() : undefined;
     return {
       items: rows.slice(0, take).map((row) => mapJobRun(row)),
       hasNextPage: rows.length > take,
+      ...(fileCheck && {
+        fileCheck: {
+          ...fileCheck,
+          startedAt: fileCheck.startedAt.toISOString(),
+          finishedAt: fileCheck.finishedAt?.toISOString() ?? null,
+        },
+      }),
     };
   }
 

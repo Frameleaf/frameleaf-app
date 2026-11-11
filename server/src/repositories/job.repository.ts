@@ -33,7 +33,7 @@ import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/que
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
-import { nightOf, reportedQueueJobs } from 'src/queue/run-query.js';
+import { nightOf, recentFileCheck, reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -783,6 +783,11 @@ export class JobRepository {
 
   getRun(runId: string) {
     return this.store.getRun(runId);
+  }
+
+  /** FL-1430: Library care's file checks running now or just finished, for Recent work. */
+  recentFileCheck() {
+    return recentFileCheck(this.store.db);
   }
 
   listRunItems(runId: string, take: number, skip: number) {

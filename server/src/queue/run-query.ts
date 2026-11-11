@@ -1097,6 +1097,41 @@ async function earlierNights(db: Kysely<any>, earlier: NightGroup[], roots: stri
   };
 }
 
+/** FL-1430: Library care's file checks for missing and damaged files, as one piece of work. */
+export type RecentFileCheck = {
+  running: boolean;
+  startedAt: Date;
+  finishedAt: Date | null;
+  checked: number;
+  total: number;
+};
+/** How long a finished file check stays in Recent work. */
+const FILE_CHECK_SHOWN = '12 hours';
+
+/**
+ * FL-1430: the file checks (Library care's missing and corrupt checks, one row per account and kind) still running,
+ * or else those that finished in the last `FILE_CHECK_SHOWN`, added up. `asset_health_run` is small: a few rows a night.
+ * ponytail: a running check writes its counts only when it ends, so while it runs `total` is usually 0.
+ */
+export async function recentFileCheck(db: Kysely<any>): Promise<RecentFileCheck | undefined> {
+  const {
+    rows: [row],
+  } = await sql<RecentFileCheck & { n: number }>`with picked as (
+      select * from asset_health_run where category in ('missing','corrupt') and status = 'running'
+      union all
+      select * from asset_health_run where category in ('missing','corrupt') and status <> 'running'
+        and "finishedAt" > now() - ${FILE_CHECK_SHOWN}::interval
+        and not exists (select 1 from asset_health_run where category in ('missing','corrupt') and status = 'running')
+    ) select count(*)::int n, bool_or(status = 'running') running, min("startedAt") "startedAt",
+      case when bool_or(status = 'running') then null else max("finishedAt") end "finishedAt",
+      coalesce(sum("checkedAssets"), 0)::int checked, coalesce(sum("totalAssets"), 0)::int total from picked`.execute(
+    db,
+  );
+  if (!row || row.n === 0) return;
+  const { n: _, ...check } = row;
+  return check;
+}
+
 export async function getRun(db: Kysely<any>, runId: string): Promise<RunRead | undefined> {
   const {
     rows: [row],
