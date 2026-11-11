@@ -334,10 +334,11 @@ export class SmartInfoService extends BaseService {
     if (reverseGeocoding.enabled) {
       await this.jobRepository.queue({ name: JobName.LandmarkInfer, data: { id, trigger: 'embedding' } });
     }
-    // each partner copy of this photo takes the embedding (`handleEncodeClip`), and hands it on to its own
+    // each partner copy of this photo takes the embedding (`handleEncodeClip`), and hands it on to its own;
+    // outside any run, since the copy may already have been skipped in this one before the source had it
     const copies = await this.partnerOriginRepository.getLiveCopyIds(id);
     if (copies.length > 0) {
-      await this.jobRepository.queueAll(copies.map((copyId) => ({ name: JobName.SmartSearch, data: { id: copyId } })));
+      await this.jobRepository.queueOutsideRun(copies.map((copyId) => ({ name: JobName.SmartSearch, data: { id: copyId } })));
     }
     return JobStatus.Success;
   }

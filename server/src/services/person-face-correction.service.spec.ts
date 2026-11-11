@@ -267,7 +267,7 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
           ['faces'],
           auth.user.id,
         );
-        expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
           { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: face.assetId, fields: ['faces'] } },
         ]);
         await expect(sut.correctFace(auth, face.id, { expectedRevision: 'stale', hidden })).rejects.toBeInstanceOf(

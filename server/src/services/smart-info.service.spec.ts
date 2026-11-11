@@ -53,7 +53,7 @@ describe(SmartInfoService.name, () => {
     mocks.partnerOrigin.getLiveCopyIds.mockResolvedValue(['copy']);
     await sut.handlePostprocessClip({ id: asset.id });
     expect(mocks.partnerOrigin.getLiveCopyIds).toHaveBeenCalledWith(asset.id);
-    expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SmartSearch, data: { id: 'copy' } }]);
+    expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([{ name: JobName.SmartSearch, data: { id: 'copy' } }]);
   });
 
   it('refuses a stored producer change even when postprocessing vector bytes stay equal', async () => {

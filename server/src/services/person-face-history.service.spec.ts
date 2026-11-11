@@ -379,7 +379,7 @@ describe('PersonService face history (FL-57)', () => {
         ['faces'],
         auth.user.id,
       );
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
         { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: entry.assetId, fields: ['faces'] } },
       ]);
       expect(mocks.job.queue).toHaveBeenCalledWith({

@@ -508,7 +508,7 @@ describe(PersonService.name, () => {
 
       expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith('asset', [face.assetId], ['faces'], auth.user.id);
       expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledOnce();
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
         { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: face.assetId, fields: ['faces'] } },
       ]);
     });
@@ -2304,7 +2304,7 @@ describe(PersonService.name, () => {
       await expect(sut.handleDetectFaces({ id: copy.id })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
       expect(mocks.partnerOrigin.getIdsWithFollowers).toHaveBeenCalledWith('asset', ['source']);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
         { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: 'source', fields: ['faces'] } },
       ]);
 

@@ -1545,8 +1545,9 @@ export class PersonService extends BaseService {
       }
 
       await this.assetRepository.upsertJobStatus({ assetId: currentAsset.id, facesRecognizedAt: new Date() });
+      // with the faces, so a copy never takes the set they replace
+      await this.propagateFaces([id]);
     });
-    await this.propagateFaces([id]);
   }
 
   /**
@@ -2292,11 +2293,14 @@ export class PersonService extends BaseService {
     await this.propagateFaces(assetIds);
   }
 
-  /** Copy the faces of `assetIds` into every partner copy that follows them (one waiting job per photo). */
+  /**
+   * Copy the faces of `assetIds` into every partner copy that follows them (one waiting job per photo). Outside
+   * any run: detection and each later recognition ask again, and a run keeps only the first request per item.
+   */
   private async propagateFaces(assetIds: string[]) {
     const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', [...new Set(assetIds)]);
     if (sources.length > 0) {
-      await this.jobRepository.queueAll(
+      await this.jobRepository.queueOutsideRun(
         sources.map((sourceId) => ({
           name: JobName.PartnerPropagate as const,
           data: { kind: 'asset' as const, sourceId, fields: [AssetOriginField.Faces] },
