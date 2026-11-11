@@ -7,6 +7,9 @@ import { resolve } from 'node:path';
  * iCloud ledgers. They take about as long as every other medium spec together, so CI runs them as
  * one job of their own beside the rest (`FRAMELEAF_MEDIUM_SUITE`). A spec left off this list still
  * runs: `core` is every medium spec that is not listed here.
+ *
+ * `corpus` (FL-883) is the known-bad file corpus: it needs the frozen media fixtures and the image's native
+ * decoders, and runs on pull requests that change the media pipeline (.github/workflows/known-bad-corpus.yml), not in `core`.
  */
 export const MEDIUM_SCALE_SUITES = Object.freeze({
   scale: [
@@ -19,6 +22,7 @@ export const MEDIUM_SCALE_SUITES = Object.freeze({
     'test/medium/specs/repositories/library-public-summary.spec.ts',
     'test/medium/specs/immich-import/derived-work.spec.ts',
   ],
+  corpus: ['test/medium/specs/corpus/known-bad-corpus.spec.ts'],
 });
 
 const ALL = ['test/medium/**/*.spec.ts'];

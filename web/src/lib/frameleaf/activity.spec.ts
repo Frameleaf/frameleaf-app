@@ -1122,3 +1122,40 @@ describe('formatFinishedTime (FL-1388)', () => {
     expect(formatFinishedTime(at(10, 3, 12), 'fr-FR', now)).toMatch(/^Aujourd’hui, 0?3:12$/);
   });
 });
+
+// FL-1409 (M7): what stopped a library scan, from the server's stable code and never from its message.
+describe('a library scan that stopped early (FL-1409)', () => {
+  const scan = (overrides: Partial<MediaOperationDto>) =>
+    fromMediaOperation(
+      operation({
+        kind: MediaOperationKind.LibraryScan,
+        label: 'Family archive',
+        status: MediaOperationStatus.Failed,
+        error: 'The library queue attempt was interrupted',
+        errorCode: 'library_scan_interrupted',
+        ...overrides,
+      }),
+    );
+
+  it('is interrupted after a restart or a lost worker', () => {
+    expect(scan({}).scan).toBe('interrupted');
+    expect(scan({ errorCode: 'lease_expired' }).scan).toBe('interrupted');
+  });
+
+  it('is waiting for a drive, not interrupted, when its folder can’t be reached', () => {
+    expect(scan({ errorCode: 'library_source_unavailable', error: '/mnt/archive: not found' }).scan).toBe('drive');
+    expect(scan({ errorCode: 'library_source_empty' }).scan).toBe('drive');
+  });
+
+  it('is carrying on by itself while it waits for its automatic retry', () => {
+    const item = scan({ status: MediaOperationStatus.Queued, autoRetries: 1, retryAt: '2026-11-10T10:00:30.000Z' });
+    expect(item.scan).toBe('resuming');
+    expect(item.failed).toBe(false);
+  });
+
+  it('says nothing for any other failure, or any other job', () => {
+    expect(scan({ errorCode: 'library_scan_no_folders' }).scan).toBeUndefined();
+    expect(scan({ kind: MediaOperationKind.MediaHealth }).scan).toBeUndefined();
+    expect(scan({ status: MediaOperationStatus.Completed, errorCode: null }).scan).toBeUndefined();
+  });
+});

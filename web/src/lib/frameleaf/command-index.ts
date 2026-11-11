@@ -15,6 +15,7 @@ import {
   mdiBackupRestore,
   mdiBellOutline,
   mdiBookshelf,
+  mdiCellphoneKey,
   mdiClockOutline,
   mdiCogOutline,
   mdiContentDuplicate,
@@ -290,6 +291,13 @@ export const USER_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_passkey_title',
     descriptionKey: 'frameleaf_passkey_subtitle',
     icon: mdiFingerprint,
+  },
+  // FL-831: two-step sign-in, opened from How you sign in (FL-776 prototype `TwoStep.jsx`).
+  {
+    key: 'two-step',
+    titleKey: 'frameleaf_two_step_title',
+    descriptionKey: 'frameleaf_two_step_subtitle',
+    icon: mdiCellphoneKey,
   },
   {
     key: 'user-pin-code-settings',

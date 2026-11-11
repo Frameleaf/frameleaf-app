@@ -8,6 +8,7 @@
    * next run opens with the title card again. Under Reduce Motion the transition is a fade, and
    * none of this shows.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { memoryLowerThird, memoryTitleCard } from '$lib/frameleaf/memory-engine';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import { effectiveTransition, SlideshowTransition } from '$lib/frameleaf/slideshow-transitions';
@@ -41,7 +42,7 @@
   const subtitle = $derived.by(() => {
     const format = (value: string | undefined) => {
       const date = value ? DateTime.fromISO(value, { zone: 'UTC' }) : undefined;
-      return date?.isValid ? date.toLocaleString(DateTime.DATE_MED, { locale: $locale }) : '';
+      return date?.isValid ? formatLuxon(date, DateTime.DATE_MED, $locale) : '';
     };
     const start = format(album?.startDate);
     const end = format(album?.endDate);
@@ -71,7 +72,7 @@
       asset.exifInfo?.timeZone && asset.exifInfo.dateTimeOriginal
         ? fromISODateTime(asset.exifInfo.dateTimeOriginal, asset.exifInfo.timeZone)
         : fromISODateTimeUTC(asset.localDateTime);
-    return date.isValid ? date.toLocaleString(DateTime.DATE_FULL, { locale: $locale }) : '';
+    return formatLuxon(date, DateTime.DATE_FULL, $locale);
   });
   const lowerThird = $derived(
     memoryLowerThird({ city: asset.exifInfo?.city }, { fallbackTitle: collectionTitle, day, video: false }),

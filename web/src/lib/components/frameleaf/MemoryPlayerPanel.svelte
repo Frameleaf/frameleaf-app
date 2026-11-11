@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { isForwardKey } from '$lib/frameleaf/reading-direction';
   /**
    * Frameleaf memory player (FL-62).
@@ -206,7 +207,7 @@
   const currentMemoryAsset = $derived(current && assetIndex >= 0 ? current.memory.assets[assetIndex] : undefined);
   const currentDay = $derived(
     currentMemoryAsset
-      ? fromISODateTimeUTC(currentMemoryAsset.localDateTime).toLocaleString(DateTime.DATE_FULL, { locale: $locale })
+      ? formatLuxon(fromISODateTimeUTC(currentMemoryAsset.localDateTime), DateTime.DATE_FULL, $locale)
       : '',
   );
   /**

@@ -321,7 +321,8 @@ describe(LibraryScanService.name, () => {
         expect(token).toBe('token');
         expect(queueExecution.getStore()?.signal).toBe(controller.signal);
         const connection = await client.reserve();
-        expect(options?.retry).toBe(false);
+        // FL-1409: the scan goes back in the queue once rather than failing
+        expect(options?.resumable).toBe(true);
         expect(executionSignal()?.aborted).toBe(false);
         try {
           await connection.unsafe('terminal claim-fenced update');
@@ -478,8 +479,22 @@ describe(LibraryScanService.name, () => {
         expect.any(String),
         'token',
         expect.objectContaining({ errorCode: 'library_scan_interrupted' }),
-        { retry: false, executor: undefined },
+        { resumable: true, executor: undefined },
       );
+    });
+
+    it("keeps an interrupted scan's run open while it waits for its automatic retry (FL-1409)", async () => {
+      const controller = new AbortController();
+      const context = { signal: controller.signal, progressUnits: 0, progress: vi.fn() } as unknown as QueueExecution;
+      operations.claimNext.mockImplementationOnce(() => {
+        controller.abort();
+        return { operation: operationOf(), claimToken: 'token' };
+      });
+      operations.fail.mockResolvedValue('retrying');
+      await queueExecution.run(context, () => sut.drain());
+      const ended = mocks.job.settleLibraryScanSource.mock.calls.at(-1)?.[2] as (outcome: unknown) => boolean;
+      expect(ended('retrying')).toBe(false);
+      expect(ended('failed')).toBe(true);
     });
 
     it('handles only one domain operation per queue wake even when more are claimable', async () => {

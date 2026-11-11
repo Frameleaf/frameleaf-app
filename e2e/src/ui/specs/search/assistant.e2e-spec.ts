@@ -8,6 +8,7 @@ import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
  */
 const json = (body: unknown) => ({ status: 200, contentType: 'application/json', json: body });
 const ASSET = '00000000-0000-4000-8000-0000000000a1';
+const SWITCH_BACK_TOKEN = '00000000-0000-4000-8000-0000000000a2';
 
 const answer = {
   query: 'Emma by the lake',
@@ -35,6 +36,7 @@ const answer = {
     },
   ],
   warnings: [],
+  switchBackToken: SWITCH_BACK_TOKEN,
 };
 
 const enableAssistant = async (context: BrowserContext) => {
@@ -72,9 +74,14 @@ test.describe('Library Assistant search (FL-918)', () => {
   test('answers a question with why each photo matched, and switches to classic search', async ({ context, page }) => {
     const asked: unknown[] = [];
     const saved: unknown[] = [];
+    const switchedBack: unknown[] = [];
     await context.route('**/api/assistant/ask', async (route) => {
       asked.push(route.request().postDataJSON());
       await route.fulfill(json(answer));
+    });
+    await context.route('**/api/assistant/classic', async (route) => {
+      switchedBack.push(route.request().postDataJSON());
+      await route.fulfill({ status: 204 });
     });
     await context.route('**/api/users/me/preferences', async (route) => {
       if (route.request().method() === 'PUT') {
@@ -100,5 +107,6 @@ test.describe('Library Assistant search (FL-918)', () => {
     await page.getByRole('radio', { name: 'Classic search' }).click();
     await expect(page.getByRole('radio', { name: 'Classic search' })).toHaveAttribute('aria-checked', 'true');
     await expect.poll(() => saved).toContainEqual({ search: { classic: true } });
+    await expect.poll(() => switchedBack).toEqual([{ token: SWITCH_BACK_TOKEN }]);
   });
 });

@@ -38,6 +38,20 @@ describe('unsupported files', () => {
     expect(warning).toHaveBeenCalledWith('scan.tga|image/x-tga', { timeout: 10_000 });
     expect(get(uploadAssetsStore)).toHaveLength(0);
   });
+
+  it("leaves out the operating system's files a folder brings, without a warning", async () => {
+    const warning = vi.spyOn(toastManager, 'warning').mockImplementation(() => undefined as never);
+    const inFolder = (name: string) => {
+      const file = new File(['x'], name);
+      Object.defineProperty(file, 'webkitRelativePath', { value: `Trip/${name}` });
+      return file;
+    };
+
+    await fileUploadHandler({ files: [inFolder('.DS_Store'), inFolder('Thumbs.db'), inFolder('._IMG_1.jpg')] });
+
+    expect(warning).not.toHaveBeenCalled();
+    expect(get(uploadAssetsStore)).toHaveLength(0);
+  });
 });
 
 describe('fileUploader error handling', () => {

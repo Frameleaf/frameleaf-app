@@ -335,6 +335,8 @@ const REQUIRED_TEST_JOBS = Object.freeze([
   "Unit Test CLI",
   "Unit Test CLI (Windows)",
   "Lint Web",
+  "Lint Web Half (components)",
+  "Lint Web Half (rest)",
   "Test Web",
   "Test i18n",
   "End-to-End Lint",

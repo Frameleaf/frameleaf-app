@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDate, formatLuxon } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import { DateTime } from 'luxon';
   /**
@@ -198,7 +199,7 @@
 
   /** FL-539: the day the next item goes for good, as the prototype says it ("Thursday, 14 November"). */
   const dayOf = (iso: string) =>
-    DateTime.fromISO(iso, { locale: $locale }).toLocaleString({ weekday: 'long', month: 'long', day: 'numeric' });
+    formatLuxon(DateTime.fromISO(iso), { weekday: 'long', month: 'long', day: 'numeric' }, $locale);
 
   const fetchPage = (page: number, size: number) =>
     getTrashItems({
@@ -532,7 +533,7 @@
       : $t('frameleaf_trash_days_left', { values: { count: daysLeft } });
   const removedText = (removedOn: Date) =>
     $t('frameleaf_trash_removed_on', {
-      values: { date: removedOn.toLocaleDateString($locale, { weekday: 'short', month: 'short', day: 'numeric' }) },
+      values: { date: formatDate(removedOn, { weekday: 'short', month: 'short', day: 'numeric' }, $locale) },
     });
 
   const sizeText = (row: TrashItemResponseDto) =>
