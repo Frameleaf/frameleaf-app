@@ -48,6 +48,7 @@
     handleMoveAlbumToCollection,
     handleUpdateAlbumInfo,
   } from '$lib/services/album.service';
+  import { hasLocalOfflineAlbums } from '$lib/frameleaf/local-offline';
   import { handleError } from '$lib/utils/handle-error';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
@@ -237,7 +238,7 @@
     desktopOffline =
       (globalThis as typeof globalThis & { __FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__?: boolean })
         .__FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__ === true;
-    localDesktopOffline = Reflect.get(globalThis, '__FRAMELEAF_DESKTOP_LOCAL_OFFLINE_ALBUMS__') === true;
+    localDesktopOffline = hasLocalOfflineAlbums();
     void Promise.resolve(getWorkflowCapabilities())
       .then((value) => {
         automationAvailable = value?.sourceFilters ?? false;
