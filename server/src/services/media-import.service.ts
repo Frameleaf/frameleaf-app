@@ -498,6 +498,7 @@ export class MediaImportService {
     if (failed && row.retries < 4) throw new MediaDownloadError('incomplete');
     if (row.subscriptionId && row.inspection)
       await this.repository.finishSubscription(authority, { ...row.inspection, entries: [] }, failed);
-    await this.repository.transition(authority, failed ? 'partial' : 'saved');
+    const saved = items.some((item) => item.state === 'saved');
+    await this.repository.transition(authority, failed ? (saved ? 'partial' : 'failed') : 'saved');
   }
 }

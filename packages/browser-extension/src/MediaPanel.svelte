@@ -163,7 +163,8 @@
   }
   async function poll(id: string) {
     const reply = await ask({ type: "media-poll", id });
-    if (disposed || step !== "inspecting") return;
+    // a reply for an inspection the user has left (Back, then another) is dropped
+    if (disposed || step !== "inspecting" || operation?.id !== id) return;
     if (reply?.operation) show(reply.operation);
     // any error ends the wait; only a reply that simply hasn't come yet is asked for again
     else if (problem || error) step = "menu";
@@ -497,6 +498,14 @@
         canCreate={false}
         onRefresh={async () => void (await sendRequest({ type: "refresh" }))}
       />
+      {#if collections.length === 0}
+        <small class="hint"
+          >You have no collections yet.
+          <a href={`${origin}/pro`} target="_blank" rel="noopener noreferrer"
+            >Make one in Boards</a
+          >, then reopen this.</small
+        >
+      {/if}
       <TagPicker
         tags={connection.catalog?.tags ?? []}
         bind:selected={tagIds}
