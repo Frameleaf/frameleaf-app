@@ -44,6 +44,7 @@ export type TripPhoto = {
   longitude: number | null;
   make: string | null;
   model: string | null;
+  dateSetByHand?: boolean;
 };
 
 export type TripSegment = { start: Date; end: Date; from: Date; to: Date; localStart: Date; localEnd: Date };

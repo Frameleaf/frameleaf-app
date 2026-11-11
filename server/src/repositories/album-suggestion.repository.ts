@@ -12,6 +12,7 @@ import {
   validLandmarkMatch,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { dateSetByHand } from 'src/utils/date-sanity.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, isNotLocked, isTimelineVisible, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
@@ -58,6 +59,8 @@ export type TripPhotoRow = {
   place: string | null;
   make: string | null;
   model: string | null;
+  /** A person chose this date (FL-1410), so `dateProblem` never calls it wrong. */
+  dateSetByHand?: boolean;
 };
 
 export type CandidateRow = Omit<TripPhotoRow, 'visibility'> & { originalFileName: string; hasCameraDetails: boolean };
@@ -121,6 +124,7 @@ export class AlbumSuggestionRepository {
           'photo.visibility',
           'photo_exif.make',
           'photo_exif.model',
+          dateSetByHand('photo').as('dateSetByHand'),
           ...this.located('photo'),
         ])
         .orderBy('photo.fileCreatedAt')

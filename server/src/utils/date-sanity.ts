@@ -65,9 +65,10 @@ const dateLooksWrong = (alias: string) => sql<boolean>`(
 
 /**
  * A scalar subquery on the EXIF row's key, not a join or `exists`: it is only run for the rare row whose
- * date looks wrong, and the planner cannot turn it into a hash of every edited photo.
+ * date looks wrong, and the planner cannot turn it into a hash of every edited photo. Also selected by
+ * callers that judge rows in memory (`dateProblem`), so both halves read the same mark.
  */
-const dateSetByHand = (alias: string) => sql<boolean>`coalesce((
+export const dateSetByHand = (alias: string) => sql<boolean>`coalesce((
   select 'dateTimeOriginal' = any(date_check_exif."lockedProperties")
   from asset_exif date_check_exif
   where date_check_exif."assetId" = ${sql.ref(`${alias}.id`)}

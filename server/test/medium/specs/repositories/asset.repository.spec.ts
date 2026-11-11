@@ -104,6 +104,30 @@ describe(AssetRepository.name, () => {
     expect(leap[0]).toMatchObject({ year: 2020, assets: [expect.objectContaining({ id: ids.get('2020-02-29') })] });
   });
 
+  it('calendar day lookup leaves out camera reset days unless a person set the date (FL-1410)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const add = async (day: string, locked = false) => {
+      const at = new Date(`${day}T12:00:00Z`);
+      const { asset } = await ctx.newAsset({ ownerId: user.id, localDateTime: at, fileCreatedAt: at });
+      await ctx.database.insertInto('asset_job_status').values({ assetId: asset.id }).execute();
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: `${asset.id}.jpg` });
+      await ctx.newExif({
+        assetId: asset.id,
+        make: 'Canon',
+        ...(locked && { lockedProperties: ['dateTimeOriginal'] as never }),
+      });
+      return asset.id;
+    };
+    await add('2000-01-01');
+    const chosen = await add('2000-01-01', true);
+    const real = await add('2010-01-01');
+    const days = await sut.getByDayOfYear([user.id], { year: 2026, month: 1, day: 1 });
+    expect(days.map(({ year }) => year)).toEqual([2010, 2000]);
+    expect(days[0].assets).toEqual([expect.objectContaining({ id: real })]);
+    expect(days[1].assets).toEqual([expect.objectContaining({ id: chosen })]);
+  });
+
   it('NSFW lookup retains its Set contract across parameter chunks', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();
