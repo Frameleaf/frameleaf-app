@@ -176,4 +176,14 @@ describe('library scan jobs', () => {
     await finishRuns(db, 10);
     expect(await run(scan.identity.operationId)).toEqual({ enumerationDone: true, finishedAt: expect.any(Date) });
   });
+
+  it('keeps the run open for a scan put back in the queue (FL-1409)', async () => {
+    const scan = await newScan();
+    await commit(scan, 1);
+    const requeued = (outcome: string) => outcome !== 'retrying';
+    await jobs.settleLibraryScanSource(scan.identity.operationId, () => Promise.resolve('retrying'), requeued);
+    expect(await run(scan.identity.operationId)).toMatchObject({ enumerationDone: false, finishedAt: null });
+    await jobs.settleLibraryScanSource(scan.identity.operationId, () => Promise.resolve('failed'), requeued);
+    expect(await run(scan.identity.operationId)).toMatchObject({ enumerationDone: true });
+  });
 });

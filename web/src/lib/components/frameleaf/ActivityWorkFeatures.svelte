@@ -260,7 +260,13 @@
       class:is-warning={card.stage === 'paused' || card.stuck}
     >
       <span class="fw3-icon" aria-hidden="true"><Icon icon={mdiCogOutline} size="20" /></span>
-      <div class="fw3-name"><strong>{title}</strong></div>
+      <div class="fw3-name">
+        <strong>{title}</strong>
+        {#if card.why}
+          <!-- FL-1409: the run's one reason, in Recent work's words ("The external library … can’t be reached"). -->
+          <small>{$t(card.why.key, { values: card.why.values })}</small>
+        {/if}
+      </div>
       <span class="fw3-where">
         <Icon icon={mdiServerOutline} size="14" aria-hidden />{$t('frameleaf_computers_this_server')}
       </span>

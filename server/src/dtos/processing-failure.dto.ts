@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { processingFailureSteps } from 'src/queue/processing-failure.js';
+import { stringToBool } from 'src/validation.js';
 
 const step = z.enum(processingFailureSteps).meta({ id: 'ProcessingFailureStep' });
 const item = z.object({ assetId: z.uuid(), step });
@@ -8,6 +9,10 @@ const item = z.object({ assetId: z.uuid(), step });
 const query = z
   .object({
     userId: z.uuid().optional(),
+    step: step.optional().describe('Only failures of this step'),
+    includeDismissed: stringToBool
+      .optional()
+      .describe('Also list failures someone chose to keep as they are or to stop trying (FL-1409)'),
     skip: z.coerce.number().int().nonnegative().default(0),
     take: z.coerce.number().int().min(1).max(200).default(100),
   })

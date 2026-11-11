@@ -550,12 +550,13 @@ describe(LibraryService.name, () => {
                   errorCode: null,
                 }
               : {
-                  status: MediaOperationStatus.Failed,
+                  // FL-1409: a stopped queue attempt puts the scan back for its one automatic retry.
+                  status: MediaOperationStatus.Queued,
                   errorCode: 'library_scan_interrupted',
                   claimToken: null,
                   claimExpiresAt: null,
-                  retryAt: null,
-                  autoRetries: 0,
+                  retryAt: expect.any(Date),
+                  autoRetries: 1,
                 },
           );
           await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([]);

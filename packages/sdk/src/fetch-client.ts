@@ -21159,7 +21159,11 @@ export type PreservationRestoreItemsQueryDto = {
     take?: number;
 };
 export type ProcessingFailureQueryDto = {
+    /** Also list failures someone chose to keep as they are or to stop trying (FL-1409) */
+    includeDismissed?: boolean;
     skip?: number;
+    /** Only failures of this step */
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 };
@@ -26200,8 +26204,10 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
 /**
  * List asset processing failures
  */
-export function getProcessingFailures({ skip, take, userId }: {
+export function getProcessingFailures({ includeDismissed, skip, step, take, userId }: {
+    includeDismissed?: boolean;
     skip?: number;
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -26209,7 +26215,9 @@ export function getProcessingFailures({ skip, take, userId }: {
         status: 200;
         data: ProcessingFailureResponseDto[];
     }>(`/assets/processing-failures${QS.query(QS.explode({
+        includeDismissed,
         skip,
+        step,
         take,
         userId
     }))}`, {
