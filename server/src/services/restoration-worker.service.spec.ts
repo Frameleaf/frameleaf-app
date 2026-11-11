@@ -1071,14 +1071,15 @@ describe(RestorationWorkerService.name, () => {
       const reviewed = { ...smooth('full'), model: { name, version } };
       if (resumed) {
         const first = planRifeFrameChunks(1125, originalStream.frameRateRational, 240)[0];
+        const identity = restorationChunkIdentity(reviewed, first);
         const timestamp = new Date(0);
         operations.getCheckpoints.mockResolvedValueOnce([
           {
-            ...restorationChunkIdentity(reviewed, first),
+            ...identity,
             id: 'rife-first',
             operationId: OPERATION_ID,
-            startTicks: Number(first.startTicks),
-            endTicks: Number(first.endTicks),
+            startTicks: Number(identity.startTicks),
+            endTicks: Number(identity.endTicks),
             prerollTicks: 0,
             state: MediaOperationCheckpointState.Complete,
             outputPath: '/cached/rife-first.mp4',
