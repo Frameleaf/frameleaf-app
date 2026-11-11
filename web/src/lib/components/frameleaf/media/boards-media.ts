@@ -6,22 +6,9 @@ import {
   type MediaSubscriptionCreateDto,
 } from '@frameleaf/sdk';
 import { newRequestKey } from '$lib/frameleaf/enrichment';
-import { libraryReferenceUrl } from '$lib/frameleaf/library-reference';
 
-export type MediaSheet = 'download' | 'subscriptions' | 'connections';
 export type MediaInterval = NonNullable<MediaSubscriptionCreateDto['intervalMinutes']>;
 export const MEDIA_INTERVALS = [15, 60, 360, 1440] as const;
-
-export const parseMediaUrls = (text: string, max: number) => {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const urls = lines.map((line) => libraryReferenceUrl(line));
-  return lines.length > 0 && lines.length <= max && urls.every((url) => url && url.length <= 8192)
-    ? [...new Set(urls as string[])]
-    : [];
-};
 
 export const mediaImportActive = (state: MediaImportState) =>
   [

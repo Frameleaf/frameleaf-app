@@ -1,5 +1,6 @@
 <script lang="ts">
   import { debounce } from 'lodash-es';
+  import { goto } from '$app/navigation';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
   import { onMount, onDestroy, untrack, type Snippet } from 'svelte';
@@ -11,12 +12,13 @@
   import { boardsView } from '$lib/frameleaf/boards-view.svelte';
   import { isFontName } from '$lib/frameleaf/boards-fonts';
   import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
+  import { creatorsHref } from '$lib/frameleaf/creators';
+  import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
   import { THUMBNAIL_SIZE_MAX, THUMBNAIL_SIZE_MIN, THUMBNAIL_SIZE_STEP } from '$lib/frameleaf/library-grid';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
   import LibraryLayoutSwitch from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
   import LibraryFilterPanel from '$lib/components/frameleaf/LibraryFilterPanel.svelte';
   import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
-  import type { MediaSheet } from '$lib/components/frameleaf/media/boards-media';
   import BookmarkInspector from '$lib/components/frameleaf/BookmarkInspector.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import BulkAlbumDialog from '$lib/components/frameleaf/BulkAlbumDialog.svelte';
@@ -72,7 +74,6 @@
     mdiChevronDown,
     mdiClose,
     mdiContentSaveOutline,
-    mdiDownloadOutline,
     mdiFolderMultipleOutline,
     mdiFolderPlusOutline,
     mdiImageOutline,
@@ -81,7 +82,6 @@
     mdiLinkVariant,
     mdiLinkVariantPlus,
     mdiMagnify,
-    mdiRss,
     mdiWeb,
     mdiPaletteOutline,
     mdiPaletteSwatchOutline,
@@ -192,9 +192,11 @@
   /** Boards opens its own save-link and extension dialogs unless the host passes its own. */
   let linkDialog = $state<{ url?: string } | null>(null);
   let extensionOpen = $state(false);
-  let mediaSheet = $state<MediaSheet>();
-  let mediaMenuHost = $state<HTMLDivElement>();
-  const openMediaSheet = (sheet: MediaSheet) => (mediaSheet = sheet);
+  /** "Add from the web…" (FL-1448): Creators' home, with the cursor in its add box. */
+  const addFromWeb = () => {
+    creatorsStore.focusAdd++;
+    void goto(creatorsHref());
+  };
   const saveLink = $derived(
     onSaveLink ?? (workspace === 'design' ? (url?: string) => (linkDialog = { url }) : undefined),
   );
@@ -773,7 +775,7 @@
 {#snippet addMenu()}
   <!-- Boards' Add menu (prototype screen 33): upload, save a link, a new collection, Eagle, the extension. -->
   <!-- Prototype ProWorkspace.jsx: Add is the page's one primary action. -->
-  <div class="fl-items-add" bind:this={mediaMenuHost}>
+  <div class="fl-items-add">
     <Menu label={$t('add')} align="end">
       {#snippet trigger()}<Icon icon={mdiPlus} size="18" aria-hidden={true} /><span aria-hidden="true">{$t('add')}</span
         >{/snippet}
@@ -791,14 +793,8 @@
       <MenuItem onSelect={() => eagleImportUi.show()}
         ><Icon icon={mdiImport} size="18" aria-hidden={true} />{$t('frameleaf_eagle_import_open')}</MenuItem
       >
-      <MenuItem onSelect={() => openMediaSheet('download')}>
-        <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />{$t('frameleaf_boards_media_download')}
-      </MenuItem>
-      <MenuItem onSelect={() => openMediaSheet('subscriptions')}>
-        <Icon icon={mdiRss} size="18" aria-hidden={true} />{$t('frameleaf_boards_media_subscriptions')}
-      </MenuItem>
-      <MenuItem onSelect={() => openMediaSheet('connections')}>
-        <Icon icon={mdiWeb} size="18" aria-hidden={true} />{$t('frameleaf_boards_media_connections')}
+      <MenuItem onSelect={addFromWeb}>
+        <Icon icon={mdiWeb} size="18" aria-hidden={true} />{$t('frameleaf_creators_add_from_web')}
       </MenuItem>
       {#if getExtension}<MenuItem onSelect={getExtension}
           ><Icon icon={mdiPuzzleOutline} size="18" aria-hidden={true} />{$t('frameleaf_boards_get_extension')}</MenuItem
@@ -1437,16 +1433,6 @@
       onSaved={() => generation++}
     />
   {/await}{/if}
-{#if mediaSheet}
-  {#await import('$lib/components/frameleaf/media/BoardsMediaDialog.svelte') then { default: BoardsMediaDialog }}
-    <BoardsMediaDialog
-      sheet={mediaSheet}
-      albumId={album?.id}
-      returnFocus={mediaMenuHost?.querySelector('button') ?? undefined}
-      onClosed={() => (mediaSheet = undefined)}
-    />
-  {/await}
-{/if}
 {#if extensionOpen}{#await import('$lib/components/frameleaf/BoardsExtensionDialog.svelte') then { default: BoardsExtensionDialog }}
     <BoardsExtensionDialog bind:open={extensionOpen} />
   {/await}{/if}

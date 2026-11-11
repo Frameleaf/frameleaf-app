@@ -2,6 +2,8 @@
   import { browser } from '$app/env';
   import { page } from '$app/state';
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
+  import CreatorAvatar from '$lib/components/frameleaf/creators/CreatorAvatar.svelte';
+  import PlatformMark from '$lib/components/frameleaf/creators/PlatformMark.svelte';
   import RailAlbumMenu from '$lib/components/frameleaf/RailAlbumMenu.svelte';
   import RailSavedSearches from '$lib/components/frameleaf/RailSavedSearches.svelte';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
@@ -15,6 +17,14 @@
   import { fromSavedSearch } from '$lib/frameleaf/search-palette';
   import { eagleImportUi, eaglePercent } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
+  import {
+    creatorPlatform,
+    creatorsHref,
+    creatorState,
+    isCreatorsArea,
+    readCreatorsLocation,
+  } from '$lib/frameleaf/creators';
+  import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
   import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
@@ -79,7 +89,10 @@
   } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import {
+    mdiAccountGroupOutline,
+    mdiAccountKeyOutline,
     mdiAccountOutline,
+    mdiAlertCircleOutline,
     mdiChevronDoubleLeft,
     mdiChevronDoubleRight,
     mdiChevronDown,
@@ -87,15 +100,19 @@
     mdiClose,
     mdiFilterVariant,
     mdiHelpCircleOutline,
+    mdiHomeOutline,
     mdiImageOutline,
     mdiImport,
     mdiInboxOutline,
     mdiLinkVariant,
+    mdiLinkVariantPlus,
     mdiPaletteOutline,
     mdiPlus,
     mdiPuzzleOutline,
+    mdiRss,
     mdiVideoOutline,
     mdiViewDashboardOutline,
+    mdiViewGridOutline,
   } from '@mdi/js';
   import { debounce } from 'lodash-es';
   import { onMount, onDestroy, tick, untrack, type Snippet } from 'svelte';
@@ -793,6 +810,38 @@
   let extensionOpen = $state(false);
 
   /**
+   * Creators (FL-1448): Boards' other area, chosen from the two tabs under the rail's title. Its rail
+   * is Home, Subscriptions and the creators grouped by the folder each is filed under (prototype
+   * `CreatorsWorkspace`); the page beside it reads the same address.
+   */
+  const creatorsArea = $derived(boards && isCreatorsArea(new URL(page.url.href)));
+  const creatorsWhere = $derived(readCreatorsLocation(new URL(page.url.href)));
+  $effect(() => {
+    if (creatorsArea) {
+      untrack(() => void creatorsStore.ensure());
+    }
+  });
+  const creatorGroups = $derived.by(() => {
+    type Group = { id: string; name: string | null; creators: typeof creatorsStore.creators };
+    const folders = new Map<string, Group>();
+    const loose: Group = { id: '', name: null, creators: [] };
+    for (const creator of creatorsStore.creators) {
+      const id = creator.parentAlbumId;
+      const name = id
+        ? (albumRecords.find((album) => album.id === id)?.albumName ?? creatorsStore.folderName(id))
+        : undefined;
+      if (!id || !name) {
+        loose.creators.push(creator);
+        continue;
+      }
+      const group = folders.get(id) ?? { id, name, creators: [] };
+      group.creators.push(creator);
+      folders.set(id, group);
+    }
+    return [...folders.values(), ...(loose.creators.length > 0 ? [loose] : [])];
+  });
+
+  /**
    * Boards' "New collection" opens over the page you are on (prototype `NewCollectionDialog`), from
    * the "+" here, Boards' Add menu or a collection's "…" menu, and creates in Boards; you stay put.
    */
@@ -963,6 +1012,114 @@
       <Icon icon={mdiClose} size="18" aria-hidden={true} />
     </button>
   </div>
+  <!-- Boards' two areas (prototype `AreaTabs`): Items is everything Boards had; Creators is FL-1448. -->
+  {#if iconOnly}
+    <nav class="fl-section" aria-label={$t('frameleaf_creators_areas')}>
+      {@render railLink($t('frameleaf_creators_items'), mdiViewGridOutline, '/pro', !creatorsArea, false)}
+      {@render railLink($t('frameleaf_creators_title'), mdiAccountGroupOutline, creatorsHref(), creatorsArea, false)}
+    </nav>
+    <div class="fl-heading fl-heading-rule" aria-hidden="true"></div>
+  {:else}
+    <nav class="fl-area" aria-label={$t('frameleaf_creators_areas')}>
+      <a href="/pro" aria-current={creatorsArea ? undefined : 'page'}>
+        <Icon icon={mdiViewGridOutline} size="16" aria-hidden={true} />{$t('frameleaf_creators_items')}
+      </a>
+      <a href={creatorsHref()} aria-current={creatorsArea ? 'page' : undefined}>
+        <Icon icon={mdiAccountGroupOutline} size="16" aria-hidden={true} />{$t('frameleaf_creators_title')}
+      </a>
+    </nav>
+  {/if}
+  {#if creatorsArea}
+    {@render creatorsList()}
+  {:else}
+    {@render boardsItems()}
+  {/if}
+{/snippet}
+
+{#snippet creatorsList()}
+  {@const home = !creatorsWhere.creator && creatorsWhere.view === 'home'}
+  {@const subscriptions = !creatorsWhere.creator && creatorsWhere.view === 'subscriptions'}
+  <nav class="fl-section" aria-label={$t('frameleaf_creators_title')}>
+    <a
+      href={creatorsHref()}
+      class="fl-link"
+      class:fl-current={home}
+      aria-current={home ? 'page' : undefined}
+      title={iconOnly ? $t('frameleaf_creators_home') : undefined}
+      aria-label={iconOnly ? $t('frameleaf_creators_home') : undefined}
+    >
+      <Icon icon={mdiHomeOutline} size="1.25em" aria-hidden={true} class="fl-icon" />
+      {#if !iconOnly}
+        <span class="fl-label">{$t('frameleaf_creators_home')}</span>
+        {#if creatorsStore.newCount > 0}
+          <small class="fl-count"
+            >{$t('frameleaf_creators_new_count', { values: { count: creatorsStore.newCount } })}</small
+          >
+        {/if}
+      {/if}
+    </a>
+    <a
+      href={creatorsHref({ view: 'subscriptions' })}
+      class="fl-link"
+      class:fl-current={subscriptions}
+      aria-current={subscriptions ? 'page' : undefined}
+      title={iconOnly ? $t('frameleaf_creators_subscriptions') : undefined}
+      aria-label={iconOnly ? $t('frameleaf_creators_subscriptions') : undefined}
+    >
+      <Icon icon={mdiRss} size="1.25em" aria-hidden={true} class="fl-icon" />
+      {#if !iconOnly}
+        <span class="fl-label">{$t('frameleaf_creators_subscriptions')}</span>
+        <small class="fl-count">{creatorsStore.following.length}</small>
+      {/if}
+    </a>
+  </nav>
+  {#each creatorGroups as group (group.id)}
+    {@const name = group.name ?? $t('frameleaf_creators_not_in_folder')}
+    {#if iconOnly}
+      <div class="fl-heading fl-heading-rule" aria-hidden="true"></div>
+    {:else}
+      <div class="fl-heading"><h2>{name}</h2></div>
+    {/if}
+    <nav class="fl-section" aria-label={name}>
+      {#each group.creators as creator (creator.id)}
+        {@const current = creatorsWhere.creator === creator.id}
+        <a
+          href={creatorsHref({ creator: creator.id })}
+          class="fl-link fl-creator"
+          class:fl-current={current}
+          aria-current={current ? 'page' : undefined}
+          title={creator.name}
+          aria-label={iconOnly ? creator.name : undefined}
+        >
+          <CreatorAvatar {creator} size={24} />
+          {#if !iconOnly}
+            <span class="fl-label">{creator.name}</span>
+            <PlatformMark
+              platform={creatorPlatform(creator.provider, creator.url)}
+              provider={creator.provider}
+              size={13}
+            />
+            {#if creatorState(creator) === 'attention'}
+              <span class="fl-creator-warn">
+                <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
+                <span class="sr-only">{$t('frameleaf_creators_needs_you')}</span>
+              </span>
+            {:else if creator.newCount > 0}
+              <small class="fl-count fl-creator-new">
+                <span aria-hidden="true">{creator.newCount}</span>
+                <span class="sr-only"
+                  >{$t('frameleaf_creators_new_count', { values: { count: creator.newCount } })}</span
+                >
+              </small>
+            {/if}
+          {/if}
+        </a>
+      {/each}
+    </nav>
+  {/each}
+{/snippet}
+
+{#snippet boardsItems()}
   <nav class="fl-section" aria-label={$t('frameleaf_boards_items')}>
     {#each BOARDS_ITEMS as item (item.id)}
       {@const current = boardsCurrent === item.id}
@@ -1120,7 +1277,35 @@
         </button>
       </div>
     {/if}
-    {#if boards}
+    {#if creatorsArea}
+      <a
+        href={creatorsHref()}
+        class="fl-link"
+        title={iconOnly ? $t('frameleaf_creators_add_from_web') : undefined}
+        aria-label={iconOnly ? $t('frameleaf_creators_add_from_web') : undefined}
+        onclick={() => creatorsStore.focusAdd++}
+      >
+        <Icon icon={mdiLinkVariantPlus} size="1.25em" aria-hidden={true} class="fl-icon" />
+        {#if !iconOnly}<span class="fl-label">{$t('frameleaf_creators_add_from_web')}</span>{/if}
+      </a>
+      <button
+        type="button"
+        class="fl-link"
+        title={iconOnly ? $t('frameleaf_boards_media_connections') : undefined}
+        aria-label={iconOnly ? $t('frameleaf_boards_media_connections') : undefined}
+        aria-haspopup="dialog"
+        disabled={creatorsStore.status !== 'ready'}
+        onclick={() => (creatorsStore.connectionsOpen = true)}
+      >
+        <Icon icon={mdiAccountKeyOutline} size="1.25em" aria-hidden={true} class="fl-icon" />
+        {#if !iconOnly}
+          <span class="fl-label">{$t('frameleaf_boards_media_connections')}</span>
+          {#if creatorsStore.connected.length > 0}
+            <small class="fl-count">{creatorsStore.connected.length}</small>
+          {/if}
+        {/if}
+      </button>
+    {:else if boards}
       {#if eagleRunning}
         {@const percent = eaglePercent(eagleRunning)}
         <button
@@ -1760,6 +1945,47 @@
     display: block;
     height: 100%;
     background: var(--fl-accent);
+  }
+  /* Prototype `.cr-area`: Boards' two areas as underline tabs under the rail's title. */
+  .fl-area {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .fl-area a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 40px;
+    margin-bottom: -1px;
+    padding: 0 8px;
+    border-bottom: 2px solid transparent;
+    color: var(--fl-muted);
+    text-decoration: none;
+  }
+  .fl-area a:hover {
+    color: var(--fl-text);
+  }
+  .fl-area a[aria-current='page'] {
+    border-bottom-color: var(--fl-accent);
+    color: var(--fl-text);
+    font-weight: 600;
+  }
+  /* Prototype `.cr-count` and `.cr-warn`: what is new from a creator, or that they need a sign-in. */
+  .fl-creator-new {
+    min-width: 20px;
+    padding: 2px 6px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-accent-soft);
+    color: var(--fl-text);
+    text-align: center;
+  }
+  .fl-creator-warn {
+    display: inline-flex;
+    margin-inline-start: auto;
+    color: var(--fl-warning);
   }
   .fl-boards-title {
     display: inline-flex;
