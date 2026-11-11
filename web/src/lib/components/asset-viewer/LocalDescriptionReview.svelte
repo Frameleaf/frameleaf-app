@@ -43,7 +43,9 @@
   });
 
   async function generate() {
-    if (busy) return;
+    if (busy) {
+      return;
+    }
     const id = asset.id;
     const before = asset.exifInfo?.description ?? '';
     const checksum = asset.checksum;
@@ -55,7 +57,9 @@
     draft = null;
     try {
       const options = await getEnrichmentOptions();
-      if (!current()) return;
+      if (!current()) {
+        return;
+      }
       const destinations = options.destinations.filter(
         (item) => item.kind === MlDestinationKind.Local && item.enrichment.admitted,
       );
@@ -71,7 +75,9 @@
           fallbackModelName: '',
         },
       });
-      if (!current()) return;
+      if (!current()) {
+        return;
+      }
       const sample = result.samples.find((item) => item.assetId === id);
       if (
         result.cloud ||
@@ -85,25 +91,35 @@
       text = sample.candidate;
       draft = { id, before, checksum, model: result.modelName, current };
     } catch {
-      if (current()) failure = $t('frameleaf_local_description_prepare_error');
+      if (current()) {
+        failure = $t('frameleaf_local_description_prepare_error');
+      }
     } finally {
-      if (current()) busy = false;
+      if (current()) {
+        busy = false;
+      }
     }
   }
 
   async function apply() {
     const snapshot = draft;
-    if (!snapshot || busy || snapshot.id !== asset.id || !snapshot.current()) return;
+    if (!snapshot || busy || snapshot.id !== asset.id || !snapshot.current()) {
+      return;
+    }
     const revision = generation;
     const session = authManager.captureSession();
     const current = () => alive && revision === generation && session();
     const description = text.trim();
-    if (!description) return;
+    if (!description) {
+      return;
+    }
     busy = true;
     failure = '';
     try {
       const latest = await getAssetInfo({ id: snapshot.id });
-      if (!current()) return;
+      if (!current()) {
+        return;
+      }
       if ((latest.exifInfo?.description ?? '') !== snapshot.before || latest.checksum !== snapshot.checksum) {
         draft = null;
         onAssetRefresh?.(latest);
@@ -111,13 +127,19 @@
         return;
       }
       await updateAsset({ id: snapshot.id, updateAssetDto: { description } });
-      if (!current()) return;
+      if (!current()) {
+        return;
+      }
       onAssetRefresh?.({ ...latest, exifInfo: { ...latest.exifInfo, description } });
       draft = null;
     } catch {
-      if (current()) failure = $t('frameleaf_local_description_apply_error');
+      if (current()) {
+        failure = $t('frameleaf_local_description_apply_error');
+      }
     } finally {
-      if (current()) busy = false;
+      if (current()) {
+        busy = false;
+      }
     }
   }
 </script>
