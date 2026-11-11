@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateSession, type PolicyInput, type PolicyRecord } from 'src/utils/sign-in-policy.js';
+import { type PolicyInput, type PolicyRecord, evaluateSession } from 'src/utils/sign-in-policy.js';
 
 const record = (over: Partial<PolicyRecord> = {}): PolicyRecord => ({
   level: 'basic',

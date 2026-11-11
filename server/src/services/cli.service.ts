@@ -1,5 +1,4 @@
 import { schemaDiff } from '@frameleaf/sql-tools';
-import { DEFAULT_SIGN_IN_REQUIREMENT } from 'src/utils/sign-in-policy.js';
 import { Injectable } from '@nestjs/common';
 import { isAbsolute, join } from 'node:path';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -9,6 +8,7 @@ import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { createMaintenanceLoginUrl, generateMaintenanceSecret } from 'src/utils/maintenance.js';
+import { DEFAULT_SIGN_IN_REQUIREMENT } from 'src/utils/sign-in-policy.js';
 
 export type SchemaReport = {
   migrations: MigrationStatus[];

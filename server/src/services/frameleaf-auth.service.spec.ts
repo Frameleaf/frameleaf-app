@@ -11,12 +11,12 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
-import { UNVERIFIED_EMAIL_MESSAGE, type AuthService } from 'src/services/auth.service.js';
+import { type AuthService, UNVERIFIED_EMAIL_MESSAGE } from 'src/services/auth.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
-import { totpCode, totpStep } from 'src/utils/two-factor.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
+import { totpCode, totpStep } from 'src/utils/two-factor.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { FakeCloud, startFakeCloud } from 'test/fake-frameleaf-cloud.js';

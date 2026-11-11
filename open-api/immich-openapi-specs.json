@@ -99928,7 +99928,7 @@
       "FrameleafStepUpDto": {
         "properties": {
           "capabilities": {
-            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none)",
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
             "items": {
               "maxLength": 64,
               "type": "string"

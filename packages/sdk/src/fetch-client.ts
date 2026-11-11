@@ -12272,7 +12272,7 @@ export type FrameleafLinkConfirmDto = {
     confirmToken: string;
 };
 export type FrameleafStepUpDto = {
-    /** What this client can do; "verification" means it can answer verification_required (default: none) */
+    /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
     capabilities?: string[];
     /** The 6-digit code from the authenticator app */
     code?: string;

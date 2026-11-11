@@ -9,7 +9,6 @@ import {
 } from '@nestjs/common';
 import { cloneDeep, get, isEqual, omit, set } from 'lodash-es';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import { ConfigCredentialResponseDto, ConfigCredentialUpdateDto } from 'src/dtos/config-credential.dto.js';
@@ -49,6 +48,7 @@ import {
   MachineLearningHardwareResponse,
   defaultMachineLearningHardware,
 } from 'src/repositories/machine-learning.repository.js';
+import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { ConfigHistoryKind, credentialHistoryTitle, readConfigHistory } from 'src/utils/config-history.js';

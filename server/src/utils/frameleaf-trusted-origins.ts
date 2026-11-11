@@ -1,7 +1,7 @@
+import type { SystemConfig } from 'src/config.js';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { SystemMetadataKey } from 'src/enum.js';
-import type { SystemConfig } from 'src/config.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
 import { httpsOrigin } from 'src/utils/frameleaf-sign-in.js';

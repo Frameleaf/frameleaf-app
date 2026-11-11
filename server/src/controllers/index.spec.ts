@@ -370,10 +370,12 @@ describe('controllers', () => {
   });
 
   it('should let only signing out skip the remote sign-in rule (FL-161)', () => {
-    expect(routes.filter((route) => route.remoteSignInExempt).map((route) => route.id).toSorted()).toEqual([
-      'POST auth/logout',
-      'POST auth/step-up',
-    ]);
+    expect(
+      routes
+        .filter((route) => route.remoteSignInExempt)
+        .map((route) => route.id)
+        .toSorted(),
+    ).toEqual(['POST auth/logout', 'POST auth/step-up']);
   });
 
   it('should keep render-worker and local Desktop routes on the home network', () => {

@@ -19,12 +19,12 @@ import {
   FrameleafAccountLinkResponseDto,
   FrameleafHandoffCreateDto,
   FrameleafHandoffRedeemDto,
-  FrameleafStepUpDto,
   FrameleafHandoffResponseDto,
   FrameleafLinkConfirmDto,
   FrameleafLinkDto,
   FrameleafLinkResponseDto,
   FrameleafLinkRoleChange,
+  FrameleafStepUpDto,
   FrameleafTokenExchangeDto,
   FrameleafTokenExchangeErrorCode,
 } from 'src/dtos/frameleaf-auth.dto.js';
@@ -37,7 +37,6 @@ import {
   DatabaseLock,
   NotificationLevel,
   NotificationType,
-  SystemMetadataKey,
 } from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import {
@@ -51,8 +50,6 @@ import { BaseService } from 'src/services/base.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
-import { frameleafTrustedOrigins } from 'src/utils/frameleaf-trusted-origins.js';
 import {
   FRAMELEAF_APP_CALLBACK,
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
@@ -66,17 +63,17 @@ import {
   frameleafRedirectUri,
   frameleafRole,
   hasInstanceAccess,
-  httpsOrigin,
 } from 'src/utils/frameleaf-sign-in.js';
+import { frameleafTrustedOrigins } from 'src/utils/frameleaf-trusted-origins.js';
 import { localNotificationText } from 'src/utils/preferences.js';
 import { publishedLocalOrigins } from 'src/utils/public-url.js';
-import { createSession, VERIFICATION_CAPABILITY, withCapabilities } from 'src/utils/session.js';
+import { VERIFICATION_CAPABILITY, createSession, withCapabilities } from 'src/utils/session.js';
 import { ACR_VERIFIED, levelFromAcr, parseAmr } from 'src/utils/sign-in-level.js';
-import { peekToken, signToken, verifyToken, type ServerMac } from 'src/utils/two-factor.js';
+import { type ServerMac, peekToken, signToken, verifyToken } from 'src/utils/two-factor.js';
 import {
   VERIFICATION_TRANSACTION_SECONDS,
-  verificationRequired,
   type VerificationMethod,
+  verificationRequired,
 } from 'src/utils/verification-required.js';
 
 /** How long a handoff code may be used. */
