@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -90,7 +90,11 @@ export class SessionService extends BaseService {
             sub: tag.sub,
             authTime: tag.authTime,
           });
+          return;
         }
+        // unlinking (or a logout) won: it ends a Frameleaf session's other sessions, so this one ends too
+        await this.sessionRepository.delete(session.id);
+        throw new UnauthorizedException('This Frameleaf sign-in ended. Sign in again.');
       });
     }
 

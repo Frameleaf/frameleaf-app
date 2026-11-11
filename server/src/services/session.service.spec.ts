@@ -1,4 +1,5 @@
 import { generateKeyPair } from '@frameleaf/locked-crypto';
+import { UnauthorizedException } from '@nestjs/common';
 import { DatabaseLock, JobStatus } from 'src/enum.js';
 import { SessionService } from 'src/services/session.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
@@ -105,7 +106,7 @@ describe('SessionService', () => {
       expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
     });
 
-    it('leaves the child untagged when unlinking won the race (the link is gone)', async () => {
+    it('ends the child and refuses when unlinking won the race (the link is gone)', async () => {
       const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
       mocks.session.getSignIn.mockResolvedValue({
         methods: ['email_code'],
@@ -118,11 +119,14 @@ describe('SessionService', () => {
       mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'parent-session', sub: 'fl-sub' } as never);
       mocks.frameleafAccount.getLinkByUser.mockResolvedValue(undefined);
       mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+      mocks.session.create.mockResolvedValue({ ...SessionFactory.create(), id: 'child-session' });
+      mocks.session.delete.mockResolvedValue();
 
-      await sut.create(auth, {});
+      await expect(sut.create(auth, {})).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.FrameleafLinkAuthority, expect.any(Function));
       expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
+      expect(mocks.session.delete).toHaveBeenCalledWith('child-session');
     });
 
     it('gives a child of a Frameleaf session the same Frameleaf tag', async () => {

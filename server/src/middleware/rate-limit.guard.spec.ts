@@ -270,6 +270,25 @@ describe(RateLimitGuard.name, () => {
     }
   });
 
+  it('answers 429 to the sixth wrong step-up code for one session, across addresses and transactions', async () => {
+    const stepUp = async (attempt: number) => {
+      const request = makeRequest({
+        ip: `203.0.113.${attempt}`,
+        headers: { authorization: 'Bearer session-token' },
+        body: { transaction: `transaction-${attempt}`, code: '000000' },
+      });
+      await sut.canActivate(contextFor(TestController.prototype.stepUp, request));
+      const handler = { handle: () => throwError(() => new UnauthorizedException()) } as CallHandler;
+      return lastValueFrom(interceptor.intercept(contextFor(TestController.prototype.stepUp, request), handler));
+    };
+    for (let attempt = 0; attempt < RATE_LIMITS.stepUp.principalLimit; attempt++) {
+      await expect(stepUp(attempt)).rejects.toBeInstanceOf(UnauthorizedException);
+    }
+    await expect(stepUp(RATE_LIMITS.stepUp.principalLimit)).rejects.toMatchObject({
+      status: HttpStatus.TOO_MANY_REQUESTS,
+    });
+  });
+
   it('counts a shared link by its key and address and an admin action by the credential presented', async () => {
     const shared = makeRequest({ query: { key: 'share-key' } });
     await sut.canActivate(contextFor(TestController.prototype.sharedLinkLogin, shared));
