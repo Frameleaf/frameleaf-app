@@ -50,6 +50,7 @@ import {
   HomeNetworkOnly,
   OriginalTransfer,
 } from 'src/middleware/auth.guard.js';
+import { DESKTOP_COPY_TOKEN_HEADER } from 'src/middleware/frameleaf-via.middleware.js';
 import { preservationUploadFolder } from 'src/repositories/preservation-files.repository.js';
 import { PreservationService } from 'src/services/preservation.service.js';
 import { asStreamableFile } from 'src/utils/file.js';
@@ -249,7 +250,7 @@ export class PreservationController {
   redeemDesktopCopy(
     @Param() { id }: UUIDv7ParamDto,
     @Req() request: Request,
-    @Headers('x-frameleaf-desktop-copy') token: string | undefined,
+    @Headers(DESKTOP_COPY_TOKEN_HEADER) token: string | undefined,
   ): Promise<StreamableFile> {
     const host = desktopCopyHost(request);
     if (request.headers.origin) {
