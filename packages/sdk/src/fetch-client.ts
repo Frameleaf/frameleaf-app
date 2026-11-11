@@ -20354,8 +20354,8 @@ export type AssetDevelopRevisionParamDto = {
 export type AssetDownloadOriginalDto = {
     /** Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original */
     edited?: boolean;
-    /** Explicit still export from an unedited photo; omission returns the untouched original or selected edit */
-    format?: Format2;
+    /** Explicit still-image export or read-only document PDF; omission returns the original or selected edit */
+    format?: Format3;
 };
 export type AssetFileSearchDto = {
     /** Asset ID to filter files by */
@@ -43795,6 +43795,12 @@ export enum Format2 {
     SdrJpeg = "sdr-jpeg",
     HdrJpeg = "hdr-jpeg",
     HdrHeic = "hdr-heic"
+}
+export enum Format3 {
+    SdrJpeg = "sdr-jpeg",
+    HdrJpeg = "hdr-jpeg",
+    HdrHeic = "hdr-heic",
+    DocumentPdf = "document-pdf"
 }
 export enum Intent {
     Preserve = "preserve"
