@@ -136,7 +136,7 @@
         desktopCopyBusy = false;
         return;
       }
-      globalThis.location.assign(`${desktopCopyPath}/${item.id}#${grant.token}`);
+      location.assign(`${desktopCopyPath}/${item.id}#${grant.token}`);
     } catch (error) {
       desktopCopyBusy = false;
       if (!controller.signal.aborted) {
@@ -151,7 +151,7 @@
     if (desktopGrant) {
       desktopGrant.abort();
     } else {
-      globalThis.location.assign(`${desktopCopyPath}/cancel`);
+      location.assign(`${desktopCopyPath}/cancel`);
     }
   };
 
@@ -377,14 +377,14 @@
   onMount(() => {
     desktopCopy = Reflect.get(globalThis, '__FRAMELEAF_LOCAL_COPY__') === true;
     if (desktopCopy) {
-      globalThis.addEventListener('frameleaf-local-copy-state', desktopCopyState);
+      addEventListener('frameleaf-local-copy-state', desktopCopyState);
     }
     void load();
   });
   onDestroy(() => {
     desktopGrant?.abort();
     if (desktopCopy) {
-      globalThis.removeEventListener('frameleaf-local-copy-state', desktopCopyState);
+      removeEventListener('frameleaf-local-copy-state', desktopCopyState);
     }
     destroyed = true;
     clearTimeout(pollTimer);
