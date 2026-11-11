@@ -1,0 +1,115 @@
+name: Known-bad file corpus
+# FL-883: before an upstream sync merges, push the known-bad corpus (server/test/fixtures/known-bad-corpus.json)
+# through metadata, thumbnails and video encoding in the medium runner image, and compare with the manifest.
+# Pull requests from any other branch see this job skipped. Run it by hand from the Actions tab for any branch.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  corpus:
+    name: Known-bad corpus
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'aj/upstream-sync-')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:e698169ffdd3c23af2a1675d30f48eeab6883fb277bf5be6911ceac5cfaf760f
+      RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Setup native runner builder
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - name: Login to owned GHCR namespace for the build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build medium native runner
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: server/Dockerfile
+          target: medium-test
+          build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
+          load: true
+          tags: frameleaf-medium:${{ github.sha }}
+          # main's registry cache (e2e-build-cache.yml), as the medium test jobs use it.
+          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
+          secrets: mise_github_token=${{ github.token }}
+      - name: Run the known-bad corpus in the native runner
+        working-directory: .
+        env:
+          MEDIUM_CONTAINER: frameleaf-corpus-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_IMAGE: frameleaf-medium:${{ github.sha }}
+          FRAMELEAF_MEDIUM_SUITE: corpus
+          FRAMELEAF_CORPUS_REPORT_DIR: /tmp/frameleaf-known-bad-corpus
+        run: |
+          set -euo pipefail
+          docker_cli=$(readlink -f "$(command -v docker)")
+          test -S /var/run/docker.sock
+          mkdir -p "$RUNNER_TEMP/known-bad-corpus"
+          docker run --rm --pull never --name "$MEDIUM_CONTAINER" --network host \
+            --mount type=bind,src="$docker_cli",dst=/usr/local/bin/docker,readonly \
+            --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+            --mount type=bind,src="$GITHUB_WORKSPACE/docker/postgres",dst=/usr/src/app/docker/postgres,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/src",dst=/usr/src/app/e2e/src,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/test-assets",dst=/usr/src/app/e2e/test-assets,readonly \
+            --mount type=bind,src="$RUNNER_TEMP/known-bad-corpus",dst=/tmp/frameleaf-known-bad-corpus \
+            --env DOCKER_HOST=unix:///var/run/docker.sock \
+            --env TESTCONTAINERS_HOST_OVERRIDE=localhost \
+            --env TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+            --env FRAMELEAF_CI_POSTGRES_IMAGE \
+            --env RYUK_CONTAINER_IMAGE \
+            --env FRAMELEAF_MEDIUM_SUITE \
+            --env FRAMELEAF_CORPUS_REPORT_DIR \
+            "$MEDIUM_IMAGE"
+      - name: Show the corpus diff
+        if: always()
+        working-directory: .
+        run: |
+          report="$RUNNER_TEMP/known-bad-corpus/known-bad-corpus-diff.md"
+          if [[ -f "$report" ]]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The corpus suite wrote no report (it stopped before the files ran)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload the corpus diff report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: known-bad-corpus-report
+          path: ${{ runner.temp }}/known-bad-corpus
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove the corpus runner after failure or cancellation
+        if: always()
+        env:
+          MEDIUM_CONTAINER: frameleaf-corpus-${{ github.run_id }}-${{ github.run_attempt }}
+        run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true

@@ -1,6 +1,12 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { cloneDeep, get } from 'lodash-es';
-import { LoginPageMessageFormat, RestorationStyle, SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import {
+  AdminConfigDto,
+  LoginPageMessageFormat,
+  RestorationStyle,
+  SystemConfig,
+  defaults,
+} from 'src/dtos/config.dto.js';
 import { VideoTrimMode } from 'src/dtos/editing.dto.js';
 import { mapConfig } from 'src/dtos/system-config.dto.js';
 import {
@@ -77,7 +83,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       cronExpression: '',
     },
   },
-  connectedApps: { allowRegistration: true },
+  connectedApps: { allowMcp: true, allowRegistration: true },
   analytics: {
     enabled: true,
     historyDays: 730,
@@ -998,6 +1004,26 @@ describe(SystemConfigService.name, () => {
   });
 
   describe('updateConfig', () => {
+    it.each([undefined, { allowRegistration: true }])(
+      'keeps MCP disabled when an older settings client omits its switch (%j)',
+      async (connectedApps) => {
+        mocks.systemMetadata.get.mockResolvedValue({ connectedApps: { allowMcp: false } } as never);
+        const dto = AdminConfigDto.schema.parse({ ...defaults, connectedApps });
+
+        await sut.updateAdminConfig(dto);
+
+        expect(configWrites().at(-1)).toMatchObject({ connectedApps: { allowMcp: false } });
+      },
+    );
+
+    it('lets an administrator explicitly turn MCP back on', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ connectedApps: { allowMcp: false } } as never);
+
+      await sut.updateAdminConfig(defaults);
+
+      expect(configWrites().at(-1)).not.toHaveProperty('connectedApps.allowMcp');
+    });
+
     it('keeps remote access itself out of a whole-settings save (FL-165)', async () => {
       mocks.systemMetadata.get.mockResolvedValue(null as never);
       await sut.updateAdminConfig({

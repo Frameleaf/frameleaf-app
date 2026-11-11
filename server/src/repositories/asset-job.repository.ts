@@ -219,11 +219,15 @@ export class AssetJobRepository {
     return { count: row?.count ?? 0, setAside: row?.setAside ?? 0 };
   }
 
-  getProcessingFailures(auth: AuthDto, { userId, take, skip }: ProcessingFailureQueryDto) {
+  /**
+   * FL-1409: the Library asks for one step with `includeDismissed`, to tell a photo whose thumbnail can't be made
+   * (failed, kept as it is or stopped) from one still waiting for it.
+   */
+  getProcessingFailures(auth: AuthDto, { userId, step, includeDismissed, take, skip }: ProcessingFailureQueryDto) {
     return this.visibleProcessingFailures(auth, this.db, userId)
       .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
-      .where('failure.dismissedAt', 'is', null)
-      .where('failure.step', 'in', processingFailureSteps)
+      .$if(!includeDismissed, (qb) => qb.where('failure.dismissedAt', 'is', null))
+      .where('failure.step', 'in', step ? [step] : processingFailureSteps)
       .select([
         'failure.assetId',
         'failure.step',

@@ -21,37 +21,6 @@ export const EAGLE_COLOURS: Readonly<Record<string, string>> = {
   pink: 'pink',
 };
 
-/** File types Boards holds, as in the design. The server's own media types narrow this further. */
-export const BOARDS_EXTENSIONS: readonly string[] = [
-  'jpg',
-  'jpeg',
-  'png',
-  'webp',
-  'avif',
-  'gif',
-  'svg',
-  'heic',
-  'tif',
-  'tiff',
-  'psd',
-  'ai',
-  'pdf',
-  'eps',
-  'mp4',
-  'mov',
-  'webm',
-  // FL-1359: fonts are Boards items
-  'ttf',
-  'otf',
-  'ttc',
-  'otc',
-  'woff',
-  'woff2',
-  'dfont',
-  'pfb',
-  'pfa',
-];
-
 /** The default new collection the import goes into. */
 export const EAGLE_DEFAULT_COLLECTION = 'Studio References';
 
@@ -151,7 +120,7 @@ export function parseEagleLibraryMetadata(value: unknown) {
 /** One `images/<id>.info/metadata.json`. `fallbackId` is the folder's name without `.info`. */
 export function parseEagleItem(value: unknown, fallbackId: string): EagleItem {
   const item = record(value);
-  const ext = text(item.ext, 20).toLowerCase().replace(/^\./, '');
+  const ext = text(item.ext, 20).trim().toLowerCase().replace(/^\./, '');
   return {
     id: text(item.id, 200) || fallbackId,
     name: text(item.name, 1000) || fallbackId,
@@ -239,7 +208,7 @@ export const eagleColour = (color?: string) => (color ? EAGLE_COLOURS[color.toLo
 
 /** Whether an item comes over: in the library, of a type Boards holds, and its file is there. */
 export const isComing = (item: EagleItem, supported: ReadonlySet<string>) =>
-  !item.unreadable && !item.isDeleted && supported.has(item.ext) && item.present;
+  !item.unreadable && !item.isDeleted && (supported.has('*') || supported.has(item.ext)) && item.present;
 
 const sameName = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
 
@@ -275,20 +244,36 @@ export function eagleAddedDate(item: Pick<EagleItem, 'modificationTime'>, now = 
 export const isSafeSegment = (value: string) =>
   value.length > 0 && value.length <= 255 && value !== '.' && value !== '..' && !/[/\\\0]/.test(value);
 
-/** The item's own file among the names in its folder: `<name>.<ext>`, or the one other file of that type. */
-export function findEagleItemFile(item: Pick<EagleItem, 'name' | 'ext'>, fileNames: readonly string[]) {
-  const exact = `${item.name}.${item.ext}`;
-  if (fileNames.includes(exact)) {
+/** Resolve copied originals by name before falling back to an unambiguous file of the declared type. */
+export function findEagleItemFile(item: Pick<EagleItem, 'name' | 'ext'>, fileNames: Iterable<string>) {
+  const fold = (name: string) => name.normalize('NFC').toLowerCase();
+  const name = fold(item.name);
+  const candidates = [...fileNames].filter((fileName) => {
+    const folded = fold(fileName);
+    const ext = originalExtension(folded);
+    return (
+      folded !== 'metadata.json' &&
+      !folded.startsWith('._') &&
+      !folded.endsWith('_thumbnail.png') &&
+      (item.ext ? ext === item.ext : !folded.startsWith('.') && ext !== 'xmp')
+    );
+  });
+  const exact = eagleFileName(item);
+  if (candidates.includes(exact)) {
     return exact;
   }
-  const candidates = fileNames.filter(
-    (fileName) =>
-      fileName !== 'metadata.json' &&
-      !fileName.endsWith('_thumbnail.png') &&
-      fileName.toLowerCase().endsWith(`.${item.ext}`),
-  );
-  return candidates.length === 1 ? candidates[0] : undefined;
+  const named = candidates.filter((fileName) => {
+    const folded = fold(fileName);
+    const dot = folded.lastIndexOf('.');
+    return folded === name || (dot > 0 && folded.slice(0, dot) === name);
+  });
+  return named.length === 1 ? named[0] : candidates.length === 1 ? candidates[0] : undefined;
 }
+
+const originalExtension = (fileName: string) => {
+  const dot = fileName.lastIndexOf('.');
+  return dot > 0 ? fileName.slice(dot + 1).toLowerCase() : '';
+};
 
 export interface EagleServerItem extends EagleItem {
   /** The name of the item's file in its folder, when it was found. */
@@ -322,7 +307,7 @@ export function buildEagleLibrary(
     // The folder name locates the item's files: the id in its own JSON is never used for a path.
     const item = { ...parseEagleItem(details, id), id };
     const fileName = findEagleItemFile(item, fileNames);
-    return fileName ? { ...item, present: true, fileName } : item;
+    return fileName ? { ...item, ext: originalExtension(fileName), present: true, fileName } : item;
   });
   const fingerprint = eagleLibraryFingerprint(metadata, library.folders, infoFolders.length);
   return { name, ...library, items, fingerprint };

@@ -33,6 +33,7 @@ describe(MetricsRepository.name, () => {
     await request(api).get('/api/unknown-private-path').expect(404);
     await request(api).get('/metrics').expect(404);
     metrics.observeJob(JobName.AssetGenerateThumbnails, 'completed');
+    metrics.observeDesktopResultAdoption();
     const result = await fetch(url, { headers });
     expect(result.status).toBe(200);
     const body = await result.text();
@@ -40,6 +41,7 @@ describe(MetricsRepository.name, () => {
     expect(body).toContain('frameleaf_jobs_total');
     expect(body).toMatch(/^frameleaf_assistant_searches_total \d+$/mu);
     expect(body).toMatch(/^frameleaf_assistant_switch_backs_total \d+$/mu);
+    expect(body).toContain('frameleaf_desktop_results_adopted_total 1');
     for (const privateValue of ['scrape-token', 'private-file-id', 'private-query', 'unknown-private-path']) {
       expect(body).not.toContain(privateValue);
     }

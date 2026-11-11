@@ -172,6 +172,8 @@
     session?.supported ?? supportedExtensions(uploadManager.getBoardsExtensions()),
   );
 
+  const videoExtensions = $derived(supportedExtensions(uploadManager.mediaTypes.video));
+
   // An import the tab left part-way, so the first step can say to choose that library again.
   if (!run && ownerId) {
     void store
@@ -204,6 +206,7 @@
     plan = undefined;
     try {
       library = await readEagleLibrary(name, entries);
+      supported = supportedExtensions(uploadManager.getBoardsExtensions());
     } catch (error) {
       readError = error instanceof EagleLibraryError ? error.reason : 'unreadable';
     } finally {
@@ -364,6 +367,7 @@
         existing,
         outcomes: saved?.outcomes,
         annotations: EAGLE_ANNOTATIONS_AVAILABLE,
+        videoExtensions,
       });
     } catch {
       if (!signal.aborted) {
@@ -386,7 +390,12 @@
       const earlier = serverEarlier?.fingerprint === current.fingerprint ? serverEarlier : undefined;
       const outcomes = earlier ? await serverOutcomes(earlier.id) : undefined;
       serverSaved = earlier;
-      plan = planEagleImport(current, { supported, outcomes, annotations: EAGLE_ANNOTATIONS_AVAILABLE });
+      plan = planEagleImport(current, {
+        supported,
+        outcomes,
+        annotations: EAGLE_ANNOTATIONS_AVAILABLE,
+        videoExtensions,
+      });
     } catch {
       checkFailed = true;
     }
@@ -453,7 +462,11 @@
       serverLocation = live.location;
       library = read.library;
       supported = read.supported;
-      plan = planEagleImport(read.library, { supported: read.supported, annotations: EAGLE_ANNOTATIONS_AVAILABLE });
+      plan = planEagleImport(read.library, {
+        supported: read.supported,
+        annotations: EAGLE_ANNOTATIONS_AVAILABLE,
+        videoExtensions,
+      });
       follow(live, read.library, plan);
     } catch {
       // The progress stays in the rail; the dialog opens at the first step.
@@ -544,7 +557,12 @@
    */
   const reportPlan = $derived(
     run instanceof ServerRun && library && (run.state === 'finished' || run.state === 'stopped')
-      ? planEagleImport(library, { supported, outcomes: run.outcomes, annotations: EAGLE_ANNOTATIONS_AVAILABLE })
+      ? planEagleImport(library, {
+          supported,
+          outcomes: run.outcomes,
+          annotations: EAGLE_ANNOTATIONS_AVAILABLE,
+          videoExtensions,
+        })
       : plan,
   );
 
@@ -557,6 +575,7 @@
           stopped: run.state === 'stopped',
           supported,
           annotations: EAGLE_ANNOTATIONS_AVAILABLE,
+          videoExtensions,
         })
       : undefined,
   );

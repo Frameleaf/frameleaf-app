@@ -33,6 +33,7 @@
     deleteUserSessionAdmin,
     getUserPinCodeStateAdmin,
     removeUserPasskeysAdmin,
+    resetUserTwoFactorAdmin,
     sendUserPasswordLinkAdmin,
     type SessionResponseDto,
     type UserAdminResponseDto,
@@ -85,6 +86,8 @@
   let hasPin = $state<boolean | undefined>();
   /** FL-859: how many passkeys the account has; undefined until the server says. */
   let passkeys = $state<number | undefined>();
+  /** FL-831: whether the account has two-step sign-in on; undefined until the server says. */
+  let twoStep = $state<boolean | undefined>();
   let pinReload = $state(0);
   $effect(() => {
     const id = user.id;
@@ -92,11 +95,13 @@
     let cancelled = false;
     hasPin = undefined;
     passkeys = undefined;
+    twoStep = undefined;
     getUserPinCodeStateAdmin({ id })
       .then((state) => {
         if (!cancelled) {
           hasPin = state.pinCode;
           passkeys = state.passkeys;
+          twoStep = state.twoFactorEnabled;
         }
       })
       .catch(() => {
@@ -110,6 +115,34 @@
   const changePin = async (mode: 'set' | 'clear') => {
     await modalManager.show(AccountPinDialog, { user, mode, hasPin: hasPin === true });
     pinReload++;
+  };
+
+  /**
+   * FL-831 (FL-776 prototype, People.jsx): turn off two-step sign-in for someone who lost their phone
+   * and their recovery codes. The server signs them out everywhere and notes it in their account
+   * history with your name.
+   */
+  let resettingTwoStep = $state(false);
+  const resetTwoStep = async () => {
+    const confirmed = await confirmFrameleaf({
+      title: $t('frameleaf_two_step_admin_confirm_title', { values: { name: user.name } }),
+      prompt: $t('frameleaf_two_step_admin_confirm', { values: { name: user.name } }),
+      confirmText: $t('frameleaf_two_step_turn_off'),
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    resettingTwoStep = true;
+    try {
+      await resetUserTwoFactorAdmin({ id: user.id });
+      twoStep = false;
+      toastManager.primary($t('frameleaf_two_step_admin_done', { values: { name: user.name } }));
+    } catch (error) {
+      handleError(error, $t('frameleaf_two_step_admin_failed'));
+    } finally {
+      resettingTwoStep = false;
+    }
   };
 
   /**
@@ -255,6 +288,21 @@
     <Button disabled={!live || hasPin === false || user.lockedEncryption} onclick={() => changePin('clear')}>
       {$t('frameleaf_users_pin_clear_open')}
     </Button>
+  </Row>
+
+  <Row
+    label={$t('frameleaf_two_step_title')}
+    help={twoStep === undefined
+      ? ''
+      : twoStep
+        ? $t('frameleaf_two_step_admin_on', { values: { name: user.name } })
+        : $t('frameleaf_two_step_admin_off', { values: { name: user.name } })}
+  >
+    {#if twoStep}
+      <Button disabled={!live || resettingTwoStep} onclick={() => void resetTwoStep()}
+        >{$t('frameleaf_two_step_admin_open')}</Button
+      >
+    {/if}
   </Row>
 
   <Row

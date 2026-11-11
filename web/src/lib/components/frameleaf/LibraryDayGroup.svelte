@@ -48,8 +48,9 @@
      * is the photo plus the caption. Work's cells already include their caption row.
      */
     captionBelow?: boolean;
-    /** Work: show file names in the captions. */
+    /** The captions name the file, and show the time taken (FL-1398, the View menu). */
     showFileNames?: boolean;
+    showTimes?: boolean;
     /** Work with the panel beside the grid: the item the panel describes gets a neutral ring. */
     inPanelId?: string | null;
     /** Rating override for an asset; by default each tile shows the asset's own rating. */
@@ -92,6 +93,7 @@
     captionHeight = 0,
     captionBelow = false,
     showFileNames = false,
+    showTimes = true,
     inPanelId = null,
     ratingFor,
     sensitiveFor,
@@ -187,6 +189,7 @@
             sensitive={sensitiveFor?.(asset) ?? false}
             {captionHeight}
             showFileName={showFileNames}
+            showTime={showTimes}
             {onOpen}
             {onToggleSelect}
             onFocus={onFocusAsset}

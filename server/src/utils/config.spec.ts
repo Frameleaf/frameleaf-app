@@ -199,9 +199,12 @@ describe('canonical system configuration storage', () => {
     );
   });
 
-  it('FL-885: keeps a file approved before the Library Assistant settings existed, and still refuses an edit', async () => {
+  it.each([false, true])('keeps a file approved before MCP, with Assistant present: %s', async (withAssistant) => {
     const approved = cloneDeep(defaults) as Partial<typeof defaults> & typeof defaults;
-    delete (approved.localFeatures as Partial<typeof defaults.localFeatures>).assistant;
+    delete approved.connectedApps.allowMcp;
+    if (!withAssistant) {
+      delete (approved.localFeatures as Partial<typeof defaults.localFeatures>).assistant;
+    }
     const partial = { trash: { days: defaults.trash.days } };
     mocks.config.getEnv.mockReturnValue({ ...mockEnvData({}), configFile: 'settings.json' });
     mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify(partial));

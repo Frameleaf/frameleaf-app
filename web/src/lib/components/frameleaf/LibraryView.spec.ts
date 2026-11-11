@@ -5,9 +5,9 @@ import { SvelteURL } from 'svelte/reactivity';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
-import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
 import { writeLibraryView } from '$lib/frameleaf/library-session';
 import { LibrarySessionStore, librarySession } from '$lib/frameleaf/library-session.svelte';
+import { libraryView } from '$lib/frameleaf/library-view.svelte';
 import { applyFilterQuery } from '$lib/frameleaf/search-shortcuts';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -269,22 +269,45 @@ describe('LibraryView', () => {
     expect(screen.getByTestId('work-panel')).toBeInTheDocument();
   });
 
-  it('offers Work’s file-name toggle in Work only, and remembers it on this device (FL-33)', async () => {
-    localStorage.removeItem('frameleaf-work-filenames');
-    libraryGridPreferences.reload();
+  it('draws a public share with the default view, whatever the signed-in visitor chose (FL-1398)', async () => {
+    libraryView.set({ badges: false, crop: false, groupBy: 'month', browseTime: true });
+    try {
+      await setup(true);
+      const root = screen.getByTestId('frameleaf-library');
+      expect(root).not.toHaveAttribute('data-view-hide');
+      expect(root).not.toHaveAttribute('data-view-fit');
+    } finally {
+      libraryView.reset();
+    }
+  });
+
+  it('has no file-name button of its own in Work: the View menu holds it, per layout (FL-1398)', async () => {
+    sdkMock.getPartners.mockResolvedValue([]);
     await setup(false);
-    const toggle = screen.getByRole('button', { name: 'frameleaf_library_show_file_names' });
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    await fireEvent.click(toggle);
-    expect(screen.getByRole('button', { name: 'frameleaf_library_hide_file_names' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(localStorage.getItem('frameleaf-work-filenames')).toBe('true');
+    expect(screen.queryByRole('button', { name: 'frameleaf_library_show_file_names' })).not.toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: /frameleaf_library_view$/ }));
+    const names = screen.getByRole('switch', { name: 'frameleaf_library_view_file_name' });
+    expect(names).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'frameleaf_library_view_time' })).toBeChecked();
+    await fireEvent.click(names);
+    expect(libraryView.value).toMatchObject({ workNames: true, browseNames: false, timelineNames: false });
+
+    // Work always keeps rating, heart and badges on its photos, whatever was switched off elsewhere
+    expect(screen.queryByRole('switch', { name: 'frameleaf_library_view_badges' })).not.toBeInTheDocument();
+    libraryView.set({ badges: false, favorites: false });
+    await tick();
+    expect(screen.getByTestId('frameleaf-library')).not.toHaveAttribute('data-view-hide');
+
+    // Browse keeps its own: bare
     librarySession.setLayout('browse');
     await tick();
-    expect(screen.queryByRole('button', { name: 'frameleaf_library_hide_file_names' })).not.toBeInTheDocument();
-    libraryGridPreferences.showFileNames = false;
+    expect(screen.getByTestId('frameleaf-library')).toHaveAttribute('data-view-hide', 'favorites badges');
+    expect(screen.getByRole('switch', { name: 'frameleaf_library_view_badges' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'frameleaf_library_view_file_name' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'frameleaf_library_view_time' })).not.toBeChecked();
+
+    libraryView.reset();
   });
 
   it('hides the timeline and its year scrubber while Compare is open (LIB-09)', async () => {
@@ -845,6 +868,18 @@ describe('LibraryView', () => {
       expect(screen.queryByTestId('frameleaf-layout-switch')).not.toBeInTheDocument();
       expect(screen.queryByTestId('frameleaf-results-toolbar')).not.toBeInTheDocument();
       expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
+    });
+
+    it('keeps the toolbar, and its View menu, when hiding partner photos leaves nothing (FL-1398)', async () => {
+      libraryView.set({ partnerPhotos: false });
+      try {
+        await setupLibrary({ options: { visibility: AssetVisibility.Timeline, withStacked: true } });
+        expect(await screen.findByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'frameleaf_library_first_run_upload' })).not.toBeInTheDocument();
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ withPartners: false }));
+      } finally {
+        libraryView.reset();
+      }
     });
 
     it('says uploads are on their way instead of offering Upload again while their previews are made', async () => {

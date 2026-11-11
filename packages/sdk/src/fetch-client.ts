@@ -1589,6 +1589,8 @@ export type AdminConfigBackupsDto = {
     schedule: AdminConfigBackupScheduleDto;
 };
 export type AdminConfigConnectedAppsDto = {
+    /** Let AI agents connect to the library through MCP */
+    allowMcp?: boolean;
     /** Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything. */
     allowRegistration: boolean;
 };
@@ -4066,6 +4068,10 @@ export type ClientsResponse = {
     /** Whether Clients is in use and shown in the top bar */
     enabled: boolean;
 };
+export type DisplayPreferencesResponse = {
+    dateFormat: DisplayDateFormat;
+    hourCycle: DisplayHourCycle;
+};
 export type DownloadResponse = {
     /** Maximum archive size in bytes */
     archiveSize: number;
@@ -4089,6 +4095,38 @@ export type FoldersResponse = {
     enabled: boolean;
     /** Whether folders appear in web sidebar */
     sidebarWeb: boolean;
+};
+export type LibraryViewResponse = {
+    /** Whether the Library also shows archived items */
+    archived: boolean;
+    /** Whether photos show video length and badges */
+    badges: boolean;
+    /** Browse: whether photos show the file name */
+    browseNames: boolean;
+    /** Browse: whether photos show the time taken */
+    browseTime: boolean;
+    /** Whether Browse and Work crop each photo to fill its tile; off shows the whole photo */
+    crop: boolean;
+    /** Whether favorite photos show a heart */
+    favorites: boolean;
+    /** How Browse and Work group photos into sections: none, day, month or year */
+    groupBy: string;
+    /** Whether the Library also shows photos a partner shares */
+    partnerPhotos: boolean;
+    /** Whether photos show their rating */
+    ratings: boolean;
+    /** Whether the Timeline shows the year scrubber */
+    scrubber: boolean;
+    /** Whether a stack shows as one photo with a count; off shows every photo in it */
+    stacksTogether: boolean;
+    /** Timeline: whether photos show the file name */
+    timelineNames: boolean;
+    /** Timeline: whether photos show the time taken */
+    timelineTime: boolean;
+    /** Work: whether photos show the file name */
+    workNames: boolean;
+    /** Work: whether photos show the time taken */
+    workTime: boolean;
 };
 export type LockedPinResponse = {
     /** How long Locked photos stay open after the PIN unlocks them, in minutes */
@@ -4179,9 +4217,11 @@ export type UserPreferencesResponseDto = {
     albums: AlbumsResponse;
     cast: CastResponse;
     clients?: ClientsResponse;
+    display?: DisplayPreferencesResponse;
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
+    libraryView?: LibraryViewResponse;
     lockedPin?: LockedPinResponse;
     /** Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67) */
     lockedRulesRevealed: boolean;
@@ -4228,6 +4268,10 @@ export type ClientsUpdate = {
     /** Whether Clients is in use and shown in the top bar */
     enabled?: boolean;
 };
+export type DisplayPreferencesUpdate = {
+    dateFormat?: DisplayDateFormat;
+    hourCycle?: DisplayHourCycle;
+};
 export type DownloadUpdate = {
     /** Maximum archive size in bytes */
     archiveSize?: number;
@@ -4251,6 +4295,38 @@ export type FoldersUpdate = {
     enabled?: boolean;
     /** Whether folders appear in web sidebar */
     sidebarWeb?: boolean;
+};
+export type LibraryViewUpdate = {
+    /** Whether the Library also shows archived items */
+    archived?: boolean;
+    /** Whether photos show video length and badges */
+    badges?: boolean;
+    /** Browse: whether photos show the file name */
+    browseNames?: boolean;
+    /** Browse: whether photos show the time taken */
+    browseTime?: boolean;
+    /** Whether Browse and Work crop each photo to fill its tile; off shows the whole photo */
+    crop?: boolean;
+    /** Whether favorite photos show a heart */
+    favorites?: boolean;
+    /** How Browse and Work group photos into sections: none, day, month or year */
+    groupBy?: string;
+    /** Whether the Library also shows photos a partner shares */
+    partnerPhotos?: boolean;
+    /** Whether photos show their rating */
+    ratings?: boolean;
+    /** Whether the Timeline shows the year scrubber */
+    scrubber?: boolean;
+    /** Whether a stack shows as one photo with a count; off shows every photo in it */
+    stacksTogether?: boolean;
+    /** Timeline: whether photos show the file name */
+    timelineNames?: boolean;
+    /** Timeline: whether photos show the time taken */
+    timelineTime?: boolean;
+    /** Work: whether photos show the file name */
+    workNames?: boolean;
+    /** Work: whether photos show the time taken */
+    workTime?: boolean;
 };
 export type LockedPinUpdate = {
     /** How long Locked photos stay open after the PIN unlocks them: 5, 15 or 60 minutes */
@@ -4334,11 +4410,13 @@ export type UserPreferencesUpdateDto = {
     avatar?: AvatarUpdate;
     cast?: CastUpdate;
     clients?: ClientsUpdate;
+    display?: DisplayPreferencesUpdate;
     download?: DownloadUpdate;
     emailNotifications?: EmailNotificationsUpdate;
     /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
     expectedRevision?: string;
     folders?: FoldersUpdate;
+    libraryView?: LibraryViewUpdate;
     lockedPin?: LockedPinUpdate;
     memories?: MemoriesUpdate;
     /** Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision. */
@@ -9366,7 +9444,7 @@ export type EagleLibraryResponseDto = {
     items: EagleItemDto[];
     name: string;
     smartFolders: string[];
-    /** File types this import brings over (lower case, no dot) */
+    /** File extensions this import accepts (lower case, no dot). * includes downloadable originals. */
     supported: string[];
     tagGroups: string[];
 };
@@ -9498,6 +9576,8 @@ export type EnrichmentPreviewRequestDto = {
     /** Destination to run on; the routed one when omitted */
     destinationId?: string;
     fallbackModelName?: string;
+    /** Require this Library server at final admission; refuse LAN and cloud */
+    localOnly?: boolean;
     /** Draft model; the saved one when omitted */
     modelName?: string;
     /** Draft prompt; the saved one when omitted */
@@ -16825,6 +16905,8 @@ export type WarmLibrarySetupDto = {
     reset?: boolean;
 };
 export type ServerMediaTypesResponseDto = {
+    /** Boards accepts other files as downloadable originals */
+    boardsOriginals?: boolean;
     /** Font file extensions an upload into Boards (libraryScope=design) accepts */
     font: string[];
     /** Supported image MIME types */
@@ -21083,7 +21165,11 @@ export type PreservationRestoreItemsQueryDto = {
     take?: number;
 };
 export type ProcessingFailureQueryDto = {
+    /** Also list failures someone chose to keep as they are or to stop trying (FL-1409) */
+    includeDismissed?: boolean;
     skip?: number;
+    /** Only failures of this step */
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 };
@@ -26124,8 +26210,10 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
 /**
  * List asset processing failures
  */
-export function getProcessingFailures({ skip, take, userId }: {
+export function getProcessingFailures({ includeDismissed, skip, step, take, userId }: {
+    includeDismissed?: boolean;
     skip?: number;
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -26133,7 +26221,9 @@ export function getProcessingFailures({ skip, take, userId }: {
         status: 200;
         data: ProcessingFailureResponseDto[];
     }>(`/assets/processing-failures${QS.query(QS.explode({
+        includeDismissed,
         skip,
+        step,
         take,
         userId
     }))}`, {
@@ -40138,6 +40228,17 @@ export enum AdminAuditAction {
 export enum AssetOrder {
     Asc = "asc",
     Desc = "desc"
+}
+export enum DisplayDateFormat {
+    Auto = "auto",
+    Iso = "iso",
+    Dmy = "dmy",
+    Mdy = "mdy"
+}
+export enum DisplayHourCycle {
+    Auto = "auto",
+    H12 = "h12",
+    H23 = "h23"
 }
 export enum SuppressionScope {
     Owned = "owned",

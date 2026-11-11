@@ -164,6 +164,34 @@ describe('import and export', () => {
     expect(draftFromDocument(changedDestination, draft).steps[0]).toMatchObject({ id: undefined, storedSecrets: [] });
   });
 
+  it('keeps the signed webhook id when editing its public JSON fields', () => {
+    const draft = draftFromDocument({
+      trigger: 'AssetCreate',
+      steps: [{ method: 'immich-plugin-core#webhook', config: { url: 'https://old.test' } }],
+    });
+    draft.steps[0] = { ...draft.steps[0], id: 'signed-webhook', storedSecrets: ['secret'] };
+
+    const document = draftToDocument(draft);
+    const [step] = document.steps as Record<string, unknown>[];
+    step.config = { url: 'https://new.test' };
+    const edited = draftFromDocument(document, draft);
+    expect(draftToCreateDto(edited).steps?.[0]).toMatchObject({
+      id: 'signed-webhook',
+      config: { url: 'https://new.test' },
+    });
+  });
+
+  it('refuses to replace a signed webhook when its JSON step id is removed', () => {
+    const document = {
+      trigger: 'AssetCreate',
+      steps: [{ method: 'immich-plugin-core#webhook', config: { url: 'https://old.test' } }],
+    };
+    const draft = draftFromDocument(document);
+    draft.steps[0] = { ...draft.steps[0], id: 'signed-webhook', storedSecrets: ['secret'] };
+
+    expect(() => draftFromDocument(document, draft)).toThrow('Keep the signed webhook step ID');
+  });
+
   it('never exports a credential typed into the draft', () => {
     const draft = draftFromDocument({
       trigger: 'AssetCreate',

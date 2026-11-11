@@ -11,14 +11,15 @@
   import Portal from '$lib/elements/Portal.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import { formatMapArea, parseMapArea } from '$lib/frameleaf/map-settings';
+  import { libraryView } from '$lib/frameleaf/library-view.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
-  import { showPartnerPhotos } from '$lib/stores/preferences.store';
   import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -37,15 +38,30 @@
   /**
    * The Map screen's "Search this area" lands here (prototype `MapView` onQuery → Library titled
    * "Map area"): the library narrowed to the area's bounds through the timeline's own `bbox`.
-   * The session's server-side "select everything matching" knows nothing of the area (or of hidden
-   * partner photos), so the bar offers the loaded selection instead while either applies.
+   * The session's server-side "select everything matching" knows nothing of the area, so the bar
+   * offers the loaded selection instead while it applies. The View menu's "Also show" and "Stacks"
+   * (FL-1398) are applied to these options by `LibraryView`.
    */
   const area = $derived(parseMapArea(page.url.searchParams.get('area')));
+
+  /**
+   * Before FL-1398 "Partner photos" was kept on this device. Someone who had hidden them keeps them
+   * hidden: the choice moves to the account once, and the device's copy goes.
+   */
+  onMount(() => {
+    const key = 'timeline-show-partner-photos';
+    try {
+      if (localStorage.getItem(key) === 'false') {
+        libraryView.set({ partnerPhotos: false });
+      }
+      localStorage.removeItem(key);
+    } catch {
+      // No storage (private mode): nothing was kept there either.
+    }
+  });
   const options = $derived({
     visibility: AssetVisibility.Timeline,
     withStacked: true,
-    // Partner sharing: copies in an album the partner made still show (the server keeps them)
-    ...(!$showPartnerPhotos && { withPartners: false }),
     ...(area && { bbox: formatMapArea(area) }),
   });
 </script>
@@ -57,9 +73,7 @@
     title={area ? undefined : $t('library')}
     destination={{ kind: 'library' }}
     downloadFileName={brandedArchiveName($t('frameleaf_archive_name_photos'))}
-    selectAll={area || !$showPartnerPhotos ? 'loaded' : 'matching'}
-    partnerPhotos={$showPartnerPhotos}
-    onTogglePartnerPhotos={() => showPartnerPhotos.set(!$showPartnerPhotos)}
+    selectAll={area ? 'loaded' : 'matching'}
     enableRouting
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >

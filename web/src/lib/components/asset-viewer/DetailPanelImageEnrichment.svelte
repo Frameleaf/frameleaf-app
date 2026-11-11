@@ -28,6 +28,7 @@
    * asset that changed underneath the panel, and neither for a rejected value or a permission
    * the signed-in user does not have.
    */
+  import LocalDescriptionReview from './LocalDescriptionReview.svelte';
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { staleReasonKey } from '$lib/frameleaf/enrichment';
   import { descriptionReview, sensitivityReview, type DescriptionReview } from '$lib/frameleaf/info-panel';
@@ -449,6 +450,10 @@
 {:else}
   <!-- Without an editor beside it (a spec, another host), the evidence stands on its own. -->
   {@render evidence()}
+{/if}
+
+{#if canReview && authManager.authenticated && authManager.user.isAdmin}
+  <LocalDescriptionReview {asset} {onAssetRefresh} />
 {/if}
 
 {#if showSensitivity}

@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import { importX } from 'eslint-plugin-import-x';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import eslintPluginUnicorn from 'eslint-plugin-unicorn';
@@ -135,6 +136,18 @@ export default defineConfig([
   {
     files: ['**/*.mjs'],
     languageOptions: { globals: globals.node, ecmaVersion: 'latest', sourceType: 'module' },
+  },
+  {
+    files: ['src/controllers/mcp.controller{,.spec}.ts', 'src/services/mcp.service{,.spec}.ts'],
+    settings: {
+      'import-x/resolver-next': [
+        // The SDK's wildcard types export appends .d.ts to the JS subpath. Resolve the ESM export.
+        createTypeScriptImportResolver({
+          project: `${import.meta.dirname}/tsconfig.eslint.json`,
+          conditionNames: ['import', 'node', 'default'],
+        }),
+      ],
+    },
   },
   {
     // These Node runtime tests exercise the built entry point; dist is intentionally absent before build.

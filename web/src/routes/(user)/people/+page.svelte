@@ -58,7 +58,7 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
-  import { PEOPLE_CAP, PEOPLE_PAGE_SIZE } from './people-page';
+  import { PEOPLE_CAP, PEOPLE_PAGE_SIZE, WAITING_REFRESH_MS } from './people-page';
   import type { PageData } from './$types';
 
   /**
@@ -222,14 +222,22 @@
     }
   };
 
-  const reloadPeople = async () => {
+  /**
+   * `quiet`: a background re-read. Its first read gives up after a while and says nothing when it
+   * fails: the page keeps what it has and the next turn asks again. Once that read has replaced the
+   * list, a later page that fails is said as on any other load, since the grid is then incomplete.
+   */
+  const reloadPeople = async ({ quiet = false }: { quiet?: boolean } = {}) => {
     if (!isCurrentView()) {
       return;
     }
     loadRequest?.abort();
     const generation = ++loadGeneration;
     try {
-      const result = await getAllPeople({ withHidden: true, size: PEOPLE_PAGE_SIZE });
+      const result = await getAllPeople(
+        { withHidden: true, size: PEOPLE_PAGE_SIZE },
+        quiet ? { signal: AbortSignal.timeout(WAITING_REFRESH_MS * 2) } : undefined,
+      );
       if (!isCurrentView() || generation !== loadGeneration) {
         return;
       }
@@ -239,11 +247,38 @@
       nextPage = result.hasNextPage ? 2 : null;
       await loadAllPages();
     } catch (error) {
-      if (isCurrentView() && generation === loadGeneration) {
+      if (!quiet && isCurrentView() && generation === loadGeneration) {
         handleError(error, $t('errors.failed_to_load_people'));
       }
     }
   };
+
+  /**
+   * FL-1419: while photos still wait for face recognition the page re-reads People, so it shows the
+   * first people (or "No people yet") without a reload. It does not hang off the queue state, which
+   * most people are not sent; that is read here too, only for the wording, and only while waiting.
+   */
+  $effect(() => {
+    if (!scanning || facesOff) {
+      return;
+    }
+    // untracked: starting the watch registers listeners, which is reactive state of its own
+    const stopWatchingWork = untrack(() => runningJobsSession.watch());
+    // One re-read at a time: a turn that started another would discard the answer still on its way,
+    // and a slow server would then never be heard.
+    let asking = false;
+    const timer = setInterval(() => {
+      if (asking || document.visibilityState === 'hidden') {
+        return;
+      }
+      asking = true;
+      void reloadPeople({ quiet: true }).finally(() => (asking = false));
+    }, WAITING_REFRESH_MS);
+    return () => {
+      clearInterval(timer);
+      stopWatchingWork();
+    };
+  });
 
   onDestroy(() => {
     alive = false;
@@ -270,20 +305,14 @@
       handlePromiseError(loadSplitSuggestions());
     }
     handlePromiseError(loadLibrarySize());
-    // Only the "photos still wait" page reads the queue state, so only it asks for it.
-    const stopWatchingWork = scanning && !facesOff ? runningJobsSession.watch() : undefined;
 
-    const stopListening = websocketEvents.on('on_person_thumbnail', (personId: string) => {
+    return websocketEvents.on('on_person_thumbnail', (personId: string) => {
       for (const person of people) {
         if (person.id === personId) {
           person.updatedAt = new Date().toISOString();
         }
       }
     });
-    return () => {
-      stopWatchingWork?.();
-      stopListening();
-    };
   });
 
   const replacePerson = (updated: PersonResponseDto) => {

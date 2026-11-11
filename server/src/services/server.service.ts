@@ -463,6 +463,7 @@ export class ServerService extends BaseService {
       image: Object.keys(mimeTypes.image),
       sidecar: Object.keys(mimeTypes.sidecar),
       font: Object.keys(mimeTypes.font),
+      boardsOriginals: true,
     };
   }
 }
