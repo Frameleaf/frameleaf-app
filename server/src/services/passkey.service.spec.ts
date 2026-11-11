@@ -268,6 +268,7 @@ describe(PasskeyService.name, () => {
     });
 
     it('counts a Frameleaf sign-in as the check only by when the person signed in, not when the session was made', async () => {
+      mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: auth.session!.id } as never);
       const signedIn = (authTime: Date) => ({
         ...auth,
         session: {
@@ -287,6 +288,26 @@ describe(PasskeyService.name, () => {
       await expect(sut.getRegistrationOptions(signedIn(new Date()), {}, headers(), details)).resolves.toMatchObject({
         passkeysAvailable: true,
       });
+    });
+
+    it('never counts a recent Frameleaf sign-in whose tag unlinking removed', async () => {
+      mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+      const unlinked = {
+        ...auth,
+        session: {
+          ...auth.session!,
+          signIn: {
+            methods: ['passkey'],
+            level: 'verified' as const,
+            source: 'frameleaf' as const,
+            legacy: false,
+            authTime: new Date(),
+          },
+        },
+      };
+      await expect(sut.getRegistrationOptions(unlinked, {}, headers(), details)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
 
     it('counts a local passkey sign-in from the last 10 minutes, and never a password one', async () => {

@@ -110928,14 +110928,7 @@
           "methods": {
             "description": "Sign in in steps: with status next, what would complete the step, most preferred first",
             "items": {
-              "enum": [
-                "totp",
-                "recovery_code",
-                "email_code",
-                "password",
-                "passkey"
-              ],
-              "type": "string"
+              "$ref": "#/components/schemas/SignInStepMethod"
             },
             "type": "array"
           },
@@ -110952,12 +110945,8 @@
             "type": "boolean"
           },
           "status": {
-            "description": "Sign in in steps (sent when the request had steps: true): done, or next with a transaction",
-            "enum": [
-              "done",
-              "next"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/SignInStepStatus",
+            "description": "Sign in in steps (sent when the request had steps: true): done, or next with a transaction"
           },
           "transaction": {
             "description": "Sign in in steps: with status next, send it with the proof to POST /auth/login/two-factor as twoFactorToken",
@@ -149246,6 +149235,23 @@
           "administrators-away",
           "everyone-away",
           "everyone"
+        ],
+        "type": "string"
+      },
+      "SignInStepMethod": {
+        "enum": [
+          "totp",
+          "recovery_code",
+          "email_code",
+          "password",
+          "passkey"
+        ],
+        "type": "string"
+      },
+      "SignInStepStatus": {
+        "enum": [
+          "done",
+          "next"
         ],
         "type": "string"
       },

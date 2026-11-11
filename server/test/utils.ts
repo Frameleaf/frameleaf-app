@@ -174,7 +174,12 @@ export const controllerSetup = async (
       { provide: ClsService, useValue: { getId: vi.fn() } },
       {
         provide: AuthService,
-        useValue: { authenticate: vi.fn(), requireSetupAvailable: vi.fn(), requireOriginalTransfer: vi.fn() },
+        useValue: {
+          authenticate: vi.fn(),
+          requireSetupAvailable: vi.fn(),
+          requireOriginalTransfer: vi.fn(),
+          requireConfirmedRecently: vi.fn(),
+        },
       },
       ...providers,
     ],
@@ -198,6 +203,7 @@ export const controllerSetup = async (
   return {
     authenticate,
     requireSetupAvailable,
+    getAuthService: () => resolvedAuthService,
     getHttpServer: () => app.getHttpServer(),
     reset: () => {
       authenticate.mockReset();

@@ -20,3 +20,17 @@ export const signInIsRecent = (
   const at = new Date(signIn.authTime).getTime();
   return at <= now && now - at <= CONFIRMED_RECENTLY_SECONDS * 1000;
 };
+
+/**
+ * `signInIsRecent` for a live session: a Frameleaf sign-in counts only while its Frameleaf tag exists
+ * (unlinking removes the tag and keeps the session).
+ */
+export const sessionIsConfirmedRecently = async (
+  session: { id: string; signIn?: Parameters<typeof signInIsRecent>[0] } | undefined,
+  hasFrameleafTag: (sessionId: string) => Promise<unknown>,
+): Promise<boolean> => {
+  if (!session || !signInIsRecent(session.signIn)) {
+    return false;
+  }
+  return session.signIn!.source !== 'frameleaf' || !!(await hasFrameleafTag(session.id));
+};

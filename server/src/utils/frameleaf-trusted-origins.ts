@@ -16,7 +16,11 @@ export const frameleafTrustedOrigins = async (
   deps: { configRepository: ConfigRepository; systemMetadataRepository: SystemMetadataRepository },
   settings: Pick<SystemConfig, 'frameleafCloud'>,
 ): Promise<string[]> => {
-  const { cloudUrl, link } = await readCloudLink(deps);
+  const { cloudUrl, link, linked } = await readCloudLink(deps);
+  // a stored link for another Cloud (FRAMELEAF_CLOUD_URL changed) or one that is no longer linked vouches for nothing
+  if (!linked) {
+    return [];
+  }
   const origins = [httpsOrigin(link?.services?.publicUrl), httpsOrigin(link?.services?.relayOrigin)];
   const state = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
   const enrollment = state?.names;

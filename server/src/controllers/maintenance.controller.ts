@@ -79,7 +79,9 @@ export class MaintenanceController {
       await this.authService.requireConfirmedRecently(auth, dto.confirmation, loginDetails);
     }
 
-    const { jwt } = await this.service.startMaintenance(dto, auth.user.name);
+    // the confirmation is checked above and never stored with the maintenance action
+    const { confirmation: _confirmation, ...action } = dto;
+    const { jwt } = await this.service.startMaintenance(action as SetMaintenanceModeDto, auth.user.name);
     return respondWithCookie(res, undefined, {
       isSecure: loginDetails.isSecure,
       values: [{ key: AuthCookie.MaintenanceToken, value: jwt }],

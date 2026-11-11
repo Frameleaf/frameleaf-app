@@ -1020,6 +1020,17 @@ describe(SystemConfigService.name, () => {
     describe('"Require a passkey or two-step"', () => {
       const everyone = () => ({ ...defaults, signInPolicy: { require: 'everyone' as const } });
 
+      it('keeps the stored choice when an older settings client omits the whole section', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          signInPolicy: { require: 'everyone', applyToOlderApps: true },
+        } as never);
+        const { signInPolicy: _omitted, ...dto } = AdminConfigDto.schema.parse(defaults);
+
+        await sut.updateAdminConfig(dto as AdminConfigDto);
+
+        expect(configWrites().at(-1)).toMatchObject({ signInPolicy: { require: 'everyone', applyToOlderApps: true } });
+      });
+
       it('keeps the stored choice when an older settings client omits it', async () => {
         mocks.systemMetadata.get.mockResolvedValue({ signInPolicy: { require: 'everyone-away' } } as never);
         const dto = AdminConfigDto.schema.parse({ ...defaults, signInPolicy: {} });

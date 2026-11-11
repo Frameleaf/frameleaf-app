@@ -213,6 +213,8 @@ type PendingSignIn = {
   sid?: string;
   needPassword: boolean;
   needAuthenticator: boolean;
+  /** The sign-in authority (Cloud link) that issued it; a pending sign-in never outlives a link change. */
+  auth: string;
   iat: number;
   exp: number;
 };
@@ -297,6 +299,11 @@ export class FrameleafAuthService extends BaseService {
     if (need.needPassword) methods.push('password');
     if (need.needAuthenticator) methods.push('totp', 'recovery_code');
     const now = Math.floor(Date.now() / 1000);
+    const config = await this.config();
+    const authority = config ? await this.signInAuthority(config) : null;
+    if (!authority) {
+      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+    }
     const pending: PendingSignIn = {
       k: 'exchange',
       uid: userId,
@@ -304,6 +311,7 @@ export class FrameleafAuthService extends BaseService {
       sid,
       needPassword: need.needPassword,
       needAuthenticator: need.needAuthenticator,
+      auth: authority,
       iat: now,
       exp: now + VERIFICATION_TRANSACTION_SECONDS,
     };
@@ -328,10 +336,10 @@ export class FrameleafAuthService extends BaseService {
     }
     const config = await this.config();
     const authority = config && (await this.signInAuthority(config));
-    if (!config || !authority) {
+    if (!config || !authority || authority !== pending.auth) {
       throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
     }
-    const proved = await this.authService.verifyLocalProof(user, dto, loginDetails, {
+    const { methods: proved, passwordHash } = await this.authService.verifyLocalProof(user, dto, loginDetails, {
       password: pending.needPassword,
       authenticator: pending.needAuthenticator,
     });
@@ -361,7 +369,9 @@ export class FrameleafAuthService extends BaseService {
           (refusal, message) =>
             exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal], refusal === 'unclaimed' ? message : undefined),
           checkRevocation,
-          { methods: proved },
+          // the proof belongs to this account, and to its password as checked: a changed password or an email
+          // that moved to another account in the meantime gets no session
+          { methods: proved, userId: user.id, passwordHash },
         );
       }),
     );
@@ -497,13 +507,20 @@ export class FrameleafAuthService extends BaseService {
     refuse: (refusal: SignInRefusal, message: string) => Error = (_refusal, message) =>
       new BadRequestException(message),
     afterTag?: (sessionId: string) => Promise<void>,
-    proof?: { methods: string[] },
+    proof?: { methods: string[]; userId: string; passwordHash?: string },
   ) {
     const { sid } = oauth;
     const { signInPolicy } = await this.getConfig({ withCache: true });
     // unified sign-in rollout: a client that does not declare `verification` keeps today's rights
     const enforce = !!loginDetails.capabilities?.includes(VERIFICATION_CAPABILITY) || !!signInPolicy.applyToOlderApps;
     const proved = proof?.methods ?? [];
+    // the proof belongs to the account it was checked for: if the email moved or the link changed since, nothing
+    // is linked and no session is made
+    const requireProvedAccount = (candidate: { id: string } | undefined) => {
+      if (proof && candidate?.id !== proof.userId) {
+        throw new UnauthorizedException('This sign-in expired. Sign in with Frameleaf again.');
+      }
+    };
     const cloudVerified = levelFromAcr(profile.acr) === 'verified';
     const askFor = async (user: { id: string }, needPassword: boolean) => {
       const enrolled = !!(await this.userRepository.getTwoFactor(user.id))?.enabledAt;
@@ -546,6 +563,9 @@ export class FrameleafAuthService extends BaseService {
         throw refuse('removed', DELETED_ACCOUNT_MESSAGE);
       }
     }
+    if (user) {
+      requireProvedAccount(user);
+    }
     if (user && link && enforce) {
       // a person's local authenticator is never skipped silently after a Basic Frameleaf sign-in
       await askFor(user, false);
@@ -559,9 +579,13 @@ export class FrameleafAuthService extends BaseService {
         if (other && other.sub !== profile.sub) {
           throw refuse('conflict', 'This account is already linked to another Frameleaf account');
         }
+        requireProvedAccount(existing);
         user = existing;
         // the first link to an existing account needs proof: a Verified Frameleaf sign-in, or the local password
-        await askFor(existing, enforce && !cloudVerified && !proved.includes('pwd'));
+        // (an older client links as today)
+        if (enforce) {
+          await askFor(existing, !cloudVerified && !proved.includes('pwd'));
+        }
         await this.frameleafAccountRepository.upsertLink({
           userId: user.id,
           sub: profile.sub,
@@ -573,6 +597,10 @@ export class FrameleafAuthService extends BaseService {
         });
         await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
       }
+    }
+    if (!user) {
+      // a proof is for an existing account: never for one made now
+      requireProvedAccount(undefined);
     }
     if (!user) {
       // Frameleaf Cloud authorized this person for this server: it is the access authority
@@ -645,6 +673,8 @@ export class FrameleafAuthService extends BaseService {
         source: 'frameleaf',
       },
       oauth,
+      // a session finished with the local password is fenced against a password change meanwhile
+      proof?.passwordHash,
     );
     try {
       await this.frameleafAccountRepository.tagSession({

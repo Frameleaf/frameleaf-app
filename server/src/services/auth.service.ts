@@ -68,7 +68,7 @@ import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { DecimalSize } from 'src/utils/bytes.js';
-import { CONFIRMATION_REQUIRED, signInIsRecent } from 'src/utils/confirmed-recently.js';
+import { CONFIRMATION_REQUIRED, sessionIsConfirmedRecently } from 'src/utils/confirmed-recently.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { mailSealKey, openMailSecret, sealMailSecret } from 'src/utils/frameleaf-mail.js';
 import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
@@ -369,19 +369,21 @@ export class AuthService extends BaseService {
   /**
    * Unified sign-in: proof of the local password and/or authenticator for a Frameleaf sign-in that needs it
    * (first link by email match; a local authenticator after a Basic Frameleaf sign-in). Wrong answers count
-   * against the usual sign-in limits (401). Returns the methods proved, as `amr` names.
+   * against the usual sign-in limits (401). Returns the methods proved, as `amr` names, and the password hash
+   * that was checked (so a session can be fenced against a password change).
    */
   async verifyLocalProof(
     user: { id: string; name: string; email: string },
     proof: { password?: string; code?: string; recoveryCode?: string },
     details: LoginDetails,
     need: { password: boolean; authenticator: boolean },
-  ): Promise<string[]> {
+  ): Promise<{ methods: string[]; passwordHash?: string }> {
     if (need.authenticator) {
       requireOneSecondFactor(proof);
     }
     const now = new Date();
     const proved: string[] = [];
+    let passwordHash: string | undefined;
     const twoFactor = await this.userRepository.getTwoFactor(user.id);
     const ok = await this.signInSecurity.attempt('two-factor', user.id, details, async (backoff) => {
       proved.length = 0;
@@ -392,6 +394,7 @@ export class AuthService extends BaseService {
           return false;
         }
         proved.push('pwd');
+        passwordHash = password;
       }
       if (need.authenticator) {
         if (!twoFactor?.enabledAt || !(await this.checkSecondFactor(user.id, twoFactor.secret, proof, now))) {
@@ -412,7 +415,7 @@ export class AuthService extends BaseService {
           : 'That didn’t work. Check your password and your authenticator code and try again.',
       );
     }
-    return proved;
+    return { methods: proved, passwordHash };
   }
 
   /**
@@ -433,7 +436,7 @@ export class AuthService extends BaseService {
     if (!signIn || (signIn.legacy && !signInPolicy.applyToOlderApps)) {
       return;
     }
-    if (signInIsRecent(signIn)) {
+    if (await sessionIsConfirmedRecently(auth.session, (id) => this.frameleafAccountRepository.getSession(id))) {
       return;
     }
     const enrolled = !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt;
@@ -662,7 +665,7 @@ export class AuthService extends BaseService {
    */
   private async requireAccountPassword(userId: string, password: string | undefined, session?: AuthSession) {
     if (password === undefined) {
-      if (signInIsRecent(session?.signIn)) {
+      if (await sessionIsConfirmedRecently(session, (id) => this.frameleafAccountRepository.getSession(id))) {
         return;
       }
       throw new ForbiddenException({
@@ -1242,7 +1245,8 @@ export class AuthService extends BaseService {
       record?.source === 'frameleaf' &&
       !(await this.frameleafAccountRepository.getSession(auth.session.id))
     ) {
-      record = { ...record, source: 'local' };
+      // nothing Cloud vouched for counts any more, a Cloud passkey included: never a local passkey
+      record = { ...record, source: 'local', methods: [], level: 'basic' };
     }
     if (away && !record) {
       // a session with no record (made outside createSession) is judged as before: legacy, by its Frameleaf tag
@@ -1257,9 +1261,10 @@ export class AuthService extends BaseService {
       };
     }
     const { frameleafCloud, signInPolicy } = await this.getConfig({ withCache: true });
-    // the authenticator matters only after a Basic Frameleaf sign-in: look it up only then
+    // the authenticator matters only for a Basic sign-in from Frameleaf, or when everyone needs two steps:
+    // look it up only then
     const hasAuthenticator =
-      record?.source === 'frameleaf' && record.level === 'basic'
+      record?.level === 'basic' && (record.source === 'frameleaf' || signInPolicy.require === 'everyone')
         ? !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt
         : false;
     const decision = evaluateSession({

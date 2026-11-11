@@ -539,7 +539,7 @@
       </Advanced>
     </Section>
 
-    <SettingActions keys={['passwordLogin', 'oauth', 'connectedApps']} {disabled} />
+    <SettingActions keys={['passwordLogin', 'signInPolicy', 'oauth', 'connectedApps']} {disabled} />
   </KitPage>
 </form>
 

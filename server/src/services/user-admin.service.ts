@@ -453,7 +453,8 @@ export class UserAdminService extends BaseService {
 
   /**
    * Unified sign-in "Reset sign-in": one action for a person who can't get in. Emails them a link to choose a
-   * new password, removes their authenticator and passkeys, and signs out every session. The three separate
+   * new password (the old one stops working), removes their authenticator and passkeys, and signs out every
+   * session. The three separate
    * actions remain for precision. The link comes first: with no email set up it is refused before anything is
    * removed, so nobody is left with no way back in.
    */
@@ -462,6 +463,8 @@ export class UserAdminService extends BaseService {
     const base = await this.requirePasswordLinkBase();
     await this.emailPasswordLink(auth, user, base, false);
     await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.PasswordReset, 'link')]);
+    // the old password stops working too: only the emailed link sets a new one
+    await this.userRepository.update(id, { password: '' });
     await this.removeAllPasskeys(auth, user);
     // removes the authenticator and signs the account out everywhere
     await this.resetTwoFactor(auth, id);

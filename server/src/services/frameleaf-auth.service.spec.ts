@@ -724,9 +724,10 @@ describe(FrameleafAuthService.name, () => {
 
         await sut.stepUp({ transaction, password: 'password' }, capable);
         expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledTimes(1);
+        // fenced: the session is created only while the password is still the one that was checked
         expect(mocks.session.create).toHaveBeenCalledWith(
           expect.anything(),
-          undefined,
+          'bcrypt-hash',
           expect.objectContaining({
             level: 'verified',
             methods: ['email_code', 'pwd'],
@@ -737,6 +738,36 @@ describe(FrameleafAuthService.name, () => {
         await expect(sut.stepUp({ transaction: 'forged', password: 'password' }, capable)).rejects.toMatchObject({
           status: 401,
         });
+      });
+
+      it('refuses a pending sign-in after the Cloud link changed, or once its account changed', async () => {
+        const { transaction } = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j8', claims: basicClaims }) }, capable),
+        );
+        // the email moved to another account in the meantime: the proof was for the first one
+        const other = UserFactory.create({ email: 'remote@example.test', password: 'bcrypt-hash' });
+        mocks.user.getByEmail.mockResolvedValue(other as never);
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({
+          status: 401,
+        });
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.session.create).not.toHaveBeenCalled();
+
+        // relinked to another Cloud account: the pending sign-in belongs to the old authority
+        mocks.user.getByEmail.mockResolvedValue(existing as never);
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), instanceId: 'instance-2' });
+        clearConfigCache();
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({
+          status: 403,
+        });
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      });
+
+      it('lets an older client link by email match as today, even when the account has an authenticator', async () => {
+        await enrol();
+        await sut.exchangeToken({ token: await mint({ jti: 'j9', claims: basicClaims }) }, loginDetails);
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledTimes(1);
+        expect(mocks.session.create).toHaveBeenCalledTimes(1);
       });
 
       it('never skips a local authenticator after a Basic Frameleaf sign-in', async () => {

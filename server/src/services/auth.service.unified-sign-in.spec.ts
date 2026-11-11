@@ -134,6 +134,15 @@ describe('AuthService unified sign-in rule', () => {
       expect(mocks.session.raiseSignIn).not.toHaveBeenCalled();
     });
 
+    it('never treats a Cloud passkey as a local one once unlinking removed the tag', async () => {
+      who = admin;
+      signIn = { source: 'frameleaf', methods: ['passkey'], level: 'verified', legacy: false };
+      mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+      expect(await refusal(sut.authenticate(request('relay', true)))).toMatchObject({
+        code: 'frameleaf_sign_in_required',
+      });
+    });
+
     it('refuses a Frameleaf session whose tag was removed by unlinking', async () => {
       signIn = basicFrameleaf();
       mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
@@ -191,6 +200,16 @@ describe('AuthService unified sign-in rule', () => {
         signIn = record;
         await expect(sut.authenticate(request(null, false))).resolves.toMatchObject({ user });
       }
+    });
+
+    it('asks for the authenticator, not setup, under "everyone, everywhere" when the person has one', async () => {
+      config({ signInPolicy: { require: 'everyone' } });
+      enrol();
+      signIn = { source: 'local', methods: ['pwd'], level: 'basic', legacy: false };
+      expect(await refusal(sut.authenticate(request(null)))).toMatchObject({
+        code: 'verification_required',
+        methods: ['totp', 'recovery_code'],
+      });
     });
 
     it('sends a password-only person to authenticator setup under "everyone, everywhere"', async () => {

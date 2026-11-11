@@ -1201,8 +1201,9 @@ const AdminConfigSchemaWithVisibility = z
           .optional()
           .describe('Older apps and sessions that predate this setting follow it too (default off)'),
       })
-      .default({ require: DEFAULT_SIGN_IN_REQUIREMENT, applyToOlderApps: false })
-      .meta({ id: 'AdminConfigSignInPolicyDto' }),
+      .meta({ id: 'AdminConfigSignInPolicyDto' })
+      // optional on input: an older settings client that omits it keeps the stored choice
+      .optional(),
     // FL-803: apps people connect to their library (AI assistants, Home Assistant) through OAuth.
     connectedApps: z
       .object({
@@ -1483,7 +1484,14 @@ const AdminConfigSchemaWithVisibility = z
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
 
-export type SystemConfig = z.infer<typeof AdminConfigSchemaWithVisibility>;
+type ParsedSystemConfig = z.infer<typeof AdminConfigSchemaWithVisibility>;
+/**
+ * The stored configuration. `signInPolicy` is optional only on input (an older settings client that omits it
+ * keeps the stored choice); every read merges the installation defaults, so it is always present here.
+ */
+export type SystemConfig = Omit<ParsedSystemConfig, 'signInPolicy'> & {
+  signInPolicy: NonNullable<ParsedSystemConfig['signInPolicy']>;
+};
 export type MachineLearningConfig = SystemConfig['machineLearning'];
 
 const visibilities = [Public, User, Admin];

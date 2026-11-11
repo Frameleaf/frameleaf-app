@@ -123,6 +123,7 @@ const LoginResponseSchema = z
       .describe('FL-793: proves the password step for five minutes; send it with the code'),
     status: z
       .enum(['done', 'next'])
+      .meta({ id: 'SignInStepStatus' })
       .optional()
       .describe('Sign in in steps (sent when the request had steps: true): done, or next with a transaction'),
     transaction: z
@@ -132,7 +133,7 @@ const LoginResponseSchema = z
         'Sign in in steps: with status next, send it with the proof to POST /auth/login/two-factor as twoFactorToken',
       ),
     methods: z
-      .array(z.enum(['totp', 'recovery_code', 'email_code', 'password', 'passkey']))
+      .array(z.enum(['totp', 'recovery_code', 'email_code', 'password', 'passkey']).meta({ id: 'SignInStepMethod' }))
       .optional()
       .describe('Sign in in steps: with status next, what would complete the step, most preferred first'),
   })

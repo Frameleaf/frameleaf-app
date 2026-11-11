@@ -7,7 +7,7 @@ import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.r
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
-import { signInIsRecent } from 'src/utils/confirmed-recently.js';
+import { sessionIsConfirmedRecently } from 'src/utils/confirmed-recently.js';
 import { privateLogStore } from 'src/utils/private-log-runtime.js';
 
 @Injectable()
@@ -20,12 +20,14 @@ export class PrivateLogsService {
     private storage: StorageRepository,
   ) {}
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- callers await it; the rule is now synchronous
   async authorize(auth: AuthDto, via: FrameleafVia | null) {
     if (!auth.user.isAdmin || !auth.session || auth.sharedLink || auth.apiKey) {
       throw new ForbiddenException('Server logs require an administrator session');
     }
-    if ((via === 'relay' || via === 'wan') && !signInIsRecent(auth.session.signIn)) {
+    if (
+      (via === 'relay' || via === 'wan') &&
+      !(await sessionIsConfirmedRecently(auth.session, (id) => this.accounts.getSession(id)))
+    ) {
       // confirmed recently: a Frameleaf sign-in or a local passkey from the last 10 minutes
       throw new ForbiddenException('Sign in again to read server logs remotely');
     }

@@ -27,6 +27,7 @@
   } from '$lib/frameleaf/auth-session-preference';
   import {
     REMEMBER_PARAM,
+    VERIFIED_PARAM,
     bounceReturn,
     bounceUrl,
     handBack,
@@ -190,7 +191,7 @@
     const bounce = bounceReturn(location);
     if (bounce && frameleaf.signInAvailable && !oauth.isCallback(location)) {
       rememberMe = new URLSearchParams(location.search).get(REMEMBER_PARAM) !== '0';
-      await startFrameleafFrom(bounce);
+      await startFrameleafFrom(bounce, new URLSearchParams(location.search).get(VERIFIED_PARAM) === '1');
       oauthLoading = false;
       return;
     }
@@ -406,7 +407,7 @@
     const signInOrigin = frameleaf.signInOrigin;
     if (signInOrigin && new URL(signInOrigin).origin !== location.origin) {
       frameleafLoading = true;
-      location.assign(bounceUrl(signInOrigin, location, rememberMe));
+      location.assign(bounceUrl(signInOrigin, location, rememberMe, true));
       return;
     }
     await startFrameleafFrom(undefined, true);

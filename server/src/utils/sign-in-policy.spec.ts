@@ -64,6 +64,12 @@ describe('at home', () => {
     expect(code({ away: false, requirement: 'everyone', record: password })).toBe('two_factor_setup_required');
     expect(code({ away: false, requirement: 'everyone' })).toBe('verification_required');
   });
+  it('asks a person who already has an authenticator for it under "everyone, everywhere", not for setup', () => {
+    const password = record({ source: 'local', methods: ['pwd'] });
+    expect(code({ away: false, requirement: 'everyone', record: password, hasAuthenticator: true })).toBe(
+      'verification_required',
+    );
+  });
 });
 
 describe('older sessions', () => {

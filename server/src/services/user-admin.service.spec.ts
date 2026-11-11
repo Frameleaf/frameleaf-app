@@ -1149,6 +1149,8 @@ describe(UserAdminService.name, () => {
 
       expect(mocks.passkey.deleteAll).toHaveBeenCalledWith(user.id);
       expect(mocks.user.deleteTwoFactor).toHaveBeenCalledWith(user.id);
+      // the old password stops working: only the emailed link sets a new one
+      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { password: '' });
       expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', {
         userId: user.id,
         invalidateSessions: true,

@@ -69,6 +69,30 @@ describe('SessionService', () => {
     });
   });
 
+  describe('create', () => {
+    it('gives a child session exactly the sign-in record of the session that made it', async () => {
+      const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
+      const record = {
+        methods: ['passkey'],
+        level: 'verified' as const,
+        source: 'local' as const,
+        legacy: false,
+        authTime: new Date('2026-11-11T10:00:00Z'),
+      };
+      mocks.session.getSignIn.mockResolvedValue(record);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await sut.create(auth, {});
+
+      expect(mocks.session.getSignIn).toHaveBeenCalledWith(auth.session!.id);
+      expect(mocks.session.create).toHaveBeenCalledWith(
+        expect.objectContaining({ parentId: auth.session!.id }),
+        undefined,
+        record,
+      );
+    });
+  });
+
   describe('handleCleanup', () => {
     it('should clean sessions', async () => {
       mocks.session.cleanup.mockResolvedValue([]);

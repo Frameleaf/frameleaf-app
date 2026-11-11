@@ -65,8 +65,9 @@ export const evaluateSession = (input: PolicyInput): PolicyDecision => {
     // a person's local authenticator is never skipped silently, at home or away
     return { ok: false, code: 'verification_required' };
   }
-  if (!frameleaf && !passkey && !away && input.requirement === 'everyone') {
-    // a local password with no second step, where everyone must have one: set it up first
+  if (!frameleaf && !passkey && !away && input.requirement === 'everyone' && !input.hasAuthenticator) {
+    // a local password with no second step, where everyone must have one: set it up first (a person who has
+    // one already is asked for it instead, below)
     return { ok: false, code: 'two_factor_setup_required' };
   }
   const everyone = input.requirement === 'everyone' || (away && input.requirement === 'everyone-away');

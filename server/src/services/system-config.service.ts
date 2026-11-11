@@ -566,9 +566,11 @@ export class SystemConfigService extends BaseService {
 
     // Older admin clients omit these fields. A settings save keeps the stored choice.
     dto.connectedApps.allowMcp ??= oldConfig.connectedApps.allowMcp;
-    dto.signInPolicy ??= oldConfig.signInPolicy;
-    dto.signInPolicy.require ??= oldConfig.signInPolicy.require;
-    dto.signInPolicy.applyToOlderApps ??= oldConfig.signInPolicy.applyToOlderApps;
+    // an older settings client omits the sign-in policy (or one of its fields): keep the stored choice
+    dto.signInPolicy = {
+      require: dto.signInPolicy?.require ?? oldConfig.signInPolicy.require,
+      applyToOlderApps: dto.signInPolicy?.applyToOlderApps ?? oldConfig.signInPolicy.applyToOlderApps,
+    };
     dto.metadata.faces.write ??= oldConfig.metadata.faces.write;
 
     // FL-165: remote access itself (the switch, connection, port, published address and custom

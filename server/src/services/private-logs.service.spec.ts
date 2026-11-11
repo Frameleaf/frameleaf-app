@@ -24,7 +24,8 @@ describe(PrivateLogsService.name, () => {
     });
     const sessions = { get: vi.fn().mockResolvedValue({ expiresAt: null }) };
     const users = { get: vi.fn().mockResolvedValue(admin.user) };
-    const sut = new PrivateLogsService({} as never, sessions as never, {} as never, users as never, {} as never);
+    const accounts = { getSession: vi.fn().mockResolvedValue({ sessionId: 'tagged' }) };
+    const sut = new PrivateLogsService({} as never, sessions as never, accounts as never, users as never, {} as never);
     const recent = signedIn('frameleaf', ['email_code'], 60_000);
     await expect(sut.authorizeLive(recent, 'relay')).resolves.toBeUndefined();
     sessions.get.mockResolvedValueOnce(undefined);
@@ -36,5 +37,8 @@ describe(PrivateLogsService.name, () => {
     await expect(sut.authorize(signedIn('local', ['pwd'], 1000), 'wan')).rejects.toBeInstanceOf(ForbiddenException);
     await expect(sut.authorize(signedIn('local', ['passkey'], 1000), 'wan')).resolves.toBeUndefined();
     await expect(sut.authorize(admin, 'relay')).rejects.toBeInstanceOf(ForbiddenException);
+    // unlinking removes the tag: an open stream is refused at its next check
+    accounts.getSession.mockResolvedValue(undefined);
+    await expect(sut.authorizeLive(recent, 'relay')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

@@ -51,14 +51,20 @@ export class SessionService extends BaseService {
 
     const token = this.cryptoRepository.randomBytesAsText(32);
     const hashed = this.cryptoRepository.hashSha256(token);
-    const session = await this.sessionRepository.create({
-      parentId: auth.session.id,
-      userId: auth.user.id,
-      expiresAt: dto.duration ? DateTime.now().plus({ seconds: dto.duration }).toJSDate() : null,
-      deviceType: dto.deviceType,
-      deviceOS: dto.deviceOS,
-      token: hashed,
-    });
+    // unified sign-in: a child session is exactly as strong, and as old, as the session that made it
+    const parent = await this.sessionRepository.getSignIn(auth.session.id);
+    const session = await this.sessionRepository.create(
+      {
+        parentId: auth.session.id,
+        userId: auth.user.id,
+        expiresAt: dto.duration ? DateTime.now().plus({ seconds: dto.duration }).toJSDate() : null,
+        deviceType: dto.deviceType,
+        deviceOS: dto.deviceOS,
+        token: hashed,
+      },
+      undefined,
+      parent ?? undefined,
+    );
 
     return { ...mapSession(session), token };
   }

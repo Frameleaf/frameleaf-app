@@ -31,7 +31,7 @@ import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { type LoginDetails, loginEventDetails } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
-import { signInIsRecent } from 'src/utils/confirmed-recently.js';
+import { sessionIsConfirmedRecently } from 'src/utils/confirmed-recently.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
@@ -463,7 +463,7 @@ export class PasskeyService extends BaseService {
     }
     // confirmed recently: a Frameleaf sign-in (its auth_time, kept across handoffs) or a local passkey, not older
     // than 10 minutes
-    if (signInIsRecent(auth.session?.signIn)) {
+    if (await sessionIsConfirmedRecently(auth.session, (id) => this.frameleafAccountRepository.getSession(id))) {
       return;
     }
     throw new ForbiddenException({
