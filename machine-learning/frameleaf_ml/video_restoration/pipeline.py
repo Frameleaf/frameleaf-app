@@ -62,6 +62,15 @@ def _unsupported(message: str, model_id: str) -> RestorationFailure:
     return RestorationFailure(RestorationErrorCode.UNSUPPORTED_INPUT, message, model_id=model_id)
 
 
+def frame_budget(selected: SelectedModel) -> int:
+    limits = selected.spec.limits
+    return (
+        min(limits.maxFrames, limits.maxFramesPerChunk)
+        if selected.spec.signed_candidate == "rife-onnx"
+        else limits.maxFrames
+    )
+
+
 def check_source(
     request: RestorationRequest,
     source: media.SourceProbe,
@@ -130,10 +139,14 @@ def check_source(
         start_ms, end_ms = request.segment.startMs, request.segment.endMs
         span_ms = end_ms - start_ms
 
-    estimated_frames = math.ceil(span_ms * float(source.frame_rate) / 1000)
-    if estimated_frames > selected.spec.limits.maxFrames:
+    estimated = span_ms * float(source.frame_rate) / 1000
+    # The source duration has already been rounded to milliseconds. The decoded frame
+    # count below is authoritative, including at fractional rates and exact budget edges.
+    estimated_frames = round(estimated) if selected.spec.signed_candidate == "rife-onnx" else math.ceil(estimated)
+    budget = frame_budget(selected)
+    if estimated_frames > budget:
         raise _unsupported(
-            f"about {estimated_frames} frames requested; {model_id} is qualified for {selected.spec.limits.maxFrames}",
+            f"about {estimated_frames} frames requested; {model_id} is qualified for {budget}",
             model_id,
         )
     return start_ms, end_ms, estimated_frames
@@ -152,6 +165,7 @@ def restore(
     started = time.monotonic()
     selected = registry.select(request.mode, request.modelId, request.modelFingerprint, kind=request.kind)
     model_id = selected.spec.id
+    budget = frame_budget(selected)
 
     still = request.kind == "image"
     try:
@@ -184,7 +198,7 @@ def restore(
                     media_path, source_video, source, start_ms=start_ms, end_ms=end_ms, timeout=MEDIA_TIMEOUT_S
                 )
             source_statistics = media.video_frame_statistics(
-                source_video, source, max_frames=selected.spec.limits.maxFrames, timeout=MEDIA_TIMEOUT_S
+                source_video, source, max_frames=budget, timeout=MEDIA_TIMEOUT_S
             )
             frame_count = len(source_statistics)
         else:
@@ -195,7 +209,7 @@ def restore(
                 end_ms=end_ms,
                 yuv_matrix=source.yuv_matrix,
                 timeout=MEDIA_TIMEOUT_S,
-                max_frames=selected.spec.limits.maxFrames,
+                max_frames=budget,
             )
     except media.MediaError as error:
         code = RestorationErrorCode.UNSUPPORTED_INPUT if error.unsupported else RestorationErrorCode.RUNTIME_FAILED
@@ -205,8 +219,8 @@ def restore(
         raise _unsupported("the segment contains no frames", model_id)
     if still and frame_count != 1:
         raise _unsupported(f"a still decoded to {frame_count} frames; send animated images as video", model_id)
-    if frame_count > selected.spec.limits.maxFrames:
-        raise _unsupported(f"{frame_count} frames exceed the qualified {selected.spec.limits.maxFrames}", model_id)
+    if frame_count > budget:
+        raise _unsupported(f"{frame_count} frames exceed the qualified {budget}", model_id)
 
     job = RuntimeJob(
         work_dir=work_dir,

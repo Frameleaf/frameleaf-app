@@ -1,5 +1,6 @@
 """FD-35 candidate checks. The real-model test accepts an explicitly supplied local file."""
 
+import base64
 import hashlib
 import json
 import os
@@ -12,10 +13,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from fastapi.testclient import TestClient
 from PIL import Image
 from pydantic import ValidationError
 
 from frameleaf_ml.video_restoration import media, rife_candidate
+from frameleaf_ml.video_restoration.app import create_app
 from frameleaf_ml.video_restoration.models import (
     RIFE_CANDIDATE_ARGV,
     RIFE_CANDIDATE_ID,
@@ -30,7 +33,12 @@ from frameleaf_ml.video_restoration.models import (
 from frameleaf_ml.video_restoration.pipeline import restore
 from frameleaf_ml.video_restoration.runtime_approval import SignedRuntimeApproval, approval_statement
 from frameleaf_ml.video_restoration.runtime_pool import RuntimePool
-from frameleaf_ml.video_restoration.schemas import RestorationErrorCode, RestorationMode, RestorationRequest
+from frameleaf_ml.video_restoration.schemas import (
+    RESULT_HEADER,
+    RestorationErrorCode,
+    RestorationMode,
+    RestorationRequest,
+)
 
 
 def fixture_frames(directory: Path, offsets=(8, 12, 16)) -> list[Path]:
@@ -150,7 +158,7 @@ def local_rife_inputs(monkeypatch):
     return model
 
 
-def fixture_clip(tmp_path, offsets=(8, 12, 16)):
+def fixture_clip(tmp_path, offsets=(8, 12, 16), rate=6):
     source_frames = tmp_path / "original-frames"
     fixture_frames(source_frames, offsets)
     original = tmp_path / "original.mp4"
@@ -160,13 +168,13 @@ def fixture_clip(tmp_path, offsets=(8, 12, 16)):
             "-v",
             "error",
             "-framerate",
-            "6",
+            str(rate),
             "-i",
             str(source_frames / "%08d.png"),
             "-f",
             "lavfi",
             "-i",
-            f"sine=frequency=440:sample_rate=48000:duration={len(offsets) / 6}",
+            f"sine=frequency=440:sample_rate=48000:duration={len(offsets) / rate}",
             "-c:v",
             "libx264",
             "-pix_fmt",
@@ -276,8 +284,8 @@ def test_candidate_cannot_use_a_legacy_model_id_or_an_arbitrary_entrypoint(tmp_p
         ModelSpec.model_validate({**base, "runtime": {**base["runtime"], "argv": ["{python}", "other.py"]}})
 
 
-def test_signed_smooth_motion_preview_and_full_version(tmp_path, monkeypatch):
-    from test_video_restoration import IMAGE_REVISION, passing_record, request_payload, rife_spec
+def signed_rife(tmp_path, monkeypatch, *, budget=30):
+    from test_video_restoration import IMAGE_REVISION, passing_record, rife_spec
 
     model = local_rife_inputs(monkeypatch)
     openssl = os.environ.get("FRAMELEAF_TEST_OPENSSL")
@@ -304,9 +312,14 @@ def test_signed_smooth_motion_preview_and_full_version(tmp_path, monkeypatch):
                 "root": root,
                 "python": sys.executable,
                 "argv": list(RIFE_CANDIDATE_ARGV),
-                "timeoutSeconds": 30,
+                "timeoutSeconds": 120,
             },
-            "limits": {"maxInputLongEdge": 1280, "maxFrames": 30, "maxFramesPerChunk": 30, "minVramBytes": 0},
+            "limits": {
+                "maxInputLongEdge": 1280,
+                "maxFrames": 240 if budget > 30 else 30,
+                "maxFramesPerChunk": budget,
+                "minVramBytes": 0,
+            },
         }
     )
     record = passing_record(spec)
@@ -345,6 +358,13 @@ def test_signed_smooth_motion_preview_and_full_version(tmp_path, monkeypatch):
             signed_admission=admission,
         )
 
+    return registry, approval, spec, record, write_record, script
+
+
+def test_signed_smooth_motion_preview_and_full_version(tmp_path, monkeypatch):
+    from test_video_restoration import IMAGE_REVISION, request_payload
+
+    registry, approval, spec, record, write_record, script = signed_rife(tmp_path, monkeypatch)
     with pytest.raises(RestorationFailure, match="no valid signed installed runtime approval"):
         registry().select(RestorationMode.SMOOTH_MOTION, spec.id, None)
     with pytest.raises(RestorationFailure, match="no valid signed installed runtime approval"):
@@ -409,3 +429,182 @@ def test_signed_smooth_motion_preview_and_full_version(tmp_path, monkeypatch):
     assert not approval(spec, record, IMAGE_REVISION)
     with pytest.raises(RestorationFailure, match="runtime-dirty"):
         admitted.select(RestorationMode.SMOOTH_MOTION, spec.id, preview.model.fingerprint)
+
+
+def test_long_signed_rife_preview_full_and_resume(tmp_path, monkeypatch):
+    from test_video_restoration import request_payload
+
+    registry, approval, spec, *_ = signed_rife(tmp_path, monkeypatch, budget=201)
+    admitted = registry(approval)
+    rate, factor, source_count = 25, 2, 600
+    offsets = tuple(8 + (index // 67) % 20 for index in range(source_count))
+    original = fixture_clip(tmp_path, offsets, rate)
+    original_digest = hashlib.sha256(original.read_bytes()).hexdigest()
+    token = "synthetic-qualification-token"
+    headers = {"Authorization": f"Bearer {token}"}
+    work = tmp_path / "worker"
+    work.mkdir()
+    preview_source = tmp_path / "preview-source.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-ss",
+            "7",
+            "-t",
+            "5",
+            "-i",
+            str(original),
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            str(preview_source),
+        ],
+        check=True,
+        timeout=15,
+    )
+
+    def invoke(client, source, name, count, *, fingerprint, context=False):
+        payload = request_payload(
+            mode="smooth_motion",
+            modelId=spec.id,
+            scale=1,
+            interpolationFactor=factor,
+            requestId=name,
+            modelFingerprint=fingerprint,
+            trailingContextFrame=context,
+            source={"width": 64, "height": 64, "durationMs": count * 1000 // rate, "frameRate": "25/1"},
+        )
+        with source.open("rb") as handle:
+            response = client.post(
+                "/restoration/restore",
+                headers=headers,
+                data={"request": json.dumps(payload)},
+                files={"media": (source.name, handle, "video/mp4")},
+            )
+        assert response.status_code == 200, response.text[:300]
+        encoded = response.headers[RESULT_HEADER]
+        result = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        derivative = tmp_path / f"{name}.mp4"
+        derivative.write_bytes(response.content)
+        assert hashlib.sha256(response.content).hexdigest() == result["output"]["sha256"]
+        return derivative, result
+
+    def client():
+        return TestClient(create_app(admitted, auth_token=token, work_root=work, refresh_on_startup=False))
+
+    def cut_segment(index, start, end, context):
+        result = tmp_path / f"source-segment-{index}.mp4"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-i",
+                str(original),
+                "-an",
+                "-vf",
+                f"trim=start_frame={start}:end_frame={end + int(context)},setpts=PTS-STARTPTS",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                str(result),
+            ],
+            check=True,
+            timeout=15,
+        )
+        return result
+
+    with client() as worker:
+        route = f"/restoration/models?modelId={spec.id}"
+        assert worker.get(route).status_code == 401
+        assert worker.get("/restoration/models", headers=headers).json()["models"] == []
+        capability = worker.get(route, headers=headers).json()["models"][0]
+        assert capability["maxFrames"] == 201
+        fingerprint = capability["fingerprint"]
+        preview, before = invoke(worker, preview_source, "preview-output", 125, fingerprint=fingerprint)
+        assert before["output"]["frameCount"] == 250
+        assert before["output"]["audio"] == "copied"
+        preview_hash = hashlib.sha256(preview.read_bytes()).hexdigest()
+        first, first_result = invoke(
+            worker, cut_segment(0, 0, 200, True), "chunk-0", 201, fingerprint=fingerprint, context=True
+        )
+        assert first_result["output"]["frameCount"] == 400
+        first_hash = hashlib.sha256(first.read_bytes()).hexdigest()
+
+    # The first validated chunk survives a worker interruption. A fresh worker
+    # rechecks the reviewed identity before filling the remaining segments.
+    with client() as worker:
+        assert worker.get(route + f"&modelFingerprint={'0' * 64}", headers=headers).status_code == 409
+        assert worker.get(route + f"&modelFingerprint={fingerprint}", headers=headers).json()["models"][0] == capability
+        second, second_result = invoke(
+            worker, cut_segment(1, 200, 400, True), "chunk-1", 201, fingerprint=fingerprint, context=True
+        )
+        third, third_result = invoke(worker, cut_segment(2, 400, 600, False), "chunk-2", 200, fingerprint=fingerprint)
+        for result in (second_result, third_result):
+            assert result["model"] == before["model"]
+            assert result["output"]["frameCount"] == 400
+
+    listing = tmp_path / "concat.txt"
+    listing.write_text("".join(f"file '{part}'\nduration 8.000000000\n" for part in (first, second, third)))
+    final = tmp_path / "full.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(listing),
+            "-i",
+            str(original),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c",
+            "copy",
+            "-t",
+            "24.000000",
+            str(final),
+        ],
+        check=True,
+        timeout=15,
+    )
+
+    def packet_hash(path):
+        return subprocess.check_output(
+            ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a:0", "-c", "copy", "-f", "hash", "-"],
+            timeout=10,
+        )
+
+    count = subprocess.check_output(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames",
+            "-of",
+            "csv=p=0",
+            str(final),
+        ],
+        timeout=15,
+    )
+    assert int(count) == 1200
+    output = media.probe(final)
+    assert output.frame_rate == 50 and abs(output.duration_ms - 24_000) <= 20
+    assert packet_hash(original) == packet_hash(final)
+    assert hashlib.sha256(first.read_bytes()).hexdigest() == first_hash
+    assert hashlib.sha256(preview.read_bytes()).hexdigest() == preview_hash
+    assert hashlib.sha256(original.read_bytes()).hexdigest() == original_digest
+    assert list(work.iterdir()) == []

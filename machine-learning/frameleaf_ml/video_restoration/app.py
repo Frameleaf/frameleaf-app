@@ -41,15 +41,15 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..env_aliases import read_env
-from .models import RestorationFailure, RestorationRegistry, adapter_for
-from .pipeline import AdapterFactory, restore
+from .models import RIFE_CANDIDATE_ID, RestorationFailure, RestorationRegistry, adapter_for
+from .pipeline import AdapterFactory, frame_budget, restore
 from .runtime_pool import RuntimePool
 from .schemas import (
     RESTORATION_PROTOCOL,
     RESULT_HEADER,
-    CapabilityReport,
     RestorationError,
     RestorationErrorCode,
+    RestorationMode,
     RestorationRequest,
     RestorationResult,
 )
@@ -307,8 +307,18 @@ def create_app(
         )
 
     @app.get("/restoration/models")
-    def models(refresh: bool = False) -> JSONResponse:
-        report: CapabilityReport = registry.refresh() if refresh else registry.report()
+    def models(refresh: bool = False, modelId: str | None = None, modelFingerprint: str | None = None) -> JSONResponse:
+        if modelId is not None or modelFingerprint is not None:
+            if not auth_token or modelId != RIFE_CANDIDATE_ID:
+                return JSONResponse({"message": "Not found"}, status_code=404)
+            try:
+                selected = registry.select(RestorationMode.SMOOTH_MOTION, modelId, modelFingerprint, kind="video")
+            except RestorationFailure as error:
+                return error_response(error)
+            capability = selected.capability.model_copy(update={"maxFrames": frame_budget(selected)})
+            report = registry.report().model_copy(update={"workloads": [], "models": [capability]})
+        else:
+            report = registry.refresh() if refresh else registry.report()
         return JSONResponse(report.model_dump(mode="json"))
 
     @app.post("/restoration/restore")

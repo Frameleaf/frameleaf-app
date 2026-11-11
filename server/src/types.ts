@@ -125,6 +125,8 @@ export interface VideoStreamInfo {
    * fraction already flattened into a float, which is not a cadence a timeline can be built on.
    */
   frameRateRational?: Rational | null;
+  /** Nominal cadence from ffprobe. Comparing it to the average detects variable cadence. */
+  nominalFrameRateRational?: Rational | null;
   /**
    * FL-102: this stream's own duration in seconds, when the container states one. Optional and
    * additive, like the fields above: persisted metadata does not carry it.

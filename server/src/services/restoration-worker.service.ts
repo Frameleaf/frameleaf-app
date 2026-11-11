@@ -61,6 +61,7 @@ import {
   RestorationSelection,
   RestorationSnapshot,
   RestorationStage,
+  RifeFrameChunk,
   STAGE_STATUSES,
   canRunStage,
   cappedOutputSize,
@@ -69,6 +70,7 @@ import {
   localRifeFingerprint,
   parseRestorationSnapshot,
   planRestorationChunks,
+  planRifeFrameChunks,
   previewExpiryAfterReady,
   previewRegionPixels,
   restorationChunkIdentity,
@@ -123,6 +125,18 @@ type StageOutput = {
   modelVersion: string | null;
 };
 
+const sameCadence = (
+  actual: { num: number; den: number } | null | undefined,
+  expected: { num: number; den: number },
+): boolean => !!actual && actual.num * expected.den === expected.num * actual.den;
+
+type LocalRifePlan = {
+  fingerprint: string;
+  cadence: { num: number; den: number };
+  frameCount: number;
+  maxFrames: number;
+};
+
 type RunContext = {
   operation: MediaOperation;
   claimToken: string;
@@ -135,6 +149,7 @@ type RunContext = {
   workDir: string;
   /** Temporary files to remove on failure. Published files are moved out of this list. */
   scratch: string[];
+  rife?: LocalRifePlan;
 };
 
 /** Even dimensions, as yuv420p encoders require. */
@@ -496,7 +511,10 @@ export class RestorationWorkerService {
         }
         throw error;
       }
-      await this.progress(context, MediaOperationStatus.Preparing, 1, total);
+      const exactRife = (snapshot.modelId ?? snapshot.model?.name) === LOCAL_RIFE_CANDIDATE_ID;
+      if (!exactRife) {
+        await this.progress(context, MediaOperationStatus.Preparing, 1, total);
+      }
 
       // FL-721: wait for the Locked key before any work starts
       await assertPlainCopyPossible(source.originalPath);
@@ -512,6 +530,12 @@ export class RestorationWorkerService {
       // FL-721 (spec §8.2): the tools read a sealed original from a plain copy
       await withPlainCopy(source.originalPath, async (originalPath) => {
         const full: RunContext = { ...context, source: { ...source, originalPath }, selection } as RunContext;
+        if (exactRife) {
+          full.rife = await this.localRifePlan(full);
+          if (stage === 'preview') {
+            await this.progress(full, MediaOperationStatus.Preparing, 1, total);
+          }
+        }
 
         const output =
           snapshot.sourceType === AssetRestorationSourceType.Video
@@ -686,14 +710,83 @@ export class RestorationWorkerService {
     };
   }
 
+  private async localRifePlan(ctx: RunContext): Promise<LocalRifePlan> {
+    const reviewed = ctx.stage === 'full' ? localRifeFingerprint(ctx.snapshot.model?.version) : null;
+    if (ctx.stage === 'full' && !reviewed) {
+      throw new RestorationFailure(RestorationErrorCode.ModelChanged, 'Request a new Smooth motion preview');
+    }
+    let report;
+    try {
+      report = await this.machineLearningRepository.getRestorationModels(ctx.selection.endpoint, {
+        modelId: LOCAL_RIFE_CANDIDATE_ID,
+        fingerprint: reviewed,
+        signal: ctx.signal,
+      });
+    } catch {
+      this.check(ctx);
+      throw new RestorationFailure(
+        reviewed ? RestorationErrorCode.ModelChanged : RestorationErrorCode.DestinationRefused,
+        reviewed
+          ? 'The reviewed Smooth motion model is unavailable; request a new preview'
+          : 'The Smooth motion candidate is unavailable',
+      );
+    }
+    const model = report.models.length === 1 ? report.models[0] : undefined;
+    if (
+      model?.id !== LOCAL_RIFE_CANDIDATE_ID ||
+      model.mode !== ctx.snapshot.mode ||
+      model.state !== 'available' ||
+      !model.qualificationId ||
+      !model.fingerprint ||
+      !/^[a-f0-9]{64}$/.test(model.fingerprint) ||
+      (reviewed !== null && model.fingerprint !== reviewed) ||
+      !Number.isSafeInteger(model.maxFrames) ||
+      model.maxFrames < 2
+    ) {
+      throw new RestorationFailure(RestorationErrorCode.ModelChanged, 'Request a new Smooth motion preview');
+    }
+    const probe = await this.mediaRepository.probe(ctx.source.originalPath, { countFrames: true, signal: ctx.signal });
+    this.check(ctx);
+    const stream = probe.videoStreams[0];
+    const cadence = stream?.frameRateRational;
+    const frameCount = stream?.frameCount ?? 0;
+    if (
+      !cadence ||
+      !sameCadence(stream?.nominalFrameRateRational, cadence) ||
+      cadence.num <= 0 ||
+      cadence.den <= 0 ||
+      !Number.isSafeInteger(frameCount) ||
+      frameCount < 2
+    ) {
+      throw new RestorationFailure(
+        RestorationErrorCode.SourceMissing,
+        'The original needs a measured constant video cadence and frame count',
+      );
+    }
+    return { cadence, frameCount, fingerprint: model.fingerprint, maxFrames: model.maxFrames };
+  }
+
   private async previewVideo(ctx: RunContext, total: number): Promise<StageOutput> {
     const { snapshot, source, workDir, operation } = ctx;
     const duration = snapshot.sourceDurationSeconds ?? 0;
-    const clipSeconds = duration > 0 ? Math.min(RESTORATION_PREVIEW_SECONDS, duration) : RESTORATION_PREVIEW_SECONDS;
-    const defaultStart = Math.max(0, (duration - clipSeconds) / 2);
+    const frameSeconds = ctx.rife ? ctx.rife.cadence.den / ctx.rife.cadence.num : 0;
+    const previewFrames = ctx.rife
+      ? Math.min(
+          ctx.rife.maxFrames,
+          ctx.rife.frameCount,
+          Math.max(2, Math.floor(RESTORATION_PREVIEW_SECONDS / frameSeconds)),
+        )
+      : 0;
+    const clipSeconds = previewFrames
+      ? previewFrames * frameSeconds
+      : duration > 0
+        ? Math.min(RESTORATION_PREVIEW_SECONDS, duration)
+        : RESTORATION_PREVIEW_SECONDS;
+    const sourceSeconds = ctx.rife ? ctx.rife.frameCount * frameSeconds : duration;
+    const defaultStart = Math.max(0, (sourceSeconds - clipSeconds) / 2);
     const start = Math.max(
       0,
-      Math.min(snapshot.region.startSeconds ?? defaultStart, Math.max(0, duration - clipSeconds)),
+      Math.min(snapshot.region.startSeconds ?? defaultStart, Math.max(0, sourceSeconds - clipSeconds)),
     );
     const rect = previewRegionPixels(snapshot.region, snapshot.sourceWidth, snapshot.sourceHeight);
     const crop = isFullRegion(snapshot.region)
@@ -703,9 +796,12 @@ export class RestorationWorkerService {
     // The clip keeps its audio so the before and after previews play in step.
     const beforeTmp = this.scratch(ctx, path.join(workDir, `before-${operation.id}.mp4`));
     await this.mediaRepository.transcode(source.originalPath, beforeTmp, {
-      inputOptions: ['-ss', start.toFixed(3), '-t', clipSeconds.toFixed(3)],
+      inputOptions: ['-ss', start.toFixed(previewFrames ? 6 : 3), '-t', clipSeconds.toFixed(previewFrames ? 6 : 3)],
       // FL-162: the clip goes to another machine; it carries no metadata or chapters
-      outputOptions: previewClipOutputOptions(crop),
+      outputOptions: [
+        ...previewClipOutputOptions(crop),
+        ...(previewFrames ? ['-frames:v', String(previewFrames)] : []),
+      ],
       twoPass: false,
       progress: { frameCount: 0, percentInterval: 5 },
     });
@@ -714,6 +810,12 @@ export class RestorationWorkerService {
     const beforeStream = before.videoStreams[0];
     if (!beforeStream) {
       throw new RestorationFailure(RestorationErrorCode.OutputInvalid, 'The preview clip has no video stream');
+    }
+    if (previewFrames && (beforeStream.frameCount < 2 || beforeStream.frameCount > previewFrames)) {
+      throw new RestorationFailure(
+        RestorationErrorCode.OutputInvalid,
+        'The Smooth motion preview exceeds its frame budget',
+      );
     }
     await this.progress(ctx, MediaOperationStatus.Rendering, 2, total);
 
@@ -760,8 +862,17 @@ export class RestorationWorkerService {
    */
   private async fullVideo(ctx: RunContext, total: number): Promise<StageOutput> {
     const { snapshot, source, workDir, operation, claimToken } = ctx;
-    const duration = snapshot.sourceDurationSeconds ?? 0;
-    const chunks = planRestorationChunks(duration);
+    const rife = ctx.rife;
+    const duration = rife
+      ? (rife.frameCount * rife.cadence.den) / rife.cadence.num
+      : (snapshot.sourceDurationSeconds ?? 0);
+    const chunks = rife
+      ? planRifeFrameChunks(rife.frameCount, rife.cadence, rife.maxFrames)
+      : planRestorationChunks(duration);
+    if (rife) {
+      total = chunks.length + 3;
+      await this.progress(ctx, MediaOperationStatus.Preparing, 1, total);
+    }
     if (chunks.length === 0) {
       throw new RestorationFailure(RestorationErrorCode.SourceMissing, 'The length of this video is not known');
     }
@@ -835,7 +946,7 @@ export class RestorationWorkerService {
 
     // FL-162 Smooth motion: every chunk but the last also carries the next chunk's first frame, so the
     // in-between frames across the join are made too; the worker uses it as context and drops it.
-    const frameSeconds = snapshot.interpolationFactor ? await this.sourceFrameSeconds(source.originalPath) : 0;
+    const frameSeconds = !rife && snapshot.interpolationFactor ? await this.sourceFrameSeconds(source.originalPath) : 0;
 
     let processed = 2;
     const outputs: string[] = [];
@@ -872,19 +983,32 @@ export class RestorationWorkerService {
       }
 
       const chunkIn = this.scratch(ctx, path.join(workDir, `chunk-${plan.sequence}-in-${operation.id}.mp4`));
+      const frameChunk = 'startFrame' in plan.chunk ? (plan.chunk as RifeFrameChunk) : null;
+      const contextFrame = frameChunk?.context ?? (frameSeconds > 0 && plan.sequence < planned.length - 1);
+      const endFrame = frameChunk ? frameChunk.endFrame + Number(contextFrame) : 0;
       await this.mediaRepository.transcode(source.originalPath, chunkIn, {
-        inputOptions: [
-          '-ss',
-          plan.chunk.startSeconds.toFixed(3),
-          '-t',
-          (
-            plan.chunk.endSeconds -
-            plan.chunk.startSeconds +
-            (plan.sequence < planned.length - 1 ? frameSeconds : 0)
-          ).toFixed(3),
-        ],
+        inputOptions: frameChunk
+          ? []
+          : [
+              '-ss',
+              plan.chunk.startSeconds.toFixed(3),
+              '-t',
+              (
+                plan.chunk.endSeconds -
+                plan.chunk.startSeconds +
+                (plan.sequence < planned.length - 1 ? frameSeconds : 0)
+              ).toFixed(3),
+            ],
         // FL-162: every chunk goes to another machine; it carries no metadata or chapters
-        outputOptions: chunkClipOutputOptions(),
+        outputOptions: frameChunk
+          ? [
+              ...chunkClipOutputOptions(),
+              '-vf',
+              `trim=start_frame=${frameChunk.startFrame}:end_frame=${endFrame},setpts=PTS-STARTPTS`,
+              '-frames:v',
+              String(endFrame - frameChunk.startFrame),
+            ]
+          : chunkClipOutputOptions(),
         twoPass: false,
         progress: { frameCount: 0, percentInterval: 5 },
       });
@@ -893,6 +1017,13 @@ export class RestorationWorkerService {
       const stream = probe.videoStreams[0];
       if (!stream) {
         throw new RestorationFailure(RestorationErrorCode.OutputInvalid, `Chunk ${plan.sequence} has no video stream`);
+      }
+
+      if (frameChunk && stream.frameCount !== endFrame - frameChunk.startFrame) {
+        throw new RestorationFailure(
+          RestorationErrorCode.OutputInvalid,
+          'The Smooth motion segment has an unexpected frame count',
+        );
       }
 
       // Chunk outputs are not scratch: they are the checkpoints a resume reuses.
@@ -907,7 +1038,7 @@ export class RestorationWorkerService {
           height: stream.height,
           durationSeconds: probe.format.duration,
         },
-        this.inferenceOptions(ctx, chunkOut, cap, frameSeconds > 0 && plan.sequence < planned.length - 1),
+        this.inferenceOptions(ctx, chunkOut, cap, contextFrame),
       );
       this.check(ctx);
       this.assertReviewedModel(ctx, result);
@@ -937,7 +1068,15 @@ export class RestorationWorkerService {
     const listPath = this.scratch(ctx, path.join(workDir, `concat-${operation.id}.txt`));
     await this.storageRepository.createOrOverwriteFile(
       listPath,
-      Buffer.from(outputs.map((file) => `file '${file.replaceAll("'", String.raw`'\''`)}'`).join('\n') + '\n'),
+      Buffer.from(
+        outputs
+          .map((file, index) => {
+            const escaped = `file '${file.replaceAll("'", String.raw`'\''`)}'`;
+            const chunk = chunks[index];
+            return rife ? `${escaped}\nduration ${(chunk.endSeconds - chunk.startSeconds).toFixed(9)}` : escaped;
+          })
+          .join('\n') + '\n',
+      ),
     );
     const joined = this.scratch(ctx, path.join(workDir, `joined-${operation.id}.mp4`));
     await this.mediaRepository.transcode(listPath, joined, {
@@ -963,7 +1102,7 @@ export class RestorationWorkerService {
         'copy',
         '-c:a',
         'copy',
-        '-shortest',
+        ...(rife ? ['-t', duration.toFixed(6)] : ['-shortest']),
         '-movflags',
         '+faststart',
       ],
@@ -972,6 +1111,18 @@ export class RestorationWorkerService {
     });
     this.check(ctx);
     const restored = await this.validateVideo(resultTmp, cap, duration);
+    const factor = snapshot.interpolationFactor ?? 1;
+    if (
+      rife &&
+      (restored.frameCount !== rife.frameCount * factor ||
+        !sameCadence(restored.nominalCadence, { num: rife.cadence.num * factor, den: rife.cadence.den }) ||
+        Math.abs(restored.duration - duration) > rife.cadence.den / rife.cadence.num)
+    ) {
+      throw new RestorationFailure(
+        RestorationErrorCode.OutputInvalid,
+        'The Smooth motion result does not match the source timeline',
+      );
+    }
     await this.progress(ctx, MediaOperationStatus.Rendering, total - 1, total);
 
     const paths = restorationOutputPaths(this.base(ctx), snapshot.assetId, snapshot.restorationId);
@@ -1309,10 +1460,7 @@ export class RestorationWorkerService {
     trailingContextFrame = false,
   ) {
     const modelId = ctx.snapshot.modelId ?? ctx.snapshot.model?.name ?? null;
-    const fingerprint =
-      ctx.snapshot.stage === 'full' && modelId === LOCAL_RIFE_CANDIDATE_ID
-        ? localRifeFingerprint(ctx.snapshot.model?.version)
-        : null;
+    const fingerprint = ctx.rife?.fingerprint;
     if (ctx.snapshot.stage === 'full' && modelId === LOCAL_RIFE_CANDIDATE_ID && !fingerprint) {
       throw new RestorationFailure(RestorationErrorCode.ModelChanged, 'Request a new Smooth motion preview');
     }
@@ -1387,7 +1535,13 @@ export class RestorationWorkerService {
         `The restored video is ${probe.format.duration.toFixed(2)} s long; the source was ${expectedSeconds.toFixed(2)} s`,
       );
     }
-    return { width: stream.width, height: stream.height, duration: probe.format.duration };
+    return {
+      width: stream.width,
+      height: stream.height,
+      duration: probe.format.duration,
+      frameCount: stream.frameCount,
+      nominalCadence: stream.nominalFrameRateRational,
+    };
   }
 
   private async decodeSource(source: Source, image: SystemConfig['image']) {

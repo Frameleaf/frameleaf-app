@@ -2341,14 +2341,25 @@ export class MachineLearningRepository implements RestorationInference {
    * reason it is unavailable and the throughput its qualification measured. Metadata only; no
    * media is sent. Workload names the server does not know are dropped.
    */
-  async getRestorationModels(endpoint: MlEndpoint): Promise<RestorationCapabilityReport> {
+  async getRestorationModels(
+    endpoint: MlEndpoint,
+    candidate?: { modelId: typeof LOCAL_RIFE_CANDIDATE_ID; fingerprint: string | null; signal: AbortSignal },
+  ): Promise<RestorationCapabilityReport> {
     await this.authorize(endpoint);
     if (endpoint.cloud) {
       throw new Error('Frameleaf Cloud models come from its catalogue, not a restoration worker');
     }
-    const response = await fetch(new URL('restoration/models', endpoint.url), {
+    const url = new URL('restoration/models', endpoint.url);
+    const timeout = AbortSignal.timeout(this.timeout());
+    if (candidate) {
+      url.searchParams.set('modelId', candidate.modelId);
+      if (candidate.fingerprint) {
+        url.searchParams.set('modelFingerprint', candidate.fingerprint);
+      }
+    }
+    const response = await fetch(url, {
       headers: this.authHeaders(endpoint),
-      signal: AbortSignal.timeout(this.timeout()),
+      signal: candidate ? AbortSignal.any([candidate.signal, timeout]) : timeout,
       redirect: 'error',
     });
     if (response.status === 404) {

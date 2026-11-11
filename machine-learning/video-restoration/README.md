@@ -105,7 +105,13 @@ The candidate additionally requires a detached Ed25519 approval binding its exac
 model fingerprint, entrypoint and Python bytes, reviewed qualification, worker
 revision, and platform. The installed qualification harness supplies the key and
 signature separately from the model manifest. Public discovery and selection
-remain gated. For an opt-in local pipeline test with an existing copy of the model,
+remain gated. An authenticated explicit lookup returns the smaller of the
+qualified per-request and per-chunk frame limits. The Studio preview is capped
+by that limit and pins the returned model fingerprint. Full renders use measured
+constant-rate frame ranges, reserve one context frame at each non-final seam,
+and recheck the same fingerprint before dispatch. Verified chunk checkpoints
+retain their frame range and can be reused after interruption. The final mux
+copies the original audio into a separate derivative. For an opt-in local pipeline test with an existing copy of the model,
 run `FRAMELEAF_RIFE_CANDIDATE_MODEL=/path/to/model.onnx uv run --extra cpu pytest test_rife_candidate.py`
 from `machine-learning`. Also set `FRAMELEAF_TEST_OPENSSL` to an absolute OpenSSL
 3 executable to exercise detached admission and preview-to-full binding with a
