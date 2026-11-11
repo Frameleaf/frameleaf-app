@@ -36,7 +36,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { TagService } from 'src/services/tag.service.js';
 import { WorkflowService } from 'src/services/workflow.service.js';
-import { fetchAutomationHop, sendWebhook } from 'src/utils/public-fetch.js';
+import { fetchAutomationHop, readAutomationAnswer, sendWebhook } from 'src/utils/public-fetch.js';
 import { inheritWorkflowCausation, workflowCausation, workflowOwnership } from 'src/utils/workflow-context.js';
 import { definitionFromSteps, redactRunError, workflowIssues } from 'src/utils/workflow-definition.js';
 import {
@@ -385,7 +385,7 @@ export class WorkflowExecutionService extends BaseService {
         const res = await fetchAutomationHop(url.href, { ...options, headers }, { allowHomeNetwork });
         const location = res.headers.get('location');
         if (![301, 302, 303, 307, 308].includes(res.status) || !location) {
-          return { ok: res.ok, status: res.status, body: await res.text() };
+          return { ok: res.ok, status: res.status, body: await readAutomationAnswer(res) };
         }
         await res.body?.cancel();
         const next = new URL(location, url);

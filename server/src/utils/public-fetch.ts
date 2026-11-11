@@ -322,6 +322,20 @@ export const fetchAutomationHop = (
   });
 };
 
+/** FL-1420: at most the first 64 KB of an automation hop's answer; the rest is never read. */
+export const readAutomationAnswer = async (response: { body: AsyncIterable<Uint8Array> | null }) => {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of response.body ?? []) {
+    size += chunk.byteLength;
+    if (size > WEBHOOK_RESPONSE_BYTES) {
+      break;
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+};
+
 /** Sends one automation message: no redirects, bounded in size and time, never to a private address. */
 export const sendWebhook = async (
   address: string,

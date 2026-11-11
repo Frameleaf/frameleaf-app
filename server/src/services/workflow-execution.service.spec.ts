@@ -166,6 +166,13 @@ describe(WorkflowExecutionService.name, () => {
       expect(await request(['*'], 'http://169.254.169.254/latest/meta-data/')).toMatchObject({ success: false });
     });
 
+    it('reads at most 64 KB of the answer', async () => {
+      hop().mockResolvedValue(answer('x'.repeat(200_000)));
+      const result = await request(['*'], 'https://hooks.example/start', { method: 'POST', body: '{}' });
+      expect(result).toMatchObject({ success: true });
+      expect(result.response.body.length).toBeLessThanOrEqual(64_000);
+    });
+
     it('preserves the method, body, and credentials on a same-origin 307 redirect', async () => {
       hop()
         .mockResolvedValueOnce(answer(null, { status: 307, headers: { location: '/done' } }))
