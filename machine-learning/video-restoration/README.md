@@ -69,6 +69,45 @@ The server routes Smooth motion by the interpolation setting under Where each jo
 only** and **Both** can use this worker, and nothing ever moves to Frameleaf Cloud without the
 person confirming a separate Frameleaf Cloud job.
 
+### Local ONNX candidate (FD-35)
+
+The CPU candidate uses the same RIFE adapter as Studio’s **Smooth motion** preview.
+The existing worker validates timing and audio, and Library keeps the original while
+reviewing or saving the derivative. The candidate uses the Studio-referenced ONNX
+export, separate from the Cloud manifest’s PyTorch checkpoint.
+
+Use a read-only copy of [the pinned ONNX export](https://huggingface.co/walterlow/RIFE_fp32_timestep/tree/ee09066f9822f8b28b8477a1b4cc30f19d607590)
+with length `21604567` and SHA-256
+`4da60c1f20d42dba4f21503140940aa48a488585ead977532bf22e95a0319327`.
+The exporter and its [FuryTMP source export](https://huggingface.co/FuryTMP/RIFE_fp32)
+declare MIT. Retain the [Practical-RIFE MIT notice](https://github.com/hzwer/Practical-RIFE/blob/bbfd2ea90910789a860ea3e2b32a240cd577b75e/LICENSE)
+with any redistributed weights. The candidate itself fetches no assets.
+
+For a disposable qualification configuration, use family `rife`, mode
+`smooth_motion`, `requiresGpu: false`, `nativeScale: null`, and `dynamicRanges: ["sdr"]`.
+Set `runtime.root` to the pinned Library checkout’s `machine-learning` directory,
+`revision` to that checkout’s exact commit, and `runtime.python` to its locked CPU
+environment. Configure a weight named `rife_onnx` with the above digest. The runtime
+arguments use the existing adapter’s frame-folder contract.
+
+```json
+[
+  "{python}", "-m", "frameleaf_ml.video_restoration.rife_candidate",
+  "--model", "{weight:rife_onnx}", "--img", "{input_dir}",
+  "--output", "{output_dir}", "--exp", "{exp}"
+]
+```
+
+The candidate limits input to 240 frames, 1920 pixels on the long edge and
+1920 × 1088 pixels per frame. It copies source endpoints byte-for-byte, holds
+frames across detected hard cuts and evaluates each intermediate phase directly.
+The model stays unavailable until the existing runtime, rights and qualification
+checks pass. For an opt-in local pipeline test with an existing copy of the model,
+run `FRAMELEAF_RIFE_CANDIDATE_MODEL=/path/to/model.onnx uv run --extra cpu pytest test_rife_candidate.py`
+from `machine-learning`. That test exercises synthetic video, audio and the exact
+model. Installed resource limits and representative motion quality still need
+qualification.
+
 ## When a model is available
 
 `GET /restoration/models` lists every configured model with a `state` and every reason it
