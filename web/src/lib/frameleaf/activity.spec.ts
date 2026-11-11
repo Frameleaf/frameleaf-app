@@ -528,6 +528,28 @@ describe('buildActivityList', () => {
     expect(list.map((item) => item.running)).toEqual([true, false]);
   });
 
+  it('drops a stopped scan once the same library has been scanned again (FL-1456)', () => {
+    const scan = (id: string, label: string, status: MediaOperationStatus, createdAt: string) =>
+      operation({
+        id: id as never,
+        kind: MediaOperationKind.LibraryScan,
+        label,
+        status,
+        createdAt,
+        errorCode: status === MediaOperationStatus.Failed ? 'library_scan_interrupted' : null,
+      });
+    const list = buildActivityList({
+      operations: [
+        scan('old', 'Family archive', MediaOperationStatus.Failed, '2026-11-10T22:34:55.000Z'),
+        scan('again', 'Family archive', MediaOperationStatus.Completed, '2026-11-10T22:35:30.000Z'),
+        scan('other', "Jamie's phone", MediaOperationStatus.Failed, '2026-11-10T22:34:00.000Z'),
+      ],
+    });
+
+    expect(list.map((item) => item.operationId)).toEqual(expect.arrayContaining(['again', 'other']));
+    expect(list).toHaveLength(2);
+  });
+
   it('never collides ids across sources', () => {
     const list = buildActivityList({
       operations: [operation({ id: 'shared-id' as never })],

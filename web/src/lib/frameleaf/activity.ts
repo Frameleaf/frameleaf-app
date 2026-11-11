@@ -946,6 +946,25 @@ export const fromBulkOperation = (operation: BulkOperationRecord): ActivityItem 
 };
 
 /**
+ * FL-1456: a scan that stopped early stops needing a look once the same library has been scanned again. The
+ * operation names its library only by `label`, so a later scan with the same label stands for it.
+ */
+const withoutOutdatedScans = (operations: MediaOperationDto[]) => {
+  const newest = new Map<string, number>();
+  for (const { kind, label, createdAt } of operations) {
+    if (kind === MediaOperationKind.LibraryScan) {
+      newest.set(label, Math.max(newest.get(label) ?? 0, Date.parse(createdAt)));
+    }
+  }
+  return operations.filter(
+    (operation) =>
+      operation.kind !== MediaOperationKind.LibraryScan ||
+      operation.status !== MediaOperationStatus.Failed ||
+      Date.parse(operation.createdAt) >= (newest.get(operation.label) ?? 0),
+  );
+};
+
+/**
  * Everything, newest first.
  *
  * Running work sorts above finished work regardless of age, because a page whose first row is a
@@ -958,7 +977,7 @@ export const buildActivityList = (sources: {
   bulk?: BulkOperationRecord[];
 }): ActivityItem[] => {
   const items = [
-    ...(sources.operations ?? []).map((operation) => fromMediaOperation(operation)),
+    ...withoutOutdatedScans(sources.operations ?? []).map((operation) => fromMediaOperation(operation)),
     ...(sources.uploads ?? []).map((upload) => fromUpload(upload)),
     ...(sources.downloads ?? []).map(([key, download]) => fromDownload(key, download)),
     ...(sources.bulk ?? []).map((operation) => fromBulkOperation(operation)),

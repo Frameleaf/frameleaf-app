@@ -139,6 +139,23 @@ export const thumbnailFailures = new ThumbnailFailures();
 export const cantShowPhoto = (asset: { id: string; isOffline?: boolean }) =>
   !!asset.isOffline || thumbnailFailures.has(asset.id);
 
-/** Still waiting for its thumbnail: no picture yet, and nothing says it can't be made. */
-export const isGettingReady = (asset: { id: string; thumbhash: string | null; isOffline?: boolean }) =>
-  !asset.thumbhash && !cantShowPhoto(asset);
+/**
+ * Still waiting for its thumbnail: no picture yet, and nothing says it can't be made. The failures list holds the
+ * viewer's own photos (every account's for an administrator), so for anyone else's photo nothing can say so, and
+ * the calm placeholder would wait for ever: such a photo is never "getting ready" (FL-1456).
+ */
+export const isGettingReady = (asset: {
+  id: string;
+  thumbhash: string | null;
+  isOffline?: boolean;
+  ownerId?: string;
+}) => {
+  if (asset.thumbhash || cantShowPhoto(asset)) {
+    return false;
+  }
+  if (asset.ownerId === undefined) {
+    return true;
+  }
+  const user = authManager.authenticated ? authManager.user : undefined;
+  return asset.ownerId === user?.id || !!user?.isAdmin;
+};

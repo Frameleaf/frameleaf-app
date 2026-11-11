@@ -36,7 +36,7 @@
   import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { lockBadgeLabelKey } from '$lib/frameleaf/locked-view';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
-  import { cantShowPhoto, thumbnailFailures } from '$lib/frameleaf/thumbnail-state.svelte';
+  import { cantShowPhoto, isGettingReady, thumbnailFailures } from '$lib/frameleaf/thumbnail-state.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
@@ -208,7 +208,9 @@
    * this photo", with the way to Library care. Otherwise it is still waiting: the calm placeholder.
    */
   const cantShow = $derived(!asset.thumbhash && cantShowPhoto({ id: asset.id, isOffline }));
-  const gettingReady = $derived(!asset.thumbhash && !cantShow);
+  const gettingReady = $derived(
+    isGettingReady({ id: asset.id, thumbhash: asset.thumbhash, isOffline, ownerId: asset.ownerId }),
+  );
   // A tile that says it can't be shown keeps the list fresh while it is on screen, so a photo that was tried
   // again and worked stops saying so. A missing file is not on the list; nothing to ask for.
   $effect(() => {
