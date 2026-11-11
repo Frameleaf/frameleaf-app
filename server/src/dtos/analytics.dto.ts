@@ -142,7 +142,7 @@ const AnalyticsBucketSchema = z
       'Photos added in this period and still in the library (a photo taken before the server started counts from the day it was taken)',
     ),
     videos: count().describe(
-      'Videos added in this period and still in the library (a photo taken before the server started counts from the day it was taken)',
+      'Videos added in this period and still in the library (a video taken before the server started counts from the day it was taken)',
     ),
     completed: count().nullable().describe('Completed processing attempts; null when not available for this scope'),
     failed: count().nullable().describe('Failed processing attempts; null when not available for this scope'),
@@ -162,7 +162,7 @@ const AnalyticsDaySchema = z
     date: day(),
     captured: count().describe('Items taken on this local date'),
     uploaded: count().describe(
-      'Items added on this UTC date (a photo taken before the server started counts from the day it was taken)',
+      'Items added on this UTC date (an item taken before the server started counts from the day it was taken)',
     ),
   })
   .meta({ id: 'AnalyticsDayDto' });

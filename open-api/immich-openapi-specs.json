@@ -75092,7 +75092,7 @@
             "type": "string"
           },
           "videos": {
-            "description": "Videos added in this period and still in the library (a photo taken before the server started counts from the day it was taken)",
+            "description": "Videos added in this period and still in the library (a video taken before the server started counts from the day it was taken)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -75180,7 +75180,7 @@
             "type": "string"
           },
           "uploaded": {
-            "description": "Items added on this UTC date (a photo taken before the server started counts from the day it was taken)",
+            "description": "Items added on this UTC date (an item taken before the server started counts from the day it was taken)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"

@@ -5615,7 +5615,7 @@ export type AnalyticsDayDto = {
     /** Items taken on this local date */
     captured: number;
     date: string;
-    /** Items added on this UTC date (a photo taken before the server started counts from the day it was taken) */
+    /** Items added on this UTC date (an item taken before the server started counts from the day it was taken) */
     uploaded: number;
 };
 export type AnalyticsSeriesDefinitionDto = {
@@ -5918,7 +5918,7 @@ export type AnalyticsBucketDto = {
     /** Bytes */
     physicalBytes: number | null;
     through: string;
-    /** Videos added in this period and still in the library (a photo taken before the server started counts from the day it was taken) */
+    /** Videos added in this period and still in the library (a video taken before the server started counts from the day it was taken) */
     videos: number;
 };
 export type AnalyticsSummaryDto = {
