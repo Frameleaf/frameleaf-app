@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { SignJWT, jwtVerify } from 'jose';
+import z from 'zod';
 import type { AuthOAuthApp } from 'src/dtos/auth.dto.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
@@ -10,7 +11,6 @@ import { BaseService } from 'src/services/base.service.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
-import z from 'zod';
 
 const purpose = 'mcp-preview-v1';
 const claims = z.object({ sub: z.uuid(), jti: z.uuid() });
@@ -42,7 +42,7 @@ export class McpPreviewService extends BaseService {
       typ: purpose,
       audience: resource,
       requiredClaims: ['exp'],
-    }).catch(() => undefined);
+    }).catch(() => null);
     const parsed = claims.safeParse(verified?.payload);
     if (!parsed.success) {
       throw new UnauthorizedException();
