@@ -19,10 +19,10 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
+import type { Request } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';

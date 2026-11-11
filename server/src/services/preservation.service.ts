@@ -40,8 +40,8 @@ import {
   PreservationRestoreItem,
   PreservationSelection,
 } from 'src/repositories/preservation.repository.js';
-import { ReadStreamResponse, StorageRepository } from 'src/repositories/storage.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
+import { ReadStreamResponse, StorageRepository } from 'src/repositories/storage.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
@@ -413,7 +413,7 @@ export class PreservationService {
     active.add(stream);
     this.desktopStreams.set(grant.sessionId, active);
     // SessionDelete can arrive before Nest attaches its response error handler.
-    stream.on('error', () => undefined);
+    stream.on('error', () => {});
     stream.once('close', () => {
       archive.stream.destroy();
       active.delete(stream);
