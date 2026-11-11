@@ -99,6 +99,22 @@ describe('dates to check (FL-1410)', () => {
     }
   });
 
+  it('selects a range from a dated photo into the group in the order shown, not by the dates they claim', async () => {
+    seed();
+    const manager = await open();
+    try {
+      await manager.loadTimelineMonth(manager.months[0].yearMonth, { cancelable: false });
+      await manager.loadTimelineMonth(manager.months[1].yearMonth, { cancelable: false });
+      // 2031 claims to be newer than August 2026, and is shown after it
+      const range = await manager.retrieveRange({ id: august.id }, { id: future[1].id });
+      expect(range.map(({ id }) => id)).toEqual([august.id, future[0].id, future[1].id]);
+      const back = await manager.retrieveRange({ id: reset.id }, { id: august.id });
+      expect(back.map(({ id }) => id)).toEqual([august.id, future[0].id, future[1].id, reset.id]);
+    } finally {
+      manager.destroy();
+    }
+  });
+
   it('gives the group its place on the scrubber and no year', async () => {
     seed();
     const manager = await open();

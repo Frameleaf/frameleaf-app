@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { TimeBucketDto } from 'src/dtos/time-bucket.dto.js';
-import { AssetVisibility, TimelineDatesToCheck } from 'src/enum.js';
+import { AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -11,7 +11,7 @@ import { TagRepository } from 'src/repositories/tag.repository.js';
 import { ViewRepository } from 'src/repositories/view-repository.js';
 import { DB } from 'src/schema/index.js';
 import { TimelineService } from 'src/services/timeline.service.js';
-import { dateProblem, hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
+import { TimelineDatesToCheck, dateProblem, hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
 import { upsertTags } from 'src/utils/tag.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';

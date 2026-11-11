@@ -136,20 +136,6 @@ export const TimeBucketDateTypeSchema = z
   .describe('Date source for timeline bucket grouping')
   .meta({ id: 'TimeBucketDateType' });
 
-/**
- * FL-1410: what a timeline request does with photos whose date cannot be right (`utils/date-sanity.ts`).
- * A request that does not say gets every photo, as before.
- */
-export enum TimelineDatesToCheck {
-  Exclude = 'exclude',
-  Only = 'only',
-}
-
-export const TimelineDatesToCheckSchema = z
-  .enum(TimelineDatesToCheck)
-  .describe('Photos whose date cannot be right: leave them out, or return only them')
-  .meta({ id: 'TimelineDatesToCheck' });
-
 export enum ImageEnrichmentFilter {
   Nsfw = 'nsfw',
   NsfwReview = 'nsfw-review',

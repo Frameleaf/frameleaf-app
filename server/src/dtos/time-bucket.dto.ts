@@ -14,9 +14,15 @@ import {
   ImageEnrichmentFilterSchema,
   LibraryViewScopeSchema,
   TimeBucketDateTypeSchema,
-  TimelineDatesToCheckSchema,
 } from 'src/enum.js';
+import { TimelineDatesToCheck } from 'src/utils/date-sanity.js';
 import { stringToBool } from 'src/validation.js';
+
+/** FL-1410: leave out, or return only, the photos whose date cannot be right. */
+const TimelineDatesToCheckSchema = z
+  .enum(TimelineDatesToCheck)
+  .describe('Photos whose date cannot be right: leave them out, or return only them')
+  .meta({ id: 'TimelineDatesToCheck' });
 
 export const TIMELINE_HIGHLIGHT_DEFAULT = 4;
 export const TIMELINE_HIGHLIGHT_MAX = 12;

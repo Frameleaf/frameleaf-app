@@ -15,6 +15,15 @@ import { sql } from 'kysely';
  */
 export type DateProblem = 'future' | 'reset';
 
+/**
+ * What a timeline request does with the photos whose date cannot be right. A request that does not say
+ * gets every photo, as before.
+ */
+export enum TimelineDatesToCheck {
+  Exclude = 'exclude',
+  Only = 'only',
+}
+
 /** A clock a little fast, or a wall time read in the wrong zone, is not a wrong date. */
 export const FUTURE_SLACK_HOURS = 24;
 /** The local days a camera's clock starts from when it was never set. */

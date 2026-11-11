@@ -41,7 +41,6 @@ import {
   LibraryViewScope,
   StudioExportVersionState,
   TimeBucketDateType,
-  TimelineDatesToCheck,
 } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -91,7 +90,7 @@ import {
   withTagId,
   withTags,
 } from 'src/utils/database.js';
-import { hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
+import { TimelineDatesToCheck, hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
 import { lockDerivedResults, releaseDerivedResults } from 'src/utils/derivative-locks.js';
 import { normalizeImportPath } from 'src/utils/library-paths.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';

@@ -22145,6 +22145,54 @@ export type TimeBucketDto = {
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
     withStacked?: boolean;
 };
+export type TimelineDatesToCheckDto = {
+    /** Filter assets belonging to a specific album */
+    albumId?: string;
+    /** Filter assets by media type */
+    assetType?: AssetTypeEnum;
+    /** Bounding box coordinates as west,south,east,north (WGS84) */
+    bbox?: string;
+    /** Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED */
+    bestPhotos?: boolean;
+    /** Date source for timeline bucket grouping. Defaults to taken date. */
+    dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
+    /** Filter by favorite status (true for favorites only, false for non-favorites only) */
+    isFavorite?: boolean;
+    /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
+    isTrashed?: boolean;
+    key?: string;
+    libraryScope?: LibraryViewScope;
+    /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
+    lockReason?: AssetLockReason | "immich-locked-folder";
+    /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
+    order?: AssetOrder;
+    /** Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf) */
+    orderBy?: AssetOrderBy;
+    /** Filter assets containing a specific person (face recognition) */
+    personId?: string;
+    /** Filter assets in which the caller confirmed one of their own pets */
+    petId?: string;
+    slug?: string;
+    /** Return only suppressed content. Requires an elevated session. */
+    suppressedOnly?: boolean;
+    /** Filter assets with a specific tag */
+    tagId?: string;
+    /** Filter assets by specific user ID */
+    userId?: string;
+    /** Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED) */
+    visibility?: AssetVisibility;
+    /** With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself. */
+    withChildTags?: boolean;
+    /** Include location data in the response */
+    withCoordinates?: boolean;
+    /** Include partner-shared copies. Defaults to true; false hides them, except copies in an album the partner made, which always show */
+    withPartners?: boolean;
+    /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
+    withStacked?: boolean;
+};
 export type TimelineHighlightsDto = {
     /** Filter assets belonging to a specific album */
     albumId?: string;

@@ -1548,7 +1548,12 @@
     if (!group || !canFixDates) {
       return;
     }
-    await manager.loadTimelineMonth(group.yearMonth, { cancelable: false });
+    try {
+      await manager.loadTimelineMonth(group.yearMonth, { cancelable: false });
+    } catch (error) {
+      handleError(error, $t('errors.failed_to_load_assets'));
+      return;
+    }
     const ids = group.getAssets().map(({ id }) => id);
     if (ids.length === 0) {
       return;

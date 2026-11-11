@@ -1,13 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
-import {
-  AssetLockReason,
-  AssetVisibility,
-  ImageEnrichmentFilter,
-  TimeBucketDateType,
-  TimelineDatesToCheck,
-} from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, ImageEnrichmentFilter, TimeBucketDateType } from 'src/enum.js';
 import { TimelineService } from 'src/services/timeline.service.js';
+import { TimelineDatesToCheck } from 'src/utils/date-sanity.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 

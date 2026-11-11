@@ -655,7 +655,7 @@ describe('dates that cannot be right (FL-1410)', () => {
     const { container } = draw();
     await waitFor(() => expect(manager.months.every((month) => month.isLoaded)).toBe(true));
     await tick();
-    const headings = [...container.querySelectorAll('[data-testid="frameleaf-day-group"] h2')].map(
+    const headings = [...container.querySelectorAll(':scope [data-testid="frameleaf-day-group"] h2')].map(
       (heading) => heading.textContent,
     );
     expect(headings.at(-1)).toBe('frameleaf_library_dates_to_check');
@@ -672,7 +672,9 @@ describe('dates that cannot be right (FL-1410)', () => {
     await waitFor(() => expect(manager.months.every((month) => month.isLoaded)).toBe(true));
     await tick();
     const titles = () =>
-      [...container.querySelectorAll('[data-testid="frameleaf-group"] h2')].map((heading) => heading.textContent);
+      [...container.querySelectorAll(':scope [data-testid="frameleaf-group"] h2')].map(
+        (heading) => heading.textContent,
+      );
     expect(titles()).toEqual(['frameleaf_library_group_all', 'frameleaf_library_dates_to_check']);
     expect(screen.getAllByTestId('frameleaf-group-flag')).toHaveLength(1);
     expect(manager.months.at(-1)!.startsGroup).toBe(true);

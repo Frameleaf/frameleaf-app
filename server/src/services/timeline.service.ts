@@ -13,10 +13,11 @@ import {
   TimelineHighlightsDto,
   TimelineOrderedDto,
 } from 'src/dtos/time-bucket.dto.js';
-import { AssetVisibility, Permission, TimelineDatesToCheck } from 'src/enum.js';
+import { AssetVisibility, Permission } from 'src/enum.js';
 import { TimeBucketOptions, TimelineOrderedPage } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
+import { TimelineDatesToCheck } from 'src/utils/date-sanity.js';
 import {
   getOthersRulesQueryOptions,
   getPrivacyQueryOptions,
