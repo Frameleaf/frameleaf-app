@@ -90,6 +90,8 @@ it.skipIf(mode !== 'replay')(
           protectedHits: 0,
           faithfulness: 1,
         });
+        expect(report.filterAccuracy).toBeGreaterThanOrEqual(thresholds.filterAccuracy);
+        expect(report.recallAt24).toBeGreaterThanOrEqual(thresholds.recallAt24);
       } finally {
         await database.destroy();
       }
