@@ -53,13 +53,24 @@ command. Only synthetic questions and catalogue names are sent. Live planning
 reports the accepted plan rate and fixture retrieval metrics overall and by
 question family. This mode uses the evaluator's reason claims.
 
+For candidate selection, set `FRAMELEAF_ASSISTANT_EVAL_MODE=candidate` instead.
+This exercises the Assistant HTTP response with the production tool schema,
+confidence and catalogue checks, and rule fallback. The report includes both
+the delivered response scores and planner-only scores, where cases answered
+by fallback count as unanswered. The family breakdown uses the planner-only
+scores. Candidate latency measures the complete HTTP response, including any
+fallback. The configured worker must satisfy the Assistant destination health
+and CLIP capability checks. Per-field counts identify missing, extra, and incorrect filters in
+accepted plans. This mode does not produce release qualification evidence.
+
 ## Live Assistant qualification
 
 From a clean candidate checkout, start a test worker built from that candidate's
 ML source with its pinned default planner available. Use only a disposable
 worker and test database. The harness sends synthetic questions and catalogue
 names, runs the production Assistant controller and service, and scores the
-plans, result IDs, structured reason claims, and latency in the HTTP response.
+plans, result IDs, visible reason text and its structured evidence, and latency
+in the HTTP response.
 The fixture supplies the test session, catalogue entries, and ML destination.
 
 ```sh

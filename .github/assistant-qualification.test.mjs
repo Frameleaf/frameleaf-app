@@ -33,7 +33,7 @@ test("rejects stale reports and measurements from other modes", () => {
     () => verifyQualification(report, "a".repeat(40), workerModel),
     /source/,
   );
-  for (const mode of ["assistant", "live", "replay", "baseline"]) {
+  for (const mode of ["assistant", "live", "candidate", "replay", "baseline"]) {
     assert.throws(
       () => verifyQualification({ ...report, mode }, source, workerModel),
       /mode/,

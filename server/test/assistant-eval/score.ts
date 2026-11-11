@@ -166,3 +166,28 @@ export function scoreByFamily(questions: EvalCase[], library: EvalAsset[], answe
     }),
   );
 }
+
+/** Count planner filter errors without writing the questions or filter values to the report. */
+export function countFilterErrors(questions: EvalCase[], answers: EvalAnswer[]) {
+  const byId = new Map(answers.map(({ id, filters }) => [id, filters]));
+  const counts = new Map<string, { missing: number; unexpected: number; incorrect: number }>();
+  for (const { id, expect } of questions) {
+    const filters = byId.get(id);
+    if (!filters) {
+      continue;
+    }
+    const expected = canonical(expect.filters);
+    const actual = canonical(filters);
+    const keys = new Set([...Object.keys(expected), ...Object.keys(actual)] as (keyof EvalFilters)[]);
+    for (const key of keys) {
+      if (isDeepStrictEqual(expected[key], actual[key])) {
+        continue;
+      }
+      const count = counts.get(key) ?? { missing: 0, unexpected: 0, incorrect: 0 };
+      const error = actual[key] === undefined ? 'missing' : expected[key] === undefined ? 'unexpected' : 'incorrect';
+      count[error]++;
+      counts.set(key, count);
+    }
+  }
+  return Object.fromEntries(counts);
+}

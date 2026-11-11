@@ -24,12 +24,14 @@ import { SPEECH_INDEX_VERSION, speechQuery, speechWindows } from 'src/utils/spee
 import cases from 'test/assistant-eval/cases.json' with { type: 'json' };
 import library from 'test/assistant-eval/library.json' with { type: 'json' };
 import { preparePlan, requestPlan } from 'test/assistant-eval/planner.js';
+import { claimFromAssistantReason } from 'test/assistant-eval/reasons.js';
 import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
 import {
   EvalAnswer,
   EvalFilters,
   RESULT_LIMIT,
   Reason,
+  countFilterErrors,
   readFixtures,
   score,
   scoreByFamily,
@@ -45,7 +47,8 @@ const neutralEmbedding = `[1,${'0,'.repeat(766)}0]`;
 const fingerprint = 'assistant-eval-synthetic';
 const typeMap = { IMAGE: AssetType.Image, VIDEO: AssetType.Video };
 
-type Mode = { mode: 'replay' | 'baseline' | 'assistant' } | { mode: 'live' | 'qualification'; endpoint: URL };
+type Mode =
+  { mode: 'replay' | 'baseline' | 'assistant' } | { mode: 'live' | 'candidate' | 'qualification'; endpoint: URL };
 
 /** Run the same fixture library against reference plans, the rule planner, or a candidate worker. */
 export async function run(database: Kysely<DB>, options: Mode) {
@@ -189,10 +192,10 @@ export async function run(database: Kysely<DB>, options: Mode) {
   };
   let validPlans = 0;
   const answers: EvalAnswer[] = [];
-  if (options.mode === 'assistant' || options.mode === 'qualification') {
+  if (options.mode === 'assistant' || options.mode === 'candidate' || options.mode === 'qualification') {
     const destination = ctx.getMock(MlDestinationRepository);
     let planner: MachineLearningRepository | undefined;
-    if (options.mode === 'qualification') {
+    if ('endpoint' in options) {
       destination.getById.mockResolvedValue({ ...mlDestinationStub.local, url: options.endpoint.href });
       planner = new MachineLearningRepository(LoggingRepository.create());
       planner.setup((await sut.getConfig({ withCache: false })).machineLearning);
@@ -200,7 +203,7 @@ export async function run(database: Kysely<DB>, options: Mode) {
     const assistant = assistantForFixture(sut, speech, people, pets, planner, destination);
     const app = await controllerSetup(AssistantController, [{ provide: AssistantService, useValue: assistant.sut }]);
     const eligible = new Set(assets.filter(({ locked, otherOwner }) => !locked && !otherOwner).map(({ key }) => key));
-    let plannerAnswers = 0;
+    const plannerCaseIds = new Set<string>();
     let protectedHits = 0;
     try {
       app.authenticate.mockResolvedValue(auth);
@@ -211,7 +214,9 @@ export async function run(database: Kysely<DB>, options: Mode) {
         const result = await http.post('/assistant/ask').send({ query: question, size: RESULT_LIMIT }).expect(200);
         const response: AssistantAskResponseDto = AssistantAskResponseDto.schema.parse(result.body);
         const elapsedMs = performance.now() - startedAt;
-        plannerAnswers += Number(response.answeredBy === 'planner');
+        if (response.answeredBy === 'planner') {
+          plannerCaseIds.add(id);
+        }
         for (const assetId of new Set([
           ...response.results.assets.items.map(({ id }) => id),
           ...response.reasons.map(({ assetId }) => assetId),
@@ -227,11 +232,20 @@ export async function run(database: Kysely<DB>, options: Mode) {
     } finally {
       await app.close();
     }
+    const plannerOnly =
+      options.mode === 'candidate'
+        ? answers.map((answer) => (plannerCaseIds.has(answer.id) ? answer : { ...answer, filters: null, hits: [] }))
+        : undefined;
     return {
       mode: options.mode,
       cases: questions.length,
       assets: assets.length,
-      plannerAnswers,
+      plannerAnswers: plannerCaseIds.size,
+      ...(plannerOnly && {
+        plannerOnly: score(questions, assets, plannerOnly),
+        byFamily: scoreByFamily(questions, assets, plannerOnly),
+        filterErrors: countFilterErrors(questions, plannerOnly),
+      }),
       protectedHits,
       ...score(questions, assets, answers),
     };
@@ -302,6 +316,7 @@ export async function run(database: Kysely<DB>, options: Mode) {
     ...(mode === 'live' && {
       validPlanRate: validPlans / questions.length,
       byFamily: scoreByFamily(questions, assets, answers),
+      filterErrors: countFilterErrors(questions, answers),
     }),
     ...score(questions, assets, answers),
   };
@@ -369,47 +384,7 @@ function assistantForFixture(
 function assistantClaims(response: AssistantAskResponseDto, assetId: string): Reason[] {
   return response.reasons
     .filter((reason) => reason.assetId === assetId)
-    .flatMap(({ items }) =>
-      items.map(({ kind, value, text }): Reason => {
-        switch (kind) {
-          case 'person': {
-            return value ? { field: 'people', value } : null;
-          }
-          case 'pet': {
-            return value ? { field: 'pets', value } : null;
-          }
-          case 'place': {
-            return value ? { field: 'city', value } : null;
-          }
-          case 'date': {
-            return value ? { field: 'takenDate', value } : null;
-          }
-          case 'favorite': {
-            return { field: 'favorite', value: true };
-          }
-          case 'type': {
-            if (text === 'A photo') return { field: 'type', value: 'IMAGE' };
-            if (text === 'A video') return { field: 'type', value: 'VIDEO' };
-            return null;
-          }
-          case 'text': {
-            return value ? { field: 'ocr', value } : null;
-          }
-          case 'speech': {
-            return value ? { field: 'spoken', value } : null;
-          }
-          case 'description': {
-            return value ? { field: 'description', value } : null;
-          }
-          case 'file': {
-            return value ? { field: 'filename', value } : null;
-          }
-          default: {
-            return null;
-          }
-        }
-      }),
-    );
+    .flatMap(({ items }) => items.map(claimFromAssistantReason));
 }
 
 function filterReasons(filters: EvalFilters): Reason[] {
