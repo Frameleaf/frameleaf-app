@@ -491,7 +491,7 @@
   let itemsView = $state<LibraryItemsView>();
   $effect(() => {
     const id = albumId;
-    void mixedDatesGeneration;
+    const generation = mixedDatesGeneration;
     mixedDatesToCheck = undefined;
     if (!mixedAlbum || isSpace) {
       return;
@@ -500,7 +500,8 @@
     void (async () => {
       try {
         const toCheck = await getTimelineDatesToCheck({ albumId: id });
-        if (current() && albumId === id) {
+        // An older read must not replace a newer one (a count read again after Change date)
+        if (current() && albumId === id && mixedDatesGeneration === generation) {
           mixedDatesToCheck = toCheck;
         }
       } catch {

@@ -1565,8 +1565,9 @@
         {empty}
       />
     </div>
-    <!-- Template TimelineLibrary.jsx:460: the scrubber stays beside the cards. -->
-    {#if showScrubber}
+    <!-- Template TimelineLibrary.jsx:460: the scrubber stays beside the cards. It has only the dated
+         months (FL-1452), so none is drawn when every photo waits among the dates to check. -->
+    {#if showScrubber && timelineManager.months.some((month) => !month.toCheck)}
       <YearScrubber
         {timelineManager}
         height={measuredHeight}

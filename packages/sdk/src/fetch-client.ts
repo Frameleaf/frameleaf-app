@@ -22499,6 +22499,8 @@ export type TimelineDatesToCheckDto = {
     order?: AssetOrder;
     /** Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf) */
     orderBy?: AssetOrderBy;
+    /** FL-1452: also return the calendar pages of these photos (pages), as GET /timeline/buckets pages them */
+    pageSize?: number;
     /** Filter assets containing a specific person (face recognition) */
     personId?: string;
     /** Filter assets in which the caller confirmed one of their own pets */

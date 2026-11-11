@@ -545,7 +545,7 @@ export class TimelineManager extends VirtualScrollManager {
     let [timebuckets, toCheck] = await Promise.all([readBuckets(), readDatesToCheck()]);
     if (toCheck === null && this.#datesToCheckApart && options === this.#requestedOptions) {
       this.#datesToCheckApart = false;
-      toCheck = undefined;
+      toCheck = null;
       timebuckets = await readBuckets();
     }
 
