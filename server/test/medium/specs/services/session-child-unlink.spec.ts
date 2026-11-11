@@ -1,6 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { DatabaseLock } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -67,6 +68,7 @@ const setup = async () => {
     frameleaf: frameleaf.sut,
     sessions: sessions.sut,
     sessionAccounts: sessions.ctx.get(FrameleafAccountRepository),
+    locks: { child: sessions.ctx.get(DatabaseRepository), unlink: frameleaf.ctx.get(DatabaseRepository) },
     auth,
     childSessions,
   };
@@ -90,7 +92,7 @@ it('ends the child when it came first', async () => {
 it.each(['child', 'unlink'] as const)(
   'leaves no child when they overlap and the %s holds the lock first',
   async (first) => {
-    const { frameleaf, sessions, sessionAccounts, auth, childSessions } = await setup();
+    const { frameleaf, sessions, sessionAccounts, locks, auth, childSessions } = await setup();
     const accounts = (frameleaf as unknown as { frameleafAccountRepository: FrameleafAccountRepository })
       .frameleafAccountRepository;
     const entered = Promise.withResolvers<void>();
@@ -111,9 +113,20 @@ it.each(['child', 'unlink'] as const)(
         return findSessions(filter);
       });
     }
+    // the second operation must actually be waiting for the link authority lock before the first one goes on
+    const contending = Promise.withResolvers<void>();
+    const second = first === 'child' ? locks.unlink : locks.child;
+    const withLock = second.withLock.bind(second);
+    vi.spyOn(second, 'withLock').mockImplementation((lock, callback) => {
+      if (lock === DatabaseLock.FrameleafLinkAuthority) {
+        contending.resolve();
+      }
+      return withLock(lock, callback);
+    });
     const firstRun = first === 'child' ? sessions.create(auth, {}) : frameleaf.unlink(auth);
     await entered.promise;
     const secondRun = first === 'child' ? frameleaf.unlink(auth) : sessions.create(auth, {});
+    await contending.promise;
     resume.resolve();
     const [firstResult, secondResult] = await Promise.allSettled([firstRun, secondRun]);
     const [childResult, unlinkResult] = first === 'child' ? [firstResult, secondResult] : [secondResult, firstResult];
