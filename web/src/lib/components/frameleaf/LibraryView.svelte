@@ -1521,6 +1521,8 @@
 
   /** Items a bar action selected on its own; put back to nothing if that action is cancelled. */
   let barSelectedIds: string[] | null = null;
+  /** What was selected before such an action took the selection over; a cancel puts it back. */
+  let barRestoreIds: string[] = [];
 
   /** Run an action through the bar, on the selection or, with none, on these items selected first. */
   const performOnBar = async (id: BulkActionId, ids: string[]) => {
@@ -1558,10 +1560,12 @@
     if (ids.length === 0) {
       return;
     }
+    const before = session.selection;
     session.dispatch({ type: 'selection', ids });
     await tick();
     if (selectionBarRef?.canPerform('change-date')) {
       barSelectedIds = ids;
+      barRestoreIds = before;
       selectionBarRef.performAction('change-date');
       return;
     }
@@ -1571,9 +1575,15 @@
   /** The bar's dialog closed: a cancelled action started from a key or a tile leaves nothing selected. */
   const onBarDialogSettled = (submitted: boolean) => {
     const selected = barSelectedIds;
+    const restore = barRestoreIds;
     barSelectedIds = null;
+    barRestoreIds = [];
     if (!submitted && selected && session.selection.every((id) => selected.includes(id))) {
-      session.clearSelection();
+      if (restore.length > 0) {
+        session.dispatch({ type: 'selection', ids: restore });
+      } else {
+        session.clearSelection();
+      }
     }
   };
 

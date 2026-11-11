@@ -177,6 +177,9 @@ describe('dates that cannot be right (FL-1410)', () => {
       years: [1970, 2000, 2031],
       timeBuckets: ['2031-06-01', '2000-01-01', '1970-01-01'],
     });
+    // a photo with no EXIF row cannot be listed by a bucket, so the notice does not count it
+    await ctx.newAsset({ ownerId: user.id, ...taken('2031-06-05T09:00:00.000Z') });
+    await expect(sut.getDatesToCheck(auth, {})).resolves.toMatchObject({ count: 3 });
     await expect(sut.getDatesToCheck(auth, { isFavorite: true })).resolves.toEqual({
       count: 0,
       years: [],

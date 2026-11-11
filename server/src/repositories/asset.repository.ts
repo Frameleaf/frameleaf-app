@@ -2717,6 +2717,17 @@ export class AssetRepository {
         .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
         .$if(options.withPartners === false, (qb) => qb.where((eb) => eb.not(isHiddenPartnerCopy)))
         .$if(!!options.datesToCheck, (qb) => qb.where(datesToCheckPredicate(options.datesToCheck!)))
+        // Only what a bucket can list (it joins the EXIF row): the notice never counts a photo its group cannot show
+        .$if(options.datesToCheck === TimelineDatesToCheck.Only, (qb) =>
+          qb.where((eb) =>
+            eb.exists(
+              eb
+                .selectFrom('asset_exif as listed_exif')
+                .select('listed_exif.assetId')
+                .whereRef('listed_exif.assetId', '=', 'asset.id'),
+            ),
+          ),
+        )
     );
   }
   private timelineBucketDate(options: TimeBucketOptions, size: 'MONTH' | 'YEAR' = 'MONTH') {

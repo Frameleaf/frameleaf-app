@@ -191,9 +191,47 @@ select
   "album_asset"."albumId" as "albumId",
   min(
     ("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date
+  ) filter (
+    where
+      (
+        not (
+          "asset"."fileCreatedAt" > now() + interval '24 hours'
+          or ("asset"."localDateTime" at time zone 'UTC')::date = any ('{1970-01-01,1980-01-01,2000-01-01}'::date[])
+        )
+        or coalesce(
+          (
+            select
+              'dateTimeOriginal' = any (date_check_exif."lockedProperties")
+            from
+              asset_exif date_check_exif
+            where
+              date_check_exif."assetId" = "asset"."id"
+          ),
+          false
+        )
+      )
   ) as "startDate",
   max(
     ("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date
+  ) filter (
+    where
+      (
+        not (
+          "asset"."fileCreatedAt" > now() + interval '24 hours'
+          or ("asset"."localDateTime" at time zone 'UTC')::date = any ('{1970-01-01,1980-01-01,2000-01-01}'::date[])
+        )
+        or coalesce(
+          (
+            select
+              'dateTimeOriginal' = any (date_check_exif."lockedProperties")
+            from
+              asset_exif date_check_exif
+            where
+              date_check_exif."assetId" = "asset"."id"
+          ),
+          false
+        )
+      )
   ) as "endDate",
   max("asset"."updatedAt") as "lastModifiedAssetTimestamp",
   count("asset"."id")::int as "assetCount"
