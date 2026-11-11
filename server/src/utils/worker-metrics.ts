@@ -4,6 +4,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageFolder } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { MediaImportRepository } from 'src/repositories/media-import.repository.js';
 import { MetricsRepository, setWorkerMetrics } from 'src/repositories/metrics.repository.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { getDatabasePoolUsage } from 'src/utils/execution-database.js';
@@ -24,7 +25,7 @@ export const prepareWorkerMetrics = (
           disk: () => getDiskUsage(StorageCore.getBaseFolder(StorageFolder.Library)),
           assets: () => db.getMetricsAssetCounts(),
         }
-      : { queues: () => db.getMetricsQueueCounts() }),
+      : { queues: () => db.getMetricsQueueCounts(), media: () => app.get(MediaImportRepository).metrics() }),
   });
   setWorkerMetrics(metrics);
   return {

@@ -94,6 +94,7 @@ async function setup(bytes: Buffer) {
     new ICloudIdentityRepository(db),
     new PhotoSourceRepository(db),
     new CaptureRepository(db),
+    {} as never,
   );
   const checksum = createHash('sha256').update(bytes).digest();
   const created = await service.create(

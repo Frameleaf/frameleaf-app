@@ -4,10 +4,13 @@
   import LibraryItemsView from '$lib/components/frameleaf/LibraryItemsView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import { contextDiscoveryQuery, discoveryUrl } from '$lib/components/discovery/query';
+  import { isCreatorsArea } from '$lib/frameleaf/creators';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { AssetTypeEnum, LibraryItemSearchKind, LibraryScope } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
   const query = $derived(contextDiscoveryQuery(new URL(page.url.href)));
+  /** Boards' other area (FL-1448): `?area=creators`, with its own page; Items is everything else. */
+  const creators = $derived(isCreatorsArea(new URL(page.url.href)));
   /** The rail's Links view: `?kinds=bookmark`. */
   const kinds = $derived(
     page.url.searchParams.get('kinds') === LibraryItemSearchKind.Bookmark
@@ -52,21 +55,28 @@
   scrollbar={false}
   onUploadClick={() => void openFileUploadDialog({ libraryScope: LibraryScope.Design })}
 >
-  <LibraryItemsView
-    title={viewTitle}
-    {query}
-    {kinds}
-    {bookmark}
-    onQueryChange={(next) => void goto(withKinds(discoveryUrl(next)), { replace: true, reset: false })}
-    onKindsChange={(next, nextQuery) => {
-      // The Type menu's Links is the rail's Links view: `?kinds=bookmark` beside the query.
-      const url = new URL(discoveryUrl(nextQuery), page.url.origin);
-      if (next?.length) {
-        url.searchParams.set('kinds', next.join(','));
-      } else {
-        url.searchParams.delete('kinds');
-      }
-      void goto(url.pathname + url.search, { replace: true, reset: false });
-    }}
-  />
+  {#if creators}
+    <!-- Loaded when opened, so Boards' Items view does not carry the Creators area up front. -->
+    {#await import('$lib/components/frameleaf/creators/CreatorsWorkspace.svelte') then { default: CreatorsWorkspace }}
+      <CreatorsWorkspace />
+    {/await}
+  {:else}
+    <LibraryItemsView
+      title={viewTitle}
+      {query}
+      {kinds}
+      {bookmark}
+      onQueryChange={(next) => void goto(withKinds(discoveryUrl(next)), { replace: true, reset: false })}
+      onKindsChange={(next, nextQuery) => {
+        // The Type menu's Links is the rail's Links view: `?kinds=bookmark` beside the query.
+        const url = new URL(discoveryUrl(nextQuery), page.url.origin);
+        if (next?.length) {
+          url.searchParams.set('kinds', next.join(','));
+        } else {
+          url.searchParams.delete('kinds');
+        }
+        void goto(url.pathname + url.search, { replace: true, reset: false });
+      }}
+    />
+  {/if}
 </UserPageLayout>

@@ -12,6 +12,7 @@
     value = $bindable(""),
     disabled = false,
     createLocked = false,
+    canCreate = true,
     onCreate,
     onRefresh,
   }: {
@@ -20,7 +21,9 @@
     disabled?: boolean;
     /** After an unconfirmed create, creating again waits for a refresh. */
     createLocked?: boolean;
-    onCreate: (name: string, parentId: string) => Promise<boolean>;
+    /** Off where a collection can only be chosen (FL-1427: the popup's Media tab). */
+    canCreate?: boolean;
+    onCreate?: (name: string, parentId: string) => Promise<boolean>;
     onRefresh: () => Promise<void>;
   } = $props();
   const uid = Math.random().toString(36).slice(2);
@@ -67,7 +70,7 @@
   }
   async function create(event: SubmitEvent) {
     event.preventDefault();
-    if (!newName.trim() || createLocked || disabled) return;
+    if (!newName.trim() || createLocked || disabled || !onCreate) return;
     if (await onCreate(newName.trim(), value)) {
       newName = "";
       close();
@@ -181,7 +184,7 @@
         </form>
       {/if}
       <div class="picker-foot">
-        {#if !creating}<button
+        {#if !creating && canCreate}<button
             type="button"
             class="link-button"
             disabled={disabled || createLocked}

@@ -13,6 +13,9 @@ export function receiptLink(
   item: Pick<QueueItem, 'state' | 'itemId' | 'itemKind'>,
 ): string | null {
   if (!origin || !item.itemId || !uuid.test(item.itemId)) return null;
+  // FL-1427: the collection your Library downloaded media into (also while more is still coming)
+  if (item.itemKind === 'collection')
+    return `${origin}/albums/${encodeURIComponent(item.itemId)}`;
   if (item.state !== 'saved' && item.state !== 'duplicate') return null;
   const id = encodeURIComponent(item.itemId);
   if (item.itemKind === 'asset') return `${origin}/pro/photos/${id}`;

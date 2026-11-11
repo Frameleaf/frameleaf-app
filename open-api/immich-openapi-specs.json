@@ -33870,6 +33870,757 @@
         "x-immich-permission": "map.read"
       }
     },
+    "/media-connections": {
+      "get": {
+        "operationId": "getMediaConnections",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaConnectionListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List connected site metadata without credentials",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-connection.read"
+      },
+      "post": {
+        "operationId": "createMediaConnection",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaConnectionCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Share selected site access with Library over HTTPS",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-connection.write"
+      }
+    },
+    "/media-connections/{id}": {
+      "delete": {
+        "operationId": "disconnectMediaConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Revoke site access and dependent work",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-connection.write"
+      }
+    },
+    "/media-connections/{id}/refresh": {
+      "post": {
+        "operationId": "refreshMediaConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaConnectionRefreshDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Replace and revoke the previous site session",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-connection.write"
+      }
+    },
+    "/media-creators": {
+      "get": {
+        "operationId": "getMediaCreators",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaCreatorListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List followed and added creators with their new item counts",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.read"
+      }
+    },
+    "/media-creators/items/{assetId}/poster": {
+      "get": {
+        "operationId": "getMediaCreatorItemPoster",
+        "parameters": [
+          {
+            "name": "assetId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the cover a site gave a saved video",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.read"
+      }
+    },
+    "/media-creators/new": {
+      "get": {
+        "operationId": "getNewMediaCreatorItems",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 24,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaCreatorFeedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the newest items not yet seen, across creators",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.read"
+      }
+    },
+    "/media-creators/{id}": {
+      "get": {
+        "operationId": "getMediaCreator",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaCreatorResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get one creator",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.read"
+      },
+      "patch": {
+        "operationId": "updateMediaCreator",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaCreatorUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaCreatorResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Move a creator’s collection into a private folder",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.update"
+      }
+    },
+    "/media-creators/{id}/avatar": {
+      "get": {
+        "operationId": "getMediaCreatorAvatar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the kept copy of a creator’s picture",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.read"
+      }
+    },
+    "/media-creators/{id}/banner": {
+      "get": {
+        "operationId": "getMediaCreatorBanner",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the kept copy of a creator’s banner",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.read"
+      }
+    },
+    "/media-creators/{id}/items": {
+      "get": {
+        "operationId": "getMediaCreatorItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/MediaItemKind"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Words to find in the title, text or tags",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "section",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/MediaSection"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "newest",
+              "$ref": "#/components/schemas/MediaCreatorItemSort"
+            }
+          },
+          {
+            "name": "unwatched",
+            "required": false,
+            "in": "query",
+            "description": "Only items not watched yet",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaCreatorItemsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List a creator’s saved items, one page at a time",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.read"
+      }
+    },
+    "/media-creators/{id}/seen": {
+      "post": {
+        "operationId": "markMediaCreatorSeen",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaCreatorResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record that this account opened a creator",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.update"
+      }
+    },
     "/media-health": {
       "get": {
         "description": "List missing and corrupt media health findings in timeline buckets.",
@@ -35319,6 +36070,341 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/media-imports": {
+      "get": {
+        "operationId": "getMediaImports",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaImportListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List media imports for this account",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.read"
+      },
+      "post": {
+        "operationId": "createMediaImport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaImportCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaImportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download selected inspected media into Boards",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.create"
+      }
+    },
+    "/media-imports/capabilities": {
+      "get": {
+        "operationId": "getMediaCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaCapabilitiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discover installed media extraction and feed capabilities",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.catalog.read"
+      }
+    },
+    "/media-imports/inspect": {
+      "post": {
+        "operationId": "inspectMedia",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaInspectDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaImportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Inspect URLs without downloading a whole account",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.create"
+      }
+    },
+    "/media-imports/{id}": {
+      "get": {
+        "operationId": "getMediaImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaImportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get media import progress and saved items",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.read"
+      }
+    },
+    "/media-imports/{id}/cancel": {
+      "post": {
+        "operationId": "cancelMediaImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaImportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel unfinished media import work",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.update"
+      }
+    },
+    "/media-imports/{id}/retry": {
+      "post": {
+        "operationId": "retryMediaImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaRetryDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaImportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry failed media import items idempotently",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.update"
+      }
+    },
     "/media-operations": {
       "get": {
         "description": "Durable renders, restorations and edits belonging to the signed-in account, newest first. These survive closing the browser and restarting the server.",
@@ -35952,6 +37038,262 @@
           }
         ],
         "x-immich-state": "Alpha"
+      }
+    },
+    "/media-subscriptions": {
+      "get": {
+        "operationId": "getMediaSubscriptions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaSubscriptionListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List creator subscription progress",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-subscription.read"
+      },
+      "post": {
+        "operationId": "createMediaSubscription",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaSubscriptionCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaSubscriptionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a private creator collection and scheduled subscription",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-subscription.write"
+      }
+    },
+    "/media-subscriptions/preview": {
+      "post": {
+        "operationId": "previewMediaSubscription",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaInspectDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaImportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Resolve creator and feed capability before subscribing",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-subscription.write"
+      }
+    },
+    "/media-subscriptions/{id}": {
+      "patch": {
+        "operationId": "updateMediaSubscription",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaSubscriptionUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaSubscriptionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Pause, resume, check, disconnect or update a subscription",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-subscription.write"
+      }
+    },
+    "/media-watch/{assetId}": {
+      "put": {
+        "operationId": "updateMediaWatch",
+        "parameters": [
+          {
+            "name": "assetId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaWatchUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaWatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record what this account has watched of a saved item",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "media-import.update"
       }
     },
     "/memories": {
@@ -76888,6 +78230,13 @@
             "nullable": true,
             "type": "string"
           },
+          "mediaPermissions": {
+            "description": "Media download permissions, listed apart from permissions so older clients can still read keys",
+            "items": {
+              "$ref": "#/components/schemas/MediaPermission"
+            },
+            "type": "array"
+          },
           "name": {
             "description": "API key name",
             "type": "string"
@@ -76922,6 +78271,7 @@
           "designPermissions",
           "id",
           "lastUsedAt",
+          "mediaPermissions",
           "name",
           "permissions",
           "secret",
@@ -76958,6 +78308,13 @@
             "nullable": true,
             "type": "string"
           },
+          "mediaPermissions": {
+            "description": "Media download permissions, listed apart from permissions so older clients can still read keys",
+            "items": {
+              "$ref": "#/components/schemas/MediaPermission"
+            },
+            "type": "array"
+          },
           "name": {
             "description": "API key name",
             "type": "string"
@@ -76987,6 +78344,7 @@
           "designPermissions",
           "id",
           "lastUsedAt",
+          "mediaPermissions",
           "name",
           "permissions",
           "signedInFrom",
@@ -83010,6 +84368,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "attachmentId": {
+            "nullable": true,
+            "type": "string"
+          },
           "captureId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -83026,6 +84388,10 @@
           },
           "creator": {
             "maxLength": 2000,
+            "nullable": true,
+            "type": "string"
+          },
+          "creatorId": {
             "nullable": true,
             "type": "string"
           },
@@ -83059,6 +84425,22 @@
           "pageUrl": {
             "format": "uri",
             "maxLength": 8192,
+            "type": "string"
+          },
+          "postId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "postText": {
+            "nullable": true,
+            "type": "string"
+          },
+          "provider": {
+            "nullable": true,
+            "type": "string"
+          },
+          "publishedAt": {
+            "nullable": true,
             "type": "string"
           },
           "title": {
@@ -85369,6 +86751,14 @@
         ],
         "type": "string"
       },
+      "BrowserExtensionGrant": {
+        "description": "capture: save into Boards; media: also download media, connect sites and follow creators",
+        "enum": [
+          "capture",
+          "media"
+        ],
+        "type": "string"
+      },
       "BrowserExtensionSignInAuthorizeDto": {
         "additionalProperties": false,
         "properties": {
@@ -85390,6 +86780,10 @@
               "S256"
             ],
             "type": "string"
+          },
+          "grant": {
+            "$ref": "#/components/schemas/BrowserExtensionGrant",
+            "description": "What to allow; capture when left out"
           },
           "installationId": {
             "description": "A random id this installation of the extension made once; its access replaces only its own",
@@ -85500,6 +86894,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "grant": {
+            "$ref": "#/components/schemas/BrowserExtensionGrant",
+            "description": "What was allowed, as bound to the code"
+          },
           "name": {
             "description": "How the access is listed in API keys",
             "type": "string"
@@ -85519,6 +86917,7 @@
         },
         "required": [
           "apiKeyId",
+          "grant",
           "name",
           "secret",
           "serverId",
@@ -85528,6 +86927,13 @@
       },
       "BrowserExtensionSignInInfoDto": {
         "properties": {
+          "grants": {
+            "description": "What an extension can ask to be allowed here",
+            "items": {
+              "$ref": "#/components/schemas/BrowserExtensionGrant"
+            },
+            "type": "array"
+          },
           "version": {
             "description": "The extension sign-in this server supports (1)",
             "maximum": 9007199254740991,
@@ -85536,6 +86942,7 @@
           }
         },
         "required": [
+          "grants",
           "version"
         ],
         "type": "object"
@@ -85557,6 +86964,10 @@
               "S256"
             ],
             "type": "string"
+          },
+          "grant": {
+            "$ref": "#/components/schemas/BrowserExtensionGrant",
+            "description": "What to allow; capture when left out"
           },
           "installationId": {
             "description": "A random id this installation of the extension made once; its access replaces only its own",
@@ -111831,6 +113242,378 @@
         ],
         "type": "object"
       },
+      "MediaAuthenticationMethod": {
+        "enum": [
+          "cookies",
+          "credentials",
+          "token"
+        ],
+        "type": "string"
+      },
+      "MediaCapabilitiesDto": {
+        "properties": {
+          "authentication": {
+            "items": {
+              "$ref": "#/components/schemas/MediaAuthenticationMethod"
+            },
+            "type": "array"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "creatorFeeds": {
+            "$ref": "#/components/schemas/MediaFeedSupport"
+          },
+          "galleryDlVersion": {
+            "nullable": true,
+            "type": "string"
+          },
+          "individualMedia": {
+            "$ref": "#/components/schemas/MediaIndividualSupport"
+          },
+          "qualifiedProviders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "version": {
+            "$ref": "#/components/schemas/MediaProtocolVersion"
+          },
+          "ytDlpVersion": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "authentication",
+          "available",
+          "creatorFeeds",
+          "galleryDlVersion",
+          "individualMedia",
+          "qualifiedProviders",
+          "reason",
+          "version",
+          "ytDlpVersion"
+        ],
+        "type": "object"
+      },
+      "MediaConnectionCreateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "provider": {
+            "pattern": "^[a-zA-Z0-9_.:-]{1,100}$",
+            "type": "string"
+          },
+          "session": {
+            "additionalProperties": false,
+            "properties": {
+              "accessToken": {
+                "maxLength": 16384,
+                "type": "string"
+              },
+              "clientId": {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              "clientSecret": {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              "cookies": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "domain": {
+                      "maxLength": 255,
+                      "type": "string"
+                    },
+                    "expires": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "hostOnly": {
+                      "type": "boolean"
+                    },
+                    "httpOnly": {
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 4096,
+                      "type": "string"
+                    },
+                    "partitionKey": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "hasCrossSiteAncestor": {
+                          "type": "boolean"
+                        },
+                        "topLevelSite": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "topLevelSite"
+                      ],
+                      "type": "object"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "type": "string"
+                    },
+                    "secure": {
+                      "type": "boolean"
+                    },
+                    "storeId": {
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "value": {
+                      "maxLength": 16384,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value",
+                    "domain",
+                    "path",
+                    "secure",
+                    "httpOnly",
+                    "hostOnly"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 500,
+                "type": "array"
+              },
+              "domains": {
+                "items": {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "password": {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              "refreshToken": {
+                "maxLength": 16384,
+                "type": "string"
+              },
+              "username": {
+                "maxLength": 1024,
+                "type": "string"
+              }
+            },
+            "required": [
+              "domains"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "label",
+          "provider",
+          "session"
+        ],
+        "type": "object"
+      },
+      "MediaConnectionListDto": {
+        "properties": {
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/MediaConnectionResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "connections"
+        ],
+        "type": "object"
+      },
+      "MediaConnectionRefreshDto": {
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "additionalProperties": false,
+            "properties": {
+              "accessToken": {
+                "maxLength": 16384,
+                "type": "string"
+              },
+              "clientId": {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              "clientSecret": {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              "cookies": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "domain": {
+                      "maxLength": 255,
+                      "type": "string"
+                    },
+                    "expires": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "hostOnly": {
+                      "type": "boolean"
+                    },
+                    "httpOnly": {
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 4096,
+                      "type": "string"
+                    },
+                    "partitionKey": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "hasCrossSiteAncestor": {
+                          "type": "boolean"
+                        },
+                        "topLevelSite": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "topLevelSite"
+                      ],
+                      "type": "object"
+                    },
+                    "path": {
+                      "maxLength": 4096,
+                      "type": "string"
+                    },
+                    "secure": {
+                      "type": "boolean"
+                    },
+                    "storeId": {
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "value": {
+                      "maxLength": 16384,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value",
+                    "domain",
+                    "path",
+                    "secure",
+                    "httpOnly",
+                    "hostOnly"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 500,
+                "type": "array"
+              },
+              "domains": {
+                "items": {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "password": {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              "refreshToken": {
+                "maxLength": 16384,
+                "type": "string"
+              },
+              "username": {
+                "maxLength": 1024,
+                "type": "string"
+              }
+            },
+            "required": [
+              "domains"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "type": "object"
+      },
+      "MediaConnectionResponseDto": {
+        "properties": {
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "revision": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaConnectionStatus"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "domains",
+          "id",
+          "label",
+          "provider",
+          "revision",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MediaConnectionStatus": {
+        "enum": [
+          "connected",
+          "expired",
+          "disconnected"
+        ],
+        "type": "string"
+      },
       "MediaCopiesResponseDto": {
         "properties": {
           "copyMinutes": {
@@ -111912,6 +113695,357 @@
           "withoutPreview"
         ],
         "type": "object"
+      },
+      "MediaCreatorFeedDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCreatorItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "MediaCreatorItemResponse": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "creatorId": {
+            "description": "The creator record this item belongs to",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "duration": {
+            "description": "Seconds",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "hasPoster": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaItemKind"
+          },
+          "pageUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "playlistId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "playlistTitle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "position": {
+            "description": "Seconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "postId": {
+            "description": "Attachments of one post share it",
+            "nullable": true,
+            "type": "string"
+          },
+          "publishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "savedAt": {
+            "type": "string"
+          },
+          "savedBy": {
+            "$ref": "#/components/schemas/MediaSavedBy"
+          },
+          "section": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaSection"
+              }
+            ],
+            "nullable": true
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "watched": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetId",
+          "creatorId",
+          "description",
+          "duration",
+          "hasPoster",
+          "kind",
+          "pageUrl",
+          "playlistId",
+          "playlistTitle",
+          "position",
+          "postId",
+          "publishedAt",
+          "savedAt",
+          "savedBy",
+          "section",
+          "tags",
+          "title",
+          "watched"
+        ],
+        "type": "object"
+      },
+      "MediaCreatorItemSort": {
+        "enum": [
+          "newest",
+          "oldest",
+          "longest"
+        ],
+        "type": "string"
+      },
+      "MediaCreatorItemsDto": {
+        "properties": {
+          "hasNextPage": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCreatorItemResponse"
+            },
+            "type": "array"
+          },
+          "page": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hasNextPage",
+          "items",
+          "page"
+        ],
+        "type": "object"
+      },
+      "MediaCreatorListDto": {
+        "properties": {
+          "creators": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCreatorResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "creators"
+        ],
+        "type": "object"
+      },
+      "MediaCreatorResponseDto": {
+        "properties": {
+          "about": {
+            "nullable": true,
+            "type": "string"
+          },
+          "albumId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "creatorId": {
+            "description": "The site’s own identifier for this account",
+            "type": "string"
+          },
+          "following": {
+            "description": "False for a creator added by saving one of their posts",
+            "type": "boolean"
+          },
+          "handle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "hasAvatar": {
+            "type": "boolean"
+          },
+          "hasBanner": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "newCount": {
+            "description": "Items saved since this account last opened the creator",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "parentAlbumId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "savedCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seenAt": {
+            "type": "string"
+          },
+          "subscription": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaCreatorSubscription"
+              }
+            ],
+            "nullable": true
+          },
+          "url": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "about",
+          "albumId",
+          "createdAt",
+          "creatorId",
+          "following",
+          "handle",
+          "hasAvatar",
+          "hasBanner",
+          "id",
+          "name",
+          "newCount",
+          "parentAlbumId",
+          "provider",
+          "savedCount",
+          "seenAt",
+          "subscription",
+          "url"
+        ],
+        "type": "object"
+      },
+      "MediaCreatorSubscription": {
+        "properties": {
+          "connectionId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "history": {
+            "$ref": "#/components/schemas/MediaReach"
+          },
+          "historyComplete": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "intervalMinutes": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lastSuccessAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "limitation": {
+            "nullable": true,
+            "type": "string"
+          },
+          "nextCheckAt": {
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/MediaQuality"
+          },
+          "saves": {
+            "$ref": "#/components/schemas/MediaSaves"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaSubscriptionState"
+          }
+        },
+        "required": [
+          "connectionId",
+          "error",
+          "history",
+          "historyComplete",
+          "id",
+          "intervalMinutes",
+          "lastSuccessAt",
+          "limitation",
+          "nextCheckAt",
+          "quality",
+          "saves",
+          "status"
+        ],
+        "type": "object"
+      },
+      "MediaCreatorUpdateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "parentAlbumId": {
+            "description": "A private collection to file under, or null for none",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parentAlbumId"
+        ],
+        "type": "object"
+      },
+      "MediaFeedSupport": {
+        "enum": [
+          "per-url"
+        ],
+        "type": "string"
       },
       "MediaHealthActivityAction": {
         "description": "What the job did",
@@ -113075,6 +115209,396 @@
           "runs"
         ],
         "type": "object"
+      },
+      "MediaHistoryMode": {
+        "enum": [
+          "all",
+          "since",
+          "new"
+        ],
+        "type": "string"
+      },
+      "MediaImportCreateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "albumId": {
+            "description": "Left out, the items are filed into their creator’s own collection",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "inspectionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "itemIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "overrideSuppression": {
+            "default": false,
+            "type": "boolean"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/MediaQuality",
+            "default": "best"
+          },
+          "streamMp4": {
+            "default": false,
+            "type": "boolean"
+          },
+          "tagIds": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          }
+        },
+        "required": [
+          "idempotencyKey",
+          "inspectionId",
+          "itemIds"
+        ],
+        "type": "object"
+      },
+      "MediaImportItemResponse": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "attachmentId": {
+            "type": "string"
+          },
+          "bytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "creator": {
+            "nullable": true,
+            "type": "string"
+          },
+          "creatorId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "duration": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaItemKind"
+          },
+          "pageUrl": {
+            "type": "string"
+          },
+          "playlistId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "playlistTitle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "postId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "section": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaSection"
+              }
+            ],
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/MediaImportItemState"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "attachmentId",
+          "bytes",
+          "creator",
+          "creatorId",
+          "description",
+          "duration",
+          "error",
+          "id",
+          "kind",
+          "pageUrl",
+          "playlistId",
+          "playlistTitle",
+          "postId",
+          "provider",
+          "publishedAt",
+          "section",
+          "state",
+          "tags",
+          "title"
+        ],
+        "type": "object"
+      },
+      "MediaImportItemState": {
+        "enum": [
+          "discovered",
+          "downloading",
+          "assembling",
+          "importing",
+          "saved",
+          "skipped",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "MediaImportListDto": {
+        "properties": {
+          "imports": {
+            "items": {
+              "$ref": "#/components/schemas/MediaImportResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "imports"
+        ],
+        "type": "object"
+      },
+      "MediaImportResponseDto": {
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "connectionId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "creator": {
+            "nullable": true,
+            "type": "string"
+          },
+          "creatorId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "discovered": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MediaImportItemResponse"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaInspectionKind"
+              }
+            ],
+            "nullable": true
+          },
+          "limitation": {
+            "nullable": true,
+            "type": "string"
+          },
+          "mediaCreatorId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "provider": {
+            "nullable": true,
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/MediaQuality"
+          },
+          "saved": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/MediaImportState"
+          },
+          "subscriptionId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "complete",
+          "connectionId",
+          "createdAt",
+          "creator",
+          "creatorId",
+          "discovered",
+          "error",
+          "failed",
+          "id",
+          "items",
+          "kind",
+          "limitation",
+          "mediaCreatorId",
+          "provider",
+          "quality",
+          "saved",
+          "skipped",
+          "state",
+          "subscriptionId",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MediaImportState": {
+        "enum": [
+          "inspecting",
+          "ready",
+          "queued",
+          "downloading",
+          "assembling",
+          "importing",
+          "saved",
+          "partial",
+          "failed",
+          "cancelled",
+          "paused"
+        ],
+        "type": "string"
+      },
+      "MediaIndividualSupport": {
+        "enum": [
+          "installed-extractors"
+        ],
+        "type": "string"
+      },
+      "MediaInspectDto": {
+        "additionalProperties": false,
+        "properties": {
+          "connectionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "urls": {
+            "items": {
+              "format": "uri",
+              "maxLength": 8192,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "type": "object"
+      },
+      "MediaInspectionKind": {
+        "enum": [
+          "item",
+          "feed"
+        ],
+        "type": "string"
+      },
+      "MediaItemKind": {
+        "enum": [
+          "image",
+          "video",
+          "audio"
+        ],
+        "type": "string"
       },
       "MediaKind": {
         "enum": [
@@ -114321,6 +116845,476 @@
           "paused"
         ],
         "type": "string"
+      },
+      "MediaPermission": {
+        "description": "Media download permission",
+        "enum": [
+          "media-import.read",
+          "media-import.create",
+          "media-import.update",
+          "media-connection.read",
+          "media-connection.write",
+          "media-subscription.read",
+          "media-subscription.write"
+        ],
+        "type": "string"
+      },
+      "MediaProtocolVersion": {
+        "enum": [
+          1
+        ],
+        "format": "int32",
+        "type": "integer"
+      },
+      "MediaQuality": {
+        "enum": [
+          "720",
+          "1080",
+          "best",
+          "audio"
+        ],
+        "type": "string"
+      },
+      "MediaReach": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/MediaReachMode"
+          },
+          "since": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "MediaReachMode": {
+        "enum": [
+          "recent",
+          "all",
+          "since",
+          "new"
+        ],
+        "type": "string"
+      },
+      "MediaRetryDto": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotencyKey": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "idempotencyKey"
+        ],
+        "type": "object"
+      },
+      "MediaSavedBy": {
+        "enum": [
+          "subscription",
+          "download"
+        ],
+        "type": "string"
+      },
+      "MediaSaves": {
+        "additionalProperties": false,
+        "properties": {
+          "images": {
+            "type": "boolean"
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "photos": {
+            "type": "boolean"
+          },
+          "pins": {
+            "type": "boolean"
+          },
+          "reels": {
+            "type": "boolean"
+          },
+          "replies": {
+            "type": "boolean"
+          },
+          "reposts": {
+            "type": "boolean"
+          },
+          "shorts": {
+            "type": "boolean"
+          },
+          "videos": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "MediaSection": {
+        "enum": [
+          "video",
+          "short",
+          "live",
+          "reel",
+          "post",
+          "pin",
+          "photo"
+        ],
+        "type": "string"
+      },
+      "MediaSubscriptionAction": {
+        "enum": [
+          "pause",
+          "resume",
+          "check",
+          "unsubscribe"
+        ],
+        "type": "string"
+      },
+      "MediaSubscriptionCreateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "history": {
+            "$ref": "#/components/schemas/MediaReach"
+          },
+          "idempotencyKey": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "inspectionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "intervalMinutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int32",
+                "enum": [
+                  15
+                ]
+              },
+              {
+                "type": "integer",
+                "format": "int32",
+                "enum": [
+                  60
+                ]
+              },
+              {
+                "type": "integer",
+                "format": "int32",
+                "enum": [
+                  360
+                ]
+              },
+              {
+                "type": "integer",
+                "format": "int32",
+                "enum": [
+                  1440
+                ]
+              }
+            ],
+            "default": 60
+          },
+          "parentId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/MediaQuality",
+            "default": "best"
+          },
+          "saves": {
+            "$ref": "#/components/schemas/MediaSaves",
+            "default": {}
+          }
+        },
+        "required": [
+          "history",
+          "idempotencyKey",
+          "inspectionId"
+        ],
+        "type": "object"
+      },
+      "MediaSubscriptionListDto": {
+        "properties": {
+          "subscriptions": {
+            "items": {
+              "$ref": "#/components/schemas/MediaSubscriptionResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "subscriptions"
+        ],
+        "type": "object"
+      },
+      "MediaSubscriptionResponseDto": {
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "connectionId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "creator": {
+            "type": "string"
+          },
+          "creatorId": {
+            "type": "string"
+          },
+          "discovered": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "history": {
+            "additionalProperties": false,
+            "description": "Kept for older clients, which read a recent reach as new; use reach",
+            "properties": {
+              "mode": {
+                "$ref": "#/components/schemas/MediaHistoryMode"
+              },
+              "since": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "type": "object"
+          },
+          "historyComplete": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "intervalMinutes": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lastSuccessAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "limitation": {
+            "nullable": true,
+            "type": "string"
+          },
+          "mediaCreatorId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "nextCheckAt": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/MediaQuality"
+          },
+          "reach": {
+            "$ref": "#/components/schemas/MediaReach"
+          },
+          "saved": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "saves": {
+            "$ref": "#/components/schemas/MediaSaves"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaSubscriptionState"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "connectionId",
+          "creator",
+          "creatorId",
+          "discovered",
+          "error",
+          "failed",
+          "history",
+          "historyComplete",
+          "id",
+          "intervalMinutes",
+          "lastSuccessAt",
+          "limitation",
+          "mediaCreatorId",
+          "nextCheckAt",
+          "provider",
+          "quality",
+          "reach",
+          "saved",
+          "saves",
+          "skipped",
+          "status",
+          "url"
+        ],
+        "type": "object"
+      },
+      "MediaSubscriptionState": {
+        "enum": [
+          "active",
+          "paused",
+          "attention",
+          "unsubscribed"
+        ],
+        "type": "string"
+      },
+      "MediaSubscriptionUpdateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/MediaSubscriptionAction"
+          },
+          "connectionId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "history": {
+            "$ref": "#/components/schemas/MediaReach"
+          },
+          "intervalMinutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int32",
+                "enum": [
+                  15
+                ]
+              },
+              {
+                "type": "integer",
+                "format": "int32",
+                "enum": [
+                  60
+                ]
+              },
+              {
+                "type": "integer",
+                "format": "int32",
+                "enum": [
+                  360
+                ]
+              },
+              {
+                "type": "integer",
+                "format": "int32",
+                "enum": [
+                  1440
+                ]
+              }
+            ]
+          },
+          "quality": {
+            "$ref": "#/components/schemas/MediaQuality"
+          },
+          "saves": {
+            "$ref": "#/components/schemas/MediaSaves"
+          }
+        },
+        "type": "object"
+      },
+      "MediaWatchResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "position": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "watched": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetId",
+          "position",
+          "updatedAt",
+          "watched"
+        ],
+        "type": "object"
+      },
+      "MediaWatchUpdateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "position": {
+            "default": 0,
+            "description": "Seconds",
+            "format": "double",
+            "maximum": 10000000,
+            "minimum": 0,
+            "type": "number"
+          },
+          "watched": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "watched"
+        ],
+        "type": "object"
       },
       "MemoriesResponse": {
         "properties": {
@@ -119202,6 +122196,13 @@
           "bookmark.read",
           "bookmark.update",
           "bookmark.delete",
+          "media-import.read",
+          "media-import.create",
+          "media-import.update",
+          "media-connection.read",
+          "media-connection.write",
+          "media-subscription.read",
+          "media-subscription.write",
           "capture.create",
           "capture.catalog.read",
           "activity.create",

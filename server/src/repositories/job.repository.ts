@@ -97,6 +97,7 @@ const COMMITTED_EFFECT_JOBS = new Set<JobName>([
 ]);
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
+  JobName.MediaImport,
   // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.
   JobName.AlbumCleanupScan,
   JobName.AlbumCleanupApply,
@@ -887,7 +888,12 @@ export class JobRepository {
         !JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(item.name) &&
         !JOBS_NOT_RETRIED.has(item.name),
       sensitive: JOBS_WITH_SENSITIVE_DATA.has(item.name),
-      deadlineMs: isMl ? QUEUE_TIMING.mlDeadline : QUEUE_TIMING.opaqueDeadline,
+      deadlineMs:
+        item.name === JobName.MediaImport
+          ? 12 * 60 * 60 * 1000
+          : isMl
+            ? QUEUE_TIMING.mlDeadline
+            : QUEUE_TIMING.opaqueDeadline,
       runId,
       itemKey: runId
         ? subject +
@@ -1371,6 +1377,9 @@ export class JobRepository {
       }
       case JobName.AlbumCleanupApply: {
         return { deduplication: { id: `${JobName.AlbumCleanupApply}:${item.data.id}` } };
+      }
+      case JobName.MediaImport: {
+        return { deduplication: { id: `${JobName.MediaImport}:${item.data.id}` } };
       }
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };

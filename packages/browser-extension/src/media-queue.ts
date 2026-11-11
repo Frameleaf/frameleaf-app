@@ -1,0 +1,351 @@
+import type { ServerBinding } from './api';
+import {
+  bindingCopy,
+  QueueFailure,
+  request,
+  sameDestination,
+  transaction,
+} from './queue';
+
+/**
+ * FL-1427: receipts for work your Library does for you: a media download or a creator subscription.
+ * They live in the saving list's own database, beside captures. A receipt holds what was asked for
+ * (ids and choices), the Library's id for the work once it accepted it, and how it last stood. It
+ * never holds a site's sign-in, a source address or the media itself: the Library has those.
+ *
+ * A receipt is bound to the server, account, address and access that made it. It is listed and
+ * followed for the same server, account and address even after this browser signs in again (the
+ * work is the account's, not the key's), and never for another account or server.
+ */
+export type MediaReceiptState =
+  /** Not yet confirmed by the Library; sent again with the same key until it answers. */
+  | 'submitting'
+  /** The Library is working on it. */
+  | 'active'
+  | 'saved'
+  | 'partial'
+  | 'failed'
+  | 'cancelled'
+  | 'paused'
+  /** A subscription the Library accepted. */
+  | 'subscribed';
+export const MEDIA_QUALITIES = ['best', '1080', '720', 'audio'] as const;
+export type MediaQualityChoice = (typeof MEDIA_QUALITIES)[number];
+/** FL-1449: the "What to save" switches a Library knows. */
+export const MEDIA_SAVES = [
+  'videos',
+  'shorts',
+  'live',
+  'images',
+  'replies',
+  'reposts',
+  'pins',
+  'photos',
+  'reels',
+] as const;
+export type MediaSaveChoices = Partial<
+  Record<(typeof MEDIA_SAVES)[number], boolean>
+>;
+export type MediaDownloadRequest = {
+  inspectionId: string;
+  itemIds: string[];
+  /** FL-1449: left out, your Library files the items under their creator. */
+  albumId?: string;
+  tagIds: string[];
+  overrideSuppression: boolean;
+  quality?: MediaQualityChoice;
+};
+/** How far back a subscription reaches: always chosen by the person, never assumed. */
+export type MediaHistoryChoice =
+  | { mode: 'all' | 'new' }
+  | { mode: 'since'; since: string }
+  | { mode: 'recent'; count: number };
+export type MediaSubscriptionRequest = {
+  inspectionId: string;
+  parentId?: string;
+  history: MediaHistoryChoice;
+  intervalMinutes: 15 | 60 | 360 | 1440;
+  saves?: MediaSaveChoices;
+  quality?: MediaQualityChoice;
+};
+interface ReceiptBase {
+  version: 1;
+  /** Made once, here. Also the key that makes sending the request again safe. */
+  id: string;
+  binding: ServerBinding;
+  label: string;
+  /** The Library's id for the download or subscription, once it accepted the request. */
+  remoteId?: string;
+  state: MediaReceiptState;
+  /** The Library's own word for where the download is ("downloading", "assembling", …). */
+  remoteState?: string;
+  albumId?: string;
+  saved: number;
+  skipped: number;
+  failed: number;
+  discovered: number;
+  error?: string;
+  /** How many times the request was sent without a confirmed answer. */
+  attempts: number;
+  cancelRequested?: true;
+  /** Made once per Retry, so a retry that is sent twice still happens once. */
+  retryKey?: string;
+  /** When the Library was last asked about it, so the longest-waiting receipt goes first. */
+  checkedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+export type MediaReceipt = ReceiptBase &
+  (
+    | { kind: 'download'; request: MediaDownloadRequest }
+    | { kind: 'subscription'; request: MediaSubscriptionRequest }
+  );
+export type NewMediaReceipt = { binding: ServerBinding; label: string } & (
+  | { kind: 'download'; request: MediaDownloadRequest }
+  | { kind: 'subscription'; request: MediaSubscriptionRequest }
+);
+
+const uuid =
+  /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
+const states: MediaReceiptState[] = [
+  'submitting',
+  'active',
+  'saved',
+  'partial',
+  'failed',
+  'cancelled',
+  'paused',
+  'subscribed',
+];
+const invalid = () =>
+  new QueueFailure(
+    'This request’s details are incomplete. Start it again from the page.',
+  );
+const quality = (value: unknown) =>
+  value === undefined || MEDIA_QUALITIES.includes(value as MediaQualityChoice);
+const ids = (value: unknown, max: number): value is string[] =>
+  Array.isArray(value) &&
+  value.length <= max &&
+  value.every((id) => typeof id === 'string' && uuid.test(id));
+
+function downloadCopy(value: MediaDownloadRequest): MediaDownloadRequest {
+  if (
+    !value ||
+    !uuid.test(value.inspectionId) ||
+    !(value.albumId === undefined || uuid.test(value.albumId)) ||
+    !ids(value.itemIds, 500) ||
+    value.itemIds.length === 0 ||
+    !ids(value.tagIds, 500) ||
+    !quality(value.quality)
+  )
+    throw invalid();
+  return {
+    inspectionId: value.inspectionId,
+    itemIds: [...new Set(value.itemIds)],
+    ...(value.albumId && { albumId: value.albumId }),
+    tagIds: [...new Set(value.tagIds)],
+    // Restoring something you removed is only ever your explicit choice.
+    overrideSuppression: value.overrideSuppression === true,
+    ...(value.quality && { quality: value.quality }),
+  };
+}
+function savesCopy(value: MediaSaveChoices): MediaSaveChoices {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw invalid();
+  const copy: MediaSaveChoices = {};
+  for (const [id, on] of Object.entries(value)) {
+    if (
+      !MEDIA_SAVES.includes(id as (typeof MEDIA_SAVES)[number]) ||
+      typeof on !== 'boolean'
+    )
+      throw invalid();
+    copy[id as (typeof MEDIA_SAVES)[number]] = on;
+  }
+  return copy;
+}
+function subscriptionCopy(
+  value: MediaSubscriptionRequest,
+): MediaSubscriptionRequest {
+  const mode = value?.history?.mode;
+  const since = mode === 'since' ? value.history.since : undefined;
+  const count = mode === 'recent' ? value.history.count : undefined;
+  if (
+    !value ||
+    !uuid.test(value.inspectionId) ||
+    !(value.parentId === undefined || uuid.test(value.parentId)) ||
+    ![15, 60, 360, 1440].includes(value.intervalMinutes) ||
+    // History is always a choice made by the person, never a default.
+    !['recent', 'all', 'since', 'new'].includes(mode) ||
+    (mode === 'since' &&
+      (typeof since !== 'string' || !Number.isFinite(Date.parse(since)))) ||
+    (mode === 'recent' &&
+      !(Number.isSafeInteger(count) && count! >= 1 && count! <= 200)) ||
+    !quality(value.quality)
+  )
+    throw invalid();
+  return {
+    inspectionId: value.inspectionId,
+    ...(value.parentId && { parentId: value.parentId }),
+    history:
+      mode === 'since'
+        ? { mode, since: new Date(since!).toISOString() }
+        : mode === 'recent'
+          ? { mode, count: count! }
+          : { mode },
+    intervalMinutes: value.intervalMinutes,
+    ...(value.saves !== undefined && { saves: savesCopy(value.saves) }),
+    ...(value.quality && { quality: value.quality }),
+  };
+}
+/** A stored receipt is read like outside input; one that no longer makes sense is left out. */
+function readable(value: MediaReceipt): boolean {
+  try {
+    if (
+      value?.version !== 1 ||
+      !uuid.test(value.id) ||
+      !states.includes(value.state) ||
+      typeof value.label !== 'string' ||
+      !(value.remoteId === undefined || uuid.test(value.remoteId)) ||
+      !(value.retryKey === undefined || uuid.test(value.retryKey)) ||
+      !Number.isSafeInteger(value.attempts) ||
+      !Number.isSafeInteger(value.createdAt)
+    )
+      return false;
+    bindingCopy(value.binding);
+    if (value.kind === 'download') downloadCopy(value.request);
+    else if (value.kind === 'subscription') subscriptionCopy(value.request);
+    else return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+/** The Library has work in hand for it (or has yet to hear of it). A paused download does not. */
+export const mediaReceiptWaiting = (receipt: MediaReceipt) =>
+  receipt.state === 'submitting' || receipt.state === 'active';
+export const mediaReceiptDone = (receipt: MediaReceipt) =>
+  ['saved', 'partial', 'failed', 'cancelled', 'subscribed'].includes(
+    receipt.state,
+  );
+/**
+ * Still needs the Library: work in hand, or a Cancel or Retry it has not heard yet. A paused
+ * download waits for you (Retry or Cancel), so it is neither asked about nor counted as unfinished.
+ */
+export const mediaReceiptPending = (receipt: MediaReceipt) =>
+  mediaReceiptWaiting(receipt) ||
+  !!receipt.cancelRequested ||
+  !!receipt.retryKey;
+
+async function all(tx: IDBTransaction): Promise<MediaReceipt[]> {
+  return (
+    (await request(tx.objectStore('media').getAll())) as MediaReceipt[]
+  ).filter(readable);
+}
+/** Finished receipts are kept for a while (the newest 50 per account), then tidied away. */
+async function prune(tx: IDBTransaction, binding: ServerBinding) {
+  const finished = (await all(tx))
+    .filter(
+      (receipt) =>
+        sameDestination(receipt.binding, binding) &&
+        !mediaReceiptPending(receipt),
+    )
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  for (const receipt of finished.slice(50))
+    await request(tx.objectStore('media').delete(receipt.id));
+}
+
+/** Keeps the request before anything is sent, so closing the browser cannot lose or repeat it. */
+export async function addMediaReceipt(
+  input: NewMediaReceipt,
+  now = Date.now(),
+): Promise<MediaReceipt> {
+  if (typeof input.label !== 'string') throw invalid();
+  const base = {
+    version: 1 as const,
+    id: crypto.randomUUID(),
+    binding: bindingCopy(input.binding),
+    label: input.label.slice(0, 300) || 'Media',
+    state: 'submitting' as const,
+    saved: 0,
+    skipped: 0,
+    failed: 0,
+    discovered: 0,
+    attempts: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const receipt: MediaReceipt =
+    input.kind === 'download'
+      ? { ...base, kind: 'download', request: downloadCopy(input.request) }
+      : {
+          ...base,
+          kind: 'subscription',
+          request: subscriptionCopy(input.request),
+        };
+  if (receipt.kind === 'download' && receipt.request.albumId)
+    receipt.albumId = receipt.request.albumId;
+  await transaction(['media'], 'readwrite', async (tx) => {
+    await request(tx.objectStore('media').add(receipt));
+    await prune(tx, receipt.binding);
+  });
+  return receipt;
+}
+/** This account's receipts on this server, newest first, whichever access made them. */
+export const listMediaReceipts = (
+  binding: ServerBinding,
+): Promise<MediaReceipt[]> =>
+  transaction(['media'], 'readonly', async (tx) =>
+    (await all(tx))
+      .filter((receipt) => sameDestination(receipt.binding, binding))
+      .sort((a, b) => b.createdAt - a.createdAt),
+  );
+/**
+ * Changes one receipt in a single step. It is found only for its own server and account: a receipt
+ * is never moved to, or changed from, another.
+ */
+export const changeMediaReceipt = (
+  id: string,
+  binding: ServerBinding,
+  change: (receipt: MediaReceipt) => void,
+  now = Date.now(),
+): Promise<MediaReceipt> =>
+  transaction(['media'], 'readwrite', async (tx) => {
+    const receipt = (await request(tx.objectStore('media').get(id))) as
+      MediaReceipt | undefined;
+    if (
+      !receipt ||
+      !readable(receipt) ||
+      !sameDestination(receipt.binding, binding)
+    )
+      throw new QueueFailure('This item isn’t in this account’s saving list.');
+    change(receipt);
+    receipt.updatedAt = now;
+    await request(tx.objectStore('media').put(receipt));
+    return receipt;
+  });
+export const requestMediaCancel = (id: string, binding: ServerBinding) =>
+  changeMediaReceipt(id, binding, (receipt) => {
+    // A request the Library has not confirmed can always be withdrawn, whatever it asks for;
+    // after that only a download can be cancelled (a subscription is stopped in Boards).
+    if (
+      mediaReceiptDone(receipt) ||
+      (receipt.kind !== 'download' && receipt.state !== 'submitting')
+    )
+      throw new QueueFailure('This item has already finished.');
+    receipt.cancelRequested = true;
+  });
+export const requestMediaRetry = (id: string, binding: ServerBinding) =>
+  changeMediaReceipt(id, binding, (receipt) => {
+    if (receipt.cancelRequested)
+      throw new QueueFailure('This item is being cancelled.');
+    // An unconfirmed request is simply sent again with its own key.
+    if (receipt.state === 'submitting' || receipt.state === 'active') return;
+    if (
+      receipt.kind !== 'download' ||
+      !receipt.remoteId ||
+      !['partial', 'failed', 'paused', 'cancelled'].includes(receipt.state)
+    )
+      throw new QueueFailure('There is nothing to retry for this item.');
+    // Pressing Retry twice before the Library answers is still one retry.
+    receipt.retryKey ??= crypto.randomUUID();
+  });

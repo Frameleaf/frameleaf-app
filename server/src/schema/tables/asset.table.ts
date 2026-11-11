@@ -23,6 +23,7 @@ import {
   asset_backup_deletion_capture,
   asset_delete_audit,
   asset_library_scope_refresh,
+  media_import_asset_removed,
 } from 'src/schema/functions.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
@@ -44,6 +45,23 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
   actions: ['delete'],
   scope: 'row',
   functionName: asset_backup_deletion_capture.name,
+})
+@Trigger({
+  name: 'media_import_asset_deleted',
+  timing: 'after',
+  actions: ['delete'],
+  scope: 'row',
+  functionName: media_import_asset_removed.name,
+})
+// Migration 1794390000000 fires this on `UPDATE OF "deletedAt"` so other asset updates skip it; the
+// generator cannot express the column list. The function itself checks that the row moved to Trash:
+// the schema reader cannot read back a WHEN that names both OLD and NEW.
+@Trigger({
+  name: 'media_import_asset_trashed',
+  timing: 'after',
+  actions: ['update'],
+  scope: 'row',
+  functionName: media_import_asset_removed.name,
 })
 @UpdatedAtTrigger('asset_updatedAt')
 @AfterDeleteTrigger({

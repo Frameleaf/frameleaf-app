@@ -176,7 +176,10 @@ test("Dockerfile override seams preserve all original customer default identitie
       file.endsWith("e2e-auth-server/Dockerfile") ||
         file.endsWith("Dockerfile.dev")
         ? 1
-        : 2,
+        : // FL-1427: the server image also builds its media downloader from the same base
+          file === "server/Dockerfile"
+          ? 3
+          : 2,
     );
     assert.doesNotMatch(source, /mirror\.gcr\.io/);
   }

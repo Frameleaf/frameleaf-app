@@ -71,4 +71,21 @@ describe('receiptLink', () => {
     ).toBeNull();
     expect(receiptLink(origin, { state: 'saved', itemId: asset })).toBeNull();
   });
+  it('opens the collection the Library downloaded media into (FL-1427)', () => {
+    const itemId = '33333333-3333-4333-8333-333333333333';
+    expect(
+      receiptLink('https://photos.example', {
+        state: 'uploading',
+        itemId,
+        itemKind: 'collection',
+      }),
+    ).toBe(`https://photos.example/albums/${itemId}`);
+    expect(
+      receiptLink('https://photos.example', {
+        state: 'saved',
+        itemId: 'not-an-id',
+        itemKind: 'collection',
+      }),
+    ).toBeNull();
+  });
 });

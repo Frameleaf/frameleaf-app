@@ -83,20 +83,25 @@ const claimLost = () =>
     'This capture claim expired or moved to another worker.',
     'claim',
   );
-const sameDestination = (a: ServerBinding, b: ServerBinding) =>
+export const sameDestination = (a: ServerBinding, b: ServerBinding) =>
   a.serverId === b.serverId && a.userId === b.userId && a.origin === b.origin;
-const request = <T>(value: IDBRequest<T>) =>
+export const request = <T>(value: IDBRequest<T>) =>
   new Promise<T>((resolve, reject) => {
     value.onsuccess = () => resolve(value.result);
     value.onerror = () => reject(value.error);
   });
 async function openQueue(): Promise<IDBDatabase> {
   if (typeof indexedDB === 'undefined') throw damaged();
-  const opening = indexedDB.open(databaseName, 1);
-  opening.onupgradeneeded = () => {
-    opening.result.createObjectStore('tasks', { keyPath: 'id' });
-    opening.result.createObjectStore('blobs', { keyPath: 'id' });
-    opening.result.createObjectStore('meta').put(0, 'bytes');
+  const opening = indexedDB.open(databaseName, 2);
+  opening.onupgradeneeded = (event) => {
+    if (event.oldVersion < 1) {
+      opening.result.createObjectStore('tasks', { keyPath: 'id' });
+      opening.result.createObjectStore('blobs', { keyPath: 'id' });
+      opening.result.createObjectStore('meta').put(0, 'bytes');
+    }
+    // FL-1427: receipts for work your Library does (media downloads, creator subscriptions)
+    if (event.oldVersion < 2)
+      opening.result.createObjectStore('media', { keyPath: 'id' });
   };
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -118,7 +123,7 @@ async function openQueue(): Promise<IDBDatabase> {
     };
   });
 }
-async function transaction<T>(
+export async function transaction<T>(
   stores: string[],
   mode: IDBTransactionMode,
   operation: (tx: IDBTransaction) => Promise<T>,
@@ -158,7 +163,7 @@ async function transaction<T>(
     database?.close();
   }
 }
-function bindingCopy(value: ServerBinding): ServerBinding {
+export function bindingCopy(value: ServerBinding): ServerBinding {
   if (
     !value ||
     typeof value.serverId !== 'string' ||
