@@ -131,8 +131,12 @@ describe('Library View menu choices (FL-1398)', () => {
   });
 
   it('lists what the tiles hide for one attribute', () => {
-    expect(hiddenParts(DEFAULT_LIBRARY_VIEW)).toBe('');
-    expect(hiddenParts(view({ ratings: false, badges: false }))).toBe('ratings badges');
-    expect(hiddenParts(view({ favorites: false }))).toBe('favorites');
+    expect(hiddenParts(DEFAULT_LIBRARY_VIEW, 'browse')).toBe('');
+    expect(hiddenParts(view({ ratings: false, badges: false }), 'timeline')).toBe('ratings badges');
+    expect(hiddenParts(view({ favorites: false }), 'browse')).toBe('favorites');
+  });
+
+  it('hides nothing in Work: rating, heart, video length and badges always show there', () => {
+    expect(hiddenParts(view({ ratings: false, favorites: false, badges: false }), 'work')).toBe('');
   });
 });

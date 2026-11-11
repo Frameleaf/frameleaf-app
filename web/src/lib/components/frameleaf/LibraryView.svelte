@@ -1419,7 +1419,11 @@
    */
   const uploadStats = uploadAssetsStore.stats;
   // Only the owner's own Photos timeline: an empty Best Photos, Locked or map area is not a new library.
-  const firstRun = $derived(!publicView && !selectionMode && ownTimeline && !session.filterActive && resultCount === 0);
+  // With partner photos switched off, an account that only receives them has an empty grid, not a new
+  // library: it keeps its toolbar, whose View menu is the way to switch them back on (FL-1398).
+  const firstRun = $derived(
+    !publicView && !selectionMode && ownTimeline && view.partnerPhotos && !session.filterActive && resultCount === 0,
+  );
   /** Selected items this view does not show (chosen elsewhere with the same session), App.jsx's "outside". */
   const selectedOutside = $derived(snapshot ? 0 : session.selection.filter((id) => !findAsset(id)).length);
 
@@ -1884,7 +1888,7 @@
   data-theme={appTheme}
   data-testid="frameleaf-library"
   data-layout={gridLayout}
-  data-view-hide={hiddenParts(view) || undefined}
+  data-view-hide={hiddenParts(view, captionLayout) || undefined}
   data-view-fit={view.crop ? undefined : 'whole'}
   bind:this={root}
 >
@@ -1908,7 +1912,7 @@
           showFileNames={captions.names}
           showTimes={captions.time}
           hideScrubber={gridLayout === 'timeline' && !view.scrubber}
-          sections={sectionGrouping(view, { layout: tileLayout, ordered: !!manager.ordered })}
+          sections={sectionGrouping(view, { layout: tileLayout, ordered: !!sortedOptions?.orderedBy })}
           onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
           showDayHeaders={gridLayout === 'timeline'}
           grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
@@ -1974,6 +1978,7 @@
                     scrubber: gridLayout === 'timeline',
                     stacks: !!pageOptions?.withStacked && !selectionMode,
                     libraryRoot: libraryRoot && !selectionMode,
+                    marks: gridLayout !== 'work',
                   }}
                   {sorts}
                   sort={shownSort}

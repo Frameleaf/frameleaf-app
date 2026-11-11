@@ -27,6 +27,11 @@ export type LibraryViewMenuOptions = {
   stacks: boolean;
   /** The Library root: "Also show". */
   libraryRoot: boolean;
+  /**
+   * Rating, Favorite heart and "Video length and badges" can be switched off here. Work always keeps
+   * them on its photos (owner, 2026-11-10), so its menu does not offer the three switches.
+   */
+  marks: boolean;
 };
 
 export const DEFAULT_LIBRARY_VIEW: LibraryViewOptions = Object.freeze({
@@ -121,6 +126,12 @@ export const sectionGrouping = (
   return `${view.groupBy}s`;
 };
 
-/** What the tiles hide, as a space-separated list for one data attribute (`[data-view-hide~=…]`). */
-export const hiddenParts = (view: LibraryViewOptions) =>
-  [!view.ratings && 'ratings', !view.favorites && 'favorites', !view.badges && 'badges'].filter(Boolean).join(' ');
+/**
+ * What the tiles hide, as a space-separated list for one data attribute (`[data-view-hide~=…]`).
+ * Work hides nothing: it is where photos are rated and sorted through, so their rating, heart, video
+ * length and badges always show there (owner, 2026-11-10).
+ */
+export const hiddenParts = (view: LibraryViewOptions, layout: LibraryCaptionLayout) =>
+  layout === 'work'
+    ? ''
+    : [!view.ratings && 'ratings', !view.favorites && 'favorites', !view.badges && 'badges'].filter(Boolean).join(' ');

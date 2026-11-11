@@ -14,6 +14,7 @@ const library: LibraryViewMenuOptions = {
   scrubber: false,
   stacks: true,
   libraryRoot: true,
+  marks: true,
 };
 
 const setup = (options: LibraryViewMenuOptions | null = library, props = {}) => {
@@ -56,6 +57,15 @@ describe(LibraryViewMenu.name, () => {
     expect(row('frameleaf_library_view_file_name')).not.toBeChecked();
     await fireEvent.click(row('frameleaf_library_view_file_name'));
     expect(view.value).toMatchObject({ workNames: true, browseNames: false, timelineNames: false });
+  });
+
+  it('does not offer to hide rating, heart or badges in Work, which always keeps them', () => {
+    setup({ ...library, layout: 'work', marks: false });
+    expect(row('frameleaf_library_view_time')).toBeInTheDocument();
+    expect(row('frameleaf_library_view_file_name')).toBeInTheDocument();
+    for (const name of ['rating', 'favorite', 'badges']) {
+      expect(screen.queryByRole('switch', { name: `frameleaf_library_view_${name}` })).not.toBeInTheDocument();
+    }
   });
 
   it('offers the year scrubber in the Timeline, and Crop and Group by in a grid', () => {

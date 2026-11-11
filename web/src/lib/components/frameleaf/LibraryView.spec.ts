@@ -281,9 +281,17 @@ describe('LibraryView', () => {
     await fireEvent.click(names);
     expect(libraryView.value).toMatchObject({ workNames: true, browseNames: false, timelineNames: false });
 
+    // Work always keeps rating, heart and badges on its photos, whatever was switched off elsewhere
+    expect(screen.queryByRole('switch', { name: 'frameleaf_library_view_badges' })).not.toBeInTheDocument();
+    libraryView.set({ badges: false, favorites: false });
+    await tick();
+    expect(screen.getByTestId('frameleaf-library')).not.toHaveAttribute('data-view-hide');
+
     // Browse keeps its own: bare
     librarySession.setLayout('browse');
     await tick();
+    expect(screen.getByTestId('frameleaf-library')).toHaveAttribute('data-view-hide', 'favorites badges');
+    expect(screen.getByRole('switch', { name: 'frameleaf_library_view_badges' })).not.toBeChecked();
     expect(screen.getByRole('switch', { name: 'frameleaf_library_view_file_name' })).not.toBeChecked();
     expect(screen.getByRole('switch', { name: 'frameleaf_library_view_time' })).not.toBeChecked();
 
@@ -848,6 +856,18 @@ describe('LibraryView', () => {
       expect(screen.queryByTestId('frameleaf-layout-switch')).not.toBeInTheDocument();
       expect(screen.queryByTestId('frameleaf-results-toolbar')).not.toBeInTheDocument();
       expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
+    });
+
+    it('keeps the toolbar, and its View menu, when hiding partner photos leaves nothing (FL-1398)', async () => {
+      libraryView.set({ partnerPhotos: false });
+      try {
+        await setupLibrary({ options: { visibility: AssetVisibility.Timeline, withStacked: true } });
+        expect(await screen.findByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'frameleaf_library_first_run_upload' })).not.toBeInTheDocument();
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ withPartners: false }));
+      } finally {
+        libraryView.reset();
+      }
     });
 
     it('says uploads are on their way instead of offering Upload again while their previews are made', async () => {

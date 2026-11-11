@@ -133,7 +133,7 @@ describe('ResultsToolbar View menu', () => {
     sdkMock.getPartners.mockResolvedValue([]);
     render(ResultsToolbar, {
       session: new LibrarySessionStore({ storage: null }),
-      viewMenu: { layout: 'browse', grid: true, scrubber: false, stacks: true, libraryRoot: true },
+      viewMenu: { layout: 'browse', grid: true, scrubber: false, stacks: true, libraryRoot: true, marks: true },
     });
 
     const view = screen.getByRole('button', { name: /View/ });

@@ -263,11 +263,13 @@
         {@render switchRow($t('frameleaf_library_view_file_name'), captions.names, (names) =>
           view.set(captionPatch(options.layout, { names })),
         )}
-        {@render switchRow($t('frameleaf_library_view_rating'), choices.ratings, (ratings) => view.set({ ratings }))}
-        {@render switchRow($t('frameleaf_library_view_favorite'), choices.favorites, (favorites) =>
-          view.set({ favorites }),
-        )}
-        {@render switchRow($t('frameleaf_library_view_badges'), choices.badges, (badges) => view.set({ badges }))}
+        {#if options.marks}
+          {@render switchRow($t('frameleaf_library_view_rating'), choices.ratings, (ratings) => view.set({ ratings }))}
+          {@render switchRow($t('frameleaf_library_view_favorite'), choices.favorites, (favorites) =>
+            view.set({ favorites }),
+          )}
+          {@render switchRow($t('frameleaf_library_view_badges'), choices.badges, (badges) => view.set({ badges }))}
+        {/if}
       </section>
       {#if options.libraryRoot}
         <section class="fl-view-section" aria-label={$t('library')}>
