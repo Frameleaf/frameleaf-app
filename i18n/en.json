@@ -17859,7 +17859,7 @@
   "frameleaf_studio_export_shape_vertical": "Vertical 9:16",
   "frameleaf_studio_export_shaped_summary": "{shape} · {width} × {height}",
   "frameleaf_studio_export_smooth_motion": "Smooth motion after export",
-  "frameleaf_studio_export_smooth_motion_cloud": "When the export is in your library, you confirm Smooth motion on Frameleaf Cloud with its estimate. It's its own job, billed separately; the export itself renders at home.",
+  "frameleaf_studio_export_smooth_motion_cloud": "After export, open the video in your library to choose a Frameleaf Cloud model and confirm the estimate. Smooth motion is billed separately. The export renders at home.",
   "frameleaf_studio_export_smooth_motion_local": "When the export is in your library, a Smooth motion preview of it is made on {name}, saved as a new version. The export itself isn't changed.",
   "frameleaf_studio_export_smooth_motion_off": "Off",
   "frameleaf_studio_export_smooth_motion_unavailable": "Smooth motion isn't available yet. Export without it. Smooth motion needs Frameleaf Cloud or another computer at home set up for restoring video.",

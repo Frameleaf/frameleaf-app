@@ -9,7 +9,15 @@ vi.mock('$lib/frameleaf/activity-session.svelte', () => ({
   activitySession: { watch: () => () => {}, operations: [], refresh: vi.fn(), cancel: vi.fn(), retry: vi.fn() },
 }));
 
-const model = { sku: 'ms_54S55W7C', rev: 'mr_0WNPDD697MT0', label: 'Upscale · Standard', gpu: 'L4-class, 24 GB' };
+const model = {
+  sku: 'ms_54S55W7C',
+  rev: 'mr_0WNPDD697MT0',
+  label: 'Upscale · Standard',
+  gpu: 'L4-class, 24 GB',
+  rank: 1,
+  perSecondUsd: 0.0004,
+  startFeeUsd: 0.02,
+};
 
 const estimate = (upscale: CloudMlJobEstimateResponseDto['upscale']): CloudMlJobEstimateResponseDto =>
   ({
@@ -118,8 +126,14 @@ describe('CloudJobDialog: one confirmation per job', () => {
     expect(sdkMock.estimateCloudMlJob).toHaveBeenCalledTimes(2);
   });
 
-  it('estimates the model the slider it was opened from named', async () => {
-    sdkMock.estimateCloudMlJob.mockResolvedValue(estimate(null));
+  it('estimates the named Smooth motion model before asking for consent', async () => {
+    const selected = { ...model, sku: 'ms_RIFE', label: 'Smooth motion · Standard' };
+    sdkMock.estimateCloudMlJob.mockResolvedValue({
+      ...estimate(null),
+      workload: MlWorkload.Interpolation,
+      model: selected,
+      models: [selected],
+    });
     render(CloudJobDialog, {
       open: true,
       title: 'Smooth motion',
@@ -137,6 +151,7 @@ describe('CloudJobDialog: one confirmation per job', () => {
         cloudMlJobEstimateRequestDto: expect.objectContaining({ modelSku: 'ms_RIFE', factor: 2 }),
       }),
     );
+    expect(sdkMock.createCloudMlJob).not.toHaveBeenCalled();
   });
 });
 

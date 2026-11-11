@@ -73,8 +73,14 @@
   import StudioExportReframe from '$lib/components/frameleaf/StudioExportReframe.svelte';
   import { cropPath, cropShare, isReshaped, shapedSize, sizeLabel } from '$lib/frameleaf/studio/reframe';
   import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
-  import { liveCloudStops, loadCloudModelData } from '$lib/frameleaf/cloud-models';
-  import { ladderStates, liveStartStop, withLiveCloudStops, type DetectedGpu } from '$lib/frameleaf/gpu-model-catalog';
+  import { catalogModelsFor, loadCloudModelData } from '$lib/frameleaf/cloud-models';
+  import {
+    genericCloudStop,
+    ladderStates,
+    liveStartStop,
+    withLiveCloudStops,
+    type DetectedGpu,
+  } from '$lib/frameleaf/gpu-model-catalog';
   import { reportedSmoothModel } from '$lib/frameleaf/restoration';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
@@ -300,17 +306,23 @@
       ? { name: smoothLocal.name, vramGb: smoothLocal.gpuMemoryBytes / 1024 ** 3, backend: 'CUDA', profile: null }
       : null,
   );
-  /** The live catalogue, read for administrators; everyone else gets a stop that names no model. */
+  /** The live catalogue determines availability. Cloud model choice happens with the estimate in Library. */
   let cloudCatalog = $state<CloudMlModelDto[] | null>(null);
   let cloudCatalogRead = $state(false);
   const smoothCloudStops = $derived(
-    liveCloudStops('interpolation', CloudMlModelGroup.Interpolation, cloudCatalog, $t('frameleaf_enhance_model_cloud')),
+    cloudCatalog === null || catalogModelsFor(cloudCatalog, CloudMlModelGroup.Interpolation).length > 0
+      ? [genericCloudStop('interpolation', $t('frameleaf_enhance_model_cloud'))]
+      : [],
   );
   /** What the computer at home reports it runs, so the export names one it has. */
   let smoothReported = $state<Parameters<typeof reportedSmoothModel>[1]>([]);
   const smoothLocalModel = $derived(reportedSmoothModel(smoothModelId, smoothReported));
   const smoothDestination = $derived(
-    smoothRunsOn === 'cloud' ? smoothCloud : smoothRunsOn === 'local' ? smoothLocal : null,
+    smoothRunsOn === 'cloud' && smoothCloudStops.length > 0
+      ? smoothCloud
+      : smoothRunsOn === 'local'
+        ? smoothLocal
+        : null,
   );
 
   // The destinations are read once Smooth motion is asked for, and the slider starts where it fits.
@@ -341,10 +353,7 @@
       return;
     }
     const states = smoothLocal ? ladderStates('interpolation', { gpu: smoothGpu, route: 'both' }) : [];
-    const recommended = cloudCatalog?.find(
-      (model) => model.group === CloudMlModelGroup.Interpolation && model.isDefault,
-    );
-    const start = liveStartStop(withLiveCloudStops(states, smoothCloudStops, smoothSliderRoute), recommended?.id);
+    const start = liveStartStop(withLiveCloudStops(states, smoothCloudStops, smoothSliderRoute));
     if (start) {
       smoothModelId = start.item.id;
       smoothRunsOn = start.runsOn;
@@ -1218,7 +1227,7 @@
               onChange={(id, state) => chooseSmoothStop(id, state.runsOn)}
             />
             <p class="note" role="status">
-              {#if smoothRunsOn === 'cloud' && smoothCloud}
+              {#if smoothRunsOn === 'cloud' && smoothDestination}
                 {$t('frameleaf_studio_export_smooth_motion_cloud')}
               {:else if smoothRunsOn === 'local' && smoothLocal}
                 {$t('frameleaf_studio_export_smooth_motion_local', { values: { name: smoothLocal.name } })}
