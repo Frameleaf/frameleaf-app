@@ -53,7 +53,7 @@ export class BrowserExtensionSignInRepository {
     return this.db
       .selectFrom('browser_extension_access')
       .innerJoin('api_key', 'api_key.id', 'browser_extension_access.apiKeyId')
-      .select(['browser_extension_access.apiKeyId', 'api_key.name'])
+      .select(['browser_extension_access.apiKeyId', 'api_key.name', 'api_key.permissions'])
       .where('browser_extension_access.userId', '=', userId)
       .where('browser_extension_access.client', '=', client)
       .where('browser_extension_access.redirectOrigin', '=', redirectOrigin)

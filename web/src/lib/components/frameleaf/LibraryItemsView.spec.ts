@@ -10,8 +10,10 @@ import {
 } from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
+import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { renderWithTooltips } from '$tests/helpers';
@@ -21,6 +23,10 @@ import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import LibraryItemsView from './LibraryItemsView.svelte';
 
+vi.mock('$app/navigation', async (original) => ({
+  ...(await original<typeof import('$app/navigation')>()),
+  goto: vi.fn(() => Promise.resolve()),
+}));
 const socket = vi.hoisted(() => ({ listeners: new Map<string, () => void>() }));
 vi.mock('$lib/stores/websocket', () => ({
   websocketEvents: {
@@ -279,4 +285,19 @@ it('opens the Download dialog from the Boards selection bar and adds the library
       expect.anything(),
     ),
   );
+});
+
+it('offers "Add from the web…" in Add, in place of the three media sheets (FL-1448)', async () => {
+  renderWithTooltips(LibraryItemsView, { title: 'Boards', query, onQueryChange: vi.fn() });
+  await fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+  const names = screen.getAllByRole('menuitem').map((item) => item.textContent?.trim());
+  expect(names).toEqual(expect.arrayContaining(['Upload files', 'Save a link', 'Add from the web…']));
+  for (const old of ['Download media', 'Creator subscriptions', 'Connected sites']) {
+    expect(names).not.toContain(old);
+  }
+  creatorsStore.focusAdd = 0;
+  await fireEvent.click(screen.getByRole('menuitem', { name: 'Add from the web…' }));
+  expect(goto).toHaveBeenCalledWith('/pro?area=creators');
+  // Creators' home puts the cursor in its add box.
+  expect(creatorsStore.focusAdd).toBe(1);
 });

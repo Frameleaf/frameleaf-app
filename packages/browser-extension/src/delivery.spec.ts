@@ -16,6 +16,8 @@ vi.mock('./settings', () => ({
 }));
 vi.mock('./platform', () => ({ hasServerAccess: vi.fn() }));
 vi.mock('./runner', () => ({ resumeQueue: vi.fn() }));
+import { syncMediaReceipts } from './media-runner';
+vi.mock('./media-runner', () => ({ syncMediaReceipts: vi.fn() }));
 const binding = {
   serverId: 'one',
   userId: '11111111-1111-4111-8111-111111111111',
@@ -31,6 +33,7 @@ beforeEach(() => {
   vi.mocked(hasServerAccess).mockResolvedValue(true);
   vi.mocked(resumeQueue).mockResolvedValue(undefined);
   vi.mocked(listCaptures).mockResolvedValue([]);
+  vi.mocked(syncMediaReceipts).mockResolvedValue(false);
 });
 afterEach(() => {
   stopDelivery();
@@ -58,6 +61,29 @@ describe('background delivery coordinator', () => {
     );
     expect(fatal).not.toHaveBeenCalled();
     expect(deliveryError(binding)).toBeNull();
+  });
+  it('then follows the Library’s media work, and trouble with media alone never stops saving (FL-1427)', async () => {
+    const fatal = vi.fn();
+    vi.mocked(syncMediaReceipts).mockRejectedValueOnce(new Error('media'));
+    await wakeDelivery(fatal);
+    expect(syncMediaReceipts).toHaveBeenCalledWith(
+      binding,
+      'private-key',
+      expect.any(AbortSignal),
+    );
+    expect(resumeQueue).toHaveBeenCalledTimes(1);
+    expect(fatal).not.toHaveBeenCalled();
+    expect(deliveryError(binding)).toBeNull();
+
+    // but an address that no longer answers as this account stops both
+    vi.mocked(syncMediaReceipts).mockRejectedValueOnce(
+      new CaptureFailure('identity'),
+    );
+    await wakeDelivery(fatal);
+    expect(fatal).toHaveBeenCalledWith(
+      binding,
+      expect.objectContaining({ code: 'identity' }),
+    );
   });
   it('requests a serialized pause callback on permission/auth loss', async () => {
     const fatal = vi.fn().mockResolvedValue(undefined);

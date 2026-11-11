@@ -8,11 +8,13 @@ import {
 } from '@nestjs/common';
 import { type Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { readdir, rm, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Readable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { MediaDownloadedFile } from 'src/repositories/media-downloader.repository.js';
 import type { DB } from 'src/schema/index.js';
 import type { UploadFile } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -20,7 +22,7 @@ import { OnEvent } from 'src/decorators.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { LivePhotoUploadCommitDto } from 'src/dtos/asset-upload-resource.dto.js';
-import { FrameleafWorker, Permission, StorageFolder } from 'src/enum.js';
+import { FrameleafWorker, LibraryScope, Permission, StorageFolder } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import {
   type AssetUploadResource,
@@ -30,6 +32,8 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaDownloadError } from 'src/repositories/media-downloader.repository.js';
+import { type MediaImportAuthority, MediaImportRepository } from 'src/repositories/media-import.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
@@ -69,6 +73,7 @@ export class AssetUploadResourceService {
     private identities: ICloudIdentityRepository,
     private sources: PhotoSourceRepository,
     private captures: CaptureRepository,
+    private mediaImports: MediaImportRepository,
   ) {}
 
   async limits() {
@@ -102,6 +107,7 @@ export class AssetUploadResourceService {
     resource: Pick<AssetUploadResource, 'metadata' | 'expectedChecksum' | 'expectedSize'>,
     tx?: Transaction<DB>,
   ) {
+    if (resource.metadata.publication === 'media-import') throw new NotFoundException('Upload unavailable');
     if (resource.metadata.publication === 'capture') {
       if (resource.metadata.captureActor !== captureActor(auth)) throw new NotFoundException('Capture unavailable');
       await this.captures.assertActor(auth, tx, Permission.CaptureCreate, true);
@@ -241,6 +247,80 @@ export class AssetUploadResourceService {
       await this.finalize(auth, id, check);
       return result;
     });
+  }
+
+  /** The durable worker grant owns this path; browser capture continues to require its real actor. */
+  async importMedia(authority: MediaImportAuthority, downloaded: MediaDownloadedFile, capturedAt: Date) {
+    const { user } = await this.mediaImports.assertAuthority(authority);
+    const auth: AuthDto = { user, system: true };
+    const check: UploadAdmissionCheck = async (tx) => {
+      await this.mediaImports.assertAuthority(authority, tx);
+    };
+    const id = await this.mediaImports.uploadId(authority, downloaded);
+    const limits = await this.limits();
+    if (downloaded.size > limits.maxSize) throw new HttpException('Insufficient upload storage', 507);
+    const createdAt = downloaded.entry.publishedAt ? new Date(downloaded.entry.publishedAt) : capturedAt;
+    const metadata = {
+      publication: 'media-import' as const,
+      mediaImportItemId: authority.itemId!,
+      filename: downloaded.filename,
+      fileCreatedAt: createdAt,
+      fileModifiedAt: createdAt,
+      deviceAssetId: authority.itemId!,
+      deviceId: 'media-import',
+      libraryScope: LibraryScope.Design,
+    };
+    try {
+      this.media.canUploadFile({
+        auth,
+        fieldName: UploadFieldName.ASSET_DATA,
+        body: metadata,
+        file: {
+          uuid: id,
+          originalPath: downloaded.path,
+          originalName: downloaded.filename,
+          size: downloaded.size,
+          checksum: Buffer.from(downloaded.sha256, 'hex'),
+        },
+      });
+    } catch (error) {
+      // A file type Library cannot keep (audio-only, for example) fails this item; later items still run.
+      if (error instanceof BadRequestException) throw new MediaDownloadError('unsupported');
+      throw error;
+    }
+    let resource = await this.uploads.create(id, user.id, {
+      metadata,
+      checksum: Buffer.from(downloaded.sha256, 'hex'),
+      contentType: downloaded.mimeType,
+      size: downloaded.size,
+      maxSize: limits.maxSize,
+    });
+    while (resource.state === 'receiving') {
+      await check();
+      const end = Math.min(downloaded.size, resource.offset + resource.maxAppendSize);
+      const input = createReadStream(downloaded.path, { start: resource.offset, end: end - 1 });
+      try {
+        await this.receiveAdmitted(auth, id, input, resource.offset, end === downloaded.size, downloaded.size, check);
+      } finally {
+        input.destroy();
+      }
+      resource = await this.uploads.get(id, user.id);
+    }
+    const verified = await this.finalize(auth, id, check);
+    if (!['verified', 'published'].includes(verified.state)) throw new ConflictException('Media file is not verified');
+    const prepared =
+      verified.state === 'verified'
+        ? await this.media.prepareUploadAsset(auth, this.metadata(verified), this.file(verified))
+        : undefined;
+    const assetId = await this.uploads.locked(id, user.id, async (tx, current) => {
+      await check(tx);
+      return this.mediaImports.publish(tx, authority, async () => {
+        const published = current.state === 'published' ? current : await this.uploads.publish(tx, current, prepared!);
+        return { id: published.resultAssetId!, status: published.resultStatus! };
+      });
+    });
+    await this.finalize(auth, id, check);
+    return assetId;
   }
 
   async append(auth: AuthDto, id: string, headers: IncomingHttpHeaders, input: Readable) {
@@ -735,7 +815,7 @@ export class AssetUploadResourceService {
     if (row.state === 'rejected') {
       throw new BadRequestException('Upload representation was rejected');
     }
-    if (row.state === 'verified' && row.metadata.publication === 'capture') return row;
+    if (row.state === 'verified' && ['capture', 'media-import'].includes(row.metadata.publication ?? '')) return row;
     if (row.state === 'verified' && row.metadata.publication !== 'live-photo') {
       await check();
       const prepared = await this.media.prepareUploadAsset(auth, this.metadata(row), this.file(row));
@@ -758,8 +838,8 @@ export class AssetUploadResourceService {
     }
     if (
       row.state === 'published' &&
-      row.metadata.sourceIdentity?.kind === 'icloud' &&
-      row.metadata.sourceIdentity.role === 'edit-render'
+      (row.metadata.publication === 'media-import' ||
+        (row.metadata.sourceIdentity?.kind === 'icloud' && row.metadata.sourceIdentity.role === 'edit-render'))
     ) {
       await this.uploads.enqueueLocalEffects();
     }
@@ -1005,10 +1085,16 @@ export class AssetUploadResourceService {
       }
       try {
         if (row.state === 'published') {
-          if (row.metadata.sourceIdentity?.kind === 'icloud' && row.metadata.sourceIdentity.role === 'edit-render')
+          if (
+            row.metadata.publication === 'media-import' ||
+            (row.metadata.sourceIdentity?.kind === 'icloud' && row.metadata.sourceIdentity.role === 'edit-render')
+          )
             await this.uploads.enqueueLocalEffects();
           await this.ingest({ user }, row);
-        } else if (row.metadata.sourceIdentity?.kind !== 'folder' && row.metadata.publication !== 'capture') {
+        } else if (
+          row.metadata.sourceIdentity?.kind !== 'folder' &&
+          !['capture', 'media-import'].includes(row.metadata.publication ?? '')
+        ) {
           // Folder publication resumes through the desktop's live photo session, never a background actor.
           await this.withStreamAdmission({ user }, row.id, (check) => this.finalize({ user }, row.id, check));
         }

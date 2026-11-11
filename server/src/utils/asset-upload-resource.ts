@@ -41,7 +41,9 @@ export const UploadSourceIdentitySchema = z.discriminatedUnion('kind', [
 ]);
 export type UploadSourceIdentity = z.infer<typeof UploadSourceIdentitySchema>;
 export type AssetUploadMetadata = AssetMediaCreateDto & {
-  publication?: 'live-photo' | 'capture';
+  publication?: 'live-photo' | 'capture' | 'media-import';
+  /** Internal only; public upload headers cannot choose this authority. */
+  mediaImportItemId?: string;
   /** Server-bound actor, never accepted from the Asset-Metadata header. */
   captureActor?: string;
   captureId?: string;

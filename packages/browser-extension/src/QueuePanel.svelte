@@ -132,7 +132,13 @@
         <li class={tone(item)}>
           <span class="queue-thumb" aria-hidden="true"
             ><Icon
-              name={item.kind === "link" ? "linkVariant" : "imageOutline"}
+              name={item.kind === "link"
+                ? "linkVariant"
+                : item.kind === "media"
+                  ? "download"
+                  : item.kind === "subscription"
+                    ? "rss"
+                    : "imageOutline"}
               size={18}
             /></span
           >
@@ -141,6 +147,9 @@
             <small class="queue-state">
               {#if item.cancelling}
                 Cancelling… waiting for your server to confirm.
+              {:else if item.detail}
+                {item.detail}{#if item.state === "saved" || item.state === "failed"}
+                  · {ago(item.updatedAt)}{/if}
               {:else if item.state === "uploading"}
                 Saving · {percent(item)}%
               {:else if item.state === "committing"}
@@ -184,15 +193,17 @@
                 class="small"
                 disabled={!!action}
                 onclick={() => void change("retry-capture", item.id)}
-                >Retry now</button
+                >{item.kind === "media" ? "Try again" : "Retry now"}</button
               >{/if}
             {#if item.canCancel}<button
                 type="button"
                 class="small"
                 disabled={!!action}
-                aria-label={`Cancel ${item.label}`}
+                aria-label={`${item.kind === "media" && item.state === "uploading" ? "Stop" : "Cancel"} ${item.label}`}
                 onclick={() => void change("cancel-capture", item.id)}
-                >Cancel</button
+                >{item.kind === "media" && item.state === "uploading"
+                  ? "Stop"
+                  : "Cancel"}</button
               >{/if}
           </span>
         </li>
@@ -203,6 +214,12 @@
       </p>{/if}
   </div>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if queue.items.some((item) => item.kind === "media" || item.kind === "subscription")}
+    <p class="hint">
+      Downloads are done by your Library, not this browser, so nothing large is
+      kept here.
+    </p>
+  {/if}
   <p class="hint">
     Saving keeps going if you close this window or the browser. Finished items
     are listed for a while, then tidied away.

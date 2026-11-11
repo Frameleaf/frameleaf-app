@@ -451,41 +451,7 @@ export class TrashRepository {
           binding.family.items.length > 0 ? (changed?.filter((id) => binding.family.assetIds.includes(id)) ?? []) : [];
         if (sequenced.length > 0) {
           const target = trashActionTargetStatus(action) as AssetStatus.Active | AssetStatus.Trashed;
-          const stackIds = (
-            await tx.selectFrom('asset').select('stackId').where('id', 'in', sequenced).execute()
-          ).flatMap((row) => (row.stackId ? [row.stackId] : []));
-          const stacks =
-            stackIds.length > 0
-              ? await tx
-                  .selectFrom('stack')
-                  .select(['id', 'primaryAssetId'])
-                  .where('ownerId', '=', userId)
-                  .where('id', 'in', [...new Set(stackIds)])
-                  .orderBy('id')
-                  .forUpdate()
-                  .execute()
-              : [];
-          const snapshots = [];
-          for (const stack of stacks) {
-            const members = await tx
-              .selectFrom('asset')
-              .select('id')
-              .where('stackId', '=', stack.id)
-              .orderBy('id')
-              .execute();
-            if (members.some((row) => !binding.family.assetIds.includes(row.id)))
-              throw new ConflictException('edit_family_unstable');
-            snapshots.push({
-              stackId: stack.id,
-              primaryAssetId: stack.primaryAssetId,
-              memberAssetIds: members.map((row) => row.id),
-            });
-          }
-          await new AssetLocalEffectRepository(tx).append(tx, userId, randomUUID(), {
-            origin: { kind: target === AssetStatus.Trashed ? 'trash' : 'restore' },
-            assets: sequenced.map((assetId) => ({ assetId, status: target, revoke: target === AssetStatus.Trashed })),
-            stacks: snapshots,
-          });
+          await this.appendStatusEffects(tx, userId, sequenced, target, binding.family.assetIds);
           // A stream counter wait must not preserve expired elevation or stale privacy at COMMIT.
           const finalAuth = duplicateUndo
             ? undefined
@@ -528,6 +494,45 @@ export class TrashRepository {
     capture?.(committed.sequenced);
     if (committed.undoEffects) captureUndoEffects?.(committed.undoEffects);
     return committed.changed;
+  }
+
+  /** Same-transaction effects; the caller already holds current authority and the complete asset family. */
+  async appendStatusEffects(
+    tx: Transaction<DB>,
+    userId: string,
+    sequenced: string[],
+    target: AssetStatus.Active | AssetStatus.Trashed,
+    coveredAssetIds: string[],
+  ) {
+    const stackIds = (await tx.selectFrom('asset').select('stackId').where('id', 'in', sequenced).execute()).flatMap(
+      (row) => (row.stackId ? [row.stackId] : []),
+    );
+    const stacks =
+      stackIds.length > 0
+        ? await tx
+            .selectFrom('stack')
+            .select(['id', 'primaryAssetId'])
+            .where('ownerId', '=', userId)
+            .where('id', 'in', [...new Set(stackIds)])
+            .orderBy('id')
+            .forUpdate()
+            .execute()
+        : [];
+    const snapshots = [];
+    for (const stack of stacks) {
+      const members = await tx.selectFrom('asset').select('id').where('stackId', '=', stack.id).orderBy('id').execute();
+      if (members.some((row) => !coveredAssetIds.includes(row.id))) throw new ConflictException('edit_family_unstable');
+      snapshots.push({
+        stackId: stack.id,
+        primaryAssetId: stack.primaryAssetId,
+        memberAssetIds: members.map((row) => row.id),
+      });
+    }
+    await new AssetLocalEffectRepository(tx).append(tx, userId, randomUUID(), {
+      origin: { kind: target === AssetStatus.Trashed ? 'trash' : 'restore' },
+      assets: sequenced.map((assetId) => ({ assetId, status: target, revoke: target === AssetStatus.Trashed })),
+      stacks: snapshots,
+    });
   }
 
   /** Narrow worker entry: sessionless restoration requires this exact recorded Undo's live claim. */

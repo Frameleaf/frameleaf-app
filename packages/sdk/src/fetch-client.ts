@@ -6004,6 +6004,8 @@ export type ApiKeyResponseDto = {
     id: string;
     /** When the key was last used to reach the server; null when it never has been */
     lastUsedAt: string | null;
+    /** Media download permissions, listed apart from permissions so older clients can still read keys */
+    mediaPermissions: MediaPermission[];
     /** API key name */
     name: string;
     /** List of permissions */
@@ -6029,6 +6031,8 @@ export type ApiKeyCreateResponseDto = {
     id: string;
     /** When the key was last used to reach the server; null when it never has been */
     lastUsedAt: string | null;
+    /** Media download permissions, listed apart from permissions so older clients can still read keys */
+    mediaPermissions: MediaPermission[];
     /** API key name */
     name: string;
     /** List of permissions */
@@ -7237,10 +7241,12 @@ export type AssetRestorationOptionsDto = {
 };
 export type AssetSourceResponseDto = {
     assetId: string;
+    attachmentId?: string | null;
     captureId: string;
     capturedAt: string;
     createdAt: string;
     creator?: string | null;
+    creatorId?: string | null;
     id: string;
     /** The app the source was imported from, such as "eagle"; null when the browser extension saved it */
     importedFrom: string | null;
@@ -7248,6 +7254,10 @@ export type AssetSourceResponseDto = {
     mediaUrl?: string | null;
     note?: string | null;
     pageUrl: string;
+    postId?: string | null;
+    postText?: string | null;
+    provider?: string | null;
+    publishedAt?: string | null;
     title: string;
 };
 export type AssetSourceImportDto = {
@@ -7753,6 +7763,8 @@ export type BookmarkTagsDto = {
     ids: string[];
 };
 export type BrowserExtensionSignInInfoDto = {
+    /** What an extension can ask to be allowed here */
+    grants: BrowserExtensionGrant[];
     /** The extension sign-in this server supports (1) */
     version: number;
 };
@@ -7764,6 +7776,8 @@ export type BrowserExtensionSignInAuthorizeDto = {
     codeChallenge: string;
     /** Only S256 is accepted */
     codeChallengeMethod: CodeChallengeMethod;
+    /** What to allow; capture when left out */
+    grant?: BrowserExtensionGrant;
     /** A random id this installation of the extension made once; its access replaces only its own */
     installationId: string;
     /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
@@ -7786,6 +7800,8 @@ export type BrowserExtensionSignInExchangeDto = {
 export type BrowserExtensionSignInExchangeResponseDto = {
     /** The access, as listed in API keys */
     apiKeyId: string;
+    /** What was allowed, as bound to the code */
+    grant: BrowserExtensionGrant;
     /** How the access is listed in API keys */
     name: string;
     /** The new access key, shown once; it can only save captures and list collections and tags */
@@ -7805,6 +7821,8 @@ export type BrowserExtensionSignInStartDto = {
     codeChallenge: string;
     /** Only S256 is accepted */
     codeChallengeMethod: CodeChallengeMethod;
+    /** What to allow; capture when left out */
+    grant?: BrowserExtensionGrant;
     /** A random id this installation of the extension made once; its access replaces only its own */
     installationId: string;
     /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
@@ -10949,6 +10967,163 @@ export type MapStatisticsResponseDto = {
     /** The viewer's own timeline items without a location */
     unlocated: number;
 };
+export type MediaConnectionResponseDto = {
+    domains: string[];
+    id: string;
+    label: string;
+    provider: string;
+    revision: number;
+    status: MediaConnectionStatus;
+    updatedAt: string;
+};
+export type MediaConnectionListDto = {
+    connections: MediaConnectionResponseDto[];
+};
+export type MediaConnectionCreateDto = {
+    label: string;
+    provider: string;
+    session: {
+        accessToken?: string;
+        clientId?: string;
+        clientSecret?: string;
+        cookies?: {
+            domain: string;
+            expires?: number;
+            hostOnly: boolean;
+            httpOnly: boolean;
+            name: string;
+            partitionKey?: {
+                hasCrossSiteAncestor?: boolean;
+                topLevelSite: string;
+            };
+            path: string;
+            secure: boolean;
+            storeId?: string;
+            value: string;
+        }[];
+        domains: string[];
+        password?: string;
+        refreshToken?: string;
+        username?: string;
+    };
+};
+export type MediaConnectionRefreshDto = {
+    session: {
+        accessToken?: string;
+        clientId?: string;
+        clientSecret?: string;
+        cookies?: {
+            domain: string;
+            expires?: number;
+            hostOnly: boolean;
+            httpOnly: boolean;
+            name: string;
+            partitionKey?: {
+                hasCrossSiteAncestor?: boolean;
+                topLevelSite: string;
+            };
+            path: string;
+            secure: boolean;
+            storeId?: string;
+            value: string;
+        }[];
+        domains: string[];
+        password?: string;
+        refreshToken?: string;
+        username?: string;
+    };
+};
+export type MediaReach = {
+    count?: number;
+    mode: MediaReachMode;
+    since?: string;
+};
+export type MediaSaves = {
+    images?: boolean;
+    live?: boolean;
+    photos?: boolean;
+    pins?: boolean;
+    reels?: boolean;
+    replies?: boolean;
+    reposts?: boolean;
+    shorts?: boolean;
+    videos?: boolean;
+};
+export type MediaCreatorSubscription = {
+    connectionId: string | null;
+    error: string | null;
+    history: MediaReach;
+    historyComplete: boolean;
+    id: string;
+    intervalMinutes: number;
+    lastSuccessAt: string | null;
+    limitation: string | null;
+    nextCheckAt: string;
+    quality: MediaQuality;
+    saves: MediaSaves;
+    status: MediaSubscriptionState;
+};
+export type MediaCreatorResponseDto = {
+    about: string | null;
+    albumId: string | null;
+    createdAt: string;
+    /** The site’s own identifier for this account */
+    creatorId: string;
+    /** False for a creator added by saving one of their posts */
+    following: boolean;
+    handle: string | null;
+    hasAvatar: boolean;
+    hasBanner: boolean;
+    id: string;
+    name: string;
+    /** Items saved since this account last opened the creator */
+    newCount: number;
+    parentAlbumId: string | null;
+    provider: string;
+    savedCount: number;
+    seenAt: string;
+    subscription: (MediaCreatorSubscription) | null;
+    url: string | null;
+};
+export type MediaCreatorListDto = {
+    creators: MediaCreatorResponseDto[];
+};
+export type MediaCreatorItemResponse = {
+    assetId: string;
+    /** The creator record this item belongs to */
+    creatorId: string;
+    description: string;
+    /** Seconds */
+    duration: number | null;
+    hasPoster: boolean;
+    kind: MediaItemKind;
+    pageUrl: string | null;
+    playlistId: string | null;
+    playlistTitle: string | null;
+    /** Seconds */
+    position: number;
+    /** Attachments of one post share it */
+    postId: string | null;
+    publishedAt: string | null;
+    savedAt: string;
+    savedBy: MediaSavedBy;
+    section: (MediaSection) | null;
+    tags: string[];
+    title: string;
+    watched: boolean;
+};
+export type MediaCreatorFeedDto = {
+    items: MediaCreatorItemResponse[];
+};
+export type MediaCreatorUpdateDto = {
+    /** A private collection to file under, or null for none */
+    parentAlbumId: string | null;
+};
+export type MediaCreatorItemsDto = {
+    hasNextPage: boolean;
+    items: MediaCreatorItemResponse[];
+    page: number;
+};
 export type MediaHealthChecksumDto = {
     algorithm: MediaHealthChecksumAlgorithm;
     /** Checksum as lowercase hex */
@@ -11362,6 +11537,83 @@ export type MediaHealthSummaryResponseDto = {
     recoveryAvailable: boolean;
     runs: MediaHealthRunsDto;
 };
+export type MediaImportItemResponse = {
+    assetId: string | null;
+    attachmentId: string;
+    bytes: number;
+    creator: string | null;
+    creatorId: string | null;
+    description: string;
+    duration: number | null;
+    error: string | null;
+    id: string;
+    kind: MediaItemKind;
+    pageUrl: string;
+    playlistId: string | null;
+    playlistTitle: string | null;
+    postId: string;
+    provider: string;
+    publishedAt: string | null;
+    section: (MediaSection) | null;
+    state: MediaImportItemState;
+    tags: string[];
+    title: string;
+};
+export type MediaImportResponseDto = {
+    albumId: string | null;
+    complete: boolean;
+    connectionId: string | null;
+    createdAt: string;
+    creator: string | null;
+    creatorId: string | null;
+    discovered: number;
+    error: string | null;
+    failed: number;
+    id: string;
+    items: MediaImportItemResponse[];
+    kind: (MediaInspectionKind) | null;
+    limitation: string | null;
+    mediaCreatorId: string | null;
+    provider: string | null;
+    quality: MediaQuality;
+    saved: number;
+    skipped: number;
+    state: MediaImportState;
+    subscriptionId: string | null;
+    updatedAt: string;
+};
+export type MediaImportListDto = {
+    imports: MediaImportResponseDto[];
+};
+export type MediaImportCreateDto = {
+    /** Left out, the items are filed into their creator’s own collection */
+    albumId?: string;
+    idempotencyKey: string;
+    inspectionId: string;
+    itemIds: string[];
+    overrideSuppression?: boolean;
+    quality?: MediaQuality;
+    streamMp4?: boolean;
+    tagIds?: string[];
+};
+export type MediaCapabilitiesDto = {
+    authentication: MediaAuthenticationMethod[];
+    available: boolean;
+    creatorFeeds: MediaFeedSupport;
+    galleryDlVersion: string | null;
+    individualMedia: MediaIndividualSupport;
+    qualifiedProviders: string[];
+    reason: string | null;
+    version: MediaProtocolVersion;
+    ytDlpVersion: string | null;
+};
+export type MediaInspectDto = {
+    connectionId?: string;
+    urls: string[];
+};
+export type MediaRetryDto = {
+    idempotencyKey: string;
+};
 export type MediaOperationListResponseDto = {
     items: MediaOperationDto[];
     /** Matching jobs, before paging */
@@ -11565,6 +11817,66 @@ export type StudioReverseConformResultDto = {
     projectId: string;
     sourceRevision: number;
     width: number;
+};
+export type MediaSubscriptionResponseDto = {
+    albumId: string | null;
+    connectionId: string | null;
+    creator: string;
+    creatorId: string;
+    discovered: number;
+    error: string | null;
+    failed: number;
+    /** Kept for older clients, which read a recent reach as new; use reach */
+    history: {
+        mode: MediaHistoryMode;
+        since?: string;
+    };
+    historyComplete: boolean;
+    id: string;
+    intervalMinutes: number;
+    lastSuccessAt: string | null;
+    limitation: string | null;
+    mediaCreatorId: string | null;
+    nextCheckAt: string;
+    provider: string;
+    quality: MediaQuality;
+    reach: MediaReach;
+    saved: number;
+    saves: MediaSaves;
+    skipped: number;
+    status: MediaSubscriptionState;
+    url: string;
+};
+export type MediaSubscriptionListDto = {
+    subscriptions: MediaSubscriptionResponseDto[];
+};
+export type MediaSubscriptionCreateDto = {
+    history: MediaReach;
+    idempotencyKey: string;
+    inspectionId: string;
+    intervalMinutes?: 15 | 60 | 360 | 1440;
+    parentId?: string;
+    quality?: MediaQuality;
+    saves?: MediaSaves;
+};
+export type MediaSubscriptionUpdateDto = {
+    action?: MediaSubscriptionAction;
+    connectionId?: string | null;
+    history?: MediaReach;
+    intervalMinutes?: 15 | 60 | 360 | 1440;
+    quality?: MediaQuality;
+    saves?: MediaSaves;
+};
+export type MediaWatchUpdateDto = {
+    /** Seconds */
+    position?: number;
+    watched: boolean;
+};
+export type MediaWatchResponseDto = {
+    assetId: string;
+    position: number;
+    updatedAt: string;
+    watched: boolean;
 };
 export type MemoryStoryPlaceDto = {
     /** City */
@@ -30630,6 +30942,196 @@ export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchiv
     }));
 }
 /**
+ * List connected site metadata without credentials
+ */
+export function getMediaConnections(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaConnectionListDto;
+    }>("/media-connections", {
+        ...opts
+    }));
+}
+/**
+ * Share selected site access with Library over HTTPS
+ */
+export function createMediaConnection({ mediaConnectionCreateDto }: {
+    mediaConnectionCreateDto: MediaConnectionCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaConnectionResponseDto;
+    }>("/media-connections", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaConnectionCreateDto
+    })));
+}
+/**
+ * Revoke site access and dependent work
+ */
+export function disconnectMediaConnection({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaConnectionResponseDto;
+    }>(`/media-connections/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Replace and revoke the previous site session
+ */
+export function refreshMediaConnection({ id, mediaConnectionRefreshDto }: {
+    id: string;
+    mediaConnectionRefreshDto: MediaConnectionRefreshDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaConnectionResponseDto;
+    }>(`/media-connections/${encodeURIComponent(id)}/refresh`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaConnectionRefreshDto
+    })));
+}
+/**
+ * List followed and added creators with their new item counts
+ */
+export function getMediaCreators(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorListDto;
+    }>("/media-creators", {
+        ...opts
+    }));
+}
+/**
+ * Retrieve the cover a site gave a saved video
+ */
+export function getMediaCreatorItemPoster({ assetId }: {
+    assetId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-creators/items/${encodeURIComponent(assetId)}/poster`, {
+        ...opts
+    }));
+}
+/**
+ * List the newest items not yet seen, across creators
+ */
+export function getNewMediaCreatorItems({ limit }: {
+    limit?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorFeedDto;
+    }>(`/media-creators/new${QS.query(QS.explode({
+        limit
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get one creator
+ */
+export function getMediaCreator({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorResponseDto;
+    }>(`/media-creators/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Move a creator’s collection into a private folder
+ */
+export function updateMediaCreator({ id, mediaCreatorUpdateDto }: {
+    id: string;
+    mediaCreatorUpdateDto: MediaCreatorUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorResponseDto;
+    }>(`/media-creators/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: mediaCreatorUpdateDto
+    })));
+}
+/**
+ * Retrieve the kept copy of a creator’s picture
+ */
+export function getMediaCreatorAvatar({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-creators/${encodeURIComponent(id)}/avatar`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve the kept copy of a creator’s banner
+ */
+export function getMediaCreatorBanner({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-creators/${encodeURIComponent(id)}/banner`, {
+        ...opts
+    }));
+}
+/**
+ * List a creator’s saved items, one page at a time
+ */
+export function getMediaCreatorItems({ id, kind, page, q, section, sort, unwatched }: {
+    id: string;
+    kind?: MediaItemKind;
+    page?: number;
+    q?: string;
+    section?: MediaSection;
+    sort?: MediaCreatorItemSort;
+    unwatched?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorItemsDto;
+    }>(`/media-creators/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        kind,
+        page,
+        q,
+        section,
+        sort,
+        unwatched
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Record that this account opened a creator
+ */
+export function markMediaCreatorSeen({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorResponseDto;
+    }>(`/media-creators/${encodeURIComponent(id)}/seen`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * List media health findings
  */
 export function list({ allAccounts, category, needsAttention, ownerId, page, size, status }: {
@@ -31000,6 +31502,101 @@ export function getSummary({ allAccounts, ownerId }: {
     }));
 }
 /**
+ * List media imports for this account
+ */
+export function getMediaImports(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaImportListDto;
+    }>("/media-imports", {
+        ...opts
+    }));
+}
+/**
+ * Download selected inspected media into Boards
+ */
+export function createMediaImport({ mediaImportCreateDto }: {
+    mediaImportCreateDto: MediaImportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaImportResponseDto;
+    }>("/media-imports", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaImportCreateDto
+    })));
+}
+/**
+ * Discover installed media extraction and feed capabilities
+ */
+export function getMediaCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCapabilitiesDto;
+    }>("/media-imports/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * Inspect URLs without downloading a whole account
+ */
+export function inspectMedia({ mediaInspectDto }: {
+    mediaInspectDto: MediaInspectDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaImportResponseDto;
+    }>("/media-imports/inspect", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaInspectDto
+    })));
+}
+/**
+ * Get media import progress and saved items
+ */
+export function getMediaImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaImportResponseDto;
+    }>(`/media-imports/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Cancel unfinished media import work
+ */
+export function cancelMediaImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaImportResponseDto;
+    }>(`/media-imports/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Retry failed media import items idempotently
+ */
+export function retryMediaImport({ id, mediaRetryDto }: {
+    id: string;
+    mediaRetryDto: MediaRetryDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaImportResponseDto;
+    }>(`/media-imports/${encodeURIComponent(id)}/retry`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaRetryDto
+    })));
+}
+/**
  * List your media operations
  */
 export function searchMediaOperations({ includeDismissed, kind, skip, status, take }: {
@@ -31153,6 +31750,79 @@ export function getMediaOperationReverseResult({ id }: {
     }>(`/media-operations/${encodeURIComponent(id)}/reverse-result`, {
         ...opts
     }));
+}
+/**
+ * List creator subscription progress
+ */
+export function getMediaSubscriptions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaSubscriptionListDto;
+    }>("/media-subscriptions", {
+        ...opts
+    }));
+}
+/**
+ * Create a private creator collection and scheduled subscription
+ */
+export function createMediaSubscription({ mediaSubscriptionCreateDto }: {
+    mediaSubscriptionCreateDto: MediaSubscriptionCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaSubscriptionResponseDto;
+    }>("/media-subscriptions", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaSubscriptionCreateDto
+    })));
+}
+/**
+ * Resolve creator and feed capability before subscribing
+ */
+export function previewMediaSubscription({ mediaInspectDto }: {
+    mediaInspectDto: MediaInspectDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaImportResponseDto;
+    }>("/media-subscriptions/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaInspectDto
+    })));
+}
+/**
+ * Pause, resume, check, disconnect or update a subscription
+ */
+export function updateMediaSubscription({ id, mediaSubscriptionUpdateDto }: {
+    id: string;
+    mediaSubscriptionUpdateDto: MediaSubscriptionUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaSubscriptionResponseDto;
+    }>(`/media-subscriptions/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: mediaSubscriptionUpdateDto
+    })));
+}
+/**
+ * Record what this account has watched of a saved item
+ */
+export function updateMediaWatch({ assetId, mediaWatchUpdateDto }: {
+    assetId: string;
+    mediaWatchUpdateDto: MediaWatchUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaWatchResponseDto;
+    }>(`/media-watch/${encodeURIComponent(assetId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: mediaWatchUpdateDto
+    })));
 }
 /**
  * Retrieve memories
@@ -40718,6 +41388,15 @@ export enum DesignPermission {
     CaptureCreate = "capture.create",
     CaptureCatalogRead = "capture.catalog.read"
 }
+export enum MediaPermission {
+    MediaImportRead = "media-import.read",
+    MediaImportCreate = "media-import.create",
+    MediaImportUpdate = "media-import.update",
+    MediaConnectionRead = "media-connection.read",
+    MediaConnectionWrite = "media-connection.write",
+    MediaSubscriptionRead = "media-subscription.read",
+    MediaSubscriptionWrite = "media-subscription.write"
+}
 export enum ApiKeyResponsePermission {
     All = "all",
     ActivityCreate = "activity.create",
@@ -40908,6 +41587,13 @@ export enum Permission {
     BookmarkRead = "bookmark.read",
     BookmarkUpdate = "bookmark.update",
     BookmarkDelete = "bookmark.delete",
+    MediaImportRead = "media-import.read",
+    MediaImportCreate = "media-import.create",
+    MediaImportUpdate = "media-import.update",
+    MediaConnectionRead = "media-connection.read",
+    MediaConnectionWrite = "media-connection.write",
+    MediaSubscriptionRead = "media-subscription.read",
+    MediaSubscriptionWrite = "media-subscription.write",
     CaptureCreate = "capture.create",
     CaptureCatalogRead = "capture.catalog.read",
     ActivityCreate = "activity.create",
@@ -41397,6 +42083,10 @@ export enum AssetWaveformChannelMode {
 export enum AssistantMediaType {
     Image = "IMAGE",
     Video = "VIDEO"
+}
+export enum BrowserExtensionGrant {
+    Capture = "capture",
+    Media = "media"
 }
 export enum BrowserExtensionClient {
     Chrome = "chrome",
@@ -41939,6 +42629,52 @@ export enum LivePhotoMatchConfidence {
     High = "high",
     Low = "low"
 }
+export enum MediaConnectionStatus {
+    Connected = "connected",
+    Expired = "expired",
+    Disconnected = "disconnected"
+}
+export enum MediaReachMode {
+    Recent = "recent",
+    All = "all",
+    Since = "since",
+    New = "new"
+}
+export enum MediaQuality {
+    $720 = "720",
+    $1080 = "1080",
+    Best = "best",
+    Audio = "audio"
+}
+export enum MediaSubscriptionState {
+    Active = "active",
+    Paused = "paused",
+    Attention = "attention",
+    Unsubscribed = "unsubscribed"
+}
+export enum MediaItemKind {
+    Image = "image",
+    Video = "video",
+    Audio = "audio"
+}
+export enum MediaSavedBy {
+    Subscription = "subscription",
+    Download = "download"
+}
+export enum MediaSection {
+    Video = "video",
+    Short = "short",
+    Live = "live",
+    Reel = "reel",
+    Post = "post",
+    Pin = "pin",
+    Photo = "photo"
+}
+export enum MediaCreatorItemSort {
+    Newest = "newest",
+    Oldest = "oldest",
+    Longest = "longest"
+}
 export enum MediaHealthCategory {
     Missing = "missing",
     Corrupt = "corrupt"
@@ -42012,6 +42748,46 @@ export enum MediaHealthActivityAction {
     RecoverDamagedMedia = "recover-damaged-media",
     TrashDamagedMedia = "trash-damaged-media"
 }
+export enum MediaImportItemState {
+    Discovered = "discovered",
+    Downloading = "downloading",
+    Assembling = "assembling",
+    Importing = "importing",
+    Saved = "saved",
+    Skipped = "skipped",
+    Failed = "failed"
+}
+export enum MediaInspectionKind {
+    Item = "item",
+    Feed = "feed"
+}
+export enum MediaImportState {
+    Inspecting = "inspecting",
+    Ready = "ready",
+    Queued = "queued",
+    Downloading = "downloading",
+    Assembling = "assembling",
+    Importing = "importing",
+    Saved = "saved",
+    Partial = "partial",
+    Failed = "failed",
+    Cancelled = "cancelled",
+    Paused = "paused"
+}
+export enum MediaAuthenticationMethod {
+    Cookies = "cookies",
+    Credentials = "credentials",
+    Token = "token"
+}
+export enum MediaFeedSupport {
+    PerUrl = "per-url"
+}
+export enum MediaIndividualSupport {
+    InstalledExtractors = "installed-extractors"
+}
+export enum MediaProtocolVersion {
+    $1 = 1
+}
 export enum DateMode {
     Set = "set",
     Shift = "shift"
@@ -42034,6 +42810,17 @@ export enum Delivery {
 }
 export enum Profile {
     H264Main32AacLcV1 = "h264-main-3.2-aac-lc-v1"
+}
+export enum MediaHistoryMode {
+    All = "all",
+    Since = "since",
+    New = "new"
+}
+export enum MediaSubscriptionAction {
+    Pause = "pause",
+    Resume = "resume",
+    Check = "check",
+    Unsubscribe = "unsubscribe"
 }
 export enum MemorySearchOrder {
     Asc = "asc",

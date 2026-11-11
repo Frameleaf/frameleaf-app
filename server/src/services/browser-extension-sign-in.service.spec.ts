@@ -45,7 +45,7 @@ class FakeSignInRepository {
         access.redirectOrigin === redirectOrigin &&
         access.installationId === installationId,
     );
-    return Promise.resolve(found && { apiKeyId: found.apiKeyId, name: found.name });
+    return Promise.resolve(found && { apiKeyId: found.apiKeyId, name: found.name, permissions: found.permissions });
   }
   replaceAccess(grant: BrowserExtensionAccessGrant) {
     this.accesses = this.accesses.filter(
@@ -132,7 +132,7 @@ describe(BrowserExtensionSignInService.name, () => {
   });
 
   it('says it can sign in from the browser', () => {
-    expect(server.service.info()).toEqual({ version: 1 });
+    expect(server.service.info()).toEqual({ version: 1, grants: ['capture', 'media'] });
   });
 
   it('allows, then exchanges the code once for an access that can only save and list', async () => {
@@ -149,6 +149,7 @@ describe(BrowserExtensionSignInService.name, () => {
       name: 'Save to Frameleaf · Chrome',
       userId: taylor.user.id,
       serverId: 'server-a',
+      grant: 'capture',
     });
     expect(server.repository.accesses).toEqual([
       expect.objectContaining({
@@ -366,6 +367,103 @@ describe(BrowserExtensionSignInService.name, () => {
     expect(server.repository.accesses.map((access) => access.apiKeyId).toSorted()).toEqual(
       [two.apiKeyId, three.apiKeyId].toSorted(),
     );
+  });
+
+  describe('media downloads (FL-1427)', () => {
+    const MEDIA = [
+      Permission.CaptureCreate,
+      Permission.CaptureCatalogRead,
+      Permission.MediaImportRead,
+      Permission.MediaImportCreate,
+      Permission.MediaImportUpdate,
+      Permission.MediaConnectionRead,
+      Permission.MediaConnectionWrite,
+      Permission.MediaSubscriptionRead,
+      Permission.MediaSubscriptionWrite,
+    ];
+
+    it('issues exactly the media permissions when Allow was pressed for them, never everything', async () => {
+      const { redirectUrl } = await server.service.authorize(taylor, request(verifier, { grant: 'media' }));
+      const [stored] = server.repository.codes.values();
+      expect(stored.accessGrant).toBe('media');
+
+      const result = await server.service.exchange(exchange(codeFrom(redirectUrl), verifier));
+
+      expect(result.grant).toBe('media');
+      expect(server.repository.accesses[0].permissions).toEqual(MEDIA);
+      expect(server.repository.accesses[0].permissions).not.toContain(Permission.All);
+    });
+
+    it('takes the scope from the code: an exchange cannot ask for more', async () => {
+      const { redirectUrl } = await server.service.authorize(taylor, request(verifier));
+      const code = codeFrom(redirectUrl);
+      // the exchange has no scope to send at all
+      expect(() =>
+        BrowserExtensionSignInExchangeDto.schema.parse({
+          code,
+          codeVerifier: verifier,
+          redirectUri: REDIRECT,
+          grant: 'media',
+        }),
+      ).toThrow();
+
+      const result = await server.service.exchange(exchange(code, verifier));
+      expect(result.grant).toBe('capture');
+      expect(server.repository.accesses[0].permissions).toEqual([
+        Permission.CaptureCreate,
+        Permission.CaptureCatalogRead,
+      ]);
+    });
+
+    it('treats a code made before grants existed as capture only', async () => {
+      const { redirectUrl } = await server.service.authorize(taylor, request(verifier));
+      const [stored] = server.repository.codes.values();
+      // the column's default for rows written by an older server
+      expect(stored.accessGrant).toBe('capture');
+      (stored as { accessGrant: unknown }).accessGrant = 'everything';
+
+      const result = await server.service.exchange(exchange(codeFrom(redirectUrl), verifier));
+      expect(result.grant).toBe('capture');
+      expect(server.repository.accesses[0].permissions).toHaveLength(2);
+    });
+
+    it('asks Allow again to upgrade a capture-only access, then not again', async () => {
+      const first = await server.service.authorize(taylor, request(verifier));
+      await server.service.exchange(exchange(codeFrom(first.redirectUrl), verifier));
+      // an older extension, and saving, still go straight through
+      await expect(server.service.start(taylor, request(verifier))).resolves.toEqual(
+        expect.objectContaining({ alreadyAllowed: true }),
+      );
+      await expect(server.service.start(taylor, request(verifier, { grant: 'media' }))).resolves.toEqual(
+        expect.objectContaining({ alreadyAllowed: false }),
+      );
+
+      const upgrade = await server.service.authorize(taylor, request(verifier, { grant: 'media' }));
+      await server.service.exchange(exchange(codeFrom(upgrade.redirectUrl), verifier));
+      expect(server.repository.accesses).toHaveLength(1);
+      await expect(server.service.start(taylor, request(verifier, { grant: 'media' }))).resolves.toEqual(
+        expect.objectContaining({ alreadyAllowed: true }),
+      );
+      await expect(server.service.start(taylor, request(verifier))).resolves.toEqual(
+        expect.objectContaining({ alreadyAllowed: true }),
+      );
+    });
+
+    it('binds an upgrade to its own verifier and uses the code once', async () => {
+      const { redirectUrl } = await server.service.authorize(taylor, request(verifier, { grant: 'media' }));
+      const code = codeFrom(redirectUrl);
+      await expect(refusal(server.service.exchange(exchange(code, verifierFor('guess'))))).resolves.toEqual(
+        expect.objectContaining({ code: 'invalid' }),
+      );
+      await expect(refusal(server.service.exchange(exchange(code, verifier)))).resolves.toEqual(
+        expect.objectContaining({ code: 'invalid' }),
+      );
+      expect(server.repository.accesses).toEqual([]);
+    });
+
+    it('refuses a grant it does not know', () => {
+      expect(() => request(verifier, { grant: 'all' as 'media' })).toThrow();
+    });
   });
 
   it('refuses a missing or malformed installation id', () => {

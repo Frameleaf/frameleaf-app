@@ -2,6 +2,7 @@ import { CaptureFailure, sameBinding, type ServerBinding } from './api';
 import { hasServerAccess } from './platform';
 import { connectionStatus, credentialFor } from './settings';
 import { resumeQueue } from './runner';
+import { syncMediaReceipts } from './media-runner';
 import { QueueFailure, listCaptures, pruneCaptureHistory } from './queue';
 
 let running: Promise<void> | undefined;
@@ -51,6 +52,14 @@ export function wakeDelivery(
         if (!ownController.signal.aborted) await pruneCaptureHistory(binding);
         if (!ownController.signal.aborted)
           await resumeQueue(binding, token, ownController.signal);
+        // FL-1427: then hand over, and read back, the work your Library does. Trouble that is only
+        // about media never stops saving; a connection that is no longer yours stops both.
+        if (!ownController.signal.aborted)
+          await syncMediaReceipts(binding, token, ownController.signal).catch(
+            (error) => {
+              if (error instanceof CaptureFailure) throw error;
+            },
+          );
         if (!ownController.signal.aborted) {
           const pending = (await listCaptures(binding)).filter((task) =>
             ['queued', 'uploading', 'committing'].includes(task.state),

@@ -535,3 +535,32 @@ export const photo_location_invalidate = registerFunction({
       RETURN NULL;
     END;`,
 });
+
+export const media_import_asset_removed = registerFunction({
+  name: 'media_import_asset_removed',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      IF TG_OP = 'DELETE' OR (NEW."deletedAt" IS NOT NULL AND OLD."deletedAt" IS NULL) THEN
+        UPDATE media_import_item SET suppression = 'owner', "updatedAt" = clock_timestamp()
+          WHERE "assetId" = OLD.id;
+      END IF;
+      RETURN NULL;
+    END;
+  `,
+});
+export const media_import_collection_removed = registerFunction({
+  name: 'media_import_collection_removed',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      UPDATE media_import_item item SET suppression = 'subscription', "updatedAt" = clock_timestamp()
+        FROM media_import operation WHERE item."importId" = operation.id
+        AND operation."subscriptionId" IS NOT NULL AND operation."albumId" = OLD."albumId"
+        AND item."assetId" = OLD."assetId" AND item.suppression IS DISTINCT FROM 'owner';
+      RETURN NULL;
+    END;
+  `,
+});

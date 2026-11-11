@@ -71,6 +71,32 @@ describe('Allow Save to Frameleaf (FL-655)', () => {
     expect(startBrowserExtensionSignIn).toHaveBeenCalledWith({ browserExtensionSignInStartDto: request });
   });
 
+  it('lists media downloads, site access and subscriptions when the extension asks for them (FL-1427)', async () => {
+    const upgrade = { ...request, grant: 'media' };
+    vi.mocked(authorizeBrowserExtensionSignIn).mockResolvedValue({ redirectUrl: `${REDIRECT}?code=c&state=s` });
+    render(Page, { data: { request: upgrade, meta: { title: '' } } as never });
+
+    expect(await screen.findByText(en.frameleaf_extension_allow_can_media_download)).toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_extension_allow_can_media_sites)).toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_extension_allow_can_media_subscribe)).toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_extension_allow_can_save)).toBeInTheDocument();
+    expect(startBrowserExtensionSignIn).toHaveBeenCalledWith({ browserExtensionSignInStartDto: upgrade });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_extension_allow_allow }));
+    await waitFor(() =>
+      expect(authorizeBrowserExtensionSignIn).toHaveBeenCalledWith({
+        browserExtensionSignInAuthorizeDto: { ...upgrade, allow: true },
+      }),
+    );
+  });
+
+  it('does not list media downloads for saving alone', async () => {
+    render(Page, { data: { request, meta: { title: '' } } as never });
+
+    expect(await screen.findByText(en.frameleaf_extension_allow_can_save)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_extension_allow_can_media_download)).not.toBeInTheDocument();
+  });
+
   it('Allow goes back to the extension with the code', async () => {
     vi.mocked(authorizeBrowserExtensionSignIn).mockResolvedValue({ redirectUrl: `${REDIRECT}?code=c&state=s` });
     render(Page, { data: { request, meta: { title: '' } } as never });

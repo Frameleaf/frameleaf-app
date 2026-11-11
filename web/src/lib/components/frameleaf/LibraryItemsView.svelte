@@ -1,5 +1,6 @@
 <script lang="ts">
   import { debounce } from 'lodash-es';
+  import { goto } from '$app/navigation';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
   import { onMount, onDestroy, untrack, type Snippet } from 'svelte';
@@ -11,6 +12,8 @@
   import { boardsView } from '$lib/frameleaf/boards-view.svelte';
   import { isFontName } from '$lib/frameleaf/boards-fonts';
   import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
+  import { creatorsHref } from '$lib/frameleaf/creators';
+  import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
   import { THUMBNAIL_SIZE_MAX, THUMBNAIL_SIZE_MIN, THUMBNAIL_SIZE_STEP } from '$lib/frameleaf/library-grid';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
   import LibraryLayoutSwitch from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
@@ -79,6 +82,7 @@
     mdiLinkVariant,
     mdiLinkVariantPlus,
     mdiMagnify,
+    mdiWeb,
     mdiPaletteOutline,
     mdiPaletteSwatchOutline,
     mdiPlus,
@@ -188,6 +192,11 @@
   /** Boards opens its own save-link and extension dialogs unless the host passes its own. */
   let linkDialog = $state<{ url?: string } | null>(null);
   let extensionOpen = $state(false);
+  /** "Add from the web…" (FL-1448): Creators' home, with the cursor in its add box. */
+  const addFromWeb = () => {
+    creatorsStore.focusAdd++;
+    void goto(creatorsHref());
+  };
   const saveLink = $derived(
     onSaveLink ?? (workspace === 'design' ? (url?: string) => (linkDialog = { url }) : undefined),
   );
@@ -784,6 +793,9 @@
       <MenuItem onSelect={() => eagleImportUi.show()}
         ><Icon icon={mdiImport} size="18" aria-hidden={true} />{$t('frameleaf_eagle_import_open')}</MenuItem
       >
+      <MenuItem onSelect={addFromWeb}>
+        <Icon icon={mdiWeb} size="18" aria-hidden={true} />{$t('frameleaf_creators_add_from_web')}
+      </MenuItem>
       {#if getExtension}<MenuItem onSelect={getExtension}
           ><Icon icon={mdiPuzzleOutline} size="18" aria-hidden={true} />{$t('frameleaf_boards_get_extension')}</MenuItem
         >{/if}

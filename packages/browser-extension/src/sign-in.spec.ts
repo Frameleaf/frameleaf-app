@@ -59,6 +59,20 @@ describe('signing in with your Frameleaf account (FL-655)', () => {
     });
   });
 
+  it('asks for media downloads only when told to (FL-1427)', () => {
+    const url = new URL(
+      allowPageUrl('https://photos.example', {
+        redirectUri: REDIRECT,
+        codeChallenge: 'c'.repeat(43),
+        state: 's'.repeat(32),
+        client: 'chrome',
+        installationId: 'installation-one-0123',
+        grant: 'media',
+      }),
+    );
+    expect(url.searchParams.get('grant')).toBe('media');
+  });
+
   it('takes the code only from our own return address and state', async () => {
     expect(readReturn(`${REDIRECT}?code=abc&state=s1`, REDIRECT, 's1')).toBe(
       'abc',
@@ -116,9 +130,19 @@ describe('signing in with your Frameleaf account (FL-655)', () => {
       .fn()
       .mockResolvedValueOnce(json({ res: 'pong' }))
       .mockResolvedValueOnce(json({ version: 1 }));
+    // a server from before media downloads lists nothing it can be asked for
     await expect(
       checkServer('https://photos.example', current),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ grants: [] });
+    const newer = vi
+      .fn()
+      .mockResolvedValueOnce(json({ res: 'pong' }))
+      .mockResolvedValueOnce(
+        json({ version: 1, grants: ['capture', 'media', 7, 'later'] }),
+      );
+    await expect(checkServer('https://photos.example', newer)).resolves.toEqual(
+      { grants: ['capture', 'media', 'later'] },
+    );
     expect(current.mock.calls.map(([url]) => url)).toEqual([
       'https://photos.example/api/server/ping',
       'https://photos.example/api/browser-extension/sign-in',
@@ -149,6 +173,8 @@ describe('signing in with your Frameleaf account (FL-655)', () => {
       apiKeyId: 'a',
       userId: 'u',
       serverId: 's',
+      // a server from before media downloads only ever allows saving
+      grant: 'capture',
     });
     expect(transport).toHaveBeenCalledWith(
       'https://photos.example/api/browser-extension/sign-in/exchange',

@@ -88,9 +88,12 @@ import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaDownloaderRepository } from 'src/repositories/media-downloader.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { MediaImportRepository } from 'src/repositories/media-import.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRecoveryRepository } from 'src/repositories/media-recovery.repository.js';
+import { MediaSessionRepository } from 'src/repositories/media-session.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
@@ -156,6 +159,9 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  MediaDownloaderRepository,
+  MediaSessionRepository,
+  MediaImportRepository,
   PhotoLocationsRepository,
   SpeechRepository,
   AssetAnnotationRepository,

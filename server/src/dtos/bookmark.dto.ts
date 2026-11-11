@@ -103,6 +103,12 @@ export class AssetSourceResponseDto extends createZodDto(
       id: z.uuidv4(),
       assetId: z.uuidv4(),
       createdAt: z.string().meta({ format: 'date-time' }),
+      provider: z.string().nullable().optional(),
+      creatorId: z.string().nullable().optional(),
+      postId: z.string().nullable().optional(),
+      attachmentId: z.string().nullable().optional(),
+      publishedAt: z.string().nullable().optional(),
+      postText: z.string().nullable().optional(),
       // A plain string rather than an enum, so a later importer is not a breaking change for strict clients.
       importedFrom: z.string().nullable().meta({
         description: 'The app the source was imported from, such as "eagle"; null when the browser extension saved it',

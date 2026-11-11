@@ -11,7 +11,10 @@ export const extensionSignInRequest = (query: URLSearchParams): BrowserExtension
   const client = (query.get('client') ?? 'chrome').toLowerCase();
   // which installation of the extension is signing in, so only its own access is replaced
   const installationId = query.get('installation') ?? '';
+  // FL-1427: what is asked for; left out (an older extension) it is saving into Boards only
+  const grant = query.get('grant');
   if (
+    (grant !== null && grant !== 'capture' && grant !== 'media') ||
     !isExtensionReturnAddress(redirectUri) ||
     !/^[\w-]{43}$/.test(codeChallenge) ||
     query.get('code_challenge_method') !== 'S256' ||
@@ -29,8 +32,15 @@ export const extensionSignInRequest = (query: URLSearchParams): BrowserExtension
     state,
     client: client === 'edge' ? BrowserExtensionClient.Edge : BrowserExtensionClient.Chrome,
     installationId,
-  };
+    // Sent only when asked for, so the request is unchanged for saving alone. The cast keeps this
+    // compiling before and after the SDK learns the field.
+    ...(grant === 'media' && { grant }),
+  } as BrowserExtensionSignInStartDto;
 };
+
+/** FL-1427: the request also asks for media downloads, connected sites and creator subscriptions. */
+export const asksForMedia = (request: BrowserExtensionSignInStartDto | null) =>
+  (request as { grant?: unknown } | null)?.grant === 'media';
 
 /** The browser sign-in window's own return address: `https://<32 a–p>.chromiumapp.org/…`. */
 export const isExtensionReturnAddress = (value: string) => {

@@ -16,7 +16,7 @@
     lastUsed,
     SIGN_IN_PROBLEMS,
   } from "./sign-in-words";
-  import { requestServerAccess, sendRequest } from "./platform";
+  import { openLibrary, requestServerAccess, sendRequest } from "./platform";
   import type { RecentServer, SignInProblem } from "./settings";
 
   let {
@@ -160,6 +160,20 @@
         />
         <span><strong>{shown.title}</strong>{shown.body(problemHost)}</span>
       </div>
+    {/if}
+    {#if mode !== "key" && currentProblem?.problem === "unreachable" && currentProblem.origin.startsWith("https://")}
+      <!-- FL-1427: a server using the certificate it made for itself answers once the browser trusts it -->
+      <p class="hint">
+        If your server uses the certificate it made for itself, open it and
+        accept the certificate when the browser asks, then try again here.
+        <button
+          type="button"
+          class="link-button"
+          disabled={working}
+          onclick={() => void openLibrary(currentProblem.origin)}
+          ><Icon name="openInNew" />Open {problemHost}</button
+        >
+      </p>
     {/if}
     {#if waiting}
       <p class="hint" role="status">
