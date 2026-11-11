@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import CreatorsWorkspace from '$lib/components/frameleaf/creators/CreatorsWorkspace.svelte';
   import LibraryItemsView from '$lib/components/frameleaf/LibraryItemsView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import { contextDiscoveryQuery, discoveryUrl } from '$lib/components/discovery/query';
@@ -57,7 +56,10 @@
   onUploadClick={() => void openFileUploadDialog({ libraryScope: LibraryScope.Design })}
 >
   {#if creators}
-    <CreatorsWorkspace />
+    <!-- Loaded when opened, so Boards' Items view does not carry the Creators area up front. -->
+    {#await import('$lib/components/frameleaf/creators/CreatorsWorkspace.svelte') then { default: CreatorsWorkspace }}
+      <CreatorsWorkspace />
+    {/await}
   {:else}
     <LibraryItemsView
       title={viewTitle}
