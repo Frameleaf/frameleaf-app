@@ -136,7 +136,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1304 transcribe dialog and caption insertion; changes no composition or raster producer.
     sourceSha256 === 'c9be2c718ed8dff077b6cbbba072dd8357cc4417109c3faf4f3a556578cffc66' ||
     // FD-27 reviews captions and persists transcript drafts; composition and raster producers are unchanged.
-    sourceSha256 === '0aa58e0ee46dd0d1e058f530ce747707db4f97d037afdf60e4352b8ab3d2c0c3'
+    sourceSha256 === '0aa58e0ee46dd0d1e058f530ce747707db4f97d037afdf60e4352b8ab3d2c0c3' ||
+    // FD-27 retains the Apply error when storage refuses rollback; producer bytes are unchanged.
+    sourceSha256 === 'e6bb2e8e859dfb80309ae119edd40662bd09ffb13fdb473fe52062153f46cc6c'
   )
     return {
       ...COMPOSITION_SOURCES,

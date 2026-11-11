@@ -1058,7 +1058,26 @@ diff --git a/src/features/timeline/deps/media-transcription-service.ts b/src/fea
 diff --git a/src/infrastructure/storage/workspace-fs/transcripts.test.ts b/src/infrastructure/storage/workspace-fs/transcripts.test.ts
 --- a/src/infrastructure/storage/workspace-fs/transcripts.test.ts
 +++ b/src/infrastructure/storage/workspace-fs/transcripts.test.ts
-@@ -37,6 +37,28 @@
+@@ -1,6 +1,6 @@
+ // @vitest-environment node
+
+-import { afterEach, describe, expect, it } from 'vite-plus/test'
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+ import type { MediaTranscript } from '@/types/storage'
+ import '../test-utils/logger-test-mocks'
+
+@@ -11,8 +11,8 @@
+   saveTranscript,
+ } from './transcripts'
+ import { setWorkspaceRoot } from './root'
+-import { asHandle, createRoot } from './__tests__/in-memory-handle'
+-import { writeJsonAtomic } from './fs-primitives'
++import { asHandle, createRoot, MemDir } from './__tests__/in-memory-handle'
++import { readJson, writeJsonAtomic } from './fs-primitives'
+ import { legacyTranscriptPath, aiOutputPath } from './paths'
+
+ function makeTranscript(mediaId: string): MediaTranscript {
+@@ -37,6 +37,65 @@
      expect(t!.mediaId).toBe('m1')
      expect(t!.segments[0]!.text).toBe('hello')
    })
@@ -1084,6 +1103,43 @@ diff --git a/src/infrastructure/storage/workspace-fs/transcripts.test.ts b/src/i
 +      expect(await getTranscript('m1')).toEqual(before)
 +    },
 +  )
++
++  it.each(['restore', 'remove'])(
++    'preserves the commit error when rollback cannot %s the transcript',
++    async (action) => {
++      const root = asHandle(createRoot())
++      setWorkspaceRoot(root)
++      const original = makeTranscript('m1')
++      if (action === 'restore') await saveTranscript(original)
++      else await writeJsonAtomic(root, legacyTranscriptPath('m1'), original)
++      const commitError = new Error('The timeline changed')
++      const rollbackError = new DOMException('Write denied', 'NotAllowedError')
++      const restore = vi.spyOn(MemDir.prototype, 'getFileHandle')
++      const remove = vi.spyOn(MemDir.prototype, 'removeEntry')
++      try {
++        const draft = { ...original, segments: [{ start: 0, end: 1, text: 'draft' }] }
++        await expect(
++          saveTranscript(draft, {
++            validate() {},
++            commit() {
++              if (action === 'restore') restore.mockRejectedValueOnce(rollbackError)
++              else remove.mockRejectedValueOnce(rollbackError)
++              throw commitError
++            },
++          }),
++        ).rejects.toBe(commitError)
++        if (action === 'restore') {
++          expect(restore).toHaveBeenLastCalledWith('transcript.json.tmp', { create: true })
++        } else {
++          expect(remove).toHaveBeenLastCalledWith('transcript.json', { recursive: false })
++          expect(await readJson(root, legacyTranscriptPath('m1'))).toEqual(original)
++        }
++      } finally {
++        restore.mockRestore()
++        remove.mockRestore()
++      }
++    },
++  )
 
    it('getTranscript returns undefined when missing', async () => {
      const root = createRoot()
@@ -1102,7 +1158,7 @@ diff --git a/src/infrastructure/storage/workspace-fs/transcripts.ts b/src/infras
  import {
    readAiOutput,
    writeAiOutput,
-@@ -66,38 +67,67 @@
+@@ -66,38 +67,71 @@
    }
  }
 
@@ -1159,8 +1215,12 @@ diff --git a/src/infrastructure/storage/workspace-fs/transcripts.ts b/src/infras
 +    try {
 +      guarded?.commit(saved)
 +    } catch (error) {
-+      if (previous == null) await removeEntry(root, target)
-+      else await writeJsonAtomic(root, target, previous)
++      try {
++        if (previous == null) await removeEntry(root, target)
++        else await writeJsonAtomic(root, target, previous)
++      } catch (rollbackError) {
++        logger.error(`saveTranscript(${mediaId}) rollback failed`, rollbackError)
++      }
 +      throw error
 +    }
 +
