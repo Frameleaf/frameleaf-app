@@ -765,6 +765,11 @@
       void manager.refresh();
       return;
     }
+    // FL-1410: a date set by hand is no longer one to check; the server says where each photo belongs now.
+    if (action === 'change-date' && manager.datesToCheck) {
+      void manager.refresh();
+      return;
+    }
     const patch = ASSET_PATCHES[action];
     if (!patch) {
       return;
@@ -1564,6 +1569,10 @@
       await manager.loadTimelineMonth(group.yearMonth, { cancelable: false });
     } catch (error) {
       handleError(error, $t('errors.failed_to_load_assets'));
+      return;
+    }
+    // The view moved on while the group loaded (a filter, a refresh): its photos are not this view's.
+    if (!manager.months.includes(group)) {
       return;
     }
     const ids = group.getAssets().map(({ id }) => id);
