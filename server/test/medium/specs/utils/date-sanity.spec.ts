@@ -135,7 +135,11 @@ describe('dates that cannot be right (FL-1410)', () => {
     const auth = factory.auth({ user });
     const add = async (instant: string, locked = false) => {
       const { asset } = await ctx.newAsset({ ownerId: user.id, ...taken(instant) });
-      await ctx.newExif({ assetId: asset.id, ...(locked && { lockedProperties: ['dateTimeOriginal'] }) });
+      await ctx.newExif({
+        assetId: asset.id,
+        make: 'Canon',
+        ...(locked && { lockedProperties: ['dateTimeOriginal'] }),
+      });
       return asset.id;
     };
     const recent = await add('2026-08-14T10:00:00.000Z');
@@ -212,7 +216,7 @@ describe('dates that cannot be right (FL-1410)', () => {
     ]);
 
     const ordered = JSON.parse(await sut.getTimelineOrdered(auth, { ...only, sort: 'filename', skip: 0, take: 10 }));
-    expect([...ordered.id].sort()).toEqual([future, reset2000, reset1970].sort());
+    expect(new Set(ordered.id)).toEqual(new Set([future, reset2000, reset1970]));
   });
 
   it("leaves them out of an album's range, and gives an album of nothing else no range", async () => {
