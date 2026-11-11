@@ -656,6 +656,15 @@
       ? { ...discoveryQuery, filter: {}, imageEnrichment: undefined }
       : undefined,
   );
+  /**
+   * FL-1412 (M13): the search answered and nothing matches, so the page is its empty state. The title
+   * and the chips stay (what was asked, each condition removable); the layout tabs, the results toolbar
+   * and the Thumbnail size bar have nothing to arrange.
+   */
+  const noMatches = $derived(
+    hasSearchQuery && discoveryQuery?.mode !== 'speech' && !isLoading && !loadFailed && searchResultAssets.length === 0,
+  );
+  const emptyClear = $derived({ label: $t('frameleaf_library_empty_filtered_clear'), onClick: clearSearch });
   const emptySecondary = $derived(
     widerQuery
       ? {
@@ -868,10 +877,12 @@
         {/if}
       </header>
       <!-- FL-707 P2/12 (LibraryView `.fl-library-layouts`): the layout tabs and what each is for. -->
-      <div class="frameleaf search-layouts" data-theme={appTheme}>
-        <p class="search-layout-hint">{$t(LAYOUT_HINTS[librarySession.layout])}</p>
-        <LibraryLayoutSwitch session={librarySession} />
-      </div>
+      {#if !noMatches}
+        <div class="frameleaf search-layouts" data-theme={appTheme}>
+          <p class="search-layout-hint">{$t(LAYOUT_HINTS[librarySession.layout])}</p>
+          <LibraryLayoutSwitch session={librarySession} />
+        </div>
+      {/if}
       <!-- Prototype `.active-filter-bar`; the Library's chips (FilterChip); an old-style link keeps the palette's SearchChip. -->
       {#if contextChips.length + filterChips.length + legacyKeys.length > 0}
         <section
@@ -951,34 +962,36 @@
         </section>
       {/if}
       <!-- Prototype `.results-toolbar`: the Library's own toolbar (LibraryView), over this search. -->
-      <div class="frameleaf search-toolbar" data-theme={appTheme}>
-        <ResultsToolbar
-          session={librarySession}
-          activeCount={chipCount}
-          {unappliedFields}
-          onOpenFilterPanel={(section) => requestFilterPanel(section)}
-          onSlideshow={discoveryQuery?.mode === 'speech' || timelineAssets.length === 0
-            ? undefined
-            : () => handlePromiseError(startSlideshow())}
-          inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
-          onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
-          sorts={ranked || discoveryQuery?.mode === 'speech' ? undefined : SEARCH_SORTS}
-          sort={searchSort}
-          onSortChange={(sort) => librarySession.patchView({ sort })}
-          view={listView ? 'list' : 'grid'}
-          onViewChange={changeView}
-          onMoreActions={() => (moreActionsOpen = true)}
-          count={hasMore || isLoading || loadFailed ? null : searchResultAssets.length}
-          leading={hasMore ? loadedCount : undefined}
-        >
-          {#if discoveryQuery && discoveryQuery.mode !== 'speech'}
-            <button type="button" class="search-tool" onclick={() => (saving = true)}>
-              <Icon icon={mdiContentSaveOutline} size="16" aria-hidden />
-              <span class="search-tool-label">{$t('frameleaf_search_save_search')}</span>
-            </button>
-          {/if}
-        </ResultsToolbar>
-      </div>
+      {#if !noMatches}
+        <div class="frameleaf search-toolbar" data-theme={appTheme}>
+          <ResultsToolbar
+            session={librarySession}
+            activeCount={chipCount}
+            {unappliedFields}
+            onOpenFilterPanel={(section) => requestFilterPanel(section)}
+            onSlideshow={discoveryQuery?.mode === 'speech' || timelineAssets.length === 0
+              ? undefined
+              : () => handlePromiseError(startSlideshow())}
+            inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
+            onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
+            sorts={ranked || discoveryQuery?.mode === 'speech' ? undefined : SEARCH_SORTS}
+            sort={searchSort}
+            onSortChange={(sort) => librarySession.patchView({ sort })}
+            view={listView ? 'list' : 'grid'}
+            onViewChange={changeView}
+            onMoreActions={() => (moreActionsOpen = true)}
+            count={hasMore || isLoading || loadFailed ? null : searchResultAssets.length}
+            leading={hasMore ? loadedCount : undefined}
+          >
+            {#if discoveryQuery && discoveryQuery.mode !== 'speech'}
+              <button type="button" class="search-tool" onclick={() => (saving = true)}>
+                <Icon icon={mdiContentSaveOutline} size="16" aria-hidden />
+                <span class="search-tool-label">{$t('frameleaf_search_save_search')}</span>
+              </button>
+            {/if}
+          </ResultsToolbar>
+        </div>
+      {/if}
     {/if}
 
     <!-- FL-1393 (prototype `.search-section`): close matches first, the looser ones under their own heading. -->
@@ -1110,13 +1123,12 @@
         <div class="frameleaf search-state" data-theme={appTheme}>
           <!-- FL-1412 (M13): clearing is the one action; a search that began in an album or under filters
                leads with the wider search and keeps clearing beside it. -->
-          {@const clear = { label: $t('frameleaf_library_empty_filtered_clear'), onClick: clearSearch }}
           <EmptyState
             icon={mdiImageSearchOutline}
             title={$t('frameleaf_library_empty_filtered_title')}
             message={$t('frameleaf_library_empty_filtered_message')}
-            action={emptySecondary ?? clear}
-            secondaryAction={emptySecondary ? clear : undefined}
+            action={emptySecondary ?? emptyClear}
+            secondaryAction={emptySecondary ? emptyClear : undefined}
           />
         </div>
       {:else if !hasSearchQuery && !showAskSearch && (showAssistant || searchLocation.kind !== 'rejected')}
@@ -1150,7 +1162,7 @@
       {/if}
     </section>
   </div>
-  {#if hasSearchQuery && discoveryQuery?.mode !== 'speech'}
+  {#if hasSearchQuery && discoveryQuery?.mode !== 'speech' && !noMatches}
     <!-- The Library's status capsule (App.jsx footer): the count, the selection and Thumbnail size. -->
     <div class="frameleaf search-status" data-theme={appTheme}>
       <LibraryStatusBar

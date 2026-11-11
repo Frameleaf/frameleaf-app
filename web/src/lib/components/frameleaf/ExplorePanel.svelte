@@ -14,6 +14,7 @@
    */
   import AlbumCover from '$lib/components/album-page/AlbumCover.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';

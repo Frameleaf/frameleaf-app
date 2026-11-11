@@ -205,10 +205,28 @@ describe('AlbumDirectory', () => {
     expect(screen.queryByRole('region', { name: 'Other albums' })).toBeNull();
   });
 
-  it('shows the empty state with a create action when there is nothing', () => {
+  it('shows the one empty-page pattern, and nothing to arrange, when there is nothing (FL-1412)', () => {
     renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: [], spaces: [] }, onRefresh: vi.fn() });
-    expect(screen.getByRole('heading', { level: 2, name: 'No albums yet' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create album' })).toBeInTheDocument();
+    const empty = screen.getByTestId('frameleaf-empty-state');
+    expect(within(empty).getByRole('heading', { level: 2, name: 'No albums yet' })).toBeInTheDocument();
+    expect(empty).toHaveTextContent('An album gathers photos you choose. The photos stay in your library.');
+    expect(within(empty).getAllByRole('button')).toHaveLength(1);
+    expect(within(empty).getByRole('button', { name: 'New album' })).toBeInTheDocument();
+    // Nothing to search, sort, lay out, select or filter. The New menu stays: it makes every kind of album.
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'View' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Select' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'New' })).toBeInTheDocument();
+  });
+
+  it('keeps its controls when a search or a filter is what leaves nothing (FL-1412)', async () => {
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'zzzz' } });
+    expect(await screen.findByRole('heading', { level: 2, name: 'No albums match' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox')).toBeInTheDocument();
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+    expect(within(screen.getByTestId('frameleaf-empty-state')).queryByRole('button')).toBeNull();
   });
 
   it('puts an album dropped on a plain album inside it, and a smart album takes none', async () => {

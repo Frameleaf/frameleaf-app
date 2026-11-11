@@ -1434,7 +1434,9 @@
    * FL-1412 (M13): an empty page shows its empty state and nothing to arrange it with: no layout tabs,
    * no toolbar, no Thumbnail size bar. That is any signed-in view with nothing in it and nothing
    * narrowing it (Favorites, Best Photos, an album), the new library included. The one exception is
-   * FL-1398's: the owner's timeline with partner photos switched off keeps its toolbar.
+   * FL-1398's: the owner's timeline with partner photos switched off keeps its toolbar. A view a filter
+   * has emptied keeps its toolbar too, since Filter is how to change it; the status bar (the count and
+   * Thumbnail size) goes whenever there is nothing to count or size.
    */
   const bare = $derived(
     !publicView && !selectionMode && !session.filterActive && resultCount === 0 && (!ownTimeline || view.partnerPhotos),
@@ -2099,7 +2101,7 @@
       {/if}
     {/if}
   {/if}
-  {#if showStatusBar && !bare}
+  {#if showStatusBar && resultCount !== 0}
     <!-- App.jsx footer (LIB-P6): the count, the selection, "Saved on this device" and Thumbnail size. -->
     {#if thumbnailControl}
       <LibraryStatusBar
