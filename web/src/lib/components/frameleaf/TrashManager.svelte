@@ -78,6 +78,7 @@
     mdiCheckCircleOutline,
     mdiClose,
     mdiDeleteOutline,
+    mdiTrashCanOutline,
     mdiDeleteRestore,
     mdiMagnify,
     mdiMovieOpenOutline,
@@ -594,8 +595,11 @@
 
 <section class="trash-manager" aria-label={$t('frameleaf_trash_label')}>
   <KitPage>
-    <!-- FL-539: the prototype's Hero (trash.jsx) in place of the three summary numbers -->
-    {#if summary && trashEnabled}
+    <!-- FL-539: the prototype's Hero (trash.jsx) in place of the three summary numbers. FL-1412 (M13):
+         an empty Trash is the one empty-page pattern instead, drawn where the items would be. -->
+    {#if nothingHere}
+      <!-- the empty state below speaks for the page -->
+    {:else if summary && trashEnabled}
       <Hero
         label={$t('frameleaf_trash_hero_label')}
         icon={available > 0 ? mdiDeleteRestore : mdiDeleteOutline}
@@ -848,11 +852,17 @@
         message={$t('frameleaf_trash_no_matches_help')}
         action={filtered ? { label: $t('frameleaf_trash_clear_filters'), onClick: clearFilters } : undefined}
       />
-    {:else if !summary}
+    {:else}
+      <!-- With the Trash on, how long things wait; with it off, an administrator gets the way to turn it on. -->
       <EmptyState
-        icon={mdiDeleteOutline}
+        icon={mdiTrashCanOutline}
         title={$t('frameleaf_trash_empty_title')}
-        message={$t('frameleaf_trash_empty_help')}
+        message={trashEnabled
+          ? $t('frameleaf_trash_empty_help', { values: { days } })
+          : $t('frameleaf_trash_retention_disabled')}
+        action={!trashEnabled && authManager.user.isAdmin
+          ? { label: $t('frameleaf_trash_hero_change'), onClick: () => void goto(commandCenterUrl('storage', 'trash')) }
+          : undefined}
       />
     {/if}
   {/if}

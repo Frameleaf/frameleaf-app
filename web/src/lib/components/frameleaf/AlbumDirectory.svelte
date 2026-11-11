@@ -10,6 +10,7 @@
   import AlbumCleanupBanner from '$lib/components/frameleaf/album-cleanup/AlbumCleanupBanner.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
@@ -163,6 +164,11 @@
     arrangeAlbumDirectory(tree, { filter: view.filter, sort: view.sort, search, userId: currentUserId }),
   );
   const everything = $derived(directoryAlbums(tree));
+  /**
+   * FL-1412 (M13): with no album, collection or space at all there is nothing to search, sort, filter or
+   * select, so the page shows its empty state and only the New menu (the way to every kind of album).
+   */
+  const nothingYet = $derived(everything.length === 0);
   /** A tile asks for its path on every update: with thousands of albums, one lookup table for them all. */
   const byId = $derived(albumsById(tree));
   const find = (id: string) => byId.get(id);
@@ -770,53 +776,55 @@
       <p>{summary}</p>
     </div>
     <div class="tools">
-      <label class="search">
-        <Icon icon={mdiMagnify} size="17" />
-        <input type="search" bind:value={search} placeholder={$t('search_albums')} aria-label={$t('search_albums')} />
-      </label>
-      <!-- The prototype's sort menu (Collections.jsx:672-683), plus "Custom order" (FL-52). -->
-      <div class="sort">
-        <Menu label={$t('frameleaf_albums_sort')} align={stacked.current ? 'start' : 'end'}>
-          {#snippet trigger()}
-            <Icon icon={mdiSortVariant} size="17" aria-hidden={true} />
-            <span aria-hidden="true">{sortLabels[view.sort]()}</span>
-          {/snippet}
-          {#each albumDirectorySorts as sort (sort)}
-            <MenuItem checked={view.sort === sort} onSelect={() => setSort(sort)}>{sortLabels[sort]()}</MenuItem>
-          {/each}
-        </Menu>
-      </div>
-      <div class="view" role="group" aria-label={$t('view')}>
+      {#if !nothingYet}
+        <label class="search">
+          <Icon icon={mdiMagnify} size="17" />
+          <input type="search" bind:value={search} placeholder={$t('search_albums')} aria-label={$t('search_albums')} />
+        </label>
+        <!-- The prototype's sort menu (Collections.jsx:672-683), plus "Custom order" (FL-52). -->
+        <div class="sort">
+          <Menu label={$t('frameleaf_albums_sort')} align={stacked.current ? 'start' : 'end'}>
+            {#snippet trigger()}
+              <Icon icon={mdiSortVariant} size="17" aria-hidden={true} />
+              <span aria-hidden="true">{sortLabels[view.sort]()}</span>
+            {/snippet}
+            {#each albumDirectorySorts as sort (sort)}
+              <MenuItem checked={view.sort === sort} onSelect={() => setSort(sort)}>{sortLabels[sort]()}</MenuItem>
+            {/each}
+          </Menu>
+        </div>
+        <div class="view" role="group" aria-label={$t('view')}>
+          <button
+            type="button"
+            aria-pressed={view.view === 'grid'}
+            aria-label={$t('frameleaf_albums_view_grid')}
+            title={$t('frameleaf_albums_view_grid')}
+            onclick={() => setViewMode('grid')}
+          >
+            <Icon icon={mdiViewGridOutline} size="18" />
+          </button>
+          <button
+            type="button"
+            aria-pressed={view.view === 'list'}
+            aria-label={$t('frameleaf_albums_view_list')}
+            title={$t('frameleaf_albums_view_list')}
+            onclick={() => setViewMode('list')}
+          >
+            <Icon icon={mdiViewListOutline} size="18" />
+          </button>
+        </div>
+        <!-- After the view switch, beside New (FL-1411): the prototype's order with the app's Select added. -->
         <button
           type="button"
-          aria-pressed={view.view === 'grid'}
-          aria-label={$t('frameleaf_albums_view_grid')}
-          title={$t('frameleaf_albums_view_grid')}
-          onclick={() => setViewMode('grid')}
+          class="select-toggle"
+          aria-pressed={selecting}
+          aria-label={selecting ? $t('done') : $t('select')}
+          onclick={() => (selecting ? stopSelecting() : (selecting = true))}
         >
-          <Icon icon={mdiViewGridOutline} size="18" />
+          <Icon icon={selecting ? mdiClose : mdiCheckboxMultipleMarkedOutline} size="17" aria-hidden={true} />
+          <span>{selecting ? $t('done') : $t('select')}</span>
         </button>
-        <button
-          type="button"
-          aria-pressed={view.view === 'list'}
-          aria-label={$t('frameleaf_albums_view_list')}
-          title={$t('frameleaf_albums_view_list')}
-          onclick={() => setViewMode('list')}
-        >
-          <Icon icon={mdiViewListOutline} size="18" />
-        </button>
-      </div>
-      <!-- After the view switch, beside New (FL-1411): the prototype's order with the app's Select added. -->
-      <button
-        type="button"
-        class="select-toggle"
-        aria-pressed={selecting}
-        aria-label={selecting ? $t('done') : $t('select')}
-        onclick={() => (selecting ? stopSelecting() : (selecting = true))}
-      >
-        <Icon icon={selecting ? mdiClose : mdiCheckboxMultipleMarkedOutline} size="17" aria-hidden={true} />
-        <span>{selecting ? $t('done') : $t('select')}</span>
-      </button>
+      {/if}
       <!-- The prototype's primary "New" menu (Collections.jsx:702-735). -->
       <div class="new-menu">
         <Menu label={$t('frameleaf_albums_new')} align="end">
@@ -842,20 +850,22 @@
     </div>
   </header>
 
-  <div class="filters" role="tablist" aria-label={$t('frameleaf_albums_show')}>
-    {#each albumDirectoryFilters as filter, index (filter)}
-      <button
-        type="button"
-        role="tab"
-        aria-selected={view.filter === filter}
-        tabindex={view.filter === filter ? 0 : -1}
-        onclick={() => setFilter(filter)}
-        onkeydown={(event) => onFilterKeydown(event, index)}
-      >
-        {filterLabels[filter]()}
-      </button>
-    {/each}
-  </div>
+  {#if !nothingYet}
+    <div class="filters" role="tablist" aria-label={$t('frameleaf_albums_show')}>
+      {#each albumDirectoryFilters as filter, index (filter)}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view.filter === filter}
+          tabindex={view.filter === filter ? 0 : -1}
+          onclick={() => setFilter(filter)}
+          onkeydown={(event) => onFilterKeydown(event, index)}
+        >
+          {filterLabels[filter]()}
+        </button>
+      {/each}
+    </div>
+  {/if}
 
   <div class="status" class:has-message={!!status}><Status message={status} {busy} /></div>
 
@@ -933,23 +943,33 @@
   {/if}
 
   {#if arrangement.empty}
-    <div class="empty">
-      <Icon icon={mdiImageAlbum} size="36" />
-      {#if arrangement.searching}
-        <h2>{$t('frameleaf_albums_empty_search_title')}</h2>
-        <p>{$t('frameleaf_albums_empty_search_text')}</p>
-      {:else if view.filter === 'shared'}
-        <h2>{$t('frameleaf_albums_empty_shared_title')}</h2>
-        <p>{$t('frameleaf_albums_empty_shared_text')}</p>
-      {:else if view.filter === 'smart'}
-        <h2>{$t('frameleaf_albums_empty_smart_title')}</h2>
-        <p>{$t('frameleaf_albums_empty_smart_text')}</p>
-      {:else}
-        <h2>{$t('frameleaf_albums_empty_title')}</h2>
-        <p>{$t('frameleaf_albums_empty_text')}</p>
-        <button type="button" class="primary" onclick={() => openCreate(AlbumKind.Album)}>{$t('create_album')}</button>
-      {/if}
-    </div>
+    <!-- FL-1412 (M13): the one empty-page pattern. Only a first album leads somewhere. -->
+    {#if arrangement.searching}
+      <EmptyState
+        icon={mdiImageAlbum}
+        title={$t('frameleaf_albums_empty_search_title')}
+        message={$t('frameleaf_albums_empty_search_text')}
+      />
+    {:else if view.filter === 'shared'}
+      <EmptyState
+        icon={mdiImageAlbum}
+        title={$t('frameleaf_albums_empty_shared_title')}
+        message={$t('frameleaf_albums_empty_shared_text')}
+      />
+    {:else if view.filter === 'smart'}
+      <EmptyState
+        icon={mdiImageAlbum}
+        title={$t('frameleaf_albums_empty_smart_title')}
+        message={$t('frameleaf_albums_empty_smart_text')}
+      />
+    {:else}
+      <EmptyState
+        icon={mdiImageAlbum}
+        title={$t('frameleaf_albums_empty_title')}
+        message={$t('frameleaf_albums_empty_text')}
+        action={{ label: $t('frameleaf_albums_create_album'), onClick: () => openCreate(AlbumKind.Album) }}
+      />
+    {/if}
   {/if}
 
   {#if selecting}
@@ -1418,24 +1438,6 @@
     color: var(--fl-muted);
     font-size: 0.75rem;
     font-weight: 400;
-  }
-  .empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 3rem 1rem;
-    color: var(--fl-muted);
-    text-align: center;
-  }
-  .empty h2 {
-    margin: 0;
-    color: var(--fl-text);
-    font-size: 1.125rem;
-  }
-  .empty p {
-    margin: 0;
-    font-size: 0.875rem;
   }
   .primary {
     padding: 0 1rem;

@@ -26,6 +26,7 @@
   import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import FolderCardGrid from '$lib/components/frameleaf/folders/FolderCardGrid.svelte';
   import FolderColumns from '$lib/components/frameleaf/folders/FolderColumns.svelte';
   import FolderPath from '$lib/components/frameleaf/folders/FolderPath.svelte';
@@ -428,12 +429,14 @@
           </div>
         {/if}
       {/if}
-      <div class="push">
-        <Button onclick={() => showInTimeline(folder)} disabled={folder.count === 0}>
-          <Icon icon={mdiTimelineClockOutline} size="18" aria-hidden />
-          {$t('frameleaf_folders_show_in_timeline')}
-        </Button>
-      </div>
+      {#if hasFolders}
+        <div class="push">
+          <Button onclick={() => showInTimeline(folder)} disabled={folder.count === 0}>
+            <Icon icon={mdiTimelineClockOutline} size="18" aria-hidden />
+            {$t('frameleaf_folders_show_in_timeline')}
+          </Button>
+        </div>
+      {/if}
     </div>
   </header>
 
@@ -465,11 +468,12 @@
   <div class="status"><Status message={status} /></div>
 
   {#if !hasFolders}
-    <div class="empty" role="status">
-      <Icon icon={mdiFolderOutline} size="36" aria-hidden />
-      <h2>{$t('frameleaf_folders_empty_title')}</h2>
-      <p>{$t('frameleaf_folders_empty_description')}</p>
-    </div>
+    <!-- FL-1412 (M13): the one empty-page pattern; the header above carries no controls. -->
+    <EmptyState
+      icon={mdiFolderOutline}
+      title={$t('frameleaf_folders_empty_title')}
+      message={$t('frameleaf_folders_empty_description')}
+    />
   {:else if query}
     {#if found.length > 0}
       <section class="group" aria-label={$t('frameleaf_folders_matching', { values: { query } })}>
@@ -482,12 +486,12 @@
         <FolderCardGrid folders={found} {label} note={foundNote} href={hrefOf} title={diskTitle} onOpen={onFoundOpen} />
       </section>
     {:else}
-      <div class="empty" role="status">
-        <Icon icon={mdiFolderOutline} size="36" aria-hidden />
-        <h2>{$t('frameleaf_folders_find_none_title', { values: { query } })}</h2>
-        <p>{$t('frameleaf_discovery_find_none_help')}</p>
-        <Button onclick={() => (search = '')}>{$t('frameleaf_discovery_find_clear')}</Button>
-      </div>
+      <EmptyState
+        icon={mdiFolderOutline}
+        title={$t('frameleaf_folders_find_none_title', { values: { query } })}
+        message={$t('frameleaf_discovery_find_none_help')}
+        secondaryAction={{ label: $t('frameleaf_discovery_find_clear'), onClick: () => (search = '') }}
+      />
     {/if}
   {:else if view === 'columns'}
     <FolderColumns
@@ -802,28 +806,6 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
     font-variant-numeric: tabular-nums;
-  }
-
-  .empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    padding: 64px 20px;
-    color: var(--fl-muted);
-    text-align: center;
-  }
-  .empty h2 {
-    margin: 4px 0 0;
-    color: var(--fl-text);
-    font-size: 16px;
-    font-weight: 600;
-    overflow-wrap: anywhere;
-  }
-  .empty p {
-    max-width: 360px;
-    margin: 0;
-    font-size: var(--fl-font-callout);
   }
 
   @media (pointer: coarse) {

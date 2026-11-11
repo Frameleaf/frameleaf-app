@@ -188,16 +188,12 @@
   </header>
 
   {#if !hasAnything}
-    <!--
-      The prototype's empty state (ExploreLibrary.jsx:60-66) speaks of albums and filters, which
-      production Explore does not have: here it is only ever an empty library, so the same pattern
-      and tone point at uploading instead.
-    -->
-    <div class="el-empty" role="status">
-      <Icon icon={mdiImageSearchOutline} size="32" aria-hidden="true" />
-      <h2>{$t('frameleaf_explore_empty_title')}</h2>
-      <p>{$t('frameleaf_explore_empty_body')}</p>
-    </div>
+    <!-- FL-1412 (M13): production Explore is only ever empty with an empty library. -->
+    <EmptyState
+      icon={mdiImageSearchOutline}
+      title={$t('frameleaf_explore_empty_title')}
+      message={$t('frameleaf_explore_empty_body')}
+    />
   {:else}
     {#if failed.people && people.length === 0}
       {@render failure('people', $t('people'), 0)}
@@ -979,18 +975,6 @@
     margin-inline-end: 16px;
     padding: 8px 0;
     font-size: 12px;
-  }
-  .el-empty {
-    padding: 50px 12px;
-    color: var(--fl-muted);
-    text-align: center;
-  }
-  .el-empty h2 {
-    margin-top: 14px;
-    color: var(--fl-text);
-  }
-  .el-empty p {
-    font-size: 13px;
   }
   .el-cover-empty {
     display: grid;

@@ -46,7 +46,11 @@
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
     {#snippet empty()}
-      <LibraryEmptyState icon={mdiHeartOutline} message={$t('frameleaf_favorites_empty')} />
+      <LibraryEmptyState
+        icon={mdiHeartOutline}
+        title={$t('frameleaf_favorites_empty_title')}
+        message={$t('frameleaf_favorites_empty')}
+      />
     {/snippet}
 
     {#snippet viewer()}

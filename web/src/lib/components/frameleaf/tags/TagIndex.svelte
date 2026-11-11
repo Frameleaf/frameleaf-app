@@ -177,55 +177,58 @@
       <h1 id={headingId} tabindex="-1" bind:this={heading}>{$t('tags')}</h1>
       <p>{summary}</p>
     </div>
-    <div class="tools">
-      <label class="search">
-        <Icon icon={mdiMagnify} size="17" aria-hidden />
-        <input
-          type="search"
-          bind:value={search}
-          bind:this={searchInput}
-          placeholder={$t('frameleaf_tags_find')}
-          aria-label={$t('frameleaf_tags_find')}
-        />
-      </label>
-      <div class="sort">
-        <Menu label={$t('frameleaf_tags_sort')} align="end">
-          {#snippet trigger()}
-            <Icon icon={mdiSortVariant} size="17" aria-hidden />
-            <span aria-hidden="true">{sortLabels[view.sort]}</span>
-          {/snippet}
-          {#each TAG_SORTS as sort (sort)}
-            <MenuItem checked={view.sort === sort} onSelect={() => setSort(sort)}>{sortLabels[sort]}</MenuItem>
-          {/each}
-        </Menu>
+    <!-- FL-1412 (M13): with no tags there is nothing to find, sort or lay out; the empty state offers New tag. -->
+    {#if total > 0}
+      <div class="tools">
+        <label class="search">
+          <Icon icon={mdiMagnify} size="17" aria-hidden />
+          <input
+            type="search"
+            bind:value={search}
+            bind:this={searchInput}
+            placeholder={$t('frameleaf_tags_find')}
+            aria-label={$t('frameleaf_tags_find')}
+          />
+        </label>
+        <div class="sort">
+          <Menu label={$t('frameleaf_tags_sort')} align="end">
+            {#snippet trigger()}
+              <Icon icon={mdiSortVariant} size="17" aria-hidden />
+              <span aria-hidden="true">{sortLabels[view.sort]}</span>
+            {/snippet}
+            {#each TAG_SORTS as sort (sort)}
+              <MenuItem checked={view.sort === sort} onSelect={() => setSort(sort)}>{sortLabels[sort]}</MenuItem>
+            {/each}
+          </Menu>
+        </div>
+        <div class="view" role="group" aria-label={$t('view')}>
+          <button
+            type="button"
+            aria-pressed={view.view === 'cards'}
+            aria-label={$t('frameleaf_tags_view_cards')}
+            title={$t('frameleaf_tags_view_cards')}
+            onclick={() => setView('cards')}
+          >
+            <Icon icon={mdiViewGridOutline} size="18" aria-hidden />
+          </button>
+          <button
+            type="button"
+            aria-pressed={view.view === 'list'}
+            aria-label={$t('frameleaf_tags_view_list')}
+            title={$t('frameleaf_tags_view_list')}
+            onclick={() => setView('list')}
+          >
+            <Icon icon={mdiViewListOutline} size="18" aria-hidden />
+          </button>
+        </div>
+        <div class="new">
+          <Button variant="primary" onclick={() => (request = { type: 'create', parentId: null })}>
+            <Icon icon={mdiPlus} size="18" aria-hidden />
+            {$t('frameleaf_tags_new')}
+          </Button>
+        </div>
       </div>
-      <div class="view" role="group" aria-label={$t('view')}>
-        <button
-          type="button"
-          aria-pressed={view.view === 'cards'}
-          aria-label={$t('frameleaf_tags_view_cards')}
-          title={$t('frameleaf_tags_view_cards')}
-          onclick={() => setView('cards')}
-        >
-          <Icon icon={mdiViewGridOutline} size="18" aria-hidden />
-        </button>
-        <button
-          type="button"
-          aria-pressed={view.view === 'list'}
-          aria-label={$t('frameleaf_tags_view_list')}
-          title={$t('frameleaf_tags_view_list')}
-          onclick={() => setView('list')}
-        >
-          <Icon icon={mdiViewListOutline} size="18" aria-hidden />
-        </button>
-      </div>
-      <div class="new">
-        <Button variant="primary" onclick={() => (request = { type: 'create', parentId: null })}>
-          <Icon icon={mdiPlus} size="18" aria-hidden />
-          {$t('frameleaf_tags_new')}
-        </Button>
-      </div>
-    </div>
+    {/if}
   </header>
 
   <p class="status" role="status" aria-live="polite">{status}</p>
@@ -238,11 +241,7 @@
       icon={mdiTagOutline}
       title={$t('frameleaf_tags_empty_title')}
       message={$t('frameleaf_tags_empty_description')}
-      action={{
-        label: $t('frameleaf_tags_new'),
-        icon: mdiPlus,
-        onClick: () => (request = { type: 'create', parentId: null }),
-      }}
+      action={{ label: $t('frameleaf_tags_new'), onClick: () => (request = { type: 'create', parentId: null }) }}
     />
   {:else if matches && matches.length === 0}
     <EmptyState

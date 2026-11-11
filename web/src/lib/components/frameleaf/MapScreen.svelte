@@ -10,6 +10,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
@@ -49,6 +50,8 @@
     mapAreaCovers,
     mapAreasMeet,
     mapDateWindow,
+    mapFiltersReset,
+    mapIsNarrowed,
     MAP_DATE_PRESETS,
     toMapArea,
     widenMapArea,
@@ -80,7 +83,8 @@
     mdiMapMarkerOffOutline,
     mdiMagnify,
     mdiMapMarkerMultipleOutline,
-    mdiMapMarkerOutline,
+    mdiMapOutline,
+    mdiMapSearchOutline,
     mdiMinus,
     mdiPlus,
     mdiViewListOutline,
@@ -232,6 +236,8 @@
   const focusedByLink = typeof location !== 'undefined' && /^#[\d.-]+\/[\d.-]+\/[\d.-]+/.test(location.hash);
 
   const patchSettings = (patch: Partial<MapSettings>) => ($mapSettings = { ...$mapSettings, ...patch });
+  /** FL-1412 (M13): an empty map under a narrowing setting is "none match", not "none yet". */
+  const narrowed = $derived(mapIsNarrowed($mapSettings, statistics?.archived));
   const focusGear = () => gear?.querySelector('button')?.focus();
 
   /* ------------------------------------------------------------------ */
@@ -1194,11 +1200,26 @@
   {/if}
 
   {#if loaded && !loadFailed && located === 0}
-    <div class="empty" role="status">
-      <Icon icon={mdiMapMarkerOutline} size="30" />
-      <!-- MapView.jsx has one empty state for both scopes: the settings sheet narrows an album too. -->
-      <strong>{$t('frameleaf_map_empty_title')}</strong>
-      <p>{$t('frameleaf_map_empty_help')}</p>
+    <!-- FL-1412 (M13): a new library has no located photos yet; a narrowed map has none that match,
+         and offers the way back. MapView.jsx has one card for both scopes: the sheet narrows an album too. -->
+    <div class="empty">
+      {#if narrowed}
+        <EmptyState
+          icon={mdiMapSearchOutline}
+          title={$t('frameleaf_map_empty_title')}
+          message={$t('frameleaf_map_empty_help')}
+          action={{
+            label: $t('frameleaf_map_reset_filters'),
+            onClick: () => patchSettings(mapFiltersReset($mapSettings, statistics?.archived)),
+          }}
+        />
+      {:else}
+        <EmptyState
+          icon={mdiMapOutline}
+          title={$t('frameleaf_map_none_title')}
+          message={$t('frameleaf_map_none_help')}
+        />
+      {/if}
     </div>
   {/if}
 </div>
@@ -1808,24 +1829,13 @@
     top: 50%;
     left: 50%;
     z-index: 3;
-    width: min(320px, calc(100% - 32px));
-    padding: 22px;
+    width: min(360px, calc(100% - 32px));
     transform: translate(-50%, -50%);
     border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
     box-shadow: var(--fl-shadow-2);
-    text-align: center;
-    color: var(--fl-muted);
-  }
-  .empty strong {
-    display: block;
-    margin-top: 10px;
-    color: var(--fl-text);
-  }
-  .empty p {
-    margin: 8px 0 0;
-    font-size: var(--fl-font-small);
-    line-height: 1.5;
+    /* The prototype's framed empty state (`.fl-empty-frame .fl-empty`). */
+    --fl-empty-padding: 32px 20px;
   }
   .sr-only {
     position: absolute;

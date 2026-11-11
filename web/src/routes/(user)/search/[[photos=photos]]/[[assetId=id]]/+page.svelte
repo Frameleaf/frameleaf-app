@@ -87,7 +87,7 @@
     type SmartSearchDto,
   } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
-  import { mdiContentSaveOutline, mdiFilterOffOutline, mdiMagnify } from '@mdi/js';
+  import { mdiContentSaveOutline, mdiImageSearchOutline, mdiMagnify } from '@mdi/js';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -1108,12 +1108,15 @@
         <!-- The Library's filtered empty state (App.jsx "No matching media"), with the way out of the
              album or space the search started in, or past its filters, when there is one. -->
         <div class="frameleaf search-state" data-theme={appTheme}>
+          <!-- FL-1412 (M13): clearing is the one action; a search that began in an album or under filters
+               leads with the wider search and keeps clearing beside it. -->
+          {@const clear = { label: $t('frameleaf_library_empty_filtered_clear'), onClick: clearSearch }}
           <EmptyState
-            icon={mdiFilterOffOutline}
+            icon={mdiImageSearchOutline}
             title={$t('frameleaf_library_empty_filtered_title')}
             message={$t('frameleaf_library_empty_filtered_message')}
-            action={emptySecondary}
-            secondaryAction={{ label: $t('frameleaf_library_empty_filtered_clear'), onClick: clearSearch }}
+            action={emptySecondary ?? clear}
+            secondaryAction={emptySecondary ? clear : undefined}
           />
         </div>
       {:else if !hasSearchQuery && !showAskSearch && (showAssistant || searchLocation.kind !== 'rejected')}

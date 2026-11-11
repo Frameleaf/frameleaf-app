@@ -37,6 +37,34 @@ export const mapDateWindow = (
   }
 };
 
+type MapFilters = Pick<
+  MapSettings,
+  'datePreset' | 'onlyFavorites' | 'includeArchived' | 'withSharedAlbums' | 'withPartners'
+>;
+
+/**
+ * FL-1412 (M13): whether the settings sheet keeps located items off the map, so an empty map can tell
+ * "no located photos yet" from "none match these filters". `archived` is the sheet's count of located
+ * archived items: left out by default, they only count as hidden when there are some.
+ */
+export const mapIsNarrowed = (settings: MapFilters, archived = 0) =>
+  settings.datePreset !== 'all' ||
+  settings.onlyFavorites ||
+  !settings.withSharedAlbums ||
+  !settings.withPartners ||
+  (!settings.includeArchived && archived > 0);
+
+/** "Reset map filters": every date and every item, and archived ones when they are what is hidden. */
+export const mapFiltersReset = (settings: MapFilters, archived = 0): Partial<MapSettings> => ({
+  datePreset: 'all',
+  dateAfter: '',
+  dateBefore: '',
+  onlyFavorites: false,
+  withSharedAlbums: true,
+  withPartners: true,
+  includeArchived: settings.includeArchived || archived > 0,
+});
+
 export type MapArea = { west: number; south: number; east: number; north: number };
 
 type MapView = { getWest(): number; getEast(): number; getSouth(): number; getNorth(): number };
