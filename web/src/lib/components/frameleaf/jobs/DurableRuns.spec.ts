@@ -319,6 +319,30 @@ describe('recent work', () => {
     render(DurableRuns);
     expect(await screen.findByText('3 of 3 tasks')).toBeInTheDocument();
   });
+  it('a scan refused before it found any work shows no count (FL-1430)', async () => {
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [
+        durableRun({
+          kind: 'library_scan',
+          libraryName: 'Jamie’s phone',
+          state: 'completed',
+          finishedAt: '2026-11-11T02:57:00.000Z',
+          total: 0,
+          completed: 0,
+          failed: 0,
+          needsAttention: 0,
+          active: 0,
+          reasons: ['source-unavailable'],
+          unreachableLibraries: ['Jamie’s phone'],
+          stageTotals: { ...durableRun().stageTotals, total: 0, completed: 0, failed: 0, needsAttention: 0, active: 0 },
+        }),
+      ],
+      hasNextPage: false,
+    });
+    render(DurableRuns);
+    expect(await screen.findByText('Couldn’t reach the drive')).toBeInTheDocument();
+    expect(screen.queryByText(/0 of 0/)).not.toBeInTheDocument();
+  });
   it('counts tasks when the work is not about photos', async () => {
     sdkMock.listDurableJobRuns.mockResolvedValue({
       items: [durableRun({ countsPhotos: false, failed: 0, needsAttention: 0 })],

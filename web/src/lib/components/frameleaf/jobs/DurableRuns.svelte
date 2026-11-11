@@ -233,6 +233,9 @@
             </span>
           {/if}
         {/if}
+        {#if view.note}
+          <div class="why"><p>{$t(view.note.key, { values: view.note.values })}</p></div>
+        {/if}
         {#if view.found}
           <div class="why"><p>{$t(view.found.key, { values: view.found.values })}</p></div>
         {/if}
@@ -255,7 +258,10 @@
           <strong>{title(run)}</strong>
           <span class="status"><Pill tone={headline.tone}>{$t(headline.status)}</Pill></span>
         </div>
-        <p class="far">{howFar(run)}</p>
+        <!-- FL-1430: a scan refused before it found any work has nothing to count -->
+        {#if !(isRunSettled(run) && run.total === 0 && run.reasons.includes('source-unavailable'))}
+          <p class="far">{howFar(run)}</p>
+        {/if}
         {#if run.enumerationDone && run.total > 0 && !isRunSettled(run)}
           <span class="bar" aria-hidden="true"><span style:width="{percent(run)}%"></span></span>
         {/if}

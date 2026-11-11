@@ -20,6 +20,7 @@ describe("Library care's file check card (FL-1430)", () => {
       status: 'frameleaf_job_runs_status_finished',
       tone: 'warn',
       found: { key: 'frameleaf_job_runs_file_check_found_damaged', values: { count: 660 } },
+      note: null,
       bucket: 'failed',
     });
     expect(fileCheckView(check({ missing: 3 })).found).toEqual({
@@ -34,6 +35,7 @@ describe("Library care's file check card (FL-1430)", () => {
       status: 'frameleaf_job_runs_status_finished',
       tone: 'good',
       found: { key: 'frameleaf_job_runs_file_check_found_none', values: {} },
+      note: null,
       bucket: 'done',
     });
   });
@@ -41,7 +43,16 @@ describe("Library care's file check card (FL-1430)", () => {
     expect(fileCheckView(check({ failed: true }))).toEqual({
       status: 'frameleaf_job_runs_status_unfinished',
       tone: 'warn',
-      found: { key: 'frameleaf_job_runs_file_check_unfinished', values: {} },
+      found: null,
+      note: { key: 'frameleaf_job_runs_file_check_unfinished', values: {} },
+      bucket: 'failed',
+    });
+    // what the checks that did finish found still shows
+    expect(fileCheckView(check({ failed: true, damaged: 660 }))).toEqual({
+      status: 'frameleaf_job_runs_status_unfinished',
+      tone: 'warn',
+      found: { key: 'frameleaf_job_runs_file_check_found_damaged', values: { count: 660 } },
+      note: { key: 'frameleaf_job_runs_file_check_unfinished', values: {} },
       bucket: 'failed',
     });
     expect(Object.keys(en)).toEqual(
@@ -53,6 +64,7 @@ describe("Library care's file check card (FL-1430)", () => {
       status: 'frameleaf_job_runs_state_running',
       tone: 'good',
       found: null,
+      note: null,
       bucket: 'running',
     });
   });
