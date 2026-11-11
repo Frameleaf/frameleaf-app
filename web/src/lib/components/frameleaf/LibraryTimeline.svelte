@@ -26,6 +26,7 @@
     WORK_CAPTION_HEIGHT,
   } from '$lib/frameleaf/library-grid';
   import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { captureLibraryAnchor, restoreLibraryAnchor, type LibraryAnchor } from '$lib/frameleaf/library-layout';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
@@ -220,6 +221,11 @@
   const withHeaders = $derived(showDayHeaders || sectioned);
 
   const groupHeaderLead = $derived(maxMd ? 8 : 16);
+  /**
+   * FL-1392 (B3): on phones a day's places sit on a second line under its date (`LibraryGroupHeader`
+   * `.is-stacked`: a 2px gap and a 17px line), so the header of a day that has places is this much taller.
+   */
+  const PLACE_LINE_HEIGHT = 19;
 
   $effect(() => {
     if (cells) {
@@ -231,6 +237,7 @@
         fillRowWidth: true,
         cells,
         dayRows: sectioned,
+        placeLineHeight: sectioned && maxMd ? PLACE_LINE_HEIGHT : 0,
       });
       return;
     }
@@ -252,6 +259,7 @@
             fillRowWidth: true,
             captionHeight: rowCaptionHeight,
             dayRows: showDayHeaders,
+            placeLineHeight: showDayHeaders ? PLACE_LINE_HEIGHT : 0,
           }
         : {
             rowHeight: timelineRowHeight(235, thumbnailSize),
@@ -814,10 +822,7 @@
 
   /** Prototype `monthTitle`: the full month name and the year, e.g. "December 2024". */
   const monthTitle = (month: TimelineMonth) =>
-    fromTimelinePlainYearMonth(month.yearMonth).toLocaleString(
-      { month: 'long', year: 'numeric' },
-      { locale: $locale ?? undefined },
-    );
+    formatLuxon(fromTimelinePlainYearMonth(month.yearMonth), { month: 'long', year: 'numeric' }, $locale ?? undefined);
 
   const displayGroups = $derived.by<DisplayGroup[]>(() => {
     if (effectiveGrouping === 'days') {
@@ -1570,6 +1575,7 @@
                 count={group.months.reduce((total, groupMonth) => total + groupMonth.assetsCount, 0)}
                 state={displayGroupState(group)}
                 {selecting}
+                stacked={maxMd}
                 hovered={group.months.some((groupMonth) => groupMonth.viewId === hoveredMonth)}
                 width={timelineManager.viewportWidth}
                 height={first.groupHeaderHeight}

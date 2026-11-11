@@ -576,7 +576,9 @@ describe('LibraryDayGroup', () => {
       height: 66,
       viewerAssets,
       activeViewerAssets: viewerAssets,
-      timelineMonth: { yearMonth: { year: 2026, month: 9 } },
+      cities: [],
+      headerExtra: 0,
+      timelineMonth: { yearMonth: { year: 2026, month: 9 }, timelineManager: { placeLineHeight: 0 } },
     } as never;
   };
 
