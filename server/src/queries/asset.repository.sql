@@ -183,6 +183,23 @@ with
               and "asset_file"."type" = $7
           )
           and "asset"."deletedAt" is null
+          and (
+            not (
+              "asset"."fileCreatedAt" > now() + interval '24 hours'
+              or ("asset"."localDateTime" at time zone 'UTC')::date = any ('{1970-01-01,1980-01-01,2000-01-01}'::date[])
+            )
+            or coalesce(
+              (
+                select
+                  'dateTimeOriginal' = any (date_check_exif."lockedProperties")
+                from
+                  asset_exif date_check_exif
+                where
+                  date_check_exif."assetId" = "asset"."id"
+              ),
+              false
+            )
+          )
         order by
           (asset."localDateTime" at time zone 'UTC')::date desc
         limit
