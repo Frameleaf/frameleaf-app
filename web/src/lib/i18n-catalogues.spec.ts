@@ -109,7 +109,8 @@ describe('shipped translation catalogues', () => {
 
       it('contains every English key with a nonempty string value', () => {
         const missing = Object.keys(english).filter((key) => !Object.hasOwn(catalogue, key));
-        expect(missing.slice(0, 20), `${missing.length} missing keys`).toEqual([]);
+        // A new English message needs its translation in every language offered in Settings.
+        expect(missing.slice(0, 20), `i18n/${code}.json lacks ${missing.length} keys of i18n/en.json`).toEqual([]);
         const invalid = Object.entries(catalogue)
           .filter(([, value]) => typeof value !== 'string' || !value.trim())
           .map(([key]) => key);
