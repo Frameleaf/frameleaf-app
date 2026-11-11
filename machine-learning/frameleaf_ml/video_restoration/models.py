@@ -1143,6 +1143,8 @@ class RestorationRegistry:
         self.signed_admission = signed_admission
         self._lock = threading.Lock()
         self._report: CapabilityReport | None = None
+        # Limits of signed candidates, which stay out of the public report but still take uploads.
+        self._candidate_limits: list[LimitsSpec] = []
 
     def load(self) -> LoadedConfiguration:
         """Read the manifest and qualification file. Never raises: problems are reported."""
@@ -1202,13 +1204,22 @@ class RestorationRegistry:
             else []
         )
         report = self._build_report(models, gpus, config.problems)
+        candidate_limits = (
+            [spec.limits for spec in manifest.models if spec.signed_candidate is not None] if manifest else []
+        )
         with self._lock:
             self._report = report
+            self._candidate_limits = candidate_limits
         for model in report.models:
             log.info("Restoration model %s is %s: %s", model.id, model.state, "; ".join(model.reasons) or "ready")
         for problem in report.configurationProblems:
             log.warning("Restoration configuration problem: %s", problem)
         return report
+
+    def candidate_limits(self) -> list[LimitsSpec]:
+        """The limits of the signed candidates in the last verified manifest (never published)."""
+        with self._lock:
+            return list(self._candidate_limits)
 
     def report(self) -> CapabilityReport:
         """The last published report. Before the first verification finishes every model is

@@ -138,11 +138,10 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
 
 
 def upload_limit(registry: RestorationRegistry) -> int:
-    """The largest upload any qualified model could use, from the manifest limits."""
-    largest = max(
-        (model.maxFrames * model.maxInputLongEdge**2 * UPLOAD_BYTES_PER_PIXEL for model in registry.report().models),
-        default=0,
-    )
+    """The largest upload any qualified model or signed candidate could use, from the manifest limits."""
+    limits = [(model.maxFrames, model.maxInputLongEdge) for model in registry.report().models]
+    limits += [(limit.maxFrames, limit.maxInputLongEdge) for limit in registry.candidate_limits()]
+    largest = max((frames * edge**2 * UPLOAD_BYTES_PER_PIXEL for frames, edge in limits), default=0)
     return max(MIN_UPLOAD_BYTES, largest)
 
 
