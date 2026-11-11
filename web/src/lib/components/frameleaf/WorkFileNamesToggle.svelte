@@ -4,7 +4,8 @@
    * `mdiFormatText` button shown in Work's grid view). Work hides file names by default; this turns
    * them back on, remembered per device. Phones hide the control, as `apple-style.css` does.
    *
-   * The library toolbar belongs to the shell; this is the self-contained control it mounts.
+   * Boards' item view mounts it. The photo library has no such button since FL-1398: its View menu
+   * holds "File name", kept per layout with the account (`library-view.svelte.ts`).
    */
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';

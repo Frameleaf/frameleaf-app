@@ -1207,6 +1207,51 @@
   "preferences.folders.sidebarWeb": {
     "type": "boolean"
   },
+  "preferences.libraryView.archived": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.badges": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.browseNames": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.browseTime": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.crop": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.favorites": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.groupBy": {
+    "type": "string"
+  },
+  "preferences.libraryView.partnerPhotos": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.ratings": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.scrubber": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.stacksTogether": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.timelineNames": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.timelineTime": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.workNames": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.workTime": {
+    "type": "boolean"
+  },
   "preferences.lockedPin.relockMinutes": {
     "type": "integer",
     "minimum": 5,

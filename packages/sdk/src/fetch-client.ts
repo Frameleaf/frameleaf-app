@@ -4090,6 +4090,38 @@ export type FoldersResponse = {
     /** Whether folders appear in web sidebar */
     sidebarWeb: boolean;
 };
+export type LibraryViewResponse = {
+    /** Whether the Library also shows archived items */
+    archived: boolean;
+    /** Whether photos show video length and badges */
+    badges: boolean;
+    /** Browse: whether photos show the file name */
+    browseNames: boolean;
+    /** Browse: whether photos show the time taken */
+    browseTime: boolean;
+    /** Whether Browse and Work crop each photo to fill its tile; off shows the whole photo */
+    crop: boolean;
+    /** Whether favorite photos show a heart */
+    favorites: boolean;
+    /** How Browse and Work group photos into sections: none, day, month or year */
+    groupBy: string;
+    /** Whether the Library also shows photos a partner shares */
+    partnerPhotos: boolean;
+    /** Whether photos show their rating */
+    ratings: boolean;
+    /** Whether the Timeline shows the year scrubber */
+    scrubber: boolean;
+    /** Whether a stack shows as one photo with a count; off shows every photo in it */
+    stacksTogether: boolean;
+    /** Timeline: whether photos show the file name */
+    timelineNames: boolean;
+    /** Timeline: whether photos show the time taken */
+    timelineTime: boolean;
+    /** Work: whether photos show the file name */
+    workNames: boolean;
+    /** Work: whether photos show the time taken */
+    workTime: boolean;
+};
 export type LockedPinResponse = {
     /** How long Locked photos stay open after the PIN unlocks them, in minutes */
     relockMinutes: number;
@@ -4178,6 +4210,7 @@ export type UserPreferencesResponseDto = {
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
+    libraryView?: LibraryViewResponse;
     lockedPin?: LockedPinResponse;
     /** Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67) */
     lockedRulesRevealed: boolean;
@@ -4246,6 +4279,38 @@ export type FoldersUpdate = {
     enabled?: boolean;
     /** Whether folders appear in web sidebar */
     sidebarWeb?: boolean;
+};
+export type LibraryViewUpdate = {
+    /** Whether the Library also shows archived items */
+    archived?: boolean;
+    /** Whether photos show video length and badges */
+    badges?: boolean;
+    /** Browse: whether photos show the file name */
+    browseNames?: boolean;
+    /** Browse: whether photos show the time taken */
+    browseTime?: boolean;
+    /** Whether Browse and Work crop each photo to fill its tile; off shows the whole photo */
+    crop?: boolean;
+    /** Whether favorite photos show a heart */
+    favorites?: boolean;
+    /** How Browse and Work group photos into sections: none, day, month or year */
+    groupBy?: string;
+    /** Whether the Library also shows photos a partner shares */
+    partnerPhotos?: boolean;
+    /** Whether photos show their rating */
+    ratings?: boolean;
+    /** Whether the Timeline shows the year scrubber */
+    scrubber?: boolean;
+    /** Whether a stack shows as one photo with a count; off shows every photo in it */
+    stacksTogether?: boolean;
+    /** Timeline: whether photos show the file name */
+    timelineNames?: boolean;
+    /** Timeline: whether photos show the time taken */
+    timelineTime?: boolean;
+    /** Work: whether photos show the file name */
+    workNames?: boolean;
+    /** Work: whether photos show the time taken */
+    workTime?: boolean;
 };
 export type LockedPinUpdate = {
     /** How long Locked photos stay open after the PIN unlocks them: 5, 15 or 60 minutes */
@@ -4330,6 +4395,7 @@ export type UserPreferencesUpdateDto = {
     /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
     expectedRevision?: string;
     folders?: FoldersUpdate;
+    libraryView?: LibraryViewUpdate;
     lockedPin?: LockedPinUpdate;
     memories?: MemoriesUpdate;
     /** Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision. */

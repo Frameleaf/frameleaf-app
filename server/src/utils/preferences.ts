@@ -204,6 +204,25 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     recentlyAdded: {
       sidebarWeb: true,
     },
+    // FL-1398, prototype `LibraryViewMenu.jsx` `DEFAULT_VIEW`: Browse is a bare grid, Timeline and Work
+    // show the time taken; stacks stay together and partner photos show.
+    libraryView: {
+      scrubber: true,
+      crop: true,
+      groupBy: 'none',
+      stacksTogether: true,
+      partnerPhotos: true,
+      archived: false,
+      ratings: true,
+      favorites: true,
+      badges: true,
+      timelineTime: true,
+      timelineNames: false,
+      browseTime: false,
+      browseNames: false,
+      workTime: true,
+      workNames: false,
+    },
     lockedPin: {
       relockMinutes: LOCKED_RELOCK_MINUTES_DEFAULT,
     },

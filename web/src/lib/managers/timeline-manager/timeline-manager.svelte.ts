@@ -111,12 +111,13 @@ export class TimelineManager extends VirtualScrollManager {
    * FL-143: a group's rows run on from one month bucket into the next, as the prototype lays it out.
    * All (and Years when not shown as cards) over justified rows is one flow per group
    * (`TimelineLibrary.jsx` justifiedRows over `group.assets`); the Browse and Work cell grids are one
-   * grid over the whole library (`App.jsx` `.media-grid`). Timeline month and day groups stay per
-   * month and per day.
+   * grid over the whole library (`App.jsx` `.media-grid`), or with `dayRows` one grid per month or
+   * year group. Timeline month and day groups stay per month and per day.
    */
   get continuousGroups(): boolean {
     if (this.cells) {
-      return true;
+      // FL-1398 "Group by": sections by month or year are one grid per group; by day, one per day.
+      return !(this.dayRows && this.#grouping === 'days');
     }
     return this.fillRowWidth && (this.#grouping === 'years' || this.#grouping === 'all');
   }

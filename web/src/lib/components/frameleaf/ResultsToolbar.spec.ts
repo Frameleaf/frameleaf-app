@@ -1,5 +1,5 @@
 import { ImageEnrichmentFilter } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -121,27 +121,36 @@ describe('ResultsToolbar chip wording', () => {
   });
 });
 
-/** Partner sharing: the View menu turns partner photos on and off, with or without the info panel. */
-describe('ResultsToolbar partner photos', () => {
+/** FL-1398: a library page's View menu holds how the library looks, with or without the info panel. */
+describe('ResultsToolbar View menu', () => {
   beforeAll(async () => {
     await init({ fallbackLocale: 'en-US' });
     register('en-US', () => import('$i18n/en.json'));
     await waitLocale('en-US');
   });
 
-  it('draws the Partner photos switch in the View menu and reports a change', async () => {
-    const onTogglePartnerPhotos = vi.fn();
+  it('opens the full menu, keeps it open through a chevron page, and gives View the focus back on Escape', async () => {
+    sdkMock.getPartners.mockResolvedValue([]);
     render(ResultsToolbar, {
       session: new LibrarySessionStore({ storage: null }),
-      partnerPhotos: true,
-      onTogglePartnerPhotos,
+      viewMenu: { layout: 'browse', grid: true, scrubber: false, stacks: true, libraryRoot: true },
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: /View/ }));
-    const toggle = screen.getByRole('switch', { name: 'Partner photos' });
-    expect(toggle).toBeChecked();
-    await fireEvent.click(toggle);
-    expect(onTogglePartnerPhotos).toHaveBeenCalledOnce();
+    const view = screen.getByRole('button', { name: /View/ });
+    await fireEvent.click(view);
+    expect(view).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByRole('group', { name: 'View options' });
+    // no information panel here, so the first control is the Size preset
+    await waitFor(() => expect(within(menu).getByRole('button', { name: 'Small' })).toHaveFocus());
+    expect(within(menu).getByRole('switch', { name: 'Crop photos to fit' })).toBeChecked();
+
+    await fireEvent.click(within(menu).getByRole('button', { name: /Also show/ }));
+    expect(within(menu).getByText('Locked items never show here.')).toBeInTheDocument();
+    expect(view).toHaveAttribute('aria-expanded', 'true');
+
+    await fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(view).toHaveAttribute('aria-expanded', 'false');
+    expect(view).toHaveFocus();
   });
 });
 

@@ -5,9 +5,9 @@ import { SvelteURL } from 'svelte/reactivity';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
-import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
 import { writeLibraryView } from '$lib/frameleaf/library-session';
 import { LibrarySessionStore, librarySession } from '$lib/frameleaf/library-session.svelte';
+import { libraryView } from '$lib/frameleaf/library-view.svelte';
 import { applyFilterQuery } from '$lib/frameleaf/search-shortcuts';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -269,22 +269,25 @@ describe('LibraryView', () => {
     expect(screen.getByTestId('work-panel')).toBeInTheDocument();
   });
 
-  it('offers Work’s file-name toggle in Work only, and remembers it on this device (FL-33)', async () => {
-    localStorage.removeItem('frameleaf-work-filenames');
-    libraryGridPreferences.reload();
+  it('has no file-name button of its own in Work: the View menu holds it, per layout (FL-1398)', async () => {
+    sdkMock.getPartners.mockResolvedValue([]);
     await setup(false);
-    const toggle = screen.getByRole('button', { name: 'frameleaf_library_show_file_names' });
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    await fireEvent.click(toggle);
-    expect(screen.getByRole('button', { name: 'frameleaf_library_hide_file_names' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(localStorage.getItem('frameleaf-work-filenames')).toBe('true');
+    expect(screen.queryByRole('button', { name: 'frameleaf_library_show_file_names' })).not.toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: /frameleaf_library_view$/ }));
+    const names = screen.getByRole('switch', { name: 'frameleaf_library_view_file_name' });
+    expect(names).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'frameleaf_library_view_time' })).toBeChecked();
+    await fireEvent.click(names);
+    expect(libraryView.value).toMatchObject({ workNames: true, browseNames: false, timelineNames: false });
+
+    // Browse keeps its own: bare
     librarySession.setLayout('browse');
     await tick();
-    expect(screen.queryByRole('button', { name: 'frameleaf_library_hide_file_names' })).not.toBeInTheDocument();
-    libraryGridPreferences.showFileNames = false;
+    expect(screen.getByRole('switch', { name: 'frameleaf_library_view_file_name' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'frameleaf_library_view_time' })).not.toBeChecked();
+
+    libraryView.reset();
   });
 
   it('hides the timeline and its year scrubber while Compare is open (LIB-09)', async () => {

@@ -1,5 +1,6 @@
 import { AssetOrder, TimeBucketDateType } from '@frameleaf/sdk';
 import { SvelteSet } from 'svelte/reactivity';
+import { cellGrid } from '$lib/frameleaf/library-grid';
 import type { CommonLayoutOptions, CommonPosition } from '$lib/utils/layout-utils';
 import { getJustifiedLayoutFromAssets } from '$lib/utils/layout-utils';
 import { getOrderingDate, plainDateTimeCompare } from '$lib/utils/timeline-util';
@@ -169,6 +170,18 @@ export class TimelineDay {
   layout(options: CommonLayoutOptions, noDefer: boolean) {
     if (!noDefer && !this.timelineMonth.isInOrNearViewport && !this.timelineMonth.timelineManager.isScrollingOnLoad) {
       this.#deferredLayout = true;
+      return;
+    }
+    const manager = this.timelineMonth.timelineManager;
+    if (manager.cells) {
+      // FL-1398: Browse and Work grouped by day, each day a cell grid of its own.
+      const grid = cellGrid(this.viewerAssets.length, manager.viewportWidth, manager.cells);
+      this.width = grid.width;
+      this.height = grid.height;
+      for (const [index, viewerAsset] of this.viewerAssets.entries()) {
+        viewerAsset.position = grid.position(index);
+      }
+      this.updateAssetBoundaries();
       return;
     }
     const assets = this.viewerAssets.map((viewerAsset) => viewerAsset.asset!);

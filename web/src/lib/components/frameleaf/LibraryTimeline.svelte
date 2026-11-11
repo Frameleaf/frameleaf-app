@@ -71,8 +71,13 @@
     tileLayout?: TileLayout;
     /** The per-device Thumbnail size (140–290) the grids and Timeline rows scale with. */
     thumbnailSize?: number;
-    /** Work: show file names in the captions. */
+    /** The captions name the file, and show the time taken (FL-1398, the View menu, per layout). */
     showFileNames?: boolean;
+    showTimes?: boolean;
+    /** FL-1398 "Group by": Browse and Work in sections by day, month or year. Null is one bare grid. */
+    sections?: Exclude<TimelineGrouping, 'all'> | null;
+    /** FL-1398: the View menu turned the year scrubber off. */
+    hideScrubber?: boolean;
     /** Work with the panel beside the grid: the item the panel describes gets a neutral ring. */
     inPanelId?: string | null;
     /**
@@ -138,6 +143,9 @@
     tileLayout = 'timeline',
     thumbnailSize = THUMBNAIL_SIZE_DEFAULT,
     showFileNames = false,
+    showTimes = true,
+    sections = null,
+    hideScrubber = false,
     inPanelId = null,
     onThumbnailSizeChange,
     grouping = 'days',
@@ -208,17 +216,37 @@
    */
   const rowCaptionHeight = $derived(tileLayout === 'timeline' && timelineCaptions ? WORK_CAPTION_HEIGHT : 0);
 
-  /** Browse and Work lay each month out as a cell grid; `null` keeps Timeline's justified rows. */
-  const cells = $derived(
-    tileLayout === 'timeline' ? null : cellGridOptions(tileLayout, thumbnailSize, libraryGridPreferences.phone),
-  );
+  /**
+   * Browse and Work lay each month out as a cell grid; `null` keeps Timeline's justified rows. A cell
+   * has a caption row when the View menu shows the time or the file name there (FL-1398).
+   */
+  const cells = $derived.by(() => {
+    if (tileLayout === 'timeline') {
+      return null;
+    }
+    const grid = cellGridOptions(tileLayout, thumbnailSize, libraryGridPreferences.phone);
+    return tileLayout === 'list'
+      ? grid
+      : { ...grid, captionHeight: showTimes || showFileNames ? WORK_CAPTION_HEIGHT : 0 };
+  });
+  /** FL-1398 "Group by": the cell grid breaks into sections, each under a group header. */
+  const sectioned = $derived(!!cells && tileLayout !== 'list' && !!sections);
+  /** Group headers are drawn: the Timeline's own, or the sections of Browse and Work. */
+  const withHeaders = $derived(showDayHeaders || sectioned);
 
   const groupHeaderLead = $derived(maxMd ? 8 : 16);
 
   $effect(() => {
     if (cells) {
-      // One gutter between months, so the grid reads as one surface (apple-style.css `gap: 2px`).
-      timelineManager.setLayoutOptions({ headerHeight: cells.gap, gap: cells.gap, fillRowWidth: true, cells });
+      // One gutter between months, so the grid reads as one surface (apple-style.css `gap: 2px`);
+      // in sections, each group starts under a header the height of the Timeline's.
+      timelineManager.setLayoutOptions({
+        headerHeight: sectioned ? (maxMd ? 32 : 48) + groupHeaderLead : cells.gap,
+        gap: cells.gap,
+        fillRowWidth: true,
+        cells,
+        dayRows: sectioned,
+      });
       return;
     }
     // The filling justified layout is what makes a short day group span the timeline. The space the
@@ -427,7 +455,7 @@
    */
   const SCRUBBER_LABEL_ROOM = 34;
   /** The scrubber is drawn: a flat order (filename, rating) has no dates to scrub through. */
-  const showScrubber = $derived(timelineManager.months.length > 0 && !timelineManager.ordered);
+  const showScrubber = $derived(timelineManager.months.length > 0 && !timelineManager.ordered && !hideScrubber);
   /**
    * The rows' scrubber only where there is something to scrub through: photos that fit on one
    * screen (a handful of results, a person with three photos) have no scrubber floating beside them.
@@ -440,7 +468,7 @@
    * Years and Months are curated cards (September 24; template `TimelineLibrary.jsx` `curated`), not
    * tile flows: the manager keeps its day layout underneath, ready for a card that opens Days.
    */
-  const curated = $derived(showDayHeaders && (grouping === 'years' || grouping === 'months'));
+  const curated = $derived(showDayHeaders && !cells && (grouping === 'years' || grouping === 'months'));
   /** The Years and Months cards, which draw their own scroller (and scrubber) in place of the rows. */
   const curatedCards = $derived(curated && (grouping === 'years' || grouping === 'months'));
   const showRowsScrubber = $derived(showScrubber && (curatedCards || rowsScroll));
@@ -524,7 +552,9 @@
 
   let announcement = $state('');
 
-  const effectiveGrouping = $derived<TimelineGrouping>(showDayHeaders && !curated ? grouping : 'days');
+  const effectiveGrouping = $derived<TimelineGrouping>(
+    sectioned && sections ? sections : showDayHeaders && !curated ? grouping : 'days',
+  );
   $effect(() => {
     timelineManager.grouping = effectiveGrouping;
   });
@@ -546,9 +576,9 @@
    * (`dissolveView`). The effect runs once the new content is in the document, in the same frame,
    * so it is never seen at full strength first; the library takes input throughout.
    */
-  let shownView = untrack(() => `${tileLayout}:${grouping}`);
+  let shownView = untrack(() => `${tileLayout}:${grouping}:${sections}`);
   $effect(() => {
-    const view = `${tileLayout}:${grouping}`;
+    const view = `${tileLayout}:${grouping}:${sections}`;
     if (view !== shownView) {
       shownView = view;
       untrack(() => dissolveView(root));
@@ -1603,6 +1633,7 @@
                   captionHeight={cells ? cells.captionHeight : rowCaptionHeight}
                   captionBelow={!cells}
                   {showFileNames}
+                  {showTimes}
                   {inPanelId}
                   showHeader={false}
                   grouped
@@ -1626,9 +1657,10 @@
                   captionHeight={cells ? cells.captionHeight : rowCaptionHeight}
                   captionBelow={!cells}
                   {showFileNames}
+                  {showTimes}
                   {inPanelId}
-                  showHeader={showDayHeaders}
-                  grouped={effectiveGrouping !== 'days' || !!cells}
+                  showHeader={withHeaders}
+                  grouped={effectiveGrouping !== 'days' || (!!cells && !sectioned)}
                   headerHeight={month.groupHeaderHeight}
                   headerWidth={timelineManager.dayRows ? timelineManager.viewportWidth : undefined}
                   onOpen={handleOpen}
