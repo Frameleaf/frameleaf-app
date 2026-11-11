@@ -52,7 +52,17 @@ from
 where
   "asset"."ownerId" = $1
   and "asset"."deletedAt" is null
-  and "asset"."visibility" in ($2, $3)
+  and (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and not exists (
     select
       1
@@ -75,8 +85,19 @@ where
   "asset"."ownerId" = $1
   and "asset"."deletedAt" is null
   and "asset_date_finding"."dismissedAt" is null
+  and (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
 order by
-  split_part(asset_date_finding."groupKey", '|', 2) desc,
+  right(asset_date_finding."groupKey", 10) desc,
   "asset_date_finding"."groupKey",
   "asset_date_finding"."currentDate",
   "asset_date_finding"."assetId"
