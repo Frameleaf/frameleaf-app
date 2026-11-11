@@ -315,11 +315,7 @@ const required = {
     /test "\$RESULT" = success/,
   ],
   "Test Web": ["test.yml", "web-unit-tests", /ci-unit/],
-  "Lint Web": [
-    "test.yml",
-    "web-lint",
-    /^pnpm exec eslint \. --max-warnings 0 --concurrency 2$/m,
-  ],
+  "Lint Web": ["test.yml", "web-lint", /test "\$RESULT" = success/],
   "Medium Tests (Server)": [
     "test.yml",
     "server-medium-tests",
@@ -353,10 +349,27 @@ const admission = (
     always: () => true,
   });
 
+// FL-1442: the web lint runs in two halves (web-lint-shards) that together cover every file; Lint Web
+// (web-lint) is green only when both are.
+const WEB_LINT_COMMAND = `. ../scripts/web-lint-half.sh
+pnpm exec eslint "$@" --max-warnings 0 --concurrency 2
+`;
 const assertPrimaryWebLint = (job) => {
+  assert.deepEqual(job.strategy?.matrix, { half: ["components", "rest"] });
+  assert.equal(job.env?.HALF, "${{ matrix.half }}");
+  // the two halves lint every file between them, each once
+  const half = readFileSync(
+    path.join(root, "scripts/web-lint-half.sh"),
+    "utf8",
+  );
+  assert.match(half, /components\) set -- src\/lib\/components ;;/);
+  assert.match(
+    half,
+    /rest\) set -- \. --ignore-pattern 'src\/lib\/components\/\*\*' ;;/,
+  );
   const lint = job.steps.find((step) => step.name === "Run linter");
   assert.ok(lint, "Lint Web requires its primary linter step");
-  assert.equal(lint.run, "pnpm exec eslint . --max-warnings 0 --concurrency 2");
+  assert.equal(lint.run, WEB_LINT_COMMAND);
   assert.equal(lint.if, "${{ !cancelled() }}");
   assert.equal(lint["continue-on-error"], undefined);
   assert.equal(job["continue-on-error"], undefined);
@@ -412,6 +425,7 @@ test("all nine protected checks execute on Frameleaf main PRs", () => {
       {
         "server-medium-tests": "server-medium-core-tests",
         "server-unit-tests": "server-unit-lanes",
+        "web-lint": "web-lint-shards",
       }[id],
       `${name} must execute directly or aggregate every isolated shard`,
     );
@@ -439,18 +453,18 @@ test("all nine protected checks execute on Frameleaf main PRs", () => {
       j.steps.some((s) => s["continue-on-error"]),
       false,
     );
-    if (id === "web-lint") assertPrimaryWebLint(j);
+    if (id === "web-lint") assertPrimaryWebLint(w.jobs["web-lint-shards"]);
   }
 });
 
 test("the primary web lint gate cannot be replaced by diagnostics or weakened", () => {
-  const job = workflow("test.yml").jobs["web-lint"];
-  const command = "pnpm exec eslint . --max-warnings 0 --concurrency 2";
+  const job = workflow("test.yml").jobs["web-lint-shards"];
+  const command = WEB_LINT_COMMAND;
   for (const change of [
     { run: `${command} || true` },
     { run: command.replace("--max-warnings 0", "--max-warnings 1") },
     { run: command.replace("--concurrency 2", "--concurrency auto") },
-    { run: command.replace("eslint .", "eslint src") },
+    { run: command.replace('eslint "$@"', "eslint src") },
     { if: "failure()" },
     { if: "false" },
     { "continue-on-error": true },
@@ -471,6 +485,9 @@ test("the primary web lint gate cannot be replaced by diagnostics or weakened", 
   assert.throws(() =>
     assertPrimaryWebLint({ ...job, "continue-on-error": true }),
   );
+  const oneHalf = structuredClone(job);
+  oneHalf.strategy.matrix.half = ["components"];
+  assert.throws(() => assertPrimaryWebLint(oneHalf));
 });
 
 const assertScriptTestWiring = (job) => {

@@ -26,6 +26,11 @@ import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
 import { recordOAuthRequest } from '$lib/frameleaf/auth-session-preference';
 import {
+  formatDate as displayFormatDate,
+  formatLuxon,
+  formatTime as displayFormatTime,
+} from '$lib/frameleaf/date-format';
+import {
   eventStoryPlace,
   formatLocalDateRange,
   memoryHeadline as headlineOf,
@@ -34,6 +39,7 @@ import {
   isPetStory,
   isPersonRecap,
   isYearInReview,
+  onThisDayYears,
 } from '$lib/frameleaf/memory-stories';
 import { mayHaveDevelopPlaybackRevision, playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -468,12 +474,16 @@ export const memoryLaneTitle = derived(t, ($t) => {
     }
 
     if (memory.type === MemoryType.OnThisDay) {
+      // FL-1408: several small years share one memory, which no single "N years ago" names
+      if (onThisDayYears(memory).length > 1) {
+        return $t('frameleaf_memories_on_this_day');
+      }
       const now = DateTime.now();
       const memoryDate = DateTime.fromISO(memory.memoryAt, { zone: 'utc' });
 
       return memoryDate.day === now.day && memoryDate.month === now.month
         ? $t('years_ago', { values: { years: now.year - memory.data.year } })
-        : memoryDate.toLocaleString(DateTime.DATE_MED, { locale: get(locale) });
+        : formatLuxon(memoryDate, DateTime.DATE_MED, get(locale));
     }
 
     // FL-62: event stories and year-in-review recaps. An event story names its place when
@@ -509,33 +519,15 @@ export const decodeBase64 = (data: string) => Uint8Array.from(atob(data), (c) =>
 
 export function createDateFormatter(localeCode: string | undefined): DateFormatter {
   return {
+    // FL-783: through the shared formatter, so the person's date and time format apply
     formatDate: (date: Date): string =>
-      date.toLocaleString(localeCode, {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }),
+      displayFormatDate(date, { year: 'numeric', month: '2-digit', day: '2-digit' }, localeCode),
 
     formatTime: (date: Date): string =>
-      date.toLocaleString(localeCode, {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      }),
+      displayFormatTime(date, { hour: '2-digit', minute: '2-digit', second: '2-digit' }, localeCode),
 
-    formatDateTime: (date: Date): string => {
-      const formattedDate = date.toLocaleString(localeCode, {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      });
-      const formattedTime = date.toLocaleString(localeCode, {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-      return `${formattedDate} ${formattedTime}`;
-    },
+    formatDateTime: (date: Date): string =>
+      `${displayFormatDate(date, { year: 'numeric', month: '2-digit', day: '2-digit' }, localeCode)} ${displayFormatTime(date, { hour: '2-digit', minute: '2-digit', second: '2-digit' }, localeCode)}`,
   };
 }
 

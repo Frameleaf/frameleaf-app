@@ -2,7 +2,12 @@ import { BrowserContext } from '@playwright/test';
 import { playwrightHost } from 'src/../playwright.config.js';
 import { adminConfigDefaults } from 'src/ui/mock-network/admin-config.js';
 
-export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserId: string) => {
+export const setupBaseMockApiRoutes = async (
+  context: BrowserContext,
+  adminUserId: string,
+  /** Server features that differ from this mock's defaults (the AI features are off). */
+  features: Record<string, boolean> = {},
+) => {
   await context.addCookies([
     {
       name: 'immich_is_authenticated',
@@ -145,6 +150,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         passwordLogin: true,
         configFile: false,
         email: false,
+        ...features,
       },
     });
   });

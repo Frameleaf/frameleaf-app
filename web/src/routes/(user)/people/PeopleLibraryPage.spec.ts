@@ -1,17 +1,21 @@
-import { PersonMergeVerdict, PersonSplitVerdict } from '@frameleaf/sdk';
+import { PersonMergeVerdict, PersonSplitVerdict, QueueName, type DurableQueueRun } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { peopleListItemFactory } from '@test-data/factories/person-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import PeoplePage from './+page.svelte';
 import { PEOPLE_CAP, PEOPLE_PAGE_SIZE } from './people-page';
 
 // Small page and cap sizes keep the rendered grid cheap; the page reads both from this module.
-vi.mock(import('./people-page'), () => ({ PEOPLE_PAGE_SIZE: 2, PEOPLE_CAP: 6 }));
+vi.mock(import('./people-page'), () => ({ PEOPLE_PAGE_SIZE: 2, PEOPLE_CAP: 6, WAITING_REFRESH_MS: 25 }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/people') } }));
+const flags = vi.hoisted(() => ({ facialRecognition: true }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: flags } }));
 vi.mock('$lib/components/layouts/UserPageLayout.svelte', async () => {
   return await import('@test-data/mocks/UserPageLayout.mock.svelte');
 });
@@ -261,5 +265,193 @@ describe('People library mixed-person question', () => {
 
     expect(await screen.findByText('frameleaf_people_merge_suggestion_question')).toBeTruthy();
     expect(screen.queryByText('frameleaf_people_split_suggestion_question')).toBeNull();
+  });
+});
+
+// FL-1408 (M9): with nobody to show, the page says why instead of "No people yet".
+describe('People library with nobody found', () => {
+  const nobody = (scanning?: boolean): Data => ({
+    ...data([], false),
+    people: { people: [], total: 0, hidden: 0, hasNextPage: false, scanning },
+  });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    sdkMock.getSplitSuggestions.mockResolvedValue({ suggestions: [] });
+    sdkMock.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
+    sdkMock.getAssetStatistics.mockResolvedValue({ images: 12, videos: 0, total: 12 });
+    // the waiting page re-reads People; by default it still finds nobody and photos still wait
+    sdkMock.getAllPeople.mockResolvedValue({ people: [], total: 0, hidden: 0, hasNextPage: false, scanning: true });
+    flags.facialRecognition = true;
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+  });
+
+  afterEach(() => {
+    flags.facialRecognition = true;
+  });
+
+  it('says face recognition is turned off, offers the setting, and asks for no merges', async () => {
+    flags.facialRecognition = false;
+    render(PeoplePage, { data: nobody() });
+
+    expect(screen.getByRole('heading', { name: 'frameleaf_people_faces_off_title' })).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_people_faces_off_description')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'frameleaf_people_faces_off_action' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('intelligence'),
+    );
+    expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.getMergeSuggestions).not.toHaveBeenCalled();
+    expect(sdkMock.getSplitSuggestions).not.toHaveBeenCalled();
+  });
+
+  it('tells someone who cannot change the setting who can, with no button', () => {
+    flags.facialRecognition = false;
+    authManager.setUser(userAdminFactory.build({ isAdmin: false }));
+    render(PeoplePage, { data: nobody() });
+
+    expect(screen.getByText('frameleaf_people_faces_off_description_member')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'frameleaf_people_faces_off_action' })).not.toBeInTheDocument();
+  });
+
+  // The wording follows the queue state Activity and Background work show, so they never disagree.
+  const faceQueue = (patch: Partial<DurableQueueRun>): DurableQueueRun => ({
+    name: QueueName.FaceDetection,
+    isPaused: false,
+    canPause: true,
+    active: 0,
+    waiting: 0,
+    processed: 0,
+    total: 0,
+    startedAt: null,
+    ...patch,
+  });
+  const work = (queues: DurableQueueRun[], canManageQueues = true) =>
+    sdkMock.getRunningJobs.mockResolvedValue({ operations: [], memoryExports: [], queues, canManageQueues } as never);
+
+  it('says face recognition is working through the library while its queue runs', async () => {
+    work([faceQueue({ active: 2, waiting: 40, total: 42 })]);
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scanning_title' })).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_people_scanning_description')).toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+  });
+
+  it('says paused, not working, while Background work says Paused, and offers its settings', async () => {
+    work([faceQueue({ isPaused: true, waiting: 40, total: 40 })]);
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scan_paused_title' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'frameleaf_people_scanning_title' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'frameleaf_activity_work_settings' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('processing'),
+    );
+  });
+
+  it('says the work is saved for the night while quiet hours hold it', async () => {
+    work([faceQueue({ heldForNight: true, resumesAt: '2026-10-31T06:00:00.000Z', state: 'paused', waiting: 40 })]);
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scan_tonight_title' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'frameleaf_activity_work_settings' })).not.toBeInTheDocument();
+  });
+
+  it('says it has not started yet while the work waits its turn', async () => {
+    work([faceQueue({ waiting: 40, total: 40 })]);
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scan_waiting_title' })).toBeInTheDocument();
+  });
+
+  it('claims no state for someone the server sends no queues to', async () => {
+    work([], false);
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scan_pending_title' })).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_people_scan_pending_description')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'frameleaf_people_scanning_title' })).not.toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+  });
+
+  // FL-1419: the waiting page updates by itself, with or without queue state
+  it('shows the first people as soon as they are found, without a reload', async () => {
+    work([], false);
+    const ada = peopleListItemFactory.build({ id: 'ada', name: 'Ada', isHidden: false });
+    sdkMock.getAllPeople.mockResolvedValue({ people: [ada], total: 1, hidden: 0, hasNextPage: false });
+    const { container } = render(PeoplePage, { data: nobody(true) });
+
+    expect(screen.getByTestId('frameleaf-empty-state')).toBeInTheDocument();
+    await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(1));
+    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+
+    // nothing waits any more, so it stops asking
+    const asked = sdkMock.getAllPeople.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(sdkMock.getAllPeople.mock.calls.length).toBe(asked);
+  });
+
+  it('says "No people yet" once everything has been looked through and nobody was found', async () => {
+    work([], false);
+    sdkMock.getAllPeople.mockResolvedValue({ people: [], total: 0, hidden: 0, hasNextPage: false });
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByText('frameleaf_people_none_assigned')).toBeInTheDocument();
+    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+  });
+
+  it('keeps the notice, and says nothing, when a re-read fails', async () => {
+    work([], false);
+    sdkMock.getAllPeople.mockRejectedValue(new Error('offline'));
+    render(PeoplePage, { data: nobody(true) });
+
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole('heading', { name: 'frameleaf_people_scan_pending_title' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('waits for a slow answer instead of asking again and discarding it', async () => {
+    work([], false);
+    const ada = peopleListItemFactory.build({ id: 'ada', name: 'Ada', isHidden: false });
+    let answer: (value: never) => void = () => {};
+    sdkMock.getAllPeople.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    const { container } = render(PeoplePage, { data: nobody(true) });
+
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledOnce());
+    // several turns pass while the server is still thinking
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(sdkMock.getAllPeople).toHaveBeenCalledOnce();
+    // a background read gives up by itself, so a stalled one cannot block the page for good
+    expect(sdkMock.getAllPeople.mock.calls[0][1]).toEqual({ signal: expect.any(AbortSignal) });
+
+    answer({ people: [ada], total: 1, hidden: 0, hasNextPage: false } as never);
+    await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(1));
+  });
+
+  it('does not re-read a page that is not waiting', async () => {
+    render(PeoplePage, { data: nobody(false) });
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(sdkMock.getAllPeople).not.toHaveBeenCalled();
+  });
+
+  it('keeps "No people yet" for a library that has been looked through', () => {
+    render(PeoplePage, { data: nobody(false) });
+
+    expect(screen.getByText('frameleaf_people_none_assigned')).toBeInTheDocument();
+    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+  });
+
+  it('keeps the people it has when face recognition is turned off later', () => {
+    flags.facialRecognition = false;
+    const ada = peopleListItemFactory.build({ id: 'ada', name: 'Ada', isHidden: false });
+    const { container } = render(PeoplePage, { data: data([ada], false) });
+
+    expect(container.querySelectorAll('.pl-card')).toHaveLength(1);
+    expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
   });
 });

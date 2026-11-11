@@ -29,7 +29,7 @@ import { Docker, command } from './docker.js';
 import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
 import { findDrives, suggestFolders } from './drives.js';
 import { storageSuggestions } from './storage-suggestions.js';
-import { applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, listFolders, newLibraryFolders } from './folders.js';
+import { adoptMappedFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, externalRoots, listFolders, newLibraryFolders } from './folders.js';
 import { thumbnailMount } from './mounts.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
@@ -56,6 +56,7 @@ const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
 if (runtime === 'docker') {
   applyFolderDefaults();
   tidyLocations();
+  adoptMappedFolders(process.env, await readFile('/proc/self/mountinfo', 'utf8').catch(() => ''));
 }
 const docker = new Docker();
 // Before any location is read: a folder may be mapped to a different path inside this container.
@@ -148,6 +149,8 @@ const managerVersion = await readFile(new URL('../package.json', import.meta.url
 const currentBackupRoot = () => process.env.MANAGER_BACKUP_ROOT ?? backupRoot!;
 const storageRoots = () => (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean);
 const folderSetup = () => runtime === 'docker' && broadRoots(storageRoots());
+/** FL-1407: an earlier install that has since mapped the broad folders browses them for External folders only. */
+const externalFolderSetup = () => runtime === 'docker' && !folderSetup() && externalRoots().length > 0;
 /** With a broad folder mapped, the places worth reporting are the folders in use, not /mnt. */
 const mediaPlaces = () =>
   folderSetup() ? (operations.installation()?.mounts ?? []).filter((m) => m.type === 'bind').map((m) => m.source) : storageRoots();
@@ -316,6 +319,8 @@ class Api {
       managerOrigin: security.requestOrigin(request),
       backupRoot: currentBackupRoot(),
       folderSetup: folderSetup() ? folderDefaults() : null,
+      /** FL-1407: the folders External folders must stay clear of, on an earlier install that mapped the broad folders. */
+      externalFolders: installation && externalFolderSetup() ? folderDefaults() : null,
       /** FL-1318: whose fix steps and checks Check this server shows, before its first result. */
       checkHost: operations.checkHost(),
       host: {
@@ -521,7 +526,7 @@ class Api {
     return operations.reviewRestore(snapshot, databaseRoot, managerPort(request), thumbnailFallback);
   }
   @Post('folders') folders(@Body() input: unknown) {
-    if (!folderSetup()) throw new Refusal('folder_browsing_unavailable');
+    if (!folderSetup() && !externalFolderSetup()) throw new Refusal('folder_browsing_unavailable');
     return listFolders(z.object({ path: z.string().min(1).max(4096) }).strict().parse(input).path);
   }
   @Post('review-move') async reviewMove(@Body() input: unknown) {

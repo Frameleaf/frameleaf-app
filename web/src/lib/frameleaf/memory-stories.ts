@@ -17,6 +17,7 @@ import {
 } from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import type { Translations } from 'svelte-i18n';
+import { formatDate, formatLuxon } from '$lib/frameleaf/date-format';
 
 /**
  * Frameleaf memory story helpers (FL-62).
@@ -100,11 +101,7 @@ export const formatLocalDateRange = (startDate: string, endDate: string, locale?
     if (!year || !month || !day) {
       return value;
     }
-    return new Date(year, month - 1, day).toLocaleDateString(locale, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+    return formatDate(new Date(year, month - 1, day), { year: 'numeric', month: 'short', day: 'numeric' }, locale);
   };
 
   return startDate === endDate ? format(startDate) : `${format(startDate)} – ${format(endDate)}`;
@@ -145,6 +142,17 @@ export const memoryLocalDay = (memory: MemoryResponseDto): string | undefined =>
   }
   return DateTime.fromMillis((start + end) / 2, { zone: 'utc' }).toISODate() ?? undefined;
 };
+
+/**
+ * FL-1408 (M8): the years an "on this day" memory's items were taken in, newest first. More than one
+ * means the server gave years with only a photo or two each one memory to share.
+ */
+export const onThisDayYears = (memory: MemoryResponseDto): string[] =>
+  memory.type === MemoryType.OnThisDay
+    ? [
+        ...new Set(memory.assets.flatMap(({ localDateTime }) => (localDateTime ? [localDateTime.slice(0, 4)] : []))),
+      ].sort((a, b) => b.localeCompare(a))
+    : [];
 
 export type MemoryEntry = {
   memory: MemoryResponseDto;
@@ -188,6 +196,9 @@ export const groupMemories = (
     }
   }
   sections.upcoming.sort((a, b) => (a.inDays ?? 0) - (b.inDays ?? 0));
+  // FL-1408: the card that gathers several years leads the day (discovery-data.mjs "FL-1405 M8")
+  const gathers = ({ memory }: MemoryEntry) => Number(onThisDayYears(memory).length > 1);
+  sections.today.sort((a, b) => gathers(b) - gathers(a));
   return sections;
 };
 
@@ -198,14 +209,14 @@ type Translate = (
 
 const longDate = (day: string, locale?: string) => {
   const date = DateTime.fromISO(day, { zone: 'utc' });
-  return date.isValid ? date.setLocale(locale ?? 'en').toLocaleString(DateTime.DATE_FULL) : day;
+  return date.isValid ? formatLuxon(date, DateTime.DATE_FULL, locale ?? 'en') : day;
 };
 
 /** 'MM-dd' as "September 25" in the viewer's language. */
 export const monthDayLabel = (monthDay: string, locale?: string): string => {
   const [month, day] = monthDay.split('-').map(Number);
   const date = DateTime.fromObject({ year: 2000, month, day }, { zone: 'utc' });
-  return date.isValid ? date.setLocale(locale ?? 'en').toLocaleString({ month: 'long', day: 'numeric' }) : monthDay;
+  return date.isValid ? formatLuxon(date, { month: 'long', day: 'numeric' }, locale ?? 'en') : monthDay;
 };
 
 export type MemoryHeadline = { title: string; subtitle: string };
@@ -277,6 +288,16 @@ const generatedHeadline = (
     return {
       title: t('frameleaf_memories_recap_title', { values: { year: memory.data.year, name: memory.data.name } }),
       subtitle: count,
+    };
+  }
+  // FL-1408 (M8): small years gathered into one card are named, not counted back to
+  const gathered = onThisDayYears(memory);
+  if (gathered.length > 1) {
+    return {
+      title: t('frameleaf_memories_on_this_day'),
+      subtitle: t('frameleaf_memories_in_years', {
+        values: { years: new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(gathered) },
+      }),
     };
   }
   const day = memoryLocalDay(memory) ?? DateTime.fromISO(memory.memoryAt, { zone: 'utc' }).toISODate() ?? today;

@@ -219,11 +219,15 @@ export class AssetJobRepository {
     return { count: row?.count ?? 0, setAside: row?.setAside ?? 0 };
   }
 
-  getProcessingFailures(auth: AuthDto, { userId, take, skip }: ProcessingFailureQueryDto) {
+  /**
+   * FL-1409: the Library asks for one step with `includeDismissed`, to tell a photo whose thumbnail can't be made
+   * (failed, kept as it is or stopped) from one still waiting for it.
+   */
+  getProcessingFailures(auth: AuthDto, { userId, step, includeDismissed, take, skip }: ProcessingFailureQueryDto) {
     return this.visibleProcessingFailures(auth, this.db, userId)
       .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
-      .where('failure.dismissedAt', 'is', null)
-      .where('failure.step', 'in', processingFailureSteps)
+      .$if(!includeDismissed, (qb) => qb.where('failure.dismissedAt', 'is', null))
+      .where('failure.step', 'in', step ? [step] : processingFailureSteps)
       .select([
         'failure.assetId',
         'failure.step',
@@ -1002,6 +1006,20 @@ export class AssetJobRepository {
       .$if(force === false, (qb) => qb.where('job_status.facesRecognizedAt', 'is', null))
       .select(['asset.id'])
       .orderBy('asset.fileCreatedAt', 'desc');
+  }
+
+  /**
+   * FL-1408: whether any of this owner's photos still waits for face detection: what "find the missing
+   * ones" would queue, so a file that is offline is not waited for. No @GenerateSql: one probe row.
+   */
+  async hasFacesToDetect(ownerId: string): Promise<boolean> {
+    const row = await this.selectionForDetectFacesJob(false)
+      .clearOrderBy()
+      .where('asset.ownerId', '=', ownerId)
+      .where(sql<boolean>`asset.status = 'active' and not asset."isOffline"`)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
   }
 
   @GenerateSql({ params: [], stream: true })

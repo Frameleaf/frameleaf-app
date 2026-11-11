@@ -77,6 +77,7 @@ const EnrichmentPreviewRequestSchema = z
       .max(ENRICHMENT_PREVIEW_MAX_SAMPLES)
       .describe('Samples to describe; run one at a time'),
     destinationId: z.uuidv4().optional().describe('Destination to run on; the routed one when omitted'),
+    localOnly: z.boolean().optional().describe('Require this Library server at final admission; refuse LAN and cloud'),
     modelName: z.string().min(1).optional().describe('Draft model; the saved one when omitted'),
     fallbackModelName: z.string().optional(),
     prompt: ImageDescriptionPromptSchema.optional().describe('Draft prompt; the saved one when omitted'),

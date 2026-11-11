@@ -478,6 +478,26 @@ try {
     await screenshot('overview-light');
     assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
     await nav('Services');
+    // FL-1407: an Unraid server set up from an earlier template is told the one change that turns External folders
+    // on, and gets the folder picker once Manager sees /mnt. Other hosts see neither.
+    const servicesWith = async (change) => {
+      change();
+      await page.reload();
+      await page.locator('main[aria-busy="false"]').waitFor();
+      await nav('Services');
+    };
+    assert.equal(await page.getByRole('heading', { name: 'External folders' }).count(), 0);
+    await servicesWith(() => (dashboard.checkHost = 'unraid'));
+    await page.getByText('Read Only - Slave', { exact: false }).waitFor();
+    assert.equal(await mainButton('Add a folder…').count(), 0);
+    await screenshot('services-external-folders-earlier-install');
+    await servicesWith(() => (dashboard.externalFolders = { media: '/fixture/media', database: '/fixture/appdata', thumbs: null, backups: '/fixture/backup', manager: '/fixture/manager' }));
+    await mainButton('Add a folder…').waitFor();
+    assert.equal(await page.getByText('Read Only - Slave', { exact: false }).count(), 0);
+    await servicesWith(() => {
+      delete dashboard.checkHost;
+      delete dashboard.externalFolders;
+    });
     await mainButton('Logs').first().click();
     await page.getByText('password=[redacted]', { exact: false }).waitFor();
     // The newest lines are what an owner opens logs for.

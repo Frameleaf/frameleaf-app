@@ -50,7 +50,6 @@
   import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
-  import WorkFileNamesToggle from '$lib/components/frameleaf/WorkFileNamesToggle.svelte';
   import {
     activeFilterFields,
     withoutDiscoveryFilter,
@@ -74,6 +73,14 @@
   } from '$lib/frameleaf/album-view-sort';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+  import {
+    captionsFor,
+    DEFAULT_LIBRARY_VIEW,
+    hiddenParts,
+    sectionGrouping,
+    viewTimelineOptions,
+  } from '$lib/frameleaf/library-view';
+  import { libraryView } from '$lib/frameleaf/library-view.svelte';
   import { searchQueryForTimeline, timelineQueryOptions } from '$lib/frameleaf/library-query-options';
   import { locale } from '$lib/stores/preferences.store';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
@@ -166,9 +173,6 @@
      * and selects everything in the view, exactly as the legacy select bar's Select All did.
      */
     selectAll?: 'matching' | 'loaded';
-    /** The View menu's partner photos switch (the library timeline); undefined draws none. */
-    partnerPhotos?: boolean;
-    onTogglePartnerPhotos?: () => void;
     /** Shortcuts this component does not act on itself (favorite, edit, tag, delete, ...). */
     onShortcut?: (shortcut: LibraryShortcut) => void;
     loading?: boolean;
@@ -265,7 +269,7 @@
   };
 
   let {
-    options,
+    options: pageOptions,
     session = librarySession,
     destination,
     timelineManager = $bindable(),
@@ -274,9 +278,7 @@
     onOpenFilterPanel,
     onShowMore,
     onShortcut,
-    selectAll = 'matching',
-    partnerPhotos,
-    onTogglePartnerPhotos,
+    selectAll: pageSelectAll = 'matching',
     loading = false,
     enableRouting = false,
     bulkContext,
@@ -311,6 +313,24 @@
   timelineManager = new TimelineManager();
   const manager = untrack(() => timelineManager as TimelineManager);
   onDestroy(() => manager.destroy());
+
+  /**
+   * FL-1398: the View menu's choices, kept with the account. "Stacks" and "Also show" change what the
+   * page asks the timeline for; a picking step keeps the page's own request. A public share is nobody's
+   * library: a signed-in visitor's own choices never shape it, so it is drawn with the defaults.
+   */
+  const view = $derived(publicView ? DEFAULT_LIBRARY_VIEW : libraryView.value);
+  const libraryRoot = $derived(destination?.kind === 'library');
+  const options = $derived(
+    pageOptions && !publicView && !selectionMode ? viewTimelineOptions(pageOptions, view, libraryRoot) : pageOptions,
+  );
+  /**
+   * The server's "select everything matching" resolves the page's own scope, which a view that adds
+   * archived items, hides partner photos or opens stacks no longer is: then the bar selects what is loaded.
+   */
+  const selectAll = $derived(
+    pageSelectAll === 'matching' && JSON.stringify(options) !== JSON.stringify(pageOptions) ? 'loaded' : pageSelectAll,
+  );
 
   let helpOpen = $state(false);
   let restored = false;
@@ -456,6 +476,10 @@
   const appliedFilterCount = $derived(
     activeFilterFields(session.query).filter((field) => !queryApplied.unapplied.includes(field)).length,
   );
+
+  /** FL-1398: time and file name under each photo are the View menu's, kept per layout. */
+  const captionLayout = $derived(gridLayout === 'timeline' || gridLayout === 'work' ? gridLayout : 'browse');
+  const captions = $derived(captionsFor(view, captionLayout));
 
   /** The List view (S-15): Browse's and Work's rows; the Timeline always keeps its dated rows. */
   const listView = $derived(!publicView && gridLayout !== 'timeline' && session.state.view === 'list');
@@ -606,7 +630,7 @@
   // The same portable view can be shown through different routes or timeline options (including
   // Locked). Sort direction changes presentation, not the resource context of selection and drafts.
   const storageContext = $derived(
-    JSON.stringify({ route: page.route?.id, options: options && { ...options, order: undefined } }),
+    JSON.stringify({ route: page.route?.id, options: pageOptions && { ...pageOptions, order: undefined } }),
   );
 
   // Restore for each account, context or explicit URL view, including Back within a mounted page.
@@ -947,9 +971,9 @@
    * "select everything matching" the server can count and freeze for an archive by itself.
    */
   const ownTimeline = $derived(
-    destination?.kind === 'library' &&
-      options?.visibility === AssetVisibility.Timeline &&
-      Object.keys(options).every((key) => ['visibility', 'withStacked'].includes(key)),
+    libraryRoot &&
+      pageOptions?.visibility === AssetVisibility.Timeline &&
+      Object.keys(pageOptions).every((key) => ['visibility', 'withStacked'].includes(key)),
   );
 
   /** A matching archive the server has counted and frozen, waiting for the person to confirm it. */
@@ -1402,7 +1426,11 @@
    */
   const uploadStats = uploadAssetsStore.stats;
   // Only the owner's own Photos timeline: an empty Best Photos, Locked or map area is not a new library.
-  const firstRun = $derived(!publicView && !selectionMode && ownTimeline && !session.filterActive && resultCount === 0);
+  // With partner photos switched off, an account that only receives them has an empty grid, not a new
+  // library: it keeps its toolbar, whose View menu is the way to switch them back on (FL-1398).
+  const firstRun = $derived(
+    !publicView && !selectionMode && ownTimeline && view.partnerPhotos && !session.filterActive && resultCount === 0,
+  );
   /** Selected items this view does not show (chosen elsewhere with the same session), App.jsx's "outside". */
   const selectedOutside = $derived(snapshot ? 0 : session.selection.filter((id) => !findAsset(id)).length);
 
@@ -1867,6 +1895,8 @@
   data-theme={appTheme}
   data-testid="frameleaf-library"
   data-layout={gridLayout}
+  data-view-hide={hiddenParts(view, captionLayout) || undefined}
+  data-view-fit={view.crop ? undefined : 'whole'}
   bind:this={root}
 >
   {@render shell?.()}
@@ -1886,7 +1916,11 @@
           sensitiveFor={lockedView ? isLockedRuleMatch : undefined}
           {tileLayout}
           thumbnailSize={libraryGridPreferences.thumbnailSize}
-          showFileNames={libraryGridPreferences.showFileNames}
+          showFileNames={captions.names}
+          showTimes={captions.time}
+          hideScrubber={gridLayout === 'timeline' && !view.scrubber}
+          keepThinScrubber={publicView}
+          sections={sectionGrouping(view, { layout: tileLayout, ordered: !!sortedOptions?.orderedBy })}
           onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
           showDayHeaders={gridLayout === 'timeline'}
           grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
@@ -1901,7 +1935,7 @@
           {tileOverlay}
           {onOpen}
           quickActions={quickActionsFor}
-          timelineCaptions={gridLayout === 'timeline'}
+          timelineCaptions={gridLayout === 'timeline' && (captions.time || captions.names)}
           empty={emptyState}
           {gutter}
           groupingInHeader={!publicView && !firstRun && mainWidth >= GROUPING_IN_TOOLBAR}
@@ -1946,8 +1980,14 @@
                   onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
                   inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
                   onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
-                  {partnerPhotos}
-                  {onTogglePartnerPhotos}
+                  viewMenu={{
+                    layout: captionLayout,
+                    grid: gridLayout !== 'timeline' && !listView,
+                    scrubber: gridLayout === 'timeline',
+                    stacks: !!pageOptions?.withStacked && !selectionMode,
+                    libraryRoot: libraryRoot && !selectionMode,
+                    marks: gridLayout !== 'work',
+                  }}
                   {sorts}
                   sort={shownSort}
                   onSortChange={albumSortId || ownSort ? changeAlbumSort : undefined}
@@ -1960,10 +2000,6 @@
                   countElsewhere={tabsInToolbar && showStatusBar}
                 >
                   {@render toolbar?.()}
-                  <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
-                  {#if gridLayout === 'work' && !listView}
-                    <WorkFileNamesToggle />
-                  {/if}
                 </ResultsToolbar>
               </div>
             {/if}

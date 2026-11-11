@@ -170,6 +170,7 @@ const ORIGINAL_TRANSFER_ROUTES = new Set([
   'POST download/archive',
   'GET admin/database-backups/:filename',
   'GET preservation/packages/:id/download',
+  'POST preservation/packages/:id/desktop-copy',
   // full-resolution masters, bundles, renders and archives, as large as originals
   'GET assets/:id/edit-versions/:versionId/download',
   'GET studio/bundles/exports/:id/download',
@@ -254,6 +255,9 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST oauth/apps/token': RATE_LIMITS.oauthAppToken,
   'POST oauth/apps/revoke': RATE_LIMITS.oauthAppToken,
   'POST oauth/apps/register': RATE_LIMITS.oauthAppRegister,
+  'GET mcp': RATE_LIMITS.mcp,
+  'POST mcp': RATE_LIMITS.mcp,
+  'GET mcp/preview': RATE_LIMITS.mcp,
   'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
   // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
   'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },
@@ -370,7 +374,14 @@ describe('controllers', () => {
 
     expect(workerRoutes.map((route) => route.id)).toContain('GET render-workers/operations/:id/inputs/:grant');
     expect(workerRoutes.filter((route) => !route.homeNetworkOnly)).toEqual([]);
-    expect(routes.filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))).toEqual([]);
+    const localCopyRoutes = [
+      'POST preservation/packages/:id/desktop-copy',
+      'POST preservation/packages/:id/desktop-copy-grant',
+    ];
+    const otherLocalRoutes = routes
+      .filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))
+      .map((route) => route.id);
+    expect(otherLocalRoutes.toSorted()).toEqual(localCopyRoutes);
   });
 
   it('should rate limit sign-in, licence activation and link start (FL-161)', () => {

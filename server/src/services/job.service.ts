@@ -139,9 +139,18 @@ const RUN_FAILURE_ACTIONS: Record<'retry' | 'stop', readonly RunFailureCause[]> 
 export class JobService extends BaseService {
   async getRuns({ take, skip, foldNightly }: JobRunSearchDto): Promise<JobRunPageDto> {
     const rows = await this.jobRepository.listRuns(take + 1, skip, foldNightly ?? false);
+    // FL-1430: Recent work's first page also shows Library care's file checks
+    const fileCheck = foldNightly && skip === 0 ? await this.jobRepository.recentFileCheck() : undefined;
     return {
       items: rows.slice(0, take).map((row) => mapJobRun(row)),
       hasNextPage: rows.length > take,
+      ...(fileCheck && {
+        fileCheck: {
+          ...fileCheck,
+          startedAt: fileCheck.startedAt.toISOString(),
+          finishedAt: fileCheck.finishedAt?.toISOString() ?? null,
+        },
+      }),
     };
   }
 
@@ -167,12 +176,16 @@ export class JobService extends BaseService {
    * FL-1349: what a run left over, by cause. The counts cover every account's photos; the samples and the raw message
    * follow Library care's privacy, and another account's photo is listed without its picture.
    */
-  async getRunFailures(auth: AuthDto, id: string): Promise<JobRunFailuresDto> {
-    const review = await this.jobRepository.reviewRunFailures(id, {
-      ...getHiddenContentQueryOptions(auth),
-      ...getLockedVisibilityOptions(auth),
-      ...getOthersRulesQueryOptions(auth),
-    });
+  async getRunFailures(auth: AuthDto, id: string, foldNightly?: boolean): Promise<JobRunFailuresDto> {
+    const review = await this.jobRepository.reviewRunFailures(
+      id,
+      {
+        ...getHiddenContentQueryOptions(auth),
+        ...getLockedVisibilityOptions(auth),
+        ...getOthersRulesQueryOptions(auth),
+      },
+      foldNightly ?? false,
+    );
     if (!review) {
       throw new NotFoundException('Job run not found');
     }
@@ -194,6 +207,7 @@ export class JobService extends BaseService {
           pictureAllowed: sample.ownerId === auth.user.id,
         })),
       })),
+      ...(foldNightly && { superseded: review.superseded }),
     };
   }
 
@@ -201,14 +215,12 @@ export class JobService extends BaseService {
   async actOnRunFailures(
     id: string,
     { cause, action }: JobRunFailureActionDto,
+    foldNightly?: boolean,
   ): Promise<JobRunFailureActionResponseDto> {
     if (!RUN_FAILURE_ACTIONS[action].includes(cause)) {
       throw new BadRequestException(`Photos left over for this reason can't be handled with ${action}`);
     }
-    const count =
-      action === 'retry'
-        ? await this.jobRepository.retryRunFailures(id, cause)
-        : await this.jobRepository.stopRunFailures(id, cause);
+    const count = await this.jobRepository.actOnRunFailures(id, cause, action, foldNightly ?? false);
     if (count === undefined) {
       throw new NotFoundException('Job run not found');
     }

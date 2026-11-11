@@ -104,6 +104,7 @@
   } from '$lib/frameleaf/studio/caption-languages';
   import { createCloudCaptionServices, type StudioCloudCaptionRequest } from '$lib/frameleaf/studio/cloud-captions';
   import CloudJobDialog from '$lib/components/frameleaf/cloud/CloudJobDialog.svelte';
+  import StudioCloudReceipts from '$lib/components/frameleaf/StudioCloudReceipts.svelte';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { createStudioLibraryServices } from '$lib/frameleaf/studio/library-search';
@@ -929,39 +930,77 @@
     },
     personThumbnailUrl: (id) => getPeopleThumbnailUrl({ id } as PersonResponseDto),
   });
-  /** The clip being priced for Frameleaf Cloud captions (FL-1304). */
+  /** The saved project and clip priced for this Cloud confirmation. */
   let cloudCaptions = $state<{
     request: StudioCloudCaptionRequest;
-    destinationId: string;
+    current: () => boolean;
+    estimate: (modelSku: string | null) => ReturnType<typeof estimateStudioTranscription>;
     resolve: (id: string | null) => void;
   } | null>(null);
   let cloudCaptionsOpen = $state(false);
+  let cloudCaptionActive = false;
+  let cloudCaptionAlive = true;
+  let cloudReceiptsOpen = $state(false);
+  let cloudReceiptOrigin = $state<string | null>(null);
 
-  const confirmCloudCaptions = async (request: StudioCloudCaptionRequest) => {
-    const destination = (await listMlDestinations()).find((item) => item.kind === MlDestinationKind.FrameleafCloud);
-    if (!destination) {
-      getCloudManager.open('processing');
+  const confirmCloudCaptions = async (request: StudioCloudCaptionRequest, projectId: string) => {
+    if (cloudCaptionActive || cloudCaptionsOpen || !authManager.authenticated || storedRevision === null) {
       return null;
     }
-    cloudCaptions?.resolve(null);
-    return new Promise<string | null>((resolve) => {
-      cloudCaptions = { request, destinationId: destination.id, resolve };
-      cloudCaptionsOpen = true;
-    });
+    const userId = authManager.user.id;
+    const revision = storedRevision;
+    const sameOwner = () => cloudCaptionAlive && authManager.authenticated && authManager.user.id === userId;
+    const current = () =>
+      sameOwner() &&
+      !accessLost &&
+      !forbidden &&
+      sessionState?.access === 'owner' &&
+      !sessionState.hasDraft &&
+      project.id === projectId &&
+      storedRevision === revision;
+    if (!current()) {
+      return null;
+    }
+    cloudCaptionActive = true;
+    try {
+      const destination = (await listMlDestinations()).find((item) => item.kind === MlDestinationKind.FrameleafCloud);
+      if (!current()) {
+        return null;
+      }
+      if (!destination) {
+        getCloudManager.open('processing');
+        return null;
+      }
+      return await new Promise<string | null>((resolve) => {
+        cloudCaptions = {
+          request,
+          current,
+          estimate: (modelSku) =>
+            current()
+              ? estimateStudioTranscription({
+                  id: projectId,
+                  studioTranscriptionEstimateDto: {
+                    clipId: request.clipId,
+                    language: request.language,
+                    destinationId: destination.id,
+                    ...(modelSku && { modelSku }),
+                  },
+                })
+              : Promise.reject(new DOMException('The Studio project changed.', 'AbortError')),
+          resolve: (id) => resolve(sameOwner() ? id : null),
+        };
+        cloudCaptionsOpen = true;
+      });
+    } finally {
+      cloudCaptionActive = false;
+    }
   };
 
-  const estimateCloudCaptions = (modelSku: string | null) => {
-    const { request, destinationId } = cloudCaptions!;
-    return estimateStudioTranscription({
-      id: project.id,
-      studioTranscriptionEstimateDto: {
-        clipId: request.clipId,
-        language: request.language,
-        destinationId,
-        ...(modelSku && { modelSku }),
-      },
-    });
-  };
+  $effect(() => {
+    if (cloudCaptionsOpen && cloudCaptions && !cloudCaptions.current()) {
+      cloudCaptionsOpen = false;
+    }
+  });
 
   const services: StudioHostServices = {
     ...libraryServices,
@@ -1110,7 +1149,21 @@
     // FL-1304: captions on Frameleaf Cloud, with the price shown first.
     ...createCloudCaptionServices({
       projectId: () => project.id,
-      save: () => session.flush(),
+      save: async () => {
+        if (!authManager.authenticated) {
+          return false;
+        }
+        const userId = authManager.user.id;
+        const startingProject = project.id;
+        await session.flush();
+        return (
+          authManager.authenticated &&
+          authManager.user.id === userId &&
+          (startingProject === STUDIO_DRAFT_PROJECT_ID || project.id === startingProject) &&
+          storedRevision !== null &&
+          sessionState?.hasDraft === false
+        );
+      },
       confirm: confirmCloudCaptions,
       read: (id, transcriptionId) => getStudioTranscription({ id, transcriptionId }),
     }),
@@ -1153,6 +1206,18 @@
   const canExportBundle = $derived(
     storedRevision !== null && sessionState?.access === 'owner' && !accessLost && !forbidden,
   );
+  const cloudReceiptScope = $derived(
+    canExportBundle && authManager.authenticated ? `${authManager.user.id}:${project.id}` : null,
+  );
+  const onCloudReceipts = () => {
+    cloudReceiptOrigin = cloudReceiptScope;
+    cloudReceiptsOpen = true;
+  };
+  $effect(() => {
+    if (cloudReceiptsOpen && cloudReceiptOrigin !== cloudReceiptScope) {
+      cloudReceiptsOpen = false;
+    }
+  });
   const onExportBundle = () => {
     exportDialogOpen = true;
   };
@@ -1644,6 +1709,8 @@
   });
 
   onDestroy(() => {
+    cloudCaptionAlive = false;
+    cloudCaptions?.resolve(null);
     detachImports();
     sourceController.abort();
     clearTimeout(exportTimer);
@@ -1728,15 +1795,25 @@
   shown and the engine disposed.
 -->
 {#if cloudCaptions}
-  <CloudJobDialog
-    bind:open={cloudCaptionsOpen}
-    title={$t('frameleaf_studio_cloud_captions_title')}
-    workName={$t('frameleaf_cloud_job_work_captions')}
-    summary={cloudCaptions.request.name}
-    estimateWith={estimateCloudCaptions}
-    onSubmitted={(job) => cloudCaptions?.resolve(job.operationId)}
-    onDismissed={() => cloudCaptions?.resolve(null)}
-  />
+  {@const quote = cloudCaptions}
+  {#key quote}
+    <CloudJobDialog
+      bind:open={cloudCaptionsOpen}
+      title={$t('frameleaf_studio_cloud_captions_title')}
+      workName={$t('frameleaf_cloud_job_work_captions')}
+      summary={quote.request.name}
+      estimateWith={quote.estimate}
+      canSubmit={quote.current}
+      onSubmitted={(job) => quote.resolve(job.operationId)}
+      onDismissed={() => quote.resolve(null)}
+    />
+  {/key}
+{/if}
+
+{#if cloudReceiptsOpen && cloudReceiptScope && cloudReceiptOrigin === cloudReceiptScope}
+  {#key cloudReceiptScope}
+    <StudioCloudReceipts bind:open={cloudReceiptsOpen} projectId={project.id} />
+  {/key}
 {/if}
 
 <StudioHost
@@ -1757,6 +1834,7 @@
   draftHeld={studioDraftHeld(sessionState?.status, sessionState?.hasDraft === true)}
   {onOpenActivity}
   onExportBundle={canExportBundle ? onExportBundle : undefined}
+  onCloudReceipts={cloudReceiptScope ? onCloudReceipts : undefined}
   onImportRetention={sessionState?.access === 'owner' &&
   !accessLost &&
   !forbidden &&

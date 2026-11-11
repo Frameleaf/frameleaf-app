@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+import { libraryView } from '$lib/frameleaf/library-view.svelte';
 import {
   alwaysLoadOriginalFile,
   alwaysLoadOriginalVideo,
@@ -120,10 +120,11 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     libraryStartLayout.set(null);
 
     const names = screen.getByRole('switch', { name: 'Show file names in Work view' });
-    const before = libraryGridPreferences.showFileNames;
+    // FL-1398: the same choice as the Library View menu's "File name" in Work, kept with the account
+    expect(names).not.toBeChecked();
     await fireEvent.click(names);
-    expect(libraryGridPreferences.showFileNames).toBe(!before);
-    libraryGridPreferences.showFileNames = before;
+    expect(libraryView.value.workNames).toBe(true);
+    libraryView.set({ workNames: false });
 
     // an account preference: it waits for the Save bar
     await fireEvent.click(screen.getByRole('switch', { name: 'Show archived photos in search' }));

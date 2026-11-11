@@ -104,6 +104,45 @@ describe(PersonService.name, () => {
       });
     });
 
+    // FL-1408 (M9): an empty People page can say the first scan is still running
+    it('says face recognition is still working when nobody has been found and photos still wait', async () => {
+      const auth = AuthFactory.create();
+      mocks.person.getAllForUser.mockResolvedValue({ items: [], hasNextPage: false });
+      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 0, hidden: 0 });
+      mocks.assetJob.hasFacesToDetect.mockResolvedValue(true);
+
+      await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.toEqual({
+        hasNextPage: false,
+        total: 0,
+        hidden: 0,
+        people: [],
+        scanning: true,
+      });
+      expect(mocks.assetJob.hasFacesToDetect).toHaveBeenCalledWith(auth.user.id);
+
+      mocks.assetJob.hasFacesToDetect.mockResolvedValue(false);
+      await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.toEqual({
+        hasNextPage: false,
+        total: 0,
+        hidden: 0,
+        people: [],
+      });
+    });
+
+    it('does not say so with face recognition turned off, or once somebody has been found', async () => {
+      const auth = AuthFactory.create();
+      mocks.person.getAllForUser.mockResolvedValue({ items: [], hasNextPage: false });
+      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 0, hidden: 0 });
+      mocks.assetJob.hasFacesToDetect.mockResolvedValue(true);
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { enabled: false } });
+      await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.not.toHaveProperty('scanning');
+
+      mocks.systemMetadata.get.mockResolvedValue({});
+      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 0, hidden: 1 });
+      await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.not.toHaveProperty('scanning');
+      expect(mocks.assetJob.hasFacesToDetect).not.toHaveBeenCalled();
+    });
+
     it('should get all visible people and favorites should be first in the array', async () => {
       const auth = AuthFactory.create();
       const [isFavorite, person] = [PersonFactory.create({ isFavorite: true }), PersonFactory.create()];

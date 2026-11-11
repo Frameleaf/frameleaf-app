@@ -65,9 +65,18 @@ const AssistantAskResponseSchema = z
     results: SearchResponseSchema,
     reasons: z.array(AssistantReasonSchema).describe('Why each result matched, one entry per result'),
     warnings: z.array(z.string()).describe('Parts of the question that could not be used'),
+    switchBackToken: z
+      .uuidv4()
+      .optional()
+      .describe('Opaque token for reporting a switch to Classic search from this answer'),
   })
   .meta({ id: 'AssistantAskResponseDto' });
 
+const AssistantSwitchBackSchema = z
+  .strictObject({ token: z.uuidv4().describe('The switch-back token from the Assistant answer') })
+  .meta({ id: 'AssistantSwitchBackDto' });
+
+export class AssistantSwitchBackDto extends createZodDto(AssistantSwitchBackSchema) {}
 export class AssistantAskDto extends createZodDto(AssistantAskSchema) {}
 export class AssistantAskResponseDto extends createZodDto(AssistantAskResponseSchema) {}
 export type AssistantReasonItem = z.infer<typeof AssistantReasonItemSchema>;

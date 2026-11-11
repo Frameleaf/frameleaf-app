@@ -7,7 +7,10 @@ import {
   otherWorkCards,
   tonightStart,
   workEtaSeconds,
+  faceRecognitionWork,
+  leftOverRuns,
 } from '$lib/frameleaf/background-work';
+import { runHeadline } from '$lib/frameleaf/run-headline';
 
 const queue = (name: QueueName, patch: Partial<DurableQueueRun> = {}): DurableQueueRun => ({
   name,
@@ -44,6 +47,12 @@ const run = (kind: QueueName, patch: Partial<DurableJobRun> = {}): DurableJobRun
   ...patch,
 });
 
+/** A run none of whose work is paused: the fixture above is a paused one, by its reasons and its steps. */
+const moving = {
+  reasons: [],
+  stageTotals: { ...counts, completed: 460, needsAttention: 0, paused: 0, retrying: 0, total: 537, waiting: 77 },
+} satisfies Partial<DurableJobRun>;
+
 const summary = (patch: Partial<DurableRunningJobs>): DurableRunningJobs => ({
   operations: [],
   memoryExports: [],
@@ -58,6 +67,7 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
   it.each([false, true])('weights combined run progress by item totals (reverse=%s)', (reverse) => {
     const runs = [
       run(QueueName.MetadataExtraction, {
+        ...moving,
         id: 'small',
         state: 'running',
         active: 1,
@@ -66,6 +76,7 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
         total: 100,
       }),
       run(QueueName.MetadataExtraction, {
+        ...moving,
         id: 'large',
         state: 'running',
         active: 1,
@@ -81,8 +92,14 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
 
   it.each([false, true])('withholds combined progress until every run is enumerated (reverse=%s)', (reverse) => {
     const runs = [
-      run(QueueName.MetadataExtraction, { id: 'known', state: 'running', active: 1 }),
-      run(QueueName.MetadataExtraction, { id: 'discovering', state: 'running', active: 1, enumerationDone: false }),
+      run(QueueName.MetadataExtraction, { ...moving, id: 'known', state: 'running', active: 1 }),
+      run(QueueName.MetadataExtraction, {
+        ...moving,
+        id: 'discovering',
+        state: 'running',
+        active: 1,
+        enumerationDone: false,
+      }),
     ];
     const cards = buildBackgroundWorkCards(summary({ durableRuns: reverse ? [...runs].reverse() : runs }));
     expect(cards).toHaveLength(1);
@@ -150,9 +167,11 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
       id: 'run:run-metadataExtraction',
       queueName: QueueName.MetadataExtraction,
       stage: 'paused',
-      statusKey: 'frameleaf_activity_stage_paused',
+      // FL-1409: Recent work's words for it, and its one reason.
+      statusKey: 'frameleaf_job_runs_state_paused',
       stuck: false,
       reason: null,
+      why: { key: 'frameleaf_job_runs_why_paused_elsewhere' },
       waiting: 20,
       running: 0,
       progress: null,
@@ -194,8 +213,15 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
 
   it.each([false, true])('keeps the more telling reason of two queued runs of one kind (reverse=%s)', (reverse) => {
     const runs = [
-      run(QueueName.MetadataExtraction, { id: 'waiting', state: 'waiting', paused: 0, waiting: 5 }),
-      run(QueueName.MetadataExtraction, { id: 'blocked', state: 'blocked', paused: 0, blocked: 5 }),
+      run(QueueName.MetadataExtraction, { ...moving, id: 'waiting', state: 'waiting', paused: 0, waiting: 5 }),
+      run(QueueName.MetadataExtraction, {
+        ...moving,
+        id: 'blocked',
+        state: 'blocked',
+        reasons: ['dependency_wait'],
+        paused: 0,
+        blocked: 5,
+      }),
     ];
     const [card] = buildBackgroundWorkCards(summary({ durableRuns: reverse ? [...runs].reverse() : runs }));
     expect(card).toMatchObject({ stage: 'queued', statusKey: 'frameleaf_job_runs_state_blocked', stuck: true });
@@ -206,10 +232,17 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
     (reverse) => {
       const runs = [
         run(QueueName.MetadataExtraction, { id: 'paused', state: 'paused' }),
-        run(QueueName.MetadataExtraction, { id: 'blocked', state: 'blocked', paused: 0, blocked: 5 }),
+        run(QueueName.MetadataExtraction, {
+          ...moving,
+          id: 'blocked',
+          state: 'blocked',
+          reasons: ['dependency_wait'],
+          paused: 0,
+          blocked: 5,
+        }),
       ];
       const [card] = buildBackgroundWorkCards(summary({ durableRuns: reverse ? [...runs].reverse() : runs }));
-      expect(card).toMatchObject({ stage: 'paused', statusKey: 'frameleaf_activity_stage_paused' });
+      expect(card).toMatchObject({ stage: 'paused', statusKey: 'frameleaf_job_runs_state_paused', stuck: false });
     },
   );
 
@@ -486,5 +519,115 @@ describe('workEtaSeconds (FL-1388)', () => {
     expect(workEtaSeconds(summary({ queues: [] }), now)).toBeNull();
     expect(workEtaSeconds(summary({ queues: [moving], canManageQueues: false }), now)).toBeNull();
     expect(workEtaSeconds(null, now)).toBeNull();
+  });
+});
+
+describe('faceRecognitionWork (FL-1408)', () => {
+  it('reads face recognition alone, in the states Activity shows', () => {
+    const state = (queues: DurableQueueRun[]) => faceRecognitionWork(summary({ queues }))?.state;
+
+    expect(state([queue(QueueName.FaceDetection, { active: 1, waiting: 9, total: 10 })])).toBe('running');
+    expect(state([queue(QueueName.FacialRecognition, { isPaused: true, waiting: 9 })])).toBe('paused');
+    expect(state([queue(QueueName.FaceDetection, { heldForNight: true, state: 'paused', waiting: 9 })])).toBe(
+      'tonight',
+    );
+    expect(state([queue(QueueName.FaceDetection, { waiting: 9 })])).toBe('waiting');
+    // pets share the feature but are not face recognition; other work says nothing about it
+    expect(state([queue(QueueName.PetRecognition, { active: 3 }), queue(QueueName.SmartSearch, { active: 3 })])).toBe(
+      'idle',
+    );
+    expect(faceRecognitionWork(null)?.state).toBe('idle');
+  });
+});
+
+// FL-1409: Activity's run rows say what Recent work says, because both read `runHeadline`.
+describe('a run on Activity and in Recent work (FL-1409)', () => {
+  const scan = 'library_scan' as QueueName;
+  const waitingRun = (patch: Partial<DurableJobRun>) =>
+    run(scan, {
+      state: 'waiting',
+      paused: 0,
+      waiting: 20,
+      ...moving,
+      ...patch,
+    });
+
+  it.each([
+    ['running', waitingRun({ state: 'running', active: 4 })],
+    ['paused by its queue', waitingRun({ reasons: ['queue_paused'], pausedQueues: [QueueName.ThumbnailGeneration] })],
+    ['paused, with only its steps saying so', run(scan, { state: 'running', active: 2, reasons: [] })],
+    [
+      'waiting for a drive',
+      waitingRun({ state: 'running', reasons: ['source-unavailable'], unreachableLibraries: ['Family archive'] }),
+    ],
+    ['held for library setup', waitingRun({ reasons: ['first_setup_pending'], held: 20 })],
+    ['saved for the night', waitingRun({ state: 'delayed', waiting: 0, delayed: 20, reasons: ['scheduled_delay'] })],
+    ['not started yet', waitingRun({ state: 'unavailable', reasons: ['worker_unavailable'] })],
+    ['waiting its turn', waitingRun({})],
+  ])('gives the same state for a run that is %s', (_name, one) => {
+    const [card] = buildBackgroundWorkCards(summary({ durableRuns: [one] }));
+    const headline = runHeadline(one);
+    expect(card.statusKey).toBe(headline.status);
+    expect(card.why?.key ?? null).toBe(headline.why);
+  });
+
+  it('never says Running for a run Recent work calls Paused', () => {
+    // `run.state` alone said running; its paused steps say otherwise.
+    const one = run(scan, { state: 'running', active: 2, reasons: [] });
+    const [card] = buildBackgroundWorkCards(summary({ durableRuns: [one] }));
+    expect(card).toMatchObject({ stage: 'paused', statusKey: 'frameleaf_job_runs_state_paused' });
+  });
+
+  it('says Waiting for a drive and names the library when a scan’s folder is offline', () => {
+    const one = waitingRun({
+      state: 'running',
+      reasons: ['source-unavailable'],
+      unreachableLibraries: ['Family archive'],
+    });
+    const [card] = buildBackgroundWorkCards(summary({ durableRuns: [one] }));
+    expect(card).toMatchObject({
+      stage: 'queued',
+      statusKey: 'frameleaf_job_runs_status_waiting_drive',
+      stuck: true,
+      why: { key: 'frameleaf_job_runs_why_drive', values: { name: 'Family archive' } },
+    });
+    expect(otherWorkCards([card])).toEqual([card]);
+  });
+});
+
+describe('leftOverRuns (FL-1409)', () => {
+  const finished = (patch: Partial<DurableJobRun>) =>
+    run(QueueName.ThumbnailGeneration, {
+      state: 'completed_with_errors',
+      finishedAt: '2026-11-10T04:06:00.000Z',
+      paused: 0,
+      reasons: [],
+      stageTotals: { ...counts, completed: 537, needsAttention: 0, paused: 0, retrying: 0, total: 537, waiting: 0 },
+      ...patch,
+    });
+
+  it('counts finished work that left photos over, which the rows drop', () => {
+    const left = finished({ id: 'left', leftOver: 312, failureCauses: [] });
+    const clean = finished({ id: 'clean', state: 'completed', leftOver: 0 });
+    const live = run(QueueName.MetadataExtraction, { id: 'live', leftOver: 4 });
+    const all = summary({ durableRuns: [left, clean, live] });
+
+    expect(buildBackgroundWorkCards(all).map((card) => card.id)).toEqual(['run:live']);
+    expect(leftOverRuns(all).map((one) => one.id)).toEqual(['left']);
+    // So the page's first line is never "Everything is up to date" beside Recent work's "312 photos need a look".
+    expect(activityWorkStatus({ rows: [], needsLook: leftOverRuns(all).length, jobs: 0 })).toBe('attention');
+  });
+
+  it('counts the nightly work once, as Recent work folds it', () => {
+    const nights = ['tonight', 'last-night', 'the-night-before'].map((id) =>
+      finished({ id, nightly: true, leftOver: 12 }),
+    );
+    expect(leftOverRuns(summary({ durableRuns: nights })).map((one) => one.id)).toEqual(['tonight']);
+  });
+
+  it('is empty for anyone the server sends no runs to', () => {
+    const left = finished({ leftOver: 312 });
+    expect(leftOverRuns(summary({ durableRuns: [left], canReadJobRuns: false }))).toEqual([]);
+    expect(leftOverRuns(null)).toEqual([]);
   });
 });

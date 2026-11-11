@@ -311,12 +311,25 @@ describe('AssetTile quick actions and captions (FL-33)', () => {
     expect(screen.queryByRole('button', { name: 'frameleaf_tile_edit' })).toBeNull();
   });
 
-  it('captions a Timeline tile with its name and time, but never names a Locked item', () => {
+  it('captions a Timeline tile with its time, and its name when asked, but never names a Locked item', () => {
+    // FL-1398: the Timeline shows the time taken; the View menu's "File name" adds the name.
+    const timeOnly = tile({
+      asset: asset({ originalFileName: 'IMG_0042.HEIC' }),
+      layout: 'timeline',
+      height: 157,
+      captionHeight: 24,
+    });
+    const bare = screen.getByTestId('frameleaf-asset-tile').querySelector('.fl-tile-caption');
+    expect(bare?.textContent).not.toContain('IMG_0042');
+    expect(bare?.querySelector('time')).not.toBeNull();
+    timeOnly.unmount();
+
     const { unmount } = tile({
       asset: asset({ originalFileName: 'IMG_0042.HEIC' }),
       layout: 'timeline',
       height: 157,
       captionHeight: 24,
+      showFileName: true,
     });
     const caption = screen.getByTestId('frameleaf-asset-tile').querySelector('.fl-tile-caption');
     expect(caption?.textContent).toContain('IMG_0042');
@@ -328,6 +341,7 @@ describe('AssetTile quick actions and captions (FL-33)', () => {
       layout: 'timeline',
       height: 157,
       captionHeight: 24,
+      showFileName: true,
     });
     const locked = screen.getByTestId('frameleaf-asset-tile').querySelector('.fl-tile-caption');
     expect(locked).not.toBeNull();
@@ -371,8 +385,8 @@ describe('AssetTile quick actions and captions (FL-33)', () => {
     expect(row.getHTML()).not.toContain('private');
   });
 
-  it('draws no caption in Browse', () => {
-    tile({ layout: 'browse', captionHeight: 24 });
+  it('draws no caption in Browse, whose cells have no caption row unless the View menu asks for one', () => {
+    tile({ layout: 'browse' });
     expect(screen.getByTestId('frameleaf-asset-tile').querySelector('.fl-tile-caption')).toBeNull();
   });
 });

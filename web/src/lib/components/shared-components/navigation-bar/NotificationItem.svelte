@@ -1,23 +1,14 @@
 <script lang="ts">
-  import { NotificationLevel, NotificationType, type NotificationDto } from '@frameleaf/sdk';
+  import { notificationIcon } from '$lib/frameleaf/notification-kind';
+  import { NotificationLevel, type NotificationDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import {
-    mdiAt,
-    mdiBackupRestore,
-    mdiImageAlbum,
-    mdiImagePlus,
-    mdiShareVariantOutline,
-    mdiInformationOutline,
-    mdiMessageBadgeOutline,
-    mdiReply,
-    mdiSync,
-  } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { locale, t } from 'svelte-i18n';
 
   /**
-   * One notification, in the prototype's row design (`SystemPanels.jsx`): a tinted icon, the title
-   * and body, when it arrived, and a dot while it is unread. What a click does is the panel's.
+   * One notification, in the prototype's row design (`SystemPanels.jsx`): a tinted icon for what it
+   * is about (`notification-kind.ts`), the title and body, when it arrived, and a dot while it is
+   * unread. What a click does is the panel's.
    */
 
   interface Props {
@@ -46,47 +37,6 @@
   };
 
   const tone = $derived(toneOf(notification.level));
-
-  const getIconType = (type: NotificationType) => {
-    switch (type) {
-      case NotificationType.BackupFailed: {
-        return mdiBackupRestore;
-      }
-      case NotificationType.JobFailed: {
-        return mdiSync;
-      }
-      case NotificationType.SystemMessage: {
-        return mdiMessageBadgeOutline;
-      }
-      case NotificationType.Custom: {
-        return mdiInformationOutline;
-      }
-
-      case NotificationType.AlbumInvite: {
-        return mdiImageAlbum;
-      }
-
-      case NotificationType.AlbumUpdate: {
-        return mdiImagePlus;
-      }
-
-      case NotificationType.ItemShare: {
-        return mdiShareVariantOutline;
-      }
-
-      case NotificationType.SharedSpaceMention: {
-        return mdiAt;
-      }
-
-      case NotificationType.SharedSpaceReply: {
-        return mdiReply;
-      }
-
-      default: {
-        return mdiInformationOutline;
-      }
-    }
-  };
 
   const formatRelativeTime = (dateString: string): string => {
     try {
@@ -121,7 +71,7 @@
     class:tone-danger={tone === 'danger'}
     aria-hidden="true"
   >
-    <Icon icon={getIconType(notification.type)} size="18" />
+    <Icon icon={notificationIcon(notification)} size="18" />
   </span>
   <span class="fl-notif-text">
     <strong>

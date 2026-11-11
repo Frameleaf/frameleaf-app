@@ -475,6 +475,26 @@ export class MemoryRepository implements IBulkAsset {
       .execute();
     return rows.map(({ memoryAt }) => memoryAt);
   }
+  /** FL-1408: whether this owner has a memory of any kind, shown or not. No @GenerateSql, as above. */
+  async hasAny(ownerId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('memory')
+      .select('id')
+      .where('ownerId', '=', ownerId)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
+  }
+  /** FL-1408: when the first photo or video still in this owner's library arrived. No @GenerateSql, as above. */
+  async getFirstAssetCreatedAt(ownerId: string): Promise<Date | null> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.min('createdAt').as('first'))
+      .where('ownerId', '=', ownerId)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirst();
+    return row?.first ?? null;
+  }
   /**
    * Pet stories (FL-58): the photos the owner confirmed each of their named, visible pets in, captured
    * (owner's local time) inside the window. Timeline photos only, so archived and hidden photos never

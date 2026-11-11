@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import helmetMiddleware from 'helmet';
 import { existsSync } from 'node:fs';
 import sirv from 'sirv';
+import type { RequestHandler } from 'express';
 import { IMMICH_SERVER_START, excludePaths, excludeRoutePatterns, serverVersion } from 'src/constants.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
 import { expressTrustProxy, frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
@@ -65,6 +66,14 @@ export async function configureExpress(
   // FL-161: record how the request arrived (vouched for by the edge worker's per-boot secret) and
   // drop every client-supplied `X-Frameleaf-*` claim before anything else reads the request.
   app.use(frameleafViaMiddleware(frameleafCloud.edge.secret));
+  const requireMcpJson: RequestHandler = (req, res, next) => {
+    if (req.method === 'POST' && !req.is('application/json')) {
+      res.sendStatus(415);
+      return;
+    }
+    next();
+  };
+  app.use(/^\/api\/mcp\/?$/i, requireMcpJson, json({ limit: '32kb' }));
   app.use(
     json({
       limit: '10mb',

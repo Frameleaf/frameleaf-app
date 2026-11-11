@@ -285,6 +285,24 @@ describe('memoryManager on a lock or unlock (FL-195 follow-up)', () => {
   });
 });
 
+// FL-1408 (M8): the server says when a library's first memories are a night away
+describe('memoryManager.preparing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('follows the server each time the memories are read', async () => {
+    vi.mocked(searchMemories).mockResolvedValue([]);
+    vi.mocked(memoriesStatistics).mockResolvedValueOnce({ total: 0, preparing: true });
+    await memoryManager.reloadForSessionAccess();
+    expect(memoryManager.preparing).toBe(true);
+
+    vi.mocked(memoriesStatistics).mockResolvedValueOnce({ total: 0 });
+    await memoryManager.reloadForSessionAccess();
+    expect(memoryManager.preparing).toBe(false);
+  });
+});
+
 describe('memory mutation session ownership', () => {
   beforeEach(() => {
     vi.clearAllMocks();

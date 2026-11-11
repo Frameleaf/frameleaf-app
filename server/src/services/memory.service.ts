@@ -117,6 +117,9 @@ const MAX_SUBJECT_MEMORY_ASSETS = 60;
 /** an "on this day" year keeps at most this many items after burst suppression (FL-62) */
 const MAX_ON_THIS_DAY_ASSETS = 20;
 
+/** FL-1408: a year with fewer items than this shares one "on this day" memory with the other small years */
+const MIN_OWN_ON_THIS_DAY_ASSETS = 3;
+
 /** how often the running export re-reads its own row to notice a cancel */
 const EXPORT_CANCEL_POLL_MS = 500;
 
@@ -183,18 +186,29 @@ export class MemoryService extends BaseService {
       const state = await this.systemMetadataRepository.get(SystemMetadataKey.MemoriesState);
       const start = DateTime.utc().startOf('day').minus({ days: DAYS });
       const lastOnThisDayDate = state?.lastOnThisDayDate ? DateTime.fromISO(state.lastOnThisDayDate) : start;
+      // FL-1408: an owner with no memory at all (a first import after the server's first nights) is
+      // given the whole window, not only the one day the server has not reached. With no memory of
+      // theirs there is nothing to duplicate.
+      const firstTime: typeof users = [];
+      for (const owner of users) {
+        if (!(await this.memoryRepository.hasAny(owner.id))) {
+          firstTime.push(owner);
+        }
+      }
 
       // generate a memory +/- X days from today
       for (let i = 0; i <= DAYS * 2; i++) {
         const target = start.plus({ days: i });
-        if (lastOnThisDayDate >= target) {
+        const reached = lastOnThisDayDate >= target;
+        const owners = reached ? firstTime : users;
+        if (owners.length === 0) {
           continue;
         }
 
         this.logger.log(`Creating memories for ${target.toISO()}`);
         try {
           await Promise.all(
-            users.map(async (owner) => {
+            owners.map(async (owner) => {
               const rules = await this.memoryRepository.getShowLess(owner.id);
               await this.createOnThisDayMemories(owner.id, target, rules);
               await this.createBirthdayMemories(owner.id, target, rules);
@@ -202,6 +216,9 @@ export class MemoryService extends BaseService {
           );
         } catch (error) {
           this.logger.error(`Failed to create memories for ${target.toISO()}: ${error}`);
+        }
+        if (reached) {
+          continue;
         }
         // update system metadata even when there is an error to minimize the chance of duplicates
         await this.systemMetadataRepository.set(SystemMetadataKey.MemoriesState, {
@@ -549,15 +566,28 @@ export class MemoryService extends BaseService {
     }
     const showAt = target.startOf('day').toISO();
     const hideAt = target.endOf('day').toISO();
-    const memories = await this.assetRepository.getByDayOfYear([ownerId], target);
+    const years = (await this.assetRepository.getByDayOfYear([ownerId], target)).map(({ year, assets }) => ({
+      year,
+      // FL-62: one moment of a burst stands for the rest, so a year is not twenty frames of the same second
+      ids: suppressBursts(
+        (assets as { id: string; localDateTime: Date | string }[])
+          .map(({ id, localDateTime }) => ({ id, localDateTime: new Date(localDateTime) }))
+          .toSorted((a, b) => a.localDateTime.getTime() - b.localDateTime.getTime()),
+      )
+        .slice(0, MAX_ON_THIS_DAY_ASSETS)
+        .map(({ id }) => id),
+    }));
+    // FL-1408 (M8): years with only a photo or two share one memory, so the day is not a row of single
+    // photos. It is an ordinary on-this-day memory dated to the newest of those years; a client reads
+    // the years from its items. A year with enough photos keeps its own.
+    const small = years.filter(({ ids }) => ids.length < MIN_OWN_ON_THIS_DAY_ASSETS);
+    const groups =
+      small.length > 1
+        ? [small, ...years.filter((entry) => !small.includes(entry)).map((entry) => [entry])]
+        : years.map((entry) => [entry]);
     await Promise.all(
-      memories.map(({ year, assets }) => {
-        // FL-62: one moment of a burst stands for the rest, so a year is not twenty frames of the same second
-        const kept = suppressBursts(
-          (assets as { id: string; localDateTime: Date | string }[])
-            .map(({ id, localDateTime }) => ({ id, localDateTime: new Date(localDateTime) }))
-            .toSorted((a, b) => a.localDateTime.getTime() - b.localDateTime.getTime()),
-        ).slice(0, MAX_ON_THIS_DAY_ASSETS);
+      groups.map((group) => {
+        const year = Math.max(...group.map((entry) => entry.year));
         return this.memoryRepository.create(
           {
             ownerId,
@@ -567,7 +597,7 @@ export class MemoryService extends BaseService {
             showAt,
             hideAt,
           },
-          new Set(kept.map(({ id }) => id)),
+          new Set(group.flatMap(({ ids }) => ids)),
         );
       }),
     );
@@ -1236,7 +1266,35 @@ export class MemoryService extends BaseService {
       const named = (await this.memoryRepository.search(auth.user.id, subjectDto, options)) as Memory[];
       excluded += named.length - (await this.withCurrentSubjects(auth, named)).length;
     }
-    return excluded > 0 ? { ...counted, total: Math.max(0, counted.total - excluded) } : counted;
+    const total = Math.max(0, counted.total - excluded);
+    return total === 0 && (await this.isPreparing(auth.user.id)) ? { total, preparing: true } : { ...counted, total };
+  }
+
+  /**
+   * FL-1408 (M8): the day after a first import. The owner has photos and no memory of any kind, and
+   * the overnight run has not happened since their first photo arrived, so "nothing yet" would be
+   * wrong: the first memories are a night away.
+   */
+  private async isPreparing(ownerId: string): Promise<boolean> {
+    if (await this.memoryRepository.hasAny(ownerId)) {
+      return false;
+    }
+    const first = await this.memoryRepository.getFirstAssetCreatedAt(ownerId);
+    if (!first) {
+      return false;
+    }
+    const { nightlyTasks } = await this.getConfig({ withCache: true });
+    if (!nightlyTasks.databaseCleanup || !nightlyTasks.generateMemories) {
+      return false;
+    }
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.MemoriesState);
+    if (!state?.lastOnThisDayDate) {
+      return true;
+    }
+    // ponytail: the day of the last run is read back from the last day it made memories for (its own
+    // day + DAYS) instead of being stored. A first import earlier on the day of a run reads as
+    // "preparing" for one day more; store the run's time if that ever matters.
+    return first.getTime() >= DateTime.fromISO(state.lastOnThisDayDate).minus({ days: DAYS }).toMillis();
   }
 
   /**

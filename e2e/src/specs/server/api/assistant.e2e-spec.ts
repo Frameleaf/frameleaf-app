@@ -1,4 +1,4 @@
-import { LoginResponseDto, SharedLinkType } from '@frameleaf/sdk';
+import { LoginResponseDto, Permission, SharedLinkType } from '@frameleaf/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -34,6 +34,7 @@ describe('/assistant', () => {
 
       expect(status).toBe(200);
       expect(body.answeredBy).toBe('rules');
+      expect(body.switchBackToken).toMatch(/^[a-f0-9-]{36}$/u);
       expect(body.plan).toMatchObject({ favorite: true });
       // only the asker's own favorite: not the other item, never the administrator's
       expect(body.results.assets.items.map(({ id }: { id: string }) => id)).toEqual([favorite.id]);
@@ -41,6 +42,16 @@ describe('/assistant', () => {
       expect(body.reasons).toEqual([
         { assetId: favorite.id, items: [{ kind: 'favorite', text: 'In your favorites' }] },
       ]);
+    });
+
+    it('keeps API key answers out of the switch-back metric', async () => {
+      const { secret } = await utils.createApiKey(owner.accessToken, [Permission.AssetRead]);
+      const { body } = await request(app)
+        .post('/assistant/ask')
+        .set('x-api-key', secret)
+        .send({ query: 'my favorites' })
+        .expect(200);
+      expect(body).not.toHaveProperty('switchBackToken');
     });
 
     it('is not available from a shared link', async () => {
@@ -53,6 +64,26 @@ describe('/assistant', () => {
         .query({ key: share.key })
         .send({ query: 'my favorites' });
       expect(status).toBe(403);
+    });
+  });
+
+  describe('POST /assistant/classic', () => {
+    it('requires a session or API credential and accepts only the opaque token', async () => {
+      const { body } = await request(app)
+        .post('/assistant/ask')
+        .set(asBearerAuth(owner.accessToken))
+        .send({ query: 'my favorites' })
+        .expect(200);
+      const token = body.switchBackToken as string;
+      await request(app).post('/assistant/classic').send({ token }).expect(401);
+      await request(app)
+        .post('/assistant/classic')
+        .set(asBearerAuth(owner.accessToken))
+        .send({ token, query: 'private' })
+        .expect(400);
+      await request(app).post('/assistant/classic').set(asBearerAuth(admin.accessToken)).send({ token }).expect(204);
+      await request(app).post('/assistant/classic').set(asBearerAuth(owner.accessToken)).send({ token }).expect(204);
+      await request(app).post('/assistant/classic').set(asBearerAuth(owner.accessToken)).send({ token }).expect(204);
     });
   });
 });

@@ -120,11 +120,8 @@ export const readConfig = async (repos: RepoDeps): Promise<SystemConfig> => {
 
 const configDigest = (value: SystemConfig) => createHash('sha256').update(canonicalJson(value)).digest('hex');
 
-/**
- * Settings sections added after configuration files could be approved (FL-885: the Library Assistant).
- * A file approved before a section existed keeps its approval while it does not name the section.
- */
-const ADDED_CONFIG_SECTIONS = ['localFeatures.assistant'] as const;
+/** Newest first, so an approved file can still match the defaults from its own version. */
+const ADDED_CONFIG_PATHS = ['connectedApps.allowMcp', 'localFeatures.assistant'] as const;
 const epochFor = (value: SystemConfig, sourceKind: Epoch['sourceKind'], epoch: number): Epoch => ({
   format: 1,
   epoch,
@@ -229,7 +226,7 @@ export const prepareFileConfig = async (repos: RepoDeps): Promise<SystemConfig> 
     if (!result.success) throw new Error('invalid');
     const parsed = cloneDeep(result.data) as SystemConfig;
     // validation fills defaults back in; a section the approved file predates stays absent (see buildConfig)
-    for (const path of ADDED_CONFIG_SECTIONS) {
+    for (const path of ADDED_CONFIG_PATHS) {
       if (get(candidate, path) === undefined) unset(parsed, path);
     }
     return parsed;
@@ -542,15 +539,16 @@ const buildConfig = async (repos: RepoDeps, privateErrors = false) => {
       }
       // Only the exact previously approved file configuration may retain the old defaults.
       if (configDigest(legacy) === priorDigest) return legacy;
-      // Settings sections added since a file was approved: an approved file that names none of them
-      // still activates unchanged (its digest was taken before they existed), and they read as their
-      // defaults where they are read (`assistantSettings`). Any other edit to the file is still refused.
+      // Try the previously approved defaults, keeping any values the file actually specifies.
+      // Readers apply the default for omitted settings. The digest still rejects unrelated file edits.
       for (const base of [config, legacy]) {
         const before = cloneDeep(base);
-        for (const path of ADDED_CONFIG_SECTIONS) {
-          if (get(partial, path) === undefined) unset(before, path);
+        for (const path of ADDED_CONFIG_PATHS) {
+          if (get(partial, path) === undefined) {
+            unset(before, path);
+            if (configDigest(before) === priorDigest) return before;
+          }
         }
-        if (configDigest(before) === priorDigest) return before;
       }
     }
   }

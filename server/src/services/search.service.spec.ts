@@ -533,6 +533,73 @@ describe(SearchService.name, () => {
       );
     });
 
+    describe('close matches (FL-1393)', () => {
+      const ranked = (...distances: number[]) => ({
+        hasNextPage: false,
+        items: distances.map((distance) => ({
+          ...getForAsset(AssetFactory.create()),
+          searchDistance: distance,
+          visualDistance: distance,
+        })),
+      });
+
+      it('counts the leading results that are close, against what an unrelated photo scores', async () => {
+        mocks.search.searchSmartV3.mockResolvedValue(ranked(0.9, 0.92, 0.93, 0.94, 0.99) as never);
+        mocks.search.getUnrelatedSearchDistance.mockResolvedValue(1);
+
+        const { assets } = await sut.searchSmart(authStub.user1, { filter: {}, query: 'lake' });
+
+        expect(assets.closeMatches).toBe(3);
+        expect(assets.items).toHaveLength(5);
+        expect(mocks.search.getUnrelatedSearchDistance).toHaveBeenCalledWith(
+          '[1, 2, 3]',
+          [authStub.user1.user.id],
+          undefined,
+        );
+
+        // a search of the design library is measured against the design library
+        await sut.searchSmart(authStub.user1, { filter: {}, query: 'lake', libraryScope: LibraryScope.Design });
+        expect(mocks.search.getUnrelatedSearchDistance).toHaveBeenLastCalledWith(
+          '[1, 2, 3]',
+          [authStub.user1.user.id],
+          LibraryScope.Design,
+        );
+      });
+
+      it('leaves the count out when the library cannot say what an unrelated photo scores', async () => {
+        mocks.search.searchSmartV3.mockResolvedValue(ranked(0.9, 0.95) as never);
+        mocks.search.getUnrelatedSearchDistance.mockResolvedValue(null);
+
+        const { assets } = await sut.searchSmart(authStub.user1, { filter: {}, query: 'lake' });
+
+        expect(assets).not.toHaveProperty('closeMatches');
+      });
+
+      it('counts on the first page only, and never for a similar-photo search', async () => {
+        mocks.search.searchSmart.mockResolvedValue(ranked(0.9, 0.99) as never);
+        mocks.search.getUnrelatedSearchDistance.mockResolvedValue(1);
+
+        await expect(sut.searchSmart(authStub.user1, { query: 'lake' })).resolves.toMatchObject({
+          assets: { closeMatches: 1 },
+        });
+        const later = await sut.searchSmart(authStub.user1, { query: 'lake', page: 2 });
+        expect(later.assets).not.toHaveProperty('closeMatches');
+
+        mocks.search.getEmbedding.mockResolvedValue({
+          assetId: newUuid(),
+          embedding: '[1, 2, 3]',
+          producerAdmissionKey: 'test',
+          producerModelKey: null,
+        });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.search.getUnrelatedSearchDistance.mockClear();
+        mocks.search.searchSmartV3.mockResolvedValue(ranked(0, 0.5) as never);
+        const similar = await sut.searchSmart(authStub.user1, { filter: {}, queryAssetId: 'asset-1' });
+        expect(similar.assets).not.toHaveProperty('closeMatches');
+        expect(mocks.search.getUnrelatedSearchDistance).not.toHaveBeenCalled();
+      });
+    });
+
     it('should work', async () => {
       await sut.searchSmart(authStub.user1, { query: 'test' });
 

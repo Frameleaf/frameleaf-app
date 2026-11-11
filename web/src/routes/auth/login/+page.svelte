@@ -14,6 +14,7 @@
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
   import Logo from '$lib/components/frameleaf/Logo.svelte';
   import PasskeySignIn from '$lib/components/frameleaf/PasskeySignIn.svelte';
+  import TwoStepCodeStep from '$lib/components/frameleaf/TwoStepCodeStep.svelte';
   import WelcomeMessage from '$lib/components/frameleaf/WelcomeMessage.svelte';
   import {
     clearRememberMePreference,
@@ -34,6 +35,7 @@
     takeHandoffCode,
   } from '$lib/frameleaf/frameleaf-sign-in';
   import { passkeysInThisBrowser } from '$lib/frameleaf/passkeys';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
@@ -67,6 +69,11 @@
   onDestroy(() => {
     alive = false;
   });
+  /**
+   * FL-831: the password was right and the account uses two-step sign-in: the code step shows with the
+   * token that proves the password, kept in memory only.
+   */
+  let twoStep = $state<{ token: string; email: string } | null>(null);
   /** Set when a forced password change just ended the session (change-password page). */
   let passwordChanged = $state(false);
 
@@ -100,11 +107,11 @@
     }
   });
 
-  const onSuccess = async (user: LoginResponseDto) => {
+  const onSuccess = async (user: LoginResponseDto, continueTo?: string) => {
     if (!alive) {
       return;
     }
-    await goto(oauth.isCallback(location) ? getOAuthContinue(data.continueUrl) : data.continueUrl, {
+    await goto(continueTo ?? (oauth.isCallback(location) ? getOAuthContinue(data.continueUrl) : data.continueUrl), {
       invalidateAll: true,
     });
     // FL-80: the continue address is cleared once a navigation lands outside the login page (the root
@@ -293,23 +300,16 @@
       errorMessage = '';
       passwordChanged = false;
       loading = true;
-      const user = await login({ loginCredentialDto: { email: address, password, rememberMe } });
+      const user = await login({ loginCredentialDto: { email: address, password, rememberMe, twoFactor: true } });
       if (!alive) {
         return;
       }
-      if (user.isAdmin && !serverConfig.isOnboarded) {
-        await onOnboarding();
+      if (user.twoFactorRequired && user.twoFactorToken) {
+        twoStep = { token: user.twoFactorToken, email: address };
+        password = '';
         return;
       }
-      if (!user.isAdmin && user.shouldChangePassword) {
-        await onFirstLogin();
-        return;
-      }
-      if (!user.isOnboarded) {
-        await onOnboarding();
-        return;
-      }
-      await onSuccess(user);
+      await afterPassword(user);
     } catch (error) {
       if (!alive) {
         return;
@@ -322,6 +322,33 @@
         loading = false;
       }
     }
+  };
+
+  /** Signed in with the password (and, when it is on, the two-step code). */
+  const afterPassword = async (user: LoginResponseDto, continueTo?: string) => {
+    if (!alive) {
+      return;
+    }
+    if (user.isAdmin && !serverConfig.isOnboarded) {
+      await onOnboarding();
+      return;
+    }
+    if (!user.isAdmin && user.shouldChangePassword) {
+      await onFirstLogin();
+      return;
+    }
+    if (!user.isOnboarded) {
+      await onOnboarding();
+      return;
+    }
+    await onSuccess(user, continueTo);
+  };
+
+  /** FL-831: back from the code step to the password, keeping the email. */
+  const leaveTwoStep = () => {
+    twoStep = null;
+    password = '';
+    errorMessage = '';
   };
 
   const handleOAuthLogin = async () => {
@@ -403,187 +430,209 @@
   >
 {/snippet}
 
-<AuthShell hero="summit" arrive>
-  <div class="auth-heading hero">
-    <h1>{$t('frameleaf_auth_welcome_title')}</h1>
-    <p>{$t('frameleaf_auth_welcome_body')}</p>
-  </div>
-
-  {#if publicConfig.server.loginPageMessage.trim()}
-    <!-- FL-426: plain text, or web formatting cleaned of scripts and remote content. -->
-    <div class="auth-info">
-      <WelcomeMessage
-        message={publicConfig.server.loginPageMessage}
-        format={publicConfig.server.loginPageMessageFormat ?? 'plain'}
+{#if twoStep}
+  <AuthShell hero="summit">
+    {#key twoStep.token}
+      <TwoStepCodeStep
+        email={twoStep.email}
+        twoFactorToken={twoStep.token}
+        onBack={leaveTwoStep}
+        onSignedIn={(user, makeCodes) =>
+          void afterPassword(
+            user,
+            makeCodes ? commandCenterUrl('privacy', 'two-step', { show: 'new-codes' }) : undefined,
+          )}
       />
+    {/key}
+  </AuthShell>
+{:else}
+  <AuthShell hero="summit" arrive>
+    <div class="auth-heading hero">
+      <h1>{$t('frameleaf_auth_welcome_title')}</h1>
+      <p>{$t('frameleaf_auth_welcome_body')}</p>
     </div>
-  {/if}
 
-  {#if oauthLoading}
-    <p class="auth-info" role="status">
-      <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_oauth_connecting')}</span>
-    </p>
-  {:else if relayOnly}
-    {#if frameleaf.sameNetwork && localHost && !stayRemote}
-      <div class="auth-lan" role="status">
-        <Icon icon={mdiLanConnect} size="18" />
-        <div>
-          <strong>{$t('frameleaf_auth_same_network_title')}</strong>
-          <span>{$t('frameleaf_auth_same_network_body')}</span>
-        </div>
-        <div class="auth-lan-actions">
-          <button type="button" class="button primary" onclick={continueAtHome}
-            >{$t('frameleaf_auth_continue_on', { values: { host: localHost } })}</button
-          >
-          <button type="button" class="auth-link" onclick={() => (stayRemote = true)}
-            >{$t('frameleaf_auth_stay_remote')}</button
-          >
-        </div>
+    {#if publicConfig.server.loginPageMessage.trim()}
+      <!-- FL-426: plain text, or web formatting cleaned of scripts and remote content. -->
+      <div class="auth-info">
+        <WelcomeMessage
+          message={publicConfig.server.loginPageMessage}
+          format={publicConfig.server.loginPageMessageFormat ?? 'plain'}
+        />
       </div>
     {/if}
-    <div class="auth-card auth-form">
-      <p class="auth-info">
-        <Icon icon={mdiInformationOutline} size="16" /><span
-          >{passkeyShown ? $t('frameleaf_passkey_relay_note') : $t('frameleaf_auth_relay_note')}</span
-        >
+
+    {#if oauthLoading}
+      <p class="auth-info" role="status">
+        <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_oauth_connecting')}</span>
       </p>
-      {#if publicConfig.passwordLogin.enabled}
-        <PasskeySignIn
-          {rememberMe}
-          disabled={frameleafLoading}
-          onSignedIn={finishUser}
-          onBusy={(busy) => (passkeyBusy = busy)}
-          onShown={(shown) => (passkeyShown = shown)}
-        />
-      {/if}
-      {#if frameleaf.signInAvailable}
-        {@render frameleafButton(true)}
-        <label class="auth-check"
-          ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
-        >
-      {:else}
-        <p class="auth-error" role="alert">
-          <Icon icon={mdiAlertCircleOutline} size="16" /><span>{$t('frameleaf_auth_frameleaf_unavailable')}</span>
-        </p>
-      {/if}
-    </div>
-  {:else}
-    <form
-      class="auth-card auth-form"
-      class:auth-shake={rejected}
-      onanimationend={() => (rejected = false)}
-      {onsubmit}
-      novalidate
-    >
-      {#if forExtension}
-        <p class="auth-info" role="note">
-          <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_extension_note')}</span>
-        </p>
-      {/if}
-      {#if publicConfig.passwordLogin.enabled}
-        {#if passwordChanged}
-          <p class="auth-info auth-success" role="status">
-            <Icon icon={mdiCheckCircleOutline} size="16" /><span>{$t('frameleaf_auth_password_changed')}</span>
-          </p>
-        {/if}
-        {#if errorMessage}<p class="auth-error" role="alert">
-            <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
-          </p>{/if}
-        <div class="auth-field">
-          <label for="auth-email">{$t('frameleaf_auth_email')}</label>
-          <!-- svelte-ignore a11y_autofocus (first sign-in field) -->
-          <input
-            id="auth-email"
-            name="email"
-            type="email"
-            inputmode="email"
-            autocomplete={passkeysHere ? 'username webauthn' : 'username'}
-            autofocus
-            bind:value={email}
-            aria-invalid={!!errorMessage || undefined}
-            placeholder={$t('frameleaf_auth_email_placeholder')}
-          />
+    {:else if relayOnly}
+      {#if frameleaf.sameNetwork && localHost && !stayRemote}
+        <div class="auth-lan" role="status">
+          <Icon icon={mdiLanConnect} size="18" />
+          <div>
+            <strong>{$t('frameleaf_auth_same_network_title')}</strong>
+            <span>{$t('frameleaf_auth_same_network_body')}</span>
+          </div>
+          <div class="auth-lan-actions">
+            <button type="button" class="button primary" onclick={continueAtHome}
+              >{$t('frameleaf_auth_continue_on', { values: { host: localHost } })}</button
+            >
+            <button type="button" class="auth-link" onclick={() => (stayRemote = true)}
+              >{$t('frameleaf_auth_stay_remote')}</button
+            >
+          </div>
         </div>
-        <AuthPasswordField
-          id="auth-password"
-          label={$t('frameleaf_auth_password')}
-          autocomplete="current-password"
-          bind:value={password}
-          invalid={!!errorMessage}
-        />
-        <div class="auth-row">
+      {/if}
+      <div class="auth-card auth-form">
+        <p class="auth-info">
+          <Icon icon={mdiInformationOutline} size="16" /><span
+            >{passkeyShown ? $t('frameleaf_passkey_relay_note') : $t('frameleaf_auth_relay_note')}</span
+          >
+        </p>
+        {#if publicConfig.passwordLogin.enabled}
+          <PasskeySignIn
+            {rememberMe}
+            disabled={frameleafLoading}
+            onSignedIn={finishUser}
+            onBusy={(busy) => (passkeyBusy = busy)}
+            onShown={(shown) => (passkeyShown = shown)}
+          />
+        {/if}
+        {#if frameleaf.signInAvailable}
+          {@render frameleafButton(true)}
           <label class="auth-check"
             ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
           >
-          <button type="button" class="auth-link" aria-expanded={forgot} onclick={() => (forgot = !forgot)}
-            >{$t('frameleaf_auth_forgot_password')}</button
-          >
-        </div>
-        {#if forgot}
-          <p class="auth-info">
-            <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_forgot_password_help')}</span>
+        {:else}
+          <p class="auth-error" role="alert">
+            <Icon icon={mdiAlertCircleOutline} size="16" /><span>{$t('frameleaf_auth_frameleaf_unavailable')}</span>
           </p>
         {/if}
-        <button type="submit" class="button primary auth-submit" disabled={loading || passkeyBusy}
-          >{loading ? $t('frameleaf_auth_signing_in') : $t('frameleaf_auth_sign_in')}</button
-        >
-        {#if passkeyShown && !publicConfig.oauth.enabled && !showFrameleafAtHome}
+      </div>
+    {:else}
+      <form
+        class="auth-card auth-form"
+        class:auth-shake={rejected}
+        onanimationend={() => (rejected = false)}
+        {onsubmit}
+        novalidate
+      >
+        {#if forExtension}
+          <p class="auth-info" role="note">
+            <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_extension_note')}</span>
+          </p>
+        {/if}
+        {#if publicConfig.passwordLogin.enabled}
+          {#if passwordChanged}
+            <p class="auth-info auth-success" role="status">
+              <Icon icon={mdiCheckCircleOutline} size="16" /><span>{$t('frameleaf_auth_password_changed')}</span>
+            </p>
+          {/if}
+          {#if errorMessage}<p class="auth-error" role="alert">
+              <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
+            </p>{/if}
+          <div class="auth-field">
+            <label for="auth-email">{$t('frameleaf_auth_email')}</label>
+            <!-- svelte-ignore a11y_autofocus (first sign-in field) -->
+            <input
+              id="auth-email"
+              name="email"
+              type="email"
+              inputmode="email"
+              autocomplete={passkeysHere ? 'username webauthn' : 'username'}
+              autofocus
+              bind:value={email}
+              aria-invalid={!!errorMessage || undefined}
+              placeholder={$t('frameleaf_auth_email_placeholder')}
+            />
+          </div>
+          <AuthPasswordField
+            id="auth-password"
+            label={$t('frameleaf_auth_password')}
+            autocomplete="current-password"
+            bind:value={password}
+            invalid={!!errorMessage}
+          />
+          <div class="auth-row">
+            <label class="auth-check"
+              ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
+            >
+            <button type="button" class="auth-link" aria-expanded={forgot} onclick={() => (forgot = !forgot)}
+              >{$t('frameleaf_auth_forgot_password')}</button
+            >
+          </div>
+          {#if forgot}
+            <p class="auth-info">
+              <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_forgot_password_help')}</span>
+            </p>
+          {/if}
+          <button type="submit" class="button primary auth-submit" disabled={loading || passkeyBusy}
+            >{loading ? $t('frameleaf_auth_signing_in') : $t('frameleaf_auth_sign_in')}</button
+          >
+          {#if passkeyShown && !publicConfig.oauth.enabled && !showFrameleafAtHome}
+            <div class="auth-divider" aria-hidden="true">{$t('frameleaf_auth_or')}</div>
+          {/if}
+        {/if}
+
+        {#if publicConfig.passwordLogin.enabled && (publicConfig.oauth.enabled || showFrameleafAtHome)}
           <div class="auth-divider" aria-hidden="true">{$t('frameleaf_auth_or')}</div>
         {/if}
-      {/if}
+        {#if publicConfig.passwordLogin.enabled}
+          <PasskeySignIn
+            {rememberMe}
+            autofill
+            {secureUrl}
+            disabled={loading}
+            onSignedIn={finishUser}
+            onBusy={(busy) => (passkeyBusy = busy)}
+            onShown={(shown) => (passkeyShown = shown)}
+          />
+        {/if}
+        {#if publicConfig.oauth.enabled || showFrameleafAtHome}
+          {#if !publicConfig.passwordLogin.enabled}
+            <label class="auth-check"
+              ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
+            >
+          {/if}
+          {#if showFrameleafAtHome}
+            {@render frameleafButton(false)}
+          {/if}
+          {#if publicConfig.oauth.enabled}
+            {#if oauthError}<p class="auth-error" role="alert">
+                <Icon icon={mdiAlertCircleOutline} size="16" /><span>{oauthError}</span>
+              </p>{/if}
+            <button
+              type="button"
+              class="button auth-oauth"
+              disabled={loading || oauthLoading}
+              onclick={handleOAuthLogin}
+              ><Icon icon={mdiShieldAccountOutline} size="20" />{publicConfig.oauth.buttonText}</button
+            >
+          {/if}
+          {#if showFrameleafAtHome}
+            <p class="auth-note auth-frameleaf-note">{$t('frameleaf_auth_frameleaf_optional')}</p>
+          {/if}
+        {/if}
+        {#if !publicConfig.passwordLogin.enabled && !publicConfig.oauth.enabled && !showFrameleafAtHome}
+          <p class="auth-error" role="alert">
+            <Icon icon={mdiAlertCircleOutline} size="16" /><span>{$t('login_has_been_disabled')}</span>
+          </p>
+        {/if}
+      </form>
+    {/if}
 
-      {#if publicConfig.passwordLogin.enabled && (publicConfig.oauth.enabled || showFrameleafAtHome)}
-        <div class="auth-divider" aria-hidden="true">{$t('frameleaf_auth_or')}</div>
-      {/if}
-      {#if publicConfig.passwordLogin.enabled}
-        <PasskeySignIn
-          {rememberMe}
-          autofill
-          {secureUrl}
-          disabled={loading}
-          onSignedIn={finishUser}
-          onBusy={(busy) => (passkeyBusy = busy)}
-          onShown={(shown) => (passkeyShown = shown)}
-        />
-      {/if}
-      {#if publicConfig.oauth.enabled || showFrameleafAtHome}
-        {#if !publicConfig.passwordLogin.enabled}
-          <label class="auth-check"
-            ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
-          >
-        {/if}
-        {#if showFrameleafAtHome}
-          {@render frameleafButton(false)}
-        {/if}
-        {#if publicConfig.oauth.enabled}
-          {#if oauthError}<p class="auth-error" role="alert">
-              <Icon icon={mdiAlertCircleOutline} size="16" /><span>{oauthError}</span>
-            </p>{/if}
-          <button type="button" class="button auth-oauth" disabled={loading || oauthLoading} onclick={handleOAuthLogin}
-            ><Icon icon={mdiShieldAccountOutline} size="20" />{publicConfig.oauth.buttonText}</button
-          >
-        {/if}
-        {#if showFrameleafAtHome}
-          <p class="auth-note auth-frameleaf-note">{$t('frameleaf_auth_frameleaf_optional')}</p>
-        {/if}
-      {/if}
-      {#if !publicConfig.passwordLogin.enabled && !publicConfig.oauth.enabled && !showFrameleafAtHome}
-        <p class="auth-error" role="alert">
-          <Icon icon={mdiAlertCircleOutline} size="16" /><span>{$t('login_has_been_disabled')}</span>
-        </p>
-      {/if}
-    </form>
-  {/if}
-
-  {#if relayOnly}
-    <div class="auth-server">
-      <Icon icon={mdiEarth} size="16" /><span>{$t('frameleaf_auth_remote_access')}</span><code
-        >{frameleaf.relayHost ?? new URL(data.serverUrl).host}</code
-      >
-    </div>
-  {:else}
-    <div class="auth-server">
-      <Icon icon={mdiServerOutline} size="16" /><span>{$t('frameleaf_auth_server')}</span><code>{data.serverUrl}</code>
-    </div>
-  {/if}
-</AuthShell>
+    {#if relayOnly}
+      <div class="auth-server">
+        <Icon icon={mdiEarth} size="16" /><span>{$t('frameleaf_auth_remote_access')}</span><code
+          >{frameleaf.relayHost ?? new URL(data.serverUrl).host}</code
+        >
+      </div>
+    {:else}
+      <div class="auth-server">
+        <Icon icon={mdiServerOutline} size="16" /><span>{$t('frameleaf_auth_server')}</span><code>{data.serverUrl}</code
+        >
+      </div>
+    {/if}
+  </AuthShell>
+{/if}

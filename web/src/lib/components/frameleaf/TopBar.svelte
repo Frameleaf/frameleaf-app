@@ -258,6 +258,10 @@
     {#await import('$lib/components/frameleaf/SetupBar.svelte') then { default: SetupBar }}
       <SetupBar />
     {/await}
+    <!-- FL-1409: the same row during any other large import (an external-library scan, a large upload). -->
+    {#await import('$lib/components/frameleaf/ImportBar.svelte') then { default: ImportBar }}
+      <ImportBar />
+    {/await}
   {/if}
   <div class="fl-topbar-grid">
     <!-- Brand and workspaces share the bar's leading track; on phones they sit in the grid directly. -->
@@ -464,7 +468,7 @@
     display: flex;
     align-items: center;
     column-gap: 1.125rem;
-    height: calc(100% - var(--fl-setup-bar-height, 0px));
+    height: calc(100% - var(--fl-setup-bar-height, 0px) - var(--fl-import-bar-height, 0px));
     padding: 0 max(1.5rem, var(--fl-safe-right)) 0 max(1.125rem, var(--fl-safe-left));
   }
   .fl-topbar-start {

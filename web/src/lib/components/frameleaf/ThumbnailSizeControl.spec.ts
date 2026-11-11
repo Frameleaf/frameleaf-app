@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { LibraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+import { LibraryGridPreferences, libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+import { libraryView } from '$lib/frameleaf/library-view.svelte';
 import ThumbnailSizeControl from './ThumbnailSizeControl.svelte';
 import WorkFileNamesToggle from './WorkFileNamesToggle.svelte';
 
@@ -48,5 +49,14 @@ describe('WorkFileNamesToggle', () => {
     expect(hide).toHaveAttribute('aria-pressed', 'true');
     await fireEvent.click(hide);
     expect(preferences.showFileNames).toBe(false);
+  });
+
+  it('sets the account’s Work choice for photos, the one their grid draws (FL-1398)', async () => {
+    render(WorkFileNamesToggle);
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_show_file_names' }));
+    expect(libraryView.value.workNames).toBe(true);
+    expect(libraryGridPreferences.showFileNames).toBe(false);
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_hide_file_names' }));
+    expect(libraryView.value.workNames).toBe(false);
   });
 });

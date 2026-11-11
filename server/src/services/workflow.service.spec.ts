@@ -382,6 +382,37 @@ describe(WorkflowService.name, () => {
       expect(mocks.workflow.update).not.toHaveBeenCalled();
     });
 
+    it.each(['replacement-signing-secret', ''])(
+      'accepts explicit signing-secret replacement or removal (%j)',
+      async (secret) => {
+        mocks.workflow.get.mockResolvedValue(
+          stored({
+            definition: {
+              ...secretDefinition,
+              steps: [
+                { ...secretDefinition.steps[0], config: { url: 'https://old.test', secret: 'old-signing-secret' } },
+              ],
+            },
+          }) as never,
+        );
+
+        await expect(
+          sut.update(auth, workflowId, {
+            steps: [{ id: stepId, method: 'immich-plugin-core#webhook', config: { url: 'https://new.test' } }],
+          }),
+        ).rejects.toThrow(/Re-enter stored credentials/);
+        expect(mocks.workflow.update).not.toHaveBeenCalled();
+
+        await sut.update(auth, workflowId, {
+          steps: [{ id: stepId, method: 'immich-plugin-core#webhook', config: { url: 'https://new.test', secret } }],
+        });
+        expect(mocks.workflow.update.mock.calls[0]![2]!.definition.steps[0]!.config).toEqual({
+          url: 'https://new.test',
+          secret,
+        });
+      },
+    );
+
     it('replaces or clears a credential that is sent', async () => {
       await sut.update(auth, workflowId, {
         steps: [

@@ -10,6 +10,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { OvernightService } from 'src/services/overnight.service.js';
+import { nightWork } from 'src/utils/night-work.js';
 import {
   OVERNIGHT_NIGHTS_KEPT,
   type OvernightState,
@@ -219,6 +220,35 @@ describe(OvernightService.name, () => {
       name: JobName.AssetDetectDuplicatesQueueAll,
       data: { force: true },
     });
+  });
+
+  it("queues each step's work under its night, so the runs it opens are the night's (FL-1430)", async () => {
+    const { sut, mocks, stored, busy } = setup();
+    const nights: Record<string, unknown> = {};
+    mocks.job.queue.mockImplementation((item: { name: string }) => {
+      nights[item.name] = nightWork.getStore();
+      return Promise.resolve();
+    });
+    mocks.queue.handleNightlyJobs.mockImplementation(() => {
+      nights.tidyUp = nightWork.getStore();
+      return Promise.resolve();
+    });
+    busy[QueueName.Library] = true;
+    await sut.handleStart();
+    const startedAt = stored.state?.run?.startedAt;
+    expect(startedAt).toEqual(expect.any(String));
+    expect(nights.tidyUp).toEqual({ startedAt, manual: false });
+    expect(nights[JobName.LibraryScanQueueAll]).toEqual({ startedAt, manual: false });
+
+    // the watch moves the night on outside the overnight job: what it starts is still the night's
+    busy[QueueName.Library] = false;
+    await sut.move();
+    expect(nights[JobName.IntegrityChecksumFiles]).toEqual({ startedAt, manual: false });
+    expect(nightWork.getStore()).toBeUndefined();
+
+    // Run now: a person's night, marked as such
+    await sut.handleStart({ manual: true });
+    expect(nights[JobName.LibraryScanQueueAll]).toEqual({ startedAt: expect.any(String), manual: true });
   });
 
   it('waits for a step to finish before starting the next', async () => {

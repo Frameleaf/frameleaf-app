@@ -56,6 +56,7 @@ import {
   requirePetFilterAllowed,
   requireSourceFilterAllowed,
 } from 'src/utils/search-filter.js';
+import { countCloseMatches } from 'src/utils/search-relevance.js';
 
 @Injectable()
 export class SearchService extends BaseService {
@@ -414,7 +415,16 @@ export class SearchService extends BaseService {
     );
 
     await read.assertCurrent();
-    return this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
+    return this.mapResponse(
+      items,
+      { auth },
+      {
+        nextPage: hasNextPage ? (page + 1).toString() : null,
+        // only a first page starts at the best result
+        closeMatches:
+          page === 1 ? await this.closeMatches(dto, embedding, userIds, items, dto.libraryScope) : undefined,
+      },
+    );
   }
 
   async getAssetsByCity(auth: AuthDto): Promise<AssetResponseDto[]> {
@@ -597,7 +607,36 @@ export class SearchService extends BaseService {
     );
 
     await read.assertCurrent();
-    return this.mapResponse(items, { auth });
+    return this.mapResponse(
+      items,
+      { auth },
+      { closeMatches: await this.closeMatches(dto, embedding, scope.userIds, items, filter.libraryScope) },
+    );
+  }
+
+  /**
+   * FL-1393: how many of a typed search's leading results are close matches (`countCloseMatches`).
+   * A similar-photo search has no words to be a close match for, so it gets no count.
+   */
+  private async closeMatches(
+    dto: SmartSearchDto,
+    embedding: string,
+    userIds: string[],
+    items: { searchDistance: number; visualDistance: number }[],
+    libraryScope?: LibraryViewScope,
+  ): Promise<number | undefined> {
+    if (!dto.query || items.length === 0) {
+      return undefined;
+    }
+    // measured against the library the search looked in
+    const unrelated = await this.searchRepository.getUnrelatedSearchDistance(embedding, userIds, libraryScope);
+    return countCloseMatches(
+      items.map(({ searchDistance, visualDistance }) => ({
+        searchDistance: Number(searchDistance),
+        visualDistance: Number(visualDistance),
+      })),
+      unrelated,
+    );
   }
 
   async resolveSearchScopeV3(
@@ -683,7 +722,7 @@ export class SearchService extends BaseService {
   private mapResponse(
     assets: MapAsset[],
     options: AssetMapOptions,
-    page: { nextPage?: string | null; nextCursor?: string | null } = {},
+    page: { nextPage?: string | null; nextCursor?: string | null; closeMatches?: number } = {},
   ): SearchResponseDto {
     const items = assets.map((asset) => mapAsset(asset, options));
     return {
@@ -695,6 +734,7 @@ export class SearchService extends BaseService {
         facets: [],
         nextPage: page.nextPage ?? null,
         nextCursor: page.nextCursor ?? null,
+        ...(page.closeMatches !== undefined && { closeMatches: page.closeMatches }),
       },
     };
   }

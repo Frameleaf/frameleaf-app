@@ -16,6 +16,7 @@ import {
   DatabaseLock,
   JobName,
   JobStatus,
+  MlDestinationKind,
   MlWorkload,
   SystemMetadataKey,
 } from 'src/enum.js';
@@ -2492,6 +2493,24 @@ describe(ImageEnrichmentService.name, () => {
   });
 
   describe('previewDescription (FL-59)', () => {
+    it('refuses a changed remote destination at final local-only admission without reading media for inference', async () => {
+      mocks.mlDestination.getById.mockResolvedValue({ ...mlDestinationStub.local, kind: MlDestinationKind.Lan });
+      const result = await sut.previewDescription(assetId, {
+        destinationId: mlDestinationStub.local.id,
+        imageDescription: defaults.machineLearning.imageDescription,
+        localOnly: true,
+      });
+      expect(result).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          message: expect.stringContaining('no longer matches the required kind'),
+        }),
+      );
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+    });
+
     it('describes a sample with the draft prompt and writes nothing', async () => {
       mocks.machineLearning.describeImage.mockResolvedValue({
         description: 'A turquoise alpine lake.',

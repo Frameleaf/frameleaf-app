@@ -35,7 +35,9 @@
   import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { lockBadgeLabelKey } from '$lib/frameleaf/locked-view';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { cantShowPhoto, thumbnailFailures } from '$lib/frameleaf/thumbnail-state.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
+  import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
@@ -80,8 +82,10 @@
     captionHeight?: number;
     /** Added dates are UTC instants; taken dates are the photo’s wall clock. */
     dateType?: TimeBucketDateType;
-    /** Work: show the file name in the caption (a per-device toggle, off by default). */
+    /** The caption names the file (the View menu's "File name" for this layout, FL-1398). */
     showFileName?: boolean;
+    /** The caption shows the time taken (the View menu's "Time taken" for this layout). */
+    showTime?: boolean;
     onOpen?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onToggleSelect?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onFocus?: (asset: TimelineAsset) => void;
@@ -119,6 +123,7 @@
     captionHeight = 0,
     dateType = TimeBucketDateType.Taken,
     showFileName = false,
+    showTime = true,
     onOpen,
     onToggleSelect,
     onFocus,
@@ -152,10 +157,16 @@
       requestedAt = performance.now();
     }
   });
-  const onImageComplete = () => {
+  /** The thumbnail did not load: with no thumbhash either, the photo is getting ready or can't be shown. */
+  let imageFailed = $state(false);
+  const onImageComplete = (errored: boolean) => {
     // A tile painted during a scrub, or from the cache, swaps at once; a slow one crossfades.
     fadeHash = performance.now() - requestedAt > INSTANT_LOAD_MS;
     imageLoaded = true;
+    imageFailed = errored;
+    if (errored && !asset.thumbhash) {
+      thumbnailFailures.check();
+    }
   };
 
   let previewMode = $state<'video' | 'live' | null>(null);
@@ -191,6 +202,19 @@
   // T-17: the template draws no Archived badge (archiving takes an item out of the library), and the
   // Offline badge follows the asset's own flag (`AssetTile.jsx` `asset.isOffline`).
   const isOffline = $derived(offline ?? !!asset.isOffline);
+  /**
+   * FL-1409: no thumbnail yet. Its file is missing, or making the thumbnail failed or was stopped: "Can't show
+   * this photo", with the way to Library care. Otherwise it is still waiting: the calm placeholder.
+   */
+  const cantShow = $derived(!asset.thumbhash && cantShowPhoto({ id: asset.id, isOffline }));
+  const gettingReady = $derived(!asset.thumbhash && !cantShow);
+  // A tile that says it can't be shown keeps the list fresh while it is on screen, so a photo that was tried
+  // again and worked stops saying so. A missing file is not on the list; nothing to ask for.
+  $effect(() => {
+    if (cantShow && imageFailed && !isOffline) {
+      return untrack(() => thumbnailFailures.watch());
+    }
+  });
   // Production stores durations in milliseconds on the timeline model, as the upstream thumbnail does.
   const durationSeconds = $derived(asset.duration ? Number(asset.duration) / 1000 : 0);
   const stars = $derived(typeof rating === 'number' ? rating : typeof asset.rating === 'number' ? asset.rating : 0);
@@ -200,13 +224,13 @@
     stars !== 0 && layout !== 'browse' && (layout === 'work' || hovered || selected || !!previewMode),
   );
   const title = $derived($getAltText(asset));
-  const withCaption = $derived(layout !== 'browse' && captionHeight > 0);
+  const withCaption = $derived(layout !== 'list' && captionHeight > 0);
   /** Template `assetTitle`: the file name without its extension. A Locked item's name is never shown. */
   const fileName = $derived(
     asset.originalFileName && !isLocked ? asset.originalFileName.replace(/\.[^.]+$/, '') : null,
   );
-  /** The Timeline caption always names the item; Work names it only on request. */
-  const captionName = $derived(layout === 'timeline' || showFileName ? fileName : null);
+  /** The caption names the item only on request (FL-1398: the View menu's "File name"). */
+  const captionName = $derived(showFileName ? fileName : null);
   const hasQuickActions = $derived(
     !!quickActions && !!(quickActions.onFavorite || quickActions.onEdit || quickActions.onShare || quickActions.onMore),
   );
@@ -255,7 +279,7 @@
   });
   /** Template: a video's duration, else the pixel size, else the file size. */
   const listDetail = $derived.by(() => {
-    if (asset.isVideo) {
+    if (asset.isVideo && durationSeconds > 0) {
       return durationLabel(durationSeconds);
     }
     if (asset.width && asset.height) {
@@ -472,7 +496,7 @@
     style:height={withCaption || listed ? `${imageHeight}px` : undefined}
     style:width={listed ? `${imageWidth}px` : undefined}
     {tabindex}
-    title={layout === 'work' && fileName && !showFileName ? (asset.originalFileName ?? undefined) : undefined}
+    title={layout !== 'browse' && fileName && !showFileName ? (asset.originalFileName ?? undefined) : undefined}
     aria-label={jobLabel ? `${title}, ${jobLabel}` : title}
     aria-pressed={selecting ? selected : undefined}
     onclick={activate}
@@ -512,6 +536,8 @@
           widthStyle="{imageWidth}px"
           heightStyle="{imageHeight}px"
           class="fl-tile-image"
+          pending={gettingReady}
+          brokenLabel={cantShow ? $t('frameleaf_thumbnail_cant_show') : undefined}
           onComplete={onImageComplete}
         />
       {:else}
@@ -537,11 +563,13 @@
       {#if overlay}
         <span class="fl-tile-overlay" aria-hidden="true">{@render overlay(asset)}</span>
       {/if}
-      <span class="fl-tile-badges">
+      <!-- A photo that can't be shown says so along the bottom of the tile, where the badges would be. -->
+      <span class="fl-tile-badges" hidden={cantShow && imageFailed}>
         {#if asset.isVideo}
           <span class="fl-badge">
             <Icon icon={mdiPlay} size="12" />
-            {durationLabel(durationSeconds)}
+            <!-- FL-1409: no "0:00" until the video's length is known. -->
+            {#if durationSeconds > 0}{durationLabel(durationSeconds)}{/if}
           </span>
         {/if}
         {#if isLive}
@@ -607,6 +635,13 @@
     <!-- The selection and focus ring, above the photo (an outline on the button paints under it). -->
     <span class="fl-tile-ring fl-continuous-corners" aria-hidden="true"></span>
   </button>
+
+  {#if cantShow && imageFailed && !selecting}
+    <!-- Beside the button, not in it: what the tile is, and the way to where such a photo is looked after. -->
+    <a class="fl-tile-care" href={Route.libraryCare()} aria-label={$t('frameleaf_thumbnail_cant_show_care')}>
+      {$t('frameleaf_thumbnail_cant_show')}
+    </a>
+  {/if}
 
   <label class="fl-tile-select" class:is-coarse={coarsePointer}>
     <input
@@ -687,11 +722,11 @@
 
   {#if withCaption}
     <!-- Template `.at-caption`: the name and the capture time, inset from the tile edges. -->
-    <div class="fl-tile-caption" style:height="{captionHeight}px">
+    <div class="fl-tile-caption" class:is-time-only={!captionName} style:height="{captionHeight}px">
       {#if captionName}
         <span title={captionName}>{captionName}</span>
       {/if}
-      {#if captureTime}
+      {#if showTime && captureTime}
         <time datetime={displayDateTime?.toISO({ includeOffset: dateType === TimeBucketDateType.Added }) ?? undefined}
           >{captureTime}</time
         >
@@ -725,6 +760,10 @@
     bottom: auto;
     border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
+  }
+  /* Browse keeps its square corners when the View menu gives it captions (FL-1398). */
+  .fl-tile[data-layout='browse'].has-caption .fl-tile-open {
+    border-radius: 0;
   }
   .fl-tile-open {
     position: absolute;
@@ -880,6 +919,9 @@
     max-width: calc(100% - 12px);
     pointer-events: none;
   }
+  .fl-tile-badges[hidden] {
+    display: none;
+  }
   .fl-badge {
     display: inline-flex;
     align-items: center;
@@ -982,6 +1024,32 @@
   .fl-tile.has-actions:hover .fl-tile-job-slot,
   .fl-tile.has-actions:focus-within .fl-tile-job-slot {
     opacity: 0;
+  }
+  /* FL-1409: the way to Library care from a photo that can't be shown; the tile itself still opens the photo. */
+  .fl-tile-care {
+    position: absolute;
+    inset-inline: 8px;
+    bottom: 8px;
+    z-index: 2;
+    min-height: 32px;
+    overflow: hidden;
+    padding: 0 8px;
+    border-radius: var(--fl-radius-control);
+    line-height: 32px;
+    text-align: center;
+    background: var(--fl-panel);
+    box-shadow: inset 0 0 0 1px var(--fl-border);
+    color: var(--fl-text);
+    font-size: var(--fl-font-micro);
+    font-weight: var(--fl-weight-medium, 500);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fl-tile-care:hover {
+    background: var(--fl-raised);
+  }
+  .fl-tile[data-layout='list'] .fl-tile-care {
+    display: none;
   }
   .fl-tile-select {
     position: absolute;
@@ -1103,6 +1171,27 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
     font-variant-numeric: tabular-nums;
+  }
+  /* review-1110.css `.at-caption.is-time-only`: a time on its own starts under the photo's edge. */
+  .fl-tile-caption.is-time-only {
+    padding-top: 4px;
+  }
+  .fl-tile-caption.is-time-only time {
+    margin-inline-start: 0;
+  }
+  /*
+   * FL-1398 (library-view-menu.css "What the switches hide"): the View menu's "Show on photos" and
+   * "Crop photos to fit", set once on the library root. Plain descendant selectors: nothing here
+   * re-styles as tiles mount (FL-1331).
+   */
+  :global([data-view-hide~='ratings']) .fl-tile-rating,
+  :global([data-view-hide~='favorites']) .fl-badge.fl-favorite,
+  :global([data-view-hide~='badges']) .fl-badge:not(.fl-favorite) {
+    display: none;
+  }
+  :global([data-view-fit='whole']) .fl-tile:is([data-layout='browse'], [data-layout='work']) :global(.fl-tile-image) {
+    object-fit: contain;
+    background: var(--fl-panel);
   }
   .fl-sr {
     position: absolute;

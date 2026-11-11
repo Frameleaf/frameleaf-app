@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
-import { mapPreferences } from 'src/dtos/user-preferences.dto.js';
+import { UserPreferencesUpdateDto, mapPreferences } from 'src/dtos/user-preferences.dto.js';
 import { UserMetadataKey } from 'src/enum.js';
 import { UserMetadataItem } from 'src/types.js';
 import {
@@ -481,5 +481,48 @@ describe('re-uploading from the Trash (FL-556)', () => {
     const reuploadUntil = new Date(Date.now() + 60_000).toISOString();
     const merged = mergePreferences(getPreferences([]), { trash: { reuploadUntil } }, 'admin');
     expect(merged.trash.reuploadUntil).toBe('');
+  });
+});
+
+describe('Library View menu choices (FL-1398)', () => {
+  it('starts as the prototype shows: Browse bare, Timeline and Work with the time, stacks together', () => {
+    expect(getPreferences([]).libraryView).toEqual({
+      scrubber: true,
+      crop: true,
+      groupBy: 'none',
+      stacksTogether: true,
+      partnerPhotos: true,
+      archived: false,
+      ratings: true,
+      favorites: true,
+      badges: true,
+      timelineTime: true,
+      timelineNames: false,
+      browseTime: false,
+      browseNames: false,
+      workTime: true,
+      workNames: false,
+    });
+  });
+
+  it('stores only what the account changed, and a reset stores nothing', () => {
+    const changed = mergePreferences(
+      getPreferences([]),
+      { libraryView: { groupBy: 'month', stacksTogether: false, browseNames: true } },
+      'user',
+    );
+    expect(getPreferencesPartial(changed)).toEqual({
+      libraryView: { groupBy: 'month', stacksTogether: false, browseNames: true },
+    });
+    expect(mapPreferences(changed).libraryView).toMatchObject({ groupBy: 'month', workTime: true });
+
+    const reset = mergePreferences(changed, { libraryView: getPreferences([]).libraryView }, 'user');
+    expect(getPreferencesPartial(reset)).toEqual({});
+  });
+
+  it('takes only the four groupings', () => {
+    const schema = UserPreferencesUpdateDto.schema;
+    expect(schema.safeParse({ libraryView: { groupBy: 'year' } }).success).toBe(true);
+    expect(schema.safeParse({ libraryView: { groupBy: 'decade' } }).success).toBe(false);
   });
 });
