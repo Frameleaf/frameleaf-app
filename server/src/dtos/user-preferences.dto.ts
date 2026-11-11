@@ -118,6 +118,24 @@ const DownloadUpdateSchema = z
   .optional()
   .meta({ id: 'DownloadUpdate' });
 
+const DateFormatSchema = z
+  .enum(['auto', 'iso', 'dmy', 'mdy'])
+  .describe('FL-783: date order. auto follows the region; iso is 2026-11-01, dmy 01/11/2026, mdy 11/01/2026')
+  .meta({ id: 'DisplayDateFormat' });
+const HourCycleSchema = z
+  .enum(['auto', 'h12', 'h23'])
+  .describe('FL-783: clock. auto follows the region; h12 is 2:30 PM, h23 is 14:30')
+  .meta({ id: 'DisplayHourCycle' });
+
+const DisplayUpdateSchema = z
+  .object({
+    dateFormat: DateFormatSchema.optional(),
+    hourCycle: HourCycleSchema.optional(),
+  })
+  .optional()
+  .describe('FL-783: how dates and times appear, independent of the language')
+  .meta({ id: 'DisplayPreferencesUpdate' });
+
 const SearchPreferencesUpdateSchema = z
   .object({
     includeArchived: z
@@ -282,6 +300,7 @@ const UserPreferencesUpdateSchema = z
     trash: TrashUpdateSchema,
     ratings: RatingsUpdateSchema,
     search: SearchPreferencesUpdateSchema,
+    display: DisplayUpdateSchema,
     sharedLinks: SharedLinksUpdateSchema,
     tags: TagsUpdateSchema,
     recentlyAdded: RecentlyAddedUpdateSchema,
@@ -384,6 +403,13 @@ const DownloadResponseSchema = z
   })
   .meta({ id: 'DownloadResponse' });
 
+const DisplayPreferencesResponseSchema = z
+  .object({
+    dateFormat: DateFormatSchema,
+    hourCycle: HourCycleSchema,
+  })
+  .meta({ id: 'DisplayPreferencesResponse' });
+
 const SearchPreferencesResponseSchema = z
   .object({
     includeArchived: z
@@ -465,6 +491,8 @@ const UserPreferencesResponseSchema = z
     privacy: PrivacyResponseSchema,
     ratings: RatingsResponseSchema,
     search: SearchPreferencesResponseSchema,
+    // always sent; optional in the schema so clients built before FL-783 keep compiling
+    display: DisplayPreferencesResponseSchema.optional(),
     sharedLinks: SharedLinksResponseSchema,
     tags: TagsResponseSchema,
     emailNotifications: EmailNotificationsResponseSchema,

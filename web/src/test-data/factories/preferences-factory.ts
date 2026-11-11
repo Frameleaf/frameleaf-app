@@ -40,6 +40,10 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
     includeArchived: false,
     classic: false,
   },
+  display: {
+    dateFormat: 'auto',
+    hourCycle: 'auto',
+  },
   privacy: {
     suppression: {
       personIds: [],

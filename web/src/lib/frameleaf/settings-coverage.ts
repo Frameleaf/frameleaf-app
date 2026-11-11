@@ -1641,6 +1641,18 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'cast.gCastEnabled',
   },
   {
+    pattern: 'display.dateFormat',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: "'display.dateFormat'",
+  },
+  {
+    pattern: 'display.hourCycle',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: "'display.hourCycle'",
+  },
+  {
     pattern: 'download.archiveSize',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',

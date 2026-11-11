@@ -215,6 +215,9 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'search.includeArchived': { label: 'frameleaf_prefs_look_archived' },
   // FL-918: Look & playback › Search.
   'search.classic': { label: 'frameleaf_prefs_look_classic_search' },
+  // FL-783: Look & playback › Appearance.
+  'display.dateFormat': { label: 'frameleaf_prefs_look_date_format' },
+  'display.hourCycle': { label: 'frameleaf_prefs_look_time_format' },
   // FL-556: Look & playback › Safety.
   'trash.reuploadUntil': { label: 'frameleaf_prefs_look_reupload' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },

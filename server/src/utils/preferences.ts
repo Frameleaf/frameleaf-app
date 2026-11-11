@@ -187,6 +187,11 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       includeArchived: false,
       classic: false,
     },
+    // FL-783: dates and times follow the region until the person picks a format.
+    display: {
+      dateFormat: 'auto',
+      hourCycle: 'auto',
+    },
     purchase: {
       showSupportBadge: true,
       hideBuyButtonUntil: new Date(2022, 1, 12).toISOString(),
