@@ -7,6 +7,7 @@ import {
   askSearch,
   searchAssets,
   searchSmart,
+  updateMyPreferences,
   type SearchResponseDto,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
@@ -20,9 +21,10 @@ import { Route } from '$lib/route';
 import { handleError } from '$lib/utils/handle-error';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { personFactory } from '@test-data/factories/person-factory';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import SearchPage from './+page.svelte';
 
-const flags = $state({ search: true, smartSearch: false, askSearch: true });
+const flags = $state({ search: true, smartSearch: false, askSearch: true, assistant: false });
 const navigation = vi.hoisted(() => ({ goto: vi.fn(), afterNavigate: vi.fn() }));
 const state = $state({
   url: new URL('http://localhost/search'),
@@ -43,6 +45,7 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   searchAssets: vi.fn(),
   searchSmart: vi.fn(),
   askSearch: vi.fn(),
+  updateMyPreferences: vi.fn(),
 }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: {
@@ -91,6 +94,7 @@ beforeEach(() => {
   resetFilterEntityNameCache();
   flags.smartSearch = false;
   flags.askSearch = true;
+  flags.assistant = false;
   state.url = new URL('http://localhost/search');
   vi.mocked(searchAssets).mockResolvedValue(result([]));
 });
@@ -432,6 +436,36 @@ describe('Ask about your photos', () => {
   it('is not offered without smart search', () => {
     render(SearchPage);
     expect(screen.queryByRole('combobox', { name: 'Ask about your photos' })).not.toBeInTheDocument();
+  });
+});
+
+describe('Library Assistant on a rejected link', () => {
+  afterEach(() => authManager.reset());
+
+  it('keeps the warning and allows a round trip through Classic when smart search is off', async () => {
+    addMessages('dev', en);
+    flags.assistant = true;
+    state.url = new URL('http://localhost/search?dq=damaged');
+    vi.mocked(updateMyPreferences).mockImplementation(async ({ userPreferencesUpdateDto }) =>
+      preferencesFactory.build({ search: { classic: userPreferencesUpdateDto.search?.classic } }),
+    );
+    render(SearchPage);
+
+    const warning = en.frameleaf_search_bridge_link_damaged;
+    const assistant = { name: 'Library Assistant' };
+    const classic = { name: en.frameleaf_assistant_classic };
+    expect(screen.getByText(warning)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { ...assistant, checked: true })).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('radio', classic));
+    expect(screen.getByText(warning)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { ...classic, checked: true })).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('radio', assistant));
+    expect(screen.getByText(warning)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { ...assistant, checked: true })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: en.frameleaf_assistant_field })).toBeInTheDocument();
+    await waitFor(() => expect(updateMyPreferences).toHaveBeenCalledTimes(2));
   });
 });
 
