@@ -199,7 +199,13 @@ describe('Full screen in "…" on a phone (FL-1457)', () => {
   it('says Exit full screen while in it', () => {
     widthIs(true);
     const asset = assetFactory.build({ ownerId: 'owner', type: AssetTypeEnum.Image });
-    render(ViewerMoreMenu, { asset, preAction: vi.fn(), onAction: vi.fn(), onToggleFullscreen: vi.fn(), fullscreen: true });
+    render(ViewerMoreMenu, {
+      asset,
+      preAction: vi.fn(),
+      onAction: vi.fn(),
+      onToggleFullscreen: vi.fn(),
+      fullscreen: true,
+    });
     expect(screen.getAllByRole('menuitem').at(-1)).toHaveTextContent('frameleaf_viewer_exit_fullscreen');
   });
 

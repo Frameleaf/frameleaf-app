@@ -105,7 +105,8 @@ describe('Thumbnail for a photo with no thumbnail yet (FL-1457)', () => {
     thumbnailFailures.ids.clear();
   });
 
-  const waiting = () => timelineAssetFactory.build({ isImage: true, isVideo: false, thumbhash: null, ownerId: 'owner-1' });
+  const waiting = () =>
+    timelineAssetFactory.build({ isImage: true, isVideo: false, thumbhash: null, ownerId: 'owner-1' });
 
   it('shows the calm placeholder, not the broken tile, and asks which photos failed', async () => {
     const { container } = render(Thumbnail, { asset: waiting() });
