@@ -687,23 +687,24 @@ export class AssetMediaService extends BaseService {
       dto.edited ?? false,
     );
 
-    if (dto.format === 'document-pdf') {
+    const { format } = dto;
+    if (format === 'document-pdf') {
       return this.reviewDocument(auth, id, ownerId, originalPath!, originalFileName, signal);
     }
 
     // Downloaded as shown (owner, 2026-10-16): the owner's viewer shows their current develop version.
-    const developedPath = dto.edited && !dto.format ? await this.getShownDevelopMaster(auth, id, ownerId) : undefined;
+    const developedPath = dto.edited && !format ? await this.getShownDevelopMaster(auth, id, ownerId) : undefined;
     const filePath = developedPath ?? editedPath ?? originalPath!;
-    if (dto.format) {
+    if (format) {
       const source = await this.assetRepository.getById(id);
       if (!source || source.type !== AssetType.Image || source.originalPath !== filePath)
         throw new BadRequestException('Still exports require an unedited photo; export a saved edit from its version');
       const policy = getOriginalLocationPolicies({ auth, assets: [source], purpose: 'download' });
       if (policy(source) !== OriginalLocationPolicy.Serve)
         throw new ForbiddenException('Downloads are turned off while metadata is hidden');
-      if (dto.format !== 'sdr-jpeg' && process.env.FRAMELEAF_HDR_IMAGES !== 'experimental')
+      if (format !== 'sdr-jpeg' && process.env.FRAMELEAF_HDR_IMAGES !== 'experimental')
         throw new NotFoundException('HDR export is unavailable');
-      if (dto.format === 'hdr-heic' && !(await this.mediaRepository.getHdrCodecCapabilities())?.heicPqEncoder)
+      if (format === 'hdr-heic' && !(await this.mediaRepository.getHdrCodecCapabilities())?.heicPqEncoder)
         throw new BadRequestException({
           code: 'hdr_heic_export_unavailable',
           message: 'HDR HEIC export is unavailable',
@@ -711,7 +712,7 @@ export class AssetMediaService extends BaseService {
       const checksum = Buffer.from(source.checksum);
       // FL-721 (spec §8): a sealed source's full-size export is written inside the locked tmpfs folder
       const folder = await makeWorkDir('photo-export', await isLockedPath(filePath));
-      const heic = dto.format === 'hdr-heic';
+      const heic = format === 'hdr-heic';
       const output = path.join(folder, heic ? 'still_hdr.heic' : 'still.jpg');
       const release = () =>
         void rm(folder, { recursive: true, force: true }).catch(() => {
@@ -721,7 +722,7 @@ export class AssetMediaService extends BaseService {
         // FL-721: a sealed original is exported from a plain copy, for a viewer allowed its key
         await withPlainCopy(
           filePath,
-          (input) => this.mediaRepository.exportPhotoStill(input, output, dto.format!, checksum, signal),
+          (input) => this.mediaRepository.exportPhotoStill(input, output, format, checksum, signal),
           { viewerId: lockedViewerOf(auth) },
         );
         signal?.throwIfAborted();
@@ -739,7 +740,7 @@ export class AssetMediaService extends BaseService {
           path: output,
           release,
           contentType: heic ? 'image/heic' : 'image/jpeg',
-          fileName: `${getFileNameWithoutExtension(originalFileName)}_still_${dto.format}.${heic ? 'heic' : 'jpg'}`,
+          fileName: `${getFileNameWithoutExtension(originalFileName)}_still_${format}.${heic ? 'heic' : 'jpg'}`,
           cacheControl: CacheControl.PrivateWithoutCache,
         });
       } catch (error) {
