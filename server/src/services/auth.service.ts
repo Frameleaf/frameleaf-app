@@ -428,16 +428,17 @@ export class AuthService extends BaseService {
     proof: { password?: string; code?: string; recoveryCode?: string } | undefined,
     details: LoginDetails,
   ): Promise<void> {
-    if (!auth.session) {
-      return;
-    }
-    const signIn = auth.session.signIn;
+    const signIn = auth.session?.signIn;
     const { signInPolicy } = await this.getConfig({ withCache: true });
-    // an older session (no record, or one marked legacy) keeps today's rights until "Apply to older apps too"
-    if ((!signIn || signIn.legacy) && !signInPolicy.applyToOlderApps) {
+    // an older session (no record, or one marked legacy) and an API key keep today's rights until "Apply to older
+    // apps too"; after that an API key confirms with the password typed for the action, like any older client
+    if ((!auth.session || !signIn || signIn.legacy) && !signInPolicy.applyToOlderApps) {
       return;
     }
-    if (await sessionIsConfirmedRecently(auth.session, (id) => this.frameleafAccountRepository.getSession(id))) {
+    if (
+      auth.session &&
+      (await sessionIsConfirmedRecently(auth.session, (id) => this.frameleafAccountRepository.getSession(id)))
+    ) {
       return;
     }
     const enrolled = !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt;
@@ -671,8 +672,10 @@ export class AuthService extends BaseService {
       }
       // an account with no password here (it signs in with the administrator's own provider) has nothing to type:
       // a sign-in from the last 10 minutes is its confirmation, so it can still set up Two-Step Verification
+      // (a local sign-in only: a Frameleaf one counts above, and only while its tag is live)
+      const local = session?.signIn?.source === 'local' ? session.signIn : undefined;
       if (
-        signInIsRecent(session?.signIn ? { ...session.signIn, source: 'frameleaf' } : undefined) &&
+        signInIsRecent(local ? { ...local, source: 'frameleaf' } : undefined) &&
         !(await this.userRepository.getForChangePassword(userId)).password
       ) {
         return;

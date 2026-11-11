@@ -336,9 +336,8 @@ export const rateLimitPrincipal = (request: Request, principal: RateLimitPrincip
       return credential ? `credential:${credential}` : undefined;
     }
     case 'two-factor-token': {
-      const body = request.body as Record<string, unknown> | undefined;
-      // the sign-in code step sends `twoFactorToken`, a step-up its `transaction`
-      const token = text(body?.twoFactorToken) ?? text(body?.transaction);
+      // only the sign-in code step uses this: its token is what it verifies (step-up is limited per session)
+      const token = text((request.body as Record<string, unknown> | undefined)?.twoFactorToken);
       return token ? `two-factor:${token}` : undefined;
     }
   }

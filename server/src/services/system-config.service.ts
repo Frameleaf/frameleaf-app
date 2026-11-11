@@ -466,10 +466,13 @@ export class SystemConfigService extends BaseService {
         'Everyone, everywhere needs password sign-in on, so you can still sign in to this server without Frameleaf.',
       );
     }
-    const authenticator = (await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt;
+    // a local authenticator is a way in only together with a local password; a local passkey is one by itself
+    const authenticator =
+      !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt &&
+      !!(await this.userRepository.getForChangePassword(auth.user.id)).password;
     if (!authenticator && (await this.passkeyRepository.countByUser(auth.user.id)) === 0) {
       throw new BadRequestException(
-        'Set up Two-Step Verification or add a passkey to your own account here first, so you can still sign in to this server without Frameleaf.',
+        'Add a passkey, or a password with Two-Step Verification, to your own account here first, so you can still sign in to this server without Frameleaf.',
       );
     }
   }

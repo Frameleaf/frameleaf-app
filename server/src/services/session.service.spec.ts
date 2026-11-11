@@ -1,5 +1,5 @@
 import { generateKeyPair } from '@frameleaf/locked-crypto';
-import { JobStatus } from 'src/enum.js';
+import { DatabaseLock, JobStatus } from 'src/enum.js';
 import { SessionService } from 'src/services/session.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -105,6 +105,26 @@ describe('SessionService', () => {
       expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
     });
 
+    it('leaves the child untagged when unlinking won the race (the link is gone)', async () => {
+      const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
+      mocks.session.getSignIn.mockResolvedValue({
+        methods: ['email_code'],
+        level: 'basic',
+        source: 'frameleaf',
+        legacy: false,
+        authTime: new Date(),
+      });
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+      mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'parent-session', sub: 'fl-sub' } as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue(undefined);
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+
+      await sut.create(auth, {});
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.FrameleafLinkAuthority, expect.any(Function));
+      expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
+    });
+
     it('gives a child of a Frameleaf session the same Frameleaf tag', async () => {
       const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
       const authTime = new Date('2026-11-11T10:00:00Z');
@@ -123,6 +143,8 @@ describe('SessionService', () => {
         sub: 'fl-sub',
         authTime,
       } as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'fl-sub' } as never);
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
 
       await sut.create(auth, {});
 

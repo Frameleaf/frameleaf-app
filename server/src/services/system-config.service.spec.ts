@@ -1058,12 +1058,22 @@ describe(SystemConfigService.name, () => {
         expect(configWrites()).toHaveLength(0);
       });
 
+      it('does not count an authenticator on an owner with no local password', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(null as never);
+        mocks.user.getTwoFactor.mockResolvedValue({ enabledAt: new Date() } as never);
+        mocks.user.getForChangePassword.mockResolvedValue({ id: authStub.admin.user.id, password: '' } as never);
+        mocks.passkey.countByUser.mockResolvedValue(0);
+
+        await expect(sut.updateAdminConfig(everyone(), authStub.admin)).rejects.toThrow('Add a passkey');
+      });
+
       it.each([
         ['a local authenticator', { enabledAt: new Date() }, 0],
         ['a local passkey', undefined, 1],
       ])('allows it for an owner with %s', async (_name, twoFactor, passkeys) => {
         mocks.systemMetadata.get.mockResolvedValue(null as never);
         mocks.user.getTwoFactor.mockResolvedValue(twoFactor as never);
+        mocks.user.getForChangePassword.mockResolvedValue({ id: authStub.admin.user.id, password: 'hash' } as never);
         mocks.passkey.countByUser.mockResolvedValue(passkeys);
 
         await sut.updateAdminConfig(everyone(), authStub.admin);

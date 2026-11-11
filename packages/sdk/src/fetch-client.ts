@@ -12487,7 +12487,7 @@ export type VerificationRequiredResponseDto = {
     /** How recent the sign-in must be, in seconds; null when any time will do */
     maxAge: number | null;
     message: string;
-    /** What would complete it: frameleaf (Cloud's step-up, then a new exchange), totp or recovery_code (the local authenticator), password (the local password, for a first link) */
+    /** What would complete it: frameleaf (Cloud's step-up, then a new exchange) on its own, or the local proofs listed. totp and recovery_code are alternatives (the local authenticator). password (a first link) is needed together with totp or recovery_code when both are listed: send the password and one authenticator code in the same step-up. */
     methods: VerificationMethod[];
     statusCode: number;
     /** Send it to POST /auth/step-up (a session) or POST /oauth/frameleaf/step-up (a sign-in), 10 minutes */

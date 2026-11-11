@@ -1043,16 +1043,23 @@ export class FrameleafAuthService extends BaseService {
    * Frameleaf sessions end; this session and their local sign-in are unchanged.
    */
   async unlink(auth: AuthDto): Promise<void> {
-    const removed = await this.frameleafAccountRepository.deleteLink(auth.user.id);
+    // under the link authority lock a child session takes its parent's tag under too (`POST /sessions`)
+    const removed = await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      const link = await this.frameleafAccountRepository.deleteLink(auth.user.id);
+      if (!link) {
+        return;
+      }
+      const sessionIds = (await this.frameleafAccountRepository.findSessions({ sub: link.sub })).map(
+        ({ sessionId }) => sessionId,
+      );
+      // the other Frameleaf sessions end; this one stays signed in but is no longer a Frameleaf session
+      await this.endSessions(sessionIds.filter((sessionId) => sessionId !== auth.session?.id));
+      await this.frameleafAccountRepository.deleteSessions(sessionIds);
+      return link;
+    });
     if (!removed) {
       return;
     }
-    const sessionIds = (await this.frameleafAccountRepository.findSessions({ sub: removed.sub })).map(
-      ({ sessionId }) => sessionId,
-    );
-    // the other Frameleaf sessions end; this one stays signed in but is no longer a Frameleaf session
-    await this.endSessions(sessionIds.filter((sessionId) => sessionId !== auth.session?.id));
-    await this.frameleafAccountRepository.deleteSessions(sessionIds);
     const user = await this.userRepository.get(auth.user.id, { withDeleted: false });
     if (user) {
       await this.auditLink(user, AdminAuditAction.FrameleafAccountUnlinked, removed.email);

@@ -10,7 +10,15 @@ import {
   SessionUpdateDto,
   mapSession,
 } from 'src/dtos/session.dto.js';
-import { AccountEventAction, FrameleafWorker, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import {
+  AccountEventAction,
+  DatabaseLock,
+  FrameleafWorker,
+  JobName,
+  JobStatus,
+  Permission,
+  QueueName,
+} from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 
@@ -67,17 +75,23 @@ export class SessionService extends BaseService {
     );
     // ...and stays a Frameleaf sign-in where its parent is one: the same tag (sid, sub, auth time), so a
     // back-channel logout, unlinking or access removal ends both
+    // Under the link authority lock unlinking also holds: the child is tagged only while the parent's tag and the
+    // account's link both still exist, so an unlink either finds the child's tag or leaves the child untagged.
     if (parent?.source === 'frameleaf') {
-      const tag = await this.frameleafAccountRepository.getSession(auth.session.id);
-      if (tag) {
-        await this.frameleafAccountRepository.tagSession({
-          sessionId: session.id,
-          userId: tag.userId,
-          sid: tag.sid,
-          sub: tag.sub,
-          authTime: tag.authTime,
-        });
-      }
+      const parentId = auth.session.id;
+      await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        const tag = await this.frameleafAccountRepository.getSession(parentId);
+        const link = tag ? await this.frameleafAccountRepository.getLinkByUser(tag.userId) : undefined;
+        if (tag && link?.sub === tag.sub) {
+          await this.frameleafAccountRepository.tagSession({
+            sessionId: session.id,
+            userId: tag.userId,
+            sid: tag.sid,
+            sub: tag.sub,
+            authTime: tag.authTime,
+          });
+        }
+      });
     }
 
     return { ...mapSession(session), token };

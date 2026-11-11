@@ -372,6 +372,25 @@ describe('AuthService unified sign-in rule', () => {
       ).toMatchObject({ code: 'confirmation_required' });
     });
 
+    it('never lets an unlinked Frameleaf sign-in use the no-password fallback', async () => {
+      mocks.user.getForChangePassword.mockResolvedValue({ id: user.id, password: '' });
+      mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+      const unlinked = { source: 'frameleaf' as const, methods: [], level: 'basic' as const, legacy: false };
+      expect(await refusal(sut.setupTwoFactor(sessionAuth({ ...unlinked, authTime: new Date() }), {}))).toMatchObject({
+        code: 'confirmation_required',
+      });
+    });
+
+    it('asks an API key to confirm once "Apply to older apps too" is on', async () => {
+      const apiKey = AuthFactory.from(user).apiKey().build();
+      await expect(sut.requireConfirmedRecently(apiKey, undefined, capable)).resolves.toBeUndefined();
+      config({ signInPolicy: { applyToOlderApps: true } });
+      expect(await refusal(sut.requireConfirmedRecently(apiKey, undefined, capable))).toMatchObject({
+        code: 'confirmation_required',
+      });
+      await expect(sut.requireConfirmedRecently(apiKey, { password: 'password' }, capable)).resolves.toBeUndefined();
+    });
+
     it('lets two-step changes skip the password within 10 minutes of a Frameleaf sign-in', async () => {
       const fresh = {
         source: 'frameleaf' as const,
