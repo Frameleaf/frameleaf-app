@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -147,6 +153,8 @@ export async function qualify(
   let started = false;
   try {
     const image = await loadArchive(archive, "assistant", directory);
+    const workerImageDigest = /@(sha256:[a-f0-9]{64})$/.exec(image)?.[1];
+    assert(workerImageDigest, "Expected the tested ML archive's exact digest");
     const labels = JSON.parse(
       execute("docker", [
         "image",
@@ -201,6 +209,11 @@ export async function qualify(
     });
     const report = JSON.parse(readFileSync(reportPath, "utf8"));
     verifyQualification(report, source, planner.name);
+    writeFileSync(
+      path.join(env.RUNNER_TEMP, "assistant-qualification-evidence.json"),
+      `${JSON.stringify({ workerImageDigest, report }, null, 2)}\n`,
+      { flag: "wx", mode: 0o600 },
+    );
     appendFileSync(
       env.GITHUB_STEP_SUMMARY,
       `### Assistant qualification passed\n\nWorker: \`${image}\`\n\n\`\`\`json\n${JSON.stringify(report, null, 2)}\n\`\`\`\n`,

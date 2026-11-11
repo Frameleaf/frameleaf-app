@@ -2079,10 +2079,25 @@ test("all Docker publication routes require same-run Assistant qualification whe
   assert.equal(archive.with["run-id"], undefined);
   assert.equal(archive.with["github-token"], undefined);
   assert.equal(
-    qualification.steps.at(-1).run,
+    qualification.steps.at(-2).run,
     "node .github/assistant-deploy-gate.mjs qualify",
   );
-  assert.equal(qualification.steps.at(-1)["continue-on-error"], undefined);
+  assert.equal(qualification.steps.at(-2)["continue-on-error"], undefined);
+  const evidence = qualification.steps.at(-1);
+  assert.match(evidence.uses, /^actions\/upload-artifact@[a-f0-9]{40}$/);
+  assert.equal(evidence.if, undefined);
+  assert.equal(evidence["continue-on-error"], undefined);
+  assert.equal(evidence.with["if-no-files-found"], "error");
+  assert.equal(
+    evidence.with.path,
+    "${{ runner.temp }}/assistant-qualification-evidence.json",
+  );
+  assert.equal(
+    qualification.steps.filter((step) =>
+      step.uses?.startsWith("actions/download-artifact@"),
+    ).length,
+    1,
+  );
   const deployment = jobs["deploy-test"];
   assert.ok(deployment.needs.includes("assistant-qualification"));
   assert.match(

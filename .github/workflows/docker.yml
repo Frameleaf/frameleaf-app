@@ -125,6 +125,13 @@ jobs:
         run: .github/install-oras.sh
       - name: Run and verify live qualification on the unpushed ML image
         run: node .github/assistant-deploy-gate.mjs qualify
+      - name: Retain verified Assistant qualification evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: assistant-qualification-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/assistant-qualification-evidence.json
+          if-no-files-found: error
+          retention-days: 30
 
   deploy-test:
     name: Deployment test (${{ matrix.architecture }})

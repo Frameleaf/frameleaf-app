@@ -135,6 +135,7 @@ test("qualification requires the fresh passing report from the same worker invoc
   const source = "a".repeat(40);
   const image = `127.0.0.1:5000/deploy-test/assistant@sha256:${"b".repeat(64)}`;
   const summary = path.join(temp, "summary");
+  const evidence = path.join(temp, "assistant-qualification-evidence.json");
   const report = {
     workerModel: planner.name,
     source,
@@ -152,7 +153,13 @@ test("qualification requires the fresh passing report from the same worker invoc
     p95Ms: 6000,
   };
   try {
-    for (const scenario of ["no-report", "stale", "failed", "passing"]) {
+    for (const scenario of [
+      "no-report",
+      "stale",
+      "failed",
+      "passing",
+      "duplicate",
+    ]) {
       const calls = [];
       const dependencies = {
         async loadArchive(file) {
@@ -213,9 +220,20 @@ test("qualification requires the fresh passing report from the same worker invoc
       if (scenario === "passing") {
         await result;
         assert.ok(readFileSync(summary, "utf8").includes(image));
+        assert.deepEqual(JSON.parse(readFileSync(evidence, "utf8")), {
+          workerImageDigest: `sha256:${"b".repeat(64)}`,
+          report,
+        });
+      } else if (scenario === "duplicate") {
+        const original = readFileSync(evidence, "utf8");
+        const originalSummary = readFileSync(summary, "utf8");
+        await assert.rejects(result, /EEXIST/);
+        assert.equal(readFileSync(evidence, "utf8"), original);
+        assert.equal(readFileSync(summary, "utf8"), originalSummary);
       } else {
         await assert.rejects(result, /ENOENT|source mismatch|Evaluator failed/);
         assert.equal(existsSync(summary), false);
+        assert.equal(existsSync(evidence), false);
       }
       assert.deepEqual(calls, [
         "docker image",
