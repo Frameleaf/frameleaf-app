@@ -85693,6 +85693,14 @@
         ],
         "type": "string"
       },
+      "BrowserExtensionGrant": {
+        "description": "capture: save into Boards; media: also download media, connect sites and follow creators",
+        "enum": [
+          "capture",
+          "media"
+        ],
+        "type": "string"
+      },
       "BrowserExtensionSignInAuthorizeDto": {
         "additionalProperties": false,
         "properties": {
@@ -85714,6 +85722,10 @@
               "S256"
             ],
             "type": "string"
+          },
+          "grant": {
+            "$ref": "#/components/schemas/BrowserExtensionGrant",
+            "description": "What to allow; capture when left out"
           },
           "installationId": {
             "description": "A random id this installation of the extension made once; its access replaces only its own",
@@ -85824,6 +85836,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "grant": {
+            "$ref": "#/components/schemas/BrowserExtensionGrant",
+            "description": "What was allowed, as bound to the code"
+          },
           "name": {
             "description": "How the access is listed in API keys",
             "type": "string"
@@ -85843,6 +85859,7 @@
         },
         "required": [
           "apiKeyId",
+          "grant",
           "name",
           "secret",
           "serverId",
@@ -85852,6 +85869,13 @@
       },
       "BrowserExtensionSignInInfoDto": {
         "properties": {
+          "grants": {
+            "description": "What an extension can ask to be allowed here",
+            "items": {
+              "$ref": "#/components/schemas/BrowserExtensionGrant"
+            },
+            "type": "array"
+          },
           "version": {
             "description": "The extension sign-in this server supports (1)",
             "maximum": 9007199254740991,
@@ -85860,6 +85884,7 @@
           }
         },
         "required": [
+          "grants",
           "version"
         ],
         "type": "object"
@@ -85881,6 +85906,10 @@
               "S256"
             ],
             "type": "string"
+          },
+          "grant": {
+            "$ref": "#/components/schemas/BrowserExtensionGrant",
+            "description": "What to allow; capture when left out"
           },
           "installationId": {
             "description": "A random id this installation of the extension made once; its access replaces only its own",

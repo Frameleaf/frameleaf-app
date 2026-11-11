@@ -7745,6 +7745,8 @@ export type BookmarkTagsDto = {
     ids: string[];
 };
 export type BrowserExtensionSignInInfoDto = {
+    /** What an extension can ask to be allowed here */
+    grants: BrowserExtensionGrant[];
     /** The extension sign-in this server supports (1) */
     version: number;
 };
@@ -7756,6 +7758,8 @@ export type BrowserExtensionSignInAuthorizeDto = {
     codeChallenge: string;
     /** Only S256 is accepted */
     codeChallengeMethod: CodeChallengeMethod;
+    /** What to allow; capture when left out */
+    grant?: BrowserExtensionGrant;
     /** A random id this installation of the extension made once; its access replaces only its own */
     installationId: string;
     /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
@@ -7778,6 +7782,8 @@ export type BrowserExtensionSignInExchangeDto = {
 export type BrowserExtensionSignInExchangeResponseDto = {
     /** The access, as listed in API keys */
     apiKeyId: string;
+    /** What was allowed, as bound to the code */
+    grant: BrowserExtensionGrant;
     /** How the access is listed in API keys */
     name: string;
     /** The new access key, shown once; it can only save captures and list collections and tags */
@@ -7797,6 +7803,8 @@ export type BrowserExtensionSignInStartDto = {
     codeChallenge: string;
     /** Only S256 is accepted */
     codeChallengeMethod: CodeChallengeMethod;
+    /** What to allow; capture when left out */
+    grant?: BrowserExtensionGrant;
     /** A random id this installation of the extension made once; its access replaces only its own */
     installationId: string;
     /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
@@ -41588,6 +41596,10 @@ export enum AssetWaveformChannelMode {
 export enum AssistantMediaType {
     Image = "IMAGE",
     Video = "VIDEO"
+}
+export enum BrowserExtensionGrant {
+    Capture = "capture",
+    Media = "media"
 }
 export enum BrowserExtensionClient {
     Chrome = "chrome",
