@@ -220,7 +220,7 @@ describe('AlbumDirectory', () => {
     expect(screen.getByRole('button', { name: 'New' })).toBeInTheDocument();
   });
 
-  it('shows the plain empty page, not a filter\u2019s, when nothing is left under a filter kept from before', () => {
+  it('shows the plain empty page, not a filtered one, when nothing is left under a filter kept from before', () => {
     albumDirectoryView.set({ ...defaultAlbumDirectoryView, filter: 'smart' });
     renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: [], spaces: [] }, onRefresh: vi.fn() });
     expect(screen.getByRole('heading', { level: 2, name: 'No albums yet' })).toBeInTheDocument();
