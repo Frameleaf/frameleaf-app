@@ -1515,6 +1515,7 @@ export class AuthService extends BaseService {
       profile,
       sid: oauthSid,
       idToken: oauthBearerToken,
+      idClaims,
     } = await this.oauthRepository.getProfileAndOAuthSid(oauth, url, expectedState, codeVerifier);
     const normalizedEmail = profile.email ? profile.email.trim().toLowerCase() : undefined;
     const { autoRegister, defaultStorageQuota, storageLabelClaim, storageQuotaClaim, roleClaim } = oauth;
@@ -1601,7 +1602,18 @@ export class AuthService extends BaseService {
       await this.syncProfilePicture(user, profile.picture);
     }
 
-    return this.createLoginResponse(user, loginDetails, { sid: oauthSid, bearerToken: oauthBearerToken }, 'oauth', []);
+    // when the person last authenticated at the provider (its verified `auth_time`); without one it is unknown and
+    // never counts as recent: an existing provider session can sign in here with no fresh authentication
+    const providerAuthTime =
+      typeof idClaims?.auth_time === 'number' ? new Date(idClaims.auth_time * 1000) : new Date(0);
+    return this.createLoginResponse(
+      user,
+      loginDetails,
+      { sid: oauthSid, bearerToken: oauthBearerToken },
+      'oauth',
+      [],
+      providerAuthTime,
+    );
   }
 
   private async syncProfilePicture(user: UserAdmin, url: string) {
@@ -1935,12 +1947,13 @@ export class AuthService extends BaseService {
     identity: { sid?: string; bearerToken?: string; passwordHash?: string },
     method: SignInMethod,
     methods: string[],
+    authTime?: Date,
   ) {
     const { session, response } = await createSession(
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
       user,
       loginDetails,
-      { methods, source: 'local' },
+      { methods, source: 'local', authTime },
       identity,
       identity.passwordHash,
     );

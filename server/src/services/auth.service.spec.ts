@@ -1836,6 +1836,31 @@ describe(AuthService.name, () => {
       );
     });
 
+    it.each([
+      ['the provider’s auth_time', { auth_time: 1_794_000_000 }, new Date(1_794_000_000_000)],
+      ['an unknown time (never recent) without one', {}, new Date(0)],
+    ])('records %s as when the person authenticated', async (_name, idClaims, authTime) => {
+      const user = UserFactory.create();
+      const profile = OAuthProfileFactory.create({ email: user.email });
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile, sid: 'oauth-sid', idClaims } as never);
+      mocks.user.getByEmail.mockResolvedValue(user);
+      mocks.user.update.mockResolvedValue(user);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await sut.callback(
+        { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foobar' },
+        {},
+        loginDetails,
+      );
+
+      expect(mocks.session.create).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        expect.objectContaining({ source: 'local', methods: [], authTime }),
+      );
+    });
+
     it('should normalize the email from the OAuth profile before linking', async () => {
       const user = UserFactory.create();
       const profile = OAuthProfileFactory.create({ email: '  TeSt@ExAmPlE.CoM  ' });
