@@ -39,6 +39,7 @@ import {
 import { WebsocketSupport } from '$lib/managers/timeline-manager/internal/websocket-support.svelte';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
 import { CancellableTask } from '$lib/utils/cancellable-task';
+import { readDatesToCheckIds } from '$lib/utils/dates-to-check';
 import { handleError } from '$lib/utils/handle-error';
 import {
   getOrderingDate,
@@ -256,6 +257,17 @@ export class TimelineManager extends VirtualScrollManager {
    * order, the cards and the scrubber's years, and wait in one group at the end.
    */
   datesToCheck: DatesToCheck | undefined = $state();
+
+  /**
+   * FL-1452: how many photos in this view have a date that cannot be right, in any order. Headers say it
+   * even where the timeline does not keep them apart (sorted by date added, name or rating).
+   */
+  datesToCheckCount = $state(0);
+
+  /** FL-1452: the ids of this view's dates to check, read from the server, for Fix dates without a group. */
+  readDatesToCheckIds() {
+    return readDatesToCheckIds(this.#datesToCheckQuery);
+  }
 
   /**
    * Whether the months held are for the options last asked for. Between a new request (a filter) and the
@@ -529,11 +541,9 @@ export class TimelineManager extends VirtualScrollManager {
       }
     };
     this.#datesToCheckApart = this.#sortsByCaptureDate;
-    let [timebuckets, toCheck] = await Promise.all([
-      readBuckets(),
-      this.#datesToCheckApart ? readDatesToCheck() : undefined,
-    ]);
-    if (toCheck === null && options === this.#requestedOptions) {
+    // FL-1452: read in every order, for the count headers show; kept apart only in capture-date order
+    let [timebuckets, toCheck] = await Promise.all([readBuckets(), readDatesToCheck()]);
+    if (toCheck === null && this.#datesToCheckApart && options === this.#requestedOptions) {
       this.#datesToCheckApart = false;
       toCheck = undefined;
       timebuckets = await readBuckets();
@@ -557,6 +567,12 @@ export class TimelineManager extends VirtualScrollManager {
     if (timebuckets.length > 0) {
       this.#calendarPaged = timebuckets.some((bucket) => bucket.page !== undefined);
     }
+    // FL-1452: where they are kept apart only the server knows whether a new or changed date is right,
+    // so every live change reads it again (a live upload dated 2031 never leads, even in an empty library)
+    if (this.#datesToCheckApart && toCheck) {
+      this.#calendarPaged = true;
+    }
+    this.datesToCheckCount = toCheck?.count ?? 0;
 
     if (this.#options.orderedBy) {
       // The same assets, counted by the buckets, paged in the flat order: one synthetic "month" per
@@ -598,12 +614,12 @@ export class TimelineManager extends VirtualScrollManager {
         timeBucket.page === undefined ? undefined : timeBucket,
       );
     });
-    const toCheckPages = toCheck?.pages ?? [];
+    const toCheckPages = (this.#datesToCheckApart && toCheck?.pages) || [];
     if (toCheckPages.length > 0) {
       // One group after every dated month, whichever way the timeline runs, held as the pages of one
       // month (FL-1452): each is read and released on its own, as a calendar month's pages are. Its key
-      // is no calendar month: it sorts past the last real one, as a flat order's pages do.
-      const key = order === AssetOrder.Asc ? { year: 9999, month: 12 } : { year: 1, month: 1 };
+      // is no calendar month (no date has a year 0 or 10000): it sorts past the last real one.
+      const key = order === AssetOrder.Asc ? { year: 10_000, month: 1 } : { year: 0, month: 1 };
       const title = get(t)('frameleaf_library_dates_to_check');
       for (const [index, page] of toCheckPages.entries()) {
         const group = new TimelineMonth(
@@ -619,8 +635,6 @@ export class TimelineManager extends VirtualScrollManager {
         group.toCheck = true;
         months.push(group);
       }
-      // Only the server knows whether a new or changed date is right: every live change reads it again.
-      this.#calendarPaged = true;
     }
     this.datesToCheck = toCheck && toCheckPages.length > 0 ? { count: toCheck.count, years: toCheck.years } : undefined;
     this.months = months;

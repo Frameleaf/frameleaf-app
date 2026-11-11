@@ -51,6 +51,7 @@
   import { getGlobalActions } from '$lib/services/app.service';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
+  import { readDatesToCheckIds } from '$lib/utils/dates-to-check';
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
@@ -60,12 +61,10 @@
     getAllTags,
     getAlbumInfo,
     getAlbumItems,
-    getTimeBucket,
     getTimelineDatesToCheck,
     LibraryScope,
     LibraryViewScope,
     searchAssets,
-    TimelineDatesToCheck,
     type AlbumResponseDto,
     type AssetResponseDto,
     type TagResponseDto,
@@ -500,7 +499,7 @@
     const current = authManager.captureSession();
     void (async () => {
       try {
-        const toCheck = await getTimelineDatesToCheck({ albumId: id, pageSize: 500 });
+        const toCheck = await getTimelineDatesToCheck({ albumId: id });
         if (current() && albumId === id) {
           mixedDatesToCheck = toCheck;
         }
@@ -511,21 +510,10 @@
   });
   const fixMixedDates = async () => {
     const id = albumId;
-    const pages = mixedDatesToCheck?.pages ?? [];
     try {
-      const buckets = await Promise.all(
-        pages.map((page) =>
-          getTimeBucket({
-            albumId: id,
-            timeBucket: page.timeBucket,
-            datesToCheck: TimelineDatesToCheck.Only,
-            take: page.count,
-            after: page.after ?? undefined,
-          }),
-        ),
-      );
+      const ids = await readDatesToCheckIds({ albumId: id });
       if (albumId === id) {
-        await itemsView?.changeDates(buckets.flatMap((bucket) => bucket.id));
+        await itemsView?.changeDates(ids);
       }
     } catch (error) {
       handleError(error, $t('errors.failed_to_load_assets'));
@@ -752,7 +740,7 @@
       onSlideshow={() => handlePromiseError(handleStartSlideshow(view))}
       onToggleActivity={() => (activityOpen = !activityOpen)}
       onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
-      datesToCheck={mixedAlbum ? mixedDatesToCheck?.count : timelineManager?.datesToCheck?.count}
+      datesToCheck={mixedAlbum ? mixedDatesToCheck?.count : timelineManager?.datesToCheckCount}
       onFixDates={() => void (mixedAlbum ? fixMixedDates() : libraryView?.fixDates())}
       onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
       {addMenu}

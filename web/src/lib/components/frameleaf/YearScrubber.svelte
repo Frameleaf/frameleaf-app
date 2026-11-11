@@ -40,6 +40,11 @@
      * controls reach the edge it sits at.
      */
     clear?: number;
+    /**
+     * FL-1452: the dated months only. The Years and Months cards leave the dates to check out, so their
+     * scrubber has no segment for them.
+     */
+    datedOnly?: boolean;
   };
 
   let {
@@ -54,6 +59,7 @@
     dragging = $bindable(false),
     thin = false,
     clear = 0,
+    datedOnly = false,
   }: Props = $props();
 
   /**
@@ -78,13 +84,21 @@
 
   type Marked = ScrubberMonth & { start: number; end: number; center: number; key: string };
 
-  const total = $derived(Math.max(1, timelineManager.scrubberTimelineHeight));
+  const shownMonths = $derived(
+    datedOnly ? timelineManager.scrubberMonths.filter((month) => !month.toCheck) : timelineManager.scrubberMonths,
+  );
+  const leftOut = $derived(
+    datedOnly
+      ? timelineManager.scrubberMonths.reduce((height, month) => height + (month.toCheck ? month.height : 0), 0)
+      : 0,
+  );
+  const total = $derived(Math.max(1, timelineManager.scrubberTimelineHeight - leftOut));
   const leadIn = $derived(timelineManager.topSectionHeight / total);
 
   /** Months laid along a 0..1 track in proportion to the scroll distance they occupy. */
   const months = $derived.by(() => {
     let offset = timelineManager.topSectionHeight;
-    return timelineManager.scrubberMonths.map((month) => {
+    return shownMonths.map((month) => {
       const start = offset / total;
       offset += month.height;
       const end = offset / total;

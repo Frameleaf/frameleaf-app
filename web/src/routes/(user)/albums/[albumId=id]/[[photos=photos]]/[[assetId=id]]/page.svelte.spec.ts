@@ -456,7 +456,7 @@ it('gives a mixed album the dates to check count and a Fix dates that opens Chan
   render(AlbumPage, { data: data(mixed) as never });
 
   await waitFor(() => expect(owners.header?.datesToCheck).toBe(3));
-  expect(getTimelineDatesToCheck).toHaveBeenCalledWith({ albumId: 'mixed', pageSize: 500 });
+  expect(getTimelineDatesToCheck).toHaveBeenCalledWith({ albumId: 'mixed' });
 
   owners.header!.onFixDates!();
   await waitFor(() => expect(libraryItemsFixture.changeDates).toHaveBeenCalledWith(['a', 'b', 'c']));

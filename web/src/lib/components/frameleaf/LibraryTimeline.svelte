@@ -1571,6 +1571,7 @@
         {timelineManager}
         height={measuredHeight}
         viewportTopMonth={cardTopMonth}
+        datedOnly
         onScrub={onCardScrub}
         onJump={onCardJump}
         thin={thinScrubber}

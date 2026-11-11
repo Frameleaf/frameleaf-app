@@ -139,7 +139,8 @@ describe('dates to check (FL-1410)', () => {
     try {
       expect(manager.scrubberMonths.map(({ year, toCheck: flagged }) => ({ year, flagged: !!flagged }))).toEqual([
         { year: 2026, flagged: false },
-        { year: 1, flagged: true },
+        // FL-1452: a key no calendar month has, so a photo dated 0001-01 never stands in its place
+        { year: 0, flagged: true },
       ]);
     } finally {
       manager.destroy();
@@ -214,16 +215,36 @@ describe('dates to check (FL-1410)', () => {
   it.each([
     { name: 'the date added', options: { dateType: TimeBucketDateType.Added } },
     { name: 'the file name', options: { orderedBy: TimelineOrderedSort.Filename } },
-  ])('leaves a timeline ordered by $name as it was', async ({ options }) => {
+  ])('leaves a timeline ordered by $name as it was, and still counts them for the header', async ({ options }) => {
     seed();
     const manager = await open(options);
     try {
-      expect(sdkMock.getTimelineDatesToCheck).not.toHaveBeenCalled();
       expect(sdkMock.getTimeBuckets).toHaveBeenCalledWith(
         expect.not.objectContaining({ datesToCheck: expect.anything() }),
       );
       expect(manager.months.some((month) => month.toCheck)).toBe(false);
+      // no notice and no group: they are not kept apart here
       expect(manager.datesToCheck).toBeUndefined();
+      // FL-1452: the header's "N dates to check" and Fix dates still know them, from the server
+      expect(manager.datesToCheckCount).toBe(3);
+      await expect(manager.readDatesToCheckIds()).resolves.toEqual([future[0].id, future[1].id, reset.id]);
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  // FL-1452 (FL-1456 review): with no wrong date yet, a live upload dated 2031 must not lead the timeline;
+  // only the server knows whether its date is right, so the change is read from it
+  it('reads a live upload from the server rather than placing it by a date that may be wrong', async () => {
+    seed();
+    sdkMock.getTimelineDatesToCheck.mockResolvedValue({ count: 0, years: [], timeBuckets: [], pages: [] });
+    const manager = await open();
+    try {
+      expect(manager.calendarPaged).toBe(true);
+      const calls = sdkMock.getTimeBuckets.mock.calls.length;
+      manager.upsertAssetsFromLiveEvent([taken('2031-06-03T09:00:00.000Z')]);
+      expect(manager.months.some(({ yearMonth }) => yearMonth.year === 2031)).toBe(false);
+      await vi.waitFor(() => expect(sdkMock.getTimeBuckets.mock.calls.length).toBeGreaterThan(calls));
     } finally {
       manager.destroy();
     }
