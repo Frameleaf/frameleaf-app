@@ -51,6 +51,7 @@
   import ColorFilter from '$lib/components/frameleaf/ColorFilter.svelte';
   import DimensionFilters from '$lib/components/frameleaf/DimensionFilters.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import SearchByTextNotice from '$lib/components/frameleaf/SearchByTextNotice.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
@@ -867,6 +868,7 @@
         <Button onclick={() => refresh()}>{$t('refresh')}</Button>
         {#if session.layout === 'work'}<WorkFileNamesToggle {preferences} />{/if}
         {#if results.countCapped}<span role="status">{$t('frameleaf_pro_count_capped')}</span>{/if}
+        {#if results.textFallback}<SearchByTextNotice />{/if}
       </div>{/snippet}
     {#snippet colorChip()}
       <div class="fl-items-popover-host">
@@ -1113,6 +1115,7 @@
               ><Icon icon={mdiContentSaveOutline} size="16" aria-hidden />{$t('frameleaf_boards_save_smart')}</Button
             >{/if}
           {#if results.countCapped}<span role="status">{$t('frameleaf_pro_count_capped')}</span>{/if}
+          {#if results.textFallback}<SearchByTextNotice />{/if}
         </div>
       {/if}
     {/snippet}

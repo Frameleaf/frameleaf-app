@@ -3,6 +3,7 @@ import {
   askSearch,
   searchLibraryItems,
   LibraryAssetItemKind,
+  LibraryItemSearchMode,
   type LibraryItemDto,
   type LibraryItemSearchDto,
   AssetVisibility,
@@ -15,6 +16,8 @@ import {
   type MetadataSearchDto,
   type SmartSearchDto,
 } from '@frameleaf/sdk';
+import { withSearchDefaults } from '$lib/components/discovery/query';
+import { withAllText } from '$lib/frameleaf/search-palette';
 
 export type LibrarySearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
 export type LibrarySearchQuery =
@@ -24,11 +27,35 @@ export type LibrarySearchQuery =
   | { kind: 'metadata' | 'smart'; terms: LibrarySearchTerms }
   | { kind: 'library'; terms: LibraryItemSearchDto };
 
+/**
+ * FL-1403: the same search matched by text, for a server where search by meaning is off or does not
+ * answer. Null when there is no text form of it: nothing was typed (a similar-photo search), or the
+ * text cannot be added to the filter inside the server's limits.
+ */
+export const textSearchTerms = (terms: LibrarySearchTerms): LibrarySearchTerms | null => {
+  const { query, ...rest } = terms;
+  const text = query?.trim();
+  if (!text || rest.queryAssetId) {
+    return null;
+  }
+  // A link that is only its text (an old `?query=` address) takes the filter shape, so it is matched
+  // by all text like any other; the filter then carries the defaults the flat request had.
+  if (rest.filter !== undefined || Object.keys(rest).length === 0) {
+    const filter = withAllText(rest.filter ?? withSearchDefaults({}), text);
+    return filter ? { ...rest, filter } : null;
+  }
+  // ponytail: an old link with other flat fields is matched by file name only; "All text" needs the
+  // filter shape, which flat fields cannot ride beside.
+  return rest.originalFileName ? null : { ...rest, originalFileName: text };
+};
+
 /** One route-owned result set. Neither queries nor private assets are persisted to device storage. */
 export class LibrarySearchSession {
   items = $state<LibraryItemDto[]>([]);
   count = $state<number | null>(null);
   countCapped = $state(false);
+  /** FL-1403: these results were matched by text, because search by meaning was off or did not answer. */
+  textFallback = $state(false);
   assets = $state<AssetResponseDto[]>([]);
   albums = $state<AlbumResponseDto[]>([]);
   askResponse = $state<AskSearchResponseDto>();
@@ -47,6 +74,7 @@ export class LibrarySearchSession {
     this.items = [];
     this.count = null;
     this.countCapped = false;
+    this.textFallback = false;
     this.assets = [];
     this.albums = [];
     this.askResponse = undefined;
@@ -61,7 +89,36 @@ export class LibrarySearchSession {
     this.reset();
   }
 
-  async loadNextPage(options: { language: string }) {
+  /**
+   * FL-1403: a search by meaning, or the same search by text when the server has search by meaning
+   * turned off (`smartOff`), refuses it or fails it. Only a first page may change how it is matched,
+   * so a list never mixes the two; later pages keep the first page's choice.
+   */
+  async #byMeaningOrText<T>(
+    request: AbortController,
+    smartOff: boolean,
+    smart: () => Promise<T>,
+    text: (() => Promise<T>) | null,
+  ): Promise<{ response: T; byText: boolean }> {
+    if (!text) {
+      return { response: await smart(), byText: false };
+    }
+    if (smartOff || this.textFallback) {
+      return { response: await text(), byText: true };
+    }
+    const firstPage = !this.nextCursor && (this.nextPage ?? 1) <= 1;
+    try {
+      return { response: await smart(), byText: false };
+    } catch (error) {
+      if (this.#request !== request || !firstPage) {
+        throw error;
+      }
+      return { response: await text(), byText: true };
+    }
+  }
+
+  /** `smartSearch`: the server's feature flag; false sends a search by meaning straight to text. */
+  async loadNextPage(options: { language: string; smartSearch?: boolean }) {
     const query = this.#query;
     if (this.#destroyed || !query || (!this.nextPage && !this.nextCursor) || this.loading) {
       return;
@@ -71,14 +128,25 @@ export class LibrarySearchSession {
     this.#request = request;
     this.loading = true;
     try {
+      const smartOff = options.smartSearch === false;
       if (query.kind === 'library') {
-        const response = await searchLibraryItems(
-          { libraryItemSearchDto: { ...query.terms, cursor: this.nextCursor ?? undefined } },
-          { signal: request.signal },
+        const searchItems = (mode: LibraryItemSearchDto['mode']) => () =>
+          searchLibraryItems(
+            { libraryItemSearchDto: { ...query.terms, mode, cursor: this.nextCursor ?? undefined } },
+            { signal: request.signal },
+          );
+        const typed =
+          query.terms.mode === LibraryItemSearchMode.Smart && !!query.terms.query?.trim() && !query.terms.queryAssetId;
+        const { response, byText } = await this.#byMeaningOrText(
+          request,
+          smartOff,
+          searchItems(query.terms.mode),
+          typed ? searchItems(LibraryItemSearchMode.Text) : null,
         );
         if (this.#request !== request) {
           return;
         }
+        this.textFallback = byText;
         const key = (item: LibraryItemDto) =>
           item.kind === LibraryAssetItemKind.Asset ? item.asset.id : `bookmark:${item.bookmark.id}`;
         const known = new Set(this.items.map((item) => key(item)));
@@ -109,6 +177,7 @@ export class LibrarySearchSession {
         return;
       }
       let response;
+      let byText = false;
       let askResponse: AskSearchResponseDto | undefined;
       const search = query;
       if (search.kind === 'ask') {
@@ -119,21 +188,32 @@ export class LibrarySearchSession {
         response = askResponse.results;
       } else {
         // The API rejects deprecated page/visibility fields alongside its structured filter shape.
-        const structured =
-          search.terms.filter !== undefined || search.terms.orderBy !== undefined || search.terms.cursor !== undefined;
-        const terms = { ...search.terms };
-        delete terms.cursor;
-        delete terms.page;
-        const searchDto = structured
-          ? { ...terms, ...(this.nextCursor && { cursor: this.nextCursor }), withExif: true }
-          : { visibility: AssetVisibility.Timeline, ...terms, page: this.nextPage ?? 1, withExif: true };
-        response =
-          search.kind === 'smart'
-            ? await searchSmart(
-                { smartSearchDto: { ...searchDto, language: options.language } },
+        const searchDto = (source: LibrarySearchTerms) => {
+          const structured = source.filter !== undefined || source.orderBy !== undefined || source.cursor !== undefined;
+          const terms = { ...source };
+          delete terms.cursor;
+          delete terms.page;
+          return structured
+            ? { ...terms, ...(this.nextCursor && { cursor: this.nextCursor }), withExif: true }
+            : { visibility: AssetVisibility.Timeline, ...terms, page: this.nextPage ?? 1, withExif: true };
+        };
+        const metadata = (terms: LibrarySearchTerms) => () =>
+          searchAssets({ metadataSearchDto: searchDto(terms) }, { signal: request.signal });
+        if (search.kind === 'smart') {
+          const textTerms = textSearchTerms(search.terms);
+          ({ response, byText } = await this.#byMeaningOrText(
+            request,
+            smartOff,
+            () =>
+              searchSmart(
+                { smartSearchDto: { ...searchDto(search.terms), language: options.language } },
                 { signal: request.signal },
-              )
-            : await searchAssets({ metadataSearchDto: searchDto }, { signal: request.signal });
+              ),
+            textTerms && metadata(textTerms),
+          ));
+        } else {
+          response = await metadata(search.terms)();
+        }
       }
 
       // Abort is advisory: a completed response can still arrive after a scope switch.
@@ -150,6 +230,7 @@ export class LibrarySearchSession {
         this.assets.push(asset);
       }
       this.albums.push(...response.albums.items);
+      this.textFallback = byText;
       this.askResponse = askResponse;
       this.nextPage = Number(response.assets.nextPage) || null;
       this.nextCursor = response.assets.nextCursor ?? null;

@@ -21,6 +21,8 @@
   type Props = {
     /** Items these results show, when known. */
     count: number | null;
+    /** More of these results are still to load, so a count above zero reads "250+ items" as the toolbar's does. */
+    more?: boolean;
     /** Items in the whole scope (library, person, partner) before any filter, when known. */
     total?: number | null;
     /** Items selected in the session. */
@@ -34,7 +36,16 @@
     controls?: Snippet;
   };
 
-  let { count, total = null, selected = 0, saved, hidden = false, outside = 0, controls }: Props = $props();
+  let {
+    count,
+    more = false,
+    total = null,
+    selected = 0,
+    saved,
+    hidden = false,
+    outside = 0,
+    controls,
+  }: Props = $props();
 
   const filtered = $derived(count !== null && total !== null && total !== count);
   const shown = $derived(count ?? total);
@@ -50,11 +61,13 @@
   <span class="fl-status-counts" aria-live="polite">
     {#if shown !== null}
       <!-- Keyed on the text, so a new count fades in rather than snapping. -->
-      {#key `${count}/${total}`}
+      {#key `${count}/${total}/${more}`}
         <span class="fl-reveal">
-          {filtered
-            ? $t('frameleaf_status_items_of', { values: { count, total } })
-            : $t('frameleaf_status_items', { values: { count: shown } })}
+          {more && count
+            ? $t('frameleaf_search_results_count', { values: { count, more: 'yes' } })
+            : filtered
+              ? $t('frameleaf_status_items_of', { values: { count, total } })
+              : $t('frameleaf_status_items', { values: { count: shown } })}
         </span>
       {/key}
       <i aria-hidden="true"></i>
