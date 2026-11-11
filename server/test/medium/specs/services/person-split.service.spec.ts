@@ -151,6 +151,34 @@ describe('PersonService split suggestions (FL-1385)', () => {
     expect(user.id).toBe(auth.user.id);
   });
 
+  it('puts every face back when a move fails after its write, and keeps the suggestion', async () => {
+    const { sut, ctx, auth, jamie } = await setup();
+    const personId = jamie.person.personGroupId;
+    await sut.handlePersonCleanup();
+    const peopleBefore = await ctx.database.selectFrom('person').select('personGroupId').execute();
+    // the first face is written to the new person, then its history entry fails
+    const record = vi.spyOn(sut, 'recordFaceCorrections').mockRejectedValueOnce(new Error('history is unavailable'));
+
+    await expect(sut.setSplitVerdict(auth, { personId, verdict: 'split' })).rejects.toThrow('history is unavailable');
+    record.mockRestore();
+
+    const faces = await ctx.database
+      .selectFrom('asset_face')
+      .select('id')
+      .where('personGroupId', '=', personId)
+      .execute();
+    expect(faces).toHaveLength(12);
+    // the new person is gone again, and the question can be answered again
+    const peopleAfter = await ctx.database.selectFrom('person').select('personGroupId').execute();
+    expect(peopleAfter.map(({ personGroupId }) => personGroupId).toSorted()).toEqual(
+      peopleBefore.map(({ personGroupId }) => personGroupId).toSorted(),
+    );
+    await expect(sut.getSplitSuggestions(auth)).resolves.toMatchObject({ suggestions: [{ faceCount: 4 }] });
+    await expect(sut.setSplitVerdict(auth, { personId, verdict: 'split' })).resolves.toMatchObject({
+      movedFaceCount: 4,
+    });
+  });
+
   it('"same" never asks again, "later" waits, and undoing an answer asks again', async () => {
     const { sut, auth, jamie, people } = await setup();
     const personId = jamie.person.personGroupId;
