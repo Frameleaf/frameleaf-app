@@ -26,7 +26,6 @@
   import { maintenanceShouldRedirect } from '$lib/utils/maintenance';
   import { installFrameleafKit } from '$lib/frameleaf/kit-bridge';
   import { heroNavigation, installHeroIntent, sectionCrossfade } from '$lib/frameleaf/motion';
-  import { adoptNotificationLanguage } from '$lib/frameleaf/notification-language';
   import { installSearchShortcuts } from '$lib/frameleaf/search-shortcuts';
   import { applyThemeColor } from '$lib/frameleaf/theme-color';
   import { viewerZoomTransition } from '$lib/frameleaf/viewer-zoom';
@@ -194,10 +193,14 @@
   const SETTINGS_ROUTE = '/(user)/user-settings';
   const openingSettings = $derived(navigating.to?.route.id === SETTINGS_ROUTE && page.route.id !== SETTINGS_ROUTE);
 
-  // FL-1437: an account that never chose a language for its emails takes the one the app is shown in
+  // FL-1437: an account that never chose a language for its emails takes the one the app is shown in.
+  // Background work, so it is loaded after the page rather than with it.
   $effect(() => {
     if (authManager.authenticated) {
-      void adoptNotificationLanguage($lang);
+      const language = $lang;
+      void import('$lib/frameleaf/notification-language').then(({ adoptNotificationLanguage }) =>
+        adoptNotificationLanguage(language),
+      );
     }
   });
 
