@@ -7,14 +7,14 @@ import { JobName, JobStatus, WorkflowResult, WorkflowRunErrorCode, WorkflowType 
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { WorkflowExecutionService, getAutomaticRetryExecutionId } from 'src/services/workflow-execution.service.js';
-import { sendWebhook } from 'src/utils/public-fetch.js';
+import { fetchAutomationHop, sendWebhook } from 'src/utils/public-fetch.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 vitest.mock('src/utils/public-fetch.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('src/utils/public-fetch.js')>();
-  return { ...actual, sendWebhook: vitest.fn(actual.sendWebhook) };
+  return { ...actual, sendWebhook: vitest.fn(actual.sendWebhook), fetchAutomationHop: vitest.fn() };
 });
 
 describe(WorkflowExecutionService.name, () => {
@@ -105,38 +105,71 @@ describe(WorkflowExecutionService.name, () => {
   });
 
   describe('plugin HTTP permissions', () => {
+    // FL-1420: every hop goes through the automation address guard; the guard itself is tested in
+    // public-fetch-webhook.spec.ts, so here it is replaced by a fake that only records the hops.
+    const hop = () => vitest.mocked(fetchAutomationHop);
+    const answer = (body: BodyInit | null, init?: ResponseInit) => new Response(body, init) as never;
+    const realHop = async () =>
+      (await vitest.importActual<typeof import('src/utils/public-fetch.js')>('src/utils/public-fetch.js'))
+        .fetchAutomationHop;
+
     it.each(['https://trusted.example.attacker.test', 'https://nottrusted.example'])(
       'rejects partial hostname matches: %s',
       async (url) => {
-        const fetchMock = vitest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('unexpected'));
+        hop().mockResolvedValue(answer('unexpected'));
         expect(await request(['trusted.example'], url)).toMatchObject({ success: false });
-        expect(fetchMock).not.toHaveBeenCalled();
+        expect(hop()).not.toHaveBeenCalled();
       },
     );
 
     it('permits wildcard subdomains and matches hostnames case-insensitively', async () => {
-      const fetchMock = vitest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
+      hop().mockResolvedValue(answer('ok'));
       expect(await request(['*.TRUSTED.EXAMPLE'], 'https://hooks.trusted.example')).toMatchObject({
         success: true,
         response: { status: 200, body: 'ok' },
       });
-      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(hop()).toHaveBeenCalledOnce();
     });
 
     it('checks redirect destinations before making another request', async () => {
-      const fetchMock = vitest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(new Response(null, { status: 302, headers: { location: 'https://private.test/secret' } }));
+      hop().mockResolvedValue(answer(null, { status: 302, headers: { location: 'https://private.test/secret' } }));
       expect(await request(['trusted.example'], 'https://trusted.example')).toMatchObject({ success: false });
-      expect(fetchMock).toHaveBeenCalledOnce();
-      expect(fetchMock.mock.calls[0]![1]).toMatchObject({ redirect: 'manual' });
+      expect(hop()).toHaveBeenCalledOnce();
+    });
+
+    it('sends every hop of an unsigned request through the automation address guard', async () => {
+      hop()
+        .mockResolvedValueOnce(answer(null, { status: 302, headers: { location: 'https://hooks.example/next' } }))
+        .mockResolvedValueOnce(answer('done'));
+      expect(await request(['*'], 'https://hooks.example/start', { method: 'POST', body: '{}' })).toMatchObject({
+        success: true,
+      });
+      expect(hop().mock.calls.map(([address, , options]) => [address, options])).toEqual([
+        ['https://hooks.example/start', { allowHomeNetwork: false }],
+        ['https://hooks.example/next', { allowHomeNetwork: false }],
+      ]);
+    });
+
+    it('refuses an unsigned request that redirects to the server itself', async () => {
+      const real = await realHop();
+      hop()
+        .mockResolvedValueOnce(answer(null, { status: 307, headers: { location: 'https://127.0.0.1/' } }))
+        .mockImplementation(real);
+      expect(await request(['*'], 'https://hooks.example/start', { method: 'POST', body: '{}' })).toMatchObject({
+        success: false,
+      });
+      expect(hop()).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses an unsigned request to a cloud metadata address before connecting', async () => {
+      hop().mockImplementation(await realHop());
+      expect(await request(['*'], 'http://169.254.169.254/latest/meta-data/')).toMatchObject({ success: false });
     });
 
     it('preserves the method, body, and credentials on a same-origin 307 redirect', async () => {
-      const fetchMock = vitest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValueOnce(new Response(null, { status: 307, headers: { location: '/done' } }))
-        .mockResolvedValueOnce(new Response('done'));
+      hop()
+        .mockResolvedValueOnce(answer(null, { status: 307, headers: { location: '/done' } }))
+        .mockResolvedValueOnce(answer('done'));
       expect(
         await request(['trusted.example'], 'https://trusted.example/start', {
           method: 'POST',
@@ -144,25 +177,22 @@ describe(WorkflowExecutionService.name, () => {
           headers: { Authorization: 'secret' },
         }),
       ).toMatchObject({ success: true });
-      const [url, options] = fetchMock.mock.calls[1]!;
+      const [url, init] = hop().mock.calls[1]!;
       expect(url).toBe('https://trusted.example/done');
-      expect(options).toMatchObject({ method: 'POST', body: 'payload' });
-      expect(new Headers(options?.headers).get('Authorization')).toBe('secret');
+      expect(init).toMatchObject({ method: 'POST', body: 'payload' });
+      expect(init.headers.get('Authorization')).toBe('secret');
     });
 
     it('stops redirect loops', async () => {
-      const fetchMock = vitest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(new Response(null, { status: 302, headers: { location: '/loop' } }));
+      hop().mockResolvedValue(answer(null, { status: 302, headers: { location: '/loop' } }));
       expect(await request(['trusted.example'], 'https://trusted.example/loop')).toMatchObject({ success: false });
-      expect(fetchMock).toHaveBeenCalledTimes(21);
+      expect(hop()).toHaveBeenCalledTimes(21);
     });
 
     it('follows allowed redirects without forwarding credentials across origins', async () => {
-      const fetchMock = vitest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: 'https://other.example/done' } }))
-        .mockResolvedValueOnce(new Response('done'));
+      hop()
+        .mockResolvedValueOnce(answer(null, { status: 302, headers: { location: 'https://other.example/done' } }))
+        .mockResolvedValueOnce(answer('done'));
       expect(
         await request(['*.example'], 'https://hooks.example', {
           method: 'POST',
@@ -170,11 +200,11 @@ describe(WorkflowExecutionService.name, () => {
           headers: { Authorization: 'secret', 'Content-Type': 'text/plain' },
         }),
       ).toMatchObject({ success: true, response: { status: 200, body: 'done' } });
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      const options = fetchMock.mock.calls[1]![1]!;
-      expect(options.method).toBe('GET');
-      expect(options.body).toBeUndefined();
-      expect(new Headers(options.headers).has('Authorization')).toBe(false);
+      expect(hop()).toHaveBeenCalledTimes(2);
+      const init = hop().mock.calls[1]![1];
+      expect(init.method).toBe('GET');
+      expect(init.body).toBeUndefined();
+      expect(init.headers.has('Authorization')).toBe(false);
     });
   });
 

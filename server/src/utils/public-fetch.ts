@@ -299,6 +299,29 @@ const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
 
 export type WebhookResponse = { ok: boolean; status: number; body: string };
 
+/**
+ * FL-1420: one hop of a plugin's HTTP request that is not a signed automation message (a photo
+ * trigger's webhook without a secret, a third-party plugin). It goes only where an automation message
+ * may: the address is checked before connecting and every DNS answer is checked while connecting, so a
+ * redirect or a rebinding name cannot reach the server itself, the home network (unless allowed) or a
+ * cloud metadata service. The caller follows redirects one hop at a time through this.
+ */
+export const fetchAutomationHop = (
+  address: string,
+  init: { method?: string; headers: Headers; body?: string | null },
+  { allowHomeNetwork }: { allowHomeNetwork: boolean },
+) => {
+  const url = checkWebhookUrl(address, allowHomeNetwork);
+  return fetch(url, {
+    dispatcher: allowHomeNetwork ? webhookAgents.home : webhookAgents.public,
+    method: init.method,
+    redirect: 'manual',
+    signal: AbortSignal.timeout(15_000),
+    headers: Object.fromEntries(init.headers.entries()),
+    body: init.body ?? undefined,
+  });
+};
+
 /** Sends one automation message: no redirects, bounded in size and time, never to a private address. */
 export const sendWebhook = async (
   address: string,

@@ -36,7 +36,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { TagService } from 'src/services/tag.service.js';
 import { WorkflowService } from 'src/services/workflow.service.js';
-import { sendWebhook } from 'src/utils/public-fetch.js';
+import { fetchAutomationHop, sendWebhook } from 'src/utils/public-fetch.js';
 import { inheritWorkflowCausation, workflowCausation, workflowOwnership } from 'src/utils/workflow-context.js';
 import { definitionFromSteps, redactRunError, workflowIssues } from 'src/utils/workflow-definition.js';
 import {
@@ -374,13 +374,15 @@ export class WorkflowExecutionService extends BaseService {
           context.event?.allowHomeNetwork ?? (await this.getConfig({ withCache: true })).server.automationsLocalNetwork;
         return sendWebhook(url.href, { method: request.method, headers, body: request.body }, { allowHomeNetwork });
       }
-      const options: RequestInit = { ...request, headers, redirect: 'manual' };
+      // FL-1420: unsigned requests follow redirects, but every hop goes only where an automation may
+      const { automationsLocalNetwork: allowHomeNetwork } = (await this.getConfig({ withCache: true })).server;
+      const options: { method?: string; body?: string | null } = { method: request.method, body: request.body };
 
       for (let redirects = 0; redirects <= 20; redirects++) {
         if (allowedHosts.every((pattern) => !pattern.test(url.hostname))) {
           throw new Error('Hostname did not match any listed in methods[].allowedHosts in the plugin manifest');
         }
-        const res = await fetch(url.href, options);
+        const res = await fetchAutomationHop(url.href, { ...options, headers }, { allowHomeNetwork });
         const location = res.headers.get('location');
         if (![301, 302, 303, 307, 308].includes(res.status) || !location) {
           return { ok: res.ok, status: res.status, body: await res.text() };
