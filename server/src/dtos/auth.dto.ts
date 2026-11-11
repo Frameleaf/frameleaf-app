@@ -318,6 +318,12 @@ const OAuthConfigSchema = z
     redirectUri: z.string().describe('OAuth redirect URI'),
     state: z.string().optional().describe('OAuth state parameter'),
     codeChallenge: z.string().optional().describe('OAuth code challenge (PKCE)'),
+    reauthenticate: z
+      .boolean()
+      .optional()
+      .describe(
+        "The administrator's own provider only: ask it to authenticate the person again now (max_age=0), so the sign-in counts as recent, for example to set up Two-Step Verification on an account with no password",
+      ),
     verified: z
       .boolean()
       .optional()

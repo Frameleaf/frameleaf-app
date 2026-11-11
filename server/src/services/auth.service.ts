@@ -1493,6 +1493,9 @@ export class AuthService extends BaseService {
       this.resolveRedirectUri(oauth, dto.redirectUri),
       dto.state,
       dto.codeChallenge,
+      // unified sign-in: a fresh authentication at the provider (max_age=0), which must then send auth_time; this is
+      // how an account with no password here confirms it is them (for example to set up Two-Step Verification)
+      dto.reauthenticate ? { maxAge: 0 } : {},
     );
   }
 

@@ -1677,6 +1677,7 @@ describe(AuthService.name, () => {
         'https://photos.example.test/immich/api/oauth/frameleaf-mobile-redirect/',
         undefined,
         undefined,
+        {},
       );
     });
 
@@ -1693,6 +1694,7 @@ describe(AuthService.name, () => {
         'http://mobile-redirect',
         undefined,
         undefined,
+        {},
       );
     });
 
@@ -1706,6 +1708,21 @@ describe(AuthService.name, () => {
         'frameleaf-auth:///oauth-callback',
         undefined,
         undefined,
+        {},
+      );
+    });
+
+    it('asks the provider to authenticate again when the person needs a recent sign-in (unified sign-in)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+
+      await sut.authorize({ redirectUri: 'http://127.0.0.1:2283/auth/login', reauthenticate: true });
+
+      expect(mocks.oauth.authorize).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'http://127.0.0.1:2283/auth/login',
+        undefined,
+        undefined,
+        { maxAge: 0 },
       );
     });
   });

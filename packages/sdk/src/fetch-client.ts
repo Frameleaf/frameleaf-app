@@ -12452,6 +12452,8 @@ export type OAuthAppGrantDto = {
 export type OAuthConfigDto = {
     /** OAuth code challenge (PKCE) */
     codeChallenge?: string;
+    /** The administrator's own provider only: ask it to authenticate the person again now (max_age=0), so the sign-in counts as recent, for example to set up Two-Step Verification on an account with no password */
+    reauthenticate?: boolean;
     /** OAuth redirect URI */
     redirectUri: string;
     /** OAuth state parameter */

@@ -98,7 +98,7 @@ export class OAuthRepository {
     redirectUrl: string,
     state?: string,
     codeChallenge?: string,
-    options: { acrValues?: string } = {},
+    options: { acrValues?: string; maxAge?: number } = {},
   ) {
     const client = await this.getClient(config);
     state ??= randomState();
@@ -123,6 +123,11 @@ export class OAuthRepository {
 
     if (options.acrValues) {
       params.acr_values = options.acrValues;
+    }
+
+    // OpenID Connect: with max_age the provider must authenticate within it and return auth_time
+    if (options.maxAge !== undefined) {
+      params.max_age = String(options.maxAge);
     }
 
     if (client.serverMetadata().supportsPKCE()) {
