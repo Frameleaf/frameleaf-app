@@ -375,12 +375,15 @@ jobs:
           # A read straight after a write can still return the old value (FL-1445: manager-v1.2.15 went red
           # here with every alias already correct). Ask again for up to a minute, then fail as before.
           settles() {
-            local expected="$1" attempt
+            local expected="$1" attempt seen=""
             shift
             for attempt in $(seq 1 12); do
-              [[ "$("$@" 2> /dev/null || true)" == "$expected" ]] && return 0
+              seen="$("$@" 2> "$RUNNER_TEMP/settles-error" || true)"
+              [[ "$seen" == "$expected" ]] && return 0
               sleep 5
             done
+            # The release exists by now, so a rerun cannot get here again: say what was read and why.
+            echo "::error::$* never returned $expected; last value: '${seen}'; last error: $(tr '\n' ' ' < "$RUNNER_TEMP/settles-error")"
             return 1
           }
           oras tag "ghcr.io/frameleaf/frameleaf-manager@$DIGEST" "$RELEASE_TAG" latest
