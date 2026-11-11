@@ -1353,10 +1353,19 @@
     background: var(--fl-text);
     color: var(--fl-canvas);
   }
-  /* FL-1390: with a mouse a filter chip is the prototype's 32px (collections.css `.al-filters button`). */
+  /*
+   * FL-1390: with a mouse a filter chip is the prototype's 32px (collections.css `.al-filters button`).
+   * On a narrow window the row scrolls sideways and would clip the chips' 44px click area, so 6px above
+   * and below the chips are inside the row; the margins keep the row where it was.
+   */
   @media (pointer: fine) {
     .filters button {
       min-height: var(--fl-chip-height);
+    }
+    .filters {
+      --fl-chip-reach: calc((var(--fl-control-target) - var(--fl-chip-height)) / 2);
+      padding-block: var(--fl-chip-reach);
+      margin-block: calc(-1 * var(--fl-chip-reach)) calc(var(--fl-space-5) - var(--fl-chip-reach));
     }
   }
   .menu-separator {
