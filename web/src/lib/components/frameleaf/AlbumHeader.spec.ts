@@ -90,13 +90,13 @@ describe('AlbumHeader', () => {
     'offers offline originals only for unlocked owned albums in Desktop ($desktop/$role/$locked)',
     async ({ desktop, role, locked, visible }) => {
       const marker = '__FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__';
-      Reflect.set(window, marker, desktop);
+      Reflect.set(globalThis, marker, desktop);
       try {
         renderHeader(albumAs(role, { kind: AlbumKind.Album, isLocked: locked }));
         const more = await openMore();
         expect(!!more.queryByRole('menuitem', { name: 'Keep Offline' })).toBe(visible);
       } finally {
-        Reflect.deleteProperty(window, marker);
+        Reflect.deleteProperty(globalThis, marker);
       }
     },
   );

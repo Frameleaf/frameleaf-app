@@ -199,8 +199,8 @@
   let desktopOffline = $state(false);
   onMount(() => {
     desktopOffline =
-      (window as Window & { __FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__?: boolean }).__FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__ ===
-      true;
+      (globalThis as typeof globalThis & { __FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__?: boolean })
+        .__FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__ === true;
     void Promise.resolve(getWorkflowCapabilities())
       .then((value) => {
         automationAvailable = value?.sourceFilters ?? false;
@@ -825,7 +825,7 @@
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
       {#if desktopOffline && owner && album.kind === AlbumKind.Album && album.isLocked === false && assetCount > 0}
-        <MenuItem onSelect={() => window.location.assign(`/__frameleaf_desktop__/offline-albums/${album.id}`)}>
+        <MenuItem onSelect={() => globalThis.location.assign(`/__frameleaf_desktop__/offline-albums/${album.id}`)}>
           <Icon icon={mdiDownloadOutline} size="18" />
           {$t('frameleaf_album_keep_offline')}
         </MenuItem>
