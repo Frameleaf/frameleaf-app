@@ -26,6 +26,7 @@ import { OAuthAppRepository, OAuthClient } from 'src/repositories/oauth-app.repo
 import { BaseService } from 'src/services/base.service.js';
 import { isCodeChallenge, verifierMatches } from 'src/utils/browser-extension-sign-in.js';
 import {
+  MCP_PATH,
   OAUTH_ACCESS_TOKEN_PREFIX,
   OAUTH_ACCESS_TTL_SECONDS,
   OAUTH_CODE_TTL_SECONDS,
@@ -352,7 +353,10 @@ export class OAuthAppService extends BaseService {
     return {
       resource: `${issuer}${path}`,
       authorization_servers: [issuer],
-      scopes_supported: OAUTH_SCOPES_SUPPORTED,
+      scopes_supported:
+        path === MCP_PATH
+          ? OAUTH_SCOPES_SUPPORTED.filter((scope) => scope !== 'library:download')
+          : OAUTH_SCOPES_SUPPORTED,
       bearer_methods_supported: ['header'],
       resource_name: 'Frameleaf',
     };
@@ -364,6 +368,24 @@ export class OAuthAppService extends BaseService {
    */
   async validateAccessToken(token: string, via: FrameleafVia | null | undefined): Promise<AuthDto> {
     const grant = await this.oauthAppRepository.getByAccessToken(this.cryptoRepository.hashSha256(token));
+    const active = this.requireActiveGrant(grant);
+    void this.recordUse(
+      active.id,
+      active.userId,
+      active.lastUsedAt,
+      via,
+      active.clientName,
+      active.clientRedirectUris,
+      active.scopes,
+    );
+    return this.mapActiveGrant(active);
+  }
+
+  async validatePreviewGrant(grantId: string): Promise<AuthDto> {
+    return this.mapActiveGrant(this.requireActiveGrant(await this.oauthAppRepository.getByGrantId(grantId)));
+  }
+
+  private requireActiveGrant(grant: Awaited<ReturnType<OAuthAppRepository['getByAccessToken']>>) {
     if (
       !grant?.user ||
       grant.revokedAt ||
@@ -376,15 +398,10 @@ export class OAuthAppService extends BaseService {
         statusCode: 401,
       });
     }
-    void this.recordUse(
-      grant.id,
-      grant.userId,
-      grant.lastUsedAt,
-      via,
-      grant.clientName,
-      grant.clientRedirectUris,
-      grant.scopes,
-    );
+    return grant;
+  }
+
+  private mapActiveGrant(grant: ReturnType<OAuthAppService['requireActiveGrant']>): AuthDto {
     return {
       user: grant.user as AuthUser,
       apiKey: { id: grant.id, permissions: scopePermissions(grant.scopes) },
@@ -645,6 +662,9 @@ export class OAuthAppService extends BaseService {
     const resource = checkResource(params.resource);
     if (resource === false) {
       return fault('invalid_target', 'The resource is not a valid address');
+    }
+    if (resource && new URL(resource).pathname === MCP_PATH && scopes.includes('library:download')) {
+      return fault('invalid_scope', 'MCP apps can’t download original files');
     }
     return { client, redirectUri, scopes, state, codeChallenge: challenge, resource };
   }

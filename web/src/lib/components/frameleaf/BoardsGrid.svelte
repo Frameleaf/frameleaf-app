@@ -23,6 +23,7 @@
   import {
     mdiCheckboxBlankCircleOutline,
     mdiCheckCircle,
+    mdiFileOutline,
     mdiFormatFont,
     mdiLinkVariant,
     mdiPlay,
@@ -81,6 +82,7 @@
         duration: string | null;
         rating: number | null;
         font: boolean;
+        originalOnly: boolean;
       }
     | {
         kind: 'link';
@@ -108,6 +110,7 @@
             kind: 'asset',
             key: asset.id,
             font,
+            originalOnly: !asset.isImage && !asset.isVideo && !font,
             name,
             asset,
             format: extension && !PLAIN_TYPES.has(extension) ? extension : null,
@@ -208,7 +211,7 @@
               )}
           onclick={(event) => press(tile, event)}
           ondblclick={() => {
-            if (tile.kind === 'asset' && !tile.font && !selecting) {
+            if (tile.kind === 'asset' && !tile.font && !tile.originalOnly && !selecting) {
               onOpenLarge?.(tile.asset);
             }
           }}
@@ -231,7 +234,9 @@
             </span>
           {:else}
             {@const shape = tile.font ? '4 / 3' : layout === 'board' ? String(tile.asset.ratio || 1) : undefined}
-            {#if previewFailed[previewKey(tile.asset)]}
+            {#if tile.originalOnly}
+              <span class="bg-link-blank" aria-hidden="true"><Icon icon={mdiFileOutline} size="36" /></span>
+            {:else if previewFailed[previewKey(tile.asset)]}
               <!-- No preview (a design file with no picture inside, or one still being made): the quiet placeholder. -->
               <span class="bg-missing" style:aspect-ratio={shape}>
                 <BrokenAsset hideMessage width="100%" height="100%" />
@@ -255,7 +260,7 @@
                 <strong>{fontFileTitle(tile.name)}</strong>
                 <small><Icon icon={mdiFormatFont} size="13" aria-hidden={true} />{tile.format}</small>
               </span>
-            {:else if showNames}<span class="bg-name">{tile.name}</span>{/if}
+            {:else if showNames || tile.originalOnly}<span class="bg-name">{tile.name}</span>{/if}
           {/if}
         </button>
         <button

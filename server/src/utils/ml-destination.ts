@@ -188,6 +188,8 @@ export type MlSelectionRequest = {
   modelSku?: string | null;
   /** FL-455: work that never leaves this network (search text): a Frameleaf Cloud destination is refused. */
   homeOnly?: boolean;
+  /** Bind an explicitly named request to the destination kind before probing or accounting. */
+  requiredKind?: MlDestinationKind;
   /**
    * FL-456: whether the Frameleaf Desktop helpers may take this request through the destination's desktop
    * assistance pool. `skip`: never (the processing order reached this server itself); `only`: only they
@@ -910,6 +912,14 @@ export const selectMlDestination = async (
   const destination = await mlDestinationRepository.getById(request.destinationId);
   if (!destination) {
     throw new MlDestinationNotFoundError(request.workload, request.destinationId);
+  }
+  if (request.requiredKind && destination.kind !== request.requiredKind) {
+    throw new MlDestinationRefusedError(
+      MlAdmissionRefusal.WorkloadNotAllowed,
+      request.workload,
+      destination.id,
+      'the destination no longer matches the required kind',
+    );
   }
   const assertAuthority = async () => {
     try {

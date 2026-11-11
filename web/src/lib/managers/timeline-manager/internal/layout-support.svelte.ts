@@ -51,7 +51,8 @@ export function layoutTimelineMonth(timelineManager: TimelineManager, month: Tim
   let timelineDayCol = 0;
 
   const options = timelineManager.justifiedLayoutOptions;
-  // The Frameleaf Timeline gives every day a row of its own, so a short day never shares one.
+  // The Frameleaf Timeline gives every day a row of its own, so a short day never shares one. So do
+  // Browse and Work grouped by day (FL-1398), where each day is a cell grid under its heading.
   const dayRows = timelineManager.dayRows;
   for (const timelineDay of month.timelineDays) {
     timelineDay.layout(options, noDefer);

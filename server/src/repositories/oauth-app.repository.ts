@@ -156,6 +156,14 @@ export class OAuthAppRepository {
    */
   @GenerateSql({ params: [DummyValue.BUFFER] })
   getByAccessToken(accessTokenHash: Buffer) {
+    return this.withGrantUser().where('oauth_grant.accessTokenHash', '=', accessTokenHash).executeTakeFirst();
+  }
+
+  getByGrantId(id: string) {
+    return this.withGrantUser().where('oauth_grant.id', '=', asUuid(id)).executeTakeFirst();
+  }
+
+  private withGrantUser() {
     return this.db
       .selectFrom('oauth_grant')
       .innerJoin('oauth_client', 'oauth_client.id', 'oauth_grant.clientId')
@@ -170,9 +178,7 @@ export class OAuthAppRepository {
             .where('user.deletedAt', 'is', null)
             .where('user.importClaimPending', '=', false),
         ).as('user'),
-      )
-      .where('oauth_grant.accessTokenHash', '=', accessTokenHash)
-      .executeTakeFirst();
+      );
   }
 
   /** The grant whose current refresh token this is. */

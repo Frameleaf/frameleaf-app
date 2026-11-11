@@ -1836,6 +1836,11 @@ export type UserPreferences = {
     /** FL-918: search questions go to classic search instead of the Library Assistant */
     classic: boolean;
   };
+  /** FL-783: how dates and times appear, independent of the language; auto follows the region */
+  display: {
+    dateFormat: 'auto' | 'iso' | 'dmy' | 'mdy';
+    hourCycle: 'auto' | 'h12' | 'h23';
+  };
   purchase: {
     showSupportBadge: boolean;
     hideBuyButtonUntil: string;
@@ -1852,6 +1857,28 @@ export type UserPreferences = {
   };
   recentlyAdded: {
     sidebarWeb: boolean;
+  };
+  /**
+   * FL-1398: the Library View menu's choices, kept with the account so they follow the person between
+   * devices. Clients apply every one of them; the server only stores them.
+   */
+  libraryView: {
+    scrubber: boolean;
+    crop: boolean;
+    /** `none`, `day`, `month` or `year` */
+    groupBy: string;
+    stacksTogether: boolean;
+    partnerPhotos: boolean;
+    archived: boolean;
+    ratings: boolean;
+    favorites: boolean;
+    badges: boolean;
+    timelineTime: boolean;
+    timelineNames: boolean;
+    browseTime: boolean;
+    browseNames: boolean;
+    workTime: boolean;
+    workNames: boolean;
   };
   pets: {
     sidebarWeb: boolean;

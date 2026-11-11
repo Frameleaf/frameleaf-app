@@ -1442,6 +1442,19 @@ describe(AuthService.name, () => {
       expect(mocks.session.getByToken).not.toHaveBeenCalled();
     });
 
+    it('checks the MCP resource audience and keeps the grant out of ordinary routes', async () => {
+      const resource = 'https://library.example/api/mcp';
+      const auth = appAuth([Permission.AssetRead]);
+      auth.oauthApp!.resource = resource;
+      useApp(auth);
+      const headers = { authorization: 'Bearer fla_token' };
+      await expect(sut.authenticateMcp(headers, resource, 'lan')).resolves.toMatchObject({ oauthApp: { resource } });
+      await expect(sut.authenticateMcp(headers, 'https://other.example/api/mcp', 'lan')).rejects.toThrow();
+      await expect(request({ permission: Permission.AssetRead })).rejects.toThrow(
+        'This connected app token is for the MCP endpoint',
+      );
+    });
+
     it('never reaches an admin route, even for an administrator’s app', async () => {
       useApp(appAuth([Permission.AssetRead], true));
       await expect(request({ adminRoute: true, permission: Permission.AssetRead })).rejects.toBeInstanceOf(

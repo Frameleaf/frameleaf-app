@@ -187,6 +187,11 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       includeArchived: false,
       classic: false,
     },
+    // FL-783: dates and times follow the region until the person picks a format.
+    display: {
+      dateFormat: 'auto',
+      hourCycle: 'auto',
+    },
     purchase: {
       showSupportBadge: true,
       hideBuyButtonUntil: new Date(2022, 1, 12).toISOString(),
@@ -203,6 +208,25 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     },
     recentlyAdded: {
       sidebarWeb: true,
+    },
+    // FL-1398, prototype `LibraryViewMenu.jsx` `DEFAULT_VIEW`: Browse is a bare grid, Timeline and Work
+    // show the time taken; stacks stay together and partner photos show.
+    libraryView: {
+      scrubber: true,
+      crop: true,
+      groupBy: 'none',
+      stacksTogether: true,
+      partnerPhotos: true,
+      archived: false,
+      ratings: true,
+      favorites: true,
+      badges: true,
+      timelineTime: true,
+      timelineNames: false,
+      browseTime: false,
+      browseNames: false,
+      workTime: true,
+      workNames: false,
     },
     pets: {
       sidebarWeb: true,

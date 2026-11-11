@@ -106,6 +106,8 @@ import { LockedSealService } from 'src/services/locked-seal.service.js';
 import { MailConnectionService } from 'src/services/mail-connection.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
+import { McpPreviewService } from 'src/services/mcp-preview.service.js';
+import { McpService } from 'src/services/mcp.service.js';
 import { MediaHealthOperationService } from 'src/services/media-health-operation.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { MediaImportService } from 'src/services/media-import.service.js';
@@ -221,6 +223,8 @@ export const services = [
   AssetPaletteService,
   CaptureService,
   BrowserExtensionSignInService,
+  McpService,
+  McpPreviewService,
   OAuthAppService,
   AlbumItemsService,
   AssetSourceService,

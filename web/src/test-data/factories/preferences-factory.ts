@@ -1,4 +1,10 @@
-import { AssetOrder, SuppressionScope, type UserPreferencesResponseDto } from '@frameleaf/sdk';
+import {
+  AssetOrder,
+  DisplayDateFormat,
+  DisplayHourCycle,
+  SuppressionScope,
+  type UserPreferencesResponseDto,
+} from '@frameleaf/sdk';
 import { Sync } from 'factory.ts';
 
 export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
@@ -39,6 +45,10 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   search: {
     includeArchived: false,
     classic: false,
+  },
+  display: {
+    dateFormat: DisplayDateFormat.Auto,
+    hourCycle: DisplayHourCycle.Auto,
   },
   privacy: {
     suppression: {

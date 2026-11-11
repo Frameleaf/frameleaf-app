@@ -21,6 +21,9 @@
   "backup.schedule.cronExpression": {
     "type": "unknown"
   },
+  "connectedApps.allowMcp": {
+    "type": "boolean"
+  },
   "connectedApps.allowRegistration": {
     "type": "boolean"
   },
@@ -1175,6 +1178,23 @@
   "preferences.clients.enabled": {
     "type": "boolean"
   },
+  "preferences.display.dateFormat": {
+    "type": "string",
+    "enum": [
+      "auto",
+      "iso",
+      "dmy",
+      "mdy"
+    ]
+  },
+  "preferences.display.hourCycle": {
+    "type": "string",
+    "enum": [
+      "auto",
+      "h12",
+      "h23"
+    ]
+  },
   "preferences.download.archiveSize": {
     "type": "integer",
     "minimum": 1,
@@ -1205,6 +1225,51 @@
     "type": "boolean"
   },
   "preferences.folders.sidebarWeb": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.archived": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.badges": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.browseNames": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.browseTime": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.crop": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.favorites": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.groupBy": {
+    "type": "string"
+  },
+  "preferences.libraryView.partnerPhotos": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.ratings": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.scrubber": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.stacksTogether": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.timelineNames": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.timelineTime": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.workNames": {
+    "type": "boolean"
+  },
+  "preferences.libraryView.workTime": {
     "type": "boolean"
   },
   "preferences.lockedPin.relockMinutes": {

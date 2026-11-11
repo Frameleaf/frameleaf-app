@@ -70506,6 +70506,10 @@
       },
       "AdminConfigConnectedAppsDto": {
         "properties": {
+          "allowMcp": {
+            "description": "Let AI agents connect to the library through MCP",
+            "type": "boolean"
+          },
           "allowRegistration": {
             "description": "Let new apps register themselves (dynamic client registration), as AI assistants do when you add Frameleaf. Each person still chooses Allow before an app can see anything.",
             "type": "boolean"
@@ -96313,6 +96317,52 @@
         },
         "type": "object"
       },
+      "DisplayDateFormat": {
+        "description": "FL-783: date order. auto follows the region; iso is 2026-11-01, dmy 01/11/2026, mdy 11/01/2026",
+        "enum": [
+          "auto",
+          "iso",
+          "dmy",
+          "mdy"
+        ],
+        "type": "string"
+      },
+      "DisplayHourCycle": {
+        "description": "FL-783: clock. auto follows the region; h12 is 2:30 PM, h23 is 14:30",
+        "enum": [
+          "auto",
+          "h12",
+          "h23"
+        ],
+        "type": "string"
+      },
+      "DisplayPreferencesResponse": {
+        "properties": {
+          "dateFormat": {
+            "$ref": "#/components/schemas/DisplayDateFormat"
+          },
+          "hourCycle": {
+            "$ref": "#/components/schemas/DisplayHourCycle"
+          }
+        },
+        "required": [
+          "dateFormat",
+          "hourCycle"
+        ],
+        "type": "object"
+      },
+      "DisplayPreferencesUpdate": {
+        "description": "FL-783: how dates and times appear, independent of the language",
+        "properties": {
+          "dateFormat": {
+            "$ref": "#/components/schemas/DisplayDateFormat"
+          },
+          "hourCycle": {
+            "$ref": "#/components/schemas/DisplayHourCycle"
+          }
+        },
+        "type": "object"
+      },
       "DocumentEditAction": {
         "description": "What the owner decided about recognized text",
         "enum": [
@@ -98004,7 +98054,7 @@
             "type": "array"
           },
           "supported": {
-            "description": "File types this import brings over (lower case, no dot)",
+            "description": "File extensions this import accepts (lower case, no dot). * includes downloadable originals.",
             "items": {
               "type": "string"
             },
@@ -98506,6 +98556,10 @@
           },
           "fallbackModelName": {
             "type": "string"
+          },
+          "localOnly": {
+            "description": "Require this Library server at final admission; refuse LAN and cloud",
+            "type": "boolean"
           },
           "modelName": {
             "description": "Draft model; the saved one when omitted",
@@ -109229,12 +109283,161 @@
         ],
         "type": "object"
       },
+      "LibraryViewResponse": {
+        "description": "Library View menu choices",
+        "properties": {
+          "archived": {
+            "description": "Whether the Library also shows archived items",
+            "type": "boolean"
+          },
+          "badges": {
+            "description": "Whether photos show video length and badges",
+            "type": "boolean"
+          },
+          "browseNames": {
+            "description": "Browse: whether photos show the file name",
+            "type": "boolean"
+          },
+          "browseTime": {
+            "description": "Browse: whether photos show the time taken",
+            "type": "boolean"
+          },
+          "crop": {
+            "description": "Whether Browse and Work crop each photo to fill its tile; off shows the whole photo",
+            "type": "boolean"
+          },
+          "favorites": {
+            "description": "Whether favorite photos show a heart",
+            "type": "boolean"
+          },
+          "groupBy": {
+            "description": "How Browse and Work group photos into sections: none, day, month or year",
+            "type": "string"
+          },
+          "partnerPhotos": {
+            "description": "Whether the Library also shows photos a partner shares",
+            "type": "boolean"
+          },
+          "ratings": {
+            "description": "Whether photos show their rating",
+            "type": "boolean"
+          },
+          "scrubber": {
+            "description": "Whether the Timeline shows the year scrubber",
+            "type": "boolean"
+          },
+          "stacksTogether": {
+            "description": "Whether a stack shows as one photo with a count; off shows every photo in it",
+            "type": "boolean"
+          },
+          "timelineNames": {
+            "description": "Timeline: whether photos show the file name",
+            "type": "boolean"
+          },
+          "timelineTime": {
+            "description": "Timeline: whether photos show the time taken",
+            "type": "boolean"
+          },
+          "workNames": {
+            "description": "Work: whether photos show the file name",
+            "type": "boolean"
+          },
+          "workTime": {
+            "description": "Work: whether photos show the time taken",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "archived",
+          "badges",
+          "browseNames",
+          "browseTime",
+          "crop",
+          "favorites",
+          "groupBy",
+          "partnerPhotos",
+          "ratings",
+          "scrubber",
+          "stacksTogether",
+          "timelineNames",
+          "timelineTime",
+          "workNames",
+          "workTime"
+        ],
+        "type": "object"
+      },
       "LibraryViewScope": {
         "enum": [
           "personal",
           "design"
         ],
         "type": "string"
+      },
+      "LibraryViewUpdate": {
+        "description": "Library View menu choices",
+        "properties": {
+          "archived": {
+            "description": "Whether the Library also shows archived items",
+            "type": "boolean"
+          },
+          "badges": {
+            "description": "Whether photos show video length and badges",
+            "type": "boolean"
+          },
+          "browseNames": {
+            "description": "Browse: whether photos show the file name",
+            "type": "boolean"
+          },
+          "browseTime": {
+            "description": "Browse: whether photos show the time taken",
+            "type": "boolean"
+          },
+          "crop": {
+            "description": "Whether Browse and Work crop each photo to fill its tile; off shows the whole photo",
+            "type": "boolean"
+          },
+          "favorites": {
+            "description": "Whether favorite photos show a heart",
+            "type": "boolean"
+          },
+          "groupBy": {
+            "description": "How Browse and Work group photos into sections: none, day, month or year",
+            "type": "string"
+          },
+          "partnerPhotos": {
+            "description": "Whether the Library also shows photos a partner shares",
+            "type": "boolean"
+          },
+          "ratings": {
+            "description": "Whether photos show their rating",
+            "type": "boolean"
+          },
+          "scrubber": {
+            "description": "Whether the Timeline shows the year scrubber",
+            "type": "boolean"
+          },
+          "stacksTogether": {
+            "description": "Whether a stack shows as one photo with a count; off shows every photo in it",
+            "type": "boolean"
+          },
+          "timelineNames": {
+            "description": "Timeline: whether photos show the file name",
+            "type": "boolean"
+          },
+          "timelineTime": {
+            "description": "Timeline: whether photos show the time taken",
+            "type": "boolean"
+          },
+          "workNames": {
+            "description": "Work: whether photos show the file name",
+            "type": "boolean"
+          },
+          "workTime": {
+            "description": "Work: whether photos show the time taken",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       },
       "LicenseActivateDto": {
         "properties": {
@@ -148539,6 +148742,10 @@
       },
       "ServerMediaTypesResponseDto": {
         "properties": {
+          "boardsOriginals": {
+            "description": "Boards accepts other files as downloadable originals",
+            "type": "boolean"
+          },
           "font": {
             "description": "Font file extensions an upload into Boards (libraryScope=design) accepts",
             "items": {
@@ -165784,6 +165991,9 @@
           "clients": {
             "$ref": "#/components/schemas/ClientsResponse"
           },
+          "display": {
+            "$ref": "#/components/schemas/DisplayPreferencesResponse"
+          },
           "download": {
             "$ref": "#/components/schemas/DownloadResponse"
           },
@@ -165792,6 +166002,15 @@
           },
           "folders": {
             "$ref": "#/components/schemas/FoldersResponse"
+          },
+          "libraryView": {
+            "$ref": "#/components/schemas/LibraryViewResponse",
+            "x-immich-history": [
+              {
+                "version": "v3.5.0",
+                "state": "Added"
+              }
+            ]
           },
           "lockedPin": {
             "$ref": "#/components/schemas/LockedPinResponse"
@@ -165917,6 +166136,9 @@
           "clients": {
             "$ref": "#/components/schemas/ClientsUpdate"
           },
+          "display": {
+            "$ref": "#/components/schemas/DisplayPreferencesUpdate"
+          },
           "download": {
             "$ref": "#/components/schemas/DownloadUpdate"
           },
@@ -165929,6 +166151,15 @@
           },
           "folders": {
             "$ref": "#/components/schemas/FoldersUpdate"
+          },
+          "libraryView": {
+            "$ref": "#/components/schemas/LibraryViewUpdate",
+            "x-immich-history": [
+              {
+                "version": "v3.5.0",
+                "state": "Added"
+              }
+            ]
           },
           "lockedPin": {
             "$ref": "#/components/schemas/LockedPinUpdate"

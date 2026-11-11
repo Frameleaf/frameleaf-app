@@ -98,8 +98,16 @@
             tone: 'good' as const,
             icon: mdiShieldCheckOutline,
             title: $t('frameleaf_privacy_hero_ok'),
-            // FL-859: the "is my account safe" hero counts a passkey as protection
-            body: $t(auth?.hasPasskeys ? 'frameleaf_privacy_hero_ok_passkey_body' : 'frameleaf_privacy_hero_ok_body'),
+            // FL-859: the "is my account safe" hero counts a passkey as protection; FL-831: and two-step sign-in
+            body: $t(
+              auth?.twoFactorEnabled
+                ? auth.hasPasskeys
+                  ? 'frameleaf_two_step_privacy_hero_passkey_body'
+                  : 'frameleaf_two_step_privacy_hero_body'
+                : auth?.hasPasskeys
+                  ? 'frameleaf_privacy_hero_ok_passkey_body'
+                  : 'frameleaf_privacy_hero_ok_body',
+            ),
           },
   );
 

@@ -9,12 +9,13 @@ import {
 import type { LibraryWorkspace } from '$lib/frameleaf/library-session';
 
 /**
- * Per-device library grid preferences (FL-33): the Thumbnail size and whether Work shows file names.
+ * Per-device library grid preferences (FL-33): the Thumbnail size, and whether Boards' Work grid
+ * shows file names.
  *
- * Both are remembered on this device only, as the template does (`App.jsx` `frameleaf-work-filenames`
- * in `localStorage`); they are view chrome, not account settings. The shell's status bar mounts
- * `ThumbnailSizeControl` and the library toolbar mounts `WorkFileNamesToggle`; both read and write
- * this one store, and so do the grid's pinch, Ctrl-scroll and +/− gestures.
+ * Both are remembered on this device only. The shell's status bar mounts `ThumbnailSizeControl` and
+ * Boards mounts `WorkFileNamesToggle`; both read and write this one store, and so do the grid's pinch,
+ * Ctrl-scroll and +/− gestures and the View menu's Size presets. The photo library's own captions
+ * (time and file name, per layout) are the View menu's, kept with the account (`library-view.svelte.ts`).
  */
 export const THUMBNAIL_SIZE_STORAGE_KEY = 'frameleaf-thumbnail-size';
 /** The template's key, kept so a preference set in the prototype review carries over. */

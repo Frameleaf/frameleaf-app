@@ -192,18 +192,30 @@ export function draftFromDocument(raw: unknown, previous?: WorkflowDraft): Workf
       typeof value.schedule.cron === 'string' &&
       Object.keys(value.schedule).every((key) => key === 'cron'));
   const previousById = new Map(previous?.steps.filter((step) => step.id).map((step) => [step.id, step]));
+  const signedWebhooks = new Set(
+    [...previousById.values()]
+      .filter((step) => step.method.endsWith('#webhook') && step.storedSecrets.includes('secret'))
+      .map((step) => step.id),
+  );
+  const signedStepMessage =
+    'Keep the signed webhook step ID and method, or remove the step using the workflow designer.';
   const seenIds = new Set<string>();
   const steps = (value.steps as Record<string, unknown>[]).map((step) => {
     const id = typeof step.id === 'string' ? step.id : undefined;
     const before = id && !seenIds.has(id) ? previousById.get(id) : undefined;
+    const signedWebhook = id && signedWebhooks.has(id);
+    if (signedWebhook && (!before || before.method !== step.method)) {
+      throw new Error(signedStepMessage);
+    }
     if (id) {
       seenIds.add(id);
     }
-    // A JSON edit carries a stored credential only with its explicit step id and unchanged public config.
+    // The server uses the signed webhook's ID to require explicit credential replacement or removal when fields change.
     const same =
       before &&
       before.method === step.method &&
-      JSON.stringify(withoutCredentials(before.config)) === JSON.stringify(withoutCredentials(step.config ?? null));
+      (signedWebhook ||
+        JSON.stringify(withoutCredentials(before.config)) === JSON.stringify(withoutCredentials(step.config ?? null)));
     return {
       id: same ? before.id : undefined,
       method: step.method as string,
@@ -213,6 +225,9 @@ export function draftFromDocument(raw: unknown, previous?: WorkflowDraft): Workf
       storedSecrets: same ? before.storedSecrets : [],
     };
   });
+  if ([...signedWebhooks].some((id) => id && !seenIds.has(id))) {
+    throw new Error(signedStepMessage);
+  }
   return {
     name: (value.name as string | null | undefined) ?? null,
     ...(hasSource && { source: value.source as WorkflowSourceDto | null }),
