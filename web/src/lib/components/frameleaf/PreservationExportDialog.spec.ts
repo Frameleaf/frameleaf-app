@@ -111,6 +111,38 @@ describe('PreservationExportDialog', () => {
     ).toBeInTheDocument();
   });
 
+  it('previews and creates only the chosen album with metadata and without Locked items', async () => {
+    const onCreated = vi.fn();
+    const created = { id: 'album-package' } as never;
+    vi.mocked(createPreservationPackage).mockResolvedValue(created);
+    vi.mocked(previewPreservationExport).mockResolvedValue(previewOf({ lockedAllowed: true, lockedItems: 1 }));
+    render(PreservationExportDialog, {
+      props: {
+        open: true,
+        album: { id: 'album-1', albumName: 'Summer' },
+        includeMetadata: false,
+        includeLockedDefault: true,
+        onCreated,
+      },
+    });
+
+    expect(screen.getByText('Summer')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.frameleaf_preservation_scope_library })).toBeNull();
+    const expected = {
+      scope: { filter: { albumIds: { any: ['album-1'] } } },
+      includeLocked: false,
+      includeMetadata: true,
+    };
+    await fireEvent.click(screen.getByRole('button', { name: en.continue }));
+    expect(previewPreservationExport).toHaveBeenCalledWith({ preservationPreviewDto: expected });
+    await fireEvent.click(await screen.findByRole('button', { name: en.continue }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_preservation_start }));
+    expect(createPreservationPackage).toHaveBeenCalledWith({
+      preservationExportCreateDto: expect.objectContaining({ ...expected, name: 'Summer' }),
+    });
+    expect(onCreated).toHaveBeenCalledWith(created);
+  });
+
   it('excludes saved links from the preview when metadata is off', async () => {
     render(PreservationExportDialog, { props: { open: true, includeMetadata: false } });
     await fireEvent.click(screen.getByRole('button', { name: en.continue }));
