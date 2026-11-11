@@ -598,7 +598,7 @@
   "asset_viewer_settings_title": "Baliabide ikuslea",
   "assets": "Baliabideak",
   "assets_added_to_album_count": "{count, plural, one {Baliabide bat} other {# baliabide}} albumera gehituta",
-  "assets_added_to_album_partial_count": "{totalCount, number}-(e)tik baliabide {successCount, number, plural, one {bat gehitu da albumera} other {# gehitu dira albumera}}",
+  "assets_added_to_album_partial_count": "{totalCount, number}-(e)tik baliabide {successCount, plural, one {bat gehitu da albumera} other {# gehitu dira albumera}}",
   "assets_added_to_albums_count": "Gehituta {assetTotal, plural, one {# asset} other {# assets}} to {albumTotal, plural, one {# album} other {# albums}}",
   "assets_cannot_be_added_to_album_count": "{count, plural, one {Baliabidea ezin izan da albumera gehitu} other {Baliabideak ezin izan dira albumera gehitu}}",
   "assets_cannot_be_added_to_albums": "{count, plural, one {Asset} other {Assets}} ezin izan da albumetara gehitu",

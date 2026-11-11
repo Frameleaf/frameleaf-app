@@ -513,8 +513,12 @@ test.describe('Timeline', () => {
       );
       await page.goto('/favorites');
       // It says how items get here, and offers no upload: that belongs to an empty library only.
-      await expect(page.getByText('Photos and videos you mark with the heart appear here.')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Upload photos' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'No favorites yet' })).toBeVisible();
+      await expect(page.getByText('Mark a photo with the heart and it appears here.')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Add photos' })).toHaveCount(0);
+      // FL-1412: an empty page has no toolbar and no Thumbnail size bar.
+      await expect(page.getByTestId('frameleaf-results-toolbar')).toHaveCount(0);
+      await expect(page.getByTestId('library-status-bar')).toHaveCount(0);
     });
   });
 
@@ -560,8 +564,8 @@ test.describe('Timeline', () => {
       await page.route('**/api/timeline/buckets?*', (route) => route.fulfill({ json: [] }));
       await page.goto('/photos');
       await expect(page.getByRole('heading', { name: 'Your library starts here' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Upload photos' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Upload folder' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Add photos' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Add a folder' })).toBeVisible();
       await expect(page.getByTestId('frameleaf-results-toolbar')).toHaveCount(0);
       await expect(page.getByRole('group', { name: 'Layout' })).toHaveCount(0);
       await expect(page.getByTestId('library-status-bar')).toHaveCount(0);

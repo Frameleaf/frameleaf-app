@@ -9,6 +9,7 @@
   import AlbumSuggestions from '$lib/components/frameleaf/AlbumSuggestions.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LibraryItemsView from '$lib/components/frameleaf/LibraryItemsView.svelte';
+  import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
@@ -67,7 +68,7 @@
     type TagResponseDto,
   } from '@frameleaf/sdk';
   import { CommandPaletteDefaultProvider, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
-  import { mdiArrowLeft } from '@mdi/js';
+  import { mdiArrowLeft, mdiImagePlusOutline } from '@mdi/js';
   import { onDestroy, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -802,6 +803,26 @@
           <AlbumPeopleChips {albumId} refreshKey={album.assetCount} />
         {/key}
         <div class="fl-album-suggestions">{@render suggestions()}</div>
+      {/snippet}
+
+      <!-- FL-1412 (M13): an empty album says how photos get here; whoever can add them gets the way to,
+           as the quiet button: the header's Add photos is this page's one filled button (BRAND.md). -->
+      {#snippet empty()}
+        {@const canAdd = canChangeAlbum && !album.isSmart}
+        <LibraryEmptyState
+          icon={mdiImagePlusOutline}
+          title={$t('frameleaf_album_empty_title')}
+          message={$t(
+            album.isSmart
+              ? 'frameleaf_albums_empty_smart_text'
+              : canAdd
+                ? 'frameleaf_album_empty_body'
+                : 'frameleaf_album_empty_viewer',
+          )}
+          action={canAdd
+            ? { label: $t('add_photos'), onClick: () => handlePromiseError(addPhotosFromLibrary()) }
+            : undefined}
+        />
       {/snippet}
 
       {#snippet viewer()}

@@ -120,7 +120,10 @@ test.describe('Transfers', () => {
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto(`/albums/${album.id}`);
-    await expect(page.getByText('No photos or videos in this view.')).toBeVisible();
+    // FL-1412: an empty album says so, with no results toolbar or Thumbnail size bar.
+    await expect(page.getByRole('heading', { name: 'This album is empty' })).toBeVisible();
+    await expect(page.getByTestId('frameleaf-results-toolbar')).toHaveCount(0);
+    await expect(page.getByTestId('library-status-bar')).toHaveCount(0);
 
     const dataTransfer = await page.evaluateHandle(
       ({ name, bytes }) => {
