@@ -460,6 +460,7 @@
       // hiding a destination here does not revoke data or API access.
       recentlyAdded: !!preferences?.recentlyAdded.sidebarWeb,
       people: !!preferences?.people.enabled && preferences.people.sidebarWeb,
+      pets: preferences?.pets?.sidebarWeb ?? true,
       memories: !!preferences?.memories.enabled && preferences.memories.sidebarWeb,
       tags: !!preferences?.tags.enabled && preferences.tags.sidebarWeb,
       folders: !!preferences?.folders.enabled && preferences.folders.sidebarWeb,

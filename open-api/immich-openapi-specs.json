@@ -119718,6 +119718,27 @@
         },
         "type": "object"
       },
+      "PetsResponse": {
+        "properties": {
+          "sidebarWeb": {
+            "description": "Whether pets appear in web sidebar",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sidebarWeb"
+        ],
+        "type": "object"
+      },
+      "PetsUpdate": {
+        "properties": {
+          "sidebarWeb": {
+            "description": "Whether pets appear in web sidebar",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "PhotoSourceCopyMode": {
         "enum": [
           "copy"
@@ -163689,6 +163710,9 @@
           "people": {
             "$ref": "#/components/schemas/PeopleResponse"
           },
+          "pets": {
+            "$ref": "#/components/schemas/PetsResponse"
+          },
           "privacy": {
             "$ref": "#/components/schemas/PrivacyResponse"
           },
@@ -163819,6 +163843,9 @@
           },
           "people": {
             "$ref": "#/components/schemas/PeopleUpdate"
+          },
+          "pets": {
+            "$ref": "#/components/schemas/PetsUpdate"
           },
           "privacy": {
             "$ref": "#/components/schemas/PrivacyUpdate"

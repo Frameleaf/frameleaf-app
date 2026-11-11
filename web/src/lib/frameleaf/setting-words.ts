@@ -171,6 +171,7 @@ const TOOLS: Record<string, string> = {
   tags: 'tags',
   ratings: 'ratings',
   recentlyAdded: 'recent',
+  pets: 'pets',
 };
 const toolWords = Object.fromEntries(
   Object.entries(TOOLS).flatMap(([path, id]) => [

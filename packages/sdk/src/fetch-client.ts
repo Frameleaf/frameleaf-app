@@ -4114,6 +4114,10 @@ export type PeopleResponse = {
     /** Whether a shared Space suggests which of my named people appear in it */
     suggestInSpaces: boolean;
 };
+export type PetsResponse = {
+    /** Whether pets appear in web sidebar */
+    sidebarWeb: boolean;
+};
 export type SuppressionResponse = {
     /** Person IDs to suppress from locked browsing sessions */
     personIds: string[];
@@ -4190,6 +4194,7 @@ export type UserPreferencesResponseDto = {
         locale?: string;
     };
     people: PeopleResponse;
+    pets?: PetsResponse;
     privacy: PrivacyResponse;
     purchase: PurchaseResponse;
     ratings: RatingsResponse;
@@ -4271,6 +4276,10 @@ export type PeopleUpdate = {
     /** Whether a shared Space suggests which of my named people appear in it */
     suggestInSpaces?: boolean;
 };
+export type PetsUpdate = {
+    /** Whether pets appear in web sidebar */
+    sidebarWeb?: boolean;
+};
 export type SuppressionUpdate = {
     /** Person IDs to suppress from locked browsing sessions */
     personIds?: string[];
@@ -4341,6 +4350,7 @@ export type UserPreferencesUpdateDto = {
         locale?: string;
     };
     people?: PeopleUpdate;
+    pets?: PetsUpdate;
     privacy?: PrivacyUpdate;
     purchase?: PurchaseUpdate;
     ratings?: RatingsUpdate;

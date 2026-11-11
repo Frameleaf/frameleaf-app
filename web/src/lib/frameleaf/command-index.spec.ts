@@ -29,6 +29,7 @@ const everything = (): CommandIndexContext =>
       map: true,
       trash: true,
       people: true,
+    pets: true,
       memories: true,
       tags: true,
       folders: true,

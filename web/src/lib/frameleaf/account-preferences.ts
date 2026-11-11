@@ -48,6 +48,7 @@ export type AccountPreferencesDraft = {
   /** Administrator only. */
   'cast.adminDisabled': boolean;
   'recentlyAdded.sidebarWeb': boolean;
+  'pets.sidebarWeb': boolean;
   'emailNotifications.enabled': boolean;
   'emailNotifications.albumInvite': boolean;
   'emailNotifications.albumUpdate': boolean;
@@ -118,6 +119,7 @@ export const SECTION_KEYS: Record<AccountPreferencesSection, readonly AccountPre
     'cast.gCastEnabled',
     'cast.adminDisabled',
     'recentlyAdded.sidebarWeb',
+    'pets.sidebarWeb',
   ],
   preferences: [
     'albums.defaultAssetOrder',
@@ -168,6 +170,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'cast.gCastEnabled': false,
   'cast.adminDisabled': false,
   'recentlyAdded.sidebarWeb': true,
+  'pets.sidebarWeb': true,
   'emailNotifications.enabled': true,
   'emailNotifications.albumInvite': true,
   'emailNotifications.albumUpdate': true,
@@ -204,6 +207,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'cast.gCastEnabled': preferences.cast.gCastEnabled,
   'cast.adminDisabled': preferences.cast.adminDisabled,
   'recentlyAdded.sidebarWeb': preferences.recentlyAdded.sidebarWeb,
+  'pets.sidebarWeb': preferences.pets?.sidebarWeb ?? true,
   'emailNotifications.enabled': preferences.emailNotifications.enabled,
   'emailNotifications.albumInvite': preferences.emailNotifications.albumInvite,
   'emailNotifications.albumUpdate': preferences.emailNotifications.albumUpdate,

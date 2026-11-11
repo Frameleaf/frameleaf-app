@@ -216,9 +216,8 @@ export const currentPrimaryDestination = (pathname: string, proContext = false):
  * Clients is in Tools only until the account starts using it, as in the prototype.
  *
  * Every entry points at a route that exists in production, so the rail never renders a
- * dead link. Pets landed with the identity model in FL-58 and is unconditional: it is a
- * Frameleaf feature with no upstream account preference behind it, so there is nothing
- * for an account to switch off. Documents (FL-63) is unconditional for the same reason:
+ * dead link. Pets landed with the identity model in FL-58 and is always on; an account can
+ * only hide it from the sidebar (`pets.sidebarWeb`). Documents (FL-63) is unconditional for the same reason:
  * it lists the photos whose recognized text is visible, and says so when text
  * recognition is switched off rather than disappearing.
  *
@@ -285,6 +284,8 @@ export interface RailCapabilities {
   map: boolean;
   trash: boolean;
   people: boolean;
+  /** The account's "show Pets in sidebar" choice (on by default). */
+  pets: boolean;
   memories: boolean;
   tags: boolean;
   folders: boolean;
@@ -302,6 +303,7 @@ export const defaultRailCapabilities = (): RailCapabilities => ({
   map: false,
   trash: false,
   people: false,
+  pets: false,
   memories: false,
   tags: false,
   folders: false,
@@ -343,7 +345,7 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       destinations: [
         ...keep(capabilities.search, destination('explore', 'explore', mdiImageSearchOutline, Route.explore())),
         ...keep(capabilities.people, destination('people', 'people', mdiAccountOutline, Route.people())),
-        destination('pets', 'frameleaf_pets_title', mdiPawOutline, Route.pets()),
+        ...keep(capabilities.pets, destination('pets', 'frameleaf_pets_title', mdiPawOutline, Route.pets())),
         ...keep(capabilities.memories, destination('memories', 'memories', mdiHistory, Route.memories())),
         destination('places', 'places', mdiMapMarkerMultipleOutline, Route.places()),
         ...keep(capabilities.map, destination('map', 'map', mdiMapOutline, Route.map())),
