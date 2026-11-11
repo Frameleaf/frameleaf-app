@@ -172,8 +172,9 @@
    * FL-1409: finished work that left photos over. Recent work says "312 photos need a look" for it, so this page
    * counts it too and never says "Everything is up to date" beside that card. Shown under All and Needs a look.
    */
-  const leftOver = $derived(filter === 'all' || filter === 'failed' ? leftOverRuns(runningJobsSession.summary) : []);
-  const leftOverCount = $derived(leftOverRuns(runningJobsSession.summary).length);
+  const allLeftOver = $derived(leftOverRuns(runningJobsSession.summary));
+  const leftOver = $derived(filter === 'all' || filter === 'failed' ? allLeftOver : []);
+  const leftOverCount = $derived(allLeftOver.length);
   /** Pausing the server's work is an administrator's: the server says who may, and sends its work to nobody else. */
   const canManage = $derived(runningJobsSession.summary.canManageQueues);
   /** In progress shows under All and In progress (the `running` filter). */
@@ -485,14 +486,19 @@
 
   /**
    * FL-1409: start an interrupted scan again. The scan checks its folders and the library's owner first, as from
-   * Libraries; the stopped one is then cleared, and the new one shows under In progress.
+   * Libraries; the stopped one is then cleared, and the new one shows under In progress. If only the clearing
+   * fails, the scan has still started: that is said by itself, and Not now can clear the card.
    */
   const scanAgain = (item: ActivityItem, libraryId: string) =>
     void run(
       item,
       async () => {
         await scanLibrary({ id: libraryId });
-        await activitySession.dismiss(item.operationId as string);
+        try {
+          await activitySession.dismiss(item.operationId as string);
+        } catch (error) {
+          handleError(error, $t('frameleaf_activity_scan_again_not_cleared'));
+        }
         await activitySession.refresh();
       },
       'frameleaf_activity_scan_again_started',

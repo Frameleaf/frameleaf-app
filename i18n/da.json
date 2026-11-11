@@ -1150,6 +1150,7 @@
   "frameleaf_activity_empty_help_own": "Dine eksporter, gendannelser, uploads og downloads vises her, mens de kører.",
   "frameleaf_activity_indicator_in_progress": "{count, plural, one {# job i gang} other {# job i gang}}. Åbn Aktivitet.",
   "frameleaf_activity_scan_again": "Skan igen",
+  "frameleaf_activity_scan_again_not_cleared": "Skanningen startede igen, men denne besked kunne ikke ryddes. Vælg “Ikke nu” for at rydde den.",
   "frameleaf_activity_scan_again_started": "Skanner “{name}” igen.",
   "frameleaf_activity_scan_drive_body": "Frameleaf kan ikke få adgang til mappen for “{name}”. Intet er fjernet fra dit bibliotek. Den næste skanning fortsætter, når drevet er tilbage.",
   "frameleaf_activity_scan_interrupted_body": "Serveren genstartede, mens den læste mappen. Intet gik tabt: de filer, den allerede havde læst, er i dit bibliotek, og resten ligger stadig på drevet.",

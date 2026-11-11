@@ -785,4 +785,32 @@ describe('Frameleaf Activity page', () => {
     await vi.waitFor(() => expect(sdkMock.scanLibrary).toHaveBeenCalledWith({ id: 'library-1' }));
     await vi.waitFor(() => expect(sdkMock.dismissMediaOperation).toHaveBeenCalledWith({ id: 'scan-1' }));
   });
+
+  it('still reads the new scan when only clearing the stopped one fails (FL-1409)', async () => {
+    sdkMock.getAllLibraries.mockResolvedValue([
+      { id: 'library-1', name: 'Family archive', assetCount: 7103, scan: { operationId: 'scan-1' } },
+    ] as never);
+    sdkMock.scanLibrary.mockResolvedValue(undefined as never);
+    sdkMock.dismissMediaOperation.mockRejectedValue(new Error('offline'));
+    await mount([
+      operation({
+        id: 'scan-1',
+        kind: MediaOperationKind.LibraryScan,
+        status: MediaOperationStatus.Failed,
+        destination: MediaOperationDestination.Local,
+        label: 'Family archive',
+        error: 'The library queue attempt was interrupted',
+        errorCode: 'library_scan_interrupted',
+        finishedAt: '2026-11-10T09:20:00.000Z',
+      }),
+    ]);
+    const reads = sdkMock.searchMediaOperations.mock.calls.length;
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Scan again' }));
+    await vi.waitFor(() => expect(sdkMock.dismissMediaOperation).toHaveBeenCalled());
+    // The scan was asked for once, the list is read again, and the card can still be cleared.
+    await vi.waitFor(() => expect(sdkMock.searchMediaOperations.mock.calls.length).toBeGreaterThan(reads));
+    expect(sdkMock.scanLibrary).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument();
+  });
 });

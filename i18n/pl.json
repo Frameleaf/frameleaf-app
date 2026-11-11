@@ -1170,6 +1170,7 @@
   "frameleaf_activity_empty_help_own": "Twoje eksporty, przywracania, przesyłania i pobierania pojawiają się tutaj, dopóki trwają.",
   "frameleaf_activity_indicator_in_progress": "{count, plural, one {# zadanie w toku} few {# zadania w toku} many {# zadań w toku} other {# zadania w toku}}. Otwórz Aktywność.",
   "frameleaf_activity_scan_again": "Skanuj ponownie",
+  "frameleaf_activity_scan_again_not_cleared": "Skanowanie rozpoczęło się ponownie, ale nie udało się usunąć tego powiadomienia. Wybierz „Nie teraz”, aby je usunąć.",
   "frameleaf_activity_scan_again_started": "Ponowne skanowanie „{name}”.",
   "frameleaf_activity_scan_drive_body": "Frameleaf nie może uzyskać dostępu do folderu „{name}”. Nic nie zostało usunięte z Twojej biblioteki. Następne skanowanie będzie kontynuowane, gdy dysk wróci.",
   "frameleaf_activity_scan_interrupted_body": "Serwer uruchomił się ponownie podczas odczytywania folderu. Nic nie zostało utracone: odczytane już pliki są w Twojej bibliotece, a reszta nadal znajduje się na dysku.",

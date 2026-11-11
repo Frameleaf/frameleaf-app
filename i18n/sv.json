@@ -1157,6 +1157,7 @@
   "frameleaf_activity_empty_help_own": "Dina exporter, återställningar, uppladdningar och nedladdningar visas här medan de pågår.",
   "frameleaf_activity_indicator_in_progress": "{count, plural, one {# jobb pågår} other {# jobb pågår}}. Öppna Aktivitet.",
   "frameleaf_activity_scan_again": "Skanna igen",
+  "frameleaf_activity_scan_again_not_cleared": "Skanningen startade igen, men det här meddelandet kunde inte tas bort. Välj ”Inte nu” för att ta bort det.",
   "frameleaf_activity_scan_again_started": "Skannar ”{name}” igen.",
   "frameleaf_activity_scan_drive_body": "Frameleaf kan inte nå mappen för ”{name}”. Ingenting har tagits bort från ditt bibliotek. Nästa skanning fortsätter när disken är tillbaka.",
   "frameleaf_activity_scan_interrupted_body": "Servern startade om medan den läste mappen. Ingenting gick förlorat: filerna som redan lästs finns i ditt bibliotek och resten ligger kvar på disken.",

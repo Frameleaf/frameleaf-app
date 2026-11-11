@@ -2595,6 +2595,7 @@
   "frameleaf_activity_retry_of": "Retry “{name}”",
   "frameleaf_activity_retry_queued": "Queued “{name}” again",
   "frameleaf_activity_scan_again": "Scan again",
+  "frameleaf_activity_scan_again_not_cleared": "The scan started again, but this notice couldn’t be cleared. Choose Not now to clear it.",
   "frameleaf_activity_scan_again_started": "Scanning “{name}” again.",
   "frameleaf_activity_scan_drive_body": "Frameleaf can’t reach the folder of “{name}”. Nothing was removed from your library. The next scan carries on when the drive is back.",
   "frameleaf_activity_scan_interrupted_body": "The server restarted while it was reading the folder. Nothing was lost: the files it had read are in your library, and the rest are still on the drive.",

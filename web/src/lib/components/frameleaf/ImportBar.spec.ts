@@ -1,4 +1,4 @@
-import { QueueName, type DurableRunningJobs } from '@frameleaf/sdk';
+import { QueueName } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,7 +31,8 @@ const scan = durableRun({
   stageTotals: { ...durableRun().stageTotals, failed: 0, needsAttention: 0 },
   pausedQueues: [],
 });
-const answer = (patch: Partial<DurableRunningJobs>) =>
+/** The server's answer, as loosely as a test may give it. */
+const answer = (patch: Record<string, unknown>) =>
   sdkMock.getRunningJobs.mockResolvedValue({
     operations: [],
     memoryExports: [],
@@ -60,7 +61,7 @@ describe('the import bar (FL-1409)', () => {
     answer({
       queues: [thumbnails],
       durableRuns: [scan],
-      operations: [{ id: 'scan-1', label: 'Family archive' }] as DurableRunningJobs['operations'],
+      operations: [{ id: 'scan-1', label: 'Family archive' }],
     });
     render(ImportBar);
 

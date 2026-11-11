@@ -39,10 +39,12 @@ class ThumbnailFailures {
       return;
     }
     this.#reading = true;
-    void this.#read().then((read) => {
-      this.#reading = false;
-      this.#readAt = Date.now() - (read ? 0 : REFRESH_MS - RETRY_MS);
-    });
+    void this.#read()
+      .catch(() => false)
+      .then((read) => {
+        this.#reading = false;
+        this.#readAt = Date.now() - (read ? 0 : REFRESH_MS - RETRY_MS);
+      });
   }
 
   /** Whether the list was read. */

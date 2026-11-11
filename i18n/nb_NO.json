@@ -1168,6 +1168,7 @@
   "frameleaf_activity_empty_help_own": "Eksportene, gjenopprettingene, opplastingene og nedlastingene dine vises her mens de pågår.",
   "frameleaf_activity_indicator_in_progress": "{count, plural, one {# jobb pågår} other {# jobber pågår}}. Åpne Aktivitet.",
   "frameleaf_activity_scan_again": "Skann på nytt",
+  "frameleaf_activity_scan_again_not_cleared": "Skanningen startet på nytt, men denne meldingen kunne ikke fjernes. Velg «Ikke nå» for å fjerne den.",
   "frameleaf_activity_scan_again_started": "Skanner «{name}» på nytt.",
   "frameleaf_activity_scan_drive_body": "Frameleaf får ikke tilgang til mappen for «{name}». Ingenting er fjernet fra biblioteket ditt. Neste skanning fortsetter når disken er tilbake.",
   "frameleaf_activity_scan_interrupted_body": "Serveren startet på nytt mens den leste mappen. Ingenting gikk tapt: filene den allerede hadde lest, er i biblioteket ditt, og resten ligger fortsatt på disken.",

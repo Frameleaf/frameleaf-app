@@ -1168,6 +1168,7 @@
   "frameleaf_activity_empty_help_own": "Le tue esportazioni, i ripristini, i caricamenti e i download compaiono qui mentre sono in corso.",
   "frameleaf_activity_indicator_in_progress": "{count, plural, one {# attività in corso} other {# attività in corso}}. Apri Attività.",
   "frameleaf_activity_scan_again": "Scansiona di nuovo",
+  "frameleaf_activity_scan_again_not_cleared": "La scansione è ripartita, ma non è stato possibile rimuovere questo avviso. Scegli «Non ora» per rimuoverlo.",
   "frameleaf_activity_scan_again_started": "Nuova scansione di «{name}».",
   "frameleaf_activity_scan_drive_body": "Frameleaf non riesce a raggiungere la cartella di «{name}». Nulla è stato rimosso dalla tua libreria. La prossima scansione riprenderà quando il disco sarà di nuovo disponibile.",
   "frameleaf_activity_scan_interrupted_body": "Il server si è riavviato mentre leggeva la cartella. Non è andato perso nulla: i file già letti sono nella tua libreria e il resto è ancora sul disco.",

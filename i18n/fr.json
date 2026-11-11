@@ -1164,6 +1164,7 @@
   "frameleaf_activity_empty_help_own": "Vos exportations, restaurations, envois et téléchargements apparaissent ici pendant leur exécution.",
   "frameleaf_activity_indicator_in_progress": "{count, plural, one {# tâche en cours} other {# tâches en cours}}. Ouvrir l’activité.",
   "frameleaf_activity_scan_again": "Analyser à nouveau",
+  "frameleaf_activity_scan_again_not_cleared": "L’analyse a redémarré, mais cet avis n’a pas pu être effacé. Choisissez « Pas maintenant » pour l’effacer.",
   "frameleaf_activity_scan_again_started": "Nouvelle analyse de « {name} ».",
   "frameleaf_activity_scan_drive_body": "Frameleaf ne peut pas accéder au dossier de « {name} ». Rien n’a été retiré de votre bibliothèque. La prochaine analyse reprendra quand le disque sera de retour.",
   "frameleaf_activity_scan_interrupted_body": "Le serveur a redémarré pendant la lecture du dossier. Rien n’a été perdu : les fichiers déjà lus sont dans votre bibliothèque, et le reste est toujours sur le disque.",

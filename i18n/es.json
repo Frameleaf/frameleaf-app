@@ -1167,6 +1167,7 @@
   "frameleaf_activity_empty_help_own": "Tus exportaciones, restauraciones, subidas y descargas aparecen aquí mientras se realizan.",
   "frameleaf_activity_indicator_in_progress": "{count, plural, one {# tarea en curso} other {# tareas en curso}}. Abrir Actividad.",
   "frameleaf_activity_scan_again": "Escanear de nuevo",
+  "frameleaf_activity_scan_again_not_cleared": "El escaneo se inició de nuevo, pero no se pudo quitar este aviso. Elige «Ahora no» para quitarlo.",
   "frameleaf_activity_scan_again_started": "Escaneando «{name}» de nuevo.",
   "frameleaf_activity_scan_drive_body": "Frameleaf no puede acceder a la carpeta de «{name}». No se ha quitado nada de tu biblioteca. El próximo escaneo continuará cuando la unidad vuelva a estar disponible.",
   "frameleaf_activity_scan_interrupted_body": "El servidor se reinició mientras leía la carpeta. No se ha perdido nada: los archivos que ya había leído están en tu biblioteca y el resto sigue en la unidad.",

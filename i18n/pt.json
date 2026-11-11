@@ -1168,6 +1168,7 @@
   "frameleaf_activity_empty_help_own": "As suas exportações, restauros, carregamentos e transferências aparecem aqui enquanto decorrem.",
   "frameleaf_activity_indicator_in_progress": "{count, plural, one {# tarefa em curso} other {# tarefas em curso}}. Abrir Atividade.",
   "frameleaf_activity_scan_again": "Analisar novamente",
+  "frameleaf_activity_scan_again_not_cleared": "A análise recomeçou, mas não foi possível limpar este aviso. Escolha “Agora não” para o limpar.",
   "frameleaf_activity_scan_again_started": "A analisar “{name}” novamente.",
   "frameleaf_activity_scan_drive_body": "O Frameleaf não consegue aceder à pasta de “{name}”. Nada foi removido da sua biblioteca. A próxima análise continua quando a unidade voltar.",
   "frameleaf_activity_scan_interrupted_body": "O servidor reiniciou enquanto lia a pasta. Nada se perdeu: os ficheiros já lidos estão na sua biblioteca e o resto continua na unidade.",

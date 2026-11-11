@@ -1168,6 +1168,7 @@
   "frameleaf_activity_empty_help_own": "Je exports, herstelacties, uploads en downloads verschijnen hier zolang ze bezig zijn.",
   "frameleaf_activity_indicator_in_progress": "{count, plural, one {# taak bezig} other {# taken bezig}}. Activiteit openen.",
   "frameleaf_activity_scan_again": "Opnieuw scannen",
+  "frameleaf_activity_scan_again_not_cleared": "De scan is opnieuw gestart, maar deze melding kon niet worden gewist. Kies ‘Niet nu’ om hem te wissen.",
   "frameleaf_activity_scan_again_started": "‘{name}’ wordt opnieuw gescand.",
   "frameleaf_activity_scan_drive_body": "Frameleaf kan de map van ‘{name}’ niet bereiken. Er is niets uit je bibliotheek verwijderd. De volgende scan gaat verder wanneer de schijf terug is.",
   "frameleaf_activity_scan_interrupted_body": "De server is opnieuw gestart terwijl de map werd gelezen. Er is niets verloren gegaan: de bestanden die al gelezen waren staan in je bibliotheek en de rest staat nog op de schijf.",
