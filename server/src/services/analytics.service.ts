@@ -52,6 +52,7 @@ import {
   analyticsScopeKey,
   analyticsScopeValue,
   analyticsWindow,
+  backfillGrowth,
   bindGrowth,
   cameraName,
   collectedSeriesFor,
@@ -376,11 +377,12 @@ export class AnalyticsService {
     // whole server) is told them, and Locked people and pets stay unnamed while the session is locked
     const readsOwnScope = !!ownerId && ownerId === auth.user.id;
     let settled = true;
-    const [inventory, physical, arrivals, captures, cameras, albums, processing, samples, insights, retention] =
+    const [inventory, physical, arrivals, added, captures, cameras, albums, processing, samples, insights, retention] =
       await Promise.all([
         this.analyticsRepository.getInventory(scope),
         this.analyticsRepository.getPhysical(scope),
         this.analyticsRepository.getArrivalsByDay(scope, window.from, window.through),
+        this.analyticsRepository.getAddedByDay(scope, window.from, window.through),
         this.analyticsRepository.getCapturesByDay(scope, window.from, window.through),
         this.analyticsRepository.getCameras(scope, getHiddenContentQueryOptions(auth)),
         this.analyticsRepository.getAlbums(scope, auth.user.id),
@@ -400,7 +402,7 @@ export class AnalyticsService {
       ]);
 
     const items = inventory.photos + inventory.videos;
-    const growth = bindGrowth(window.buckets, samples);
+    const growth = backfillGrowth(window.buckets, bindGrowth(window.buckets, samples), added);
     const arrivalTotals = sumIntoBuckets(window.buckets, arrivals, ['photos', 'videos'] as const);
     const processingTotals = processing
       ? sumIntoBuckets(window.buckets, processing, ['completed', 'failed'] as const)

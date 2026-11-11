@@ -201,6 +201,43 @@ describe(AnalyticsRepository.name, () => {
     ]);
   });
 
+  it('dates an imported photo taken before the server held anything by when it was taken', async () => {
+    const { db, ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    const imported = new Date('2026-09-18T12:00:00.000Z');
+    // the server's first item, then a library imported later that day: photos from 2019 and June 2026
+    await newSizedAsset(ctx, user.id, 10, { createdAt: imported, fileCreatedAt: imported });
+    const old = await newSizedAsset(ctx, user.id, 100, {
+      createdAt: new Date('2026-09-18T13:00:00.000Z'),
+      fileCreatedAt: new Date('2019-05-01T09:00:00.000Z'),
+    });
+    const copy = await newSizedAsset(ctx, user.id, 100, {
+      createdAt: new Date('2026-09-18T13:00:00.000Z'),
+      fileCreatedAt: new Date('2026-06-30T09:00:00.000Z'),
+    });
+    // the same original twice: its file counts once, on the earlier day
+    await sharePhysicalFile(db, [old.id, copy.id], 100);
+    // uploaded later and taken after the server started: counts from the day it arrived, as before
+    await newSizedAsset(ctx, user.id, 5, {
+      createdAt: new Date('2026-09-19T08:00:00.000Z'),
+      fileCreatedAt: new Date('2026-09-18T20:00:00.000Z'),
+    });
+
+    await expect(sut.getArrivalsByDay(account(user.id), '2026-06-22', '2026-09-19')).resolves.toEqual(
+      expect.arrayContaining([
+        { day: '2026-06-30', photos: 1, videos: 0 },
+        { day: '2026-09-18', photos: 1, videos: 0 },
+        { day: '2026-09-19', photos: 1, videos: 0 },
+      ]),
+    );
+    await expect(sut.getAddedByDay(account(user.id), '2026-06-22', '2026-09-19')).resolves.toEqual([
+      { day: '2026-06-21', items: 1, logicalBytes: 100, physicalBytes: 100 },
+      { day: '2026-06-30', items: 1, logicalBytes: 100, physicalBytes: 0 },
+      { day: '2026-09-18', items: 1, logicalBytes: 10, physicalBytes: 10 },
+      { day: '2026-09-19', items: 1, logicalBytes: 5, physicalBytes: 5 },
+    ]);
+  });
+
   it('reads albums in scope and whether the viewer may see each one', async () => {
     const { ctx, sut } = await setup();
     const { user: taylor } = await ctx.newUser();
@@ -450,6 +487,36 @@ describe('AnalyticsRepository.getInsights (FL-79)', () => {
     );
     return { heic };
   };
+
+  it("colours a month with its most common hue, not a grey average of every photo's colour", async () => {
+    const { ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    const hash = (l: number, p: number, q: number) => {
+      const header = l | (p << 6) | (q << 12);
+      return Buffer.from([header & 255, (header >> 8) & 255, header >> 16, 0, 0]);
+    };
+    // two orange photos, one blue and two grey in March: blue and orange would average to grey
+    for (const [index, thumbhash] of [
+      hash(40, 50, 40),
+      hash(40, 52, 40),
+      hash(30, 10, 22),
+      hash(63, 31, 31),
+      hash(20, 32, 32),
+    ].entries()) {
+      await newItem(ctx, user.id, {
+        originalFileName: `${index}.jpg`,
+        localDateTime: new Date('2025-03-10T12:00:00Z'),
+        thumbhash,
+      });
+    }
+
+    const insights = await sut.getInsights(account(user.id), {
+      ownerId: user.id,
+      suppressedPersonIds: [],
+      suppressedPetIds: [],
+    });
+    expect(insights.magic!.colour).toEqual([{ month: 3, photos: 5, l: 40, p: 51, q: 40 }]);
+  });
 
   it('reads Library magic: colour by month, the light, months by hemisphere, tags, places and counts', async () => {
     const { db, ctx, sut } = await setup();

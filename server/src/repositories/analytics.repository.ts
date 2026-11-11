@@ -111,6 +111,14 @@ const scopeCondition = (scope: AnalyticsScope, alias = 'a'): RawBuilder<boolean>
   }
 };
 
+/**
+ * The UTC day an item joined the library, for the charts. A photo taken before this server held
+ * anything (an imported library) counts from the day it was taken, so a library imported in one go
+ * keeps its history; anything newer counts from the day it arrived. Alias `a` is the asset.
+ */
+const ADDED_DAY = sql<string>`((case when a."fileCreatedAt" < (select min(first."createdAt") from asset first)
+  then a."fileCreatedAt" else a."createdAt" end) at time zone 'UTC')::date`;
+
 /** FL-79: file extensions per photo format; RAW is decided first with the same pattern as `summary.raw` */
 const HEIC_EXTENSION_PATTERN = String.raw`\.(heic|heif|hif)$`;
 const JPEG_EXTENSION_PATTERN = String.raw`\.(jpe?g|jfif)$`;
@@ -388,21 +396,59 @@ export class AnalyticsRepository {
     }));
   }
 
-  /** Items still in the selection, by the UTC day they were added. */
+  /** Items still in the selection, by the UTC day they were added (`ADDED_DAY`). */
   async getArrivalsByDay(scope: AnalyticsScope, from: string, through: string) {
     const { rows } = await sql<{ day: string; photos: string; videos: string }>`
       select
-        to_char((a."createdAt" at time zone 'UTC')::date, 'YYYY-MM-DD') as day,
+        to_char(${ADDED_DAY}, 'YYYY-MM-DD') as day,
         count(*) filter (where a.type = ${IMAGE}) as photos,
         count(*) filter (where a.type = ${VIDEO}) as videos
       from asset a
       where a.type in (${IMAGE}, ${VIDEO}) and a.visibility <> ${HIDDEN} and ${isNotLocked('a')}
         and ${scopeCondition(scope)}
-        and a."createdAt" >= ${from}::date at time zone 'UTC'
-        and a."createdAt" < (${through}::date + 1) at time zone 'UTC'
+        and ${ADDED_DAY} between ${from}::date and ${through}::date
       group by 1
     `.execute(this.db);
     return rows.map((row) => ({ day: row.day, photos: num(row.photos), videos: num(row.videos) }));
+  }
+
+  /**
+   * What today's selection held at the end of each day through `through`, rebuilt from the items'
+   * added days (`ADDED_DAY`), counted as the nightly collector counts them: items not hidden, every
+   * original's size, each physical file once on the day its first item was added. Days before `from`
+   * fold into one row for the day before `from`. Rows are the day's additions, not running totals.
+   */
+  async getAddedByDay(scope: AnalyticsScope, from: string, through: string) {
+    const { rows } = await sql<{ day: string; items: string; logicalBytes: string; physicalBytes: string }>`
+      with refs as (
+        select greatest(${ADDED_DAY}, ${from}::date - 1) as day, a.visibility, e."fileSizeInByte" as "logicalSize",
+          coalesce(p.id::text, a.id::text) as key, coalesce(p."sizeInBytes", e."fileSizeInByte") as "physicalSize"
+        from asset a
+        left join asset_exif e on e."assetId" = a.id
+        left join physical_file p on p.id = a."physicalOriginalFileId"
+        where a.type in (${IMAGE}, ${VIDEO}) and ${isNotLocked('a')} and ${scopeCondition(scope)}
+          and ${ADDED_DAY} <= ${through}::date
+      ),
+      logical as (
+        select day, count(*) filter (where visibility <> ${HIDDEN}) as items, coalesce(sum("logicalSize"), 0) as bytes
+        from refs group by 1
+      ),
+      physical as (
+        select day, sum(size) as bytes
+        from (select key, min(day) as day, max("physicalSize") as size from refs group by 1) t
+        group by 1
+      )
+      select to_char(l.day, 'YYYY-MM-DD') as day, l.items, l.bytes as "logicalBytes",
+        coalesce(p.bytes, 0) as "physicalBytes"
+      from logical l left join physical p on p.day = l.day
+      order by 1
+    `.execute(this.db);
+    return rows.map((row) => ({
+      day: row.day,
+      items: num(row.items),
+      logicalBytes: num(row.logicalBytes),
+      physicalBytes: num(row.physicalBytes),
+    }));
   }
 
   /** Items still in the selection, by the local calendar date they were taken. */
@@ -649,13 +695,23 @@ export class AnalyticsRepository {
             group by 1 order by 2 desc, 1 asc`),
     ]);
     const [colour, light, months, underTheHood] = await Promise.all([
+      // Averaging every photo's P and Q cancels opposing hues out to grey, so each month shows its most
+      // common hue instead: the colourful photos (chroma at least 4 of 31.5) fall into twelve 30° hue
+      // bins and the fullest bin's average wins. A month with no colourful photo keeps its grey average.
       run<{ month: number; photos: string; l: number; p: number; q: number }>(sql`
-        select extract(month from ${local})::int as month, count(*) as photos,
-          avg(items."thumbhashHeader" & 63)::float as l,
-          avg((items."thumbhashHeader" >> 6) & 63)::float as p,
-          avg((items."thumbhashHeader" >> 12) & 63)::float as q
-        from items where items.type = ${IMAGE} and items."thumbhashHeader" is not null
-        group by 1 order by 1`),
+        select distinct on (month) month, sum(count(*)) over (partition by month) as photos,
+          avg(l)::float as l, avg(p)::float as p, avg(q)::float as q
+        from (
+          select month, l, p, q, case when sqrt(power(p - 31.5, 2) + power(q - 31.5, 2)) >= 4
+            then floor((degrees(atan2(q - 31.5, p - 31.5)) + 360) / 30)::int % 12 end as hue
+          from (
+            select extract(month from ${local})::int as month, items."thumbhashHeader" & 63 as l,
+              (items."thumbhashHeader" >> 6) & 63 as p, (items."thumbhashHeader" >> 12) & 63 as q
+            from items where items.type = ${IMAGE} and items."thumbhashHeader" is not null
+          ) photo
+        ) hued
+        group by month, hue
+        order by month, hue is null, count(*) desc`),
       own
         ? run<{ goldenMorning: string; goldenEvening: string; blueHour: string; daylight: string; night: string }>(sql`
         select
