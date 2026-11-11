@@ -519,10 +519,17 @@ describe('/admin/database-backups', () => {
       cookie = headers['set-cookie']?.[0]?.split(';', 1)[0];
       expect(status).toBe(201);
 
-      await utils.poll(
-        () => request(app).get('/admin/maintenance/status').set('cookie', cookie!),
-        ({ status, body }) => status === 200 && body.action === 'restore_database' && body.task !== undefined,
-      );
+      // The server restarts into maintenance before the restore reports a task. That restart alone takes
+      // about five seconds on CI, so this waits as long as the other restore tests do.
+      await expect
+        .poll(
+          async () => {
+            const { status, body } = await request(app).get('/admin/maintenance/status').set('cookie', cookie!);
+            return status === 200 && body.action === 'restore_database' && body.task !== undefined;
+          },
+          { interval: 250, timeout: 30_000 },
+        )
+        .toBe(true);
 
       for (const action of [{ action: 'end' }, { action: 'restore_database', restoreBackupFilename: filename }]) {
         const { status: conflict } = await request(app).post('/admin/maintenance').set('cookie', cookie!).send(action);
