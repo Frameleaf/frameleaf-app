@@ -1046,18 +1046,19 @@
             secondaryAction={{ label: $t('frameleaf_library_empty_filtered_clear'), onClick: clearSearch }}
           />
         </div>
-      {:else if !hasSearchQuery && !showAskSearch && searchLocation.kind !== 'rejected'}
-        <!-- Never a blank page: without Ask, the way in is the search palette itself. -->
+      {:else if !hasSearchQuery && !showAskSearch && (showAssistant || searchLocation.kind !== 'rejected')}
         <div class="frameleaf search-state" data-theme={appTheme}>
           {#if showAssistant}
             <AssistantModeSwitch classic onChange={(classic) => handlePromiseError(setClassicSearch(classic))} />
           {/if}
-          <EmptyState
-            icon={mdiMagnify}
-            title={$t('frameleaf_search_title')}
-            message={$t('frameleaf_search_results_start_body')}
-            action={{ label: $t('search'), icon: mdiMagnify, onClick: openSearchPalette }}
-          />
+          {#if searchLocation.kind !== 'rejected'}
+            <EmptyState
+              icon={mdiMagnify}
+              title={$t('frameleaf_search_title')}
+              message={$t('frameleaf_search_results_start_body')}
+              action={{ label: $t('search'), icon: mdiMagnify, onClick: openSearchPalette }}
+            />
+          {/if}
         </div>
       {/if}
 
