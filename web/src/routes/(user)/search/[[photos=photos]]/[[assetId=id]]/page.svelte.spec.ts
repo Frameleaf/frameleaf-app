@@ -22,7 +22,7 @@ import { handleError } from '$lib/utils/handle-error';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { personFactory } from '@test-data/factories/person-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
-import { moments } from '@test-data/mocks/VideoMomentResults.mock.svelte';
+import { moments } from '@test-data/mocks/video-moments.svelte';
 import SearchPage from './+page.svelte';
 
 const flags = $state({ search: true, smartSearch: false, askSearch: true, assistant: false });
