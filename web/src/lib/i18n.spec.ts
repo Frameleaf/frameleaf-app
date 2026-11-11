@@ -29,6 +29,13 @@ describe('i18n', () => {
       }
     });
 
+    it('has an Assistant product name for every shipped language', () => {
+      for (const { code } of SHIPPED_LANGUAGES) {
+        const messages = JSON.parse(readFileSync(`../i18n/${code}.json`, 'utf8'));
+        expect(messages.frameleaf_assistant_name, code).toEqual(expect.stringContaining('Frameleaf'));
+      }
+    });
+
     it('keeps a language already in use that is not listed, but never the development keys', () => {
       expect(languageChoices('ja').at(-1)).toMatchObject({ code: 'ja' });
       expect(languageChoices('fr')).toHaveLength(SHIPPED_LANGUAGES.length);

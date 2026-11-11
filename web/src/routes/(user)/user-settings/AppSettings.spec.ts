@@ -135,7 +135,7 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     render(AppSettings);
     const toggle = screen.getByRole('switch', { name: 'Use classic search' });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByText(/instead of asking the Library Assistant/)).toBeInTheDocument();
+    expect(screen.getByText(/instead of asking Frameleaf Assistant/)).toBeInTheDocument();
     await fireEvent.click(toggle);
     expect(albums.set).toHaveBeenLastCalledWith('search.classic', true);
   });

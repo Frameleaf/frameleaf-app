@@ -92,14 +92,16 @@ describe(AssistantService.name, () => {
 
   it('refuses shared-link sessions with 403', async () => {
     const { sut } = setup();
-    await expect(sut.ask(factory.auth({ sharedLink: {} }), { query: 'beach' })).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    const response = sut.ask(factory.auth({ sharedLink: {} }), { query: 'beach' });
+    await expect(response).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(response).rejects.toThrow('Frameleaf Assistant is not available from a shared link');
   });
 
   it('refuses when the assistant is turned off', async () => {
     const { sut } = setup({ enabled: false });
-    await expect(sut.ask(auth, { query: 'beach' })).rejects.toBeInstanceOf(BadRequestException);
+    const response = sut.ask(auth, { query: 'beach' });
+    await expect(response).rejects.toBeInstanceOf(BadRequestException);
+    await expect(response).rejects.toThrow('Frameleaf Assistant is turned off');
   });
 
   it('answers with the rules by default and never asks the planner', async () => {

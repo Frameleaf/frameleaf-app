@@ -31,6 +31,12 @@ You can search the following types of content:
 
 To browse the photos that show text, and to correct what was read, see [Documents](./documents.md).
 
+## Frameleaf Assistant
+
+When your server offers Frameleaf Assistant, open Search and type a question in **Ask about your photos**. The answer shows matching photos and videos with a short reason for each match. Choose **Classic search** beside the question field whenever you want to use filters or search by words.
+
+Frameleaf Assistant runs on your server. It uses simple search rules when a planner model is unavailable.
+
 ## Ask Search
 
 Frameleaf adds a local Ask Search experience for Google Photos-like discovery without handing your media library to a cloud photo service.
