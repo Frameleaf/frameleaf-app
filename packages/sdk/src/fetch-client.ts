@@ -9438,7 +9438,7 @@ export type EagleLibraryResponseDto = {
     items: EagleItemDto[];
     name: string;
     smartFolders: string[];
-    /** File types this import brings over (lower case, no dot) */
+    /** File extensions this import accepts (lower case, no dot). * includes downloadable originals. */
     supported: string[];
     tagGroups: string[];
 };
@@ -16899,6 +16899,8 @@ export type WarmLibrarySetupDto = {
     reset?: boolean;
 };
 export type ServerMediaTypesResponseDto = {
+    /** Boards accepts other files as downloadable originals */
+    boardsOriginals?: boolean;
     /** Font file extensions an upload into Boards (libraryScope=design) accepts */
     font: string[];
     /** Supported image MIME types */
@@ -21157,7 +21159,11 @@ export type PreservationRestoreItemsQueryDto = {
     take?: number;
 };
 export type ProcessingFailureQueryDto = {
+    /** Also list failures someone chose to keep as they are or to stop trying (FL-1409) */
+    includeDismissed?: boolean;
     skip?: number;
+    /** Only failures of this step */
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 };
@@ -26198,8 +26204,10 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
 /**
  * List asset processing failures
  */
-export function getProcessingFailures({ skip, take, userId }: {
+export function getProcessingFailures({ includeDismissed, skip, step, take, userId }: {
+    includeDismissed?: boolean;
     skip?: number;
+    step?: ProcessingFailureStep;
     take?: number;
     userId?: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -26207,7 +26215,9 @@ export function getProcessingFailures({ skip, take, userId }: {
         status: 200;
         data: ProcessingFailureResponseDto[];
     }>(`/assets/processing-failures${QS.query(QS.explode({
+        includeDismissed,
         skip,
+        step,
         take,
         userId
     }))}`, {

@@ -109,6 +109,10 @@ it('sets an asset aside on its third failed attempt and leaves other assets avai
   await expect(repository.updateProcessingFailures(other, action)).rejects.toThrow('Processing failure not found');
   await repository.updateProcessingFailures(auth, action);
   expect(await repository.getProcessingFailures(auth, query)).toEqual([]);
+  // FL-1409: a file kept as it is still can't be shown; the Library asks for it by step
+  const thumbnails = { ...query, step: JobName.AssetGenerateThumbnails as const, includeDismissed: true };
+  expect(await repository.getProcessingFailures(auth, thumbnails)).toMatchObject([{ assetId: corrupt.id }]);
+  expect(await repository.getProcessingFailures(auth, { ...thumbnails, step: JobName.Ocr as const })).toEqual([]);
   expect(await repository.countProcessingFailures(auth)).toEqual({ count: 0, setAside: 0 });
 
   const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);

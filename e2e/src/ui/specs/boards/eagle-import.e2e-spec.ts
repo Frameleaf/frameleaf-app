@@ -27,7 +27,7 @@ const ITEMS: FixtureItem[] = [
   { id: 'I2', name: 'logo', ext: 'png', folders: ['F2'], tags: ['logo'] },
   { id: 'I3', name: 'loose', ext: 'webp', tags: ['warm'] },
   { id: 'I4', name: 'already', ext: 'png', folders: ['F2'] },
-  // a kind of file Boards does not keep (fonts come over since FL-1359)
+  // This original requires the server capability for downloadable Boards files.
   { id: 'I5', name: 'Lodge Mark', ext: 'blend', folders: ['F2'] },
   { id: 'I6', name: 'old-draft', ext: 'png', isDeleted: true },
   { id: 'I7', name: 'missing', ext: 'jpg', noFile: true },
@@ -95,13 +95,18 @@ test.describe('Import from Eagle', () => {
   });
 
   /** The server the import talks to. `holdUploads` leaves every file upload after the first unanswered. */
-  const mockServer = async (context: BrowserContext, { holdUploads = false } = {}) => {
+  const mockServer = async (context: BrowserContext, { holdUploads = false, boardsOriginals = false } = {}) => {
     const albums: { albumName: string; parentId?: string; color?: string }[] = [];
     const uploads: string[] = [];
     const alreadySha = createHash('sha256').update(bytes(ITEMS[3])).digest('hex');
     const existingId = faker.string.uuid();
 
     await setupBaseMockApiRoutes(context, userId);
+    if (boardsOriginals) {
+      await context.route('**/api/server/media-types', (route) =>
+        json(route, { image: ['.jpg', '.png', '.webp'], video: [], sidecar: [], font: [], boardsOriginals: true }),
+      );
+    }
     // The browser path: the folder input, not the File System Access picker.
     await context.addInitScript(() => {
       delete (globalThis as { showDirectoryPicker?: unknown }).showDirectoryPicker;
@@ -178,7 +183,7 @@ test.describe('Import from Eagle', () => {
   };
 
   test('checks the library, imports it into Studio References and reconciles the report', async ({ context, page }) => {
-    const { albums, uploads, updates } = await mockServer(context);
+    const { albums, uploads, updates } = await mockServer(context, { boardsOriginals: true });
 
     await page.goto('/pro');
     await page.getByRole('button', { name: 'Import from Eagle…' }).first().click();
@@ -193,17 +198,17 @@ test.describe('Import from Eagle', () => {
     await dialog.getByRole('button', { name: 'Check this library' }).click();
 
     const check = page.getByRole('dialog', { name: 'Check before importing' });
-    await expect(check.getByText('4 items', { exact: true })).toBeVisible();
-    await expect(check.getByText(/3 new · 1 already in your library/)).toBeVisible();
-    await expect(check.getByText('Lodge Mark.blend')).toBeVisible();
+    await expect(check.getByText('5 items', { exact: true })).toBeVisible();
+    await expect(check.getByText(/4 new · 1 already in your library/)).toBeVisible();
+    await expect(check.getByText('Lodge Mark.blend')).toHaveCount(0);
     await expect(check.getByText('old-draft.png')).toBeVisible();
     await expect(check.getByText('missing.jpg')).toBeVisible();
-    await expect(check.getByText('7 items found in Eagle = 4 that come over + 3 that can’t.')).toBeVisible();
+    await expect(check.getByText('7 items found in Eagle = 5 that come over + 2 that can’t.')).toBeVisible();
     await check.getByRole('button', { name: 'Continue' }).click();
 
     const where = page.getByRole('dialog', { name: 'Where should it go?' });
     await expect(where.getByText('4 collections go into Studio References')).toBeVisible();
-    await where.getByRole('button', { name: 'Import 4 items' }).click();
+    await where.getByRole('button', { name: 'Import 5 items' }).click();
 
     const report = page.getByRole('dialog', { name: 'Import finished' });
     await expect(
@@ -211,14 +216,19 @@ test.describe('Import from Eagle', () => {
     ).toBeVisible();
     await expect(report.getByRole('button', { name: 'Show in Boards' })).toBeVisible();
     const ledger = report.getByRole('table', { name: 'How every item found in Eagle was handled' });
-    await expect(ledger.getByRole('row', { name: /Added to Boards/ })).toContainText('3');
+    await expect(ledger.getByRole('row', { name: /Added to Boards/ })).toContainText('4');
     await expect(ledger.getByRole('row', { name: /Already in your library/ })).toContainText('1');
-    await expect(ledger.getByRole('row', { name: /Couldn’t come over/ })).toContainText('3');
+    await expect(ledger.getByRole('row', { name: /Couldn’t come over/ })).toContainText('2');
     await expect(ledger.getByRole('row', { name: /Found in Eagle/ })).toContainText('7');
     expect(updates).toEqual([{ rating: 5 }]);
 
     // The file already in the library is not sent; the others are sent once each.
-    expect(uploads.toSorted((a, b) => a.localeCompare(b))).toEqual(['hero.jpg', 'logo.png', 'loose.webp']);
+    expect(uploads.toSorted((a, b) => a.localeCompare(b))).toEqual([
+      'hero.jpg',
+      'Lodge Mark.blend',
+      'logo.png',
+      'loose.webp',
+    ]);
     expect(albums.map(({ albumName }) => albumName)).toEqual([
       'Studio References',
       'Brand identity',

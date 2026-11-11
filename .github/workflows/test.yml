@@ -265,6 +265,11 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    # FL-1441: the type-aware lint grows past Node's default 4 GB heap late in the run and the eslint
+    # worker dies with ERR_WORKER_OUT_OF_MEMORY. The flag is process-wide, so both worker threads get
+    # 6 GB each; two of them fit in the runner's 16 GB.
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     defaults:
       run:
         working-directory: ./web

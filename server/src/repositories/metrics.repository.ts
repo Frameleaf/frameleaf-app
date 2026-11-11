@@ -48,6 +48,11 @@ export class MetricsRepository {
     labelNames: ['job_name', 'outcome'] as const,
     registers: [this.registry],
   });
+  private readonly desktopResultsAdopted = new Counter({
+    name: `${prefix}desktop_results_adopted_total`,
+    help: 'Desktop inference results adopted by committed Library queue jobs',
+    registers: [this.registry],
+  });
   private readonly collectors: Array<() => Promise<void> | void> = [];
   private server?: Server;
 
@@ -122,6 +127,10 @@ export class MetricsRepository {
 
   observeHttp(route: string, status: number, seconds: number) {
     this.httpDuration.observe({ route, status: String(status) }, seconds);
+  }
+
+  observeDesktopResultAdoption() {
+    this.desktopResultsAdopted.inc();
   }
 
   observeJob(name: JobName, outcome: 'completed' | 'failed') {
