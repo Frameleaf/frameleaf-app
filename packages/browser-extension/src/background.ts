@@ -24,6 +24,7 @@ import { handleMedia, registerMediaWatch } from './media-background';
 import {
   listMediaReceipts,
   mediaReceiptDone,
+  mediaReceiptPending,
   requestMediaCancel,
   requestMediaRetry,
   type MediaReceipt,
@@ -53,6 +54,7 @@ import {
   checkServer,
   codeChallenge,
   exchangeCode,
+  type ExchangedAccess,
   randomText,
   readReturn,
   removeAccess,
@@ -150,7 +152,7 @@ function mediaQueueItem(receipt: MediaReceipt, paused: boolean): QueueItem {
     saved: `Saved by your Library${counts ? ` · ${counts}` : ''}`,
     partial: `Finished with errors${counts ? ` · ${counts}` : ''}`,
     failed: `Couldn’t download · ${receipt.error ?? 'Your Library couldn’t finish it.'}`,
-    cancelled: 'Cancelled',
+    cancelled: receipt.error ?? 'Cancelled',
     paused: `Paused on your Library${receipt.error ? ` · ${receipt.error}` : ''}`,
     subscribed:
       'Subscribed · your Library saves new posts to this creator’s collection. Manage it in Boards.',
@@ -194,7 +196,8 @@ function mediaQueueItem(receipt: MediaReceipt, paused: boolean): QueueItem {
         (receipt.state === 'submitting' && !!receipt.error)),
     canCancel:
       !paused &&
-      download &&
+      // a request your Library has not confirmed can be withdrawn; after that, only a download
+      (download || receipt.state === 'submitting') &&
       !mediaReceiptDone(receipt) &&
       !receipt.cancelRequested,
   };
@@ -227,10 +230,11 @@ async function queueProgress(): Promise<QueueProgress> {
   // FL-1427: work your Library is doing is listed with what is being sent from here. A saving list
   // that can't be read for media still shows its captures.
   const receipts = await listMediaReceipts(current.binding).catch(() => []);
-  const working = receipts.filter((receipt) => !mediaReceiptDone(receipt));
+  // a paused download waits for you, so it is listed but not counted as still going
+  const working = receipts.filter(mediaReceiptPending);
   const media = [
     ...working.slice(0, 50),
-    ...receipts.filter(mediaReceiptDone).slice(0, 10),
+    ...receipts.filter((receipt) => !mediaReceiptPending(receipt)).slice(0, 10),
   ].map((receipt) => mediaQueueItem(receipt, paused));
   // While the list is open, ask the Library how its work is going every few seconds.
   if (!paused && working.length > 0 && now - mediaWoken > 5000) {
@@ -857,7 +861,8 @@ async function signIn(message: object): Promise<ExtensionReply> {
   signingIn = true;
   const transport = globalThis.fetch.bind(globalThis);
   /** An access the server made that this browser has not kept yet, removed again if it isn't. */
-  let exchanged: { secret: string } | undefined;
+  let exchanged: ExchangedAccess | undefined;
+
   let saved = false;
   try {
     if (!(await hasServerAccess(origin))) throw new SignInFailure('permission');
@@ -961,7 +966,39 @@ async function signIn(message: object): Promise<ExtensionReply> {
     void retryRemovals();
     return { ok: true, connection: await connectionStatus() };
   } catch (error) {
+    // FL-1427: asking for more access already replaced this browser's old one on the server. If the
+    // new one is for the same server and account, it is the only access that still works, so it is
+    // kept even though the last check didn't finish or something else changed meanwhile; each later
+    // request confirms who answers anyway. Removing it would leave a stored access the server no
+    // longer accepts. It is only ever kept over a connection to that same server and account.
+    if (upgrade && exchanged && !saved) {
+      const access = exchanged;
+      const kept = await serialize(async () => {
+        const latest = await connectionStatus();
+        if (
+          !latest ||
+          latest.binding.origin !== origin ||
+          latest.binding.serverId !== access.serverId ||
+          latest.binding.userId !== access.userId
+        )
+          return false;
+        generation++;
+        // a new access, so a new credential id: anything checking the old one stops
+        await saveConnection(
+          { ...latest.binding, credentialId: crypto.randomUUID() },
+          access.secret,
+          { method: 'sign-in', apiKeyId: access.apiKeyId, grant: access.grant },
+        );
+        return true;
+      }).catch(() => false);
+      if (kept) {
+        saved = true;
+        wake();
+        return { ok: true, connection: await connectionStatus() };
+      }
+    }
     // an access the server made but this browser didn't keep is removed again, now or later
+    const stray = !!exchanged && !saved;
     if (exchanged && !saved)
       await revoke(origin, exchanged.secret).catch(() => {});
     if (error instanceof Superseded)
@@ -976,6 +1013,14 @@ async function signIn(message: object): Promise<ExtensionReply> {
     // You stay signed in while asking for more, so this is said in the Media tab, not as a sign-in problem.
     if (upgrade) {
       wake();
+      // An access was made and could not be kept: that is a sign-in that failed, and is said so.
+      if (stray)
+        return {
+          ok: false,
+          error: problem,
+          problem,
+          connection: await connectionStatus().catch(() => null),
+        };
       return {
         ok: false,
         error:

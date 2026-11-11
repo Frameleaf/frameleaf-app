@@ -67,10 +67,25 @@ async function call<T>(
 ): Promise<T> {
   /** The answer to the media request itself (the identity check before it is not one). */
   let status: number | undefined;
+  let capabilities = false;
+  /** The Library said this access lacks the permission, as opposed to refusing for another reason. */
+  let notAllowed = false;
   const transport: typeof globalThis.fetch = async (input, init) => {
     const response = await fetch(input, init);
-    if (/\/api\/media-/.test(new URL(String(input)).pathname))
+    const path = new URL(String(input)).pathname;
+    if (/\/api\/media-/.test(path)) {
       status = response.status;
+      capabilities = path.endsWith('/api/media-imports/capabilities');
+      if (status === 403)
+        notAllowed = /Missing required permission/i.test(
+          (
+            await response
+              .clone()
+              .text()
+              .catch(() => '')
+          ).slice(0, 2000),
+        );
+    }
     return response;
   };
   try {
@@ -78,9 +93,13 @@ async function call<T>(
   } catch (error) {
     if (error instanceof LibraryFailure) throw error;
     if (!(error instanceof CaptureFailure)) throw new LibraryFailure('refused');
-    // A key that can save but was never allowed media is not a broken key.
-    if (status === 403) throw new LibraryFailure('grant', status);
-    if (status === 404) throw new LibraryFailure('unsupported', status);
+    // A key that can save but was never allowed media is not a broken key. Any other 403 (say,
+    // site access sent without HTTPS) is the Library saying no to this one request.
+    if (status === 403 && notAllowed) throw new LibraryFailure('grant', status);
+    // Only the question "do you have media downloads?" can be answered "no such thing"; a 404 for
+    // one download or inspection means that one is gone.
+    if (status === 404 && capabilities)
+      throw new LibraryFailure('unsupported', status);
     if (status !== undefined && status !== 401)
       throw new LibraryFailure('refused', status);
     if (error.code === 'connection') throw new LibraryFailure('unreachable');

@@ -567,6 +567,99 @@ describe('media downloads from the popup (FL-1427)', () => {
     expect(chrome.storage.local.set).not.toHaveBeenCalled();
   });
 
+  it('finds a connection made from "www." cookies alone, so it is refreshed rather than made twice', async () => {
+    signedIn('media');
+    connections = [{ ...connected, domains: ['www.video.example'] }];
+
+    const shown = await handleMessage({ type: 'media-site' }, popup);
+    expect(shown).toEqual(
+      expect.objectContaining({
+        media: {
+          site: expect.objectContaining({
+            connection: expect.objectContaining({ id: CONNECTION }),
+          }),
+        },
+      }),
+    );
+    media[`POST /api/media-connections/${CONNECTION}/refresh`] = () =>
+      json({ ...connected, domains: ['www.video.example'], revision: 2 });
+    await expect(
+      handleMessage({ type: 'media-connect', connectionId: CONNECTION }, popup),
+    ).resolves.toEqual(expect.objectContaining({ ok: true }));
+    expect(
+      mediaCalls().some(
+        (call) =>
+          call.method === 'POST' && call.path === '/api/media-connections',
+      ),
+    ).toBe(false);
+
+    // and it is not taken to cover the bare domain, which those cookies are never sent to
+    tab.url = 'https://video.example/watch?v=1';
+    const bare = (await handleMessage({ type: 'media-site' }, popup)) as {
+      media: { site: object };
+    };
+    expect(bare.media.site).not.toHaveProperty('connection');
+  });
+
+  it('a check the Library no longer has says so, not that the Library needs an update', async () => {
+    signedIn('media');
+    delete media[`GET /api/media-imports/${INSPECTION}`];
+
+    const reply = await handleMessage(
+      { type: 'media-poll', id: INSPECTION },
+      popup,
+    );
+
+    expect(reply).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.stringContaining('Start again from the page'),
+      }),
+    );
+    expect(reply).not.toHaveProperty('mediaProblem');
+  });
+
+  it('a paused download is listed but not counted as still going', async () => {
+    signedIn('media');
+    const queue = await import('./media-queue');
+    const added = await queue.addMediaReceipt({
+      kind: 'download',
+      binding,
+      label: 'A clip',
+      request: {
+        inspectionId: INSPECTION,
+        itemIds: [ITEM],
+        albumId: ALBUM,
+        tagIds: [],
+        overrideSuppression: false,
+      },
+    });
+    await queue.changeMediaReceipt(added.id, binding, (receipt) => {
+      receipt.state = 'paused';
+      receipt.remoteId = INSPECTION;
+    });
+    vi.mocked(wakeDelivery).mockClear();
+
+    const list = await handleMessage({ type: 'queue' }, popup);
+
+    expect(list).toEqual(
+      expect.objectContaining({
+        queue: expect.objectContaining({
+          unfinished: 0,
+          items: [
+            expect.objectContaining({
+              state: 'needs-attention',
+              canRetry: true,
+              canCancel: true,
+            }),
+          ],
+        }),
+      }),
+    );
+    // nor does opening the list keep asking the Library about it
+    expect(wakeDelivery).not.toHaveBeenCalled();
+  });
+
   it('refreshes only the connection that is for this site', async () => {
     signedIn('media');
     connections = [connected];
@@ -665,6 +758,9 @@ describe('media downloads from the popup (FL-1427)', () => {
     const list = await handleMessage({ type: 'queue' }, popup);
     expect(
       (list as unknown as { queue: { items: object[] } }).queue.items,
-    ).toEqual([expect.objectContaining({ kind: 'subscription' })]);
+    ).toEqual([
+      // not yet confirmed by the Library, so it can still be withdrawn
+      expect.objectContaining({ kind: 'subscription', canCancel: true }),
+    ]);
   });
 });

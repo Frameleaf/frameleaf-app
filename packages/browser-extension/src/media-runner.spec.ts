@@ -294,6 +294,112 @@ describe('media receipts in the saving list (FL-1427)', () => {
     );
   });
 
+  it('a Cancel always ends, even for a subscription or with the Library out of reach', async () => {
+    const library = api();
+    const subscription = (label: string) =>
+      queue.addMediaReceipt({
+        kind: 'subscription',
+        binding,
+        label,
+        request: {
+          inspectionId: INSPECTION,
+          history: { mode: 'new' },
+          intervalMinutes: 60,
+        },
+      });
+    // never sent
+    const unsent = await subscription('unsent');
+    await queue.requestMediaCancel(unsent.id, binding);
+    // sent, but the answer never came
+    library.subscribe.mockRejectedValue(new failure('unreachable'));
+    const sent = await subscription('sent');
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+    await queue.requestMediaCancel(sent.id, binding);
+    // a download whose request never got an answer either
+    library.startDownload.mockRejectedValue(new failure('unreachable'));
+    const stuck = await queue.addMediaReceipt(download());
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+    await queue.requestMediaCancel(stuck.id, binding);
+
+    // each pass stops at the first receipt the Library can't be asked about
+    for (let pass = 0; pass < 3; pass++)
+      await runner.syncMediaReceipts(binding, 'key', live, library);
+
+    const after = new Map(
+      (await queue.listMediaReceipts(binding)).map((item) => [item.id, item]),
+    );
+    expect(after.get(unsent.id)).toEqual(
+      expect.objectContaining({ state: 'cancelled' }),
+    );
+    expect(after.get(unsent.id)).not.toHaveProperty('error');
+    for (const id of [sent.id, stuck.id]) {
+      expect(after.get(id)).toEqual(
+        expect.objectContaining({
+          state: 'cancelled',
+          error: expect.stringContaining('If it shows up in Boards'),
+        }),
+      );
+      expect(after.get(id)).not.toHaveProperty('cancelRequested');
+    }
+    await expect(
+      runner.syncMediaReceipts(binding, 'key', live, library),
+    ).resolves.toBe(false);
+    // a subscription the Library confirmed is stopped in Boards, not from here
+    library.subscribe.mockResolvedValue({
+      id: REMOTE,
+      creator: 'Someone',
+      provider: 'example',
+      albumId: ALBUM,
+    });
+    const made = await subscription('made');
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+    await expect(queue.requestMediaCancel(made.id, binding)).rejects.toThrow();
+  });
+
+  it('a paused download is left alone until you retry or cancel it', async () => {
+    const added = await queue.addMediaReceipt(download());
+    const library = api();
+    library.readOperation.mockResolvedValue(remote('paused'));
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+    await expect(
+      runner.syncMediaReceipts(binding, 'key', live, library),
+    ).resolves.toBe(false);
+    const asked = library.readOperation.mock.calls.length;
+
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+    expect(library.readOperation).toHaveBeenCalledTimes(asked);
+
+    await queue.requestMediaRetry(added.id, binding);
+    await expect(
+      runner.syncMediaReceipts(binding, 'key', live, library),
+    ).resolves.toBe(true);
+    expect(library.retryDownload).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes the receipts it asked about longest ago first, so stuck ones never hold up newer ones', async () => {
+    const library = api();
+    // the Library keeps failing for the first 30 requests made to it
+    library.startDownload.mockRejectedValue(new failure('refused', 503));
+    const old: string[] = [];
+    for (let index = 0; index < 30; index++)
+      old.push((await queue.addMediaReceipt(download(), 1000 + index)).id);
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+    expect(library.startDownload).toHaveBeenCalledTimes(25);
+    const newer = await queue.addMediaReceipt(download(), 5000);
+    library.startDownload.mockClear();
+
+    await runner.syncMediaReceipts(binding, 'key', live, library);
+
+    const keys = library.startDownload.mock.calls.map(
+      ([, , dto]) => (dto as { idempotencyKey: string }).idempotencyKey,
+    );
+    // the five not reached last time and the new one go before any retried a moment ago
+    expect(keys.slice(0, 6).sort()).toEqual(
+      [...old.slice(25), newer.id].sort(),
+    );
+    expect(keys).toHaveLength(25);
+  });
+
   it('Retry pressed twice, or sent twice, is one retry', async () => {
     const added = await queue.addMediaReceipt(download());
     const library = api();

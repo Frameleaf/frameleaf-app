@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { BrowserExtensionGrant } from 'src/schema/tables/browser-extension-sign-in.table.js';
 import {
   BrowserExtensionSignInAuthorizeDto,
   BrowserExtensionSignInAuthorizeResponseDto,
@@ -14,7 +15,6 @@ import { BrowserExtensionSignInRepository } from 'src/repositories/browser-exten
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
-import type { BrowserExtensionGrant } from 'src/schema/tables/browser-extension-sign-in.table.js';
 import {
   SIGN_IN_CODE_TTL_SECONDS,
   accessName,
@@ -89,7 +89,7 @@ export class BrowserExtensionSignInService {
     const { origin } = this.check(auth, dto);
     const existing = await this.repository.getAccess(auth.user.id, dto.client, origin, dto.installationId);
     // Allow is skipped only when this installation's key already holds everything now asked for.
-    const held = new Set<string>(existing?.permissions ?? []);
+    const held = new Set<string>(existing?.permissions);
     const alreadyAllowed =
       !!existing &&
       (held.has(Permission.All) || BROWSER_EXTENSION_GRANTS[dto.grant ?? 'capture'].every((item) => held.has(item)));

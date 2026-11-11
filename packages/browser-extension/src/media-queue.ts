@@ -64,6 +64,8 @@ interface ReceiptBase {
   cancelRequested?: true;
   /** Made once per Retry, so a retry that is sent twice still happens once. */
   retryKey?: string;
+  /** When the Library was last asked about it, so the longest-waiting receipt goes first. */
+  checkedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -166,13 +168,21 @@ function readable(value: MediaReceipt): boolean {
     return false;
   }
 }
+/** The Library has work in hand for it (or has yet to hear of it). A paused download does not. */
+export const mediaReceiptWaiting = (receipt: MediaReceipt) =>
+  receipt.state === 'submitting' || receipt.state === 'active';
 export const mediaReceiptDone = (receipt: MediaReceipt) =>
   ['saved', 'partial', 'failed', 'cancelled', 'subscribed'].includes(
     receipt.state,
   );
-/** Still needs the Library: unfinished, or a Cancel or Retry it has not heard yet. */
+/**
+ * Still needs the Library: work in hand, or a Cancel or Retry it has not heard yet. A paused
+ * download waits for you (Retry or Cancel), so it is neither asked about nor counted as unfinished.
+ */
 export const mediaReceiptPending = (receipt: MediaReceipt) =>
-  !mediaReceiptDone(receipt) || !!receipt.cancelRequested || !!receipt.retryKey;
+  mediaReceiptWaiting(receipt) ||
+  !!receipt.cancelRequested ||
+  !!receipt.retryKey;
 
 async function all(tx: IDBTransaction): Promise<MediaReceipt[]> {
   return (
@@ -262,7 +272,12 @@ export const changeMediaReceipt = (
   });
 export const requestMediaCancel = (id: string, binding: ServerBinding) =>
   changeMediaReceipt(id, binding, (receipt) => {
-    if (mediaReceiptDone(receipt) || receipt.kind !== 'download')
+    // A request the Library has not confirmed can always be withdrawn, whatever it asks for;
+    // after that only a download can be cancelled (a subscription is stopped in Boards).
+    if (
+      mediaReceiptDone(receipt) ||
+      (receipt.kind !== 'download' && receipt.state !== 'submitting')
+    )
       throw new QueueFailure('This item has already finished.');
     receipt.cancelRequested = true;
   });

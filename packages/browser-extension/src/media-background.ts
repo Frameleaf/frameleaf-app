@@ -247,7 +247,12 @@ async function site(context: MediaContext): Promise<{
     );
   const connection = (
     await siteConnections(context.binding, context.token)
-  ).find((item) => item.status !== 'disconnected' && covers(item, found.host));
+  ).find(
+    // by the tab's real host: a connection made from "www." cookies alone covers only "www."
+    (item) =>
+      item.status !== 'disconnected' &&
+      covers(item, new URL(page.url).hostname.toLowerCase()),
+  );
   const allowed = await chrome.permissions.contains({
     permissions: ['cookies'],
     origins: sitePatterns(found.origins),
@@ -340,7 +345,15 @@ export async function handleMedia(
     case 'media-poll': {
       if (!uuid.test(String(request.id)))
         throw new QueueFailure('Start again from the page.');
-      return { operation: await readOperation(binding, token, request.id) };
+      try {
+        return { operation: await readOperation(binding, token, request.id) };
+      } catch (error) {
+        if (error instanceof LibraryFailure && error.status === 404)
+          throw new QueueFailure(
+            'Your Library no longer has this check. Start again from the page.',
+          );
+        throw error;
+      }
     }
     case 'media-download':
     case 'media-subscribe': {

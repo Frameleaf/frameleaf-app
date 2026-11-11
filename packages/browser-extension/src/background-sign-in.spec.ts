@@ -648,7 +648,14 @@ describe('Sign in with your Frameleaf account (FL-655)', () => {
         popup,
       );
 
-      expect(reply).toEqual(expect.objectContaining({ ok: false }));
+      // a sign-in that failed, said as one: not "nothing changed"
+      expect(reply).toEqual(
+        expect.objectContaining({
+          ok: false,
+          problem: 'failed',
+          error: 'failed',
+        }),
+      );
       expect(stored().token).not.toBe('someone-elses-key');
       expect(
         fetchMock.mock.calls.some(
@@ -659,6 +666,57 @@ describe('Sign in with your Frameleaf account (FL-655)', () => {
               'someone-elses-key',
         ),
       ).toBe(true);
+    });
+
+    it('keeps the new access when the last check fails: the server already replaced the old one', async () => {
+      newerLibrary();
+      const handleMessage = await signIn();
+      // the exchange succeeded, then the server stopped answering
+      vi.mocked(connectServer).mockRejectedValueOnce(new Error('timed out'));
+
+      const reply = await handleMessage(
+        { type: 'sign-in', address: 'https://photos.example', grant: 'media' },
+        popup,
+      );
+
+      expect(reply).toEqual(
+        expect.objectContaining({
+          ok: true,
+          connection: expect.objectContaining({
+            status: 'connected',
+            grant: 'media',
+          }),
+        }),
+      );
+      expect(stored()).toEqual(
+        expect.objectContaining({
+          token: 'media-key',
+          apiKeyId: 'access-2',
+          grant: 'media',
+        }),
+      );
+      // same server and account, but a new access is a new credential
+      const kept = (values.frameleafConnectionV1 as { binding: typeof binding })
+        .binding;
+      expect(kept).toEqual(
+        expect.objectContaining({
+          serverId: binding.serverId,
+          userId: binding.userId,
+          origin: binding.origin,
+        }),
+      );
+      expect(kept.credentialId).not.toBe(binding.credentialId);
+      // and the only access that still works was not removed
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith('/api/browser-extension/sign-in') &&
+            (init as RequestInit)?.method === 'DELETE' &&
+            new Headers((init as RequestInit).headers).get('x-api-key') ===
+              'media-key',
+        ),
+      ).toBe(false);
+      expect(values.frameleafPendingRemovalsV1).toBeUndefined();
     });
 
     it('can’t be asked for a server this browser isn’t signed in to', async () => {

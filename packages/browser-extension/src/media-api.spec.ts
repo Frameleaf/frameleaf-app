@@ -110,16 +110,6 @@ describe('asking your Library for media (FL-1427)', () => {
     await expect(
       problem(mediaCapabilities(binding, 'access-key', old as never)),
     ).resolves.toBe('unsupported');
-    await expect(
-      problem(
-        inspect(
-          binding,
-          'access-key',
-          { urls: ['https://video.example/'] },
-          old as never,
-        ),
-      ),
-    ).resolves.toBe('unsupported');
     // the same key and address keep listing collections for captures
     await expect(
       getCatalog(binding, 'access-key', old as never),
@@ -133,10 +123,41 @@ describe('asking your Library for media (FL-1427)', () => {
           binding,
           'access-key',
           { urls: ['https://video.example/'] },
-          library(() => json({ message: 'Forbidden' }, 403)) as never,
+          library(() =>
+            json(
+              {
+                message: 'Missing required permission: media-import.create',
+                error: 'Forbidden',
+                statusCode: 403,
+              },
+              403,
+            ),
+          ) as never,
         ),
       ),
     ).resolves.toBe('grant');
+  });
+
+  it('a 403 for any other reason is that request refused, not a missing permission', async () => {
+    const error = await inspect(
+      binding,
+      'access-key',
+      { urls: ['https://video.example/'] },
+      library(() =>
+        json({ message: 'Use HTTPS to share site access with Library' }, 403),
+      ) as never,
+    ).catch((reason: unknown) => reason);
+    expect(error).toMatchObject({ problem: 'refused', status: 403 });
+  });
+
+  it('a 404 for one inspection means it is gone, not that the Library needs an update', async () => {
+    const error = await readOperation(
+      binding,
+      'access-key',
+      ID,
+      library(() => json({ message: 'Not Found' }, 404)) as never,
+    ).catch((reason: unknown) => reason);
+    expect(error).toMatchObject({ problem: 'refused', status: 404 });
   });
 
   it('a key the Library no longer accepts stops everything, as it does for saving', async () => {

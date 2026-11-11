@@ -31,6 +31,7 @@
     sendRequest,
   } from "./platform";
   import type { ConnectionStatus } from "./settings";
+  import { hostOf, SIGN_IN_PROBLEMS } from "./sign-in-words";
 
   let {
     connection,
@@ -311,8 +312,12 @@
         allowLocalhost,
         grant: "media",
       });
-      if (!reply.ok) error = reply.error;
-      else await load();
+      if (reply.ok) await load();
+      else if (reply.problem) {
+        // a sign-in that failed outright, in the sign-in's own words
+        const words = SIGN_IN_PROBLEMS[reply.problem];
+        error = `${words.title}. ${words.body(hostOf(origin))}`;
+      } else error = reply.error;
     } catch {
       error = "Could not open your Library’s page. Try again.";
     } finally {

@@ -32,6 +32,8 @@ const WAITING = 'Waiting for your Library. This is sent again automatically.';
 const REFUSED =
   'Your Library couldn’t accept this. Start it again from the page.';
 const GONE = 'Your Library no longer lists this download.';
+const UNSURE =
+  'Cancelled here before your Library confirmed it. If it shows up in Boards anyway, stop it there.';
 
 const stateOf = (operation: MediaOperationView): MediaReceiptState =>
   operation.state === 'saved' ||
@@ -69,14 +71,23 @@ async function settle(
   api: MediaLibrary,
 ) {
   const save = (change: (receipt: MediaReceipt) => void) =>
-    changeMediaReceipt(receipt.id, binding, change);
+    changeMediaReceipt(receipt.id, binding, (value) => {
+      value.checkedAt = Date.now();
+      change(value);
+    });
   if (!receipt.remoteId) {
-    // Never sent: Cancel simply forgets it. Once sent, only the Library knows what became of it.
-    if (receipt.cancelRequested && receipt.attempts === 0) {
+    // Never sent: Cancel simply forgets it. A subscription that may have arrived is withdrawn here
+    // too, with a note; a download that may have arrived is found (same key) and cancelled below.
+    if (
+      receipt.cancelRequested &&
+      (receipt.attempts === 0 || receipt.kind === 'subscription')
+    ) {
+      const sent = receipt.attempts > 0;
       await save((value) => {
         value.state = 'cancelled';
         delete value.cancelRequested;
-        delete value.error;
+        if (sent) value.error = UNSURE;
+        else delete value.error;
       });
       return;
     }
@@ -150,9 +161,13 @@ export async function syncMediaReceipts(
   signal: AbortSignal,
   api: MediaLibrary = library,
 ): Promise<boolean> {
+  // Longest since it was last asked about first, so a few stuck receipts never hold up the rest.
   const pending = (await listMediaReceipts(binding))
     .filter(mediaReceiptPending)
-    .reverse()
+    .sort(
+      (a, b) =>
+        (a.checkedAt ?? 0) - (b.checkedAt ?? 0) || a.createdAt - b.createdAt,
+    )
     .slice(0, 25);
   for (const receipt of pending) {
     if (signal.aborted) break;
@@ -162,7 +177,13 @@ export async function syncMediaReceipts(
       if (!(error instanceof LibraryFailure)) throw error;
       const sent = !!receipt.remoteId;
       await changeMediaReceipt(receipt.id, binding, (value) => {
-        if (error.problem === 'grant') value.error = NEEDS_PERMISSION;
+        value.checkedAt = Date.now();
+        // A Cancel the Library could not be asked about still ends here, rather than waiting forever.
+        if (value.cancelRequested && !value.remoteId) {
+          value.state = 'cancelled';
+          value.error = UNSURE;
+          delete value.cancelRequested;
+        } else if (error.problem === 'grant') value.error = NEEDS_PERMISSION;
         else if (worthRetrying(error)) value.error = WAITING;
         else {
           // The Library said no for good: nothing more is sent for this receipt.
