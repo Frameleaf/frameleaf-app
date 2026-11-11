@@ -16,6 +16,12 @@ run = "pnpm run test:runtime"
 env._.path = "./node_modules/.bin"
 run = "pnpm run test:medium"
 
+[tasks.corpus]
+description = "Run the known-bad file corpus (FL-883); best inside the medium runner image, which has every decoder"
+env._.path = "./node_modules/.bin"
+env.FRAMELEAF_MEDIUM_SUITE = "corpus"
+run = ["bash ../scripts/checkout-test-assets.sh", "pnpm run test:medium --run"]
+
 [tasks.format]
 env._.path = "./node_modules/.bin"
 run = "prettier --check ."

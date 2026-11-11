@@ -170,7 +170,9 @@ class AuthManager {
     // sign-out page takes over (which skips the in-app reset below)
     clearPrivateBrowserState();
 
-    if (hasLocalOfflineAlbums()) {
+    // Signing out already deleted the session, which revokes its offline album grants on the server.
+    // A provider sign-out page still has to run, so Desktop's revoke step is only used without one.
+    if (hasLocalOfflineAlbums() && redirectUri.startsWith('/')) {
       this.reset();
       eventManager.emit('AuthLogout');
       revokeSessionView(Route.logout());

@@ -1,6 +1,5 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
 import type { Selectable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { EagleImportRecent, EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
@@ -34,6 +33,7 @@ import {
   isComing,
   topFolderNames,
 } from 'src/utils/eagle-library.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 
 export const EAGLE_IMPORT_TICK_MS = 5000;
 export const EAGLE_IMPORT_LEASE_MS = 2 * 60_000;
@@ -399,7 +399,7 @@ export class EagleImportWorkerService {
     if (!file) {
       throw new EagleItemError('The file is not in the library folder');
     }
-    const extension = path.extname(item.fileName!).toLowerCase();
+    const extension = mimeTypes.uploadExtension(item.fileName!).toLowerCase();
     const destination = StorageCore.getNestedPath(StorageFolder.Upload, row.ownerId, `${randomUUID()}${extension}`);
     // Copied from the handle that was checked, never by opening the path again.
     const digest = await this.staging

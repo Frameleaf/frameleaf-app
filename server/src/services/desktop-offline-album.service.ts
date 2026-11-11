@@ -1,11 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
-import { OnEvent } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import { OnEvent } from 'src/decorators.js';
 import { AlbumKind, AlbumUserRole, AssetType, AssetVisibility, CacheControl } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -87,6 +87,10 @@ export class DesktopOfflineAlbumService {
     const grant = this.find(this.handoffs, id, host, token);
     this.handoffs.delete(tokenKey(token)!);
     const plan = await this.revalidate(grant);
+    // A new grant replaces earlier ones for the same session and album, so the cap counts albums, not clicks.
+    for (const [key, value] of this.grants) {
+      if (value.sessionId === grant.sessionId && value.plan.id === grant.plan.id) this.grants.delete(key);
+    }
     return {
       grant: this.store(this.grants, grant, IDLE_GRANT_LIFETIME),
       serverId: grant.serverId,
@@ -188,7 +192,7 @@ export class DesktopOfflineAlbumService {
     if (
       !album ||
       album.kind !== AlbumKind.Album ||
-      album.isLocked !== false ||
+      album.isLocked ||
       !album.albumUsers?.some((member) => member.role === AlbumUserRole.Owner && member.user.id === auth.user.id)
     ) {
       throw notAvailable();
@@ -216,7 +220,7 @@ export class DesktopOfflineAlbumService {
   ): Original | undefined {
     if (
       asset.ownerId !== auth.user.id ||
-      asset.isLocked !== false ||
+      asset.isLocked ||
       asset.deletedAt ||
       (asset.visibility !== AssetVisibility.Timeline && asset.visibility !== AssetVisibility.Archive) ||
       (asset.type !== AssetType.Image && asset.type !== AssetType.Video)

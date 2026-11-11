@@ -1,6 +1,7 @@
 import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@frameleaf/sdk';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { activeFilterFields, ENRICHMENT_FIELD, type DiscoveryQuery } from '$lib/components/discovery/query';
+import { formatDate } from '$lib/frameleaf/date-format';
 import { mediaKindInfo } from '$lib/frameleaf/media-kinds';
 
 /**
@@ -315,7 +316,7 @@ const formatDay = (value: unknown, locale: string) => {
   const day = typeof value === 'string' ? value : '';
   const time = Date.parse(day.length === 10 ? `${day}T00:00:00.000Z` : day);
   return Number.isFinite(time)
-    ? new Intl.DateTimeFormat(locale, { timeZone: 'UTC', year: 'numeric', month: 'short', day: 'numeric' }).format(time)
+    ? formatDate(time, { timeZone: 'UTC', year: 'numeric', month: 'short', day: 'numeric' }, locale)
     : String(value);
 };
 

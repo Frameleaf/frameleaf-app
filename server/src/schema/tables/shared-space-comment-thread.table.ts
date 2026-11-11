@@ -7,11 +7,11 @@ import { AlbumTable } from 'src/schema/tables/album.table.js';
  * Which comment a shared space reply answers (FL-55, threaded replies).
  *
  * A reply is an ordinary `activity` comment; this row is the only thing that
- * makes it a reply. Keeping the thread in a fork table, rather than adding a
- * parent column to the upstream `activity` table, means an upstream merge never
- * touches it. A comment with no row here is a top-level comment, which is what
- * every comment written before this table existed, and every comment written
- * through the upstream activity endpoints, stays.
+ * makes it a reply. Keeping the thread in its own table, rather than adding a
+ * parent column to the `activity` table, leaves every existing comment as it is.
+ * A comment with no row here is a top-level comment, which is what every comment
+ * written before this table existed, and every comment written through the
+ * plain activity endpoints, stays.
  *
  * Threads are one level deep: `parentActivityId` is always a top-level
  * comment. Replying to a reply is stored against that reply's own parent, so

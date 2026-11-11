@@ -279,6 +279,8 @@ describe('/server', () => {
         image: expect.any(Array),
         video: expect.any(Array),
         font: expect.any(Array),
+        // FL-1425: Boards keeps other files as downloadable originals
+        boardsOriginals: true,
       });
     });
   });

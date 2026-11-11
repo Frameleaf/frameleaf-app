@@ -194,10 +194,11 @@ const unmapped = (address: string): string => {
   return address;
 };
 
-/** Cloud metadata services that sit inside private ranges (Alibaba, AWS over IPv6): never reachable. */
+/** Cloud metadata services that sit inside private ranges (Alibaba, AWS and Google Cloud over IPv6): never reachable. */
 const metadataAddresses = subnets([
   ['100.100.100.200', 32, 'ipv4'],
   ['fd00:ec2::254', 128, 'ipv6'],
+  ['fd20:ce::254', 128, 'ipv6'],
 ]);
 
 /** Whether an automation may send to `address`: anywhere public, a home address only when allowed. */
@@ -310,6 +311,46 @@ const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
 };
 
 export type WebhookResponse = { ok: boolean; status: number; body: string };
+
+/**
+ * FL-1420: one hop of a plugin's HTTP request that is not a signed automation message (a photo
+ * trigger's webhook without a secret, a third-party plugin). It goes only where an automation message
+ * may: the address is checked before connecting and every DNS answer is checked while connecting, so a
+ * redirect or a rebinding name cannot reach the server itself, the home network (unless allowed) or a
+ * cloud metadata service. The caller follows redirects one hop at a time through this.
+ */
+export const fetchAutomationHop = (
+  address: string,
+  init: { method?: string; headers: Headers; body?: string | null },
+  { allowHomeNetwork }: { allowHomeNetwork: boolean },
+) => {
+  const url = checkWebhookUrl(address, allowHomeNetwork);
+  // as sendWebhook: plain http connects only to home-network addresses, whatever the name resolves to
+  const secureDispatcher = allowHomeNetwork ? webhookAgents.home : webhookAgents.public;
+  return fetch(url, {
+    dispatcher: url.protocol === 'http:' ? webhookAgents.plainHttp : secureDispatcher,
+    method: init.method,
+    redirect: 'manual',
+    signal: AbortSignal.timeout(15_000),
+    headers: Object.fromEntries(init.headers.entries()),
+    body: init.body ?? undefined,
+  });
+};
+
+/** FL-1420: at most the first 64 KB of an automation hop's answer; the rest is never read. */
+export const readAutomationAnswer = async (response: { body: AsyncIterable<Uint8Array> | null }) => {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of response.body ?? []) {
+    const room = WEBHOOK_RESPONSE_BYTES - size;
+    chunks.push(Buffer.from(chunk.subarray(0, room)));
+    size += Math.min(chunk.byteLength, room);
+    if (size >= WEBHOOK_RESPONSE_BYTES) {
+      break;
+    }
+  }
+  return Buffer.concat(chunks).toString('utf8');
+};
 
 /** Sends one bounded automation message without redirects, using plain HTTP only on the home network. */
 export const sendWebhook = async (

@@ -74,6 +74,13 @@ describe(DesktopOfflineAlbumService.name, () => {
     await expect(service.plan('different', host, access.grant)).rejects.toThrow(NotFoundException);
   });
 
+  it('replaces an earlier grant for the same session and album', async () => {
+    const first = await service.redeem('album', host, (await service.issue(auth, 'album', host)).token);
+    const second = await service.redeem('album', host, (await service.issue(auth, 'album', host)).token);
+    await expect(service.plan('album', host, first.grant)).rejects.toThrow(NotFoundException);
+    await expect(service.plan('album', host, second.grant)).resolves.toMatchObject({ id: 'album' });
+  });
+
   it('refuses a handoff if the browser session ended before redemption', async () => {
     const { token } = await service.issue(auth, 'album', host);
     authService.authorizeOfflineAlbumSession.mockResolvedValue(undefined);

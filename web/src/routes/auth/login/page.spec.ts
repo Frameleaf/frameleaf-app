@@ -5,6 +5,7 @@ import {
   getPasskeyLoginOptions,
   isHttpError,
   login,
+  loginTwoFactor,
   redeemFrameleafHandoff,
   startFrameleafSignIn,
 } from '@frameleaf/sdk';
@@ -29,6 +30,7 @@ import Page from './+page.svelte';
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('@frameleaf/sdk', () => ({
   login: vi.fn(),
+  loginTwoFactor: vi.fn(),
   isHttpError: vi.fn(() => false),
   startFrameleafSignIn: vi.fn(),
   finishFrameleafSignIn: vi.fn(),
@@ -211,7 +213,7 @@ describe('login mandatory-change routing', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     await waitFor(() => expect(goto).toHaveBeenCalledWith('/auth/change-password'));
     expect(login).toHaveBeenCalledWith({
-      loginCredentialDto: { email: 'user@example.test', password: 'temporary', rememberMe: false },
+      loginCredentialDto: { email: 'user@example.test', password: 'temporary', rememberMe: false, twoFactor: true },
     });
     expect(rememberMePreference()).toBe(false);
     expect(eventManager.emit).not.toHaveBeenCalled();
@@ -238,7 +240,9 @@ describe('login mandatory-change routing', () => {
     await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'secret' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     await waitFor(() =>
-      expect(login).toHaveBeenCalledWith({ loginCredentialDto: { email, password: 'secret', rememberMe: true } }),
+      expect(login).toHaveBeenCalledWith({
+        loginCredentialDto: { email, password: 'secret', rememberMe: true, twoFactor: true },
+      }),
     );
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -677,4 +681,119 @@ it('shows local browser callback setup guidance without leaving the login page',
   render(Page, { data: pageData } as never);
   await fireEvent.click(screen.getByRole('button', { name: 'Sign in with Frameleaf' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(message);
+});
+
+describe('Two-step sign-in (FL-831)', () => {
+  const signedIn = { isAdmin: false, isOnboarded: true, shouldChangePassword: false } as LoginResponseDto;
+  const challenge = { ...signedIn, accessToken: '', twoFactorRequired: true, twoFactorToken: 'challenge-token' };
+
+  const signIn = async () => {
+    vi.mocked(login).mockResolvedValue(challenge as never);
+    render(Page, { data: data(false) } as never);
+    await fireEvent.input(screen.getByLabelText('Email'), { target: { value: 'taylor@example.test' } });
+    await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'secret' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    return screen.findByRole('heading', { level: 1, name: en.frameleaf_two_step_code_title });
+  };
+
+  it('asks for the code after the password, then signs in and trusts the browser when ticked', async () => {
+    vi.mocked(loginTwoFactor).mockResolvedValue(signedIn);
+    await signIn();
+    expect(login).toHaveBeenCalledWith({
+      loginCredentialDto: { email: 'taylor@example.test', password: 'secret', rememberMe: true, twoFactor: true },
+    });
+    expect(screen.getByText('taylor@example.test')).toBeInTheDocument();
+
+    const field = screen.getByLabelText(en.frameleaf_two_step_code_label);
+    expect(field).toHaveAttribute('autocomplete', 'one-time-code');
+    expect(field).toHaveAttribute('inputmode', 'numeric');
+    const continueButton = screen.getByRole('button', { name: en.frameleaf_two_step_continue });
+    expect(continueButton).toBeDisabled();
+    // No length limit on the field: a spaced paste is cleaned, not cut short
+    expect(field).not.toHaveAttribute('maxlength');
+    await fireEvent.input(field, { target: { value: '1 2 3 4 5 6' } });
+    expect(field).toHaveValue('123456');
+    // A pasted code keeps its digits only
+    await fireEvent.input(field, { target: { value: ' 123-456 ' } });
+    expect(field).toHaveValue('123456');
+    await fireEvent.click(screen.getByRole('checkbox', { name: /Trust this browser for 30 days/ }));
+    await fireEvent.click(continueButton);
+
+    await waitFor(() =>
+      expect(loginTwoFactor).toHaveBeenCalledWith({
+        loginTwoFactorDto: { twoFactorToken: 'challenge-token', code: '123456', trustDevice: true },
+      }),
+    );
+    await waitFor(() => expect(goto).toHaveBeenCalledWith('/photos', { invalidateAll: true }));
+    expect(eventManager.emit).toHaveBeenCalledWith('AuthLogin', signedIn);
+  });
+
+  it('says a wrong code inline with the tries left, and the wait when signing in pauses', async () => {
+    vi.mocked(isHttpError).mockReturnValue(true);
+    vi.mocked(loginTwoFactor)
+      .mockRejectedValueOnce({ status: 401, data: { message: 'That code didn’t work.' } })
+      .mockRejectedValueOnce({ status: 429, data: { message: 'Too many requests.', retryAfter: 530 } });
+    await signIn();
+
+    const field = screen.getByLabelText(en.frameleaf_two_step_code_label);
+    await fireEvent.input(field, { target: { value: '000000' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_two_step_continue }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(en.frameleaf_two_step_wrong);
+    expect(alert).toHaveTextContent('4 more tries, then signing in pauses for 10 minutes.');
+
+    await fireEvent.input(screen.getByLabelText(en.frameleaf_two_step_code_label), { target: { value: '000000' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_two_step_continue }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: en.frameleaf_two_step_locked_title }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in again in 9 minutes' })).toBeDisabled();
+  });
+
+  it('takes a recovery code, and after the last one offers to make new codes', async () => {
+    vi.mocked(loginTwoFactor).mockResolvedValue(signedIn);
+    vi.mocked(getAuthStatus).mockResolvedValue({ twoFactorEnabled: true, recoveryCodesRemaining: 0 } as never);
+    await signIn();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_two_step_use_recovery }));
+    const field = screen.getByLabelText(en.frameleaf_two_step_recovery_label);
+    // A line pasted from the downloaded codes file keeps the code, not its number
+    await fireEvent.input(field, { target: { value: '1. aaaaa-bbbbb' } });
+    expect(field).toHaveValue('aaaaa-bbbbb');
+    await fireEvent.input(field, { target: { value: 'H7K2MXQ4RT' } });
+    expect(field).toHaveValue('h7k2m-xq4rt');
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_two_step_continue }));
+
+    await waitFor(() =>
+      expect(loginTwoFactor).toHaveBeenCalledWith({
+        loginTwoFactorDto: { twoFactorToken: 'challenge-token', recoveryCode: 'h7k2m-xq4rt', trustDevice: false },
+      }),
+    );
+    expect(
+      await screen.findByRole('heading', { level: 1, name: en.frameleaf_two_step_last_title }),
+    ).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_two_step_last_make }));
+    await waitFor(() =>
+      expect(goto).toHaveBeenCalledWith('/user-settings?area=privacy&section=two-step&show=new-codes', {
+        invalidateAll: true,
+      }),
+    );
+  });
+
+  it('sends an expired sign-in back to the password, keeping the email', async () => {
+    vi.mocked(isHttpError).mockReturnValue(true);
+    vi.mocked(loginTwoFactor).mockRejectedValue({
+      status: 401,
+      data: { message: 'This sign-in expired. Enter your password again.' },
+    });
+    await signIn();
+    await fireEvent.input(screen.getByLabelText(en.frameleaf_two_step_code_label), { target: { value: '123456' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_two_step_continue }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: en.frameleaf_two_step_expired_title }),
+    ).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_two_step_expired_action }));
+    expect(await screen.findByLabelText('Email')).toHaveValue('taylor@example.test');
+    expect(screen.getByLabelText('Password')).toHaveValue('');
+  });
 });

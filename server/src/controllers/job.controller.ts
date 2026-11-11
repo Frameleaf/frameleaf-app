@@ -6,6 +6,7 @@ import {
   JobRunFailureActionDto,
   JobRunFailureActionResponseDto,
   JobRunFailuresDto,
+  JobRunFailuresSearchDto,
   JobRunIdParamDto,
   JobRunItemPageDto,
   JobRunItemSearchDto,
@@ -54,8 +55,12 @@ export class JobController {
       "The photos a run left over (failed or needing attention), grouped by plain cause, each with up to six photos the caller may see and one raw message. The counts cover every account's photos; another account's Locked or hidden photos never appear among the samples.",
     history: new HistoryBuilder().added('v3').alpha('v3'),
   })
-  getJobRunFailures(@Auth() auth: AuthDto, @Param() { id }: JobRunIdParamDto): Promise<JobRunFailuresDto> {
-    return this.service.getRunFailures(auth, id);
+  getJobRunFailures(
+    @Auth() auth: AuthDto,
+    @Param() { id }: JobRunIdParamDto,
+    @Query() { foldNightly }: JobRunFailuresSearchDto,
+  ): Promise<JobRunFailuresDto> {
+    return this.service.getRunFailures(auth, id, foldNightly);
   }
 
   @Post('runs/:id/failures')
@@ -72,8 +77,9 @@ export class JobController {
   actOnJobRunFailures(
     @Param() { id }: JobRunIdParamDto,
     @Body() dto: JobRunFailureActionDto,
+    @Query() { foldNightly }: JobRunFailuresSearchDto,
   ): Promise<JobRunFailureActionResponseDto> {
-    return this.service.actOnRunFailures(id, dto);
+    return this.service.actOnRunFailures(id, dto, foldNightly);
   }
 
   @Post('runs/:id/release')

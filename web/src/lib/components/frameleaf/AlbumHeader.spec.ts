@@ -110,7 +110,7 @@ describe('AlbumHeader', () => {
       captureSession.mockReturnValueOnce(() => current);
       const token = 'a'.repeat(43);
       const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ token }));
-      const assign = vi.spyOn(globalThis.location, 'assign').mockImplementation(() => {});
+      const assign = vi.spyOn(location, 'assign').mockImplementation(() => {});
       try {
         renderHeader(albumAs(AlbumUserRole.Owner, { kind: AlbumKind.Album, isLocked: false }));
         const more = await openMore();

@@ -78,6 +78,11 @@
     sections?: Exclude<TimelineGrouping, 'all'> | null;
     /** FL-1398: the View menu turned the year scrubber off. */
     hideScrubber?: boolean;
+    /**
+     * There is no Timeline to switch to (a public share is always Browse): touch and narrow screens
+     * keep the thin scrubber here, so a long share can still be moved through by date.
+     */
+    keepThinScrubber?: boolean;
     /** Work with the panel beside the grid: the item the panel describes gets a neutral ring. */
     inPanelId?: string | null;
     /**
@@ -146,6 +151,7 @@
     showTimes = true,
     sections = null,
     hideScrubber = false,
+    keepThinScrubber = false,
     inPanelId = null,
     onThumbnailSizeChange,
     grouping = 'days',
@@ -178,33 +184,12 @@
   const maxMd = $derived(mediaQueryManager.maxMd);
   const coarsePointer = $derived(mediaQueryManager.pointerCoarse);
   /**
-   * On touch and on narrow screens the scrubber takes no column of its own: it floats over the
-   * photos' edge and shows only while the library is being scrolled or scrubbed.
+   * On touch and on narrow screens the scrubber is the prototype's thin line in a slim column
+   * (timeline-library.css, 700px), and only Timeline has one: Browse and Work keep the whole width
+   * for the photos (UI review 2026-11-10, A6). A page with no Timeline to switch to keeps it
+   * (`keepThinScrubber`).
    */
-  const overlayScrubber = $derived(coarsePointer || mediaQueryManager.maxMd);
-  const SCRUBBER_LINGER_MS = 1400;
-  let scrolledRecently = $state(false);
-  let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined;
-  const noteScroll = () => {
-    if (!overlayScrubber) {
-      return;
-    }
-    scrolledRecently = true;
-    clearTimeout(scrollIdleTimer);
-    scrollIdleTimer = setTimeout(() => (scrolledRecently = false), SCRUBBER_LINGER_MS);
-  };
-  $effect(() => () => clearTimeout(scrollIdleTimer));
-  /**
-   * Focus moved into the header or the toolbar (a menu opening there): the overlay scrubber goes at
-   * once rather than lingering over the menu's edge and taking the taps meant for it.
-   */
-  const dismissScrubber = () => {
-    if (!scrolledRecently) {
-      return;
-    }
-    clearTimeout(scrollIdleTimer);
-    scrolledRecently = false;
-  };
+  const thinScrubber = $derived(coarsePointer || maxMd);
   const isEmpty = $derived(timelineManager.isInitialized && timelineManager.months.length === 0);
   const selection = $derived(session.selection);
   // In picking mode the tiles show their checkboxes from the start, as the legacy grid did.
@@ -455,7 +440,12 @@
    */
   const SCRUBBER_LABEL_ROOM = 34;
   /** The scrubber is drawn: a flat order (filename, rating) has no dates to scrub through. */
-  const showScrubber = $derived(timelineManager.months.length > 0 && !timelineManager.ordered && !hideScrubber);
+  const showScrubber = $derived(
+    timelineManager.months.length > 0 &&
+      !timelineManager.ordered &&
+      !hideScrubber &&
+      (!thinScrubber || showDayHeaders || keepThinScrubber),
+  );
   /**
    * The rows' scrubber only where there is something to scrub through: photos that fit on one
    * screen (a handful of results, a person with three photos) have no scrubber floating beside them.
@@ -475,10 +465,10 @@
   /**
    * The column the rows leave at their end for the scrubber (LIB-P4). The header block above them
    * (page header, toolbar, grouping) spans it, as the template's does; the scrubber keeps below
-   * that block while it is on screen. On touch and narrow screens the scrubber floats over the rows.
+   * that block while it is on screen. The thin scrubber has no year labels to leave room for.
    */
   const scrubberSpace = $derived(
-    overlayScrubber || !showRowsScrubber || !scrubberWidth ? 0 : scrubberWidth + SCRUBBER_LABEL_ROOM,
+    !showRowsScrubber || !scrubberWidth ? 0 : scrubberWidth + (thinScrubber ? 0 : SCRUBBER_LABEL_ROOM),
   );
   /** The width the rows are laid out in: the scroll area less the gutters and the scrubber column. */
   const layoutWidth = $derived(Math.max(0, measuredWidth - 2 * gutter - scrubberSpace));
@@ -665,7 +655,6 @@
   let cards = $state<{ jumpTo: (month: { year: number; month: number }) => boolean }>();
 
   const onCardPeriod = (period: { year: number; month?: number } | undefined) => {
-    noteScroll();
     if (!period) {
       cardTopMonth = undefined;
       return;
@@ -1333,7 +1322,6 @@
     }
     timelineManager.updateSlidingWindow();
     timelineManager.scrolling = true;
-    noteScroll();
     if (!scrubbing) {
       headOnScreen = Math.max(0, measuredTop - timelineManager.scrollTop);
     }
@@ -1515,8 +1503,7 @@
         viewportTopMonth={cardTopMonth}
         onScrub={onCardScrub}
         onJump={onCardJump}
-        overlay={overlayScrubber}
-        active={scrolledRecently}
+        thin={thinScrubber}
         clear={cardsClear}
         bind:scrubberWidth
       />
@@ -1541,7 +1528,6 @@
           class="fl-timeline-top"
           style:top="{-Math.min(timelineManager.topSectionHeight, timelineManager.scrollOffset)}px"
           bind:this={topElement}
-          onfocusin={dismissScrubber}
         >
           {@render top()}
           {#if isEmpty}
@@ -1695,8 +1681,7 @@
         {timelineScrollPercent}
         {onScrub}
         {onJump}
-        overlay={overlayScrubber}
-        active={scrolledRecently}
+        thin={thinScrubber}
         clear={headOnScreen}
         bind:scrubberWidth
         bind:dragging={scrubbing}

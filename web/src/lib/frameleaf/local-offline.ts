@@ -5,4 +5,4 @@ export const hasLocalOfflineAlbums = () => Reflect.get(globalThis, marker) === t
 export const localOfflineSignOutPath = '/__frameleaf_desktop__/offline-albums/revoke';
 
 export const offlineSessionExit = (destination: string) =>
-  destination.split('?')[0] === '/auth/logout' && hasLocalOfflineAlbums() ? localOfflineSignOutPath : destination;
+  destination.split('?', 1)[0] === '/auth/logout' && hasLocalOfflineAlbums() ? localOfflineSignOutPath : destination;
