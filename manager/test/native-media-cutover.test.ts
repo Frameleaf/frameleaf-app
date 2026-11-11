@@ -105,6 +105,7 @@ function setup(
       assert.deepEqual(store.locked()?.receipts[intentKey], {
         request: { protocolVersion: 1, operationId: operation.id, binding },
         decision,
+        sourceMediaIdentity: store.get(`native-active-media:${installation.secureInstallationId}`),
       });
       receipt = finalized;
       return receipt;
@@ -330,3 +331,51 @@ test('candidate admission needs verified backup readback and exact explicit conf
     assert.equal(inspections, 3);
   });
 });
+
+
+test('refuses a foreign active media identity before recording or calling the owner', async () => {
+  await fixture('target', async (f) => {
+    f.store.set(`native-active-media:${f.installation.secureInstallationId}`, 'f'.repeat(64));
+    f.owner.inspect = async () => { throw Error('owner inspection must not run'); };
+    await assert.rejects(f.execute(), /native_media_cutover_journal_invalid/);
+    assert.equal(f.store.locked()?.receipts[intentKey], undefined);
+    assert.equal(f.calls(), 0);
+  });
+});
+
+for (const [decision, previouslyRelocated] of [
+  ['target', true],
+  ['original', true],
+  ['original', false],
+] as const) {
+  test(`replays ${decision} startup with an exact identity (relocated source: ${previouslyRelocated})`, async () => {
+    await fixture(decision, async (f) => {
+      const source = previouslyRelocated ? f.selection.binding.sourceIdentity : undefined;
+      const expected = decision === 'target' ? f.finalized.activeMediaIdentity : source;
+      if (source)
+        f.store.set(`native-active-media:${f.installation.secureInstallationId}`, source);
+
+      const complete = (start: NativeHost['start']) =>
+        completeNativeMediaCutover(f.store, f.owner, f.installation, f.operation, start);
+      await assert.rejects(complete(async () => {
+        assert.equal(nativeActiveMediaIdentity(f.store, f.installation), expected);
+        throw Error('lost startup acknowledgement');
+      }), /lost startup acknowledgement/);
+      assert.ok(f.store.locked()?.receipts[resultKey]);
+      f.owner.inspect = async () => { throw Error('already finalized'); };
+
+      await complete(async () => ({
+        protocolVersion: 1,
+        state: 'running',
+        secureInstallationId: f.installation.secureInstallationId,
+        manifestSha256: f.installation.manifestSha256,
+        sourceRevision: f.installation.sourceRevision,
+        certified: f.installation.certified,
+        ...(expected ? { activeMediaIdentity: expected } : {}),
+      }));
+      assert.equal(nativeActiveMediaIdentity(f.store, f.installation), expected);
+      assert.equal(f.calls(), 1);
+      assert.ok(f.store.locked()?.receipts['native-media-cutover-startup']);
+    });
+  });
+}

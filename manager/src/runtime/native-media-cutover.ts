@@ -124,6 +124,7 @@ export function nativeMediaMoveAdmission(
       !isDeepStrictEqual(verifyBackup(review.backupOperationId), review.safety)
     )
       throw new Refusal('native_media_review_changed');
+    requireSourceMediaIdentity(store, installation, review.binding.sourceIdentity);
     const request = {
       protocolVersion: 1 as const,
       operationId: review.reviewId,
@@ -175,6 +176,13 @@ const FencedSelection = MoveRequest.extend({
   writerFence: z.literal('held'),
 });
 
+const CutoverIntent = z.strictObject({
+  request: MoveRequest,
+  decision: MoveInput.shape.decision,
+  // Early qualification journals only admitted a first move.
+  sourceMediaIdentity: sha256.nullable().default(null),
+});
+
 const Finalized = MoveRequest.extend({
   state: z.enum(['target-admitted', 'original-restored']),
   writerFence: z.literal('released'),
@@ -221,6 +229,16 @@ export function nativeActiveMediaIdentity(
 }
 
 const invalid = () => new Refusal('native_media_cutover_journal_invalid');
+
+function requireSourceMediaIdentity(
+  store: Store,
+  installation: NativeInstallation,
+  source: string,
+) {
+  const recorded = nativeActiveMediaIdentity(store, installation);
+  if (recorded !== undefined && recorded !== source) throw invalid();
+  return recorded;
+}
 
 /** Reconcile the writer-fenced move without releasing Manager's operation lock. */
 export async function runNativeMediaCutover(
@@ -296,14 +314,23 @@ export async function runNativeMediaCutover(
   }
 
   owned();
-  const intent = { request, decision };
   const previousIntent = operation.receipts[intentKey];
   const previousResult = operation.receipts[resultKey];
   if (
     operation.completed.includes(intentKey) !== (previousIntent !== undefined) ||
     operation.completed.includes(resultKey) !== (previousResult !== undefined) ||
-    (previousIntent !== undefined && !isDeepStrictEqual(previousIntent, intent)) ||
     (previousResult !== undefined && previousIntent === undefined)
+  )
+    throw invalid();
+  const parsedIntent =
+    previousIntent === undefined ? undefined : CutoverIntent.safeParse(previousIntent);
+  if (
+    parsedIntent &&
+    (!parsedIntent.success ||
+      !isDeepStrictEqual(parsedIntent.data.request, request) ||
+      parsedIntent.data.decision !== decision ||
+      (parsedIntent.data.sourceMediaIdentity !== null &&
+        parsedIntent.data.sourceMediaIdentity !== binding.sourceIdentity))
   )
     throw invalid();
 
@@ -311,14 +338,20 @@ export async function runNativeMediaCutover(
   // can no longer be inspected through the quiescent controller.
   if (previousResult !== undefined) return finalReceipt(previousResult);
 
+  const source = requireSourceMediaIdentity(store, installation, binding.sourceIdentity);
+  if (parsedIntent?.success && parsedIntent.data.sourceMediaIdentity !== (source ?? null))
+    throw invalid();
   const current = await owner.inspect(request, signal);
   owned();
+  if (requireSourceMediaIdentity(store, installation, binding.sourceIdentity) !== source)
+    throw invalid();
   const selected = FencedSelection.safeParse(current);
   let receipt: Finalized;
   if (selected.success) {
     if (!matchesRequest(selected.data))
       throw new Refusal('native_media_cutover_unconfirmed');
-    if (previousIntent === undefined) record(intentKey, intent);
+    if (previousIntent === undefined)
+      record(intentKey, { request, decision, sourceMediaIdentity: source ?? null });
     receipt = finalReceipt(await owner.apply(selected.data, decision, signal));
   } else {
     if (previousIntent === undefined)
@@ -347,18 +380,22 @@ export async function completeNativeMediaCutover(
     operation,
   );
   if (!isDeepStrictEqual(store.locked(), operation)) throw invalid();
-  const expected =
-    receipt.state === 'target-admitted' ? receipt.activeMediaIdentity : undefined;
+  const intent = CutoverIntent.safeParse(operation.receipts[intentKey]);
+  if (!intent.success) throw invalid();
+  const source = intent.data.sourceMediaIdentity ?? undefined;
+  const expected = receipt.state === 'target-admitted' ? receipt.activeMediaIdentity : source;
   const recorded = nativeActiveMediaIdentity(store, installation);
-  if (recorded !== undefined && recorded !== expected) throw invalid();
-  // Persist the expected target before any startup. Ordinary starts after Manager
-  // recovery also require that identity, including after the move operation completes.
-  if (
-    expected !== undefined &&
-    recorded === undefined &&
-    !store.createOnce(activeMediaKey(installation), expected)
-  )
-    throw invalid();
+  if (recorded !== expected) {
+    // The operation lock spans this synchronous transition and startup. Recovery
+    // accepts either the journaled source or an already persisted exact target.
+    if (recorded !== source || expected === undefined) throw invalid();
+    const key = activeMediaKey(installation);
+    if (recorded === undefined) {
+      if (!store.createOnce(key, expected)) throw invalid();
+    } else {
+      store.set(key, expected);
+    }
+  }
 
   const ready = await start();
   if (
