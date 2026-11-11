@@ -163,7 +163,7 @@ describe(WorkflowExecutionService.name, () => {
 
     it('refuses an unsigned request to a cloud metadata address before connecting', async () => {
       hop().mockImplementation(await realHop());
-      expect(await request(['*'], 'http://169.254.169.254/latest/meta-data/')).toMatchObject({ success: false });
+      expect(await request(['*'], 'https://169.254.169.254/latest/meta-data/')).toMatchObject({ success: false });
     });
 
     it('reads at most 64 KB of the answer', async () => {
