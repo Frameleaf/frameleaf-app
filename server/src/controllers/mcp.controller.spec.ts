@@ -47,7 +47,7 @@ describe('MCP HTTP transport', () => {
       clientInfo: { name: 'Frameleaf transport fixture', version: '1.0.0' },
     },
   };
-  const post = (body: unknown = initialize) =>
+  const post = (body: object = initialize) =>
     request(server)
       .post('/api/mcp')
       .set('Accept', 'application/json, text/event-stream')
