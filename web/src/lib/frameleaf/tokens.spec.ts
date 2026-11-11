@@ -784,7 +784,7 @@ describe('Frameleaf theme contract', () => {
     const strip = blockAfter(baseline, '@media (pointer: fine)');
     const controls = String.raw`:where\(\.frameleaf \.button, \.fl-scope \.button, \.frameleaf \.fl-control, \.fl-scope \.fl-control\)`;
     expect(strip).toMatch(new RegExp(String.raw`${controls} {\s*position: relative;\s*isolation: isolate;\s*}`));
-    const [, after] = new RegExp(String.raw`${controls}::after {([^}]*)}`).exec(strip) ?? [];
+    const [, after] = new RegExp(`${controls}::after {([^}]*)}`).exec(strip) ?? [];
     expect(after).toMatch(/content: '';/);
     expect(after).toMatch(/position: absolute;/);
     // Behind the control's own content, so a press inside the box lands where it did.
