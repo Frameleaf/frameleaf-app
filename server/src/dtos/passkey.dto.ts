@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { capabilitiesField } from 'src/dtos/auth.dto.js';
 import { PASSKEY_NAME_LENGTH } from 'src/utils/passkey.js';
 
 /**
@@ -61,6 +62,7 @@ const PasskeyLoginSchema = z
   .object({
     credential: PasskeyCredentialSchema,
     rememberMe: z.boolean().optional().describe('Keep the session after the browser closes'),
+    capabilities: capabilitiesField,
   })
   .meta({ id: 'PasskeyLoginDto' });
 

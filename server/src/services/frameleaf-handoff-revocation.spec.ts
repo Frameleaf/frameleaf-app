@@ -37,6 +37,7 @@ it.each([
   } as never);
   mocks.user.get.mockResolvedValue(user);
   mocks.session.create.mockResolvedValue({ id: 'child' } as never);
+  mocks.session.getSignIn.mockResolvedValue(undefined);
   mocks.crypto.randomBytesAsText.mockReturnValue('synthetic-child-token');
   mocks.frameleafAccount.getSession.mockResolvedValue(parent as never);
   mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: parent.sub } as never);

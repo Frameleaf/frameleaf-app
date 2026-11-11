@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { OAuthCallbackSchema } from 'src/dtos/auth.dto.js';
+import { OAuthCallbackSchema, capabilitiesField } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseSchema } from 'src/dtos/user.dto.js';
 
 /** Sign in with Frameleaf (FL-158): a person's own Frameleaf account link and the sign-in handoff. */
@@ -30,6 +30,7 @@ const FrameleafHandoffRedeemSchema = z
   .object({
     code: z.string().min(16).max(200).describe('The code from POST oauth/frameleaf/handoff'),
     rememberMe: z.boolean().optional(),
+    capabilities: capabilitiesField,
   })
   .meta({ id: 'FrameleafHandoffRedeemDto' });
 
@@ -84,6 +85,7 @@ const FrameleafTokenExchangeSchema = z
         'A server-audience token from the Frameleaf identity provider (OAuth token exchange), signed by the issuer this server is linked to, with header typ "frameleaf-exchange+jwt", aud this server\'s client id, iat, exp, a single-use jti and the Sign in with Frameleaf claims',
       ),
     rememberMe: z.boolean().optional(),
+    capabilities: capabilitiesField,
   })
   .meta({ id: 'FrameleafTokenExchangeDto' });
 

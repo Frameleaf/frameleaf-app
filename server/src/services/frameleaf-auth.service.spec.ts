@@ -617,6 +617,48 @@ describe(FrameleafAuthService.name, () => {
       );
     });
 
+    describe('how Cloud says the person signed in (unified sign-in)', () => {
+      beforeEach(() => {
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+        mocks.user.getByEmail.mockResolvedValue(void 0);
+        mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+        mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
+        mocks.user.create.mockResolvedValue(UserFactory.create() as never);
+      });
+
+      it('treats a token without amr or acr as Basic, and a client without the capability as legacy', async () => {
+        await sut.exchangeToken({ token: await mint({ jti: 'jti-old' }) }, loginDetails);
+        expect(mocks.session.create).toHaveBeenCalledWith(
+          expect.anything(),
+          undefined,
+          expect.objectContaining({ methods: [], level: 'basic', source: 'frameleaf', legacy: true }),
+        );
+      });
+
+      it('records amr, acr and auth_time, and a client that declares verification is not legacy', async () => {
+        const token = await mint({
+          jti: 'jti-new',
+          claims: {
+            amr: ['pwd', 'totp', 'fl-session'],
+            acr: 'urn:frameleaf:acr:verified',
+            auth_time: 1_794_000_000,
+          },
+        });
+        await sut.exchangeToken({ token, capabilities: ['verification'] }, loginDetails);
+        expect(mocks.session.create).toHaveBeenCalledWith(
+          expect.anything(),
+          undefined,
+          expect.objectContaining({
+            methods: ['pwd', 'totp'],
+            level: 'verified',
+            authTime: new Date(1_794_000_000_000),
+            source: 'frameleaf',
+            legacy: false,
+          }),
+        );
+      });
+    });
+
     describe('a server set up from the Frameleaf app (FL-292)', () => {
       beforeEach(() => {
         mocks.user.getAdmin.mockResolvedValue(void 0);
@@ -1086,6 +1128,14 @@ describe(FrameleafAuthService.name, () => {
         handoffExpiresAt: new Date(Date.now() + 30_000),
       } as never);
       mocks.session.get.mockResolvedValue({ id: 'session-1' } as never);
+      const authTime = new Date('2026-11-11T10:00:00Z');
+      mocks.session.getSignIn.mockResolvedValue({
+        methods: ['pwd', 'totp'],
+        level: 'verified',
+        authTime,
+        source: 'frameleaf',
+        legacy: false,
+      });
       mocks.user.get.mockResolvedValue(user as never);
       mocks.crypto.randomBytesAsText.mockReturnValue('new-token');
       mocks.frameleafAccount.getSession.mockResolvedValue({
@@ -1102,6 +1152,18 @@ describe(FrameleafAuthService.name, () => {
       );
 
       expect(mocks.signInSecurity.signedIn).toHaveBeenCalledWith(user, loginDetails);
+      // the new address inherits how the handed-over session was made; this client declared no capability
+      expect(mocks.session.create).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        expect.objectContaining({
+          methods: ['pwd', 'totp'],
+          level: 'verified',
+          authTime,
+          source: 'frameleaf',
+          legacy: true,
+        }),
+      );
 
       mocks.frameleafAccount.takeHandoff.mockResolvedValue(void 0);
       await expect(sut.redeemHandoff({ code }, loginDetails)).rejects.toThrow('not valid');
