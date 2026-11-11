@@ -122,6 +122,9 @@ type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'asset
   checksums?: Map<File, UploadChecksums>;
 };
 
+/** Files an operating system leaves in folders (Finder, Explorer, AppleDouble); never photos or designs. */
+const isSystemFile = (name: string) => name === '.ds_store' || name === 'thumbs.db' || name.startsWith('._');
+
 /** Browsers report no type for camera formats they don't know (Blackmagic RAW, RED R3D); name the extension. */
 const fileExtension = (name: string) => (name.includes('.') ? `.${name.split('.').pop()}` : name);
 
@@ -143,6 +146,10 @@ export const fileUploadHandler = async ({
   const promises = [];
   for (const file of files) {
     const name = file.name.toLowerCase();
+    // a folder brings its operating system's files along: leave them out quietly, not as "unsupported"
+    if (file.webkitRelativePath && isSystemFile(name)) {
+      continue;
+    }
     if (extensions.includes('*') || extensions.some((extension) => name.endsWith(extension))) {
       const deviceAssetId = getDeviceAssetId(file);
       uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId, isLockedAssets, libraryScope });

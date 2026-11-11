@@ -105,7 +105,7 @@ describe('FL-653 Eagle library on the server', () => {
       {
         id: 'I1',
         metadata: { name: 'Café', ext: ' .PSB ' },
-        fileNames: ['CAFE\u0301.PSB', 'other.psb', 'metadata.json'],
+        fileNames: ['CAFE\u{301}.PSB', 'other.psb', 'metadata.json'],
       },
       {
         id: 'I2',
@@ -119,7 +119,7 @@ describe('FL-653 Eagle library on the server', () => {
       },
     ])!;
     expect(library.items.map(({ ext, fileName }) => [ext, fileName])).toEqual([
-      ['psb', 'CAFE\u0301.PSB'],
+      ['psb', 'CAFE\u{301}.PSB'],
       ['otf', 'Type.OTF'],
       ['', undefined],
     ]);
