@@ -314,6 +314,12 @@ describe('AlbumHeader', () => {
     expect(menu.getByRole('menuitem', { name: 'Leave album' })).toBeInTheDocument();
   });
 
+  it('ends the breadcrumb with the album itself on a wide screen', () => {
+    renderHeader(albumAs(AlbumUserRole.Owner, { albumName: 'All phone photos' }));
+    const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(crumbs.querySelector('[aria-current="page"]')).toHaveTextContent('All phone photos');
+  });
+
   describe('on a phone', () => {
     const phoneWidth = (query: string) => ({
       matches: query.includes('max-width: 700px'),
@@ -333,6 +339,23 @@ describe('AlbumHeader', () => {
         ...phoneWidth(query),
         matches: false,
       })) as never);
+    });
+
+    // FL-1411 (M12): a long name was shown twice, as the last breadcrumb and as the title.
+    it('stops the breadcrumb at the parent and leaves the name to the title', () => {
+      const family = albumFactory.build({ id: 'family', albumName: 'Family', kind: AlbumKind.Collection });
+      const album = albumAs(AlbumUserRole.Owner, { albumName: 'All phone photos', parentId: 'family' });
+      render(AlbumHeader, { album, ancestors: [family], assetCount: 3, onAlbumChange: vi.fn(), onRefresh: vi.fn() });
+
+      const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' });
+      expect(
+        within(crumbs)
+          .getAllByRole('link')
+          .map((link) => link.textContent?.trim()),
+      ).toEqual(['Albums', 'Family']);
+      expect(crumbs).not.toHaveTextContent('All phone photos');
+      expect(crumbs.querySelector('[aria-current]')).toBeNull();
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('All phone photos');
     });
 
     // Approved template, CollectionHeader.jsx:1410-1510.
