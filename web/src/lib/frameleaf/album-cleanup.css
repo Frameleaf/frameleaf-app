@@ -216,7 +216,7 @@
 .ac-head {
   display: grid;
   gap: 8px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 .ac-head h1 {
   margin: 0;
@@ -225,6 +225,14 @@
 }
 .ac-head p:last-child {
   margin: 0;
+  color: var(--fl-muted);
+}
+.ac-checked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 24px;
   color: var(--fl-muted);
 }
 dl.ac-stats {

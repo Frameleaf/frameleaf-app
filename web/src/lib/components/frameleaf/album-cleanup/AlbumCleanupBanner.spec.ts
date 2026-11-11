@@ -39,12 +39,14 @@ describe(AlbumCleanupBanner.name, () => {
     vi.spyOn(authManager, 'preferences', 'get').mockReturnValue(preferences(false));
     sdkMock.getAlbumCleanupStatus.mockResolvedValue({
       ready: true,
+      checking: false,
       computedAt: '2026-11-08T00:00:00.000Z',
       suggestionCount: 40,
       apply: null,
     });
     sdkMock.getAlbumCleanupSnapshot.mockResolvedValue({
       ready: true,
+      checking: false,
       computedAt: '2026-11-08T00:00:00.000Z',
       suggestionCount: 40,
       facts: facts(40),
@@ -63,6 +65,7 @@ describe(AlbumCleanupBanner.name, () => {
   it('says nothing for a clean or small library', async () => {
     sdkMock.getAlbumCleanupStatus.mockResolvedValue({
       ready: true,
+      checking: false,
       computedAt: '2026-11-08T00:00:00.000Z',
       suggestionCount: 19,
       apply: null,
@@ -72,6 +75,50 @@ describe(AlbumCleanupBanner.name, () => {
     flushSync();
     expect(sdkMock.getAlbumCleanupSnapshot).not.toHaveBeenCalled();
     expect(screen.queryByText('frameleaf_album_cleanup_review_suggestions')).not.toBeInTheDocument();
+  });
+
+  // FL-1404: the scan on record ran before the albums existed, and the banner never appeared.
+  it('waits for a scan under way instead of trusting the one before it', async () => {
+    sdkMock.getAlbumCleanupStatus
+      .mockResolvedValueOnce({ ready: true, checking: true, computedAt: null, suggestionCount: 0, apply: null })
+      .mockResolvedValue({
+        ready: true,
+        checking: false,
+        computedAt: '2026-11-10T23:05:00.000Z',
+        suggestionCount: 40,
+        apply: null,
+      });
+    vi.useFakeTimers();
+    try {
+      render(AlbumCleanupBanner);
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.waitFor(() =>
+        expect(screen.getByText('frameleaf_album_cleanup_review_suggestions')).toBeInTheDocument(),
+      );
+      expect(sdkMock.getAlbumCleanupStatus).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says nothing from an old count when the scan outlasts the wait', async () => {
+    sdkMock.getAlbumCleanupStatus.mockResolvedValue({
+      ready: true,
+      checking: true,
+      computedAt: '2026-11-08T00:00:00.000Z',
+      suggestionCount: 40,
+      apply: null,
+    });
+    vi.useFakeTimers();
+    try {
+      render(AlbumCleanupBanner);
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(sdkMock.getAlbumCleanupStatus).toHaveBeenCalledTimes(13);
+      expect(sdkMock.getAlbumCleanupSnapshot).not.toHaveBeenCalled();
+      expect(screen.queryByText('frameleaf_album_cleanup_review_suggestions')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('stays quiet after Not now', () => {

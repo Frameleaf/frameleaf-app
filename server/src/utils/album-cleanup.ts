@@ -11,8 +11,10 @@ export const SAME_PHOTOS_MIN_SHARED = 3;
 export const HOME_RADIUS_KM = 100;
 /** The review's picker lists this many of the largest clusters. */
 export const HOME_AREAS_SHOWN = 5;
-/** A snapshot older than this is computed again the next time the person opens Albums. */
+/** A snapshot older than this is computed again the next time the person opens Albums, changed albums or not. */
 export const CLEANUP_SCAN_STALE_HOURS = 24;
+/** One scan per person waits at a time. The status reads this key to say a scan is waiting or running. */
+export const albumCleanupScanKey = (userId: string): string => `AlbumCleanupScan:${userId}`;
 /** Suggestions listed per album in the snapshot; healing still sends each approved photo's id. */
 export const CLEANUP_MAX_LOST_DATES_PER_ALBUM = 200;
 /** Nothing else is moving: a run with no progress for this long is treated as stopped, so Undo stays available. */

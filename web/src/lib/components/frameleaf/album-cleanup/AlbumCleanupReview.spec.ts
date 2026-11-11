@@ -21,6 +21,7 @@ const fact = (id: string, name: string, count = 3) => ({
 
 const snapshot = (facts: Partial<AlbumCleanupFactsDto> = {}) => ({
   ready: true,
+  checking: false,
   computedAt: '2026-11-08T00:00:00.000Z',
   suggestionCount: 3,
   facts: {
@@ -38,6 +39,7 @@ const snapshot = (facts: Partial<AlbumCleanupFactsDto> = {}) => ({
 
 const idleStatus = {
   ready: true,
+  checking: false,
   computedAt: '2026-11-08T00:00:00.000Z',
   suggestionCount: 3,
   apply: null,
@@ -101,12 +103,107 @@ describe(AlbumCleanupReview.name, () => {
   it('says it is still reading when the first scan has not finished', async () => {
     sdkMock.getAlbumCleanupSnapshot.mockResolvedValue({
       ready: false,
+      checking: true,
       computedAt: null,
       suggestionCount: 0,
       facts: null,
     });
     render(AlbumCleanupReview);
     expect(await screen.findByText('frameleaf_album_cleanup_scanning')).toBeInTheDocument();
+  });
+
+  describe('looking again (FL-1404)', () => {
+    /** What the server holds from before any album existed, while it looks again. */
+    const emptyAndChecking = { ...snapshot({ albums: [], sameName: [] }), suggestionCount: 0, checking: true };
+    const fresh = { ...snapshot(), computedAt: '2026-11-10T23:05:00.000Z' };
+
+    it('says when it last looked and offers to check again', async () => {
+      render(AlbumCleanupReview);
+      expect(await screen.findByText('frameleaf_album_cleanup_checked')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'frameleaf_album_cleanup_check_again' })).toBeEnabled();
+    });
+
+    it('says it is looking, not that there is nothing to do, then shows what the new look found', async () => {
+      sdkMock.getAlbumCleanupSnapshot.mockResolvedValueOnce(emptyAndChecking).mockResolvedValue(fresh);
+      vi.useFakeTimers();
+      try {
+        render(AlbumCleanupReview);
+        await vi.waitFor(() => expect(screen.getByText('frameleaf_album_cleanup_scanning')).toBeInTheDocument());
+        expect(screen.queryByText('frameleaf_album_cleanup_intro')).not.toBeInTheDocument();
+        expect(screen.queryByText('frameleaf_album_cleanup_no_groups')).not.toBeInTheDocument();
+
+        await vi.advanceTimersByTimeAsync(3000);
+        await vi.waitFor(() => expect(screen.getByText('frameleaf_album_cleanup_intro')).toBeInTheDocument());
+        expect(screen.queryByText('frameleaf_album_cleanup_scanning')).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('shows the first newer result even when another look is already waiting', async () => {
+      sdkMock.getAlbumCleanupSnapshot
+        .mockResolvedValueOnce(emptyAndChecking)
+        .mockResolvedValue({ ...fresh, checking: true });
+      vi.useFakeTimers();
+      try {
+        render(AlbumCleanupReview);
+        await vi.waitFor(() => expect(screen.getByText('frameleaf_album_cleanup_scanning')).toBeInTheDocument());
+        await vi.advanceTimersByTimeAsync(3000);
+        await vi.waitFor(() => expect(screen.getByText('frameleaf_album_cleanup_intro')).toBeInTheDocument());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('shows the last result after a minute when the new look never finishes', async () => {
+      sdkMock.getAlbumCleanupSnapshot.mockResolvedValue({ ...snapshot(), checking: true });
+      vi.useFakeTimers();
+      try {
+        render(AlbumCleanupReview);
+        await vi.waitFor(() => expect(screen.getByText('frameleaf_album_cleanup_scanning')).toBeInTheDocument());
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(screen.queryByText('frameleaf_album_cleanup_intro')).not.toBeInTheDocument();
+
+        await vi.advanceTimersByTimeAsync(31_000);
+        await vi.waitFor(() => expect(screen.getByText('frameleaf_album_cleanup_intro')).toBeInTheDocument());
+        expect(screen.getByText('frameleaf_album_cleanup_checked')).toBeInTheDocument();
+        const calls = sdkMock.getAlbumCleanupSnapshot.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(sdkMock.getAlbumCleanupSnapshot).toHaveBeenCalledTimes(calls);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('starts a new look on Check again and waits for it', async () => {
+      render(AlbumCleanupReview);
+      const button = await screen.findByRole('button', { name: 'frameleaf_album_cleanup_check_again' });
+      sdkMock.getAlbumCleanupSnapshot.mockResolvedValue({ ...snapshot(), checking: true });
+      await fireEvent.click(button);
+
+      expect(await screen.findByText('frameleaf_album_cleanup_scanning')).toBeInTheDocument();
+      expect(sdkMock.checkAlbumCleanup).toHaveBeenCalledOnce();
+      expect(screen.queryByText('frameleaf_album_cleanup_intro')).not.toBeInTheDocument();
+    });
+
+    it('takes Apply away while Check again is being asked for', async () => {
+      let answer: () => void = () => {};
+      sdkMock.checkAlbumCleanup.mockReturnValueOnce(new Promise<never>((resolve) => (answer = resolve as () => void)));
+      render(AlbumCleanupReview);
+      await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_album_cleanup_check_again' }));
+
+      expect(await screen.findByText('frameleaf_album_cleanup_scanning')).toBeInTheDocument();
+      expect(screen.queryByText('frameleaf_album_cleanup_apply')).not.toBeInTheDocument();
+      answer();
+    });
+
+    it('keeps the suggestions on screen when a new look cannot be started', async () => {
+      sdkMock.checkAlbumCleanup.mockRejectedValueOnce(new Error('offline'));
+      render(AlbumCleanupReview);
+      await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_album_cleanup_check_again' }));
+      await waitFor(() => expect(sdkMock.checkAlbumCleanup).toHaveBeenCalledOnce());
+      expect(await screen.findByText('frameleaf_album_cleanup_intro')).toBeInTheDocument();
+    });
   });
 
   it('offers to try again when the suggestions cannot be read', async () => {
@@ -127,7 +224,7 @@ describe(AlbumCleanupReview.name, () => {
     unmount();
     vi.useFakeTimers();
     try {
-      answer({ ready: false, computedAt: null, suggestionCount: 0, facts: null });
+      answer({ ready: false, checking: true, computedAt: null, suggestionCount: 0, facts: null });
       await vi.advanceTimersByTimeAsync(60_000);
       expect(sdkMock.getAlbumCleanupSnapshot).toHaveBeenCalledTimes(1);
     } finally {

@@ -52,6 +52,7 @@ import {
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { albumCleanupScanKey } from 'src/utils/album-cleanup.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
@@ -1316,7 +1317,7 @@ export class JobRepository {
       }
       case JobName.AlbumCleanupScan: {
         // One scan per person: opening Albums again while one is waiting asks for nothing new.
-        return { deduplication: { id: `${JobName.AlbumCleanupScan}:${item.data.userId}`, keepLastIfActive: true } };
+        return { deduplication: { id: albumCleanupScanKey(item.data.userId), keepLastIfActive: true } };
       }
       case JobName.AlbumCleanupApply: {
         return { deduplication: { id: `${JobName.AlbumCleanupApply}:${item.data.id}` } };

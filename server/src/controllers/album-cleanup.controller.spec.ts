@@ -23,6 +23,14 @@ describe(AlbumCleanupController.name, () => {
     expect(ctx.authenticate).toHaveBeenCalled();
   });
 
+  describe('POST /albums/cleanup/check', () => {
+    it('starts a new scan', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/albums/cleanup/check');
+      expect(status).toBe(204);
+      expect(service.check).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('POST /albums/cleanup/apply', () => {
     it('refuses an empty list and unknown operations', async () => {
       const empty = await request(ctx.getHttpServer()).post('/albums/cleanup/apply').send({ operations: [] });

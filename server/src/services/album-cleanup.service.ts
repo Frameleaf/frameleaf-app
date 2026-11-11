@@ -14,8 +14,8 @@ import type { CleanupAlbumRow, CleanupCollectionRow } from 'src/repositories/alb
 import type { AlbumReadOptions } from 'src/repositories/album.repository.js';
 import type { DB } from 'src/schema/index.js';
 import type { JobOf } from 'src/types.js';
-import { OnJob } from 'src/decorators.js';
-import { AlbumKind, AlbumUserRole, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { AlbumKind, AlbumUserRole, FrameleafWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { AlbumChangeKind, AlbumMergeRepository } from 'src/repositories/album-merge.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { MAX_HEAL_PHOTOS } from 'src/repositories/album-suggestion.repository.js';
@@ -35,6 +35,7 @@ import {
   CLEANUP_SCAN_STALE_HOURS,
   SAME_PHOTOS_MIN_SHARED,
   SAME_PHOTOS_SHARE,
+  albumCleanupScanKey,
   albumNameKey,
   albumPlaceKey,
   countCleanupSuggestions,
@@ -203,11 +204,12 @@ export class AlbumCleanupService extends BaseService {
   }
 
   async getStatus(auth: AuthDto): Promise<AlbumCleanupStatusResponseDto> {
+    const waiting = await this.isScanWaiting(auth);
     const [snapshot, latest] = await Promise.all([
       this.albumCleanupRepository.getSnapshotSummary(auth.user.id, variantOf(auth)),
       this.albumCleanupRepository.getLatestApply(auth.user.id),
     ]);
-    await this.scanWhenStale(auth.user.id, snapshot?.computedAt);
+    const checking = waiting || (await this.scanWhenStale(auth, snapshot?.computedAt));
 
     let status = latest?.status;
     if (latest && status === AlbumChangeRunStatus.Running && (await this.failIfAbandoned(latest))) {
@@ -216,6 +218,7 @@ export class AlbumCleanupService extends BaseService {
 
     return {
       ready: !!snapshot,
+      checking,
       computedAt: snapshot ? new Date(snapshot.computedAt).toISOString() : null,
       suggestionCount: snapshot?.suggestionCount ?? 0,
       apply: latest
@@ -230,26 +233,58 @@ export class AlbumCleanupService extends BaseService {
   }
 
   async getSnapshot(auth: AuthDto): Promise<AlbumCleanupSnapshotResponseDto> {
+    const waiting = await this.isScanWaiting(auth);
     const stored = await this.albumCleanupRepository.getSnapshot(auth.user.id, variantOf(auth));
     // A snapshot from before the facts changed shape is treated as missing, so a fresh scan replaces it.
     const snapshot = stored && hasCurrentAlbumFacts(stored.facts.albums) ? stored : undefined;
-    await this.scanWhenStale(auth.user.id, snapshot?.computedAt);
+    const checking = waiting || (await this.scanWhenStale(auth, snapshot?.computedAt));
     if (!snapshot) {
-      return { ready: false, computedAt: null, suggestionCount: 0, facts: null };
+      return { ready: false, checking, computedAt: null, suggestionCount: 0, facts: null };
     }
     return {
       ready: true,
+      checking,
       computedAt: new Date(snapshot.computedAt).toISOString(),
       suggestionCount: snapshot.suggestionCount,
       facts: snapshot.facts,
     };
   }
 
-  private async scanWhenStale(userId: string, computedAt: Date | undefined): Promise<void> {
-    const stale = !computedAt || Date.now() - new Date(computedAt).getTime() > CLEANUP_SCAN_STALE_HOURS * 3_600_000;
-    if (stale) {
-      await this.jobRepository.queue({ name: JobName.AlbumCleanupScan, data: { userId } });
+  /**
+   * Whether a scan is waiting or running. Asked before the result is read: a scan that ends in between then
+   * answers "checking" with its new result, never "done" with the old one.
+   */
+  private isScanWaiting(auth: AuthDto): Promise<boolean> {
+    return this.jobRepository.hasDedupJob(QueueName.BackgroundTask, albumCleanupScanKey(auth.user.id));
+  }
+
+  /** "Check again": a new scan now, however recent the last one. */
+  async check(auth: AuthDto): Promise<void> {
+    await this.jobRepository.queue({ name: JobName.AlbumCleanupScan, data: { userId: auth.user.id } });
+  }
+
+  /** FL-1404: the overnight run looks again for everyone with albums, whether or not they open Albums. */
+  @OnEvent({ name: 'NightlyDatabaseCleanup', workers: [FrameleafWorker.Microservices] })
+  async onNightlyDatabaseCleanup(): Promise<void> {
+    const userIds = await this.albumCleanupRepository.getUserIdsWithAlbums();
+    await this.jobRepository.queueAll(
+      userIds.map((userId) => ({ name: JobName.AlbumCleanupScan as const, data: { userId } })),
+    );
+  }
+
+  /**
+   * FL-1404: asks for a scan when there is none, when it is a day old, or when an album was created, changed or
+   * deleted since it ran. A scan that ran once and was never repeated told a library of 57 new albums that it had
+   * nothing to tidy. Returns whether it asked, so nobody is told there is nothing to do while a scan is on its way.
+   */
+  private async scanWhenStale(auth: AuthDto, computedAt: Date | undefined): Promise<boolean> {
+    const userId = auth.user.id;
+    const recent = !!computedAt && Date.now() - new Date(computedAt).getTime() <= CLEANUP_SCAN_STALE_HOURS * 3_600_000;
+    if (recent && !(await this.albumCleanupRepository.hasChangedSinceScan(userId, variantOf(auth)))) {
+      return false;
     }
+    await this.jobRepository.queue({ name: JobName.AlbumCleanupScan, data: { userId } });
+    return true;
   }
 
   /**
@@ -294,6 +329,8 @@ export class AlbumCleanupService extends BaseService {
 
   @OnJob({ name: JobName.AlbumCleanupScan, queue: QueueName.BackgroundTask })
   async handleScan({ userId }: JobOf<JobName.AlbumCleanupScan>): Promise<JobStatus> {
+    // Dated before anything is read, so an album that changes while the scan runs is newer than its result.
+    const computedAt = await this.albumCleanupRepository.getTime();
     const [scanned, collections, metadata] = await Promise.all([
       this.loadScanAlbums(userId),
       this.albumCleanupRepository.getCollections(userId),
@@ -317,7 +354,6 @@ export class AlbumCleanupService extends BaseService {
       ids.length > 0 ? this.albumCleanupRepository.getAlbumsWithLocked(ids) : Promise.resolve(new Set<string>()),
     ]);
 
-    const computedAt = new Date();
     const { facts: ordinaryFacts, healSkippedIds } = await this.scanVariant({
       userId,
       albums,
@@ -341,7 +377,7 @@ export class AlbumCleanupService extends BaseService {
     return JobStatus.Success;
   }
 
-  private async save(userId: string, variant: AlbumCleanupVariant, facts: AlbumCleanupFacts, computedAt: Date) {
+  private async save(userId: string, variant: AlbumCleanupVariant, facts: AlbumCleanupFacts, computedAt: string) {
     await this.albumCleanupRepository.saveSnapshot(userId, variant, facts, countCleanupSuggestions(facts), computedAt);
   }
 

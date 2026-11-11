@@ -33,11 +33,13 @@
 
   const load = async (signal: AbortSignal) => {
     let status = await getAlbumCleanupStatus();
-    for (let poll = 0; !status.ready && poll < SCAN_POLLS && !signal.aborted; poll++) {
+    // FL-1404: a scan from before the albums changed is not the answer either; wait for the one under way.
+    for (let poll = 0; (!status.ready || status.checking) && poll < SCAN_POLLS && !signal.aborted; poll++) {
       await new Promise((resolve) => setTimeout(resolve, SCAN_POLL_MS));
       status = await getAlbumCleanupStatus();
     }
-    if (signal.aborted || status.suggestionCount < CLEANUP_BANNER_MIN_SUGGESTIONS) {
+    // Still looking after the last poll: the count on record is the old one, so say nothing this visit.
+    if (signal.aborted || status.checking || status.suggestionCount < CLEANUP_BANNER_MIN_SUGGESTIONS) {
       return;
     }
     const { facts } = await getAlbumCleanupSnapshot();
