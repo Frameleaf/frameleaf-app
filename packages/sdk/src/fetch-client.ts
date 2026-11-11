@@ -7351,6 +7351,8 @@ export type SearchAlbumResponseDto = {
     total: number;
 };
 export type SearchAssetResponseDto = {
+    /** How many of the leading items are close matches for the search; the rest are looser. Only on the first page of a search ranked by meaning, and absent when the search cannot tell close from loose */
+    closeMatches?: number;
     /** Number of assets in this page */
     count: number;
     facets: SearchFacetResponseDto[];

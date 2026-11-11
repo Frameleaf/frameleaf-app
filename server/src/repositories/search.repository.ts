@@ -11,6 +11,7 @@ import {
 } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import z from 'zod';
+import type { LibraryViewScope } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { LANDMARK_WIDE_RADIUS_M } from 'src/constants.js';
@@ -30,7 +31,6 @@ import {
   AssetVisibility,
   ImageEnrichmentFilter,
   LibraryScope,
-  LibraryViewScope,
   PetObservationState,
 } from 'src/enum.js';
 import { deferJobAdoption } from 'src/queue/context.js';
@@ -271,6 +271,11 @@ const DESCRIPTION_FUSION_WEIGHT = 0.1;
 // always stays ahead of a described photo.
 export const DESCRIPTION_MATCH_MAX_DISTANCE = 0.45;
 export const DESCRIPTION_MATCH_MAX_BONUS = 0.1;
+// FL-1393: the photos a search is measured against to learn what an unrelated photo scores for
+// it. The lowest file checksums are a fixed, evenly spread sample of a library, so the same search
+// gets the same answer every time. Fewer than the minimum with an embedding is too few to judge.
+const UNRELATED_DISTANCE_SAMPLE = 1000;
+const UNRELATED_DISTANCE_MIN_SAMPLE = 30;
 
 export interface FaceEmbeddingSearch extends Omit<SearchEmbeddingOptions, 'userIds'> {
   clusterGroupId: string;
@@ -505,14 +510,57 @@ export class SearchRepository {
       const items = await searchAssetBuilderLegacy(trx, options)
         .selectAll('asset')
         .select(isLocked('asset').as('isLocked'))
+        .select(this.smartSearchOrder(options).as('searchDistance'))
+        .select(this.visualDistance(options.embedding).as('visualDistance'))
         .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
-        .orderBy(this.smartSearchOrder(options))
+        .orderBy(sql.ref('searchDistance'))
         .orderBy('asset.id', 'asc')
         .limit(pagination.size + 1)
         .offset((pagination.page - 1) * pagination.size)
         .execute();
       return paginationHelper(items, pagination.size);
     });
+  }
+
+  /**
+   * FL-1393: what an unrelated photo scores for a search: the distance that nine in ten of a fixed
+   * sample of the person's library are within. Null when too few of them have an embedding. The
+   * ninetieth percentile rather than the middle, so a library that is mostly the thing searched
+   * for (a holiday of lakes, searched for "lake") still has unrelated photos to measure against.
+   */
+  @GenerateSql({ params: [DummyValue.VECTOR, [DummyValue.UUID]] })
+  async getUnrelatedSearchDistance(
+    embedding: string,
+    userIds: string[],
+    libraryScope: LibraryViewScope = LibraryScope.Personal,
+  ): Promise<number | null> {
+    const { unrelated, count } = await this.db
+      // Materialized, so only the sampled photos' embeddings are read.
+      .with(
+        (cte) => cte('sample').materialized(),
+        (qb) =>
+          qb
+            .selectFrom('asset')
+            .select('asset.id')
+            .where('asset.ownerId', '=', anyUuid(userIds))
+            .where('asset.deletedAt', 'is', null)
+            // Only what a plain search shows: nothing archived, hidden or Locked is measured.
+            .where(isTimelineVisible('asset'))
+            // the library the search looked in, so a design library never moves a photo search's line
+            .where(libraryScopePredicate(libraryScope))
+            .orderBy('asset.checksum')
+            .limit(UNRELATED_DISTANCE_SAMPLE),
+      )
+      .selectFrom('sample')
+      .innerJoin('smart_search', 'smart_search.assetId', 'sample.id')
+      .select([
+        sql<number | null>`percentile_cont(0.9) within group (order by smart_search.embedding <=> ${embedding})`.as(
+          'unrelated',
+        ),
+        (eb) => eb.fn.countAll<number>().as('count'),
+      ])
+      .executeTakeFirstOrThrow();
+    return unrelated === null || Number(count) < UNRELATED_DISTANCE_MIN_SAMPLE ? null : Number(unrelated);
   }
 
   @GenerateSql({
@@ -954,8 +1002,10 @@ export class SearchRepository {
       const items = await searchAssetBuilder(trx, options, scope)
         .select(columns.searchAsset)
         .select(isLocked('asset').as('isLocked'))
+        .select(this.smartSearchOrder(options).as('searchDistance'))
+        .select(this.visualDistance(options.embedding).as('visualDistance'))
         .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
-        .orderBy(this.smartSearchOrder(options))
+        .orderBy(sql.ref('searchDistance'))
         .orderBy('asset.id', 'asc')
         .limit(pagination.take + 1)
         .offset(pagination.skip ?? 0)
@@ -1243,6 +1293,11 @@ export class SearchRepository {
     };
   }
 
+  /** How far a photo looks from the search, before any bonus for its own words. */
+  private visualDistance(embedding: string) {
+    return sql<number>`(smart_search.embedding <=> ${embedding})`;
+  }
+
   private smartSearchOrder(options: { embedding: string; query?: string }) {
     const text = options.query?.trim();
     const fusionText = text ? tokenizeForSearch(text).join(' ') : null;
@@ -1253,11 +1308,11 @@ export class SearchRepository {
     // clashing with conditional joins inside searchAssetBuilder.
     // <=> returns [0, 2]; (1 - <->>>) returns [0, 1] when the sidecar row
     // exists, NULL otherwise.
-    const visualDistance = sql`(smart_search.embedding <=> ${options.embedding})`;
+    const visualDistance = this.visualDistance(options.embedding);
     // Visual distance minus a capped bonus for a close description match (see
     // DESCRIPTION_MATCH_MAX_DISTANCE). No description embedding yet means no
     // bonus.
-    const blendedClipDistance = sql`(
+    const blendedClipDistance = sql<number>`(
       ${visualDistance}
       - ${DESCRIPTION_MATCH_MAX_BONUS / DESCRIPTION_MATCH_MAX_DISTANCE} * coalesce(
           greatest(
@@ -1269,7 +1324,7 @@ export class SearchRepository {
         )
     )`;
     const orderExpr = fusionText
-      ? sql`
+      ? sql<number>`
         ${blendedClipDistance}
         - ${OCR_FUSION_WEIGHT} * coalesce(
             1 - (f_unaccent((select text from ocr_search where "assetId" = asset.id)) <->>> f_unaccent(${fusionText})),
