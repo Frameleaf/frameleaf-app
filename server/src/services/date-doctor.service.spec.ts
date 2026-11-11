@@ -4,7 +4,7 @@ import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { JobName } from 'src/enum.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
-import { DateFindingCause, dateFromFileName, type DateScanRow, detectDateFindings } from 'src/utils/date-doctor.js';
+import { DateFindingCause, type DateScanRow, dateFromFileName, detectDateFindings } from 'src/utils/date-doctor.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { FIXTURE_NOW, buildDateDoctorFixture, scoreFindings } from 'test/fixtures/date-doctor.fixture.js';
 
@@ -84,7 +84,7 @@ describe('detectDateFindings, edge cases', () => {
 
   it('accepts any of the zones a place has', () => {
     // Ürümqi: the map gives Asia/Shanghai and Asia/Urumqi
-    const urumqi = { latitude: 43.839_319, longitude: 87.526_148 };
+    const urumqi = { latitude: 43.839319, longitude: 87.526148 };
     const takenAt = new Date('2023-05-12T06:00:00Z');
     expect(detectDateFindings([row({ ...urumqi, takenAt, timeZone: 'Asia/Urumqi' })], now)).toEqual([]);
     expect(detectDateFindings([row({ ...urumqi, takenAt, timeZone: 'Asia/Shanghai' })], now)).toEqual([]);
