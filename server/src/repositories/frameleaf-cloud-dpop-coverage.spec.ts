@@ -56,7 +56,8 @@ const RAW_FETCH = {
   'repositories/map.repository.ts': 'public landmark icon pack',
   // FL-632: Save a link reads a typed page's title and picture through the guarded public-only fetch
   // (no private addresses, checked at connect and on each redirect); anonymous, no instance token.
-  'utils/public-fetch.ts': 'link preview of a public page',
+  // FL-1420: also every hop of a user's workflow HTTP step (fetchAutomationHop)
+  'utils/public-fetch.ts': 'link preview of a public page, automation messages and workflow HTTP steps',
   // generic OIDC profile pictures
   'repositories/oauth.repository.ts': 'OIDC profile picture',
   // the public release feed: anonymous on purpose, no instance identity is ever sent (FL-80, FL-192)
@@ -66,8 +67,6 @@ const RAW_FETCH = {
   'services/help.service.ts': 'help website articles and Ask',
   // FL-283: fixed api.stripe.com checkout/reconciliation with the studio's Stripe key; never a Cloud/media call.
   'services/photography-workflow.service.ts': 'studio-owned Stripe checkout and payment reconciliation',
-  // a user's own workflow HTTP step
-  'services/workflow-execution.service.ts': 'workflow HTTP step',
   // Buddy vault requests carry source-key DPoP and require a pinned destination receipt (buddy-backup-client.spec.ts).
   // Cloud grants still use FrameleafCloudRepository through BuddyBackupPeerService.cloud.
   'utils/buddy-backup-client.ts': 'DPoP-authenticated Buddy peer transport',
