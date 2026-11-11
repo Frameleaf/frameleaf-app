@@ -41,14 +41,14 @@ export type ImportProgress = {
   etaSeconds: number | null;
 };
 
-/** The run states in which a scan's photos are not getting ready. */
-const HOLDING: ReadonlySet<Translations> = new Set<Translations>([
+/** The run states in which a scan's photos are not getting ready. Plain strings, as `STUCK_HEADLINES` is. */
+const HOLDING: ReadonlySet<string> = new Set([
   'frameleaf_job_runs_state_paused',
   'frameleaf_job_runs_status_waiting_drive',
   'frameleaf_job_runs_state_waiting',
   'frameleaf_job_runs_status_waiting_setup',
   'frameleaf_job_runs_state_delayed',
-]);
+] satisfies Translations[]);
 
 export const importProgress = (
   summary: DurableRunningJobs | null | undefined,

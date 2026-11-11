@@ -175,12 +175,15 @@ const fromImportRun = (run: DurableJobRun): BackgroundWorkCard | null => {
   };
 };
 
-/** Headlines that say nothing moves until somebody or something else acts. */
-const STUCK_HEADLINES: ReadonlySet<Translations> = new Set<Translations>([
+/**
+ * Headlines that say nothing moves until somebody or something else acts. A set of plain strings: a `Set` of the
+ * translation keys' own type sends TypeScript 7's checker into a spin (the keys are a union of some 19,000).
+ */
+const STUCK_HEADLINES: ReadonlySet<string> = new Set([
   'frameleaf_job_runs_state_unavailable',
   'frameleaf_job_runs_state_blocked',
   'frameleaf_job_runs_status_waiting_drive',
-]);
+] satisfies Translations[]);
 
 /**
  * FL-1409: a run's card says what its Recent work card says. The state, its reason and whether it is stuck all come

@@ -208,6 +208,13 @@
    */
   const cantShow = $derived(!asset.thumbhash && cantShowPhoto({ id: asset.id, isOffline }));
   const gettingReady = $derived(!asset.thumbhash && !cantShow);
+  // A tile that says it can't be shown keeps the list fresh while it is on screen, so a photo that was tried
+  // again and worked stops saying so. A missing file is not on the list; nothing to ask for.
+  $effect(() => {
+    if (cantShow && imageFailed && !isOffline) {
+      return untrack(() => thumbnailFailures.watch());
+    }
+  });
   // Production stores durations in milliseconds on the timeline model, as the upstream thumbnail does.
   const durationSeconds = $derived(asset.duration ? Number(asset.duration) / 1000 : 0);
   const stars = $derived(typeof rating === 'number' ? rating : typeof asset.rating === 'number' ? asset.rating : 0);

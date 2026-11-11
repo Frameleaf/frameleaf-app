@@ -1,6 +1,7 @@
 import { getProcessingFailures, ProcessingFailureStep } from '@frameleaf/sdk';
 import { SvelteSet } from 'svelte/reactivity';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**
  * FL-1409 (M5): a photo with no thumbnail is either still waiting for one or can't be shown. The Library tells them
@@ -31,6 +32,36 @@ class ThumbnailFailures {
   readonly ids = new SvelteSet<string>();
   #readAt = 0;
   #reading = false;
+  #watchers = 0;
+  #timer: ReturnType<typeof setInterval> | undefined;
+
+  constructor() {
+    // The list belongs to the account that read it: the next one to sign in starts from nothing.
+    eventManager.on({
+      AuthLogout: () => {
+        this.ids.clear();
+        this.#readAt = 0;
+      },
+    });
+  }
+
+  /**
+   * A tile that says "Can't show this photo" is on screen. Nothing else would ask again for it (only a photo that
+   * is getting ready asks for its picture again), so while any such tile shows, the list is read every minute;
+   * a photo the server stops listing goes back to getting ready, and its picture is asked for again. Returns the
+   * stop function, ready for an effect.
+   */
+  watch(): () => void {
+    this.#watchers++;
+    this.#timer ??= setInterval(() => this.check(), REFRESH_MS);
+    return () => {
+      this.#watchers = Math.max(0, this.#watchers - 1);
+      if (this.#watchers === 0) {
+        clearInterval(this.#timer);
+        this.#timer = undefined;
+      }
+    };
+  }
 
   /** A tile's thumbnail did not load: read the list unless it was read in the last minute. */
   check(now = Date.now()) {
@@ -50,6 +81,8 @@ class ThumbnailFailures {
   /** Whether the list was read. */
   async #read() {
     const found = new Set<string>();
+    // An answer that arrives after the account signed out or changed is not this session's to keep.
+    const isCurrent = authManager.captureSession();
     try {
       for (let page = 0; page < MAX_PAGES; page++) {
         const rows = await getProcessingFailures({
@@ -67,6 +100,9 @@ class ThumbnailFailures {
       }
     } catch {
       // A restart or a dropped connection: keep the last answer, and ask again soon.
+      return false;
+    }
+    if (!isCurrent()) {
       return false;
     }
     for (const id of this.ids) {

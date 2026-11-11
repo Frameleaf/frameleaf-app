@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { cantShowPhoto, isGettingReady, thumbnailFailures } from '$lib/frameleaf/thumbnail-state.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /** FL-1409 (M5): "Getting this photo ready" is only for a photo still waiting for its thumbnail. */
 describe('a photo with no thumbnail yet (FL-1409)', () => {
@@ -57,6 +58,40 @@ describe('a photo with no thumbnail yet (FL-1409)', () => {
       thumbnailFailures.check(Date.now() + 15_000);
       expect(sdkMock.getProcessingFailures).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('reads the list every minute while a tile that can’t be shown is on screen, and then stops', () => {
+    vi.useFakeTimers();
+    try {
+      const check = vi.spyOn(thumbnailFailures, 'check').mockImplementation(() => {});
+      const first = thumbnailFailures.watch();
+      const second = thumbnailFailures.watch();
+      vi.advanceTimersByTime(60_000);
+      // One timer for every such tile.
+      expect(check).toHaveBeenCalledTimes(1);
+      first();
+      vi.advanceTimersByTime(60_000);
+      expect(check).toHaveBeenCalledTimes(2);
+      second();
+      vi.advanceTimersByTime(180_000);
+      expect(check).toHaveBeenCalledTimes(2);
+      check.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops an answer that arrives after the session changed, and forgets the list at sign-out', async () => {
+    vi.spyOn(authManager, 'captureSession').mockReturnValue(() => false);
+    sdkMock.getProcessingFailures.mockResolvedValue([{ assetId: 'photo-1' }] as never);
+    thumbnailFailures.check(Date.now() + 900_000);
+    await vi.waitFor(() => expect(sdkMock.getProcessingFailures).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(cantShowPhoto(photo)).toBe(false);
+
+    thumbnailFailures.ids.add('photo-1');
+    eventManager.emit('AuthLogout');
+    expect(cantShowPhoto(photo)).toBe(false);
   });
 
   it('never asks for the list on a shared link', () => {

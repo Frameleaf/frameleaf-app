@@ -420,6 +420,28 @@ describe('AssetTile for a photo with no thumbnail (FL-1409)', () => {
     }
   });
 
+  it('keeps the list of such photos fresh while its tile is on screen, and stops when it leaves', async () => {
+    const stop = vi.fn();
+    const watch = vi.spyOn(thumbnailFailures, 'watch').mockReturnValue(stop);
+    thumbnailFailures.ids.add('asset-1');
+    try {
+      const { container, unmount } = render(AssetTile, { asset: asset(), width: 200, height: 133 });
+      expect(watch).not.toHaveBeenCalled();
+      await fail(container);
+      expect(watch).toHaveBeenCalledTimes(1);
+
+      // The server stops listing it: the tile goes back to getting ready, which asks for the picture again.
+      thumbnailFailures.ids.delete('asset-1');
+      await tick();
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-thumbnail-pending]')).not.toBeNull();
+      unmount();
+    } finally {
+      thumbnailFailures.ids.delete('asset-1');
+      watch.mockRestore();
+    }
+  });
+
   it('keeps the can’t-show tile for a photo whose file is missing from its library', async () => {
     const { container } = render(AssetTile, { asset: asset({ isOffline: true }), width: 200, height: 133 });
     await fail(container);
