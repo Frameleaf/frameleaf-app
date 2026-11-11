@@ -513,7 +513,13 @@
       }
     })();
   });
+  let fixingMixedDates = false;
   const fixMixedDates = async () => {
+    // One Fix dates at a time: a second click while the ids are read does nothing
+    if (fixingMixedDates) {
+      return;
+    }
+    fixingMixedDates = true;
     const view = albumView;
     try {
       const ids = await readDatesToCheckIds({ albumId: view.albumId });
@@ -523,6 +529,8 @@
       }
     } catch (error) {
       handleError(error, $t('errors.failed_to_load_assets'));
+    } finally {
+      fixingMixedDates = false;
     }
   };
 
