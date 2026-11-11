@@ -59,7 +59,18 @@
   };
 </script>
 
-<Dialog title={$t('frameleaf_two_step_off_title')} closeLabel={$t('close')} size="medium" bind:open>
+<Dialog
+  title={$t('frameleaf_two_step_off_title')}
+  closeLabel={$t('close')}
+  size="medium"
+  bind:open
+  onRequestClose={() => {
+    // Not while the server is answering: the change would happen with nobody told.
+    if (!working) {
+      open = false;
+    }
+  }}
+>
   <form class="ts-dialog" onsubmit={turnOff} novalidate>
     <p>{$t('frameleaf_two_step_off_body')}</p>
     <TwoStepPasswordField bind:value={password} />

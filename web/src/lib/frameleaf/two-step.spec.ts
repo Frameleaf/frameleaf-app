@@ -27,6 +27,10 @@ describe('two-step sign-in rules (FL-831)', () => {
   it('puts the dash back in a recovery code and lower-cases it', () => {
     expect(cleanRecoveryCode('H7K2M XQ4RT')).toBe('h7k2m-xq4rt');
     expect(cleanRecoveryCode('h7k2')).toBe('h7k2');
+    // A line pasted from the codes file, number and all
+    expect(cleanRecoveryCode('1. aaaaa-bbbbb')).toBe('aaaaa-bbbbb');
+    expect(cleanRecoveryCode('10) h7k2m-xq4rt')).toBe('h7k2m-xq4rt');
+    expect(cleanCode('1 2 3 4 5 6')).toBe('123456');
     expect(isRecoveryCode('h7k2m-xq4rt')).toBe(true);
     expect(isRecoveryCode('h7k2m')).toBe(false);
   });

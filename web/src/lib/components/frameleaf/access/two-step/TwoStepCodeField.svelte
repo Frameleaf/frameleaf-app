@@ -1,6 +1,6 @@
 <script lang="ts">
   /** FL-831: a 6-digit code (or a recovery code) in a settings dialog; spaces and dashes from a paste go. */
-  import { CODE_LENGTH, cleanCode, cleanRecoveryCode } from '$lib/frameleaf/two-step';
+  import { cleanCode, cleanRecoveryCode } from '$lib/frameleaf/two-step';
   import { t } from 'svelte-i18n';
 
   let {
@@ -35,7 +35,6 @@
     autocomplete={recovery ? 'off' : 'one-time-code'}
     autocapitalize="none"
     spellcheck={false}
-    maxlength={recovery ? 11 : CODE_LENGTH + 2}
     placeholder={recovery ? 'xxxxx-xxxxx' : '000000'}
     {autofocus}
     data-initial-focus={autofocus ? '' : undefined}

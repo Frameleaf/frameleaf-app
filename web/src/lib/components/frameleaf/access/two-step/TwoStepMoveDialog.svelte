@@ -108,7 +108,18 @@
   };
 </script>
 
-<Dialog {title} closeLabel={$t('close')} size="medium" bind:open>
+<Dialog
+  {title}
+  closeLabel={$t('close')}
+  size="medium"
+  bind:open
+  onRequestClose={() => {
+    // Not while the server is answering: the change would happen with nobody told.
+    if (!working) {
+      open = false;
+    }
+  }}
+>
   <form class="ts-dialog" onsubmit={submit} novalidate>
     <span class="ts-step">{$t('frameleaf_two_step_step', { values: { number: step, count: 3 } })}</span>
     {#if step === 1}

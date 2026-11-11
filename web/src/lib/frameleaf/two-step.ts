@@ -19,9 +19,13 @@ export const cleanCode = (value: string | null | undefined) =>
 const CODE_PATTERN = new RegExp(String.raw`^\d{${CODE_LENGTH}}$`);
 export const isCode = (value: string) => CODE_PATTERN.test(value);
 
-/** A recovery code as typed: lower case, the dash put back after five characters. */
+/**
+ * A recovery code as typed: lower case, the dash put back after five characters. A line pasted from
+ * the codes file ("1. aaaaa-bbbbb") loses its number first.
+ */
 export const cleanRecoveryCode = (value: string | null | undefined) => {
   const raw = (value ?? '')
+    .replace(/^\s*\d+[.)]\s+/, '')
     .toLowerCase()
     .replaceAll(/[^a-z0-9]/g, '')
     .slice(0, 10);
@@ -122,7 +126,7 @@ export const printRecoveryCodes = (text: string, title: string) => {
   }
   page.title = title;
   const pre = page.createElement('pre');
-  pre.style.font = '16px/1.6 ui-monospace, Menlo, monospace';
+  pre.style.font = '16px/1.6 system-ui, sans-serif';
   pre.textContent = text;
   page.body.append(pre);
   const remove = () => frame.remove();

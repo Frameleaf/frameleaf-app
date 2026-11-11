@@ -230,7 +230,7 @@
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
   font-weight: 400;
-  text-align: right;
+  text-align: end;
   content: counter(code);
   counter-increment: code;
 }

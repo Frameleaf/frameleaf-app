@@ -20,7 +20,6 @@
     mdiTimerSandComplete,
   } from '@mdi/js';
   import {
-    CODE_LENGTH,
     LOCK_MINUTES,
     SIGN_IN_MINUTES,
     TRUST_DAYS,
@@ -266,7 +265,6 @@
           autocomplete={recovery ? 'off' : 'one-time-code'}
           autocapitalize="none"
           spellcheck={false}
-          maxlength={recovery ? 11 : CODE_LENGTH + 2}
           placeholder={recovery ? 'xxxxx-xxxxx' : '000000'}
           value={code}
           aria-invalid={(wrong > 0 && !code) || undefined}

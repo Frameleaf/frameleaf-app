@@ -709,6 +709,10 @@ describe('Two-step sign-in (FL-831)', () => {
     expect(field).toHaveAttribute('inputmode', 'numeric');
     const continueButton = screen.getByRole('button', { name: en.frameleaf_two_step_continue });
     expect(continueButton).toBeDisabled();
+    // No length limit on the field: a spaced paste is cleaned, not cut short
+    expect(field).not.toHaveAttribute('maxlength');
+    await fireEvent.input(field, { target: { value: '1 2 3 4 5 6' } });
+    expect(field).toHaveValue('123456');
     // A pasted code keeps its digits only
     await fireEvent.input(field, { target: { value: ' 123-456 ' } });
     expect(field).toHaveValue('123456');
@@ -753,6 +757,9 @@ describe('Two-step sign-in (FL-831)', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_two_step_use_recovery }));
     const field = screen.getByLabelText(en.frameleaf_two_step_recovery_label);
+    // A line pasted from the downloaded codes file keeps the code, not its number
+    await fireEvent.input(field, { target: { value: '1. aaaaa-bbbbb' } });
+    expect(field).toHaveValue('aaaaa-bbbbb');
     await fireEvent.input(field, { target: { value: 'H7K2MXQ4RT' } });
     expect(field).toHaveValue('h7k2m-xq4rt');
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_two_step_continue }));
