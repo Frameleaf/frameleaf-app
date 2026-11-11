@@ -285,6 +285,7 @@ RUN . /etc/os-release && \
   zlib1g \
   ocl-icd-libopencl1 \
   postgresql-client-19 \
+  python3 \
   libio-compress-brotli-perl \
   libwebp7 \
   libwebpdemux2 \
@@ -552,6 +553,22 @@ WORKDIR /src
 COPY icloud-bridge/go.mod icloud-bridge/go.sum icloud-bridge/main.go ./
 RUN go mod download && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /icloud-bridge .
 
+# FL-1427: The downloader runs in a fresh, unprivileged process with an inherited seccomp filter.
+FROM ${NODE_IMAGE} AS media-downloader
+COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-update-strict
+ARG DEBIAN_FRONTEND=noninteractive
+COPY server/resources/media-downloader/requirements.lock /build/
+RUN apt-update-strict && \
+  apt-get install --no-install-recommends -yqq ca-certificates gcc libc6-dev linux-libc-dev python3-venv && \
+  python3 -m venv /opt/frameleaf-media-downloader/venv && \
+  /opt/frameleaf-media-downloader/venv/bin/pip install --require-hashes --only-binary=:all: --no-cache-dir -r /build/requirements.lock && \
+  /opt/frameleaf-media-downloader/venv/bin/pip check && \
+  /opt/frameleaf-media-downloader/venv/bin/pip uninstall --yes pip
+COPY server/resources/media-downloader/launcher.c /build/
+RUN gcc -O2 -Wall -Wextra -Werror -fstack-protector-strong -Wl,-z,relro,-z,now \
+    /build/launcher.c -o /opt/frameleaf-media-downloader/launcher
+COPY server/resources/media-downloader/bridge.py server/resources/media-downloader/transport.py server/resources/media-downloader/media.py /opt/frameleaf-media-downloader/
+
 FROM base-server-prod AS prod
 
 WORKDIR /usr/src/app
@@ -569,6 +586,7 @@ COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json /build/plugi
 # FL-294: `frameleaf` is the CLI; `immich` stays on PATH as its deprecated alias
 RUN ln -s ../../cli/bin/frameleaf server/bin/frameleaf && ln -s ../../cli/bin/immich server/bin/immich
 COPY --from=icloud-bridge /icloud-bridge /usr/local/bin/icloud-bridge
+COPY --from=media-downloader /opt/frameleaf-media-downloader /opt/frameleaf-media-downloader
 COPY icloud-bridge/licenses/ /licenses/icloud-bridge/
 COPY LICENSE /licenses/LICENSE.txt
 COPY LICENSE /LICENSE
