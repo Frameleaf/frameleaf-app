@@ -415,14 +415,17 @@ export class SearchService extends BaseService {
     );
 
     await read.assertCurrent();
+    // only a first page starts at the best result
+    const closeMatches =
+      page === 1 ? await this.closeMatches(dto, embedding, userIds, items, dto.libraryScope) : undefined;
     return this.mapResponse(
       items,
       { auth },
       {
         nextPage: hasNextPage ? (page + 1).toString() : null,
-        // only a first page starts at the best result
-        closeMatches:
-          page === 1 ? await this.closeMatches(dto, embedding, userIds, items, dto.libraryScope) : undefined,
+        // A first page that is close all through says nothing about where the line falls on the next one,
+        // and the web would put every later page under "More results".
+        closeMatches: closeMatches === items.length && hasNextPage ? undefined : closeMatches,
       },
     );
   }
