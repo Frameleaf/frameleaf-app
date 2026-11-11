@@ -38,6 +38,8 @@ describe(MetricsRepository.name, () => {
     const body = await result.text();
     expect(body).toContain('frameleaf_http_request_duration_seconds_count{route="/api/assets/:id",status="200"} 1');
     expect(body).toContain('frameleaf_jobs_total');
+    expect(body).toMatch(/^frameleaf_assistant_searches_total \d+$/mu);
+    expect(body).toMatch(/^frameleaf_assistant_switch_backs_total \d+$/mu);
     for (const privateValue of ['scrape-token', 'private-file-id', 'private-query', 'unknown-private-path']) {
       expect(body).not.toContain(privateValue);
     }

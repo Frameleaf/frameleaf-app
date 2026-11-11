@@ -21809,6 +21809,55 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assistant/classic": {
+      "post": {
+        "description": "Record a local switch to Classic search from an Assistant answer. Expired, previously used, and other-session tokens are ignored.",
+        "operationId": "recordAssistantSwitchBack",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSwitchBackDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record a switch to Classic search",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Beta"
+      }
+    },
     "/auth/admin-sign-up": {
       "post": {
         "description": "Create the first admin user in the system.",
@@ -83009,6 +83058,12 @@
             "description": "One line describing what was searched",
             "type": "string"
           },
+          "switchBackToken": {
+            "description": "Opaque token for reporting a switch to Classic search from this answer",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "warnings": {
             "description": "Parts of the question that could not be used",
             "items": {
@@ -83175,6 +83230,21 @@
         "required": [
           "kind",
           "text"
+        ],
+        "type": "object"
+      },
+      "AssistantSwitchBackDto": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "The switch-back token from the Assistant answer",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
         ],
         "type": "object"
       },

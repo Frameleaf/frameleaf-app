@@ -1,5 +1,6 @@
 import {
   askAssistant,
+  recordAssistantSwitchBack,
   askSearch,
   searchLibraryItems,
   LibraryBookmarkItemKind,
@@ -21,6 +22,7 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   askAssistant: vi.fn(),
+  recordAssistantSwitchBack: vi.fn(),
   askSearch: vi.fn(),
   searchAssets: vi.fn(),
   searchLibraryItems: vi.fn(),
@@ -388,4 +390,40 @@ describe('LibrarySearchSession: search by meaning answered by text (FL-1403)', (
     expect(refusing.items).toHaveLength(1);
     expect(refusing.textFallback).toBe(true);
   });
+});
+
+it('reports an explicit switch from the accepted answer once, without propagating reporting errors', async () => {
+  const session = createSession();
+  session.reset({ kind: 'assistant', query: 'private question' });
+  vi.mocked(askAssistant).mockResolvedValue({
+    query: 'private question',
+    results: result('private result'),
+    switchBackToken: 'opaque-token',
+  } as AssistantAskResponseDto);
+  vi.mocked(recordAssistantSwitchBack).mockRejectedValue(new Error('unavailable'));
+  await session.loadNextPage({ ...options, isCurrent: () => true });
+  await session.reportSwitchBack();
+  await session.reportSwitchBack();
+  expect(recordAssistantSwitchBack).toHaveBeenCalledExactlyOnceWith({
+    assistantSwitchBackDto: { token: 'opaque-token' },
+  });
+});
+
+it('does not report a switch from a previous login or a server without tokens', async () => {
+  const session = createSession();
+  session.reset({ kind: 'assistant', query: 'old' });
+  vi.mocked(askAssistant).mockResolvedValueOnce({
+    query: 'old',
+    results: result('old'),
+    switchBackToken: 'opaque-token',
+  } as AssistantAskResponseDto);
+  let current = true;
+  await session.loadNextPage({ ...options, isCurrent: () => current });
+  current = false;
+  await session.reportSwitchBack();
+  session.reset({ kind: 'assistant', query: 'new' });
+  vi.mocked(askAssistant).mockResolvedValueOnce({ query: 'new', results: result('new') } as AssistantAskResponseDto);
+  await session.loadNextPage({ ...options, isCurrent: () => true });
+  await session.reportSwitchBack();
+  expect(recordAssistantSwitchBack).not.toHaveBeenCalled();
 });
