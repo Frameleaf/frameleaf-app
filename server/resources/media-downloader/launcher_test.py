@@ -1,11 +1,14 @@
 """Run through the launcher in a local Linux container."""
 import errno
 import os
+import resource
 import socket
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+HIGH = 3000
 
 
 def check():
@@ -45,10 +48,16 @@ def run(launcher):
             path.chmod(0o666)
             broker.listen(1)
             broker.settimeout(10)
+            # A descriptor numbered above a hard limit that is lowered after it was opened must be closed too.
+            soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+            resource.setrlimit(resource.RLIMIT_NOFILE, (max(soft, HIGH + 1), hard))
+            os.dup2(inherited.fileno(), HIGH, inheritable=True)
             child = subprocess.Popen(
-                [launcher, str(stage), "204107", sys.executable, __file__, "check", str(path), str(inherited.fileno())],
-                pass_fds=(inherited.fileno(),),
+                [launcher, str(stage), "204107", sys.executable, __file__, "check", str(path), str(HIGH)],
+                pass_fds=(HIGH,),
+                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_NOFILE, (1024, 1024)),
             )
+            os.close(HIGH)
             with child:
                 connection, _ = broker.accept()
                 with connection:
