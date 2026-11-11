@@ -38,7 +38,9 @@ test.describe('Map', () => {
     const sheet = page.getByRole('dialog', { name: 'Map settings' });
     await expect(sheet.getByRole('radio', { name: 'All time' })).toHaveAttribute('aria-checked', 'true');
     await sheet.getByRole('switch', { name: 'Only favorites' }).click();
-    await expect(page.getByText('No located items match these settings')).toBeVisible();
+    // FL-1412: a setting that leaves nothing says "none match" and offers the way back.
+    await expect(page.getByRole('heading', { name: 'No photos match on the map' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reset map filters' })).toBeVisible();
     await sheet.getByRole('switch', { name: 'Only favorites' }).click();
     await expect(page.getByText('1 item in view')).toBeVisible();
     await page.keyboard.press('Escape');
@@ -260,6 +262,8 @@ test.describe('Map', () => {
     await expect(dialog).toHaveCount(0);
 
     await page.goto('/map');
-    await expect(page.getByText('No located items match these settings')).toBeVisible();
+    // FL-1412: with nothing narrowing the map, no located photo is "none yet", with nothing to reset.
+    await expect(page.getByRole('heading', { name: 'No photos on the map yet' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reset map filters' })).toHaveCount(0);
   });
 });

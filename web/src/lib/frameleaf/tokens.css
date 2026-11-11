@@ -257,8 +257,8 @@
    * tracking token: `font: var(--fl-type-title); letter-spacing: var(--fl-tracking-title);`, or
    * the `fl-type-*` classes in base.css. The --fl-font-* sizes are the same steps for rules that
    * only set a size. Nothing is below 11px. Headings are semibold and tighten as they grow: the
-   * confident voice shared with frameleaf.app. `hero` is for sign-in, first run and an empty
-   * library only.
+   * confident voice shared with frameleaf.app. `hero` is for sign-in and first run only; an empty
+   * library is the one empty-page pattern like every other empty page (FL-1412).
    */
   --fl-font-hero: 40px;
   --fl-font-display: 28px;

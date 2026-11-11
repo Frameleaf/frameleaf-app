@@ -56,6 +56,8 @@ const mediaQueries = vi.hoisted(() => ({
 }));
 vi.mock('$lib/stores/media-query-manager.svelte', () => ({ mediaQueryManager: mediaQueries }));
 
+/** FL-1412: an empty view has no toolbar, so a test about the toolbar needs a view with photos in it. */
+const SOME_PHOTOS = [{ timeBucket: '2024-03-01', count: 2 }];
 const infoPanel = createRawSnippet(() => ({ render: () => '<p data-testid="work-panel">details</p>' }));
 
 beforeAll(() => {
@@ -207,6 +209,7 @@ describe('LibraryView', () => {
   });
 
   it('applies supported album filters in place and preserves the resulting session across layouts (FL-40)', async () => {
+    sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
     authManager.setUser(userAdminFactory.build({ id: 'owner' }));
     authManager.setPreferences(preferencesFactory.build());
     await setup(false);
@@ -282,6 +285,7 @@ describe('LibraryView', () => {
   });
 
   it('has no file-name button of its own in Work: the View menu holds it, per layout (FL-1398)', async () => {
+    sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
     sdkMock.getPartners.mockResolvedValue([]);
     await setup(false);
     expect(screen.queryByRole('button', { name: 'frameleaf_library_show_file_names' })).not.toBeInTheDocument();
@@ -311,6 +315,7 @@ describe('LibraryView', () => {
   });
 
   it('hides the timeline and its year scrubber while Compare is open (LIB-09)', async () => {
+    sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
     await setup(false);
     librarySession.patchView({ view: 'compare' });
     await tick();
@@ -368,6 +373,7 @@ describe('LibraryView', () => {
     };
 
     it('steps aside while Activity or the filter panel is open beside the results', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
       const props = {
         options: { albumId: 'album-1' },
         destination: { kind: 'album' as const, id: 'album-1' },
@@ -391,6 +397,7 @@ describe('LibraryView', () => {
     });
 
     it('closes, opens again from the toolbar and from the I key, and reopens on a switch to Work', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
       await setupWork();
 
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_close' }));
@@ -469,6 +476,7 @@ describe('LibraryView', () => {
     });
 
     it('does not open Work’s panel by itself at 1000px and below, but the toolbar still shows it', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
       mediaQueries.wideInspector = false;
       render(LibraryView, {
         options: { albumId: 'album-1' },
@@ -487,6 +495,7 @@ describe('LibraryView', () => {
     });
 
     it('switches layout from the keyboard, so the switch works mid-library (LIB-01)', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
       await setup(false);
       const library = screen.getByTestId('frameleaf-library');
       await fireEvent.keyDown(document, { key: 'B', shiftKey: true });
@@ -599,6 +608,7 @@ describe('LibraryView', () => {
     });
 
     it('shows Timeline’s date order while keeping a flat sort for Browse and Work', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
       render(LibraryView, {
         options: { albumId: 'album-1', order: AssetOrder.Asc },
         destination: { kind: 'album', id: 'album-1' },
@@ -862,8 +872,14 @@ describe('LibraryView', () => {
       const empty = await screen.findByTestId('frameleaf-library-empty');
       expect(within(empty).getByRole('status')).toBeInTheDocument();
       expect(empty).toHaveTextContent('frameleaf_library_first_run_title');
-      expect(screen.getByRole('button', { name: 'frameleaf_library_first_run_upload' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'frameleaf_transfer_upload_folder' })).toBeInTheDocument();
+      expect(empty).toHaveTextContent('frameleaf_library_first_run_message');
+      // FL-1412 (M13): the prototype's two ways in, and no third line under them.
+      expect(
+        within(empty)
+          .getAllByRole('button')
+          .map((button) => button.textContent?.trim()),
+      ).toEqual(['frameleaf_library_first_run_upload', 'frameleaf_library_first_run_folder']);
+      expect(empty.querySelectorAll('p')).toHaveLength(1);
       // Nothing to arrange yet: no layout switch, results toolbar or status capsule.
       expect(screen.queryByTestId('frameleaf-layout-switch')).not.toBeInTheDocument();
       expect(screen.queryByTestId('frameleaf-results-toolbar')).not.toBeInTheDocument();
@@ -894,12 +910,27 @@ describe('LibraryView', () => {
       }
     });
 
-    // LIB-P3: an empty Best Photos (or Locked, or a map area) is not a brand-new library.
-    it('keeps the chrome and offers no upload on an empty library page that is not the Photos timeline', async () => {
-      await setupLibrary({ options: { visibility: AssetVisibility.Timeline, bestPhotos: true }, ranked: true });
-      const empty = await screen.findByTestId('frameleaf-library-empty');
-      expect(empty).not.toHaveTextContent('frameleaf_library_first_run_title');
-      expect(screen.getByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
+    // LIB-P3: an empty Best Photos (or Locked, or a map area) is not a brand-new library. FL-1412 (M13):
+    // it is still an empty page, so it shows its own words and no toolbar or Thumbnail size bar.
+    it('shows an empty page that is not the Photos timeline with its own words and no chrome', async () => {
+      const empty = createRawSnippet(() => ({ render: () => '<p data-testid="page-empty">No best photos yet</p>' }));
+      await setupLibrary({
+        options: { visibility: AssetVisibility.Timeline, bestPhotos: true },
+        ranked: true,
+        empty,
+      });
+      expect(await screen.findByTestId('page-empty')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'frameleaf_library_first_run_upload' })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('frameleaf-layout-switch')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('frameleaf-results-toolbar')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
+    });
+
+    it('brings the toolbar and the Thumbnail size bar back once the page has photos', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
+      await setupLibrary({ options: { isFavorite: true }, destination: { kind: 'favorites' } });
+      expect(await screen.findByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
+      expect(screen.getByTestId('library-status-bar')).toBeInTheDocument();
     });
 
     it('keeps the plain empty state, with no upload offer, on any other empty view (T-10)', async () => {
@@ -1041,6 +1072,7 @@ describe('LibraryView', () => {
 
     // LIB-P7: Grid and List in every layout. The Timeline reads as the grid; List shows Browse's rows.
     it('keeps Grid and List in the Timeline, where List opens the list in Browse', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
       await setupLibrary();
       librarySession.setLayout('timeline');
       await tick();
@@ -1056,6 +1088,7 @@ describe('LibraryView', () => {
 
     // LIB-P3: Best Photos opens Browse on its quality ranking and keeps "Best first" for itself.
     it('orders a ranked page by quality outside the Timeline', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(SOME_PHOTOS);
       await setupLibrary({ options: { visibility: AssetVisibility.Timeline, bestPhotos: true }, ranked: true });
       librarySession.setLayout('browse');
       await waitFor(() =>

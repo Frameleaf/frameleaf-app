@@ -14,8 +14,9 @@
     type JobRunPageDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAlertCircleOutline, mdiPlay } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiHistory, mdiPlay } from '@mdi/js';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import type RunFailuresSheet from '$lib/components/frameleaf/jobs/RunFailuresSheet.svelte';
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import type { ActivityFilter } from '$lib/frameleaf/activity';
@@ -211,9 +212,10 @@
   </header>
   {#if unavailable}<p class="note" role="status">{$t('frameleaf_job_runs_unavailable')}</p>{/if}
   {#if notice}<p class="note" role="status">{notice}</p>{/if}
-  {#if !loading && runs.length === 0 && !fileCheck && !unavailable}<p class="note">
-      {$t('frameleaf_job_runs_empty')}
-    </p>{/if}
+  {#if !loading && runs.length === 0 && !fileCheck && !unavailable}
+    <!-- FL-1412 (M13): the shared empty state, in its panel form; the approved words are FL-1349's. -->
+    <EmptyState compact icon={mdiHistory} message={$t('frameleaf_job_runs_empty')} />
+  {/if}
   <ol>
     {#if fileCheck && (filter === 'all' || filter === fileCheckView(fileCheck).bucket)}
       {@const check = fileCheck}

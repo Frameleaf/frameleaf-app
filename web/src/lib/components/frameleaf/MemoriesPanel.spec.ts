@@ -157,19 +157,46 @@ describe('MemoriesPanel', () => {
     expect(screen.getByText('Memories appear here on the anniversary of your photos and videos.')).toBeInTheDocument();
   });
 
+  // FL-1412 (M13): a quiet day with nothing else to show is the one empty-page pattern, once.
+  it('shows a quiet day with no memories at all as one empty state, with no empty sections under it', () => {
+    render(MemoriesPanel);
+
+    const empty = screen.getByTestId('frameleaf-empty-state');
+    expect(within(empty).getByRole('heading', { name: 'Nothing from this day yet' })).toBeInTheDocument();
+    expect(empty).toHaveTextContent('Memories appear here on the anniversary of your photos and videos.');
+    expect(empty.querySelector('button, a')).toBeNull();
+    expect(screen.getAllByTestId('frameleaf-empty-state')).toHaveLength(1);
+    expect(screen.queryByRole('region', { name: 'Today' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Earlier' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No memories yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing earlier')).not.toBeInTheDocument();
+  });
+
+  it('never puts a second empty message under the quiet Today line', () => {
+    vi.useFakeTimers({ now: new Date(2026, 8, 25, 12), toFake: ['Date'] });
+    memoryManager.memories = [onDay('later', '2026-09-30', 2025)];
+
+    render(MemoriesPanel);
+
+    expect(screen.getByText('Nothing from this day yet')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Earlier' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing earlier')).not.toBeInTheDocument();
+  });
+
   // FL-1408 (M8): the day after a first import the page has one message, and no "No memories yet" under it.
   it('says the memories are being prepared, and nothing else, before the first overnight run', () => {
     memoryManager.preparing = true;
 
     render(MemoriesPanel);
 
-    const today = screen.getByRole('region', { name: 'Today' });
-    expect(within(today).getByText('Your memories are being prepared')).toBeInTheDocument();
-    expect(
-      within(today).getByText(
-        'Frameleaf looks back through new photos overnight. They will be here by tomorrow morning.',
-      ),
-    ).toBeInTheDocument();
+    // FL-1412 (M13): the same words, in the one empty-page pattern.
+    const empty = screen.getByTestId('frameleaf-empty-state');
+    expect(within(empty).getByRole('heading', { name: 'Your memories are being prepared' })).toBeInTheDocument();
+    expect(empty).toHaveTextContent(
+      'Frameleaf looks back through new photos overnight. They will be here by tomorrow morning.',
+    );
+    expect(empty.querySelector('button, a')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Today' })).not.toBeInTheDocument();
     expect(screen.queryByText('Nothing from this day yet')).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Earlier' })).not.toBeInTheDocument();
     expect(screen.queryByText('No memories yet')).not.toBeInTheDocument();

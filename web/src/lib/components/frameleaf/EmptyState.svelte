@@ -12,6 +12,11 @@
    *
    * A full-size empty state has no photographs on screen, so its icon sits on a soft accent plate
    * and fades in once. The compact form, used inside panels beside content, stays plain.
+   *
+   * FL-1412 (M13): every empty page is this one pattern, with the prototype's measurements
+   * (`src/EmptyState.jsx`, `.fl-empty`): a 48px plate, 8px between the lines, 12px above the
+   * actions. A page that shows it shows no toolbar and no Thumbnail size bar. A card that holds it
+   * (the Map's) sets `--fl-empty-padding`.
    */
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { Icon } from '@frameleaf/ui';
@@ -59,7 +64,7 @@
     {#if compact}
       <span class="icon" aria-hidden="true"><Icon {icon} size={ICON_SIZE.hero} /></span>
     {:else}
-      <span class="icon framed" aria-hidden="true"><Icon {icon} size={ICON_SIZE.hero} /></span>
+      <span class="icon framed" aria-hidden="true"><Icon {icon} size="24" /></span>
     {/if}
   {/if}
   {#if title}<h2>{title}</h2>{/if}
@@ -79,13 +84,18 @@
     flex-direction: column;
     align-items: center;
     gap: var(--fl-space-2);
-    padding: var(--fl-space-12) var(--fl-space-4);
+    padding: var(--fl-empty-padding, 56px var(--fl-space-6));
     color: var(--fl-muted);
     font: var(--fl-type-body);
     text-align: center;
   }
-  .compact {
-    padding-block: var(--fl-space-6);
+  @media (max-width: 767px) {
+    .fl-empty-state {
+      padding: var(--fl-empty-padding, 40px var(--fl-space-4));
+    }
+  }
+  .fl-empty-state.compact {
+    padding: var(--fl-space-6) var(--fl-space-4);
   }
   .icon {
     display: inline-flex;
@@ -95,8 +105,8 @@
   .icon.framed {
     display: inline-grid;
     place-items: center;
-    width: 3.5rem;
-    height: 3.5rem;
+    width: 48px;
+    height: 48px;
     margin-bottom: var(--fl-space-2);
     color: var(--fl-accent);
     border-radius: var(--fl-radius-card);
@@ -113,9 +123,14 @@
     font: var(--fl-type-headline);
     letter-spacing: var(--fl-tracking-headline);
     color: var(--fl-text);
+    /* A title can quote what was typed ("No folders match …"). */
+    overflow-wrap: anywhere;
+  }
+  h2,
+  p {
+    max-width: 44ch;
   }
   p {
-    max-width: 28rem;
     margin: 0;
   }
   .actions {

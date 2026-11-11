@@ -441,9 +441,13 @@ describe('TagIndex', () => {
     renderIndex([], []);
     expect(screen.getByText('0 tags')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'No tags yet' })).toBeInTheDocument();
-    expect(screen.getByText('Create a tag to start grouping photos and videos.')).toBeInTheDocument();
+    expect(screen.getByText('A tag groups photos and videos under a word you choose.')).toBeInTheDocument();
     expect(screen.queryByRole('treegrid')).toBeNull();
-    const [, inState] = screen.getAllByRole('button', { name: 'New tag' });
+    // FL-1412 (M13): nothing to find, sort or lay out, and New tag is offered once, by the empty state.
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'View' })).toBeNull();
+    const inState = within(screen.getByTestId('frameleaf-empty-state')).getByRole('button', { name: 'New tag' });
+    expect(screen.getAllByRole('button', { name: 'New tag' })).toEqual([inState]);
     await fireEvent.click(inState);
     expect(screen.getByRole('dialog', { name: 'New tag' })).toBeInTheDocument();
   });
