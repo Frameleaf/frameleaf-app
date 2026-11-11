@@ -30,9 +30,9 @@ import {
   AssetVisibility,
   ImageEnrichmentFilter,
   LibraryScope,
-  LibraryViewScope,
   PetObservationState,
 } from 'src/enum.js';
+import type { LibraryViewScope } from 'src/enum.js';
 import { deferJobAdoption } from 'src/queue/context.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
