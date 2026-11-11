@@ -182,7 +182,7 @@
    * (timeline-library.css, 700px), and only Timeline has one: Browse and Work keep the whole width
    * for the photos (UI review 2026-11-10, A6).
    */
-  const thinScrubber = $derived(coarsePointer || mediaQueryManager.maxMd);
+  const thinScrubber = $derived(coarsePointer || maxMd);
   const isEmpty = $derived(timelineManager.isInitialized && timelineManager.months.length === 0);
   const selection = $derived(session.selection);
   // In picking mode the tiles show their checkboxes from the start, as the legacy grid did.
@@ -434,10 +434,7 @@
   const SCRUBBER_LABEL_ROOM = 34;
   /** The scrubber is drawn: a flat order (filename, rating) has no dates to scrub through. */
   const showScrubber = $derived(
-    timelineManager.months.length > 0 &&
-      !timelineManager.ordered &&
-      !hideScrubber &&
-      !(thinScrubber && !showDayHeaders),
+    timelineManager.months.length > 0 && !timelineManager.ordered && !hideScrubber && (!thinScrubber || showDayHeaders),
   );
   /**
    * The rows' scrubber only where there is something to scrub through: photos that fit on one
