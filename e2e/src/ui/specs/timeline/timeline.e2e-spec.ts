@@ -775,20 +775,25 @@ test.describe('Timeline', () => {
     test('Next/previous asset - ArrowRight/ArrowLeft', async ({ page }) => {
       await pageUtils.openPhotosPage(page);
       await thumbnailUtils.openButton(page, assets[0].id).focus();
-      for (let i = 1; i < 15; i++) {
+      // FL-1457: how many tiles fit above the fold depends on the grid's width (Browse has no scrubber column), so
+      // step until the focus first has to scroll; from there each step lands on the bottom row.
+      const scrollTop = () => timelineUtils.locator(page).evaluate((scroller) => scroller.scrollTop);
+      const top = await scrollTop();
+      let first = 0;
+      while ((await scrollTop()) === top) {
+        first++;
         await page.keyboard.press('ArrowRight');
-        await assetViewerUtils.expectActiveAssetToBe(page, assets[i].id);
+        await assetViewerUtils.expectActiveAssetToBe(page, assets[first].id);
+        expect(first).toBeLessThan(60);
       }
-      for (let i = 15; i <= 20; i++) {
-        await page.keyboard.press('ArrowRight');
-        await assetViewerUtils.expectActiveAssetToBe(page, assets[i].id);
+      for (let i = first; i <= first + 5; i++) {
+        if (i > first) {
+          await page.keyboard.press('ArrowRight');
+          await assetViewerUtils.expectActiveAssetToBe(page, assets[i].id);
+        }
         await thumbnailUtils.expectBottomIsTimelineBottom(page, assets[i].id);
       }
-      for (let i = 19; i >= 15; i--) {
-        await page.keyboard.press('ArrowLeft');
-        await assetViewerUtils.expectActiveAssetToBe(page, assets[i].id);
-      }
-      for (let i = 14; i > 0; i--) {
+      for (let i = first + 4; i > 0; i--) {
         await page.keyboard.press('ArrowLeft');
         await assetViewerUtils.expectActiveAssetToBe(page, assets[i].id);
       }
