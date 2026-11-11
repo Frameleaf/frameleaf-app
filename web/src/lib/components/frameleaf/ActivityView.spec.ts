@@ -4,6 +4,7 @@ import {
   MediaOperationStatus,
   StudioRenderStage,
   QueueName,
+  State4,
   type MediaOperationDto,
   type QueueRunDto,
 } from '@frameleaf/sdk';
@@ -503,7 +504,7 @@ describe('Frameleaf Activity page', () => {
       memoryExports: [],
       canManageQueues: true,
       canReadJobRuns: true,
-      queues: [queue(QueueName.FaceDetection, { state: 'blocked', waiting: 5, total: 5 } as Partial<QueueRunDto>)],
+      queues: [queue(QueueName.FaceDetection, { state: State4.Blocked, waiting: 5, total: 5 })],
       durableRuns: [],
     });
     try {

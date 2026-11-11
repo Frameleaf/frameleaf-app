@@ -125,7 +125,7 @@ describe('importProgress (FL-1409)', () => {
     ['waits for another step', { reasons: ['dependency_wait'] }, 'frameleaf_job_runs_state_blocked'],
     ['lost its worker', { reasons: ['worker_unavailable'] }, 'frameleaf_job_runs_state_unavailable'],
   ] as const)('says a scan that %s is stopped, with no time left', (_, patch, status) => {
-    const run = scanRun({ active: 0, ...patch } as Partial<DurableJobRun>);
+    const run = scanRun({ active: 0, reasons: [...patch.reasons] });
     const line = importProgress(summary({ queues: [thumbnails({ active: 0 })], durableRuns: [run] }), NOW);
     expect(line?.stopped).toMatchObject({ status });
     expect(line?.etaSeconds).toBeNull();
