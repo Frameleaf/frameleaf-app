@@ -22,14 +22,19 @@ jobs:
       packages: read
     outputs:
       server: ${{ steps.filter.outputs.server }}
-      machine-learning: ${{ steps.filter.outputs['machine-learning'] }}
+      machine-learning: ${{ steps.assistant.outputs.required == 'true' || steps.filter.outputs['machine-learning'] == 'true' }}
+      assistant-qualification: ${{ steps.assistant.outputs.required }}
       server-release: ${{ steps.filter.outputs.server-release }}
       machine-learning-release: ${{ steps.filter.outputs.machine-learning-release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Resolve the source-pinned Assistant model
+        id: assistant
+        run: node .github/assistant-deploy-gate.mjs plan
       - name: Prove unchanged verified image inputs
         id: filter
         env:
@@ -88,10 +93,49 @@ jobs:
       device: cpu
       mode: archive
 
+  assistant-qualification:
+    name: Qualify the pinned Assistant planner
+    needs: [changes, machine-learning]
+    if: needs.changes.outputs.assistant-qualification == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: frameleaf-machine-learning-archive-amd64
+          path: ${{ runner.temp }}/ml
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - name: Install and build evaluator dependencies
+        run: |
+          pnpm --filter 'frameleaf...' --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk install --frozen-lockfile
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
+          pnpm --filter @frameleaf/locked-crypto build
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
+      - name: Run and verify live qualification on the unpushed ML image
+        run: node .github/assistant-deploy-gate.mjs qualify
+
   deploy-test:
     name: Deployment test (${{ matrix.architecture }})
-    needs: [changes, integration, server, machine-learning]
-    if: ${{ !cancelled() && needs.integration.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.server.result) && contains(fromJSON('["success","skipped"]'), needs['machine-learning'].result) }}
+    needs:
+      [changes, integration, server, machine-learning, assistant-qualification]
+    if: >-
+      !cancelled() && needs.changes.result == 'success' && needs.integration.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.server.result) &&
+      contains(fromJSON('["success","skipped"]'), needs['machine-learning'].result) &&
+      ((needs.changes.outputs.assistant-qualification == 'false' && needs.assistant-qualification.result == 'skipped') ||
+      (needs.changes.outputs.assistant-qualification == 'true' && needs.assistant-qualification.result == 'success'))
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:

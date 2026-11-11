@@ -65,6 +65,12 @@ accepted plans. This mode does not produce release qualification evidence.
 
 ## Live Assistant qualification
 
+Deploy runs the live evaluator before publishing or retagging images when the
+source manifest pins a default planner. The job starts the same run's unpushed
+Linux amd64 CPU worker archive on a loopback port and verifies a fresh report
+against the exact source commit. The hosted CPU image provides the Transformers
+runtime. An empty manifest leaves the regular deployment test in effect.
+
 From a clean candidate checkout, start a test worker built from that candidate's
 ML source with its pinned default planner available. Use only a disposable
 worker and test database. The harness sends synthetic questions and catalogue

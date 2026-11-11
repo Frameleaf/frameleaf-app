@@ -2058,6 +2058,57 @@ test("image publish and re-tag jobs survive the other image's skipped build", ()
   );
 });
 
+test("all Docker publication routes require same-run Assistant qualification when pinned", () => {
+  const jobs = workflow("docker.yml").jobs;
+  const qualification = jobs["assistant-qualification"];
+  assert.equal(jobs.changes.steps[0].with.ref, "${{ github.sha }}");
+  assert.match(
+    jobs.changes.outputs["machine-learning"],
+    /steps.assistant.outputs.required == 'true'/,
+  );
+  assert.deepEqual(qualification.needs, ["changes", "machine-learning"]);
+  assert.equal(
+    qualification.if,
+    "needs.changes.outputs.assistant-qualification == 'true'",
+  );
+  assert.equal(qualification.steps[0].with.ref, "${{ github.sha }}");
+  const archive = qualification.steps.find((step) =>
+    step.uses?.startsWith("actions/download-artifact@"),
+  );
+  assert.equal(archive.with.name, "frameleaf-machine-learning-archive-amd64");
+  assert.equal(archive.with["run-id"], undefined);
+  assert.equal(archive.with["github-token"], undefined);
+  assert.equal(
+    qualification.steps.at(-1).run,
+    "node .github/assistant-deploy-gate.mjs qualify",
+  );
+  assert.equal(qualification.steps.at(-1)["continue-on-error"], undefined);
+  const deployment = jobs["deploy-test"];
+  assert.ok(deployment.needs.includes("assistant-qualification"));
+  assert.match(
+    deployment.if,
+    /outputs.assistant-qualification == 'false' && needs.assistant-qualification.result == 'skipped'/,
+  );
+  assert.match(
+    deployment.if,
+    /outputs.assistant-qualification == 'true' && needs.assistant-qualification.result == 'success'/,
+  );
+  for (const name of [
+    "server-publish",
+    "machine-learning-publish",
+    "machine-learning-hardware",
+    "retag-server",
+    "retag-machine-learning",
+  ]) {
+    assert.ok(jobs[name].needs.includes("deploy-test"), name);
+    assert.match(
+      jobs[name].if,
+      /needs\['deploy-test'\]\.result == 'success'/,
+      name,
+    );
+  }
+});
+
 test("isolated test lanes cover every shard and keep required gates fail-closed", () => {
   const jobs = workflow("test.yml").jobs;
   for (const [id, total] of [
