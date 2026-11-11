@@ -33,7 +33,7 @@ import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/que
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
-import { reportedQueueJobs } from 'src/queue/run-query.js';
+import { nightOf, reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -60,8 +60,8 @@ import { DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { FIX_SEARCH_DELAY_MS } from 'src/utils/file-fix.js';
 import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
-import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 import { NIGHT_DATA_KEY, nightWork, withNight } from 'src/utils/night-work.js';
+import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
@@ -790,16 +790,26 @@ export class JobRepository {
   }
 
   /** FL-1349: a run's left-over photos by cause, with samples the reader may see. Undefined for an unknown run. */
-  reviewRunFailures(runId: string, privacy: RunFailurePrivacy) {
-    return reviewRunFailures(this.store.db, runId, privacy);
+  reviewRunFailures(runId: string, privacy: RunFailurePrivacy, foldNightly = false) {
+    return reviewRunFailures(this.store.db, runId, privacy, foldNightly);
   }
 
-  retryRunFailures(runId: string, cause: RunFailureCause) {
-    return this.store.retryRunFailures(runId, cause);
-  }
-
-  stopRunFailures(runId: string, cause: RunFailureCause) {
-    return this.store.stopRunFailures(runId, cause);
+  /**
+   * FL-1430: Try again now or Stop trying on what a Recent work card counts (`foldNightly`): each run of a folded
+   * night, leaving photos newer work left over again to that work. Undefined for an unknown run.
+   */
+  async actOnRunFailures(runId: string, cause: RunFailureCause, action: 'retry' | 'stop', foldNightly = false) {
+    const runs = foldNightly ? await nightOf(this.store.db, runId) : [runId];
+    if (!runs) return;
+    let count: number | undefined;
+    for (const id of runs) {
+      const done =
+        action === 'retry'
+          ? await this.store.retryRunFailures(id, cause, foldNightly)
+          : await this.store.stopRunFailures(id, cause, foldNightly);
+      if (done !== undefined) count = (count ?? 0) + done;
+    }
+    return count;
   }
 
   private intent(item: JobItem): QueueIntent {
@@ -872,7 +882,9 @@ export class JobRepository {
     const itemKey = `producer/${context.claim.id}`;
     await this.fenced(context, async (tx) => {
       await sql`insert into job_run(id, kind, selection, "enumerationDone")
-        values (${runId}::uuid, ${context.claim.name}, ${JSON.stringify(withNight({}))}::text::jsonb, true)`.execute(tx);
+        values (${runId}::uuid, ${context.claim.name}, ${JSON.stringify(withNight({}))}::text::jsonb, true)`.execute(
+        tx,
+      );
       await sql`update job set "runId" = ${runId}::uuid, "itemKey" = ${itemKey}
         where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(tx);
     });

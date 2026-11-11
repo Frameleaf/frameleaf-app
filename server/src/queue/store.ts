@@ -1224,7 +1224,7 @@ export class SqlQueueStore {
    * re-armed first (set aside work is never put back otherwise). Returns how many photos went back (tasks, in a run
    * that counts tasks), or undefined for an unknown run.
    */
-  async retryRunFailures(runId: string, cause: RunFailureCause): Promise<number | undefined> {
+  async retryRunFailures(runId: string, cause: RunFailureCause, supersede = false): Promise<number | undefined> {
     const photos = await this.db.transaction().execute(async (tx) => {
       const {
         rows: [run],
@@ -1232,7 +1232,7 @@ export class SqlQueueStore {
       if (!run) return;
       // a run that counts tasks has no photos: each failed task is its own item, named by its job id
       const countsPhotos = (await runCountsPhotos(tx, runId)) ?? true;
-      const items = await runFailureRoots(tx, runId, cause, countsPhotos);
+      const items = await runFailureRoots(tx, runId, cause, countsPhotos, supersede);
       if (items.length === 0) return 0;
       await sql`update asset_processing_failure f set "quarantinedAt" = null, attempts = 0 from job j
         where j."runId" = ${runId}::uuid and j.state = 'failed'
@@ -1256,13 +1256,13 @@ export class SqlQueueStore {
    * are dismissed, so nightly reprocessing selects them no more. Their jobs stay failed: history and the per-photo
    * list are kept. Returns how many photos were stopped, or undefined for an unknown run.
    */
-  async stopRunFailures(runId: string, cause: RunFailureCause): Promise<number | undefined> {
+  async stopRunFailures(runId: string, cause: RunFailureCause, supersede = false): Promise<number | undefined> {
     const photos = await this.db.transaction().execute(async (tx) => {
       const {
         rows: [run],
       } = await sql`select id from job_run where id = ${runId}::uuid for no key update`.execute(tx);
       if (!run) return;
-      const roots = await runFailureRoots(tx, runId, cause);
+      const roots = await runFailureRoots(tx, runId, cause, true, supersede);
       if (roots.length === 0) return 0;
       // a fixed cause, never exception text (`recordProcessingFailure`)
       const lastError = cause === 'unsupported' ? 'unsupported' : 'unreadable';

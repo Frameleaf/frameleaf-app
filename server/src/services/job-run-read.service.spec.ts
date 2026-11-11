@@ -148,6 +148,7 @@ describe('durable run read service', () => {
     const review = {
       photos: 2,
       countsPhotos: true,
+      superseded: 0,
       causes: [
         {
           cause: 'unsupported' as const,
@@ -156,6 +157,7 @@ describe('durable run read service', () => {
           repaired: 0,
           libraries: [],
           queues: ['thumbnailGeneration'],
+          superseded: 0,
           message: 'unsupported image format',
           samples: [
             { assetId: '0195e2a0-0000-7000-8000-00000000000a', fileName: 'a.heic', ownerId: 'me', ownerName: 'Me' },
@@ -169,11 +171,12 @@ describe('durable run read service', () => {
       const auth = factory.auth({ user: { id: 'me', isAdmin: true }, session: { hasElevatedPermission: true } });
       mocks.job.reviewRunFailures.mockResolvedValue(review);
       const page = await sut.getRunFailures(auth, run.id);
-      expect(mocks.job.reviewRunFailures).toHaveBeenCalledWith(run.id, {
-        revealLockedOwnerId: 'me',
-        lockedOwnerId: 'me',
-        othersRulesViewerId: 'me',
-      });
+      expect(mocks.job.reviewRunFailures).toHaveBeenCalledWith(
+        run.id,
+        { revealLockedOwnerId: 'me', lockedOwnerId: 'me', othersRulesViewerId: 'me' },
+        false,
+      );
+      expect(page.superseded).toBeUndefined();
       expect(page.causes[0].samples).toEqual([
         { assetId: '0195e2a0-0000-7000-8000-00000000000a', fileName: 'a.heic', ownerName: 'Me', pictureAllowed: true },
         {
@@ -188,16 +191,30 @@ describe('durable run read service', () => {
       const hiding = factory.auth({ user: { id: 'me', isAdmin: true } });
       hiding.hideNsfwAssets = true;
       await sut.getRunFailures(hiding, run.id);
-      expect(mocks.job.reviewRunFailures).toHaveBeenLastCalledWith(run.id, {
-        excludeNsfw: true,
-        othersRulesViewerId: 'me',
+      expect(mocks.job.reviewRunFailures).toHaveBeenLastCalledWith(
+        run.id,
+        { excludeNsfw: true, othersRulesViewerId: 'me' },
+        false,
+      );
+    });
+
+    it("reads a Recent work card's photos as the card counts them, and says how many newer work took (FL-1430)", async () => {
+      const auth = factory.auth({ user: { id: 'me', isAdmin: true } });
+      mocks.job.reviewRunFailures.mockResolvedValue({ ...review, superseded: 285 });
+      const page = await sut.getRunFailures(auth, run.id, true);
+      expect(mocks.job.reviewRunFailures).toHaveBeenLastCalledWith(run.id, expect.any(Object), true);
+      expect(page.superseded).toBe(285);
+      mocks.job.actOnRunFailures.mockResolvedValue(2);
+      await expect(sut.actOnRunFailures(run.id, { cause: 'other', action: 'retry' }, true)).resolves.toEqual({
+        count: 2,
       });
+      expect(mocks.job.actOnRunFailures).toHaveBeenLastCalledWith(run.id, 'other', 'retry', true);
     });
 
     it('404 for an unknown run', async () => {
       mocks.job.reviewRunFailures.mockResolvedValue(undefined);
       await expect(sut.getRunFailures(factory.auth(), run.id)).rejects.toBeInstanceOf(NotFoundException);
-      mocks.job.retryRunFailures.mockResolvedValue(undefined);
+      mocks.job.actOnRunFailures.mockResolvedValue(undefined);
       await expect(sut.actOnRunFailures(run.id, { cause: 'drive', action: 'retry' })).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -212,19 +229,18 @@ describe('durable run read service', () => {
       ] as const) {
         await expect(sut.actOnRunFailures(run.id, body)).rejects.toBeInstanceOf(BadRequestException);
       }
-      expect(mocks.job.stopRunFailures).not.toHaveBeenCalled();
-      expect(mocks.job.retryRunFailures).not.toHaveBeenCalled();
+      expect(mocks.job.actOnRunFailures).not.toHaveBeenCalled();
     });
 
     it('tries a drive or other cause again, and stops trying an unsupported one', async () => {
-      mocks.job.retryRunFailures.mockResolvedValue(3);
+      mocks.job.actOnRunFailures.mockResolvedValue(3);
       await expect(sut.actOnRunFailures(run.id, { cause: 'drive', action: 'retry' })).resolves.toEqual({ count: 3 });
-      expect(mocks.job.retryRunFailures).toHaveBeenCalledWith(run.id, 'drive');
-      mocks.job.stopRunFailures.mockResolvedValue(863);
+      expect(mocks.job.actOnRunFailures).toHaveBeenCalledWith(run.id, 'drive', 'retry', false);
+      mocks.job.actOnRunFailures.mockResolvedValue(863);
       await expect(sut.actOnRunFailures(run.id, { cause: 'unsupported', action: 'stop' })).resolves.toEqual({
         count: 863,
       });
-      expect(mocks.job.stopRunFailures).toHaveBeenCalledWith(run.id, 'unsupported');
+      expect(mocks.job.actOnRunFailures).toHaveBeenCalledWith(run.id, 'unsupported', 'stop', false);
     });
   });
   it('releases a held run and refuses an import that is not activated yet', async () => {

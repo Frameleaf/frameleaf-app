@@ -31960,6 +31960,15 @@
         "operationId": "getJobRunFailures",
         "parameters": [
           {
+            "name": "foldNightly",
+            "required": false,
+            "in": "query",
+            "description": "As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "id",
             "required": true,
             "in": "path",
@@ -32018,6 +32027,15 @@
         "description": "Try again now (retry) the photos left over because a drive can't be reached or for other reasons, or stop trying (stop) the ones whose format can't be read. Stopping keeps their history; nightly processing no longer picks them.",
         "operationId": "actOnJobRunFailures",
         "parameters": [
+          {
+            "name": "foldNightly",
+            "required": false,
+            "in": "query",
+            "description": "As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again",
+            "schema": {
+              "type": "boolean"
+            }
+          },
           {
             "name": "id",
             "required": true,
@@ -105472,6 +105490,12 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "superseded": {
+            "description": "With foldNightly: photos left over here that newer work left over again; they are counted on its card, not here",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -105479,6 +105503,15 @@
           "countsPhotos",
           "photos"
         ],
+        "type": "object"
+      },
+      "JobRunFailuresSearchDto": {
+        "properties": {
+          "foldNightly": {
+            "description": "As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "JobRunItemPageDto": {
@@ -105856,6 +105889,10 @@
               "nights"
             ],
             "type": "object"
+          },
+          "libraryName": {
+            "description": "A folder scan's library, while it exists",
+            "type": "string"
           },
           "needsAttention": {
             "maximum": 9007199254740991,

@@ -477,7 +477,13 @@ describe('atomic initial run admission', () => {
 
     // a selection the night queues outside a job, and a run it admits, are the night's too
     const { runId: selected } = await nightWork.run(night, () =>
-      jobs.queueSelection(JobName.ImageDescription, db.selectFrom('asset').select('id').where(sql<boolean>`false`)),
+      jobs.queueSelection(
+        JobName.ImageDescription,
+        db
+          .selectFrom('asset')
+          .select('id')
+          .where(sql<boolean>`false`),
+      ),
     );
     expect(await selectionOf(selected)).toEqual({ night });
     const admitted = await nightWork.run(night, () => jobs.createRun(queue, { holds: {} }, async () => {}));
@@ -486,7 +492,10 @@ describe('atomic initial run admission', () => {
     // the same work started by a person carries no night
     const { runId: manual } = await jobs.queueSelection(
       JobName.ImageDescription,
-      db.selectFrom('asset').select('id').where(sql<boolean>`false`),
+      db
+        .selectFrom('asset')
+        .select('id')
+        .where(sql<boolean>`false`),
     );
     expect(await selectionOf(manual)).toEqual({});
     await jobs.queue({ name: JobName.AssetEncodeVideoQueueAll, data: { force: false } });

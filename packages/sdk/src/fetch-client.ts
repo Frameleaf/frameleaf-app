@@ -10394,6 +10394,8 @@ export type JobRunResponseDto = {
         /** Photos this run left over (stopped ones aside) */
         photos: number;
     };
+    /** A folder scan's library, while it exists */
+    libraryName?: string;
     needsAttention: number;
     /** The overnight schedule's work */
     nightly?: boolean;
@@ -10543,6 +10545,8 @@ export type JobRunFailuresResponseDto = {
     countsPhotos: boolean;
     /** Photos left over, stopped ones included */
     photos: number;
+    /** With foldNightly: photos left over here that newer work left over again; they are counted on its card, not here */
+    superseded?: number;
 };
 export type JobRunFailureActionDto = {
     action: JobRunFailureAction;
@@ -20763,6 +20767,10 @@ export type IntegrityGetReportDto = {
 export type IntegrityReportDto = {
     "type": IntegrityReport;
 };
+export type JobRunFailuresSearchDto = {
+    /** As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again */
+    foldNightly?: boolean;
+};
 export type JobRunItemSearchDto = {
     skip?: number;
     take?: number;
@@ -30052,7 +30060,8 @@ export function getJobRuns({ foldNightly, skip, take }: {
 /**
  * Review a job run's left-over photos
  */
-export function getJobRunFailures({ id }: {
+export function getJobRunFailures({ foldNightly, id }: {
+    foldNightly?: boolean;
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -30060,14 +30069,17 @@ export function getJobRunFailures({ id }: {
         data: JobRunFailuresResponseDto;
     } | {
         status: 404;
-    }>(`/jobs/runs/${encodeURIComponent(id)}/failures`, {
+    }>(`/jobs/runs/${encodeURIComponent(id)}/failures${QS.query(QS.explode({
+        foldNightly
+    }))}`, {
         ...opts
     }));
 }
 /**
  * Act on a job run's left-over photos
  */
-export function actOnJobRunFailures({ id, jobRunFailureActionDto }: {
+export function actOnJobRunFailures({ foldNightly, id, jobRunFailureActionDto }: {
+    foldNightly?: boolean;
     id: string;
     jobRunFailureActionDto: JobRunFailureActionDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -30078,7 +30090,9 @@ export function actOnJobRunFailures({ id, jobRunFailureActionDto }: {
         status: 400;
     } | {
         status: 404;
-    }>(`/jobs/runs/${encodeURIComponent(id)}/failures`, oazapfts.json({
+    }>(`/jobs/runs/${encodeURIComponent(id)}/failures${QS.query(QS.explode({
+        foldNightly
+    }))}`, oazapfts.json({
         ...opts,
         method: "POST",
         body: jobRunFailureActionDto

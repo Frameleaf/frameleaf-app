@@ -458,9 +458,11 @@ export class OvernightService {
       // The counts that run every night go with the first step, whether or not it runs.
       if (step === 'cleanup' && result !== 'done' && result !== 'unfinished') {
         const night = { startedAt: run.startedAt, manual: run.manual };
-        await nightWork.run(night, () => this.queueService.handleNightlyJobs({ cleanup: false })).catch((error: unknown) => {
-          this.logger.warn(`Overnight run: the nightly counts did not start: ${error}`);
-        });
+        await nightWork
+          .run(night, () => this.queueService.handleNightlyJobs({ cleanup: false }))
+          .catch((error: unknown) => {
+            this.logger.warn(`Overnight run: the nightly counts did not start: ${error}`);
+          });
       }
       const results: OvernightRun['results'] = { ...run.results, [step]: result };
       const next = nextOvernightStep(step);

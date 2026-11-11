@@ -92,6 +92,17 @@ export class JobRunSearchDto extends createZodDto(
     .meta({ id: 'JobRunSearchDto' }),
 ) {}
 export class JobRunItemSearchDto extends createZodDto(page.meta({ id: 'JobRunItemSearchDto' })) {}
+export class JobRunFailuresSearchDto extends createZodDto(
+  z
+    .object({
+      foldNightly: stringToBool
+        .optional()
+        .describe(
+          "As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again",
+        ),
+    })
+    .meta({ id: 'JobRunFailuresSearchDto' }),
+) {}
 export class JobRunIdParamDto extends createZodDto(z.object({ id: z.uuid() })) {}
 export const JobRunResponseSchema = counts
   .extend({
@@ -168,6 +179,7 @@ export const JobRunResponseSchema = counts
       })
       .optional()
       .describe('With foldNightly, on the newest nightly run: how long the same photos have been left over'),
+    libraryName: z.string().optional().describe("A folder scan's library, while it exists"),
   })
   .extend(progress.shape)
   .meta({ id: 'JobRunResponseDto' });
@@ -223,6 +235,13 @@ export class JobRunFailuresDto extends createZodDto(
       photos: z.int().min(0).describe('Photos left over, stopped ones included'),
       countsPhotos: z.boolean().describe('The counts are photos; when false they are tasks'),
       causes: z.array(JobRunFailureCauseGroupSchema).describe('One per cause with photos, most telling first'),
+      superseded: z
+        .int()
+        .min(0)
+        .optional()
+        .describe(
+          'With foldNightly: photos left over here that newer work left over again; they are counted on its card, not here',
+        ),
     })
     .meta({ id: 'JobRunFailuresResponseDto' }),
 ) {}
@@ -284,4 +303,5 @@ export const mapJobRun = (row: RunRead): JobRunResponseDto => ({
     })),
   }),
   ...(row.leftOverStreak && { leftOverStreak: row.leftOverStreak }),
+  ...(row.libraryName && { libraryName: row.libraryName }),
 });

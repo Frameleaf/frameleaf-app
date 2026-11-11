@@ -10,7 +10,7 @@ import {
 } from 'src/enum.js';
 import { type RunFailureInput, failureCauseSql, runFailureCause } from 'src/queue/run-failure-cause.js';
 import { reviewRunFailures } from 'src/queue/run-failures.js';
-import { getRun, runFailureGroupsQuery, summarizeRunFailures } from 'src/queue/run-query.js';
+import { getRun, listRuns, runFailureGroupsQuery, summarizeRunFailures } from 'src/queue/run-query.js';
 import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -122,6 +122,26 @@ describe('summarizeRunFailures', () => {
       ),
     );
 
+    // FL-1430: counting out the photos newer runs left over again probes each newer run by its own index
+    const { rows: superseding } = await sql<{
+      'QUERY PLAN': unknown;
+    }>`explain (format json) ${runFailureGroupsQuery({ runs: [{ id, countsPhotos: true }], supersede: true })}`.execute(
+      db,
+    );
+    // job_run itself (its primary key) is read too; what matters is how job is read
+    const supersedingReads = jobReads(superseding[0]['QUERY PLAN']).filter(({ index }) => index !== 'job_run_pkey');
+    expect(supersedingReads.map(({ type }) => type)).not.toContain('Seq Scan');
+    expect(supersedingReads.filter(({ index }) => index)).toEqual(
+      supersedingReads
+        .filter(({ index }) => index)
+        .map(() =>
+          expect.objectContaining({
+            index: expect.stringMatching(/^job_run_(progress|stage)$/),
+            cond: expect.stringContaining('"runId" ='),
+          }),
+        ),
+    );
+
     const groups = await summarizeRunFailures(db, id);
     // the roots are no photos here, so every one is other
     expect(groups.map(({ cause, count }) => ({ cause, count }))).toEqual([{ cause: 'other', count: 2857 }]);
@@ -145,10 +165,19 @@ describe('summarizeRunFailures', () => {
         count: 1,
         stopped: 0,
         repaired: 0,
+        superseded: 0,
         queues: ['faceDetection', 'thumbnailGeneration'],
         libraries: [],
       },
-      { cause: 'other', count: 1, stopped: 0, repaired: 0, queues: ['thumbnailGeneration'], libraries: [] },
+      {
+        cause: 'other',
+        count: 1,
+        stopped: 0,
+        repaired: 0,
+        superseded: 0,
+        queues: ['thumbnailGeneration'],
+        libraries: [],
+      },
     ]);
     expect(await getRun(db, id)).toMatchObject({
       failed: 1,
@@ -234,6 +263,64 @@ describe('summarizeRunFailures', () => {
     expect(await getRun(db, id)).toMatchObject({ failureCauses: [{ cause: 'damaged', count: 1 }], leftOver: 1 });
     expect((await getRun(db, clean))?.failureCauses).toBeUndefined();
     expect((await getRun(db, clean))?.leftOver).toBeUndefined();
+  });
+
+  it("a finished run's causes follow what Library care found since, as its review does (FL-1430)", async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+    const id = await run();
+    await failedJob(id, asset.id, JobName.AssetExtractMetadata, 'Timed out');
+    await failedJob(id, other.id, JobName.AssetExtractMetadata, 'Timed out');
+    expect(await finishRuns(db, 10)).toBe(1);
+    expect(await getRun(db, id)).toMatchObject({ failureCauses: [{ cause: 'other', count: 2 }], leftOver: 2 });
+
+    await finding(asset.id, MediaHealthCategory.Corrupt);
+    expect(await getRun(db, id)).toMatchObject({
+      failureCauses: [
+        { cause: 'damaged', count: 1 },
+        { cause: 'other', count: 1 },
+      ],
+      leftOver: 2,
+    });
+    const review = (await reviewRunFailures(database, id, {}))!;
+    expect(review.causes.map(({ cause, count }) => ({ cause, count }))).toEqual([
+      { cause: 'damaged', count: 1 },
+      { cause: 'other', count: 1 },
+    ]);
+  });
+
+  it('a photo newer work left over again is counted on that work only (FL-1430)', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset: again } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: once } = await ctx.newAsset({ ownerId: user.id });
+    const first = await run();
+    await failedJob(first, again.id, JobName.AssetExtractMetadata, 'Timed out');
+    await failedJob(first, once.id, JobName.AssetExtractMetadata, 'Timed out');
+    const second = await run();
+    await failedJob(second, again.id, JobName.AssetExtractMetadata, 'Timed out');
+    const newest = await run();
+    await failedJob(newest, again.id, JobName.AssetExtractMetadata, 'Timed out');
+    expect(await finishRuns(db, 10)).toBe(3);
+
+    const page = await listRuns(db, 25, 0, true);
+    const card = (id: string) => page.find((read) => read.id === id)!;
+    expect(card(newest)).toMatchObject({ leftOver: 1, failureCauses: [{ cause: 'other', count: 1 }] });
+    expect(card(first)).toMatchObject({ leftOver: 1, failureCauses: [{ cause: 'other', count: 1 }] });
+    // every photo it left over is counted on newer work: nothing needs a look here
+    expect(card(second)).toMatchObject({ leftOver: 0, failureCauses: [], state: 'completed_with_errors' });
+
+    // its review says where they went, and acting on it leaves them to the newer work
+    const review = (await reviewRunFailures(database, second, {}, true))!;
+    expect(review).toMatchObject({ superseded: 1, causes: [expect.objectContaining({ count: 0, superseded: 1 })] });
+    expect(review.causes[0].samples).toEqual([]);
+    const store = new SqlQueueStore(database);
+    expect(await store.retryRunFailures(second, 'other', true)).toBe(0);
+    // the run alone, as other callers read it, still has its photo
+    expect(await getRun(db, second)).toMatchObject({ leftOver: 1 });
+    expect((await reviewRunFailures(database, second, {}))!.causes[0]).toMatchObject({ count: 1, superseded: 0 });
   });
 
   it('classifies in SQL exactly as the TypeScript mirror does', async () => {
