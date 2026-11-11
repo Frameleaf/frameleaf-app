@@ -180,6 +180,12 @@ export const JobRunResponseSchema = counts
       .optional()
       .describe('With foldNightly, on the newest nightly run: how long the same photos have been left over'),
     libraryName: z.string().optional().describe("A folder scan's library, while it exists"),
+    countedOnce: z
+      .boolean()
+      .optional()
+      .describe(
+        'With foldNightly, on the night card: false when its photos could not be counted once each (too many, or their tasks are pruned); its numbers are then tasks (stageTotals)',
+      ),
   })
   .extend(progress.shape)
   .meta({ id: 'JobRunResponseDto' });
@@ -198,6 +204,10 @@ export class JobRunPageDto extends createZodDto(
           total: z.int().min(0).describe('Files to check; 0 when not known yet'),
           damaged: z.int().min(0).describe('Files the finished checks found damaged'),
           missing: z.int().min(0).describe('Files the finished checks found missing'),
+          failed: z
+            .boolean()
+            .optional()
+            .describe("A finished check failed or was cancelled: it didn't finish its work"),
         })
         .optional()
         .describe(
@@ -318,4 +328,5 @@ export const mapJobRun = (row: RunRead): JobRunResponseDto => ({
   }),
   ...(row.leftOverStreak && { leftOverStreak: row.leftOverStreak }),
   ...(row.libraryName && { libraryName: row.libraryName }),
+  ...(row.countedOnce !== undefined && { countedOnce: row.countedOnce }),
 });

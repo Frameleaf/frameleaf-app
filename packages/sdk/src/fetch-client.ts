@@ -10366,6 +10366,8 @@ export type JobRunResponseDto = {
     canRelease?: boolean;
     cancelled: number;
     completed: number;
+    /** With foldNightly, on the night card: false when its photos could not be counted once each (too many, or their tasks are pruned); its numbers are then tasks (stageTotals) */
+    countedOnce?: boolean;
     /** The counts are photos; when false they are tasks (the run works on something other than photos) */
     countsPhotos?: boolean;
     createdAt: string;
@@ -10526,6 +10528,8 @@ export type JobRunPageDto = {
         checked: number;
         /** Files the finished checks found damaged */
         damaged: number;
+        /** A finished check failed or was cancelled: it didn't finish its work */
+        failed?: boolean;
         /** When the last one finished; null while any still runs */
         finishedAt: string | null;
         /** Files the finished checks found missing */

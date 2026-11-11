@@ -810,20 +810,31 @@ export class JobRepository {
       return action === 'retry' ? this.store.retryRunFailures(runId, cause) : this.store.stopRunFailures(runId, cause);
     }
     // FL-1430: the photos the card shows for this cause, worked out once over the whole night (or the run), then
-    // tried again or stopped in every run that left them over: every failed step of a photo goes, and the count is
-    // what the card said
+    // tried again or stopped in every run that left them over, each run's steps newer work took over left to that
+    // work. The count is the photos (tasks, in a run that counts tasks) something was actually done to.
     const found = await recentWorkScope(this.store.db, runId);
     if (!found) return;
     const roots = (await failureRoots(this.store.db, found.scope)).filter(
       (root) => needsLook(root) && root.rank === causeRank(cause),
     );
+    const exclude = roots.flatMap(({ takenJobs }) => takenJobs);
+    const acted = new Set<string>();
+    let known = false;
     for (const run of found.scope.runs) {
-      const only = roots.filter((root) => root.runIds.includes(run.id)).map(({ root }) => root);
-      if (only.length === 0) continue;
-      if (action === 'retry') await this.store.retryRunFailures(run.id, cause, only);
-      else await this.store.stopRunFailures(run.id, cause, only);
+      // Stop trying works on photos (as before FL-1430): a run that counts tasks has nothing it can stop
+      if (action === 'stop' && !run.countsPhotos) continue;
+      const mine = roots.filter((root) => root.runIds.includes(run.id) && root.rooted === run.countsPhotos);
+      if (mine.length === 0) continue;
+      const only = { items: mine.map(({ root }) => root), exclude };
+      const done =
+        action === 'retry'
+          ? await this.store.retryRunFailures(run.id, cause, only)
+          : await this.store.stopRunFailures(run.id, cause, only);
+      if (done === undefined) continue;
+      known = true;
+      if (done > 0) for (const { root } of mine) acted.add(root);
     }
-    return roots.length;
+    return known || roots.length === 0 ? acted.size : 0;
   }
 
   private intent(item: JobItem): QueueIntent {

@@ -13,9 +13,10 @@ describe('the night a piece of work belongs to (FL-1430)', () => {
     expect(withNight({})).toEqual({});
   });
 
-  it('is carried by a job the night queued, while that night is recent', () => {
+  it('is carried by a job the night queued, however late it runs (Recent work checks it against the night)', () => {
     expect(queueExecution.run(claimed('2026-11-11T02:40:00.000Z'), () => currentNight())).toEqual(night);
-    // the same job run again days later (retried from the task list) opens a run of its own
-    expect(queueExecution.run(claimed('2026-11-13T09:00:00.000Z'), () => currentNight())).toBeUndefined();
+    // a producer held by quiet hours runs 14 hours later: still the night's; a run opened after the night ended
+    // stands alone, decided when Recent work reads it (recent-work.ts)
+    expect(queueExecution.run(claimed('2026-11-11T16:40:00.000Z'), () => currentNight())).toEqual(night);
   });
 });

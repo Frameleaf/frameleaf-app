@@ -138,6 +138,8 @@ describe('summarizeRunFailures', () => {
     // job_run itself (its primary key) is read too; what matters is how job is read
     const supersedingReads = jobReads(superseding[0]['QUERY PLAN']).filter(({ index }) => index !== 'job_run_pkey');
     expect(supersedingReads.map(({ type }) => type)).not.toContain('Seq Scan');
+    // each newer run's failed keys are read once, not probed per photo: no read of job is keyed by a photo of this run
+    expect(supersedingReads.filter(({ cond }) => /"rootItemKey" = (p|f|pairs)\./.test(cond))).toEqual([]);
     expect(supersedingReads.filter(({ index }) => index)).toEqual(
       supersedingReads
         .filter(({ index }) => index)
@@ -344,6 +346,75 @@ describe('summarizeRunFailures', () => {
     expect(putBack).toEqual([{ root: otherStep.id }]);
     // the run alone, as other callers read it, keeps all its photos
     expect((await reviewRunFailures(database, first, {}))!.causes[0]).toMatchObject({ count: 2, superseded: 0 });
+  });
+
+  it('acting on an older card leaves the steps newer work took over alone (FL-1430)', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const older = await run();
+    await failedJob(older, asset.id, JobName.AssetExtractMetadata, 'unsupported file format');
+    await failedJob(older, asset.id, JobName.AssetGenerateThumbnails, 'unsupported file format');
+    const newer = await run();
+    await failedJob(newer, asset.id, JobName.AssetExtractMetadata, 'unsupported file format');
+    expect(await finishRuns(db, 10)).toBe(2);
+    // the photo still needs a look on the older card, for its thumbnails
+    const card = (await listRecentWork(db, 25, 0)).find(({ id }) => id === older)!;
+    expect(card).toMatchObject({ leftOver: 1 });
+    const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
+    expect(await jobs.actOnRunFailures(older, 'unsupported', 'stop', true)).toBe(1);
+    const { rows: stopped } = await sql<{ step: string }>`select step from asset_processing_failure
+      where "assetId" = ${asset.id}::uuid and "dismissedAt" is not null`.execute(db);
+    // only the thumbnails step: the metadata step is the newer card's to decide
+    expect(stopped).toEqual([{ step: JobName.AssetGenerateThumbnails }]);
+
+    await sql`delete from asset_processing_failure where "assetId" = ${asset.id}::uuid`.execute(db);
+    await sql`update job set error = 'Timed out' where "rootItemKey" = ${asset.id}`.execute(db);
+    expect(await jobs.actOnRunFailures(older, 'other', 'retry', true)).toBe(1);
+    const { rows: back } = await sql<{ name: string }>`select name from job
+      where "runId" = ${older}::uuid and state = 'pending'`.execute(db);
+    expect(back).toEqual([{ name: JobName.AssetGenerateThumbnails }]);
+  });
+
+  it('Stop trying on work that counts tasks stops nothing, and says so (FL-1430)', async () => {
+    const id = await run();
+    await failedJob(id, randomUUID(), JobName.AssetGenerateThumbnails, 'unsupported format', {
+      dataId: randomUUID(),
+    });
+    await sql`update job set "rootItemKey" = null where "runId" = ${id}::uuid`.execute(db);
+    expect(await finishRuns(db, 10)).toBe(1);
+    const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
+    expect(await jobs.actOnRunFailures(id, 'other', 'stop', true)).toBe(0);
+    expect(await jobs.actOnRunFailures(id, 'unsupported', 'stop', true)).toBe(0);
+  });
+
+  it("the night's marker doesn't make a selection a different request (FL-1430)", async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const store = new SqlQueueStore(database);
+    const select = (runId: string, data: Record<string, unknown>) =>
+      database.transaction().execute((tx) =>
+        store.insertSelectionPage(
+          {
+            queue: QueueName.ThumbnailGeneration,
+            name: JobName.AssetGenerateThumbnails,
+            data,
+            runId,
+            safeToRetry: true,
+            sensitive: false,
+            deadlineMs: 1000,
+          },
+          database.selectFrom('asset').select('asset.id').where('asset.id', '=', asset.id),
+          null,
+          100,
+          tx,
+        ),
+      );
+    const nightly = await select(await run(), { _night: { startedAt: '2026-11-12T02:33:00.000Z', manual: false } });
+    expect(nightly.inserted).toBe(1);
+    // a person's selection of the same photo while the night's is still waiting coalesces into it
+    expect((await select(await run(), {})).inserted).toBe(0);
   });
 
   it('only work with a card of its own takes photos over: not an earlier night (FL-1430)', async () => {

@@ -105775,6 +105775,10 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "failed": {
+                "description": "A finished check failed or was cancelled: it didn't finish its work",
+                "type": "boolean"
+              },
               "finishedAt": {
                 "description": "When the last one finished; null while any still runs",
                 "format": "date-time",
@@ -105856,6 +105860,10 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "countedOnce": {
+            "description": "With foldNightly, on the night card: false when its photos could not be counted once each (too many, or their tasks are pruned); its numbers are then tasks (stageTotals)",
+            "type": "boolean"
           },
           "countsPhotos": {
             "description": "The counts are photos; when false they are tasks (the run works on something other than photos)",

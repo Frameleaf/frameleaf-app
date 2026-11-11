@@ -110,6 +110,8 @@ export type RunRead = RunCounts & {
   leftOver?: number;
   /** FL-1430: a folder scan's library, while it exists */
   libraryName?: string;
+  /** FL-1430, a folded night: false when its photos couldn't be counted once each (its numbers are tasks) */
+  countedOnce?: boolean;
 };
 export type RunEarlier = { id: string; createdAt: Date; finishedAt: Date | null; total: number; leftOver: number };
 export type RunFailureCauseCount = { cause: RunFailureCause; count: number };
@@ -186,11 +188,11 @@ export const add = (counts: RunCounts, outcome: RunOutcome, n: number) => {
 };
 
 const HOLD_REASONS = new Set<unknown>(['setup', 'paused', 'parked']);
-const holdsOf = (value: unknown): Holds => {
+export const holdsOf = (value: unknown): Holds => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value).filter(([, reason]) => HOLD_REASONS.has(reason))) as Holds;
 };
-const namesHeldAs = (holds: Holds, reason: HoldReason) =>
+export const namesHeldAs = (holds: Holds, reason: HoldReason) =>
   Object.entries(holds)
     .filter(([, value]) => value === reason)
     .map(([name]) => name);
@@ -329,6 +331,8 @@ export async function aggregateRun(
   run: { id: string; holds: unknown },
   around: Surroundings,
   exact = false,
+  /** FL-1430 (Recent work only): count work waiting out a retry as retrying; Activity keeps it waiting, as before */
+  retries = false,
 ): Promise<RunAggregate> {
   const holds = holdsOf(run.holds);
   const parked = namesHeldAs(holds, 'parked');
@@ -369,7 +373,7 @@ export async function aggregateRun(
   const moved = Math.min(deferredCount, stageTotals.waiting);
   stageTotals.waiting -= moved;
   stageTotals.blocked += moved;
-  const retrying = await retryingTasks(db, run.id, tasks, holds, queueOf, around, stageTotals);
+  const retrying = retries ? await retryingTasks(db, run.id, tasks, holds, queueOf, around, stageTotals) : 0;
   stageTotals.waiting -= retrying;
   stageTotals.retrying += retrying;
 
@@ -526,7 +530,9 @@ export async function toRead(
   options: ReadOptions = {},
 ): Promise<RunRead> {
   const finished = run.summarized && !!run.summary;
-  const aggregate = finished ? fromSummary(run.summary!) : await aggregateRun(db, run, around);
+  const aggregate = finished
+    ? fromSummary(run.summary!)
+    : await aggregateRun(db, run, around, false, options.live !== undefined);
   const context = { enumerationDone: run.enumerationDone, workerAvailable: around.workerAvailable };
   const state = runState(context, aggregate);
   const ready = aggregate.stageTotals.waiting;
@@ -659,15 +665,21 @@ const scopeOf = (scope: string | FailureScope, countsPhotos: boolean, settled: b
 
 /**
  * FL-1430: the (photo, step, run) pairs of `failed` that a newer run of `newer` left over again at the same step, not
- * stopped there. Probed once per pair, each newer run through its own progress index.
+ * stopped there. Each newer run's failed keys are read once (its own progress index, state checked in the index),
+ * then hash-joined with the pairs; only the matches are looked up for a stop (by primary key).
  */
 const SUPERSEDING = sql`pairs as materialized (select distinct f.root, f.name, f."runId" from failed f where f.rooted),
-  superseding as materialized (select p.root, p.name, p."runId" from pairs p join job_run fr on fr.id = p."runId"
-    where exists (select 1 from newer n join job s on s."runId" = n.id and s."rootItemKey" = p.root and s.name = p.name
-        and (s.state in ('failed','needs_attention')) is true
-      left join asset_processing_failure d on d."assetId" = case when pg_input_is_valid(s.data->>'id', 'uuid')
-        then (s.data->>'id')::uuid end and d.step = s.name
-      where n."createdAt" > fr."createdAt" and d."dismissedAt" is null)),`;
+  -- one read per newer run through its own index (offset 0 keeps the planner from one pass over every job instead)
+  newer_keys as materialized (select s.root, s.name, n."createdAt", s.subject from newer n cross join lateral (
+      select j."rootItemKey" root, j.name,
+        case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end subject
+      from job j where j."runId" = n.id and j."rootItemKey" is not null
+        and (j.state in ('failed','needs_attention')) is true offset 0) s),
+  superseding as materialized (select distinct p.root, p.name, p."runId" from pairs p
+    join job_run fr on fr.id = p."runId"
+    join newer_keys k on k.root = p.root and k.name = p.name and k."createdAt" > fr."createdAt"
+    left join asset_processing_failure d on d."assetId" = k.subject and d.step = k.name
+    where d."dismissedAt" is null),`;
 
 /**
  * FL-1349: each failed or needs-attention task of a run with its photo's cause. Read from the run's progress index
@@ -778,6 +790,8 @@ export type FailureRoot = {
   rooted: boolean;
   assetId: string | null;
   runIds: string[];
+  /** its failed tasks newer work took over (their steps are that work's, not this card's) */
+  takenJobs: string[];
   rank: number;
   stopped: boolean;
   superseded: boolean;
@@ -797,6 +811,7 @@ export async function failureRoots(db: Kysely<any>, scope: FailureScope): Promis
       array_agg(distinct t."runId") "runIds", min(t."photoRank") rank, bool_and(t."photoStopped") stopped,
       bool_and(t."photoSuperseded") superseded, bool_or(t.fixed) fixed,
       array_agg(distinct t.queue order by t.queue) queues, min(l.name) library,
+      coalesce(array_agg(t."jobId") filter (where t.superseded), '{}') "takenJobs",
       (array_agg(t.error order by t."jobId") filter (where not t.sensitive and t.error is not null
         and t.rank = t."photoRank"))[1] message
     from (${runFailureTasks(scope)}) t left join library l on l.id = t."libraryId"
