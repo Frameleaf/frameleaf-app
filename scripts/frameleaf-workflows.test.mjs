@@ -2033,6 +2033,7 @@ test("image publish and re-tag jobs survive the other image's skipped build", ()
     "server-publish",
     "machine-learning-publish",
     "machine-learning-hardware",
+    "machine-learning-openvino-publish",
     "retag-server",
     "retag-machine-learning",
   ]) {
@@ -2064,18 +2065,30 @@ test("all Docker publication routes require same-run Assistant qualification whe
   assert.equal(jobs.changes.steps[0].with.ref, "${{ github.sha }}");
   assert.match(
     jobs.changes.outputs["machine-learning"],
-    /steps.assistant.outputs.required == 'true'/,
+    /steps.assistant.outputs.variant == 'cpu' \|\| steps.filter.outputs\['machine-learning'\] == 'true'/,
   );
-  assert.deepEqual(qualification.needs, ["changes", "machine-learning"]);
-  assert.equal(
+  assert.deepEqual(qualification.needs, [
+    "changes",
+    "machine-learning",
+    "machine-learning-openvino-archive",
+  ]);
+  assert.match(qualification.if, /!cancelled\(\)/);
+  assert.match(
     qualification.if,
-    "needs.changes.outputs.assistant-qualification == 'true'",
+    /outputs.assistant-variant == 'cpu' && needs.machine-learning.result == 'success'/,
+  );
+  assert.match(
+    qualification.if,
+    /outputs.assistant-variant == 'openvino' && needs.machine-learning-openvino-archive.result == 'success'/,
   );
   assert.equal(qualification.steps[0].with.ref, "${{ github.sha }}");
   const archive = qualification.steps.find((step) =>
     step.uses?.startsWith("actions/download-artifact@"),
   );
-  assert.equal(archive.with.name, "frameleaf-machine-learning-archive-amd64");
+  assert.match(
+    archive.with.name,
+    /^frameleaf-machine-learning.*assistant-variant == 'openvino' && '-openvino'.*-archive-amd64$/,
+  );
   assert.equal(archive.with["run-id"], undefined);
   assert.equal(archive.with["github-token"], undefined);
   assert.equal(
@@ -2109,7 +2122,7 @@ test("all Docker publication routes require same-run Assistant qualification whe
   assert.ok(publisher.needs.includes("assistant-qualification"));
   assert.equal(
     publisher.with["tested-amd64-manifest"],
-    "${{ needs.assistant-qualification.outputs.amd64-manifest }}",
+    "${{ needs.changes.outputs.assistant-variant == 'cpu' && needs.assistant-qualification.outputs.amd64-manifest || '' }}",
   );
   const merger = workflow("local-multi-runner-build.yml").jobs.merge.steps.at(
     -1,
@@ -2130,6 +2143,7 @@ test("all Docker publication routes require same-run Assistant qualification whe
     "server-publish",
     "machine-learning-publish",
     "machine-learning-hardware",
+    "machine-learning-openvino-publish",
     "retag-server",
     "retag-machine-learning",
   ]) {
@@ -2139,6 +2153,79 @@ test("all Docker publication routes require same-run Assistant qualification whe
       /needs\['deploy-test'\]\.result == 'success'/,
       name,
     );
+  }
+});
+
+test("OpenVINO uses exactly one publication path for built and reused ML variants", () => {
+  const jobs = workflow("docker.yml").jobs;
+  const archive = jobs["machine-learning-openvino-archive"];
+  const publisher = jobs["machine-learning-openvino-publish"];
+  assert.equal(
+    archive.if,
+    "needs.changes.outputs.assistant-variant == 'openvino'",
+  );
+  const {
+    mode,
+    "tested-amd64-manifest": testedManifest,
+    ...variantInputs
+  } = publisher.with;
+  assert.deepEqual(archive.with, { ...variantInputs, mode: "archive" });
+  assert.match(
+    publisher.if,
+    /machine-learning'\] == 'true' \|\| needs.changes.outputs.assistant-variant == 'openvino'/,
+  );
+  assert.equal(
+    mode,
+    "${{ needs.changes.outputs.assistant-variant == 'openvino' && 'publish' || 'push' }}",
+  );
+  assert.equal(
+    testedManifest,
+    "${{ needs.changes.outputs.assistant-variant == 'openvino' && needs.assistant-qualification.outputs.amd64-manifest || '' }}",
+  );
+  assert.equal(
+    jobs["machine-learning-hardware"].strategy.matrix.include.some(
+      ({ device }) => device === "openvino",
+    ),
+    false,
+  );
+  const retag = jobs["retag-machine-learning"].strategy.matrix;
+  assert.ok(retag.suffix.includes("-openvino"));
+  assert.equal(
+    retag.exclude,
+    `\${{ fromJSON(needs.changes.outputs.assistant-variant == 'openvino' && '[{"suffix":"-openvino"}]' || '[]') }}`,
+  );
+
+  const summary = jobs["success-check-ml"];
+  assert.ok(summary.needs.includes("machine-learning-openvino-publish"));
+  for (const [variant, mlBuilt, openvino, expected] of [
+    ["", false, "skipped", true],
+    ["", true, "success", true],
+    ["cpu", true, "success", true],
+    ["openvino", true, "success", true],
+    ["openvino", false, "success", true],
+    ["openvino", false, "skipped", false],
+    ["openvino", true, "failure", false],
+    ["", true, "skipped", false],
+  ]) {
+    const results = {
+      changes: {
+        outputs: {
+          "machine-learning": String(mlBuilt),
+          "assistant-variant": variant,
+        },
+      },
+      integration: { result: "success" },
+      "deploy-test": { result: "success" },
+      "machine-learning-publish": { result: mlBuilt ? "success" : "skipped" },
+      "machine-learning-hardware": { result: mlBuilt ? "success" : "skipped" },
+      "retag-machine-learning": { result: mlBuilt ? "skipped" : "success" },
+      "machine-learning-openvino-publish": { result: openvino },
+    };
+    const result = spawnSync("bash", ["-c", summary.steps[0].run], {
+      encoding: "utf8",
+      env: { ...process.env, RESULTS: JSON.stringify(results) },
+    });
+    assert.equal(result.status, expected ? 0 : 1, JSON.stringify(results));
   }
 });
 

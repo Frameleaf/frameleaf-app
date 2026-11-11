@@ -67,13 +67,13 @@ accepted plans. This mode does not produce release qualification evidence.
 
 Deploy runs the live evaluator before publishing or retagging images when the
 source manifest pins a default planner. The job starts the same run's unpushed
-Linux amd64 CPU worker archive on a loopback port and verifies a fresh report
+Linux amd64 worker archive on a loopback port and verifies a fresh report
 against the exact source commit. The job retains the verified report, worker
 archive digest, and Linux amd64 manifest digest as a 30-day audit artifact.
 Publication checks the tested manifest digest before pushing the archive and
-before advancing the candidate tag to edge. The hosted CPU image
-provides the Transformers runtime. An empty manifest leaves the regular
-deployment test in effect.
+before advancing the candidate tag to edge. Transformers uses the standard CPU
+image. OpenVINO uses the existing OpenVINO image with CPU inference. An empty
+manifest leaves the regular deployment test in effect.
 
 From a clean candidate checkout, start a test worker built from that candidate's
 ML source with its pinned default planner available. Use only a disposable

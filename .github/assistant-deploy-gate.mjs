@@ -15,6 +15,14 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const manifestPath =
   "machine-learning/frameleaf_ml/models/assistant-planner-models.json";
 
+export function plannerVariant(runtime) {
+  assert(
+    runtime === "transformers" || runtime === "openvino",
+    "Unsupported Assistant planner runtime",
+  );
+  return runtime === "openvino" ? "openvino" : "cpu";
+}
+
 export function defaultPlanner(manifest) {
   assert(
     Array.isArray(manifest),
@@ -43,11 +51,7 @@ export function defaultPlanner(manifest) {
     "Expected exactly one default Assistant planner",
   );
   const [planner] = defaults;
-  assert.equal(
-    planner.runtime,
-    "transformers",
-    "The hosted CPU qualification image requires a Transformers planner",
-  );
+  plannerVariant(planner.runtime);
   assert(
     planner.files &&
       typeof planner.files === "object" &&
@@ -92,7 +96,7 @@ function sourcePlanner(source) {
   );
 }
 
-export function assertArchiveIdentity(labels, source) {
+export function assertArchiveIdentity(labels, source, variant) {
   assert.equal(
     labels["org.opencontainers.image.source"],
     "https://github.com/Frameleaf/frameleaf-app",
@@ -105,7 +109,7 @@ export function assertArchiveIdentity(labels, source) {
   );
   assert.equal(
     labels["org.frameleaf.build.variant"],
-    "cpu",
+    variant === "openvino" ? "openvino-openvino" : "cpu",
     "Wrong ML image runtime variant",
   );
 }
@@ -141,6 +145,7 @@ export async function qualify(
   { execute = run, loadArchive, ready = waitForWorker } = {},
 ) {
   assert(planner, "The candidate must pin a default Assistant planner");
+  const workerVariant = plannerVariant(planner.runtime);
   loadArchive ??= (await import("./frameleaf-deploy-test.cjs")).default
     .loadArchive;
   const { verifyQualification } = await import("./assistant-qualification.mjs");
@@ -178,7 +183,7 @@ export async function qualify(
         image,
       ]),
     );
-    assertArchiveIdentity(labels, source);
+    assertArchiveIdentity(labels, source, workerVariant);
     execute("docker", [
       "run",
       "--detach",
@@ -227,7 +232,7 @@ export async function qualify(
     verifyQualification(report, source, planner.name);
     writeFileSync(
       path.join(env.RUNNER_TEMP, "assistant-qualification-evidence.json"),
-      `${JSON.stringify({ workerImageDigest, workerManifestDigest, report }, null, 2)}\n`,
+      `${JSON.stringify({ workerVariant, workerImageDigest, workerManifestDigest, report }, null, 2)}\n`,
       { flag: "wx", mode: 0o600 },
     );
     appendFileSync(
@@ -254,7 +259,11 @@ if (
   const { GITHUB_SHA, GITHUB_OUTPUT } = process.env;
   const planner = sourcePlanner(GITHUB_SHA);
   if (process.argv[2] === "plan") {
-    appendFileSync(GITHUB_OUTPUT, `required=${planner !== null}\n`);
+    const variant = planner ? plannerVariant(planner.runtime) : "";
+    appendFileSync(
+      GITHUB_OUTPUT,
+      `required=${planner !== null}\nvariant=${variant}\n`,
+    );
   } else {
     assert.equal(process.argv[2], "qualify", "Expected plan or qualify");
     await qualify(GITHUB_SHA, planner, process.env);

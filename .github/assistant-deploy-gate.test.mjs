@@ -14,6 +14,7 @@ import { test } from "node:test";
 import {
   assertArchiveIdentity,
   defaultPlanner,
+  plannerVariant,
   qualify,
   workerEndpoint,
 } from "./assistant-deploy-gate.mjs";
@@ -43,10 +44,17 @@ test("only an empty manifest can bypass live qualification", () => {
   }
 });
 
-test("default planner must use the CPU archive's runtime and pinned files", () => {
+test("default planner must use a supported runtime and pinned files", () => {
+  assert.equal(plannerVariant(defaultPlanner([planner]).runtime), "cpu");
+  assert.equal(
+    plannerVariant(
+      defaultPlanner([{ ...planner, runtime: "openvino" }]).runtime,
+    ),
+    "openvino",
+  );
   assert.throws(
-    () => defaultPlanner([{ ...planner, runtime: "openvino" }]),
-    /Transformers/,
+    () => defaultPlanner([{ ...planner, runtime: "llama.cpp" }]),
+    /Unsupported Assistant planner runtime/,
   );
   for (const files of [
     undefined,
@@ -58,7 +66,7 @@ test("default planner must use the CPU archive's runtime and pinned files", () =
   }
 });
 
-test("qualification requires the exact candidate ML CPU image", () => {
+test("qualification requires the exact candidate ML runtime image", () => {
   const source = "a".repeat(40);
   const labels = {
     "org.opencontainers.image.source":
@@ -66,10 +74,21 @@ test("qualification requires the exact candidate ML CPU image", () => {
     "org.opencontainers.image.revision": source,
     "org.frameleaf.build.variant": "cpu",
   };
-  assert.doesNotThrow(() => assertArchiveIdentity(labels, source));
+  assert.doesNotThrow(() => assertArchiveIdentity(labels, source, "cpu"));
+  assert.throws(
+    () => assertArchiveIdentity(labels, source, "openvino"),
+    /runtime variant/,
+  );
+  assert.doesNotThrow(() =>
+    assertArchiveIdentity(
+      { ...labels, "org.frameleaf.build.variant": "openvino-openvino" },
+      source,
+      "openvino",
+    ),
+  );
   for (const label of Object.keys(labels)) {
     assert.throws(() =>
-      assertArchiveIdentity({ ...labels, [label]: "wrong" }, source),
+      assertArchiveIdentity({ ...labels, [label]: "wrong" }, source, "cpu"),
     );
   }
 });
@@ -116,21 +135,31 @@ test("plan reads the exact candidate commit and fails for a different checkout",
         },
       );
     run(source);
+    const pin = defaultPlanner(manifest);
+    const variant = pin ? plannerVariant(pin.runtime) : "";
     assert.equal(
       readFileSync(output, "utf8"),
-      `required=${manifest.length > 0}\n`,
+      `required=${manifest.length > 0}\nvariant=${variant}\n`,
     );
     assert.throws(() => run("0".repeat(40)), /Wrong candidate checkout/);
     assert.equal(
       readFileSync(output, "utf8"),
-      `required=${manifest.length > 0}\n`,
+      `required=${manifest.length > 0}\nvariant=${variant}\n`,
     );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("qualification requires the fresh passing report from the same worker invocation", async () => {
+for (const [runtime, variant, imageVariant] of [
+  ["transformers", "cpu", "cpu"],
+  ["openvino", "openvino", "openvino-openvino"],
+]) {
+  test(`${runtime} qualification requires a fresh report from the same worker invocation`, () =>
+    checkQualification(runtime, variant, imageVariant));
+}
+
+async function checkQualification(runtime, variant, imageVariant) {
   const temp = mkdtempSync(path.join(tmpdir(), "assistant-deploy-live-"));
   const source = "a".repeat(40);
   const image = `127.0.0.1:5000/deploy-test/assistant@sha256:${"b".repeat(64)}`;
@@ -198,12 +227,13 @@ test("qualification requires the fresh passing report from the same worker invoc
               "org.opencontainers.image.source":
                 "https://github.com/Frameleaf/frameleaf-app",
               "org.opencontainers.image.revision": source,
-              "org.frameleaf.build.variant": "cpu",
+              "org.frameleaf.build.variant": imageVariant,
             });
           if (args[0] === "run") {
             assert.equal(args.at(-1), image);
             assert.ok(args.includes("127.0.0.1::3003"));
             assert.equal(args[args.indexOf("--platform") + 1], "linux/amd64");
+            assert.ok(!args.includes("--device") && !args.includes("--gpus"));
           }
           if (args[0] === "port") return "127.0.0.1:32768";
           if (command === "pnpm") {
@@ -231,7 +261,7 @@ test("qualification requires the fresh passing report from the same worker invoc
       };
       const result = qualify(
         source,
-        planner,
+        { ...planner, runtime },
         {
           RUNNER_TEMP: temp,
           GITHUB_STEP_SUMMARY: summary,
@@ -245,6 +275,7 @@ test("qualification requires the fresh passing report from the same worker invoc
         await result;
         assert.ok(readFileSync(summary, "utf8").includes(image));
         assert.deepEqual(JSON.parse(readFileSync(evidence, "utf8")), {
+          workerVariant: variant,
           workerImageDigest: `sha256:${"b".repeat(64)}`,
           workerManifestDigest: manifestDigest,
           report,
@@ -280,4 +311,4 @@ test("qualification requires the fresh passing report from the same worker invoc
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
-});
+}
