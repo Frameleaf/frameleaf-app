@@ -130,6 +130,26 @@ it('says why pending work is not running: a paused or closed queue, a dependency
   expect(stored.reason).toBe('destination-capacity');
 });
 
+it('says a run whose only unfinished photo waits out a retry is retrying, not running (FL-1430)', async () => {
+  const id = await run();
+  for (const root of ['a', 'b', 'c']) await job(id, root, 'Sidecar', { state: 'completed' });
+  await job(id, 'c', 'Metadata', { retry: true, delay: true });
+  expect(await read(id)).toMatchObject({
+    state: 'retrying',
+    total: 3,
+    completed: 2,
+    retrying: 1,
+    waiting: 0,
+    stageTotals: { retrying: 1, waiting: 0 },
+  });
+  expect((await read(id)).reasons).toContain('retry_backoff');
+
+  // work that is simply ready keeps waiting
+  const ready = await run();
+  await job(ready, 'a', 'Metadata');
+  expect(await read(ready)).toMatchObject({ state: 'waiting', waiting: 1, retrying: 0 });
+});
+
 it('reports a held setup as blocked, a paused setup as paused, and leaves parked stages out', async () => {
   const setup = await run({ holds: { Faces: 'setup', Smart: 'parked' } });
   await job(setup, 'a', 'Thumbnail', { state: 'completed' });

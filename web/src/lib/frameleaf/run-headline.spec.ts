@@ -157,6 +157,24 @@ describe('one state and one reason per piece of work (FL-1349)', () => {
       action: null,
     });
   });
+  it('running work still finding its photos names that, for a folder scan by the folder (FL-1430)', () => {
+    expect(runHeadline(durableRun({ state: 'running', enumerationDone: false, reasons: ['enumerating'] }))).toEqual({
+      status: 'frameleaf_job_runs_state_running',
+      tone: 'good',
+      why: 'frameleaf_job_runs_why_enumerating',
+      action: null,
+    });
+    expect(
+      runHeadline(
+        durableRun({ kind: 'library_scan', state: 'running', enumerationDone: false, reasons: ['enumerating'] }),
+      ).why,
+    ).toBe('frameleaf_job_runs_why_enumerating_scan');
+    // a retry's wait says it, even while the run is still finding its photos
+    expect(
+      runHeadline(durableRun({ state: 'retrying', enumerationDone: false, reasons: ['enumerating', 'retry_backoff'] }))
+        .why,
+    ).toBe('frameleaf_job_runs_why_retry');
+  });
   it('no wording says queue, job, checksum or SHA', () => {
     const words = Object.entries(en).filter(([key]) => key.startsWith('frameleaf_job_runs_'));
     expect(words.length).toBeGreaterThan(40);

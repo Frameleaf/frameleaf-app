@@ -279,6 +279,35 @@ async function lastProgress(db: Kysely<any>, runId: string, exact: boolean) {
   return own;
 }
 
+/** At most this many live tasks are read one by one to tell a retry's wait from ready work. */
+const RETRY_PROBE = 500;
+
+/**
+ * FL-1430: the waiting tasks that wait out a retry's backoff (a failed attempt put back for later). Read only when
+ * nothing of the run is running and few tasks are live (`job_run_live`, at most `RETRY_PROBE` rows): that is when a
+ * card would otherwise say the run is waiting, or running, with nothing to show for it.
+ */
+async function retryingTasks(
+  db: Kysely<any>,
+  runId: string,
+  tasks: Array<{ name: string; state: string; n: number }>,
+  holds: Holds,
+  queueOf: Map<string, string>,
+  around: Surroundings,
+  stageTotals: RunCounts,
+) {
+  const live = tasks.filter((task) => LIVE.has(task.state)).reduce((sum, task) => sum + task.n, 0);
+  if (stageTotals.active > 0 || stageTotals.waiting === 0 || live > RETRY_PROBE) return 0;
+  const { rows } = await sql<{ name: string; n: number }>`select name, count(*)::int n from job
+    where "runId" = ${runId}::uuid and state in ('pending','waiting') and "dependencyReason" is null
+      and attempt > "retryBaseAttempt" and "availableAt" > now() and "availableAt" < 'infinity'
+    group by name`.execute(db);
+  const waiting = rows
+    .filter(({ name }) => liveOutcome(name, holds, queueOf, around) === 'waiting')
+    .reduce((sum, row) => sum + row.n, 0);
+  return Math.min(waiting, stageTotals.waiting);
+}
+
 /**
  * FL-1265: the counts of a run that has no valid summary. Two passes over `job_run_progress`
  * ("runId","rootItemKey",name,state), both answered from the index: one grouped by root in index order (a photo's
@@ -333,6 +362,9 @@ export async function aggregateRun(
   const moved = Math.min(deferredCount, stageTotals.waiting);
   stageTotals.waiting -= moved;
   stageTotals.blocked += moved;
+  const retrying = await retryingTasks(db, run.id, tasks, holds, queueOf, around, stageTotals);
+  stageTotals.waiting -= retrying;
+  stageTotals.retrying += retrying;
 
   const photos = zero();
   let held = 0;
@@ -355,6 +387,11 @@ export async function aggregateRun(
   // Which photos the deferred tasks belong to isn't read; when every waiting task is deferred, so are their photos.
   if (deferredCount > 0 && stageTotals.waiting === 0) {
     photos.blocked += photos.waiting;
+    photos.waiting = 0;
+  }
+  // FL-1430: likewise, when every waiting task waits out a retry, their photos are retrying
+  if (retrying > 0 && stageTotals.waiting === 0) {
+    photos.retrying += photos.waiting;
     photos.waiting = 0;
   }
   const countsPhotos = roots.some((row) => row.rooted);

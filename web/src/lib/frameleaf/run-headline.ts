@@ -171,7 +171,12 @@ export const runHeadline = (run: DurableJobRun): Headline => {
   return {
     status: run.state === 'waiting' ? runStateKey(run.state) : 'frameleaf_job_runs_state_running',
     tone: 'good',
-    why: null,
+    // FL-1430: work still finding what to do says so, rather than standing at Running with nothing to show
+    why: has('enumerating')
+      ? run.kind === 'library_scan'
+        ? 'frameleaf_job_runs_why_enumerating_scan'
+        : 'frameleaf_job_runs_why_enumerating'
+      : null,
     action: null,
   };
 };

@@ -9800,6 +9800,8 @@
   "frameleaf_job_runs_try_again": "Try again now",
   "frameleaf_job_runs_unavailable": "Recent work couldn’t be loaded. What’s shown may be out of date.",
   "frameleaf_job_runs_why_drive": "The external library “{name}” can’t be reached. It carries on by itself when the drive is back.",
+  "frameleaf_job_runs_why_enumerating": "Still finding all the work to do.",
+  "frameleaf_job_runs_why_enumerating_scan": "Still looking through the folder for new and changed files.",
   "frameleaf_job_runs_why_ml": "It carries on by itself when machine learning is available.",
   "frameleaf_job_runs_why_ml_off": "Machine learning is turned off for this. It carries on when you turn it on.",
   "frameleaf_job_runs_why_needs_attention": "This stopped before it finished. Start it again from the task list when you’re ready.",
