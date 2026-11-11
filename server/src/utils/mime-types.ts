@@ -278,6 +278,15 @@ const font: Record<string, string[]> = {
   '.woff2': ['font/woff2'],
 };
 
+const boardAudio: Record<string, string> = {
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.m4a': 'audio/mp4',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
+};
+
 const types = { ...image, ...video, ...sidecar, ...font };
 
 const isType = (filename: string, r: Record<string, string[]>) =>
@@ -312,6 +321,7 @@ export const mimeTypes = {
   isSidecar: (filename: string) => isType(filename, sidecar),
   isVideo: (filename: string) => isType(filename, video),
   isBoardOriginal,
+  boardAudioType: (filename: string): string | undefined => boardAudio[getFilenameExtension(filename).toLowerCase()],
   uploadExtension: (filename: string) => (isBoardOriginal(filename) ? '.bin' : getFilenameExtension(filename)),
   isFont: (filename: string) => isType(filename, font),
   canBeTransparent: (filename: string) =>

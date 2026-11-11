@@ -57,6 +57,7 @@ import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
+import { DesktopOfflineAlbumService } from 'src/services/desktop-offline-album.service.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
@@ -233,6 +234,7 @@ export const services = [
   DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,
   DesktopDeviceService,
+  DesktopOfflineAlbumService,
   PhotoSourceService,
   SourceResourceAuthService,
   DesktopMlService,

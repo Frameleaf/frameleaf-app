@@ -743,6 +743,7 @@ export class MediaRepository {
             // reconstruct 30000/1001 or 1/30000 out of a float.
             timeBaseRational: tryParseRational(stream.time_base),
             frameRateRational: tryParseRational(stream.avg_frame_rate ?? stream.r_frame_rate),
+            nominalFrameRateRational: tryParseRational(stream.r_frame_rate),
             duration: this.parseStreamDuration(stream),
             startTime: this.parseStartTime(stream.start_time),
             rotation: this.parseInt(stream.rotation),

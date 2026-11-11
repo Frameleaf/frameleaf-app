@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack, type Snippet } from 'svelte';
+  import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import {
     EVERY_FOLDABLE_ACTION,
     foldedAlbumActions,
@@ -44,6 +44,7 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { workspaceHref } from '$lib/frameleaf/search-context';
   import {
     handleCreateAlbumEntry,
@@ -54,6 +55,7 @@
     handleMoveAlbumToCollection,
     handleUpdateAlbumInfo,
   } from '$lib/services/album.service';
+  import { hasLocalOfflineAlbums } from '$lib/frameleaf/local-offline';
   import { handleError } from '$lib/utils/handle-error';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
@@ -203,10 +205,52 @@
   const currentUserId = $derived(authManager.user.id);
   let automationAvailable = $state(false);
   let desktopOffline = $state(false);
+  let localDesktopOffline = $state(false);
+  let requestingOffline = $state(false);
+  let offlineRequest: AbortController | undefined;
+  onDestroy(() => offlineRequest?.abort());
+  async function keepOffline() {
+    if (typeof location === 'undefined' || requestingOffline) {
+      return;
+    }
+    const id = album.id;
+    const path = `/__frameleaf_desktop__/offline-albums/${id}`;
+    if (!localDesktopOffline) {
+      location.assign(path);
+      return;
+    }
+    const sessionCurrent = authManager.captureSession();
+    const request = new AbortController();
+    offlineRequest = request;
+    requestingOffline = true;
+    try {
+      const response = await fetch(`/api/albums/${id}/desktop-offline-grant`, {
+        method: 'POST',
+        cache: 'no-store',
+        signal: request.signal,
+      });
+      const value = response.ok ? await response.json() : null;
+      if (request.signal.aborted || !sessionCurrent() || album.id !== id) {
+        return;
+      }
+      if (typeof value?.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(value.token)) {
+        throw new Error('Offline album unavailable');
+      }
+      location.assign(`${path}#${value.token}`);
+    } catch (error) {
+      if (!request.signal.aborted && sessionCurrent()) {
+        handleError(error, $t('frameleaf_album_keep_offline_error'));
+      }
+    } finally {
+      offlineRequest = undefined;
+      requestingOffline = false;
+    }
+  }
   onMount(() => {
     desktopOffline =
       (globalThis as typeof globalThis & { __FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__?: boolean })
         .__FRAMELEAF_DESKTOP_OFFLINE_ALBUMS__ === true;
+    localDesktopOffline = hasLocalOfflineAlbums();
     void Promise.resolve(getWorkflowCapabilities())
       .then((value) => {
         automationAvailable = value?.sourceFilters ?? false;
@@ -306,6 +350,8 @@
     save({ icon, color }, $t('frameleaf_album_color_saved'));
   /** Make a movie (FL-561): beside Slideshow, in the "…" menu on phones. */
   let movieOpen = $state(false);
+  let preservationExportOpen = $state(false);
+  const canExportAlbum = $derived(owner && album.kind === AlbumKind.Album && !album.isLocked);
   let shareOpen = $state(false);
   let shareSection = $state<'people' | 'links'>('people');
   const openShare = (section: 'people' | 'links' = 'people') => {
@@ -815,8 +861,8 @@
       {#snippet trigger()}
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
-      {#if desktopOffline && owner && album.kind === AlbumKind.Album && album.isLocked === false && assetCount > 0}
-        <MenuItem onSelect={() => location.assign(`/__frameleaf_desktop__/offline-albums/${album.id}`)}>
+      {#if (desktopOffline || localDesktopOffline) && owner && album.kind === AlbumKind.Album && album.isLocked === false && assetCount > 0}
+        <MenuItem disabled={requestingOffline} onSelect={keepOffline}>
           <Icon icon={mdiDownloadOutline} size="18" />
           {$t('frameleaf_album_keep_offline')}
         </MenuItem>
@@ -924,6 +970,12 @@
             </MenuItem>
           {/if}
           <div class="menu-separator" role="separator"></div>
+        {/if}
+        {#if canExportAlbum}
+          <MenuItem disabled={assetCount === 0} onSelect={() => (preservationExportOpen = true)}>
+            <Icon icon={mdiDownloadOutline} size="18" />
+            {$t('frameleaf_preservation_album_export')}
+          </MenuItem>
         {/if}
         {#if canCreateChild}
           <!-- CollectionHeader.jsx "new-album": from a plain album it goes next to it, in the same collection
@@ -1094,6 +1146,21 @@
 {/if}
 <AlbumCoverDialog {album} albumIds={coverSourceIds} bind:open={coverOpen} onUpdated={onCoverChange} />
 <AlbumOptionsDialog {album} bind:open={optionsOpen} onUpdated={onAlbumChange} />
+
+{#if canExportAlbum && preservationExportOpen}
+  {#key album.id}
+    {#await import('$lib/components/frameleaf/PreservationExportDialog.svelte') then { default: PreservationExportDialog }}
+      <PreservationExportDialog
+        bind:open={preservationExportOpen}
+        {album}
+        onCreated={(created) => {
+          toastManager.info($t('frameleaf_preservation_export_started'));
+          void goto(commandCenterUrl('backup', 'preservation', { preservationPackage: created.id }));
+        }}
+      />
+    {/await}
+  {/key}
+{/if}
 
 {#if editOpen}{#await import('$lib/components/frameleaf/AlbumCreateDialog.svelte') then { default: AlbumCreateDialog }}
     <AlbumCreateDialog

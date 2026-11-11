@@ -100,7 +100,38 @@ RUNTIME_PLACEHOLDERS = frozenset(
     }
 )
 
-ModelFamily = Literal["realbasicvsr", "seedvr2", "rife"]
+ModelFamily = Literal["realbasicvsr", "seedvr2", "rife", "realesrgan"]
+STILL_FAMILY = "realesrgan"
+STILL_MAX_PIXELS = 1_048_576
+STILL_SCRIPT = "machine-learning/video-restoration/runtimes/realesrgan_still.py"
+STILL_WEIGHT_SHA256 = "8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292"
+STILL_ARGV = (
+    "{python}",
+    "-I",
+    "{runtime_root}/" + STILL_SCRIPT,
+    "--input-dir",
+    "{input_dir}",
+    "--output-dir",
+    "{output_dir}",
+    "--checkpoint",
+    "{weight:model}",
+)
+RIFE_CANDIDATE_ID = "rife-onnx-candidate"
+RIFE_CANDIDATE_SCRIPT = "machine-learning/frameleaf_ml/video_restoration/rife_candidate.py"
+RIFE_CANDIDATE_WEIGHT_SHA256 = "4da60c1f20d42dba4f21503140940aa48a488585ead977532bf22e95a0319327"
+RIFE_CANDIDATE_ARGV = (
+    "{python}",
+    "-I",
+    "{runtime_root}/" + RIFE_CANDIDATE_SCRIPT,
+    "--model",
+    "{weight:model}",
+    "--img",
+    "{input_dir}",
+    "--output",
+    "{output_dir}",
+    "--exp",
+    "{exp}",
+)
 
 
 class RestorationFailure(Exception):
@@ -211,6 +242,16 @@ class ModelSpec(ConfigModel):
     requiresGpu: bool = True
     notes: str = ""
 
+    @property
+    def signed_candidate(self) -> Literal["still", "rife-onnx"] | None:
+        if (
+            self.id == RIFE_CANDIDATE_ID
+            or any("rife_candidate" in argument for argument in self.runtime.argv)
+            or any(weight.sha256 == RIFE_CANDIDATE_WEIGHT_SHA256 for weight in self.weights)
+        ):
+            return "rife-onnx"
+        return "still" if self.family == STILL_FAMILY else None
+
     @model_validator(mode="after")
     def _check_placeholders(self) -> "ModelSpec":
         roles = {weight.role for weight in self.weights}
@@ -235,6 +276,40 @@ class ModelSpec(ConfigModel):
                     raise ValueError(f"model {self.id} argv uses an unknown placeholder: {{{name}}}")
         if (self.family == "rife") != (self.mode == RestorationMode.SMOOTH_MOTION):
             raise ValueError(f"model {self.id}: only the rife family serves smooth_motion")
+        if self.family == STILL_FAMILY and (
+            self.mode != RestorationMode.FAITHFUL
+            or self.nativeScale != 4
+            or self.requiresGpu
+            or self.dynamicRanges != [DynamicRange.SDR]
+            or self.limits.maxInputLongEdge > 2048
+            or self.limits.maxFrames != 1
+            or self.limits.maxFramesPerChunk != 1
+            or not self.runtime.root.is_absolute()
+            or not self.runtime.python.is_absolute()
+            or self.runtime.protocol != "process"
+            or self.runtime.env
+            or tuple(self.runtime.argv) != STILL_ARGV
+            or [(weight.role, weight.sha256) for weight in self.weights] != [("model", STILL_WEIGHT_SHA256)]
+        ):
+            raise ValueError(f"model {self.id}: invalid Real-ESRGAN still runtime configuration")
+        if self.signed_candidate == "rife-onnx" and (
+            self.id != RIFE_CANDIDATE_ID
+            or self.family != "rife"
+            or self.nativeScale is not None
+            or self.requiresGpu
+            or self.dynamicRanges != [DynamicRange.SDR]
+            or self.limits.maxInputLongEdge > 1920
+            or self.limits.maxFrames > 240
+            or self.limits.maxFramesPerChunk > self.limits.maxFrames
+            or self.limits.minVramBytes != 0
+            or not self.runtime.root.is_absolute()
+            or not self.runtime.python.is_absolute()
+            or self.runtime.protocol != "process"
+            or self.runtime.env
+            or tuple(self.runtime.argv) != RIFE_CANDIDATE_ARGV
+            or [(weight.role, weight.sha256) for weight in self.weights] != [("model", RIFE_CANDIDATE_WEIGHT_SHA256)]
+        ):
+            raise ValueError(f"model {self.id}: invalid signed RIFE candidate configuration")
         return self
 
 
@@ -267,6 +342,7 @@ class EvidenceItem(StrEnum):
     COMPARE_MOTION = "compare-motion"
     COMPARE_CUTS = "compare-cuts"
     CHUNK_SEAMS = "chunk-seams"
+    TILE_SEAMS = "tile-seams"
     TIMING_PRESERVED = "timing-preserved"
     AUDIO_PRESERVED = "audio-preserved"
     HALLUCINATION = "hallucination"
@@ -315,6 +391,16 @@ REQUIRED_EVIDENCE: dict[str, frozenset[EvidenceItem]] = {
     "realbasicvsr": COMMON_EVIDENCE | {EvidenceItem.X4_TO_REQUESTED_2X},
     "seedvr2": COMMON_EVIDENCE | {EvidenceItem.INTERMEDIATE_COMPRESSION, EvidenceItem.FRAME_COUNT},
     "rife": COMMON_EVIDENCE | {EvidenceItem.FRAME_COUNT, EvidenceItem.INTERPOLATION_ARTIFACTS},
+    STILL_FAMILY: COMMON_EVIDENCE
+    - {
+        EvidenceItem.COMPARE_MOTION,
+        EvidenceItem.COMPARE_CUTS,
+        EvidenceItem.CHUNK_SEAMS,
+        EvidenceItem.TIMING_PRESERVED,
+        EvidenceItem.AUDIO_PRESERVED,
+        EvidenceItem.TEMPORAL_STABILITY,
+    }
+    | {EvidenceItem.X4_TO_REQUESTED_2X, EvidenceItem.TILE_SEAMS},
 }
 
 
@@ -801,6 +887,7 @@ class RuntimeJob:
     interpolation_factor: int = 1
     # SeedVR2 consumes the validated video segment without a PNG/re-encode round trip.
     source_video: Path | None = None
+    kind: Literal["image", "video"] = "video"
 
 
 @dataclass(frozen=True)
@@ -892,6 +979,15 @@ class RealBasicVsrAdapter(RestorationAdapter):
             peak_vram_bytes=outcome.peak_vram_bytes,
             warnings=warnings,
         )
+
+
+class RealEsrganStillAdapter(RealBasicVsrAdapter):
+    family = STILL_FAMILY
+
+    def run(self, job: RuntimeJob) -> AdapterRun:
+        if job.kind != "image" or job.frame_count != 1:
+            raise RestorationFailure(RestorationErrorCode.UNSUPPORTED_INPUT, "Real-ESRGAN requires a still image")
+        return super().run(job)
 
 
 class SeedVr2Adapter(RestorationAdapter):
@@ -989,6 +1085,7 @@ class RifeAdapter(RestorationAdapter):
 
 ADAPTERS: dict[str, type[RestorationAdapter]] = {
     RealBasicVsrAdapter.family: RealBasicVsrAdapter,
+    RealEsrganStillAdapter.family: RealEsrganStillAdapter,
     SeedVr2Adapter.family: SeedVr2Adapter,
     RifeAdapter.family: RifeAdapter,
 }
@@ -1035,6 +1132,7 @@ class RestorationRegistry:
         runtime_inspector: Callable[[ModelSpec], RuntimeStatus] = inspect_runtime,
         verifier: WeightVerifier | None = None,
         container_revision: str | None = None,
+        signed_admission: Callable[[ModelSpec, QualificationRecord, str], bool] | None = None,
     ) -> None:
         self.manifest_path = manifest_path
         self.qualification_path = qualification_path
@@ -1042,8 +1140,11 @@ class RestorationRegistry:
         self.runtime_inspector = runtime_inspector
         self.verifier = verifier or WeightVerifier()
         self.container_revision = container_revision
+        self.signed_admission = signed_admission
         self._lock = threading.Lock()
         self._report: CapabilityReport | None = None
+        # Limits of signed candidates, which stay out of the public report but still take uploads.
+        self._candidate_limits: list[LimitsSpec] = []
 
     def load(self) -> LoadedConfiguration:
         """Read the manifest and qualification file. Never raises: problems are reported."""
@@ -1097,15 +1198,28 @@ class RestorationRegistry:
         config = self.load()
         gpus = self.gpu_query()
         manifest = config.manifest
-        models = [self._evaluate(spec, config, manifest, gpus) for spec in manifest.models] if manifest else []
+        models = (
+            [self._evaluate(spec, config, manifest, gpus) for spec in manifest.models if spec.signed_candidate is None]
+            if manifest
+            else []
+        )
         report = self._build_report(models, gpus, config.problems)
+        candidate_limits = (
+            [spec.limits for spec in manifest.models if spec.signed_candidate is not None] if manifest else []
+        )
         with self._lock:
             self._report = report
+            self._candidate_limits = candidate_limits
         for model in report.models:
             log.info("Restoration model %s is %s: %s", model.id, model.state, "; ".join(model.reasons) or "ready")
         for problem in report.configurationProblems:
             log.warning("Restoration configuration problem: %s", problem)
         return report
+
+    def candidate_limits(self) -> list[LimitsSpec]:
+        """The limits of the signed candidates in the last verified manifest (never published)."""
+        with self._lock:
+            return list(self._candidate_limits)
 
     def report(self) -> CapabilityReport:
         """The last published report. Before the first verification finishes every model is
@@ -1115,9 +1229,18 @@ class RestorationRegistry:
                 return self._report
         config = self.load()
         specs = config.manifest.models if config.manifest else []
-        return self._build_report([verifying_capability(spec) for spec in specs], [], config.problems)
+        return self._build_report(
+            [verifying_capability(spec) for spec in specs if spec.signed_candidate is None], [], config.problems
+        )
 
-    def select(self, mode: RestorationMode, model_id: str | None, fingerprint: str | None) -> SelectedModel:
+    def select(
+        self,
+        mode: RestorationMode,
+        model_id: str | None,
+        fingerprint: str | None,
+        *,
+        kind: Literal["image", "video"] = "video",
+    ) -> SelectedModel:
         """Choose the model for one request and verify it again now, so weights or a checkout
         changed since the last report are caught before any frame is decoded.
 
@@ -1130,7 +1253,15 @@ class RestorationRegistry:
             raise RestorationFailure(
                 RestorationErrorCode.MODEL_UNAVAILABLE, "; ".join(config.problems) or "no model manifest"
             )
-        candidates = [spec for spec in manifest.models if spec.mode == mode]
+        candidates = [
+            spec
+            for spec in manifest.models
+            if spec.mode == mode
+            and (
+                spec.signed_candidate is None
+                or (spec.id == model_id and kind == ("image" if spec.signed_candidate == "still" else "video"))
+            )
+        ]
         if model_id is not None:
             candidates = [spec for spec in candidates if spec.id == model_id]
         if not candidates:
@@ -1142,6 +1273,16 @@ class RestorationRegistry:
         available: list[tuple[ModelSpec, ModelCapability]] = []
         for spec in candidates:
             capability = self._evaluate(spec, config, manifest, gpus)
+            if capability.state == ModelState.AVAILABLE and spec.signed_candidate is not None:
+                record, _ = find_qualification(spec, config.records, self.container_revision)
+                if (
+                    self.signed_admission is None
+                    or self.container_revision is None
+                    or record is None
+                    or not self.signed_admission(spec, record, self.container_revision)
+                ):
+                    reasons.append(f"{spec.id}: no valid signed installed runtime approval")
+                    continue
             if capability.state == ModelState.AVAILABLE:
                 available.append((spec, capability))
             else:

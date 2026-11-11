@@ -22,14 +22,20 @@ jobs:
       packages: read
     outputs:
       server: ${{ steps.filter.outputs.server }}
-      machine-learning: ${{ steps.filter.outputs['machine-learning'] }}
+      machine-learning: ${{ steps.assistant.outputs.variant == 'cpu' || steps.filter.outputs['machine-learning'] == 'true' }}
+      assistant-qualification: ${{ steps.assistant.outputs.required }}
+      assistant-variant: ${{ steps.assistant.outputs.variant }}
       server-release: ${{ steps.filter.outputs.server-release }}
       machine-learning-release: ${{ steps.filter.outputs.machine-learning-release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Resolve the source-pinned Assistant model
+        id: assistant
+        run: node .github/assistant-deploy-gate.mjs plan
       - name: Prove unchanged verified image inputs
         id: filter
         env:
@@ -45,8 +51,8 @@ jobs:
   # FL-142 (owner decision 2026-09-27): nothing is pushed until the images just built pass a deployment
   # test on this run's runners. The server and the CPU machine-learning image are built to OCI archives
   # (no push), deployed together with the release Compose file and tested, and only then pushed by digest,
-  # byte for byte. Hardware ML variants, which hosted runners cannot run, are built and pushed only after
-  # that deployment test passed. The archive builds start alongside the integration checks; only the
+  # byte for byte. A pinned OpenVINO Assistant uses the same archive path on hosted Linux amd64. Other
+  # hardware variants build and push after the deployment test. Archive builds run alongside integration; only the
   # deployment test and every push wait for integration.
   server:
     name: Build Server (archive, not pushed)
@@ -88,10 +94,83 @@ jobs:
       device: cpu
       mode: archive
 
+  machine-learning-openvino-archive:
+    name: Build ML OpenVINO (archive, not pushed)
+    needs: [changes]
+    if: needs.changes.outputs.assistant-variant == 'openvino'
+    uses: ./.github/workflows/local-multi-runner-build.yml
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    with:
+      image: frameleaf-machine-learning
+      context: machine-learning
+      dockerfile: machine-learning/Dockerfile
+      build-contexts: frameleaf=.
+      source-sha: ${{ github.sha }}
+      suffix: '-openvino'
+      platforms: linux/amd64
+      target: prod
+      device: openvino
+      mode: archive
+
+  assistant-qualification:
+    name: Qualify the pinned Assistant planner
+    needs: [changes, machine-learning, machine-learning-openvino-archive]
+    if: >-
+      !cancelled() && needs.changes.result == 'success' &&
+      ((needs.changes.outputs.assistant-variant == 'cpu' && needs.machine-learning.result == 'success') ||
+      (needs.changes.outputs.assistant-variant == 'openvino' && needs.machine-learning-openvino-archive.result == 'success'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      amd64-manifest: ${{ steps.qualify.outputs.amd64-manifest }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: frameleaf-machine-learning${{ needs.changes.outputs.assistant-variant == 'openvino' && '-openvino' || '' }}-archive-amd64
+          path: ${{ runner.temp }}/ml
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - name: Install and build evaluator dependencies
+        run: |
+          pnpm --filter 'frameleaf...' --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk install --frozen-lockfile
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
+          pnpm --filter @frameleaf/locked-crypto build
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
+      - name: Run and verify live qualification on the unpushed ML image
+        id: qualify
+        run: node .github/assistant-deploy-gate.mjs qualify
+      - name: Retain verified Assistant qualification evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: assistant-qualification-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/assistant-qualification-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
   deploy-test:
     name: Deployment test (${{ matrix.architecture }})
-    needs: [changes, integration, server, machine-learning]
-    if: ${{ !cancelled() && needs.integration.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.server.result) && contains(fromJSON('["success","skipped"]'), needs['machine-learning'].result) }}
+    needs:
+      [changes, integration, server, machine-learning, assistant-qualification]
+    if: >-
+      !cancelled() && needs.changes.result == 'success' && needs.integration.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.server.result) &&
+      contains(fromJSON('["success","skipped"]'), needs['machine-learning'].result) &&
+      ((needs.changes.outputs.assistant-qualification == 'false' && needs.assistant-qualification.result == 'skipped') ||
+      (needs.changes.outputs.assistant-qualification == 'true' && needs.assistant-qualification.result == 'success' && needs.assistant-qualification.outputs.amd64-manifest != ''))
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -164,7 +243,7 @@ jobs:
 
   machine-learning-publish:
     name: Push ML CPU (tested archive)
-    needs: [changes, deploy-test, machine-learning]
+    needs: [changes, deploy-test, machine-learning, assistant-qualification]
     if: ${{ !cancelled() && needs.changes.outputs['machine-learning'] == 'true' && needs['machine-learning'].result == 'success' && needs['deploy-test'].result == 'success' }}
     uses: ./.github/workflows/local-multi-runner-build.yml
     permissions:
@@ -182,6 +261,7 @@ jobs:
       target: prod
       device: cpu
       mode: publish
+      tested-amd64-manifest: ${{ needs.changes.outputs.assistant-variant == 'cpu' && needs.assistant-qualification.outputs.amd64-manifest || '' }}
 
   machine-learning-hardware:
     name: Build and Push ML hardware variants
@@ -193,10 +273,6 @@ jobs:
         include:
           - device: cuda
             suffix: '-cuda'
-            platforms: linux/amd64
-            target: prod
-          - device: openvino
-            suffix: '-openvino'
             platforms: linux/amd64
             target: prod
           - device: armnn
@@ -227,6 +303,30 @@ jobs:
       target: ${{ matrix.target }}
       device: ${{ matrix.device }}
       mode: push
+
+  machine-learning-openvino-publish:
+    name: Publish ML OpenVINO
+    needs: [changes, deploy-test, assistant-qualification]
+    if: >-
+      !cancelled() && needs['deploy-test'].result == 'success' &&
+      (needs.changes.outputs['machine-learning'] == 'true' || needs.changes.outputs.assistant-variant == 'openvino')
+    uses: ./.github/workflows/local-multi-runner-build.yml
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    with:
+      image: frameleaf-machine-learning
+      context: machine-learning
+      dockerfile: machine-learning/Dockerfile
+      build-contexts: frameleaf=.
+      source-sha: ${{ github.sha }}
+      suffix: '-openvino'
+      platforms: linux/amd64
+      target: prod
+      device: openvino
+      mode: ${{ needs.changes.outputs.assistant-variant == 'openvino' && 'publish' || 'push' }}
+      tested-amd64-manifest: ${{ needs.changes.outputs.assistant-variant == 'openvino' && needs.assistant-qualification.outputs.amd64-manifest || '' }}
 
   retag-server:
     name: Re-Tag Server
@@ -269,6 +369,7 @@ jobs:
       fail-fast: false
       matrix:
         suffix: ['', '-cuda', '-openvino', '-armnn', '-rknn', '-rocm']
+        exclude: ${{ fromJSON(needs.changes.outputs.assistant-variant == 'openvino' && '[{"suffix":"-openvino"}]' || '[]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -303,10 +404,12 @@ jobs:
     name: Docker Build & Push ML Success
     needs:
       [
+        changes,
         integration,
         deploy-test,
         machine-learning-publish,
         machine-learning-hardware,
+        machine-learning-openvino-publish,
         retag-machine-learning,
       ]
     if: always()
@@ -315,4 +418,15 @@ jobs:
       - name: Require every deployment-tested ML variant
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: jq -e '.integration.result == "success" and ."deploy-test".result == "success" and ((."machine-learning-publish".result == "success" and ."machine-learning-hardware".result == "success") or ."retag-machine-learning".result == "success")' <<< "$RESULTS"
+        run: |
+          jq -e '
+            .integration.result == "success" and ."deploy-test".result == "success" and
+            (if .changes.outputs."machine-learning" == "true"
+              then ."machine-learning-publish".result == "success" and ."machine-learning-hardware".result == "success"
+              else ."retag-machine-learning".result == "success"
+             end) and
+            (if .changes.outputs."machine-learning" == "true" or .changes.outputs."assistant-variant" == "openvino"
+              then ."machine-learning-openvino-publish".result == "success"
+              else ."machine-learning-openvino-publish".result == "skipped"
+             end)
+          ' <<< "$RESULTS"

@@ -541,7 +541,7 @@ describe('Ask about your photos', () => {
     state.url = new URL('http://localhost/search?ask=beach');
     render(SearchPage);
 
-    expect(screen.getByRole('status')).toHaveTextContent('Ask about your photos is turned off on this server.');
+    expect(screen.getByRole('status')).toHaveTextContent('Ask Search is turned off on this server.');
     expect(askSearch).not.toHaveBeenCalled();
   });
 
@@ -551,7 +551,7 @@ describe('Ask about your photos', () => {
   });
 });
 
-describe('Library Assistant on a rejected link', () => {
+describe('Frameleaf Assistant on a rejected link', () => {
   afterEach(() => authManager.reset());
 
   it('keeps the warning and allows a round trip through Classic when smart search is off', async () => {
@@ -566,7 +566,7 @@ describe('Library Assistant on a rejected link', () => {
     render(SearchPage);
 
     const warning = en.frameleaf_search_bridge_link_damaged;
-    const assistant = { name: 'Library Assistant' };
+    const assistant = { name: 'Frameleaf Assistant' };
     const classic = { name: en.frameleaf_assistant_classic };
     expect(screen.getByText(warning)).toBeInTheDocument();
     expect(screen.getByRole('radio', { ...assistant, checked: true })).toBeInTheDocument();

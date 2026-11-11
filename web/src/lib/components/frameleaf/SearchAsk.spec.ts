@@ -115,7 +115,7 @@ describe('SearchAsk (FL-31)', () => {
   it('says Ask is turned off and offers no field that cannot answer', () => {
     render(SearchAsk, { onAsk: vi.fn(), problem: 'disabled' });
 
-    expect(screen.getByRole('status')).toHaveTextContent('Ask about your photos is turned off on this server.');
+    expect(screen.getByRole('status')).toHaveTextContent('Ask Search is turned off on this server.');
     expect(screen.getByRole('combobox')).toBeDisabled();
     expect(screen.getByRole('combobox')).not.toHaveAttribute('aria-controls');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();

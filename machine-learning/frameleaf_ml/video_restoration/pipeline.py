@@ -17,6 +17,8 @@ from typing import Literal
 
 from . import media
 from .models import (
+    STILL_FAMILY,
+    STILL_MAX_PIXELS,
     RestorationAdapter,
     RestorationFailure,
     RestorationRegistry,
@@ -58,6 +60,15 @@ def _file_sha256(path: Path) -> str:
 
 def _unsupported(message: str, model_id: str) -> RestorationFailure:
     return RestorationFailure(RestorationErrorCode.UNSUPPORTED_INPUT, message, model_id=model_id)
+
+
+def frame_budget(selected: SelectedModel) -> int:
+    limits = selected.spec.limits
+    return (
+        min(limits.maxFrames, limits.maxFramesPerChunk)
+        if selected.spec.signed_candidate == "rife-onnx"
+        else limits.maxFrames
+    )
 
 
 def check_source(
@@ -111,6 +122,8 @@ def check_source(
         )
 
     if still:
+        if selected.spec.family == STILL_FAMILY and source.width * source.height > STILL_MAX_PIXELS:
+            raise _unsupported(f"the still exceeds the {STILL_MAX_PIXELS:,} pixel input limit", model_id)
         return None, None, 1
 
     start_ms: int | None = None
@@ -126,10 +139,14 @@ def check_source(
         start_ms, end_ms = request.segment.startMs, request.segment.endMs
         span_ms = end_ms - start_ms
 
-    estimated_frames = math.ceil(span_ms * float(source.frame_rate) / 1000)
-    if estimated_frames > selected.spec.limits.maxFrames:
+    estimated = span_ms * float(source.frame_rate) / 1000
+    # The source duration has already been rounded to milliseconds. The decoded frame
+    # count below is authoritative, including at fractional rates and exact budget edges.
+    estimated_frames = round(estimated) if selected.spec.signed_candidate == "rife-onnx" else math.ceil(estimated)
+    budget = frame_budget(selected)
+    if estimated_frames > budget:
         raise _unsupported(
-            f"about {estimated_frames} frames requested; {model_id} is qualified for {selected.spec.limits.maxFrames}",
+            f"about {estimated_frames} frames requested; {model_id} is qualified for {budget}",
             model_id,
         )
     return start_ms, end_ms, estimated_frames
@@ -146,8 +163,9 @@ def restore(
     """Run one request. Returns the result and the path of the new restored file inside
     ``work_dir``; the caller streams it and then removes ``work_dir``."""
     started = time.monotonic()
-    selected = registry.select(request.mode, request.modelId, request.modelFingerprint)
+    selected = registry.select(request.mode, request.modelId, request.modelFingerprint, kind=request.kind)
     model_id = selected.spec.id
+    budget = frame_budget(selected)
 
     still = request.kind == "image"
     try:
@@ -180,7 +198,7 @@ def restore(
                     media_path, source_video, source, start_ms=start_ms, end_ms=end_ms, timeout=MEDIA_TIMEOUT_S
                 )
             source_statistics = media.video_frame_statistics(
-                source_video, source, max_frames=selected.spec.limits.maxFrames, timeout=MEDIA_TIMEOUT_S
+                source_video, source, max_frames=budget, timeout=MEDIA_TIMEOUT_S
             )
             frame_count = len(source_statistics)
         else:
@@ -191,7 +209,7 @@ def restore(
                 end_ms=end_ms,
                 yuv_matrix=source.yuv_matrix,
                 timeout=MEDIA_TIMEOUT_S,
-                max_frames=selected.spec.limits.maxFrames,
+                max_frames=budget,
             )
     except media.MediaError as error:
         code = RestorationErrorCode.UNSUPPORTED_INPUT if error.unsupported else RestorationErrorCode.RUNTIME_FAILED
@@ -201,8 +219,8 @@ def restore(
         raise _unsupported("the segment contains no frames", model_id)
     if still and frame_count != 1:
         raise _unsupported(f"a still decoded to {frame_count} frames; send animated images as video", model_id)
-    if frame_count > selected.spec.limits.maxFrames:
-        raise _unsupported(f"{frame_count} frames exceed the qualified {selected.spec.limits.maxFrames}", model_id)
+    if frame_count > budget:
+        raise _unsupported(f"{frame_count} frames exceed the qualified {budget}", model_id)
 
     job = RuntimeJob(
         work_dir=work_dir,
@@ -215,6 +233,7 @@ def restore(
         yuv_matrix=source.yuv_matrix,
         interpolation_factor=factor,
         source_video=source_video,
+        kind=request.kind,
     )
     if smooth and frame_count < 2:
         raise _unsupported("smooth motion needs at least two frames", model_id)

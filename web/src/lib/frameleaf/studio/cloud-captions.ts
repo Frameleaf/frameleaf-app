@@ -67,10 +67,10 @@ export const createCloudCaptionServices = ({
 }: {
   /** Read on each use: a draft's first save and Save as copy both change it without a remount. */
   projectId: () => string;
-  /** The server prices the head revision, so unsaved edits must land first. */
-  save: () => Promise<unknown>;
+  /** The server prices the head revision. Return false when edits could not be saved. */
+  save: () => Promise<boolean | void>;
   /** Show the price. Resolves with the confirmed job's id, or null when nothing was sent. */
-  confirm: (request: StudioCloudCaptionRequest) => Promise<string | null>;
+  confirm: (request: StudioCloudCaptionRequest, projectId: string) => Promise<string | null>;
   read: (projectId: string, id: string) => Promise<Transcription>;
   storage?: Storage;
 }) => {
@@ -109,16 +109,19 @@ export const createCloudCaptionServices = ({
 
   return {
     startCloudCaptions: async (request: StudioCloudCaptionRequest): Promise<StudioCloudCaptionJob | null> => {
-      await save();
-      const id = await confirm(request);
+      if ((await save()) === false) {
+        return null;
+      }
+      const project = projectId();
+      const id = await confirm(request, project);
       if (!id) {
         return null;
       }
       const job = { ...request, id };
-      const project = projectId();
       owners.set(id, project);
-      remember(project, [...pending(project), job]);
-      return job;
+      remember(project, [...pending(project).filter((existing) => existing.id !== id), job]);
+      // Confirmation may settle after Save as copy. The original can resume it when reopened.
+      return projectId() === project ? job : null;
     },
 
     readCloudCaptions: async (id: string): Promise<StudioCloudCaptionState> => {

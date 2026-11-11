@@ -4,6 +4,12 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { digest, Refusal, type Operation } from '../contracts.js';
 import { Store } from '../store.js';
+import type {
+  FencedSelection,
+  MoveRequest,
+  NativeMediaAdmissionAuthority,
+  ReviewedMediaBackup,
+} from './native-media-cutover.js';
 import {
   NativeRestoreInputBinding,
   NativeRestorePreparedSchema,
@@ -55,6 +61,9 @@ const Running = z
     certified: z.boolean(),
   })
   .strict();
+const ServerReady = Running.extend({
+  activeMediaIdentity: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+}).strict();
 const DatabaseReady = Running.extend({
   state: z.literal('database-ready'),
 }).strict();
@@ -141,7 +150,7 @@ const Quiescent = Running.omit({ state: true })
     generation: z.string().uuid(),
   })
   .strict();
-type Ready = z.infer<typeof Running>;
+type Ready = z.infer<typeof ServerReady>;
 type StopReceipt = z.infer<typeof Stopped> & {
   inspection?: z.infer<typeof Quiescent>;
 };
@@ -223,6 +232,7 @@ function deferred<T>() {
 type Owner = {
   child: ChildProcessWithoutNullStreams | null;
   mode: 'server' | 'database' | 'checkpoint-cleanup' | 'restore-prepare';
+  expectedMediaIdentity?: string;
   ready: ReturnType<
     typeof deferred<Ready | DatabaseReceipt | CleanupReceipt | RestoreReceipt>
   >;
@@ -275,6 +285,7 @@ export class NativeHost implements NativeRuntime {
     installation: NativeInstallation,
     private password: () => Promise<string>,
     private authorizeController: () => Promise<void> = async () => {},
+    private activeMediaIdentity: () => string | undefined = () => undefined,
   ) {
     const parsed = Installation.safeParse(installation);
     if (!parsed.success) throw new Refusal('native_installation_invalid');
@@ -286,7 +297,58 @@ export class NativeHost implements NativeRuntime {
     });
   }
   start(): Promise<Ready> {
-    return this.startOwner('server') as Promise<Ready>;
+    return this.startOwner(
+      'server',
+      this.activeMediaIdentity(),
+    ) as Promise<Ready>;
+  }
+  mediaMoveAuthority(): NativeMediaAdmissionAuthority {
+    return {
+      identity: this.identity,
+      inspectAdmission: (request, backup) =>
+        this.mediaMoveRequest(request, undefined, undefined, backup),
+      inspect: (request, signal) =>
+        this.mediaMoveRequest(request, undefined, signal),
+      apply: (selection: FencedSelection, decision, signal) => {
+        const { protocolVersion, operationId, binding } = selection;
+        return this.mediaMoveRequest(
+          { protocolVersion, operationId, binding },
+          decision,
+          signal,
+        );
+      },
+    };
+  }
+  private async mediaMoveRequest(
+    request: MoveRequest,
+    decision: 'target' | 'original' | undefined,
+    signal?: AbortSignal,
+    reviewedBackup?: ReviewedMediaBackup,
+  ): Promise<unknown> {
+    const { id, secureInstallationId, candidate, state, manifestSha256 } =
+      this.installation;
+    if (
+      request.binding.secureInstallationId !== secureInstallationId ||
+      request.binding.manifestSha256 !== manifestSha256
+    )
+      throw new Refusal('native_media_cutover_unconfirmed');
+    const reply = await this.ownerRequest(
+      '--media-move-owner',
+      {
+        installationId: id,
+        secureInstallationId,
+        candidate,
+        state,
+        manifestSha256,
+        request,
+        decision,
+        reviewedBackup,
+      },
+      signal,
+    );
+    if (reply.code !== 0 || reply.signal)
+      throw new Refusal('native_media_cutover_unconfirmed');
+    return reply.value;
   }
   startDatabase(): Promise<DatabaseReceipt> {
     return this.startOwner('database') as Promise<DatabaseReceipt>;
@@ -476,17 +538,23 @@ export class NativeHost implements NativeRuntime {
   }
   private startOwner(
     mode: 'server' | 'database' | 'checkpoint-cleanup' | 'restore-prepare',
+    expectedMediaIdentity?: string,
   ): Promise<Ready | DatabaseReceipt | CleanupReceipt | RestoreReceipt> {
     if (this.inspecting)
       return Promise.reject(new Refusal('native_runtime_busy'));
     if (this.owner && !this.owner.finished) {
-      if (this.owner.stopping || this.owner.mode !== mode)
+      if (
+        this.owner.stopping ||
+        this.owner.mode !== mode ||
+        this.owner.expectedMediaIdentity !== expectedMediaIdentity
+      )
         return Promise.reject(new Refusal('native_runtime_busy'));
       return this.owner.ready.promise;
     }
     const owner: Owner = {
       child: null,
       mode,
+      expectedMediaIdentity,
       ready: deferred<
         Ready | DatabaseReceipt | CleanupReceipt | RestoreReceipt
       >(),
@@ -647,27 +715,26 @@ export class NativeHost implements NativeRuntime {
     void work.catch(() => {});
     return work;
   }
-  private async probe(): Promise<StopReceipt> {
+  private async ownerRequest(
+    mode: '--inspect-owner' | '--media-move-owner',
+    payload: object,
+    signal?: AbortSignal,
+  ): Promise<{
+    value: unknown;
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }> {
     await this.authorizeController();
-    const { id, secureInstallationId, candidate, state, manifestSha256 } =
-      this.installation;
-    const wire =
-      JSON.stringify({
-        protocolVersion: 1,
-        installationId: id,
-        secureInstallationId,
-        candidate,
-        state,
-        manifestSha256,
-      }) + '\n';
+    if (signal?.aborted) throw new Refusal('native_media_cutover_cancelled');
+    const wire = JSON.stringify(payload) + '\n';
     if (Buffer.byteLength(wire) > 16 * 1024)
-      return Promise.reject(new Refusal('native_installation_invalid'));
+      throw new Refusal('native_installation_invalid');
     return new Promise((resolve, reject) => {
       const env =
         process.platform === 'win32' && process.env.SystemRoot
           ? { SystemRoot: process.env.SystemRoot }
           : {};
-      const child = spawn(this.installation.controller, ['--inspect-owner'], {
+      const child = spawn(this.installation.controller, [mode], {
         env,
         stdio: 'pipe',
         windowsHide: true,
@@ -678,11 +745,14 @@ export class NativeHost implements NativeRuntime {
         fault ??= new Refusal(code);
         child.kill();
       };
+      const abort = () => fail('native_media_cutover_cancelled');
+      const inspection = mode === '--inspect-owner';
       const timer = setTimeout(
-        () => fail('native_inspection_timeout'),
-        120_000,
+        () => fail(inspection ? 'native_inspection_timeout' : 'native_media_cutover_timeout'),
+        inspection ? 120_000 : 1_800_000,
       );
       timer.unref();
+      signal?.addEventListener('abort', abort, { once: true });
       child.stderr.resume();
       child.once('error', () => fail('native_controller_unavailable'));
       child.stdin.on('error', () => fail('native_host_pipe_failed'));
@@ -694,53 +764,69 @@ export class NativeHost implements NativeRuntime {
           return fail('native_host_protocol_invalid');
         output = Buffer.concat([output, chunk]);
       });
-      child.once('close', (code, signal) => {
+      child.once('close', (code, childSignal) => {
         clearTimeout(timer);
+        signal?.removeEventListener('abort', abort);
         if (fault) return reject(fault);
-        let value: unknown;
         try {
-          value = JSON.parse(output.toString('utf8'));
+          resolve({
+            value: JSON.parse(output.toString('utf8')),
+            code,
+            signal: childSignal,
+          });
         } catch {
-          return reject(new Refusal('native_host_inspection_failed'));
-        }
-        const failed = Failed.safeParse(value);
-        if (failed.success) {
-          const allowed = [
-            'host_recovery_requires_manager',
-            'host_profile_identity_changed',
-            'host_controller_binding_changed',
-            'host_controller_already_owned',
-            'host_process_state_requires_review',
-            'host_controller_state_unavailable',
-          ];
-          return reject(
+          reject(
             new Refusal(
-              allowed.includes(failed.data.code)
-                ? failed.data.code
-                : 'native_host_inspection_failed',
+              inspection
+                ? 'native_host_inspection_failed'
+                : 'native_media_cutover_unconfirmed',
             ),
           );
         }
-        const result = Quiescent.safeParse(value);
-        if (code !== 0 || signal || !result.success)
-          return reject(new Refusal('native_host_inspection_failed'));
-        const expected = this.installation;
-        if (
-          result.data.installationId !== id ||
-          result.data.secureInstallationId !== secureInstallationId ||
-          result.data.manifestSha256 !== manifestSha256 ||
-          result.data.sourceRevision !== expected.sourceRevision ||
-          result.data.certified !== expected.certified
-        )
-          return reject(new Refusal('native_host_identity_changed'));
-        resolve({
-          protocolVersion: 1,
-          state: 'stopped',
-          inspection: result.data,
-        });
       });
       child.stdin.end(wire);
     });
+  }
+  private async probe(): Promise<StopReceipt> {
+    const { id, secureInstallationId, candidate, state, manifestSha256 } =
+      this.installation;
+    const { value, code, signal } = await this.ownerRequest('--inspect-owner', {
+      protocolVersion: 1,
+      installationId: id,
+      secureInstallationId,
+      candidate,
+      state,
+      manifestSha256,
+    });
+    const failed = Failed.safeParse(value);
+    if (failed.success) {
+      const allowed = [
+        'host_recovery_requires_manager',
+        'host_profile_identity_changed',
+        'host_controller_binding_changed',
+        'host_controller_already_owned',
+        'host_process_state_requires_review',
+        'host_controller_state_unavailable',
+      ];
+      throw new Refusal(
+        allowed.includes(failed.data.code)
+          ? failed.data.code
+          : 'native_host_inspection_failed',
+      );
+    }
+    const result = Quiescent.safeParse(value);
+    if (code !== 0 || signal || !result.success)
+      throw new Refusal('native_host_inspection_failed');
+    const expected = this.installation;
+    if (
+      result.data.installationId !== id ||
+      result.data.secureInstallationId !== secureInstallationId ||
+      result.data.manifestSha256 !== manifestSha256 ||
+      result.data.sourceRevision !== expected.sourceRevision ||
+      result.data.certified !== expected.certified
+    )
+      throw new Refusal('native_host_identity_changed');
+    return { protocolVersion: 1, state: 'stopped', inspection: result.data };
   }
   private stopOwner(owner: Owner): void {
     if (owner.finished) return;
@@ -902,7 +988,7 @@ export class NativeHost implements NativeRuntime {
               ? CleanupReady
               : owner.mode === 'database'
                 ? DatabaseReady
-                : Running
+                : ServerReady
         ).safeParse(value);
         const checkpoint = CheckpointReply.safeParse(value);
         const restore = NativeRestoreReply.safeParse(value);
@@ -934,6 +1020,11 @@ export class NativeHost implements NativeRuntime {
             running.data.certified !== expected.certified
           )
             return fail('native_host_identity_changed');
+          if (
+            running.data.state === 'running' &&
+            running.data.activeMediaIdentity !== owner.expectedMediaIdentity
+          )
+            return fail('native_media_startup_unconfirmed');
           owner.readySeen = true;
           clearTimeout(owner.startupTimer);
           if (!owner.stopping) owner.ready.resolve(running.data);
@@ -1063,6 +1154,7 @@ export class NativeOperations {
     private runtime: NativeRuntime,
     private backup?: (operation: Operation) => Promise<unknown>,
     private restoreWork?: (operation: Operation) => Promise<unknown>,
+    private mediaMoveWork?: (operation: Operation) => Promise<unknown>,
   ) {}
   control(
     kind: 'start' | 'stop' | 'restart' | 'backup',
@@ -1078,6 +1170,12 @@ export class NativeOperations {
     if (created) this.launch(operation);
     return operation;
   }
+  admitMediaMove(key: string, input: Record<string, unknown>): Operation {
+    if (!this.mediaMoveWork) throw new Refusal('native_action_unavailable');
+    const { operation, created } = this.store.start('move-library', key, input);
+    if (created) this.launch(operation);
+    return operation;
+  }
   resume(id: string): Operation {
     const operation = this.store.history().find((value) => value.id === id);
     if (
@@ -1086,15 +1184,18 @@ export class NativeOperations {
       !['failed', 'interrupted'].includes(operation.state) ||
       (!['start', 'stop', 'restart'].includes(operation.kind) &&
         !(operation.kind === 'backup' && this.backup) &&
-        !(operation.kind === 'restore' && this.restoreWork)) ||
+        !(operation.kind === 'restore' && this.restoreWork) &&
+        !(operation.kind === 'move-library' && this.mediaMoveWork)) ||
       (operation.kind === 'restore' &&
         !checkpointOperation.safeParse(operation.input.reviewId).success) ||
-      !isDeepStrictEqual(
-        operation.input,
-        operation.kind === 'restore'
-          ? { reviewId: operation.input.reviewId, ...this.runtime.identity }
-          : this.runtime.identity,
-      )
+      (operation.kind === 'move-library'
+        ? !isDeepStrictEqual(operation, this.store.locked())
+        : !isDeepStrictEqual(
+            operation.input,
+            operation.kind === 'restore'
+              ? { reviewId: operation.input.reviewId, ...this.runtime.identity }
+              : this.runtime.identity,
+          ))
     )
       throw new Refusal('operation_not_recoverable');
     operation.state = 'running';
@@ -1157,6 +1258,11 @@ export class NativeOperations {
     this.store.save(operation);
   }
   private async run(operation: Operation): Promise<void> {
+    if (operation.kind === 'move-library') {
+      if (!this.mediaMoveWork) throw new Refusal('native_action_unavailable');
+      await this.mediaMoveWork(operation);
+      return;
+    }
     if (operation.kind === 'restore') {
       if (!this.restoreWork) throw new Refusal('native_action_unavailable');
       await this.restoreWork(operation);

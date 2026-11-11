@@ -8,7 +8,6 @@
    * FL-918: the two-way Library Assistant / Classic search switch from the approved mock
    * (`AssistantPanel.jsx` `.la-mode`). One tap flips it; the page remembers the choice for the person.
    */
-  import { ASSISTANT_NAME } from '$lib/frameleaf/assistant';
   import { t } from 'svelte-i18n';
 
   let { classic, onChange }: { classic: boolean; onChange: (classic: boolean) => void } = $props();
@@ -49,7 +48,7 @@
     onclick={() => choose(false)}
     {onkeydown}
   >
-    {ASSISTANT_NAME}
+    {$t('frameleaf_assistant_name')}
   </button>
   <button
     type="button"

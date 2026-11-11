@@ -359,6 +359,10 @@ export class MetadataService extends BaseService {
       asset.type === AssetType.Other &&
       mimeTypes.isBoardOriginal(asset.originalFileName)
     ) {
+      await publishJobResult(async () => {
+        await this.assetRepository.upsertJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+        await this.jobRepository.queue({ name: JobName.AssetMetadataPostprocess, data });
+      });
       await this.queueLockedSeal([asset.id]);
       return;
     }

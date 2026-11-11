@@ -63,6 +63,17 @@ export const runHeadline = (run: DurableJobRun): Headline => {
         action: null,
       };
     }
+    // FL-1430: a folder scan refused because its folder is empty or gone; nothing of the library was changed
+    if (has('source-unavailable')) {
+      const name = run.unreachableLibraries?.[0];
+      return {
+        status: 'frameleaf_job_runs_status_unreachable',
+        tone: 'warn',
+        why: name ? 'frameleaf_job_runs_why_scan_unreachable' : 'frameleaf_job_runs_why_scan_unreachable_unnamed',
+        ...(name && { values: { name } }),
+        action: null,
+      };
+    }
     if (leftOver(run) > 0) {
       return {
         status: photos ? 'frameleaf_job_runs_status_left_over' : 'frameleaf_job_runs_status_left_over_tasks',
@@ -171,7 +182,12 @@ export const runHeadline = (run: DurableJobRun): Headline => {
   return {
     status: run.state === 'waiting' ? runStateKey(run.state) : 'frameleaf_job_runs_state_running',
     tone: 'good',
-    why: null,
+    // FL-1430: work still finding what to do says so, rather than standing at Running with nothing to show
+    why: has('enumerating')
+      ? run.kind === 'library_scan'
+        ? 'frameleaf_job_runs_why_enumerating_scan'
+        : 'frameleaf_job_runs_why_enumerating'
+      : null,
     action: null,
   };
 };

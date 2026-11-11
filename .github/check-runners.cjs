@@ -163,6 +163,7 @@ for (const name of [
   "server-publish",
   "machine-learning-publish",
   "machine-learning-hardware",
+  "machine-learning-openvino-publish",
   "retag-server",
   "retag-machine-learning",
 ]) {
@@ -188,29 +189,43 @@ assert(
   !workflows["frameleaf-quality.yml"].on.push,
   "Mainline integration is invoked by Docker only",
 );
-const cpu = docker.jobs["machine-learning"].with;
+const openvino = docker.jobs["machine-learning-openvino-publish"].with;
+const { mode: archiveMode, ...openvinoArchive } =
+  docker.jobs["machine-learning-openvino-archive"].with;
+const {
+  mode: openvinoPublishMode,
+  "tested-amd64-manifest": testedManifest,
+  ...openvinoPublish
+} = openvino;
+assert.equal(archiveMode, "archive");
+assert.match(openvinoPublishMode, /'openvino' && 'publish' \|\| 'push'/);
+assert.match(
+  testedManifest,
+  /needs.assistant-qualification.outputs.amd64-manifest/,
+);
+assert.deepEqual(openvinoArchive, openvinoPublish);
 const ml = [
-  {
-    device: cpu.device,
-    suffix: cpu.suffix,
-    platforms: cpu.platforms,
-    target: cpu.target,
-  },
+  docker.jobs["machine-learning"].with,
+  openvino,
   ...docker.jobs["machine-learning-hardware"].strategy.matrix.include,
 ];
 assert.deepEqual(
-  ml.map(({ device, suffix, platforms, target }) => ({
-    device,
-    suffix,
-    platforms,
-    target,
-  })),
-  VARIANTS.slice(1).map((v) => ({
-    device: v.device,
-    suffix: v.suffix,
-    platforms: v.platforms.join(","),
-    target: v.target,
-  })),
+  ml
+    .map(({ device, suffix, platforms, target }) => ({
+      device,
+      suffix,
+      platforms,
+      target,
+    }))
+    .sort((left, right) => left.suffix.localeCompare(right.suffix)),
+  VARIANTS.slice(1)
+    .map((v) => ({
+      device: v.device,
+      suffix: v.suffix,
+      platforms: v.platforms.join(","),
+      target: v.target,
+    }))
+    .sort((left, right) => left.suffix.localeCompare(right.suffix)),
 );
 for (const spec of VARIANTS) {
   const input = {

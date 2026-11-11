@@ -36,7 +36,7 @@ const caseSchema = z.strictObject({
 export type EvalFilters = z.infer<typeof filtersSchema>;
 export type EvalCase = z.infer<typeof caseSchema>;
 export type EvalAsset = z.infer<typeof assetSchema>;
-export type Reason = { field: keyof EvalFilters; value: string | boolean };
+export type Reason = { field: keyof EvalFilters | 'takenDate' | 'filename'; value: string | boolean } | null;
 export type EvalAnswer = {
   id: string;
   filters: EvalFilters | null;
@@ -66,9 +66,13 @@ export function readFixtures(cases: unknown, library: unknown, replay: unknown) 
   return { questions, assets, plans };
 }
 
-function supports(asset: EvalAsset | undefined, { field, value }: Reason) {
-  if (!asset || asset.locked || asset.otherOwner) {
+function supports(asset: EvalAsset | undefined, claim: Reason) {
+  if (!asset || asset.locked || asset.otherOwner || !claim) {
     return false;
+  }
+  const { field, value } = claim;
+  if (field === 'takenDate') {
+    return asset.takenAt.slice(0, 10) === value;
   }
   if (field === 'takenAfter' || field === 'takenBefore') {
     if (typeof value !== 'string') {
@@ -82,7 +86,7 @@ function supports(asset: EvalAsset | undefined, { field, value }: Reason) {
   if (Array.isArray(evidence)) {
     return typeof value === 'string' && evidence.includes(value);
   }
-  if (['ocr', 'spoken', 'description'].includes(field)) {
+  if (['ocr', 'spoken', 'description', 'filename'].includes(field)) {
     return (
       typeof value === 'string' && typeof evidence === 'string' && evidence.toLowerCase().includes(value.toLowerCase())
     );
@@ -143,4 +147,47 @@ export function score(questions: EvalCase[], library: EvalAsset[], answers: Eval
     faithfulness: reasons === 0 ? 0 : supported / reasons,
     p95Ms: times[Math.ceil(0.95 * times.length) - 1],
   };
+}
+
+/** Diagnose live planner regressions by question family without emitting questions or responses. */
+export function scoreByFamily(questions: EvalCase[], library: EvalAsset[], answers: EvalAnswer[]) {
+  return Object.fromEntries(
+    [...Map.groupBy(questions, ({ family }) => family)].map(([family, cases]) => {
+      const ids = new Set(cases.map(({ id }) => id));
+      const familyAnswers = answers.filter(({ id }) => ids.has(id));
+      return [
+        family,
+        {
+          cases: cases.length,
+          validPlanRate: familyAnswers.filter(({ filters }) => filters !== null).length / cases.length,
+          ...score(cases, library, familyAnswers),
+        },
+      ];
+    }),
+  );
+}
+
+/** Count planner filter errors without writing the questions or filter values to the report. */
+export function countFilterErrors(questions: EvalCase[], answers: EvalAnswer[]) {
+  const byId = new Map(answers.map(({ id, filters }) => [id, filters]));
+  const counts = new Map<string, { missing: number; unexpected: number; incorrect: number }>();
+  for (const { id, expect } of questions) {
+    const filters = byId.get(id);
+    if (!filters) {
+      continue;
+    }
+    const expected = canonical(expect.filters);
+    const actual = canonical(filters);
+    const keys = new Set([...Object.keys(expected), ...Object.keys(actual)] as (keyof EvalFilters)[]);
+    for (const key of keys) {
+      if (isDeepStrictEqual(expected[key], actual[key])) {
+        continue;
+      }
+      const count = counts.get(key) ?? { missing: 0, unexpected: 0, incorrect: 0 };
+      const error = actual[key] === undefined ? 'missing' : expected[key] === undefined ? 'unexpected' : 'incorrect';
+      count[error]++;
+      counts.set(key, count);
+    }
+  }
+  return Object.fromEntries(counts);
 }

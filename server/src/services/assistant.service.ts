@@ -88,12 +88,12 @@ export class AssistantService {
   async ask(auth: AuthDto, dto: AssistantAskDto): Promise<AssistantAskResponseDto> {
     // A shared link has no library to ask about; its visitors keep the album's own search.
     if (auth.sharedLink) {
-      throw new ForbiddenException('The Library Assistant is not available from a shared link');
+      throw new ForbiddenException('Frameleaf Assistant is not available from a shared link');
     }
     const { localFeatures, machineLearning } = await this.search.getConfig({ withCache: false });
     const settings = assistantSettings({ localFeatures });
     if (!settings.enabled) {
-      throw new BadRequestException('The Library Assistant is turned off');
+      throw new BadRequestException('Frameleaf Assistant is turned off');
     }
     const size = Math.min(dto.size ?? settings.maxResults, settings.maxResults);
     const query = dto.query.trim().replaceAll(/\s+/g, ' ');

@@ -1903,9 +1903,9 @@ export type AdminConfigAskSearchDto = {
     maxResults: number;
 };
 export type AdminConfigAssistantDto = {
-    /** Enable the Library Assistant in search */
+    /** Enable Frameleaf Assistant in search */
     enabled: boolean;
-    /** Maximum number of Library Assistant results */
+    /** Maximum number of Frameleaf Assistant results */
     maxResults: number;
     /** Plan questions with an installed planner model before the rules */
     planner: boolean;
@@ -10392,6 +10392,8 @@ export type JobRunResponseDto = {
     canRelease?: boolean;
     cancelled: number;
     completed: number;
+    /** With foldNightly, on the night card: false when its photos could not be counted once each (too many, or their tasks are pruned); its numbers are then tasks (stageTotals) */
+    countedOnce?: boolean;
     /** The counts are photos; when false they are tasks (the run works on something other than photos) */
     countsPhotos?: boolean;
     createdAt: string;
@@ -10432,6 +10434,8 @@ export type JobRunResponseDto = {
         /** Photos this run left over (stopped ones aside) */
         photos: number;
     };
+    /** A folder scan's library, while it exists */
+    libraryName?: string;
     needsAttention: number;
     /** The overnight schedule's work */
     nightly?: boolean;
@@ -10544,6 +10548,24 @@ export type RunningJobsResponseDto = {
     queues: QueueRunDto[];
 };
 export type JobRunPageDto = {
+    /** With foldNightly, on the first page: Library care's checks for missing and damaged files, running now or finished in the last 12 hours */
+    fileCheck?: {
+        /** Files checked so far; while a check runs this is often still 0 */
+        checked: number;
+        /** Files the finished checks found damaged */
+        damaged: number;
+        /** A finished check failed or was cancelled: it didn't finish its work */
+        failed?: boolean;
+        /** When the last one finished; null while any still runs */
+        finishedAt: string | null;
+        /** Files the finished checks found missing */
+        missing: number;
+        /** Some of the checks are still going */
+        running: boolean;
+        startedAt: string;
+        /** Files to check; 0 when not known yet */
+        total: number;
+    };
     hasNextPage: boolean;
     items: JobRunResponseDto[];
 };
@@ -10581,6 +10603,8 @@ export type JobRunFailuresResponseDto = {
     countsPhotos: boolean;
     /** Photos left over, stopped ones included */
     photos: number;
+    /** With foldNightly: photos left over here that newer work left over again; they are counted on its card, not here */
+    superseded?: number;
 };
 export type JobRunFailureActionDto = {
     action: JobRunFailureAction;
@@ -20524,8 +20548,8 @@ export type AssetDevelopRevisionParamDto = {
 export type AssetDownloadOriginalDto = {
     /** Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original */
     edited?: boolean;
-    /** Explicit still export from an unedited photo; omission returns the untouched original or selected edit */
-    format?: Format2;
+    /** Explicit still-image export or read-only document PDF; omission returns the original or selected edit */
+    format?: Format3;
 };
 export type AssetFileSearchDto = {
     /** Asset ID to filter files by */
@@ -20978,6 +21002,10 @@ export type IntegrityGetReportDto = {
 };
 export type IntegrityReportDto = {
     "type": IntegrityReport;
+};
+export type JobRunFailuresSearchDto = {
+    /** As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again */
+    foldNightly?: boolean;
 };
 export type JobRunItemSearchDto = {
     skip?: number;
@@ -27303,7 +27331,7 @@ export function getAssetOcr({ id }: {
  */
 export function downloadAsset({ edited, format, id, key, slug }: {
     edited?: boolean;
-    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic";
+    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic" | "document-pdf";
     id: string;
     key?: string;
     slug?: string;
@@ -27679,7 +27707,7 @@ export function getAssetWaveform({ buckets, channels, id, key, slug }: {
     }));
 }
 /**
- * Ask the Library Assistant
+ * Search with Frameleaf Assistant
  */
 export function askAssistant({ assistantAskDto }: {
     assistantAskDto: AssistantAskDto;
@@ -30288,7 +30316,8 @@ export function getJobRuns({ foldNightly, skip, take }: {
 /**
  * Review a job run's left-over photos
  */
-export function getJobRunFailures({ id }: {
+export function getJobRunFailures({ foldNightly, id }: {
+    foldNightly?: boolean;
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -30296,14 +30325,17 @@ export function getJobRunFailures({ id }: {
         data: JobRunFailuresResponseDto;
     } | {
         status: 404;
-    }>(`/jobs/runs/${encodeURIComponent(id)}/failures`, {
+    }>(`/jobs/runs/${encodeURIComponent(id)}/failures${QS.query(QS.explode({
+        foldNightly
+    }))}`, {
         ...opts
     }));
 }
 /**
  * Act on a job run's left-over photos
  */
-export function actOnJobRunFailures({ id, jobRunFailureActionDto }: {
+export function actOnJobRunFailures({ foldNightly, id, jobRunFailureActionDto }: {
+    foldNightly?: boolean;
     id: string;
     jobRunFailureActionDto: JobRunFailureActionDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -30314,7 +30346,9 @@ export function actOnJobRunFailures({ id, jobRunFailureActionDto }: {
         status: 400;
     } | {
         status: 404;
-    }>(`/jobs/runs/${encodeURIComponent(id)}/failures`, oazapfts.json({
+    }>(`/jobs/runs/${encodeURIComponent(id)}/failures${QS.query(QS.explode({
+        foldNightly
+    }))}`, oazapfts.json({
         ...opts,
         method: "POST",
         body: jobRunFailureActionDto
@@ -44250,6 +44284,12 @@ export enum Format2 {
     SdrJpeg = "sdr-jpeg",
     HdrJpeg = "hdr-jpeg",
     HdrHeic = "hdr-heic"
+}
+export enum Format3 {
+    SdrJpeg = "sdr-jpeg",
+    HdrJpeg = "hdr-jpeg",
+    HdrHeic = "hdr-heic",
+    DocumentPdf = "document-pdf"
 }
 export enum Intent {
     Preserve = "preserve"

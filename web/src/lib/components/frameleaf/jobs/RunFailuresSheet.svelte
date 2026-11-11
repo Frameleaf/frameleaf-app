@@ -107,7 +107,8 @@
     }
     loading = true;
     try {
-      failures = await getJobRunFailures({ id: run.id });
+      // FL-1430: as Recent work's card counts them (a night's runs together, none newer work took over)
+      failures = await getJobRunFailures({ id: run.id, foldNightly: true });
       failed = false;
     } catch {
       // A read again after an action that fails keeps what is shown; only a first read says it couldn't load.
@@ -129,6 +130,7 @@
     try {
       const { count } = await actOnJobRunFailures({
         id: run.id,
+        foldNightly: true,
         jobRunFailureActionDto: { cause: group.cause, action },
       });
       const stop = action === JobRunFailureAction.Stop;
@@ -162,7 +164,11 @@
   {:else if !failures}
     <p class="lead" role="status">{$t('frameleaf_job_runs_review_loading')}</p>
   {:else if causes.length === 0}
-    <p class="lead">{$t('frameleaf_job_runs_review_empty')}</p>
+    <p class="lead">
+      {(failures.superseded ?? 0) > 0
+        ? $t('frameleaf_job_runs_review_superseded', { values: { count: failures.superseded } })
+        : $t('frameleaf_job_runs_review_empty')}
+    </p>
   {:else}
     <p class="lead">
       {live.length === 0

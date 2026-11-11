@@ -72,6 +72,8 @@
     open?: boolean;
     /** The section's "Include metadata and edit recipes" choice, carried into the export. */
     includeMetadata?: boolean;
+    /** An album shortcut always preserves the exact album, with metadata and without Locked items. */
+    album?: Pick<AlbumResponseDto, 'id' | 'albumName'>;
     /**
      * The selection bar's items ("Export for preservation…"): the account's own, and how many known
      * to be someone else's were left out. When set, the dialog opens on "Selected items".
@@ -85,6 +87,7 @@
   let {
     open = $bindable(false),
     includeMetadata = $bindable(true),
+    album,
     selection = null,
     includeLockedDefault = false,
     onCreated,
@@ -107,9 +110,18 @@
   const search = $derived(searchScope(searchInput, catalog));
   const selectedCount = $derived(selection?.assetIds.length ?? 0);
   const request = $derived(
-    scopeToRequest({ ...scope, searchFilter: search.filter, assetIds: selection?.assetIds ?? [] }),
+    scopeToRequest(
+      album
+        ? { ...emptyScope(), kind: 'albums', albumIds: [album.id] }
+        : { ...scope, searchFilter: search.filter, assetIds: selection?.assetIds ?? [] },
+    ),
   );
-  const shortfall = $derived(preview && scope.kind === 'selection' ? selectionShortfall(selectedCount, preview) : 0);
+  const exportMetadata = $derived(!!album || includeMetadata);
+  const exportLocked = $derived(!album && includeLocked);
+  const suggestedName = $derived(album?.albumName.trim().slice(0, 120) || defaultPackageName(scope));
+  const shortfall = $derived(
+    preview && !album && scope.kind === 'selection' ? selectionShortfall(selectedCount, preview) : 0,
+  );
   const bytes = (value: string | null | undefined) => {
     const parsed = asBytes(value);
     return parsed === null ? '—' : getByteUnitString(parsed, $locale ?? undefined);
@@ -181,9 +193,9 @@
     previewing = true;
     try {
       preview = await previewPreservationExport({
-        preservationPreviewDto: { scope: request, includeLocked, includeMetadata },
+        preservationPreviewDto: { scope: request, includeLocked: exportLocked, includeMetadata: exportMetadata },
       });
-      if (includeLocked && !preview.lockedAllowed) {
+      if (exportLocked && !preview.lockedAllowed) {
         includeLocked = false;
       }
       step = 1;
@@ -202,10 +214,10 @@
     try {
       const created = await createPreservationPackage({
         preservationExportCreateDto: {
-          name: name.trim() || defaultPackageName(scope),
+          name: name.trim() || suggestedName,
           scope: request,
-          includeLocked: includeLocked && !!preview?.lockedAllowed,
-          includeMetadata,
+          includeLocked: exportLocked && !!preview?.lockedAllowed,
+          includeMetadata: exportMetadata,
           requestKey,
         },
       });
@@ -256,13 +268,19 @@
     {#if step === 0}
       <fieldset class="scope">
         <legend>{$t('frameleaf_preservation_scope_label')}</legend>
-        <SegmentedControl
-          label={$t('frameleaf_preservation_scope_label')}
-          options={scopeOptions}
-          value={scope.kind}
-          onChange={setKind}
-        />
-        {#if scope.kind === 'dates'}
+        {#if album}
+          <p>{album.albumName}</p>
+        {:else}
+          <SegmentedControl
+            label={$t('frameleaf_preservation_scope_label')}
+            options={scopeOptions}
+            value={scope.kind}
+            onChange={setKind}
+          />
+        {/if}
+        {#if album}
+          <p class="hint">{$t('frameleaf_preservation_album_export_scope')}</p>
+        {:else if scope.kind === 'dates'}
           <div class="dates">
             <label>
               {$t('frameleaf_preservation_scope_from')}
@@ -348,7 +366,7 @@
           type="text"
           maxlength="120"
           bind:value={name}
-          placeholder={defaultPackageName(scope)}
+          placeholder={suggestedName}
           aria-describedby="preservation-name-hint"
         />
         <small id="preservation-name-hint">{$t('frameleaf_preservation_name_hint')}</small>
@@ -358,7 +376,9 @@
         <SettingToggle
           title={$t('frameleaf_preservation_include_metadata')}
           subtitle={$t('frameleaf_preservation_include_metadata_help')}
-          bind:checked={includeMetadata}
+          checked={exportMetadata}
+          disabled={!!album}
+          onToggle={(checked) => (includeMetadata = checked)}
         />
         <SettingToggle
           title={$t('frameleaf_preservation_include_checksums')}
@@ -368,17 +388,19 @@
         >
           <small class="policy">{$t('frameleaf_preservation_always_protected')}</small>
         </SettingToggle>
-        <SettingToggle
-          title={$t('frameleaf_preservation_include_locked')}
-          subtitle={$t('frameleaf_preservation_include_locked_help')}
-          bind:checked={includeLocked}
-        >
-          {#if includeLocked && preview && !preview.lockedAllowed}
-            <small class="policy">
-              <a href={unlockHref}>{$t('frameleaf_preservation_unlock_to_include')}</a>
-            </small>
-          {/if}
-        </SettingToggle>
+        {#if !album}
+          <SettingToggle
+            title={$t('frameleaf_preservation_include_locked')}
+            subtitle={$t('frameleaf_preservation_include_locked_help')}
+            bind:checked={includeLocked}
+          >
+            {#if includeLocked && preview && !preview.lockedAllowed}
+              <small class="policy">
+                <a href={unlockHref}>{$t('frameleaf_preservation_unlock_to_include')}</a>
+              </small>
+            {/if}
+          </SettingToggle>
+        {/if}
       </div>
     {:else if step === 1 && preview}
       <dl class="facts">
@@ -388,7 +410,7 @@
             values: { count: preview.includedItems, size: bytes(preview.includedBytes) },
           })}
         </dd>
-        {#if scope.kind === 'selection' && selection}
+        {#if !album && scope.kind === 'selection' && selection}
           <dt>{$t('frameleaf_preservation_verify_left_out')}</dt>
           <dd>
             {#if selection.leftOut === 0 && shortfall === 0}
@@ -411,8 +433,8 @@
         <dd>
           {#if !preview.lockedAllowed}
             {$t('frameleaf_preservation_verify_locked_hidden')}
-            <a href={unlockHref}>{$t('frameleaf_preservation_unlock_to_include')}</a>
-          {:else if includeLocked}
+            {#if !album}<a href={unlockHref}>{$t('frameleaf_preservation_unlock_to_include')}</a>{/if}
+          {:else if exportLocked}
             {$t('frameleaf_preservation_verify_locked_included', { values: { count: preview.lockedItems } })}
           {:else}
             {$t('frameleaf_preservation_verify_locked_excluded', { values: { count: preview.lockedItems } })}
@@ -458,7 +480,7 @@
             <span>{group.categories.map((category) => $t(supportCategoryKey(category))).join(', ')}</span>
           </div>
         {/each}
-        {#if !includeMetadata}
+        {#if !exportMetadata}
           <p class="note">{$t('frameleaf_preservation_support_originals_only')}</p>
         {/if}
       </section>

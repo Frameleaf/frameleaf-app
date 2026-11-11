@@ -9,6 +9,7 @@
    * A copy (a preservation package) is the signed-in account's own. Nothing here reads another
    * account's media, and a copy holding Locked items downloads only from an unlocked session.
    */
+  import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PreservationExportDialog from '$lib/components/frameleaf/PreservationExportDialog.svelte';
@@ -91,7 +92,10 @@
     restores.filter((item) => item.status !== PreservationRestoreStatus.Completed || isOperationActive(item.operation)),
   );
   const showsJob = (item: PreservationPackageDto) =>
-    !!item.operation && (isOperationActive(item.operation) || item.operation.status === MediaOperationStatus.Failed);
+    !!item.operation &&
+    (isOperationActive(item.operation) ||
+      item.operation.status === MediaOperationStatus.Failed ||
+      item.operation.status === MediaOperationStatus.Cancelled);
   const canRetryFailed = (item: PreservationPackageDto) =>
     item.origin === PreservationPackageOrigin.Export && item.counts.failed > 0 && !isOperationActive(item.operation);
 
@@ -106,13 +110,14 @@
   const downloadHref = (item: PreservationPackageDto, what: 'download' | 'manifest') =>
     `${getBaseUrl()}/preservation/packages/${item.id}/${what}`;
   const desktopCopyPath = '/__frameleaf_desktop_copy';
-  const canCopyInDesktop = (item: PreservationPackageDto) =>
+  const eligibleForDesktopCopy = (item: PreservationPackageDto) =>
     desktopCopy &&
     !item.lockedContent &&
     item.status === PreservationPackageStatus.Ready &&
     item.manifest?.complete &&
-    item.manifest.exported > 0 &&
-    item.verification?.status === PreservationVerificationStatus.Verified;
+    item.manifest.exported > 0;
+  const canCopyInDesktop = (item: PreservationPackageDto) =>
+    eligibleForDesktopCopy(item) && item.verification?.status === PreservationVerificationStatus.Verified;
 
   const copyInDesktop = async (item: PreservationPackageDto) => {
     if (!canCopyInDesktop(item) || desktopCopyBusy) {
@@ -191,6 +196,22 @@
   );
   const restorable = $derived(packages.some((item) => item.restorable));
   const managing = $derived(packages.find((item) => item.id === managingId) ?? null);
+  const requestedPackage = $derived(page.url.searchParams.get('preservationPackage'));
+  let openedRequest: string | null = null;
+
+  $effect(() => {
+    if (requestedPackage === openedRequest) {
+      return;
+    }
+    // Away from the package (or not loaded yet): forget it, so coming back to the same link opens it again.
+    if (packages.every((item) => item.id !== requestedPackage)) {
+      openedRequest = null;
+      return;
+    }
+    openedRequest = requestedPackage;
+    managingId = requestedPackage;
+    manageOpen = true;
+  });
 
   const counts = (item: PreservationPackageDto) => {
     const parts: string[] = [];
@@ -553,6 +574,9 @@
         {$t('frameleaf_preservation_upload_expires', { values: { date: formatWhen(managing.expiresAt) } })}
       </p>
     {/if}
+    {#if managing.operation && showsJob(managing)}
+      <PreservationJobStatus operation={managing.operation} retryable onChanged={() => void load()} />
+    {/if}
     {#if managing.downloadable}
       <Row
         label={$t('frameleaf_preservation_manage_download')}
@@ -576,9 +600,15 @@
       </Row>
     {/if}
     {#if managing.status !== PreservationPackageStatus.Removed}
-      <Row label={$t('frameleaf_preservation_check_again')} help={$t('frameleaf_preservation_manage_check_help')}>
-        <Button disabled={busy === managing.id} onclick={() => act(managing, 'verify')}
-          >{$t('frameleaf_preservation_verify')}</Button
+      <Row
+        label={eligibleForDesktopCopy(managing) && !canCopyInDesktop(managing)
+          ? $t('frameleaf_preservation_desktop_verify_first')
+          : $t('frameleaf_preservation_check_again')}
+        help={$t('frameleaf_preservation_manage_check_help')}
+      >
+        <Button
+          disabled={busy === managing.id || isOperationActive(managing.operation)}
+          onclick={() => act(managing, 'verify')}>{$t('frameleaf_preservation_verify')}</Button
         >
       </Row>
     {/if}

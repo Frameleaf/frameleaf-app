@@ -43,6 +43,7 @@ import { ConfigPublicController } from 'src/controllers/config-public.controller
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
+import { DesktopOfflineAlbumController } from 'src/controllers/desktop-offline-album.controller.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { DevelopBatchController } from 'src/controllers/develop-batch.controller.js';
 import { DocumentController } from 'src/controllers/document.controller.js';
@@ -182,6 +183,7 @@ export const controllers = [
   BookmarkController,
   DevelopBatchController,
   DesktopDeviceController,
+  DesktopOfflineAlbumController,
   PhotoSourceController,
   SourceResourceController,
   DesktopWorkerController,

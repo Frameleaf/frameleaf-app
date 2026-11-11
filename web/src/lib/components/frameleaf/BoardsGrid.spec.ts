@@ -8,6 +8,36 @@ import { timelineAssetFactory } from '@test-data/factories/asset-factory';
 const session = { selection: [], select: vi.fn(), setScrollAnchor: vi.fn() } as unknown as LibrarySessionStore;
 
 describe('BoardsGrid', () => {
+  it('shows a document preview when available and a file icon otherwise', async () => {
+    const assets = [
+      timelineAssetFactory.build({
+        originalFileName: 'report.docx',
+        isImage: false,
+        isVideo: false,
+        thumbhash: 'hash',
+      }),
+      timelineAssetFactory.build({ originalFileName: 'drawing.dwg', isImage: false, isVideo: false, thumbhash: null }),
+    ];
+    const items = assets.map(
+      (asset) => ({ kind: LibraryAssetItemKind.Asset, asset: { id: asset.id } }) as unknown as LibraryItemDto,
+    );
+    const { container } = render(BoardsGrid, {
+      items,
+      assets,
+      session,
+      layout: 'grid',
+      tileSize: 180,
+      showNames: false,
+      onOpen: vi.fn(),
+    });
+    const preview = container.querySelector(':scope .bg-open img');
+    expect(preview).toBeTruthy();
+    expect(container.querySelectorAll('.bg-link-blank')).toHaveLength(1);
+    expect(container.textContent).toContain('drawing.dwg');
+    await fireEvent.error(preview!);
+    expect(container.querySelectorAll('.bg-link-blank')).toHaveLength(2);
+  });
+
   it('shows the quiet placeholder for an item whose thumbnail does not load, and its name still (FL-1358)', async () => {
     const [missing, fine] = [
       timelineAssetFactory.build({ originalFileName: 'logo.eps' }),

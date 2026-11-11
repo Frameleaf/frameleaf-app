@@ -35,6 +35,7 @@ import {
   mediaOperationDestinationOf,
   parseRestorationSnapshot,
   planRestorationChunks,
+  planRifeFrameChunks,
   previewExpiryAfterDecision,
   previewExpiryAfterReady,
   previewInputBytes,
@@ -252,6 +253,21 @@ describe('restoration rules (FL-115)', () => {
       ]);
       expect(planRestorationChunks(5, 20)).toEqual([{ sequence: 0, startSeconds: 0, endSeconds: 5 }]);
       expect(planRestorationChunks(0)).toEqual([]);
+    });
+
+    it('splits exact RIFE frame indices, reserves context, and avoids a one-frame tail', () => {
+      const cadence = { num: 30_000, den: 1001 };
+      const chunks = planRifeFrameChunks(602, cadence, 240);
+      expect(chunks.map(({ startFrame, endFrame, context }) => [startFrame, endFrame, context])).toEqual([
+        [0, 239, true],
+        [239, 478, true],
+        [478, 602, false],
+      ]);
+      expect(chunks[2].endSeconds).toBe((602 * 1001) / 30_000);
+      expect(planRifeFrameChunks(241, cadence, 240).map(({ startFrame, endFrame }) => endFrame - startFrame)).toEqual([
+        239, 2,
+      ]);
+      expect(() => planRifeFrameChunks(241, cadence, 1)).toThrow(RangeError);
     });
 
     it('keys a chunk by every input that changes its output, never by its number alone', () => {

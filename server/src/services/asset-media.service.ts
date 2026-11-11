@@ -5,8 +5,9 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { rm } from 'node:fs/promises';
+import { copyFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { Transaction } from 'kysely';
@@ -66,6 +67,7 @@ import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
 import {
   OriginalAsset,
   OriginalLocationPolicy,
@@ -74,6 +76,9 @@ import {
 } from 'src/utils/partner-location.js';
 import { getPreferences, isTrashReuploadOpen } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
+
+/** How long a finished document PDF may take to download before the response is ended. */
+const DOCUMENT_REVIEW_HOLD = 5 * 60 * 1000;
 
 export interface AssetMediaRedirectResponse {
   targetSize: AssetMediaSize | 'original';
@@ -599,6 +604,84 @@ export class AssetMediaService extends BaseService {
     }
   }
 
+  private activeDocumentReviews = 0;
+
+  private async reviewDocument(
+    auth: AuthDto,
+    id: string,
+    ownerId: string,
+    originalPath: string,
+    originalFileName: string,
+    signal?: AbortSignal,
+  ): Promise<FileDownloadResponse> {
+    if (!originalPath || !isOfficePreviewFile(originalFileName)) {
+      throw new NotFoundException('Document preview is unavailable');
+    }
+    if (
+      getOriginalLocationPolicies({ auth, assets: [{ id, ownerId }], purpose: 'download' })({ id, ownerId }) !==
+      OriginalLocationPolicy.Serve
+    ) {
+      throw new ForbiddenException('Downloads are turned off while metadata is hidden');
+    }
+    if (this.activeDocumentReviews >= 2) {
+      throw new ServiceUnavailableException('Document previews are busy. Try again shortly.');
+    }
+
+    // A slot is held until the PDF is released after delivery. Delivery ends after DOCUMENT_REVIEW_HOLD,
+    // so a stalled download cannot keep a slot, or its PDF in temporary storage, indefinitely.
+    this.activeDocumentReviews++;
+    let directory: string | undefined;
+    let released = false;
+    const release = async () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      this.activeDocumentReviews--;
+      if (directory) {
+        await rm(directory, { recursive: true, force: true });
+      }
+    };
+    try {
+      directory = await makeWorkDir('document-review', await isLockedPath(originalPath));
+      const output = path.join(directory, 'review.pdf');
+      const rendered = await withPlainCopy(
+        originalPath,
+        (source) =>
+          withOfficePreview(
+            source,
+            originalFileName,
+            async (pdf) => {
+              await copyFile(pdf, output);
+              return true;
+            },
+            { allPages: true, signal },
+          ),
+        { viewerId: lockedViewerOf(auth) },
+      );
+      if (!rendered) {
+        throw new NotFoundException('Document preview is unavailable');
+      }
+      signal?.throwIfAborted();
+      await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+      const current = await this.assetRepository.getForOriginal(id, false);
+      if (current.ownerId !== ownerId || current.originalPath !== originalPath) {
+        throw new ConflictException('This document changed during preview');
+      }
+      return new FileDownloadResponse({
+        path: output,
+        release,
+        deliveryTimeout: DOCUMENT_REVIEW_HOLD,
+        contentType: 'application/pdf',
+        fileName: `${getFileNameWithoutExtension(originalFileName)}.pdf`,
+        cacheControl: CacheControl.PrivateWithoutCache,
+      });
+    } catch (error) {
+      await release();
+      throw error;
+    }
+  }
+
   async downloadOriginal(
     auth: AuthDto,
     id: string,
@@ -617,19 +700,24 @@ export class AssetMediaService extends BaseService {
       dto.edited ?? false,
     );
 
+    const { format } = dto;
+    if (format === 'document-pdf') {
+      return this.reviewDocument(auth, id, ownerId, originalPath!, originalFileName, signal);
+    }
+
     // Downloaded as shown (owner, 2026-10-16): the owner's viewer shows their current develop version.
-    const developedPath = dto.edited && !dto.format ? await this.getShownDevelopMaster(auth, id, ownerId) : undefined;
+    const developedPath = dto.edited && !format ? await this.getShownDevelopMaster(auth, id, ownerId) : undefined;
     const filePath = developedPath ?? editedPath ?? originalPath!;
-    if (dto.format) {
+    if (format) {
       const source = await this.assetRepository.getById(id);
       if (!source || source.type !== AssetType.Image || source.originalPath !== filePath)
         throw new BadRequestException('Still exports require an unedited photo; export a saved edit from its version');
       const policy = getOriginalLocationPolicies({ auth, assets: [source], purpose: 'download' });
       if (policy(source) !== OriginalLocationPolicy.Serve)
         throw new ForbiddenException('Downloads are turned off while metadata is hidden');
-      if (dto.format !== 'sdr-jpeg' && process.env.FRAMELEAF_HDR_IMAGES !== 'experimental')
+      if (format !== 'sdr-jpeg' && process.env.FRAMELEAF_HDR_IMAGES !== 'experimental')
         throw new NotFoundException('HDR export is unavailable');
-      if (dto.format === 'hdr-heic' && !(await this.mediaRepository.getHdrCodecCapabilities())?.heicPqEncoder)
+      if (format === 'hdr-heic' && !(await this.mediaRepository.getHdrCodecCapabilities())?.heicPqEncoder)
         throw new BadRequestException({
           code: 'hdr_heic_export_unavailable',
           message: 'HDR HEIC export is unavailable',
@@ -637,7 +725,7 @@ export class AssetMediaService extends BaseService {
       const checksum = Buffer.from(source.checksum);
       // FL-721 (spec §8): a sealed source's full-size export is written inside the locked tmpfs folder
       const folder = await makeWorkDir('photo-export', await isLockedPath(filePath));
-      const heic = dto.format === 'hdr-heic';
+      const heic = format === 'hdr-heic';
       const output = path.join(folder, heic ? 'still_hdr.heic' : 'still.jpg');
       const release = () =>
         void rm(folder, { recursive: true, force: true }).catch(() => {
@@ -647,7 +735,7 @@ export class AssetMediaService extends BaseService {
         // FL-721: a sealed original is exported from a plain copy, for a viewer allowed its key
         await withPlainCopy(
           filePath,
-          (input) => this.mediaRepository.exportPhotoStill(input, output, dto.format!, checksum, signal),
+          (input) => this.mediaRepository.exportPhotoStill(input, output, format, checksum, signal),
           { viewerId: lockedViewerOf(auth) },
         );
         signal?.throwIfAborted();
@@ -665,7 +753,7 @@ export class AssetMediaService extends BaseService {
           path: output,
           release,
           contentType: heic ? 'image/heic' : 'image/jpeg',
-          fileName: `${getFileNameWithoutExtension(originalFileName)}_still_${dto.format}.${heic ? 'heic' : 'jpg'}`,
+          fileName: `${getFileNameWithoutExtension(originalFileName)}_still_${format}.${heic ? 'heic' : 'jpg'}`,
           cacheControl: CacheControl.PrivateWithoutCache,
         });
       } catch (error) {
@@ -693,7 +781,9 @@ export class AssetMediaService extends BaseService {
       fileName: boardOriginal
         ? originalFileName
         : getFileNameWithoutExtension(originalFileName) + getFilenameExtension(filePath),
-      contentType: boardOriginal ? 'application/octet-stream' : mimeTypes.lookup(filePath),
+      contentType: boardOriginal
+        ? (mimeTypes.boardAudioType(originalFileName) ?? 'application/octet-stream')
+        : mimeTypes.lookup(filePath),
       ...(boardOriginal && { attachment: true }),
       // The current version can change under the same URL; a cached copy could be the one before.
       cacheControl: developedPath ? CacheControl.PrivateWithoutCache : CacheControl.PrivateWithCache,

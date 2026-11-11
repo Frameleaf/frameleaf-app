@@ -11,8 +11,9 @@ import AlbumHeader from './AlbumHeader.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(() => Promise.resolve()) }));
 
+const { captureSession } = vi.hoisted(() => ({ captureSession: vi.fn(() => (): boolean => true) }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
-  authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {} },
+  authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {}, captureSession },
 }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { map: false } },
@@ -101,6 +102,40 @@ describe('AlbumHeader', () => {
     },
   );
 
+  it.each([true, false])(
+    'hands a local album grant to Desktop only while the Photos session is current (%s)',
+    async (current) => {
+      const marker = '__FRAMELEAF_DESKTOP_LOCAL_OFFLINE_ALBUMS__';
+      Reflect.set(globalThis, marker, true);
+      captureSession.mockReturnValueOnce(() => current);
+      const token = 'a'.repeat(43);
+      const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ token }));
+      const assign = vi.spyOn(location, 'assign').mockImplementation(() => {});
+      try {
+        renderHeader(albumAs(AlbumUserRole.Owner, { kind: AlbumKind.Album, isLocked: false }));
+        const more = await openMore();
+        await fireEvent.click(more.getByRole('menuitem', { name: 'Keep Offline' }));
+        expect(fetch).toHaveBeenCalledWith('/api/albums/album-1/desktop-offline-grant', {
+          method: 'POST',
+          cache: 'no-store',
+          signal: expect.any(AbortSignal),
+        });
+        if (current) {
+          await waitFor(() =>
+            expect(assign).toHaveBeenCalledWith(`/__frameleaf_desktop__/offline-albums/album-1#${token}`),
+          );
+        } else {
+          await waitFor(() => expect(captureSession).toHaveBeenCalledOnce());
+          expect(assign).not.toHaveBeenCalled();
+        }
+      } finally {
+        assign.mockRestore();
+        fetch.mockRestore();
+        Reflect.deleteProperty(globalThis, marker);
+      }
+    },
+  );
+
   it('opens a workflow draft for this editable album without adding any photos', async () => {
     sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: true } as never);
     renderHeader(albumAs(AlbumUserRole.Owner));
@@ -151,9 +186,16 @@ describe('AlbumHeader', () => {
     expect(screen.getByRole('button', { name: 'Edit title' })).toBeInTheDocument();
 
     const more = await openMore();
+    expect(more.queryByRole('menuitem', { name: 'Export originals and metadata…' })).toBeInTheDocument();
     expect(more.getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument();
     expect(more.getByRole('menuitem', { name: /Delete album/ })).toBeInTheDocument();
     expect(more.queryByRole('menuitem', { name: /Leave album/ })).toBeNull();
+  });
+
+  it('hides preservation export for a Locked album', async () => {
+    renderHeader(albumAs(AlbumUserRole.Owner, { kind: AlbumKind.Album, isLocked: true }));
+    const more = await openMore();
+    expect(more.queryByRole('menuitem', { name: 'Export originals and metadata…' })).toBeNull();
   });
 
   it('lets an editor add, upload and edit, but not invite, manage links or delete', async () => {
@@ -166,6 +208,7 @@ describe('AlbumHeader', () => {
     expect(screen.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();
 
     const more = await openMore();
+    expect(more.queryByRole('menuitem', { name: 'Export originals and metadata…' })).toBeNull();
     expect(more.getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument();
     expect(more.queryByRole('menuitem', { name: /Delete album/ })).toBeNull();
     expect(more.getByRole('menuitem', { name: /Leave album/ })).toBeInTheDocument();
@@ -183,6 +226,7 @@ describe('AlbumHeader', () => {
     expect(screen.getByText(/View only/)).toBeInTheDocument();
 
     const more = await openMore();
+    expect(more.queryByRole('menuitem', { name: 'Export originals and metadata…' })).toBeNull();
     expect(more.queryByRole('menuitem', { name: 'Edit details' })).toBeNull();
     expect(more.queryByRole('menuitem', { name: 'Options' })).toBeNull();
     expect(more.getByRole('menuitem', { name: /Leave album/ })).toBeInTheDocument();

@@ -34,6 +34,7 @@ import {
   RestorationInferenceResult,
   RestorationSnapshot,
   planRestorationChunks,
+  planRifeFrameChunks,
   restorationAdmissionOf,
   restorationChunkIdentity,
 } from 'src/utils/restoration.js';
@@ -747,23 +748,50 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
-    it('publishes a full render that ran the reviewed model', async () => {
+    it.each([
+      { name: 'faithful-v1', version: '1.0' },
+      { name: 'realesr-general-x4v3', version: 'aaaaaaaaaaaa+bbbbbbbbbbbb' },
+    ])('publishes a separate image version from the reviewed model $name', async (model) => {
+      restore.mockImplementation((_selection, _input, options) =>
+        Promise.resolve({
+          outputPath: options.outputPath,
+          width: 2048,
+          height: 1536,
+          modelName: model.name,
+          modelVersion: model.version,
+        }),
+      );
       await sut.run(
         operation({
           kind: MediaOperationKind.Restoration,
-          snapshot: snapshot({ stage: 'full', model: { name: 'faithful-v1', version: '1.0' } }),
+          snapshot: snapshot({ stage: 'full', model }),
         }),
         CLAIM,
       );
 
-      expect(restore).toHaveBeenCalled();
-      // FL-423: the worker is asked for exactly the reviewed model, so it never runs another one
-      expect(restore.mock.calls[0][2].modelId).toBe('faithful-v1');
-      expect(operations.fail).not.toHaveBeenCalledWith(
-        OPERATION_ID,
-        CLAIM,
-        expect.objectContaining({ errorCode: RestorationErrorCode.ModelChanged }),
+      expect(restore).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ kind: 'image', path: expect.stringContaining('/input-') }),
+        expect.objectContaining({ modelId: model.name }),
       );
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.Restoring],
+        expect.objectContaining({
+          status: AssetRestorationStatus.Restored,
+          resultPath: expect.stringContaining(`_restore_${RESTORATION_ID}_result.png`),
+          modelName: model.name,
+          modelVersion: model.version,
+        }),
+        TRX,
+        { stage: 'full', id: OPERATION_ID },
+      );
+      expect(mocks.storage.rename).toHaveBeenCalledWith(
+        expect.stringContaining('/result-'),
+        expect.stringContaining(`_restore_${RESTORATION_ID}_result.png`),
+      );
+      expect(mocks.storage.rename.mock.calls.flat()).not.toContain(asset.originalPath);
+      expect(operations.fail).not.toHaveBeenCalled();
     });
 
     it('sends a web-native original to the worker as a copy without EXIF or GPS, its ICC kept (FL-162)', async () => {
@@ -983,6 +1011,121 @@ describe(RestorationWorkerService.name, () => {
           maxHeight: 1080,
         }),
       );
+    });
+
+    it.each(['fresh', 'resumed', 'stale'])('binds the full RIFE frame plan and checkpoints (%s)', async (run) => {
+      const exact = run !== 'stale';
+      const resumed = run === 'resumed';
+      const name = 'rife-onnx-candidate';
+      const fingerprint = 'a'.repeat(64);
+      mocks.machineLearning.getRestorationModels.mockResolvedValue({
+        models: [
+          {
+            id: name,
+            mode: AssetRestorationMode.SmoothMotion,
+            state: 'available',
+            qualificationId: 'fixture',
+            fingerprint,
+            maxFrames: 240,
+          },
+        ],
+      } as never);
+      const originalStream = {
+        width: 1920,
+        height: 1080,
+        frameRate: 25,
+        frameRateRational: { num: 25, den: 1 },
+        nominalFrameRateRational: { num: 25, den: 1 },
+        frameCount: 1125,
+      };
+      mocks.media.probe.mockImplementation((file) => {
+        const chunk = /chunk-(\d+)-in-/.exec(file);
+        const frameCount = chunk ? (Number(chunk[1]) < 4 ? 240 : 169) : file.includes('result-') ? 4500 : 1125;
+        return Promise.resolve({
+          format: { formatName: 'mp4', formatLongName: 'mp4', duration: chunk ? frameCount / 25 : 45, bitrate: 0 },
+          videoStreams: [
+            {
+              ...originalStream,
+              frameCount,
+              nominalFrameRateRational: { num: file.includes('result-') ? 100 : 25, den: 1 },
+            },
+          ],
+          audioStreams: [],
+        } as never);
+      });
+      const version = `0123456789ab+${exact ? fingerprint : fingerprint.slice(0, 12)}`;
+      restorations.get.mockResolvedValue(
+        row({ status: AssetRestorationStatus.Accepted, mode: AssetRestorationMode.SmoothMotion, upscale: 4 }),
+      );
+      mocks.storage.stat.mockResolvedValue({ size: 1024 } as never);
+      mocks.crypto.hashFile.mockResolvedValue(Buffer.alloc(32, 1));
+      restore.mockImplementation((_selection, _input, options) =>
+        Promise.resolve({
+          outputPath: options.outputPath,
+          width: 1920,
+          height: 1080,
+          modelName: name,
+          modelVersion: version,
+        }),
+      );
+      const reviewed = { ...smooth('full'), model: { name, version } };
+      if (resumed) {
+        const first = planRifeFrameChunks(1125, originalStream.frameRateRational, 240)[0];
+        const identity = restorationChunkIdentity(reviewed, first);
+        const timestamp = new Date(0);
+        operations.getCheckpoints.mockResolvedValueOnce([
+          {
+            ...identity,
+            id: 'rife-first',
+            operationId: OPERATION_ID,
+            startTicks: Number(identity.startTicks),
+            endTicks: Number(identity.endTicks),
+            prerollTicks: 0,
+            state: MediaOperationCheckpointState.Complete,
+            outputPath: '/cached/rife-first.mp4',
+            outputChecksum: Buffer.alloc(32, 1),
+            sizeInBytes: 1024,
+            subtitlePath: null,
+            subtitleChecksum: null,
+            subtitleSizeInBytes: null,
+            attempt: 1,
+            claimToken: CLAIM,
+            completedAt: timestamp,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            updateId: 'rife-first-update',
+          },
+        ]);
+      }
+      await sut.run(operation({ kind: MediaOperationKind.Restoration, snapshot: reviewed }), CLAIM);
+      if (exact) {
+        expect(restore).toHaveBeenCalledTimes(resumed ? 4 : 5);
+        expect(restore.mock.calls.map((call) => call[2].trailingContextFrame)).toEqual(
+          [true, true, true, true, false].slice(resumed ? 1 : 0),
+        );
+        const chunkOptions = mocks.media.transcode.mock.calls.find(([, output]) => String(output).includes('-in-'));
+        expect(chunkOptions?.[2].outputOptions).toContain(
+          resumed
+            ? 'trim=start_frame=239:end_frame=479,setpts=PTS-STARTPTS'
+            : 'trim=start_frame=0:end_frame=240,setpts=PTS-STARTPTS',
+        );
+        if (resumed) {
+          expect(mocks.crypto.hashFile).toHaveBeenCalledWith('/cached/rife-first.mp4', 'sha256');
+          expect(mocks.storage.createOrOverwriteFile.mock.calls[0][1].toString()).toContain('/cached/rife-first.mp4');
+        }
+        expect(mocks.machineLearning.getRestorationModels).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ modelId: name, fingerprint }),
+        );
+        expect(restore.mock.calls.every((call) => call[2].modelFingerprint === fingerprint)).toBe(true);
+      } else {
+        expect(restore).not.toHaveBeenCalled();
+        expect(operations.fail).toHaveBeenCalledWith(
+          OPERATION_ID,
+          CLAIM,
+          expect.objectContaining({ errorCode: RestorationErrorCode.ModelChanged }),
+        );
+      }
     });
 
     it('gives every chunk but the last the next chunk’s first frame as context, so no join is left out', async () => {

@@ -18,7 +18,6 @@
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import {
-    ASSISTANT_NAME,
     answeredWithRules,
     reasonsByAsset,
     whyLine,
@@ -114,7 +113,7 @@
 </script>
 
 <section class="frameleaf la" aria-labelledby="{id}-title">
-  <h2 id="{id}-title" class="sr-only">{ASSISTANT_NAME}</h2>
+  <h2 id="{id}-title" class="sr-only">{$t('frameleaf_assistant_name')}</h2>
   <div class="la-ask">
     <label class="la-field" class:is-disabled={disabled}>
       <Icon icon={mdiCreationOutline} size="22" aria-hidden="true" />
@@ -143,7 +142,7 @@
   {#if problem === 'disabled'}
     <p class="la-route" role="status">
       <Icon icon={mdiAlertCircleOutline} size="18" aria-hidden="true" />
-      {$t('frameleaf_assistant_disabled', { values: { name: ASSISTANT_NAME } })}
+      {$t('frameleaf_assistant_disabled', { values: { name: $t('frameleaf_assistant_name') } })}
     </p>
   {:else if problem === 'failed'}
     <p class="la-route is-warn" role="alert">

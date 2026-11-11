@@ -165,6 +165,7 @@ const SHARED_LINK_ROUTES = new Set([
  * an administrator allows them. Thumbnails, previews and playback are deliberately not here.
  */
 const ORIGINAL_TRANSFER_ROUTES = new Set([
+  'GET albums/:id/desktop-offline/originals/:assetId',
   'GET assets/:id/original',
   'GET develop-batches/:id/download',
   'POST download/archive',
@@ -369,19 +370,23 @@ describe('controllers', () => {
     expect(routes.filter((route) => route.remoteSignInExempt).map((route) => route.id)).toEqual(['POST auth/logout']);
   });
 
-  it('should keep the whole render-worker API, original inputs included, on the home network (FL-161)', () => {
+  it('should keep render-worker and local Desktop routes on the home network', () => {
     const workerRoutes = routes.filter((route) => route.path.startsWith('render-workers/'));
 
     expect(workerRoutes.map((route) => route.id)).toContain('GET render-workers/operations/:id/inputs/:grant');
     expect(workerRoutes.filter((route) => !route.homeNetworkOnly)).toEqual([]);
-    const localCopyRoutes = [
+    const desktopLocalRoutes = [
+      'GET albums/:id/desktop-offline',
+      'GET albums/:id/desktop-offline/originals/:assetId',
+      'POST albums/:id/desktop-offline-grant',
+      'POST albums/:id/desktop-offline/redeem',
       'POST preservation/packages/:id/desktop-copy',
       'POST preservation/packages/:id/desktop-copy-grant',
     ];
     const otherLocalRoutes = routes
       .filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))
       .map((route) => route.id);
-    expect(otherLocalRoutes.toSorted()).toEqual(localCopyRoutes);
+    expect(otherLocalRoutes.toSorted()).toEqual(desktopLocalRoutes);
   });
 
   it('should rate limit sign-in, licence activation and link start (FL-161)', () => {
