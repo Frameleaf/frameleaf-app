@@ -1,6 +1,7 @@
 import { render as renderComponent, toPlainText } from '@react-email/render';
 import { createTransport } from 'nodemailer';
 import english from 'src/emails/translations/en.json' with { type: 'json' };
+import translations from 'src/emails/translations/locales.json' with { type: 'json' };
 import { EmailRenderRequest, EmailRepository, EmailTemplate } from 'src/repositories/email.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { automock } from 'test/utils.js';
@@ -362,6 +363,36 @@ describe(EmailRepository.name, () => {
 
       expect(result.html).toContain('<!DOCTYPE html PUBLIC');
       expect(result.text).toContain('Holiday');
+    });
+
+    describe('in the recipient’s language (FL-1437)', () => {
+      const catalogues: Record<string, Record<string, string>> = translations;
+      const data = { baseUrl: undefined, displayName: 'Alice', showBranding: true };
+
+      it('writes the email in a shipped language, and in English for any other', async () => {
+        const french = await sut.renderEmail({ template: EmailTemplate.TEST_EMAIL, data: { ...data, locale: 'fr' } });
+        expect(french.html).toContain('lang="fr"');
+        expect(french.text).toContain(catalogues.fr.test_body);
+        expect(french.text).not.toContain(english.test_body);
+
+        for (const locale of ['ja', 'fr-CA', 'not a locale', undefined]) {
+          const fallback = await sut.renderEmail({ template: EmailTemplate.TEST_EMAIL, data: { ...data, locale } });
+          expect(fallback.html).toContain('lang="en"');
+          expect(fallback.text).toContain(english.test_body);
+        }
+      });
+
+      it.each(['fr', 'es', 'de', 'it', 'pt', 'nl', 'pl', 'sv', 'da', 'nb-NO'])(
+        '%s has every message, with the placeholders of the English',
+        (locale) => {
+          const placeholders = (text: string) => Array.from(text.matchAll(/\{(\w+)\}/g), ([, name]) => name).sort();
+          for (const [key, source] of Object.entries(english)) {
+            const translated = catalogues[locale]?.[key] ?? '';
+            expect(translated.trim(), `${locale}.${key}`).not.toBe('');
+            expect(placeholders(translated), `${locale}.${key}`).toEqual(placeholders(source));
+          }
+        },
+      );
     });
   });
 });
