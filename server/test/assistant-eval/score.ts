@@ -36,7 +36,7 @@ const caseSchema = z.strictObject({
 export type EvalFilters = z.infer<typeof filtersSchema>;
 export type EvalCase = z.infer<typeof caseSchema>;
 export type EvalAsset = z.infer<typeof assetSchema>;
-export type Reason = { field: keyof EvalFilters; value: string | boolean };
+export type Reason = { field: keyof EvalFilters | 'takenDate' | 'filename'; value: string | boolean } | null;
 export type EvalAnswer = {
   id: string;
   filters: EvalFilters | null;
@@ -66,9 +66,13 @@ export function readFixtures(cases: unknown, library: unknown, replay: unknown) 
   return { questions, assets, plans };
 }
 
-function supports(asset: EvalAsset | undefined, { field, value }: Reason) {
-  if (!asset || asset.locked || asset.otherOwner) {
+function supports(asset: EvalAsset | undefined, claim: Reason) {
+  if (!asset || asset.locked || asset.otherOwner || !claim) {
     return false;
+  }
+  const { field, value } = claim;
+  if (field === 'takenDate') {
+    return asset.takenAt.slice(0, 10) === value;
   }
   if (field === 'takenAfter' || field === 'takenBefore') {
     if (typeof value !== 'string') {
@@ -82,7 +86,7 @@ function supports(asset: EvalAsset | undefined, { field, value }: Reason) {
   if (Array.isArray(evidence)) {
     return typeof value === 'string' && evidence.includes(value);
   }
-  if (['ocr', 'spoken', 'description'].includes(field)) {
+  if (['ocr', 'spoken', 'description', 'filename'].includes(field)) {
     return (
       typeof value === 'string' && typeof evidence === 'string' && evidence.toLowerCase().includes(value.toLowerCase())
     );

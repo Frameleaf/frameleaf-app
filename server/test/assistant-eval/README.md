@@ -38,9 +38,11 @@ threshold enforcement. The existing endpoint has a response-level explanation,
 so it scores zero for per-hit reasons. Set
 `FRAMELEAF_ASSISTANT_EVAL_MODE=baseline` before the same command.
 
-Live qualification requires the planner and Assistant API. Its per-hit claims
-must come from the actual Assistant response. Replay and baseline results
-cannot qualify the release.
+Set `FRAMELEAF_ASSISTANT_EVAL_MODE=assistant` to score the Assistant HTTP
+response with recorded plans. The regular replay run also exercises the
+Assistant HTTP response with a local fixture worker. Both use the seeded
+library and fixture authentication. These runs verify the harness and the
+API contract. Release qualification requires an actual planner model.
 
 ## Candidate planner benchmarking
 
@@ -48,6 +50,31 @@ Run a candidate exposing the FL-847 `POST /assistant/plan` contract on a test
 worker. Set `FRAMELEAF_ASSISTANT_EVAL_MODE=live` and set
 `FRAMELEAF_ASSISTANT_PLANNER_URL` to its HTTP(S) origin before invoking the same
 command. Only synthetic questions and catalogue names are sent. Live planning
-reports the accepted plan rate and end-to-end fixture retrieval metrics.
-Its reason claims come from the evaluation harness. Release qualification
-still requires reasons returned by the actual Assistant API.
+reports the accepted plan rate and fixture retrieval metrics. This mode uses
+the evaluator's reason claims.
+
+## Live Assistant qualification
+
+From a clean candidate checkout, start a test worker built from that candidate's
+ML source with its pinned default planner available. Use only a disposable
+worker and test database. The harness sends synthetic questions and catalogue
+names, runs the production Assistant controller and service, and scores the
+plans, result IDs, structured reason claims, and latency in the HTTP response.
+The fixture supplies the test session, catalogue entries, and ML destination.
+
+```sh
+FRAMELEAF_ASSISTANT_EVAL_MODE=qualification \
+FRAMELEAF_ASSISTANT_PLANNER_URL=http://127.0.0.1:3003 \
+FRAMELEAF_ASSISTANT_QUALIFICATION_REPORT=/tmp/frameleaf-assistant-qualification.json \
+  pnpm --filter frameleaf test:assistant-eval
+
+node .github/assistant-qualification.mjs /tmp/frameleaf-assistant-qualification.json "$(git rev-parse HEAD)"
+```
+
+The evaluator checks the candidate's default planner against the worker's
+advertised capabilities and rejects runs with protected results or insufficient
+model use. It writes the report only after all quality thresholds pass, and
+requires a fresh report path. The checker accepts only qualification reports for
+the specified source SHA and that commit's default planner. Its input must come
+from a trusted candidate qualification run. The checker does not authenticate
+the report's producer or attest to the worker image's provenance.

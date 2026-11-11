@@ -58,6 +58,8 @@ jobs:
         run: node --test scripts/frameleaf-devcontainer-startup.test.mjs
       - name: Validate public Docker Hub mirror configuration
         run: node --test scripts/dockerhub-mirror.test.mjs scripts/ci-registry-images.test.mjs
+      - name: Validate Assistant qualification evidence
+        run: node --test .github/assistant-qualification.test.mjs
       - name: Validate medium native runner contract
         run: node --test docker/medium-runner.test.mjs
       - name: Validate canonical restore fixture mutations
