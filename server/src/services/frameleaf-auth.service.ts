@@ -910,12 +910,20 @@ export class FrameleafAuthService extends BaseService {
       throw new BadRequestException('OAuth code verifier is missing');
     }
     try {
-      return await this.oauthRepository.getProfileAndOAuthSid(
+      const { profile, idClaims, ...rest } = await this.oauthRepository.getProfileAndOAuthSid(
         config,
         frameleafCallbackUrl(dto.url),
         expectedState,
         codeVerifier,
       );
+      // how the person signed in (amr, acr, auth_time) is an ID token claim, never a userinfo one: the verified
+      // ID token's value wins and a value only userinfo carries is dropped (other claims are untouched)
+      const signedIn: Record<string, unknown> = { ...profile };
+      for (const claim of ['amr', 'acr', 'auth_time']) {
+        if (idClaims && claim in idClaims) signedIn[claim] = idClaims[claim];
+        else delete signedIn[claim];
+      }
+      return { ...rest, profile: signedIn as OAuthProfile };
     } catch (error) {
       this.logger.warn(`Sign in with Frameleaf failed: ${error}`);
       throw new UnauthorizedException('Sign in with Frameleaf did not finish. Try again.');
