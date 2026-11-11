@@ -162,13 +162,22 @@
     step = "choose";
   }
   async function poll(id: string) {
-    const reply = await ask({ type: "media-poll", id });
+    // not through ask(): nothing on the panel changes until the reply is known to be current
+    const reply = await sendRequest({ type: "media-poll", id }).catch(
+      () => null,
+    );
     // a reply for an inspection the user has left (Back, then another) is dropped
     if (disposed || step !== "inspecting" || operation?.id !== id) return;
-    if (reply?.operation) show(reply.operation);
-    // any error ends the wait; only a reply that simply hasn't come yet is asked for again
-    else if (problem || error) step = "menu";
-    else timer = setTimeout(() => void poll(id), 3000);
+    if (reply?.ok && reply.media?.operation) show(reply.media.operation);
+    else if (reply?.ok) timer = setTimeout(() => void poll(id), 3000);
+    else {
+      // any error ends the wait
+      error =
+        reply?.error ??
+        "Could not reach the extension. Reopen it and try again.";
+      problem = reply?.mediaProblem ?? null;
+      step = "menu";
+    }
   }
   async function inspectPage(next: "page" | "subscribe") {
     busy = true;
