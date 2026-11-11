@@ -1621,7 +1621,7 @@
   "person": "אדם",
   "person_age_months": "{months, plural, one {חודש #} other {# חודשים}}",
   "person_age_year_months": "בגיל שנה ו{months, plural, one {חודש #} other {# חודשים}}",
-  "person_age_years": "בגיל {years, plural,one{#שנה}, other {# שנים}}",
+  "person_age_years": "בגיל {years, plural, one {# שנה} other {# שנים}}",
   "person_birthdate": "נולד בתאריך {date}",
   "person_hidden": "{name}{hidden, select, true { (מוסתר)} other {}}",
   "person_recognized": "זוהה אדם",
