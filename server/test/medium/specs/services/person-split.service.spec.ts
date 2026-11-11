@@ -151,17 +151,28 @@ describe('PersonService split suggestions (FL-1385)', () => {
     expect(user.id).toBe(auth.user.id);
   });
 
-  it('puts every face back when a move fails after its write, and keeps the suggestion', async () => {
+  // `recordFaceCorrections` fails inside the move's transaction, so the face write is rolled back and the
+  // empty new person is removed; `createNewFeaturePhoto` fails after that transaction has committed, so
+  // the face is on the new person and has to be merged back.
+  it.each([
+    ['before its write is committed', 'recordFaceCorrections', false],
+    ['after its write is committed', 'createNewFeaturePhoto', true],
+  ] as const)('puts every face back when a move fails %s, and keeps the suggestion', async (_, method, committed) => {
     const { sut, ctx, auth, jamie } = await setup();
     const personId = jamie.person.personGroupId;
     await sut.handlePersonCleanup();
     const peopleBefore = await ctx.database.selectFrom('person').select('personGroupId').execute();
-    // the first face is written to the new person, then its history entry fails
-    const record = vi.spyOn(sut, 'recordFaceCorrections').mockRejectedValueOnce(new Error('history is unavailable'));
+    const merge = vi.spyOn(sut, 'mergePeople');
+    const failure = vi.spyOn(sut, method).mockRejectedValueOnce(new Error('the move could not finish'));
 
-    await expect(sut.setSplitVerdict(auth, { personId, verdict: 'split' })).rejects.toThrow('history is unavailable');
-    record.mockRestore();
+    await expect(sut.setSplitVerdict(auth, { personId, verdict: 'split' })).rejects.toThrow(
+      'the move could not finish',
+    );
+    failure.mockRestore();
 
+    // a committed move is taken back by merging the new person into the one the face came from
+    expect(merge).toHaveBeenCalledTimes(committed ? 1 : 0);
+    merge.mockRestore();
     const faces = await ctx.database
       .selectFrom('asset_face')
       .select('id')
