@@ -25,17 +25,22 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BASE_SERVICE_DEPENDENCIES } from 'src/services/base.service.js';
 import { MediaService } from 'src/services/media.service.js';
@@ -87,6 +92,19 @@ const REAL: Dependency[] = [
   TagRepository,
 ];
 
+// What the services touch beyond the database and the file system (the medium factory can mock these).
+const MOCK: Dependency[] = [
+  ConfigRepository,
+  DatabaseRepository,
+  EventRepository,
+  JobRepository,
+  LoggingRepository,
+  MachineLearningRepository,
+  MapRepository,
+  MlDestinationRepository,
+  WebsocketRepository,
+];
+
 let db: Kysely<DB>;
 let mediaLocation: string;
 let ownerId: string;
@@ -99,7 +117,7 @@ const newCorpusContext = <S extends typeof MetadataService | typeof MediaService
   const ctx = new MediumTestContext(Service, {
     database: db,
     real: REAL,
-    mock: BASE_SERVICE_DEPENDENCIES.filter((dependency) => !REAL.includes(dependency)),
+    mock: MOCK,
   });
   ctx.getMock(ConfigRepository).getEnv.mockReturnValue(mockEnvData({}));
   ctx.getMock(EventRepository).emit.mockResolvedValue();
