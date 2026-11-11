@@ -467,6 +467,8 @@ describe('Frameleaf Activity page', () => {
     expect(screen.queryByRole('button', { name: 'Back to library' })).not.toBeInTheDocument();
     // Nobody who may not pause the server's work is offered it.
     expect(screen.queryByRole('button', { name: 'Pause all' })).not.toBeInTheDocument();
+    // FL-1457 (N8): nor the footnote about background jobs, which reads as a leftover on an empty page.
+    expect(screen.queryByText(en.frameleaf_activity_footnote)).not.toBeInTheDocument();
   });
 
   it('keeps the filters, and says so in the same pattern, when only the chosen filter is empty', async () => {
@@ -821,8 +823,14 @@ describe('Frameleaf Activity page', () => {
       }),
     ]);
 
-    const section = await screen.findByRole('region', { name: /Needs a look/ });
-    const card = within(section).getByRole('article', { name: 'The scan of “Family archive” was interrupted' });
+    // FL-1457 (prototype `ScanInterrupted`): a card of its own, the page's width above the status line, not one of
+    // the cards under "Needs a look".
+    const card = await screen.findByRole('article', { name: 'The scan of “Family archive” was interrupted' });
+    expect(card.closest('section')).toBeNull();
+    expect(screen.queryByRole('region', { name: /Needs a look/ })).not.toBeInTheDocument();
+    const status = screen.getByRole('region', { name: 'How the work is going' });
+    expect(card.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(card).getByRole('heading', { level: 2 })).toBeInTheDocument();
     expect(card).toHaveTextContent('The server restarted while it was reading the folder. Nothing was lost');
     // Not the old row: "Failed", the raw message in the main line and only a dismiss button.
     expect(within(card).queryByText('Failed')).not.toBeInTheDocument();

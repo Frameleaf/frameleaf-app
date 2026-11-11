@@ -157,7 +157,13 @@
   /* FL-1388: what ended well is one line each; everything else that ended keeps its card, reason and Retry. */
   const ended = $derived(visible.filter((item) => !isProgressStage(item.stage)));
   const finishedRows = $derived(buildFinishedRows(ended));
-  const needsLook = $derived(ended.filter((item) => !matchesActivityFilter(item, 'done')));
+  const endedBadly = $derived(ended.filter((item) => !matchesActivityFilter(item, 'done')));
+  /**
+   * FL-1457 (prototype Activity.jsx `ScanInterrupted`): a stopped library scan is a card of its own, full width above
+   * the page's status line, not one of the cards under "Needs a look".
+   */
+  const stoppedScans = $derived(endedBadly.filter((item) => item.scan === 'interrupted' || item.scan === 'drive'));
+  const needsLook = $derived(endedBadly.filter((item) => !stoppedScans.includes(item)));
   /** What the Done chip counts whatever the filter: lines, not runs. */
   const finishedCount = $derived(buildFinishedRows(items.filter((item) => !isProgressStage(item.stage))).length);
   /**
@@ -635,6 +641,19 @@
     </div>
   {/if}
 
+  {#if stoppedScans.length > 0}
+    <div class="fla-stopped">
+      {#each stoppedScans as item (item.id)}
+        <ActivityScanStopped
+          {item}
+          busy={busyId === item.id}
+          onScanAgain={(libraryId) => scanAgain(item, libraryId)}
+          onDismiss={() => dismiss(item)}
+        />
+      {/each}
+    </div>
+  {/if}
+
   <!-- The page's answer (prototype `.fw3-status`): how the work is going, Pause all, and its settings. -->
   {#if allQuiet}
     <EmptyState
@@ -867,16 +886,7 @@
       </h2>
       <div class="fla-list">
         {#each needsLook as item (item.id)}
-          {#if item.scan === 'interrupted' || item.scan === 'drive'}
-            <ActivityScanStopped
-              {item}
-              busy={busyId === item.id}
-              onScanAgain={(libraryId) => scanAgain(item, libraryId)}
-              onDismiss={() => dismiss(item)}
-            />
-          {:else}
-            {@render card(item, visible.indexOf(item), 'h3')}
-          {/if}
+          {@render card(item, visible.indexOf(item), 'h3')}
         {/each}
         <ActivityLeftOver runs={leftOver} onChanged={() => void runningJobsSession.refresh()} />
       </div>
@@ -1004,9 +1014,12 @@
     </section>
   {/if}
 
-  <footer class="fla-footer">
-    <span class="muted">{$t('frameleaf_activity_footnote')}</span>
-  </footer>
+  <!-- FL-1457 (N8): an empty page has nothing for the footnote to be about. -->
+  {#if !allQuiet}
+    <footer class="fla-footer">
+      <span class="muted">{$t('frameleaf_activity_footnote')}</span>
+    </footer>
+  {/if}
 </main>
 
 <style>
@@ -1125,6 +1138,12 @@
     flex: 1;
   }
   /* activity.css `.fw3-status`: the page's answer, with what to do about it. */
+  /* FL-1457 (messy-1110.css `.act-interrupted`): the page's width, 24px above the status line. */
+  .fla-stopped {
+    display: grid;
+    gap: var(--fl-space-3);
+    margin: 0 0 var(--fl-space-6);
+  }
   .fw3-status {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
