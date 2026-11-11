@@ -778,6 +778,44 @@ describe(FrameleafAuthService.name, () => {
         expect(mocks.session.create).not.toHaveBeenCalled();
       });
 
+      it('creates neither link nor session when the password changes right after the early check', async () => {
+        const { transaction } = await refusal(
+          sut.exchangeToken({ token: await mint({ jti: 'j12', claims: basicClaims }) }, capable),
+        );
+        // the account's password as the database holds it; the repositories fence on it (proved in the medium spec)
+        let current = 'bcrypt-hash';
+        const links: unknown[] = [];
+        mocks.user.getForChangePassword.mockImplementation(() => {
+          const answer = { id: existing.id, password: current };
+          // the step-up's proof and its early check both read 'bcrypt-hash'; the change lands after the early check
+          if (mocks.user.getForChangePassword.mock.calls.length >= 2) {
+            current = 'changed-hash';
+          }
+          return Promise.resolve(answer);
+        });
+        mocks.frameleafAccount.upsertLink.mockImplementation((row, expected) => {
+          if (expected !== undefined && expected !== current) {
+            return Promise.reject(new UnauthorizedException('This sign-in expired'));
+          }
+          links.push(row);
+          return Promise.resolve({ ...row, access: null, linkedAt: new Date(), lastSignInAt: null } as never);
+        });
+        mocks.session.create.mockImplementation((row, expected) =>
+          expected !== undefined && expected !== current
+            ? Promise.reject(new UnauthorizedException('Incorrect email or password'))
+            : Promise.resolve({ id: 'session-1', ...row } as never),
+        );
+
+        await expect(sut.stepUp({ transaction, password: 'password' }, capable)).rejects.toMatchObject({ status: 401 });
+
+        expect(current).toBe('changed-hash');
+        // the early check passed; the link write's own fence refused the changed password
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(expect.anything(), 'bcrypt-hash');
+        expect(links).toEqual([]);
+        expect(mocks.session.create).not.toHaveBeenCalled();
+        expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
+      });
+
       it('fences the link write itself with the proved password', async () => {
         const { transaction } = await refusal(
           sut.exchangeToken({ token: await mint({ jti: 'j11', claims: basicClaims }) }, capable),
