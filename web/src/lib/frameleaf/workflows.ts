@@ -91,9 +91,10 @@ export function workflowIssueMessage(issue: WorkflowIssueDto, localProblems: rea
       if (local) {
         return local;
       }
-      // For a step the server names the field at fault: a general sentence would hide it.
+      // For a step the server names the field at fault ("Step 3 / Album name must be text."): a
+      // general sentence would hide it. It stays in the server's English until both sides share a rule.
       if (issue.step !== undefined && issue.message) {
-        return `${step}: ${issue.message}`;
+        return issue.message;
       }
       return translate(
         issue.step === undefined
