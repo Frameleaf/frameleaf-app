@@ -26,6 +26,7 @@
     libraryPreferenceKey,
     type LibraryLayout,
   } from '$lib/frameleaf/library-session';
+  import type { DisplayFormat } from '$lib/frameleaf/date-format';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -87,6 +88,8 @@
     'search.includeArchived',
     'search.classic',
     'trash.reuploadUntil',
+    'display.dateFormat',
+    'display.hourCycle',
   ]);
 
   /** FL-556: a 24-hour window, turned on here and off by itself (the server caps it at 24 hours). */
@@ -161,6 +164,32 @@
             onChange={(value) => ($locale = value)}
           />
         {/if}
+      </Row>
+      <!-- FL-783: the account's date order and clock, whatever the language (prototype preferences.jsx). -->
+      <Row label={$t('frameleaf_prefs_look_date_format')} help={$t('frameleaf_prefs_look_date_format_help')}>
+        <Select
+          label={$t('frameleaf_prefs_look_date_format')}
+          value={albums.draft['display.dateFormat']}
+          options={[
+            { value: 'auto', label: $t('frameleaf_prefs_look_format_auto') },
+            { value: 'iso', label: '2026-11-01' },
+            { value: 'dmy', label: '01/11/2026' },
+            { value: 'mdy', label: '11/01/2026' },
+          ]}
+          onChange={(value) => albums.set('display.dateFormat', value as DisplayFormat['dateFormat'])}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_look_time_format')} help={$t('frameleaf_prefs_look_time_format_help')}>
+        <Select
+          label={$t('frameleaf_prefs_look_time_format')}
+          value={albums.draft['display.hourCycle']}
+          options={[
+            { value: 'auto', label: $t('frameleaf_prefs_look_format_auto') },
+            { value: 'h12', label: $t('frameleaf_prefs_look_time_format_h12') },
+            { value: 'h23', label: $t('frameleaf_prefs_look_time_format_h23') },
+          ]}
+          onChange={(value) => albums.set('display.hourCycle', value as DisplayFormat['hourCycle'])}
+        />
       </Row>
       <Row label={$t('frameleaf_prefs_look_motion')} help={$t('frameleaf_prefs_look_motion_help')}>
         <Switch

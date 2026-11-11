@@ -1,10 +1,14 @@
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
-import { timelineAssetFactory } from '@test-data/factories/asset-factory';
+import { timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
 import { TimelineManager } from '../timeline-manager.svelte';
 import { isMismatched, updateObject } from './utils.svelte';
 
 const managers: TimelineManager[] = [];
+beforeEach(() => {
+  sdkMock.getTimeBucket.mockResolvedValue(toResponseDto());
+});
+
 afterEach(() => {
   for (const manager of managers) {
     manager.destroy();

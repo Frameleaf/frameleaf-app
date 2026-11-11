@@ -1,5 +1,11 @@
 <script lang="ts">
   import { onMount, untrack, type Snippet } from 'svelte';
+  import {
+    EVERY_FOLDABLE_ACTION,
+    foldedAlbumActions,
+    isWideAlbumHeader,
+    type FoldableAction,
+  } from '$lib/frameleaf/album-header-folds';
   import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
@@ -241,30 +247,15 @@
   const boardsHead = $derived(boards && !!addMenu && !phone.current);
   const folded = $derived(compact || boards);
   /**
-   * The header's own width (so the Work panel beside the grid counts as well as the window): the
-   * secondary actions fold into "…" as it narrows, so the row never wraps and leaves "…" alone on a
-   * second line (prototype CollectionHeader.jsx `WIDTH_FOLDS`). 0 until it has been measured.
+   * The header's width with the page gutters beside it (`.measure`), so the Work panel beside the
+   * grid counts as well as the window: the secondary actions fold into "…" as it narrows, so the
+   * row never wraps and leaves "…" alone on a second line. A header wide enough puts its actions
+   * beside the title, so the photos start higher. The rules are the prototype's
+   * (`album-header-folds.ts`). 0 until it has been measured.
    */
   let headerWidth = $state(0);
-  type FoldableAction = 'matching' | 'links' | 'map' | 'slideshow' | 'movie' | 'download' | 'activity';
-  const WIDTH_FOLDS: [number, FoldableAction[]][] = [
-    [840, ['links', 'map', 'movie', 'download']],
-    [1060, ['links', 'map']],
-  ];
-  /**
-   * A header this wide puts its actions beside the title, so the photos start higher; the title keeps
-   * about WIDE_TITLE px and the actions fold by what is left (approved design, 2026-11-04).
-   */
-  const WIDE = 1180;
-  const WIDE_TITLE = 560;
-  const wide = $derived(!compact && headerWidth >= WIDE);
-  const foldedActions = $derived.by((): Set<FoldableAction> => {
-    if (folded) {
-      return new Set(['matching', 'links', 'map', 'slideshow', 'movie', 'download', 'activity']);
-    }
-    const room = wide ? headerWidth - WIDE_TITLE : headerWidth;
-    return new Set(headerWidth > 0 ? (WIDTH_FOLDS.find(([max]) => room <= max)?.[1] ?? []) : []);
-  });
+  const wide = $derived(!compact && isWideAlbumHeader(headerWidth));
+  const foldedActions = $derived(new Set(folded ? EVERY_FOLDABLE_ACTION : foldedAlbumActions(headerWidth)));
   const inRow = (action: FoldableAction) => !foldedActions.has(action);
   /**
    * A shared space opens here (owner, 2026-11-05), so its contributors get the space's "Add matching…"
@@ -566,8 +557,8 @@
   class:boards-head={boardsHead}
   class:boards-page={boards}
   aria-label={kindLabel}
-  bind:clientWidth={headerWidth}
 >
+  <div class="measure" bind:clientWidth={headerWidth}></div>
   {#if compact && uploadScope === LibraryScope.Design}
     <!-- Boards on a phone: the rail is the "Collections and filters" sheet (prototype screen 22). -->
     <button
@@ -1343,12 +1334,21 @@
     cursor: pointer;
   }
   .album-header {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
     /* The layout switch follows the actions closely (`.collection-header.compact`), with no band between. */
     padding-block: 1rem 0.25rem;
     color: var(--fl-text);
+  }
+  /* As wide as the header and the page gutters beside it: the width the fold rules are written for. */
+  .measure {
+    position: absolute;
+    inset-inline: calc(-1 * var(--fl-library-gutter-start, 0px)) calc(-1 * var(--fl-library-gutter-end, 0px));
+    block-size: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
   .crumbs {
     display: flex;

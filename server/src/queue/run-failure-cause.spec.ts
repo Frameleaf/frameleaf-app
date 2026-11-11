@@ -4,6 +4,7 @@ import {
   NIGHTLY_RUN_KINDS,
   RUN_FAILURE_CAUSES,
   runFailureCause,
+  singleMessage,
 } from 'src/queue/run-failure-cause.js';
 
 const upload = { asset: true, external: false, offline: false, finding: null };
@@ -33,6 +34,30 @@ describe('runFailureCause', () => {
     expect(runFailureCause({ ...external, error })).toBe('drive');
     expect(runFailureCause({ ...external, error: 'EHOSTDOWN: host is down' })).toBe('drive');
     expect(runFailureCause({ ...upload, error: 'Original file not found' })).toBe('missing');
+  });
+
+  it("exiftool's damaged-file wordings, also doubled, are damaged (FL-1430)", () => {
+    for (const error of [
+      'File format error',
+      'File format error; File format error',
+      'Entire file is binary zeros',
+      'Entire file is binary zeros; Entire file is binary zeros',
+    ]) {
+      expect(runFailureCause({ ...upload, error })).toBe('damaged');
+      expect(runFailureCause({ ...external, error })).toBe('damaged');
+    }
+    // a network or model error that merely says "format" or "zeros" stays other
+    expect(runFailureCause({ ...upload, error: 'Response format error from the model server' })).toBe('other');
+  });
+
+  it('shows a message exiftool doubled once', () => {
+    expect(singleMessage('File format error; File format error')).toBe('File format error');
+    expect(singleMessage('Entire file is binary zeros; Entire file is binary zeros')).toBe(
+      'Entire file is binary zeros',
+    );
+    expect(singleMessage('Bad IFD; Truncated')).toBe('Bad IFD; Truncated');
+    expect(singleMessage('Timed out')).toBe('Timed out');
+    expect(singleMessage(null)).toBeNull();
   });
 
   it("machine learning's not found is not a missing file", () => {

@@ -233,6 +233,33 @@ describe(AssetMediaService.name, () => {
     },
   );
 
+  it.each(['recording.wav', 'model.glb', 'offline.mhtml', 'poster.afdesign', 'README'])(
+    'keeps %s as a downloadable Boards original',
+    async (originalName) => {
+      const originalPath = '/data/upload/user/file.bin';
+      const file = { ...fileStub.livePhotoStill, originalPath, originalName };
+      const dto = { ...createDto, filename: originalName, libraryScope: LibraryScope.Design };
+      const request = uploadFile.filename(UploadFieldName.ASSET_DATA, originalName, { libraryScope: 'design' });
+      expect(sut.canUploadFile(request)).toBe(true);
+      expect(sut.getUploadFilename(request)).toBe('random-uuid.bin');
+      await expect(sut.prepareUploadAsset(authStub.user1, dto, file)).resolves.toMatchObject({
+        asset: { type: AssetType.Other, originalFileName: originalName, libraryScope: LibraryScope.Design },
+      });
+      await expect(
+        sut.prepareUploadAsset(authStub.user1, { ...dto, libraryScope: LibraryScope.Personal }, file),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      const asset = AssetFactory.from({ originalFileName: originalName, originalPath, type: AssetType.Other }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue(asset);
+      await expect(sut.downloadOriginal(authStub.admin, asset.id, {})).resolves.toMatchObject({
+        fileName: originalName,
+        contentType: 'application/octet-stream',
+        attachment: true,
+      });
+    },
+  );
+
   describe('fonts (FL-1359)', () => {
     const font = {
       ...fileStub.livePhotoStill,

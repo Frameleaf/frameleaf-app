@@ -16298,6 +16298,15 @@
         "operationId": "getProcessingFailures",
         "parameters": [
           {
+            "name": "includeDismissed",
+            "required": false,
+            "in": "query",
+            "description": "Also list failures someone chose to keep as they are or to stop trying (FL-1409)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "skip",
             "required": false,
             "in": "query",
@@ -16306,6 +16315,15 @@
               "maximum": 9007199254740991,
               "default": 0,
               "type": "integer"
+            }
+          },
+          {
+            "name": "step",
+            "required": false,
+            "in": "query",
+            "description": "Only failures of this step",
+            "schema": {
+              "$ref": "#/components/schemas/ProcessingFailureStep"
             }
           },
           {
@@ -21792,6 +21810,55 @@
           }
         ],
         "summary": "Ask the Library Assistant",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/assistant/classic": {
+      "post": {
+        "description": "Record a local switch to Classic search from an Assistant answer. Expired, previously used, and other-session tokens are ignored.",
+        "operationId": "recordAssistantSwitchBack",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSwitchBackDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record a switch to Classic search",
         "tags": [
           "Search"
         ],
@@ -31960,6 +32027,15 @@
         "operationId": "getJobRunFailures",
         "parameters": [
           {
+            "name": "foldNightly",
+            "required": false,
+            "in": "query",
+            "description": "As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "id",
             "required": true,
             "in": "path",
@@ -32018,6 +32094,15 @@
         "description": "Try again now (retry) the photos left over because a drive can't be reached or for other reasons, or stop trying (stop) the ones whose format can't be read. Stopping keeps their history; nightly processing no longer picks them.",
         "operationId": "actOnJobRunFailures",
         "parameters": [
+          {
+            "name": "foldNightly",
+            "required": false,
+            "in": "query",
+            "description": "As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again",
+            "schema": {
+              "type": "boolean"
+            }
+          },
           {
             "name": "id",
             "required": true,
@@ -83013,6 +83098,12 @@
             "description": "One line describing what was searched",
             "type": "string"
           },
+          "switchBackToken": {
+            "description": "Opaque token for reporting a switch to Classic search from this answer",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "warnings": {
             "description": "Parts of the question that could not be used",
             "items": {
@@ -83179,6 +83270,21 @@
         "required": [
           "kind",
           "text"
+        ],
+        "type": "object"
+      },
+      "AssistantSwitchBackDto": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "The switch-back token from the Assistant answer",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
         ],
         "type": "object"
       },
@@ -95558,6 +95664,52 @@
         },
         "type": "object"
       },
+      "DisplayDateFormat": {
+        "description": "FL-783: date order. auto follows the region; iso is 2026-11-01, dmy 01/11/2026, mdy 11/01/2026",
+        "enum": [
+          "auto",
+          "iso",
+          "dmy",
+          "mdy"
+        ],
+        "type": "string"
+      },
+      "DisplayHourCycle": {
+        "description": "FL-783: clock. auto follows the region; h12 is 2:30 PM, h23 is 14:30",
+        "enum": [
+          "auto",
+          "h12",
+          "h23"
+        ],
+        "type": "string"
+      },
+      "DisplayPreferencesResponse": {
+        "properties": {
+          "dateFormat": {
+            "$ref": "#/components/schemas/DisplayDateFormat"
+          },
+          "hourCycle": {
+            "$ref": "#/components/schemas/DisplayHourCycle"
+          }
+        },
+        "required": [
+          "dateFormat",
+          "hourCycle"
+        ],
+        "type": "object"
+      },
+      "DisplayPreferencesUpdate": {
+        "description": "FL-783: how dates and times appear, independent of the language",
+        "properties": {
+          "dateFormat": {
+            "$ref": "#/components/schemas/DisplayDateFormat"
+          },
+          "hourCycle": {
+            "$ref": "#/components/schemas/DisplayHourCycle"
+          }
+        },
+        "type": "object"
+      },
       "DocumentEditAction": {
         "description": "What the owner decided about recognized text",
         "enum": [
@@ -97249,7 +97401,7 @@
             "type": "array"
           },
           "supported": {
-            "description": "File types this import brings over (lower case, no dot)",
+            "description": "File extensions this import accepts (lower case, no dot). * includes downloadable originals.",
             "items": {
               "type": "string"
             },
@@ -105476,6 +105628,12 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "superseded": {
+            "description": "With foldNightly: photos left over here that newer work left over again; they are counted on its card, not here",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -105483,6 +105641,15 @@
           "countsPhotos",
           "photos"
         ],
+        "type": "object"
+      },
+      "JobRunFailuresSearchDto": {
+        "properties": {
+          "foldNightly": {
+            "description": "As Recent work's card counts them (foldNightly): a folded night's runs together, without the photos newer work left over again",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "JobRunItemPageDto": {
@@ -105663,6 +105830,65 @@
       },
       "JobRunPageDto": {
         "properties": {
+          "fileCheck": {
+            "description": "With foldNightly, on the first page: Library care's checks for missing and damaged files, running now or finished in the last 12 hours",
+            "properties": {
+              "checked": {
+                "description": "Files checked so far; while a check runs this is often still 0",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "damaged": {
+                "description": "Files the finished checks found damaged",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "failed": {
+                "description": "A finished check failed or was cancelled: it didn't finish its work",
+                "type": "boolean"
+              },
+              "finishedAt": {
+                "description": "When the last one finished; null while any still runs",
+                "format": "date-time",
+                "nullable": true,
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "missing": {
+                "description": "Files the finished checks found missing",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "running": {
+                "description": "Some of the checks are still going",
+                "type": "boolean"
+              },
+              "startedAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "total": {
+                "description": "Files to check; 0 when not known yet",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "running",
+              "startedAt",
+              "finishedAt",
+              "checked",
+              "total",
+              "damaged",
+              "missing"
+            ],
+            "type": "object"
+          },
           "hasNextPage": {
             "type": "boolean"
           },
@@ -105704,6 +105930,10 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "countedOnce": {
+            "description": "With foldNightly, on the night card: false when its photos could not be counted once each (too many, or their tasks are pruned); its numbers are then tasks (stageTotals)",
+            "type": "boolean"
           },
           "countsPhotos": {
             "description": "The counts are photos; when false they are tasks (the run works on something other than photos)",
@@ -105860,6 +106090,10 @@
               "nights"
             ],
             "type": "object"
+          },
+          "libraryName": {
+            "description": "A folder scan's library, while it exists",
+            "type": "string"
           },
           "needsAttention": {
             "maximum": 9007199254740991,
@@ -137910,11 +138144,19 @@
       },
       "ProcessingFailureQueryDto": {
         "properties": {
+          "includeDismissed": {
+            "description": "Also list failures someone chose to keep as they are or to stop trying (FL-1409)",
+            "type": "boolean"
+          },
           "skip": {
             "default": 0,
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "step": {
+            "$ref": "#/components/schemas/ProcessingFailureStep",
+            "description": "Only failures of this step"
           },
           "take": {
             "default": 100,
@@ -144093,6 +144335,12 @@
       },
       "SearchAssetResponseDto": {
         "properties": {
+          "closeMatches": {
+            "description": "How many of the leading items are close matches for the search; the rest are looser. Only on the first page of a search ranked by meaning, and absent when the search cannot tell close from loose",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "count": {
             "description": "Number of assets in this page",
             "maximum": 9007199254740991,
@@ -146913,6 +147161,10 @@
       },
       "ServerMediaTypesResponseDto": {
         "properties": {
+          "boardsOriginals": {
+            "description": "Boards accepts other files as downloadable originals",
+            "type": "boolean"
+          },
           "font": {
             "description": "Font file extensions an upload into Boards (libraryScope=design) accepts",
             "items": {
@@ -164158,6 +164410,9 @@
           "clients": {
             "$ref": "#/components/schemas/ClientsResponse"
           },
+          "display": {
+            "$ref": "#/components/schemas/DisplayPreferencesResponse"
+          },
           "download": {
             "$ref": "#/components/schemas/DownloadResponse"
           },
@@ -164299,6 +164554,9 @@
           },
           "clients": {
             "$ref": "#/components/schemas/ClientsUpdate"
+          },
+          "display": {
+            "$ref": "#/components/schemas/DisplayPreferencesUpdate"
           },
           "download": {
             "$ref": "#/components/schemas/DownloadUpdate"

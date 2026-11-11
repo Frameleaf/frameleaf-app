@@ -11,6 +11,7 @@
    * replaying a date the panel never saw would be a guess. A stale asset is reloaded instead.
    */
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import ViewerDateDialog from '$lib/components/frameleaf/ViewerDateDialog.svelte';
@@ -38,6 +39,19 @@
       : fromISODateTimeUTC(asset.localDateTime),
   );
   const isOwner = $derived(authManager.authenticated && asset.ownerId === authManager.user.id);
+  /**
+   * The prototype's two lines (MediaViewer.jsx "Captured"; UI review 2026-11-10, A5): the day, then
+   * the time with the zone's name after it when the photo has one. No seconds and no GMT offset.
+   * Both follow the person's date and time format (FL-783).
+   */
+  const dateLine = $derived(
+    dateTime && formatLuxon(dateTime, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }, $locale),
+  );
+  const timeLine = $derived(
+    [dateTime && formatLuxon(dateTime, { hour: 'numeric', minute: '2-digit' }, $locale), timeZone?.replaceAll('_', ' ')]
+      .filter(Boolean)
+      .join(' · '),
+  );
 
   let failure = $state<InlineEditFailure | null>(null);
 
@@ -115,26 +129,8 @@
       <Icon icon={mdiCalendar} size="24" />
 
       <div>
-        <p>
-          {dateTime.toLocaleString({ month: 'short', day: 'numeric', year: 'numeric' }, { locale: $locale })}
-        </p>
-        <div class="flex gap-2 text-sm">
-          <p>
-            {dateTime.toLocaleString(
-              {
-                weekday: 'short',
-                hour: 'numeric',
-                minute: '2-digit',
-                second: '2-digit',
-                timeZoneName: timeZone ? 'longOffset' : undefined,
-              },
-              { locale: $locale },
-            )}
-          </p>
-        </div>
-        {#if timeZone}
-          <p class="text-sm text-gray-500 dark:text-gray-400">{timeZone.replaceAll('_', ' ')}</p>
-        {/if}
+        <p data-testid="detail-panel-date">{dateLine}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="detail-panel-time">{timeLine}</p>
         {#if asset.exifInfo?.dateEstimated}
           <p class="text-sm text-gray-500 dark:text-gray-400">{$t('frameleaf_info_date_estimated')}</p>
         {/if}

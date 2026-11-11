@@ -63,7 +63,23 @@ describe('CloudJobDialog: one confirmation per job', () => {
     vi.clearAllMocks();
   });
 
-  it('asks no per-job consent: the disclosure is a plain line and the terms go with the job', async () => {
+  it('does not confirm a displayed estimate when its Studio project is no longer current', async () => {
+    let current = true;
+    render(CloudJobDialog, {
+      open: true,
+      title: 'Cloud captions',
+      estimateWith: async () => estimate(null),
+      canSubmit: () => current,
+    });
+    const submit = await screen.findByRole('button', { name: /frameleaf_cloud_job_submit/ });
+    await waitFor(() => expect(submit).toBeEnabled());
+
+    current = false;
+    await fireEvent.click(submit);
+    expect(sdkMock.createCloudMlJob).not.toHaveBeenCalled();
+  });
+
+  it('confirms the disclosed estimate and terms only after pressing Run', async () => {
     sdkMock.estimateCloudMlJob.mockResolvedValue(estimate(null));
     sdkMock.createCloudMlJob.mockResolvedValue({ operationId: 'op-1' } as never);
     open();

@@ -326,6 +326,8 @@ const testJobNames = [
   "Unit Test CLI",
   "Unit Test CLI (Windows)",
   "Lint Web",
+  "Lint Web Half (components)",
+  "Lint Web Half (rest)",
   "Test Web",
   "Test i18n",
   "End-to-End Lint",
@@ -427,7 +429,7 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
   const evidence = await requireTestQualification(sha, fixture.request);
   assert.equal(evidence.runId, 42);
   assert.equal(evidence.attempt, 2);
-  assert.equal(evidence.jobs.length, 71);
+  assert.equal(evidence.jobs.length, 73);
   assert.equal(
     evidence.jobs.filter((job) =>
       job.name.startsWith("End-to-End Tests (Server & CLI)"),

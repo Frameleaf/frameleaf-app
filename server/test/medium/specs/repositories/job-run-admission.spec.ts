@@ -8,6 +8,7 @@ import { QueueExecution } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { QueueService } from 'src/services/queue.service.js';
+import { nightWork } from 'src/utils/night-work.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
 
 describe('atomic initial run admission', () => {
@@ -440,6 +441,72 @@ describe('atomic initial run admission', () => {
       'Job is already running',
     );
     expect(await runs()).toEqual([]);
+  });
+
+  it('marks the runs a scheduled night opens with that night, and only those (FL-1430)', async () => {
+    const night = { startedAt: '2026-11-11T02:33:00.226Z', manual: false };
+    jobs['handlers'][JobName.ImageDescription] = { queueName: queue as QueueName } as never;
+    const selectionOf = async (id: string) =>
+      (await db.selectFrom('job_run').select('selection').where('id', '=', id).executeTakeFirstOrThrow()).selection;
+
+    // the night queues a producer outside any run: the job carries its night ...
+    await nightWork.run(night, () => jobs.queue(item()));
+    const [producer] = await store.claim(queue, workerId);
+    expect(producer.data._night).toEqual(night);
+    // ... and the run it opens when it runs is the night's
+    const context: QueueExecution = {
+      claim: producer,
+      signal: new AbortController().signal,
+      progress: () => {},
+      progressUnits: 0,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    };
+    const producerRun = await queueExecution.run(context, () => jobs.ensureProducerRun());
+    expect(await selectionOf(producerRun!)).toEqual({ night });
+    // a folder scan the night's scan-all task queues opens its run marked too
+    const scan = randomUUID();
+    const libraryId = randomUUID();
+    await db
+      .transaction()
+      .execute((tx) =>
+        queueExecution.run(context, () => jobs['openLibraryScanRun'](tx, { operationId: scan, libraryId })),
+      );
+    expect(await selectionOf(scan)).toEqual({ libraryId, night });
+
+    // a selection the night queues outside a job, and a run it admits, are the night's too
+    const { runId: selected } = await nightWork.run(night, () =>
+      jobs.queueSelection(
+        JobName.ImageDescription,
+        db
+          .selectFrom('asset')
+          .select('id')
+          .where(sql<boolean>`false`),
+      ),
+    );
+    expect(await selectionOf(selected)).toEqual({ night });
+    const admitted = await nightWork.run(night, () => jobs.createRun(queue, { holds: {} }, async () => {}));
+    expect(await selectionOf(admitted)).toEqual({ holds: {}, night });
+
+    // the same work started by a person carries no night
+    const { runId: manual } = await jobs.queueSelection(
+      JobName.ImageDescription,
+      db
+        .selectFrom('asset')
+        .select('id')
+        .where(sql<boolean>`false`),
+    );
+    expect(await selectionOf(manual)).toEqual({});
+    await jobs.queue({ name: JobName.AssetEncodeVideoQueueAll, data: { force: false } });
+    const { rows } = await sql<{ data: Record<string, unknown> }>`select data from job
+      where queue = ${queue} and name = ${JobName.AssetEncodeVideoQueueAll}`.execute(db);
+    expect(rows.map(({ data }) => data._night)).toEqual([undefined]);
+    // a job queued again outside the night with the old data (a copy of the night's) carries no night
+    await jobs.queue({ name: JobName.LibraryScanRun, data: { _night: night } } as never);
+    const { rows: copied } = await sql<{ data: Record<string, unknown> }>`select data from job
+      where queue = ${queue} and name = ${JobName.LibraryScanRun}`.execute(db);
+    expect(copied.map(({ data }) => data._night)).toEqual([undefined]);
   });
 
   it('preserves caller-owned explicit run IDs outside createRun admission', async () => {
