@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # TEMPORARY (FL-883 bring-up, removed before merge)
+  push:
+    branches: [aj/fl-883-known-bad-corpus]
 
 permissions: {}
 
@@ -16,7 +19,7 @@ concurrency:
 jobs:
   corpus:
     name: Known-bad corpus
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'aj/upstream-sync-')) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || startsWith(github.head_ref, 'aj/upstream-sync-')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
