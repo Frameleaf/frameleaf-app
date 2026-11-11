@@ -54,14 +54,14 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
   functionName: media_import_asset_removed.name,
 })
 // Migration 1794390000000 fires this on `UPDATE OF "deletedAt"` so other asset updates skip it; the
-// generator cannot express the column list, but the action, timing and condition match.
+// generator cannot express the column list. The function itself checks that the row moved to Trash:
+// the schema reader cannot read back a WHEN that names both OLD and NEW.
 @Trigger({
   name: 'media_import_asset_trashed',
   timing: 'after',
   actions: ['update'],
   scope: 'row',
   functionName: media_import_asset_removed.name,
-  when: 'OLD."deletedAt" IS NULL AND NEW."deletedAt" IS NOT NULL',
 })
 @UpdatedAtTrigger('asset_updatedAt')
 @AfterDeleteTrigger({

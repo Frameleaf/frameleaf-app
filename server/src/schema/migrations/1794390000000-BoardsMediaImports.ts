@@ -70,8 +70,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     CREATE TRIGGER media_import_asset_deleted AFTER DELETE ON asset
       FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed();
     CREATE TRIGGER media_import_asset_trashed AFTER UPDATE OF "deletedAt" ON asset
-      FOR EACH ROW WHEN (OLD."deletedAt" IS NULL AND NEW."deletedAt" IS NOT NULL)
-      EXECUTE FUNCTION media_import_asset_removed();
+      FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed();
     CREATE FUNCTION media_import_collection_removed() RETURNS trigger LANGUAGE plpgsql AS $body$
     BEGIN
       UPDATE media_import_item item SET suppression = 'subscription', "updatedAt" = clock_timestamp()
