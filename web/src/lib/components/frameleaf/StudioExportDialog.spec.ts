@@ -792,7 +792,9 @@ describe('Studio export dialog', () => {
         render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
 
         await fireEvent.click(within(smoothGroup()).getAllByRole('radio')[1]);
-        await waitFor(() => expect(screen.getByText('frameleaf_studio_export_smooth_motion_cloud')).toBeInTheDocument());
+        await waitFor(() =>
+          expect(screen.getByText('frameleaf_studio_export_smooth_motion_cloud')).toBeInTheDocument(),
+        );
         expect(getCloudMlCatalog).toHaveBeenCalledOnce();
         const slider = within(screen.getByRole('group', { name: 'frameleaf_restoration_smooth_motion_model' }));
         const usable = (slider.getAllByRole('radio') as HTMLInputElement[]).filter((radio) => !radio.disabled);

@@ -318,7 +318,11 @@
   let smoothReported = $state<Parameters<typeof reportedSmoothModel>[1]>([]);
   const smoothLocalModel = $derived(reportedSmoothModel(smoothModelId, smoothReported));
   const smoothDestination = $derived(
-    smoothRunsOn === 'cloud' && smoothCloudStops.length > 0 ? smoothCloud : smoothRunsOn === 'local' ? smoothLocal : null,
+    smoothRunsOn === 'cloud' && smoothCloudStops.length > 0
+      ? smoothCloud
+      : smoothRunsOn === 'local'
+        ? smoothLocal
+        : null,
   );
 
   // The destinations are read once Smooth motion is asked for, and the slider starts where it fits.
