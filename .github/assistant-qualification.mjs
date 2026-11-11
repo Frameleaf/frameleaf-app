@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import cases from "../server/test/assistant-eval/cases.json" with { type: "json" };
+import library from "../server/test/assistant-eval/library.json" with { type: "json" };
 import thresholds from "../server/test/assistant-eval/thresholds.json" with { type: "json" };
 
 export function verifyQualification(report, source, workerModel) {
@@ -25,13 +28,24 @@ export function verifyQualification(report, source, workerModel) {
     workerModel,
     "Assistant qualification workerModel mismatch",
   );
-  assert(
-    Number.isInteger(report.cases) && report.cases >= 200,
-    "Incomplete cases",
+  assert.equal(
+    report.corpusDigest,
+    createHash("sha256")
+      .update(JSON.stringify([cases, library]))
+      .digest("hex"),
+    "Assistant qualification corpusDigest mismatch",
   );
-  assert(
-    Number.isInteger(report.assets) && report.assets >= 300,
-    "Incomplete assets",
+  assert(cases.length >= 200, "The candidate corpus must have 200+ cases");
+  assert(library.length >= 300, "The candidate corpus must have 300+ assets");
+  assert.equal(
+    report.cases,
+    cases.length,
+    "Assistant qualification cases mismatch",
+  );
+  assert.equal(
+    report.assets,
+    library.length,
+    "Assistant qualification assets mismatch",
   );
   assert(
     Number.isInteger(report.plannerAnswers) &&

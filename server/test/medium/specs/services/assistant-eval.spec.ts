@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import z from 'zod';
 import cases from 'test/assistant-eval/cases.json' with { type: 'json' };
+import library from 'test/assistant-eval/library.json' with { type: 'json' };
 import { requestPlan } from 'test/assistant-eval/planner.js';
 import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
 import { run } from 'test/assistant-eval/run.js';
@@ -158,7 +160,10 @@ async function qualificationIdentity(endpoint: URL) {
   if (!available || model !== defaults[0].name) {
     throw new Error(`The worker must offer the candidate's default planner: ${String(reason ?? model)}`);
   }
-  return { source, workerModel: model, endpoint };
+  const corpusDigest = createHash('sha256')
+    .update(JSON.stringify([cases, library]))
+    .digest('hex');
+  return { source, workerModel: model, corpusDigest, endpoint };
 }
 
 const asset = { key: 'one', city: 'Banff', type: 'IMAGE', takenAt: '2024-01-10T12:00:00.000Z' } as const;

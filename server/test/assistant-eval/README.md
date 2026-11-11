@@ -75,6 +75,7 @@ The evaluator checks the candidate's default planner against the worker's
 advertised capabilities and rejects runs with protected results or insufficient
 model use. It writes the report only after all quality thresholds pass, and
 requires a fresh report path. The checker accepts only qualification reports for
-the specified source SHA and that commit's default planner. Its input must come
+the specified source SHA, that commit's default planner, and the exact corpus
+of questions and assets. Its input must come
 from a trusted candidate qualification run. The checker does not authenticate
 the report's producer or attest to the worker image's provenance.
