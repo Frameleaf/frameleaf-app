@@ -747,23 +747,50 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
-    it('publishes a full render that ran the reviewed model', async () => {
+    it.each([
+      { name: 'faithful-v1', version: '1.0' },
+      { name: 'realesr-general-x4v3', version: 'aaaaaaaaaaaa+bbbbbbbbbbbb' },
+    ])('publishes a separate image version from the reviewed model $name', async (model) => {
+      restore.mockImplementation((_selection, _input, options) =>
+        Promise.resolve({
+          outputPath: options.outputPath,
+          width: 2048,
+          height: 1536,
+          modelName: model.name,
+          modelVersion: model.version,
+        }),
+      );
       await sut.run(
         operation({
           kind: MediaOperationKind.Restoration,
-          snapshot: snapshot({ stage: 'full', model: { name: 'faithful-v1', version: '1.0' } }),
+          snapshot: snapshot({ stage: 'full', model }),
         }),
         CLAIM,
       );
 
-      expect(restore).toHaveBeenCalled();
-      // FL-423: the worker is asked for exactly the reviewed model, so it never runs another one
-      expect(restore.mock.calls[0][2].modelId).toBe('faithful-v1');
-      expect(operations.fail).not.toHaveBeenCalledWith(
-        OPERATION_ID,
-        CLAIM,
-        expect.objectContaining({ errorCode: RestorationErrorCode.ModelChanged }),
+      expect(restore).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ kind: 'image', path: expect.stringContaining('/input-') }),
+        expect.objectContaining({ modelId: model.name }),
       );
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.Restoring],
+        expect.objectContaining({
+          status: AssetRestorationStatus.Restored,
+          resultPath: expect.stringContaining(`_restore_${RESTORATION_ID}_result.png`),
+          modelName: model.name,
+          modelVersion: model.version,
+        }),
+        TRX,
+        { stage: 'full', id: OPERATION_ID },
+      );
+      expect(mocks.storage.rename).toHaveBeenCalledWith(
+        expect.stringContaining('/result-'),
+        expect.stringContaining(`_restore_${RESTORATION_ID}_result.png`),
+      );
+      expect(mocks.storage.rename.mock.calls.flat()).not.toContain(asset.originalPath);
+      expect(operations.fail).not.toHaveBeenCalled();
     });
 
     it('sends a web-native original to the worker as a copy without EXIF or GPS, its ICC kept (FL-162)', async () => {

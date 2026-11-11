@@ -17,6 +17,8 @@ from typing import Literal
 
 from . import media
 from .models import (
+    STILL_FAMILY,
+    STILL_MAX_PIXELS,
     RestorationAdapter,
     RestorationFailure,
     RestorationRegistry,
@@ -111,6 +113,8 @@ def check_source(
         )
 
     if still:
+        if selected.spec.family == STILL_FAMILY and source.width * source.height > STILL_MAX_PIXELS:
+            raise _unsupported(f"the still exceeds the {STILL_MAX_PIXELS:,} pixel input limit", model_id)
         return None, None, 1
 
     start_ms: int | None = None
@@ -146,7 +150,7 @@ def restore(
     """Run one request. Returns the result and the path of the new restored file inside
     ``work_dir``; the caller streams it and then removes ``work_dir``."""
     started = time.monotonic()
-    selected = registry.select(request.mode, request.modelId, request.modelFingerprint)
+    selected = registry.select(request.mode, request.modelId, request.modelFingerprint, kind=request.kind)
     model_id = selected.spec.id
 
     still = request.kind == "image"
@@ -215,6 +219,7 @@ def restore(
         yuv_matrix=source.yuv_matrix,
         interpolation_factor=factor,
         source_video=source_video,
+        kind=request.kind,
     )
     if smooth and frame_count < 2:
         raise _unsupported("smooth motion needs at least two frames", model_id)
