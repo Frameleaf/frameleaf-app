@@ -2286,6 +2286,43 @@ describe(PersonService.name, () => {
       },
     );
 
+    it("never detects a partner copy that follows its source's faces, and asks the source for them", async () => {
+      const copy = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(copy));
+      mocks.partnerOrigin.getOrigin.mockResolvedValue({
+        id: copy.id,
+        sourceId: 'source',
+        ownerId: 'partner',
+        rootOwnerId: 'owner',
+        partnerSharedById: 'owner',
+        overriddenFields: [],
+        following: true,
+      });
+      mocks.partnerOrigin.getLiveSourceId.mockResolvedValue('source');
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue(['source']);
+
+      await expect(sut.handleDetectFaces({ id: copy.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.getIdsWithFollowers).toHaveBeenCalledWith('asset', ['source']);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: 'source', fields: ['faces'] } },
+      ]);
+
+      // a copy whose owner changed its faces detects its own
+      mocks.partnerOrigin.getOrigin.mockResolvedValue({
+        id: copy.id,
+        sourceId: 'source',
+        ownerId: 'partner',
+        rootOwnerId: 'owner',
+        partnerSharedById: 'owner',
+        overriddenFields: ['faces'],
+        following: true,
+      });
+      mocks.machineLearning.detectFaces.mockResolvedValue({ imageHeight: 1, imageWidth: 1, faces: [] });
+      await sut.handleDetectFaces({ id: copy.id });
+      expect(mocks.machineLearning.detectFaces).toHaveBeenCalled();
+    });
+
     it('waits for a missing preview only while one can still arrive, and never for a hidden asset', async () => {
       const execution = {
         claim: { id: 'job', token: 'token', data: {} },
@@ -2302,7 +2339,7 @@ describe(PersonService.name, () => {
       await expect(detect('pending')).rejects.toThrow(JobDependencyUnavailable);
       // The run's thumbnail item for this damaged original has ended without a preview.
       mocks.job.previewMayArrive.mockResolvedValue(false);
-      await expect(detect('damaged')).resolves.toBe(JobStatus.Failed);
+      await expect(detect('damaged')).resolves.toBe(JobStatus.Skipped);
       expect(mocks.job.previewMayArrive).toHaveBeenCalledWith('damaged');
       expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
     });

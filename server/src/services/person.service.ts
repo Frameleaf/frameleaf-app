@@ -1327,10 +1327,28 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // A partner copy that follows its source's faces takes them from the source (`PartnerPropagate`), so a
+    // picture shared between libraries is detected once. One with none yet asks for them: the source may have
+    // finished before this copy was made.
+    const origin = await this.partnerOriginRepository.getOrigin('asset', id);
+    if (
+      origin?.sourceId &&
+      origin.following &&
+      !origin.overriddenFields.includes(AssetOriginField.Faces) &&
+      (await this.partnerOriginRepository.getLiveSourceId(id))
+    ) {
+      if (asset.faces.length === 0) {
+        await this.propagateFaces([origin.sourceId]);
+      }
+      return JobStatus.Skipped;
+    }
+
     const previewFile = asset.files[0];
     if (!previewFile) {
       if (await this.jobRepository.previewMayArrive(id)) deferJobUntilDependency('source-unavailable');
-      return JobStatus.Failed;
+      // The thumbnail step ended without a preview (handed to Library care, or RAW support) and already lists
+      // the photo there; faces are found when a later preview's follow-ups run, so this is no failure of its own.
+      return JobStatus.Skipped;
     }
 
     // FL-455: routed to Frameleaf Cloud, the photo waits for a batch (an imported face set is always
@@ -1528,6 +1546,7 @@ export class PersonService extends BaseService {
 
       await this.assetRepository.upsertJobStatus({ assetId: currentAsset.id, facesRecognizedAt: new Date() });
     });
+    await this.propagateFaces([id]);
   }
 
   /**
@@ -1801,6 +1820,8 @@ export class PersonService extends BaseService {
           this.logger.debug(`Face ${id} was decided meanwhile, keeping that decision`);
           throw new Error('Face decision changed before recognition publication');
         }
+        // partner copies show the source's people, so they take its faces again now one has a person
+        await this.propagateFaces([face.assetId]);
         // FL-57: a named person now shows in this photo, so its generated text may name the wrong people
         if (person?.name) {
           await this.refreshIdentities(ownerId, { assetIds: [face.assetId] });
@@ -2268,6 +2289,11 @@ export class PersonService extends BaseService {
     }
     await this.emitAssetsChanged(assetIds);
     await this.queueFaceSidecars(assetIds);
+    await this.propagateFaces(assetIds);
+  }
+
+  /** Copy the faces of `assetIds` into every partner copy that follows them (one waiting job per photo). */
+  private async propagateFaces(assetIds: string[]) {
     const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', [...new Set(assetIds)]);
     if (sources.length > 0) {
       await this.jobRepository.queueAll(

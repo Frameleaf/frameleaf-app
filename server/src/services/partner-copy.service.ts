@@ -600,6 +600,8 @@ export class PartnerCopyService extends BaseService {
               maxDistance,
             });
           }, follower.ownerId);
+          // the copy's faces are found: the overnight check queues no detection for it
+          await this.assetRepository.upsertJobStatus({ assetId: follower.id, facesRecognizedAt: new Date() });
         }
         // spec §4.9: a lock or unlock carries over while the copy's visibility is followed, including one a
         // tag or face edit causes by bringing the source under (or out of) the sharer's Locked rules

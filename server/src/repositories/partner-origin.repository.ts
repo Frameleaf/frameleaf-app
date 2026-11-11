@@ -307,6 +307,16 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows;
   }
+  /** The live copies made directly from `sourceAssetId`, followed or not: they show its picture. */
+  async getLiveCopyIds(sourceAssetId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      SELECT origin."assetId" AS id FROM public.asset_origin origin
+      JOIN asset copy ON copy.id = origin."assetId"
+      WHERE origin."sourceAssetId" = ${sourceAssetId}::uuid AND copy."deletedAt" IS NULL AND copy.status = ${AssetStatus.Active}
+      ORDER BY origin."assetId"
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
   /** Of `ids`, those that have at least one live copy following them. */
   async getIdsWithFollowers(kind: OriginKind, ids: string[]): Promise<string[]> {
     const list = [...new Set(ids)];
