@@ -1,6 +1,8 @@
 import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import request from 'supertest';
+import { AssistantController } from 'src/controllers/assistant.controller.js';
 import { AssistantAskResponseDto } from 'src/dtos/assistant.dto.js';
 import { SearchFilter } from 'src/dtos/search.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
@@ -22,10 +24,22 @@ import { SPEECH_INDEX_VERSION, speechQuery, speechWindows } from 'src/utils/spee
 import cases from 'test/assistant-eval/cases.json' with { type: 'json' };
 import library from 'test/assistant-eval/library.json' with { type: 'json' };
 import { preparePlan, requestPlan } from 'test/assistant-eval/planner.js';
+import { claimFromAssistantReason } from 'test/assistant-eval/reasons.js';
 import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
-import { EvalAnswer, EvalFilters, RESULT_LIMIT, Reason, readFixtures, score } from 'test/assistant-eval/score.js';
+import {
+  EvalAnswer,
+  EvalFilters,
+  RESULT_LIMIT,
+  Reason,
+  countFilterErrors,
+  readFixtures,
+  score,
+  scoreByFamily,
+} from 'test/assistant-eval/score.js';
+import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
+import { controllerSetup } from 'test/utils.js';
 
 // This supplies the same CLIP vector for all items and all queries. The baseline measures the
 // rule planner and database filters without assigning semantic relevance to a fake embedding.
@@ -33,7 +47,9 @@ const neutralEmbedding = `[1,${'0,'.repeat(766)}0]`;
 const fingerprint = 'assistant-eval-synthetic';
 const typeMap = { IMAGE: AssetType.Image, VIDEO: AssetType.Video };
 
-type Mode = { mode: 'replay' | 'baseline' | 'assistant' } | { mode: 'live'; endpoint: URL };
+type Mode =
+  | { mode: 'replay' | 'baseline' | 'assistant' | 'rules' }
+  | { mode: 'live' | 'candidate' | 'qualification'; endpoint: URL };
 
 /** Run the same fixture library against reference plans, the rule planner, or a candidate worker. */
 export async function run(database: Kysely<DB>, options: Mode) {
@@ -160,7 +176,7 @@ export async function run(database: Kysely<DB>, options: Mode) {
           .execute();
       }
     }
-    if (mode === 'baseline') {
+    if (mode === 'baseline' || mode === 'rules') {
       await search.upsert(asset.id, neutralEmbedding);
     }
   }
@@ -177,25 +193,74 @@ export async function run(database: Kysely<DB>, options: Mode) {
   };
   let validPlans = 0;
   const answers: EvalAnswer[] = [];
-  const assistant = mode === 'assistant' ? assistantWithReplayPlanner(sut, speech, people, pets) : undefined;
+  const offlineAssistant = mode === 'assistant' || mode === 'rules';
+  const productionPlanner = mode === 'candidate' || mode === 'qualification';
+  if (offlineAssistant || productionPlanner) {
+    const destination = ctx.getMock(MlDestinationRepository);
+    let planner: MachineLearningRepository | undefined;
+    if ('endpoint' in options) {
+      destination.getById.mockResolvedValue({ ...mlDestinationStub.local, url: options.endpoint.href });
+      planner = new MachineLearningRepository(LoggingRepository.create());
+      planner.setup((await sut.getConfig({ withCache: false })).machineLearning);
+    }
+    const assistant = assistantForFixture(sut, speech, people, pets, planner, destination);
+    const app = await controllerSetup(AssistantController, [{ provide: AssistantService, useValue: assistant.sut }]);
+    const eligible = new Set(assets.filter(({ locked, otherOwner }) => !locked && !otherOwner).map(({ key }) => key));
+    const plannerCaseIds = new Set<string>();
+    let protectedHits = 0;
+    try {
+      app.authenticate.mockResolvedValue(auth);
+      const http = request(app.getHttpServer());
+      for (const { id, question } of questions) {
+        if (mode === 'assistant') {
+          assistant.plans.set(question, plans[id]);
+        }
+        const startedAt = performance.now();
+        const result = await http.post('/assistant/ask').send({ query: question, size: RESULT_LIMIT }).expect(200);
+        const response: AssistantAskResponseDto = AssistantAskResponseDto.schema.parse(result.body);
+        const elapsedMs = performance.now() - startedAt;
+        if (response.answeredBy === 'planner') {
+          plannerCaseIds.add(id);
+        }
+        for (const assetId of new Set([
+          ...response.results.assets.items.map(({ id }) => id),
+          ...response.reasons.map(({ assetId }) => assetId),
+        ])) {
+          protectedHits += Number(!eligible.has(keys.get(assetId) ?? assetId));
+        }
+        const hits = response.results.assets.items.map((asset) => ({
+          key: keys.get(asset.id) ?? asset.id,
+          reasons: assistantClaims(response, asset.id),
+        }));
+        answers.push({ id, filters: response.plan, hits, elapsedMs });
+      }
+    } finally {
+      await app.close();
+    }
+    const plannerOnly =
+      options.mode === 'candidate'
+        ? answers.map((answer) => (plannerCaseIds.has(answer.id) ? answer : { ...answer, filters: null, hits: [] }))
+        : undefined;
+    const diagnostics = mode === 'rules' ? answers : plannerOnly;
+    return {
+      mode,
+      cases: questions.length,
+      assets: assets.length,
+      plannerAnswers: plannerCaseIds.size,
+      ...(plannerOnly && { plannerOnly: score(questions, assets, plannerOnly) }),
+      ...(diagnostics && {
+        byFamily: scoreByFamily(questions, assets, diagnostics),
+        filterErrors: countFilterErrors(questions, diagnostics),
+      }),
+      protectedHits,
+      ...score(questions, assets, answers),
+    };
+  }
+
   for (const { id, question } of questions) {
     const startedAt = performance.now();
     let filters: EvalFilters;
     let ids: string[];
-    if (assistant) {
-      // FL-885: the real Library Assistant API, its planner answering with the recorded plan. Its own
-      // per-item reasons are scored, so faithfulness here is the API's, not the harness's.
-      assistant.plans.set(question, plans[id]);
-      const response = await assistant.sut.ask(auth, { query: question, size: RESULT_LIMIT });
-      const { visual: _visual, albums: _albums, tags: _tags, ...plan } = response.plan;
-      filters = plan;
-      const hits = response.results.assets.items.map((asset) => ({
-        key: keys.get(asset.id) ?? asset.id,
-        reasons: assistantClaims(response, asset.id),
-      }));
-      answers.push({ id, filters, hits, elapsedMs: performance.now() - startedAt });
-      continue;
-    }
     if (mode === 'baseline') {
       const { plan, results } = await sut.askSearch(auth, { query: question, size: RESULT_LIMIT });
       const raw = plan.filters;
@@ -254,20 +319,25 @@ export async function run(database: Kysely<DB>, options: Mode) {
     mode,
     cases: questions.length,
     assets: assets.length,
-    ...(mode === 'live' && { validPlanRate: validPlans / questions.length }),
+    ...(mode === 'live' && {
+      validPlanRate: validPlans / questions.length,
+      byFamily: scoreByFamily(questions, assets, answers),
+      filterErrors: countFilterErrors(questions, answers),
+    }),
     ...score(questions, assets, answers),
   };
 }
 
 /**
- * The Library Assistant over the same seeded library and repositories, with its planner answering from
- * `plans` (question to recorded filters). The catalogue comes from the seeded people and pets.
+ * The Library Assistant over the seeded library. Offline mode substitutes a recorded planner call.
  */
-function assistantWithReplayPlanner(
+function assistantForFixture(
   search: SearchService,
   speech: SpeechRepository,
   people: Map<string, string>,
   pets: Map<string, string>,
+  planner: MachineLearningRepository | undefined,
+  destination: MlDestinationRepository,
 ) {
   const plans = new Map<string, EvalFilters>();
   const configured = Object.create(search) as SearchService;
@@ -280,7 +350,7 @@ function assistantWithReplayPlanner(
   };
   const named = (items: Map<string, string>) => [...items].map(([name, id]) => ({ id, name }));
   const sut = new AssistantService(
-    { setContext: () => {}, debug: () => {} } as never,
+    LoggingRepository.create(),
     configured,
     {
       search: (auth: never, dto: { query: string }) => speech.search(auth, dto as never, speechQuery(dto.query)),
@@ -289,9 +359,12 @@ function assistantWithReplayPlanner(
     { getAll: () => Promise.resolve(named(pets)) } as never,
     { getAll: () => Promise.resolve([]) } as never,
     { getAll: () => Promise.resolve([]) } as never,
-    {} as never,
-    {} as never,
+    planner ?? ({} as MachineLearningRepository),
+    destination,
   );
+  if (planner) {
+    return { sut, plans };
+  }
   // the planner call itself (ML admission and HTTP) is replaced; validation and name resolution stay real
   const resolver = sut as unknown as {
     planWithModel: (question: string, language: string, catalog: unknown) => Promise<unknown>;
@@ -315,45 +388,9 @@ function assistantWithReplayPlanner(
 
 /** The Assistant's own reasons for one result, as the scorer's claims about fixture fields. */
 function assistantClaims(response: AssistantAskResponseDto, assetId: string): Reason[] {
-  const items = response.reasons.find((reason) => reason.assetId === assetId)?.items ?? [];
-  const { plan } = response;
-  return items.flatMap(({ kind, value }): Reason[] => {
-    switch (kind) {
-      case 'person': {
-        return value ? [{ field: 'people', value }] : [];
-      }
-      case 'pet': {
-        return value ? [{ field: 'pets', value }] : [];
-      }
-      case 'place': {
-        return value ? [{ field: 'city', value }] : [];
-      }
-      case 'date': {
-        return [
-          ...(plan.takenAfter ? [{ field: 'takenAfter' as const, value: plan.takenAfter }] : []),
-          ...(plan.takenBefore ? [{ field: 'takenBefore' as const, value: plan.takenBefore }] : []),
-        ];
-      }
-      case 'favorite': {
-        return [{ field: 'favorite', value: true }];
-      }
-      case 'type': {
-        return plan.type ? [{ field: 'type', value: plan.type }] : [];
-      }
-      case 'text': {
-        return value ? [{ field: 'ocr', value }] : [];
-      }
-      case 'speech': {
-        return value ? [{ field: 'spoken', value }] : [];
-      }
-      case 'description': {
-        return value ? [{ field: 'description', value }] : [];
-      }
-      default: {
-        return [];
-      }
-    }
-  });
+  return response.reasons
+    .filter((reason) => reason.assetId === assetId)
+    .flatMap(({ items }) => items.map((item) => claimFromAssistantReason(item)));
 }
 
 function filterReasons(filters: EvalFilters): Reason[] {

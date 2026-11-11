@@ -362,7 +362,15 @@ const REGISTRY_CONTAINER = "frameleaf-deploy-test-registry";
 let registryStarted = false;
 async function startLocalRegistry() {
   if (registryStarted) return;
-  run("docker", ["rm", "--force", REGISTRY_CONTAINER], { stdio: "ignore" });
+  const existing = run("docker", [
+    "ps",
+    "--all",
+    "--quiet",
+    "--filter",
+    `name=^/${REGISTRY_CONTAINER}$`,
+  ]).trim();
+  if (existing)
+    run("docker", ["rm", "--force", REGISTRY_CONTAINER], { stdio: "ignore" });
   run("docker", [
     "run",
     "--detach",

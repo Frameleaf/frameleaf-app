@@ -2050,6 +2050,7 @@ test("image publish and re-tag jobs survive the other image's skipped build", ()
     "server-publish",
     "machine-learning-publish",
     "machine-learning-hardware",
+    "machine-learning-openvino-publish",
     "retag-server",
     "retag-machine-learning",
   ]) {
@@ -2073,6 +2074,277 @@ test("image publish and re-tag jobs survive the other image's skipped build", ()
     String(jobs["machine-learning-publish"].if),
     /needs\['machine-learning'\]\.result == 'success'/,
   );
+});
+
+test("all Docker publication routes require same-run Assistant qualification when pinned", () => {
+  const jobs = workflow("docker.yml").jobs;
+  const qualification = jobs["assistant-qualification"];
+  assert.equal(jobs.changes.steps[0].with.ref, "${{ github.sha }}");
+  assert.match(
+    jobs.changes.outputs["machine-learning"],
+    /steps.assistant.outputs.variant == 'cpu' \|\| steps.filter.outputs\['machine-learning'\] == 'true'/,
+  );
+  assert.deepEqual(qualification.needs, [
+    "changes",
+    "machine-learning",
+    "machine-learning-openvino-archive",
+  ]);
+  assert.match(qualification.if, /!cancelled\(\)/);
+  assert.match(
+    qualification.if,
+    /outputs.assistant-variant == 'cpu' && needs.machine-learning.result == 'success'/,
+  );
+  assert.match(
+    qualification.if,
+    /outputs.assistant-variant == 'openvino' && needs.machine-learning-openvino-archive.result == 'success'/,
+  );
+  assert.equal(qualification.steps[0].with.ref, "${{ github.sha }}");
+  const archive = qualification.steps.find((step) =>
+    step.uses?.startsWith("actions/download-artifact@"),
+  );
+  assert.match(
+    archive.with.name,
+    /^frameleaf-machine-learning.*assistant-variant == 'openvino' && '-openvino'.*-archive-amd64$/,
+  );
+  assert.equal(archive.with["run-id"], undefined);
+  assert.equal(archive.with["github-token"], undefined);
+  assert.equal(
+    qualification.steps.at(-2).run,
+    "node .github/assistant-deploy-gate.mjs qualify",
+  );
+  assert.equal(qualification.steps.at(-2)["continue-on-error"], undefined);
+  const evidence = qualification.steps.at(-1);
+  assert.match(evidence.uses, /^actions\/upload-artifact@[a-f0-9]{40}$/);
+  assert.equal(evidence.if, undefined);
+  assert.equal(evidence["continue-on-error"], undefined);
+  assert.equal(evidence.with["if-no-files-found"], "error");
+  assert.equal(
+    evidence.with.path,
+    "${{ runner.temp }}/assistant-qualification-evidence.json",
+  );
+  assert.equal(
+    qualification.steps.filter((step) =>
+      step.uses?.startsWith("actions/download-artifact@"),
+    ).length,
+    1,
+  );
+  assert.equal(
+    qualification.outputs["amd64-manifest"],
+    "${{ steps.qualify.outputs.amd64-manifest }}",
+  );
+  const deployment = jobs["deploy-test"];
+  assert.ok(deployment.needs.includes("assistant-qualification"));
+  assert.match(deployment.if, /outputs.amd64-manifest != ''/);
+  const publisher = jobs["machine-learning-publish"];
+  assert.ok(publisher.needs.includes("assistant-qualification"));
+  assert.equal(
+    publisher.with["tested-amd64-manifest"],
+    "${{ needs.changes.outputs.assistant-variant == 'cpu' && needs.assistant-qualification.outputs.amd64-manifest || '' }}",
+  );
+  const merger = workflow("local-multi-runner-build.yml").jobs.merge.steps.at(
+    -1,
+  );
+  assert.equal(
+    merger.env.TESTED_AMD64_MANIFEST,
+    "${{ inputs.tested-amd64-manifest }}",
+  );
+  assert.match(
+    deployment.if,
+    /outputs.assistant-qualification == 'false' && needs.assistant-qualification.result == 'skipped'/,
+  );
+  assert.match(
+    deployment.if,
+    /outputs.assistant-qualification == 'true' && needs.assistant-qualification.result == 'success'/,
+  );
+  for (const name of [
+    "server-publish",
+    "machine-learning-publish",
+    "machine-learning-hardware",
+    "machine-learning-openvino-publish",
+    "retag-server",
+    "retag-machine-learning",
+  ]) {
+    assert.ok(jobs[name].needs.includes("deploy-test"), name);
+    assert.match(
+      jobs[name].if,
+      /needs\['deploy-test'\]\.result == 'success'/,
+      name,
+    );
+  }
+});
+
+test("OpenVINO uses exactly one publication path for built and reused ML variants", () => {
+  const jobs = workflow("docker.yml").jobs;
+  const archive = jobs["machine-learning-openvino-archive"];
+  const publisher = jobs["machine-learning-openvino-publish"];
+  assert.equal(
+    archive.if,
+    "needs.changes.outputs.assistant-variant == 'openvino'",
+  );
+  const {
+    mode,
+    "tested-amd64-manifest": testedManifest,
+    ...variantInputs
+  } = publisher.with;
+  assert.deepEqual(archive.with, { ...variantInputs, mode: "archive" });
+  assert.match(
+    publisher.if,
+    /machine-learning'\] == 'true' \|\| needs.changes.outputs.assistant-variant == 'openvino'/,
+  );
+  assert.equal(
+    mode,
+    "${{ needs.changes.outputs.assistant-variant == 'openvino' && 'publish' || 'push' }}",
+  );
+  assert.equal(
+    testedManifest,
+    "${{ needs.changes.outputs.assistant-variant == 'openvino' && needs.assistant-qualification.outputs.amd64-manifest || '' }}",
+  );
+  assert.equal(
+    jobs["machine-learning-hardware"].strategy.matrix.include.some(
+      ({ device }) => device === "openvino",
+    ),
+    false,
+  );
+  const retag = jobs["retag-machine-learning"].strategy.matrix;
+  assert.ok(retag.suffix.includes("-openvino"));
+  assert.equal(
+    retag.exclude,
+    `\${{ fromJSON(needs.changes.outputs.assistant-variant == 'openvino' && '[{"suffix":"-openvino"}]' || '[]') }}`,
+  );
+
+  const summary = jobs["success-check-ml"];
+  assert.ok(summary.needs.includes("machine-learning-openvino-publish"));
+  for (const [variant, mlBuilt, openvino, expected] of [
+    ["", false, "skipped", true],
+    ["", true, "success", true],
+    ["cpu", true, "success", true],
+    ["openvino", true, "success", true],
+    ["openvino", false, "success", true],
+    ["openvino", false, "skipped", false],
+    ["openvino", true, "failure", false],
+    ["", true, "skipped", false],
+  ]) {
+    const results = {
+      changes: {
+        outputs: {
+          "machine-learning": String(mlBuilt),
+          "assistant-variant": variant,
+        },
+      },
+      integration: { result: "success" },
+      "deploy-test": { result: "success" },
+      "machine-learning-publish": { result: mlBuilt ? "success" : "skipped" },
+      "machine-learning-hardware": { result: mlBuilt ? "success" : "skipped" },
+      "retag-machine-learning": { result: mlBuilt ? "skipped" : "success" },
+      "machine-learning-openvino-publish": { result: openvino },
+    };
+    const result = spawnSync("bash", ["-c", summary.steps[0].run], {
+      encoding: "utf8",
+      env: { ...process.env, RESULTS: JSON.stringify(results) },
+    });
+    assert.equal(result.status, expected ? 0 : 1, JSON.stringify(results));
+  }
+});
+
+test("AMD64 publication rejects a substituted archive before its first registry write", () => {
+  const publish = workflow(
+    "local-multi-runner-build.yml",
+  ).jobs.publish.steps.find(
+    (step) => step.name === "Push the tested archive by digest, byte for byte",
+  );
+  assert.equal(
+    publish.env.TESTED_AMD64_MANIFEST,
+    "${{ inputs.tested-amd64-manifest }}",
+  );
+  const directory = mkdtempSync(
+    path.join(tmpdir(), "assistant-digest-publish-"),
+  );
+  const qualified = `sha256:${"a".repeat(64)}`;
+  const archiveDigest = `sha256:${"b".repeat(64)}`;
+  const different = `sha256:${"c".repeat(64)}`;
+  try {
+    const fixture = path.join(directory, "fixture");
+    const temp = path.join(directory, "runner");
+    mkdirSync(path.join(fixture, "blobs", "sha256"), { recursive: true });
+    mkdirSync(path.join(temp, "archive"), { recursive: true });
+    const archive = path.join(temp, "archive", "image.tar");
+    const calls = path.join(directory, "oras-calls");
+    writeFileSync(
+      path.join(temp, "archive", "linux-amd64.json"),
+      JSON.stringify({
+        platform: "linux/amd64",
+        digest: archiveDigest,
+      }),
+    );
+    writeFileSync(
+      path.join(fixture, "index.json"),
+      JSON.stringify({ manifests: [{ digest: archiveDigest }] }),
+    );
+    writeFileSync(
+      path.join(directory, "oras"),
+      [
+        "#!/bin/bash",
+        'echo "$1" >> "$CALLS"',
+        'case "$1" in login) cat >/dev/null ;; resolve) echo "$ARCHIVE_DIGEST" ;; esac',
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    for (const [child, expected, success] of [
+      [different, qualified, false],
+      [different, "invalid", false],
+      [qualified, qualified, true],
+      [different, "", true],
+    ]) {
+      writeFileSync(
+        path.join(fixture, "blobs", "sha256", archiveDigest.slice(7)),
+        JSON.stringify({
+          manifests: [
+            { platform: { os: "linux", architecture: "amd64" }, digest: child },
+            {
+              platform: { os: "unknown", architecture: "unknown" },
+              digest: qualified,
+            },
+          ],
+        }),
+      );
+      execFileSync("tar", [
+        "-cf",
+        archive,
+        "-C",
+        fixture,
+        "index.json",
+        "blobs",
+      ]);
+      writeFileSync(calls, "");
+      const result = spawnSync("bash", ["-c", publish.run], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          RUNNER_TEMP: temp,
+          PLATFORM: "linux/amd64",
+          TESTED_AMD64_MANIFEST: expected,
+          IMAGE: "frameleaf-machine-learning",
+          REGISTRY_TOKEN: "fixture-token",
+          ACTOR: "fixture",
+          CALLS: calls,
+          ARCHIVE_DIGEST: archiveDigest,
+        },
+      });
+      assert.equal(
+        result.status,
+        success ? 0 : 1,
+        result.stderr || result.stdout,
+      );
+      assert.equal(
+        readFileSync(calls, "utf8"),
+        success ? "login\ncp\nresolve\nlogout\n" : "",
+      );
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("isolated test lanes cover every shard and keep required gates fail-closed", () => {

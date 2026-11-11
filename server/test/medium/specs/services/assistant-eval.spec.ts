@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { once } from 'node:events';
+import { lstatSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
+import z from 'zod';
+import { ASSISTANT_TOOL_SCHEMA } from 'src/services/assistant.service.js';
+import cases from 'test/assistant-eval/cases.json' with { type: 'json' };
+import library from 'test/assistant-eval/library.json' with { type: 'json' };
 import { requestPlan } from 'test/assistant-eval/planner.js';
+import replay from 'test/assistant-eval/replay.json' with { type: 'json' };
 import { run } from 'test/assistant-eval/run.js';
-import { type EvalCase, score } from 'test/assistant-eval/score.js';
+import { type EvalCase, countFilterErrors, score, scoreByFamily } from 'test/assistant-eval/score.js';
 import thresholds from 'test/assistant-eval/thresholds.json' with { type: 'json' };
 import { getActiveForkKyselyDB } from 'test/utils.js';
 
@@ -10,24 +22,109 @@ const mode = process.env.FRAMELEAF_ASSISTANT_EVAL_MODE ?? 'replay';
 it(
   'evaluates the fixed assistant corpus against a seeded library',
   async () => {
+    const options = evaluationOptions();
+    const output = options.mode === 'qualification' ? process.env.FRAMELEAF_ASSISTANT_QUALIFICATION_REPORT : undefined;
+    if (output && lstatSync(output, { throwIfNoEntry: false })) {
+      throw new Error('Provide a fresh FRAMELEAF_ASSISTANT_QUALIFICATION_REPORT path');
+    }
+    const identity = options.mode === 'qualification' ? await qualificationIdentity(options.endpoint) : undefined;
     const database = await getActiveForkKyselyDB('assistant_eval');
     try {
-      const report = await run(database, evaluationOptions());
+      const report = await run(database, options);
       process.stdout.write(`${JSON.stringify(report)}\n`);
-      if (mode === 'replay' || mode === 'assistant') {
+      if (report.mode === 'rules') {
+        expect(report.plannerAnswers).toBe(0);
+        expect(report.protectedHits).toBe(0);
+      }
+      if (['replay', 'assistant', 'qualification'].includes(mode)) {
         expect(report.filterAccuracy).toBeGreaterThanOrEqual(thresholds.filterAccuracy);
         expect(report.recallAt24).toBeGreaterThanOrEqual(thresholds.recallAt24);
         expect(report.faithfulness).toBeGreaterThanOrEqual(thresholds.faithfulness);
         expect(report.p95Ms).toBeLessThanOrEqual(thresholds.p95Ms);
       }
+      if (report.mode === 'qualification' && identity && 'plannerAnswers' in report) {
+        expect(report.plannerAnswers).toBeGreaterThanOrEqual(Math.ceil(report.cases * thresholds.filterAccuracy));
+        expect(report.protectedHits).toBe(0);
+        if (output) {
+          const after = await qualificationIdentity(identity.endpoint);
+          expect(after).toEqual(identity);
+          const { endpoint: _endpoint, ...provenance } = identity;
+          await writeFile(output, `${JSON.stringify({ ...report, ...provenance }, null, 2)}\n`, { flag: 'wx' });
+        }
+      }
     } finally {
       await database.destroy();
     }
   },
-  mode === 'live' ? 30 * 60_000 : 120_000,
+  ['live', 'candidate', 'qualification'].includes(mode) ? 35 * 60_000 : 120_000,
 );
 
-const OFFLINE_MODES = ['replay', 'baseline', 'assistant'] as const;
+it.skipIf(mode !== 'replay')(
+  'scores the candidate through Assistant HTTP and separates rule fallbacks',
+  async () => {
+    const fallbackQuestion = cases[0].question;
+    const plans = new Map(cases.map(({ question, id }) => [question, replay[id as keyof typeof replay]]));
+    const worker = createServer((request, response) => {
+      if (request.url === '/ping') {
+        response.end('pong');
+        return;
+      }
+      if (request.url === '/capabilities') {
+        response.setHeader('Content-Type', 'application/json').end(JSON.stringify({ workloads: ['clip'] }));
+        return;
+      }
+      if (request.url !== '/assistant/plan') {
+        response.writeHead(404).end();
+        return;
+      }
+      void Array.fromAsync(request)
+        .then((chunks) => {
+          const { question, toolSchema } = JSON.parse(Buffer.concat(chunks).toString()) as {
+            question: string;
+            toolSchema: unknown;
+          };
+          assert.deepEqual(toolSchema, ASSISTANT_TOOL_SCHEMA);
+          response.setHeader('Content-Type', 'application/json').end(
+            JSON.stringify({
+              tool: 'search_library',
+              arguments: plans.get(question),
+              confidence: question === fallbackQuestion ? 0.1 : 0.9,
+            }),
+          );
+        })
+        .catch(() => response.writeHead(500).end());
+    }).listen(0, '127.0.0.1');
+    try {
+      await once(worker, 'listening');
+      const address = worker.address();
+      assert.ok(address && typeof address === 'object');
+      const database = await getActiveForkKyselyDB('assistant_http_eval');
+      try {
+        const report = await run(database, {
+          mode: 'candidate',
+          endpoint: new URL(`http://127.0.0.1:${address.port}`),
+        });
+        expect(report).toMatchObject({
+          mode: 'candidate',
+          plannerAnswers: cases.length - 1,
+          protectedHits: 0,
+          plannerOnly: { filterAccuracy: (cases.length - 1) / cases.length, faithfulness: 1 },
+        });
+        expect(report.filterAccuracy).toBeGreaterThanOrEqual(thresholds.filterAccuracy);
+        expect(report.recallAt24).toBeGreaterThanOrEqual(thresholds.recallAt24);
+      } finally {
+        await database.destroy();
+      }
+    } finally {
+      if (worker.listening) {
+        await new Promise<void>((resolve, reject) => worker.close((error) => (error ? reject(error) : resolve())));
+      }
+    }
+  },
+  120_000,
+);
+
+const OFFLINE_MODES = ['replay', 'baseline', 'assistant', 'rules'] as const;
 const isOffline = (value: string): value is (typeof OFFLINE_MODES)[number] =>
   (OFFLINE_MODES as readonly string[]).includes(value);
 
@@ -35,18 +132,58 @@ function evaluationOptions(): Parameters<typeof run>[1] {
   if (isOffline(mode)) {
     return { mode };
   }
-  if (mode !== 'live') {
-    throw new Error('Expected assistant eval mode replay, baseline, assistant, or live');
+  if (mode !== 'live' && mode !== 'candidate' && mode !== 'qualification') {
+    throw new Error(
+      'Expected assistant eval mode replay, baseline, assistant, rules, live, candidate, or qualification',
+    );
   }
   const configured = process.env.FRAMELEAF_ASSISTANT_PLANNER_URL;
   if (!configured) {
     throw new Error('Live evaluation requires FRAMELEAF_ASSISTANT_PLANNER_URL');
   }
   const endpoint = new URL(configured);
-  if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password) {
+  if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.href !== `${endpoint.origin}/`) {
     throw new Error('Provide a planner HTTP(S) origin without credentials');
   }
   return { mode, endpoint };
+}
+
+const root = fileURLToPath(new URL('../../../../../', import.meta.url));
+const manifestPath = 'machine-learning/frameleaf_ml/models/assistant-planner-models.json';
+const plannerManifest = z.array(z.object({ name: z.string(), default: z.boolean().optional() }));
+const plannerCapabilities = z.object({
+  tasks: z.object({
+    'assistant-plan': z.object({ available: z.boolean(), model: z.string().nullable(), reason: z.unknown() }),
+  }),
+});
+
+async function qualificationIdentity(endpoint: URL) {
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+  const source = git('rev-parse', 'HEAD');
+  if (git('status', '--porcelain', '--untracked-files=no')) {
+    throw new Error('Qualify a clean candidate checkout');
+  }
+  const defaults = plannerManifest
+    .parse(JSON.parse(git('show', `${source}:${manifestPath}`)))
+    .filter((entry) => entry.default);
+  if (defaults.length !== 1) {
+    throw new Error('The candidate must pin one default Assistant planner');
+  }
+  const result = await fetch(new URL('/capabilities', endpoint), {
+    redirect: 'error',
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!result.ok) {
+    throw new Error(`Planner capabilities returned HTTP ${result.status}`);
+  }
+  const { available, model, reason } = plannerCapabilities.parse(await result.json()).tasks['assistant-plan'];
+  if (!available || model !== defaults[0].name) {
+    throw new Error(`The worker must offer the candidate's default planner: ${String(reason ?? model)}`);
+  }
+  const corpusDigest = createHash('sha256')
+    .update(JSON.stringify([cases, library]))
+    .digest('hex');
+  return { source, workerModel: model, corpusDigest, endpoint };
 }
 
 const asset = { key: 'one', city: 'Banff', type: 'IMAGE', takenAt: '2024-01-10T12:00:00.000Z' } as const;
@@ -56,6 +193,43 @@ const question: EvalCase = {
   question: 'Photos in Banff',
   expect: { filters: { city: 'Banff', type: 'IMAGE' }, assetKeys: ['one'] },
 };
+
+it('reports live metrics separately for each question family, including unanswered cases', () => {
+  const unanswered = { ...question, id: 'unanswered', family: 'people' };
+  const result = scoreByFamily(
+    [question, unanswered],
+    [asset],
+    [
+      { id: unanswered.id, filters: null, hits: [], elapsedMs: 8000 },
+      {
+        id: question.id,
+        filters: question.expect.filters,
+        hits: [{ key: asset.key, reasons: [{ field: 'city', value: 'Banff' }] }],
+        elapsedMs: 50,
+      },
+    ],
+  );
+  assert.deepEqual(result, {
+    'place-date': { cases: 1, validPlanRate: 1, filterAccuracy: 1, recallAt24: 1, faithfulness: 1, p95Ms: 50 },
+    people: { cases: 1, validPlanRate: 0, filterAccuracy: 0, recallAt24: 0, faithfulness: 0, p95Ms: 8000 },
+  });
+});
+
+it('counts omitted, extra, and wrong filters without counting unanswered cases as filter errors', () => {
+  const unanswered = { ...question, id: 'unanswered' };
+  const result = countFilterErrors(
+    [question, unanswered],
+    [
+      { id: unanswered.id, filters: null, hits: [], elapsedMs: 8000 },
+      { id: question.id, filters: { city: 'Toronto', favorite: true }, hits: [], elapsedMs: 50 },
+    ],
+  );
+  assert.deepEqual(result, {
+    city: { missing: 0, unexpected: 0, incorrect: 1 },
+    type: { missing: 1, unexpected: 0, incorrect: 0 },
+    favorite: { missing: 0, unexpected: 1, incorrect: 0 },
+  });
+});
 
 it('counts only supported reasons', () => {
   const result = score(
@@ -68,17 +242,14 @@ it('counts only supported reasons', () => {
         hits: [
           {
             key: 'one',
-            reasons: [
-              { field: 'city', value: 'Banff' },
-              { field: 'type', value: 'VIDEO' },
-            ],
+            reasons: [{ field: 'city', value: 'Banff' }, { field: 'type', value: 'VIDEO' }, null],
           },
         ],
         elapsedMs: 75,
       },
     ],
   );
-  assert.deepEqual(result, { filterAccuracy: 1, recallAt24: 1, faithfulness: 0.5, p95Ms: 75 });
+  assert.deepEqual(result, { filterAccuracy: 1, recallAt24: 1, faithfulness: 1 / 3, p95Ms: 75 });
 });
 
 it('scores recall and reasons over the same unique hits in the top 24 ranks', () => {

@@ -40,6 +40,9 @@ on:
       mode:
         type: string
         default: push
+      tested-amd64-manifest:
+        type: string
+        default: ''
       # FL-408: named build contexts (`name=path`, one per line), e.g. the repository for the ML image
       build-contexts:
         type: string
@@ -204,6 +207,7 @@ jobs:
         env:
           IMAGE: ${{ inputs.image }}
           PLATFORM: ${{ matrix.platform }}
+          TESTED_AMD64_MANIFEST: ${{ inputs.tested-amd64-manifest }}
           REGISTRY_TOKEN: ${{ github.token }}
           ACTOR: ${{ github.actor }}
         run: |
@@ -214,6 +218,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/layout"
           tar -xf "$RUNNER_TEMP/archive/image.tar" -C "$RUNNER_TEMP/layout"
           jq -e --arg d "$digest" '[.manifests[].digest] == [$d]' "$RUNNER_TEMP/layout/index.json" > /dev/null
+          if [[ "$PLATFORM" == linux/amd64 && -n "$TESTED_AMD64_MANIFEST" ]]; then
+            [[ "$TESTED_AMD64_MANIFEST" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Invalid qualified worker digest"; exit 1; }
+            manifest="$RUNNER_TEMP/layout/blobs/sha256/${digest#sha256:}"
+            jq -e --arg d "$TESTED_AMD64_MANIFEST" \
+              '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest] == [$d]' \
+              "$manifest" > /dev/null || { echo "::error::ML archive differs from the qualified worker manifest"; exit 1; }
+          fi
           printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$ACTOR" --password-stdin
           oras cp --from-oci-layout "$RUNNER_TEMP/layout@${digest}" "ghcr.io/frameleaf/${IMAGE}@${digest}"
           pushed="$(oras resolve "ghcr.io/frameleaf/${IMAGE}@${digest}")"
@@ -259,5 +270,6 @@ jobs:
           SUFFIX: ${{ inputs.suffix }}
           SOURCE_SHA: ${{ inputs.source-sha }}
           DIGEST_DIR: ${{ runner.temp }}/digests
+          TESTED_AMD64_MANIFEST: ${{ inputs.tested-amd64-manifest }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs merge-candidate
