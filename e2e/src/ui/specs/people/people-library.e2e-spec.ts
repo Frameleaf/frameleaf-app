@@ -17,7 +17,8 @@ const setup = async (context: BrowserContext) => {
   await context.routeWebSocket('**/socket.io/**', () => {
     // This UI fixture has no authenticated socket session.
   });
-  await setupBaseMockApiRoutes(context, '00000000-0000-4000-8000-000000000001');
+  // FL-1408: merge prompts are only asked while face recognition is on
+  await setupBaseMockApiRoutes(context, '00000000-0000-4000-8000-000000000001', { facialRecognition: true });
   const people = [
     person('2', 'Alex', 2, '2024-01-01T00:00:00.000Z'),
     person('3', 'Blair', 9, '2023-01-01T00:00:00.000Z'),

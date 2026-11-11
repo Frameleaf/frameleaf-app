@@ -58,6 +58,9 @@ describe(MemoryService.name, () => {
     mocks.memory.getHiddenMemoryIds.mockResolvedValue([]);
     mocks.memory.getShowLess.mockResolvedValue([]);
     mocks.memory.getBirthdaySubjects.mockResolvedValue([]);
+    // FL-1408: an owner with memories is past their first import, which is the ordinary case
+    mocks.memory.hasAny.mockResolvedValue(true);
+    mocks.memory.getFirstAssetCreatedAt.mockResolvedValue(null);
     mocks.memory.getRecapSubjects.mockResolvedValue([]);
     mocks.memory.cleanupCurations.mockResolvedValue();
     mocks.memory.searchExports.mockResolvedValue([]);
@@ -1645,6 +1648,158 @@ describe(MemoryService.name, () => {
       expect(mocks.memory.get).toHaveBeenCalledWith(memory.id, {
         excludePersonIds: [personId],
         excludePetIds: [petId],
+      });
+    });
+  });
+
+  describe('on this day, small years and first imports (FL-1408)', () => {
+    const userId = '00000000-0000-4000-8000-000000000001';
+    const otherId = '00000000-0000-4000-8000-000000000009';
+    /** `count` items of one year, an hour apart so none is a burst of another */
+    const yearOf = (year: number, count: number) => ({
+      year,
+      assets: Array.from({ length: count }, (_, index) => ({
+        id: `${year}-${index}`,
+        localDateTime: new Date(Date.UTC(year, 8, 25, 9 + index)),
+      })),
+    });
+    const onThisDay = () =>
+      mocks.memory.create.mock.calls
+        .filter(([memory]) => memory.type === MemoryType.OnThisDay)
+        .map(([memory, assetIds]) => ({ year: (memory.data as OnThisDayData).year, ids: [...assetIds].toSorted() }));
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-09-25T12:00:00.000Z'));
+      mocks.user.getList.mockResolvedValue([{ id: userId }] as never);
+      mocks.systemMetadata.get.mockResolvedValue(null);
+      mocks.asset.getByDayOfYear.mockResolvedValue([]);
+      mocks.asset.getEventStoryCandidates.mockResolvedValue([]);
+      mocks.asset.getYearInReviewCandidates.mockResolvedValue([]);
+      mocks.memory.getExistingMemoryDates.mockResolvedValue([]);
+      mocks.memory.getBirthdaySubjects.mockResolvedValue([]);
+      mocks.memory.hasSubjectMemory.mockResolvedValue(false);
+      mocks.memory.hasAny.mockResolvedValue(true);
+      mocks.memory.create.mockResolvedValue({} as never);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const onlyOn = (day: number, years: ReturnType<typeof yearOf>[]) =>
+      mocks.asset.getByDayOfYear.mockImplementation((_owners, target) =>
+        Promise.resolve((target.day === day ? years : []) as never),
+      );
+
+    it('gives years with a photo or two each one memory to share, and leaves a fuller year its own', async () => {
+      onlyOn(25, [yearOf(2025, 1), yearOf(2024, 4), yearOf(2023, 2), yearOf(2019, 1)]);
+
+      await sut.onMemoriesCreate();
+
+      expect(onThisDay()).toEqual([
+        { year: 2025, ids: ['2019-0', '2023-0', '2023-1', '2025-0'] },
+        { year: 2024, ids: ['2024-0', '2024-1', '2024-2', '2024-3'] },
+      ]);
+      // an ordinary on-this-day memory, dated to the newest of its years and shown for the one day
+      expect(mocks.memory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { year: 2025 },
+          memoryAt: '2025-09-25T00:00:00.000Z',
+          showAt: '2026-09-25T00:00:00.000Z',
+          hideAt: '2026-09-25T23:59:59.999Z',
+        }),
+        expect.any(Set),
+      );
+    });
+
+    it('leaves a single small year as its own memory', async () => {
+      onlyOn(25, [yearOf(2025, 5), yearOf(2021, 2)]);
+
+      await sut.onMemoriesCreate();
+
+      expect(onThisDay()).toEqual([
+        { year: 2025, ids: ['2025-0', '2025-1', '2025-2', '2025-3', '2025-4'] },
+        { year: 2021, ids: ['2021-0', '2021-1'] },
+      ]);
+    });
+
+    it('gives an owner with no memories the days the server has already passed', async () => {
+      mocks.user.getList.mockResolvedValue([{ id: userId }, { id: otherId }] as never);
+      // last night's run already reached every day of the window
+      mocks.systemMetadata.get.mockResolvedValue({ lastOnThisDayDate: '2026-09-28T00:00:00.000Z' });
+      mocks.memory.hasAny.mockImplementation((ownerId) => Promise.resolve(ownerId === userId));
+      mocks.asset.getByDayOfYear.mockResolvedValue([yearOf(2020, 3)] as never);
+
+      await sut.onMemoriesCreate();
+
+      // the whole window, 22 to 28 September, for the new library only
+      expect(mocks.asset.getByDayOfYear.mock.calls.map(([owners, target]) => [owners, target.day])).toEqual(
+        [22, 23, 24, 25, 26, 27, 28].map((day) => [[otherId], day]),
+      );
+      expect(onThisDay()).toHaveLength(7);
+      expect(mocks.memory.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: userId, type: MemoryType.OnThisDay }),
+        expect.anything(),
+      );
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalledWith(
+        SystemMetadataKey.MemoriesState,
+        expect.objectContaining({ lastOnThisDayDate: expect.not.stringContaining('2026-09-28') }),
+      );
+    });
+
+    describe('statistics', () => {
+      const auth = () => factory.auth({ user: { id: userId } });
+      const config = (nightlyTasks: Record<string, boolean>, lastOnThisDayDate?: string) =>
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.SystemConfig
+              ? { nightlyTasks }
+              : lastOnThisDayDate
+                ? { lastOnThisDayDate }
+                : null) as never,
+          ),
+        );
+
+      beforeEach(() => {
+        mocks.memory.statistics.mockResolvedValue({ total: 0 });
+        mocks.memory.search.mockResolvedValue([]);
+        mocks.memory.hasAny.mockResolvedValue(false);
+        mocks.memory.getFirstAssetCreatedAt.mockResolvedValue(new Date('2026-09-25T09:00:00.000Z'));
+      });
+
+      it('says memories are being prepared for a library whose first photos arrived after the last overnight run', async () => {
+        // the run on 25 September made memories through the 28th; the import came later that day
+        config({}, '2026-09-28T00:00:00.000Z');
+        await expect(sut.statistics(auth(), {})).resolves.toEqual({ total: 0, preparing: true });
+      });
+
+      it('says so on a server that has never made memories', async () => {
+        config({});
+        await expect(sut.statistics(auth(), {})).resolves.toEqual({ total: 0, preparing: true });
+      });
+
+      it('stops once an overnight run has happened since', async () => {
+        config({}, '2026-09-29T00:00:00.000Z');
+        await expect(sut.statistics(auth(), {})).resolves.toEqual({ total: 0 });
+      });
+
+      it('never says so for an account with a memory of any kind, with no photos, or with memories turned off', async () => {
+        config({}, '2026-09-28T00:00:00.000Z');
+        mocks.memory.hasAny.mockResolvedValueOnce(true);
+        await expect(sut.statistics(auth(), {})).resolves.toEqual({ total: 0 });
+
+        mocks.memory.getFirstAssetCreatedAt.mockResolvedValueOnce(null);
+        await expect(sut.statistics(auth(), {})).resolves.toEqual({ total: 0 });
+
+        config({ generateMemories: false }, '2026-09-28T00:00:00.000Z');
+        await expect(sut.statistics(auth(), {})).resolves.toEqual({ total: 0 });
+      });
+
+      it('does not look when there are memories to show', async () => {
+        mocks.memory.statistics.mockResolvedValue({ total: 3 });
+        await expect(sut.statistics(auth(), {})).resolves.toEqual({ total: 3 });
+        expect(mocks.memory.hasAny).not.toHaveBeenCalled();
       });
     });
   });

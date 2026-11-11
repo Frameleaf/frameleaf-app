@@ -17,6 +17,9 @@ const actions = vi.hoisted(() => ({
   mixed: undefined as { onSplit: () => Promise<void> } | undefined,
 }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/people') } }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
+  featureFlagsManager: { value: { facialRecognition: true } },
+}));
 vi.mock(
   '$lib/components/layouts/UserPageLayout.svelte',
   async () => import('@test-data/mocks/UserPageLayout.mock.svelte'),

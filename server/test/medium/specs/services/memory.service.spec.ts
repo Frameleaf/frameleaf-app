@@ -26,6 +26,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
@@ -58,6 +59,7 @@ const setup = (db?: Kysely<DB>) => {
     real: [
       AccessRepository,
       AssetRepository,
+      ConfigRepository,
       DatabaseRepository,
       MemoryRepository,
       UserRepository,
@@ -500,6 +502,37 @@ describe(MemoryService.name, () => {
 
       const memoriesAfter = await memoryRepo.search(user.id, {});
       expect(memoriesAfter.length).toBe(1);
+    });
+
+    // FL-1408 (M8): the day after a first import, and years with a photo or two each
+    it('says memories are being prepared, then gives the small years one memory to share', async () => {
+      const { sut, ctx } = setup();
+      const assetRepo = ctx.get(AssetRepository);
+      const memoryRepo = ctx.get(MemoryRepository);
+      const now = DateTime.fromObject({ year: 2025, month: 3, day: 14 }, { zone: 'utc' }) as DateTime<true>;
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      for (const years of [1, 3, 6]) {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, localDateTime: now.minus({ years }).toISO() });
+        await Promise.all([
+          ctx.newExif({ assetId: asset.id, make: 'Canon' }),
+          ctx.newJobStatus({ assetId: asset.id }),
+          assetRepo.upsertFiles([
+            { assetId: asset.id, type: AssetFileType.Preview, path: `/path/to/${asset.id}-preview.jpg` },
+          ]),
+        ]);
+      }
+
+      vi.setSystemTime(now.toJSDate());
+      await expect(sut.statistics(auth, {})).resolves.toEqual({ total: 0, preparing: true });
+
+      await sut.onMemoriesCreate();
+
+      const memories = await memoryRepo.search(user.id, {});
+      expect(memories).toHaveLength(1);
+      expect(memories[0]).toEqual(expect.objectContaining({ type: 'on_this_day', data: { year: 2024 } }));
+      expect(memories[0].assets).toHaveLength(3);
+      await expect(sut.statistics(auth, {})).resolves.toEqual({ total: 1 });
     });
   });
 

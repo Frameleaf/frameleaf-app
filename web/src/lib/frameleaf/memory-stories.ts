@@ -146,6 +146,17 @@ export const memoryLocalDay = (memory: MemoryResponseDto): string | undefined =>
   return DateTime.fromMillis((start + end) / 2, { zone: 'utc' }).toISODate() ?? undefined;
 };
 
+/**
+ * FL-1408 (M8): the years an "on this day" memory's items were taken in, newest first. More than one
+ * means the server gave years with only a photo or two each one memory to share.
+ */
+export const onThisDayYears = (memory: MemoryResponseDto): string[] =>
+  memory.type === MemoryType.OnThisDay
+    ? [
+        ...new Set(memory.assets.flatMap(({ localDateTime }) => (localDateTime ? [localDateTime.slice(0, 4)] : []))),
+      ].sort((a, b) => b.localeCompare(a))
+    : [];
+
 export type MemoryEntry = {
   memory: MemoryResponseDto;
   /** Days until an upcoming memory's day (1 is tomorrow). */
@@ -188,6 +199,9 @@ export const groupMemories = (
     }
   }
   sections.upcoming.sort((a, b) => (a.inDays ?? 0) - (b.inDays ?? 0));
+  // FL-1408: the card that gathers several years leads the day (discovery-data.mjs "FL-1405 M8")
+  const gathers = ({ memory }: MemoryEntry) => Number(onThisDayYears(memory).length > 1);
+  sections.today.sort((a, b) => gathers(b) - gathers(a));
   return sections;
 };
 
@@ -277,6 +291,16 @@ const generatedHeadline = (
     return {
       title: t('frameleaf_memories_recap_title', { values: { year: memory.data.year, name: memory.data.name } }),
       subtitle: count,
+    };
+  }
+  // FL-1408 (M8): small years gathered into one card are named, not counted back to
+  const gathered = onThisDayYears(memory);
+  if (gathered.length > 1) {
+    return {
+      title: t('frameleaf_memories_on_this_day'),
+      subtitle: t('frameleaf_memories_in_years', {
+        values: { years: new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(gathered) },
+      }),
     };
   }
   const day = memoryLocalDay(memory) ?? DateTime.fromISO(memory.memoryAt, { zone: 'utc' }).toISODate() ?? today;

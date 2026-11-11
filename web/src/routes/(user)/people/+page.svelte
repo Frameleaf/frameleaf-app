@@ -3,6 +3,7 @@
   import { page as appPage } from '$app/state';
   import { scrollMemory } from '$lib/actions/scroll-memory';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import BirthdayDialog from '$lib/components/frameleaf/people/BirthdayDialog.svelte';
   import MergePeopleDialog from '$lib/components/frameleaf/people/MergePeopleDialog.svelte';
   import MergeSuggestionBanner from '$lib/components/frameleaf/people/MergeSuggestionBanner.svelte';
@@ -11,12 +12,17 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter } from '$lib/constants';
+  import { faceRecognitionWork, tonightLabel } from '$lib/frameleaf/background-work';
   import { filterPeopleByName, isUnnamedPerson, sortPeopleForGrid, type PeopleGridSort } from '$lib/frameleaf/people';
+  import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { toastAction, toastUndo } from '$lib/frameleaf/toast';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { Route } from '$lib/route';
+  import { locale } from '$lib/stores/preferences.store';
   import { websocketEvents } from '$lib/stores/websocket';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -42,7 +48,13 @@
     type PersonSplitSuggestionDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
-  import { mdiAccountMultipleOutline, mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
+  import {
+    mdiAccountMultipleOutline,
+    mdiAccountOffOutline,
+    mdiAccountSearchOutline,
+    mdiEyeOffOutline,
+    mdiEyeOutline,
+  } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
@@ -57,6 +69,13 @@
    * counts, the merge-suggestion banner (FL-57), inline rename, and the Frameleaf merge and
    * date-of-birth dialogs. Sorting and searching run over the whole list, so every page of
    * people is read up front rather than on scroll.
+   *
+   * With nobody to show, the page says why (FL-1408, M9): face recognition is turned off on this
+   * server (with the way to turn it on, for whoever runs it), or photos still wait to be looked
+   * through. Whether that work is running, paused, saved for the night or waiting its turn is read from
+   * the queue state Activity and Background work show, so the three never disagree; someone the server
+   * sends no queue state to is told only that photos still wait. While face recognition is off there
+   * are no merge or split prompts either.
    */
 
   interface Props {
@@ -70,6 +89,53 @@
 
   let people: PeopleListItemDto[] = $state(untrack(() => data.people.people));
   let nextPage: number | null = $state(untrack(() => (data.people.hasNextPage ? 2 : null)));
+  const facesOff = $derived(!featureFlagsManager.value.facialRecognition);
+  /** The server found nobody yet and still has photos of this account to look through. */
+  let scanning = $state(untrack(() => data.people.scanning ?? false));
+  const faceWork = $derived(faceRecognitionWork(runningJobsSession.summary));
+  const canManageWork = $derived(runningJobsSession.summary.canManageQueues);
+  /** What the page says while photos still wait for face recognition, in Activity's words for its state. */
+  const waitingNotice = $derived.by(() => {
+    const told = (state: string) => $t('frameleaf_people_scan_state_description', { values: { state } });
+    switch (faceWork?.state) {
+      case 'running': {
+        return {
+          title: $t('frameleaf_people_scanning_title'),
+          message: $t('frameleaf_people_scanning_description'),
+          manage: false,
+        };
+      }
+      case 'paused': {
+        return {
+          title: $t('frameleaf_people_scan_paused_title'),
+          message: $t('frameleaf_people_scan_paused_description'),
+          manage: true,
+        };
+      }
+      case 'tonight': {
+        return {
+          title: $t('frameleaf_people_scan_tonight_title'),
+          message: told(tonightLabel(faceWork.tonight?.startsAt ?? null, $t, $locale ?? undefined)),
+          manage: false,
+        };
+      }
+      case 'waiting':
+      case 'stuck': {
+        return {
+          title: $t('frameleaf_people_scan_waiting_title'),
+          message: told($t(faceWork.statusKey ?? 'frameleaf_activity_work_up_next')),
+          manage: faceWork.state === 'stuck',
+        };
+      }
+      default: {
+        return {
+          title: $t('frameleaf_people_scan_pending_title'),
+          message: $t('frameleaf_people_scan_pending_description'),
+          manage: false,
+        };
+      }
+    }
+  });
   let search = $state(untrack(() => appPage.url.searchParams.get(QueryParameter.SEARCHED_PEOPLE) ?? ''));
   let sort: PeopleGridSort = $state('name');
   let showHidden = $state(false);
@@ -168,6 +234,7 @@
         return;
       }
       people = result.people;
+      scanning = result.scanning ?? false;
       truncated = false;
       nextPage = result.hasNextPage ? 2 : null;
       await loadAllPages();
@@ -198,17 +265,25 @@
   const allLoaded = loadAllPages();
 
   onMount(() => {
-    handlePromiseError(loadMergeSuggestions());
-    handlePromiseError(loadSplitSuggestions());
+    if (!facesOff) {
+      handlePromiseError(loadMergeSuggestions());
+      handlePromiseError(loadSplitSuggestions());
+    }
     handlePromiseError(loadLibrarySize());
+    // Only the "photos still wait" page reads the queue state, so only it asks for it.
+    const stopWatchingWork = scanning && !facesOff ? runningJobsSession.watch() : undefined;
 
-    return websocketEvents.on('on_person_thumbnail', (personId: string) => {
+    const stopListening = websocketEvents.on('on_person_thumbnail', (personId: string) => {
       for (const person of people) {
         if (person.id === personId) {
           person.updatedAt = new Date().toISOString();
         }
       }
     });
+    return () => {
+      stopWatchingWork?.();
+      stopListening();
+    };
   });
 
   const replacePerson = (updated: PersonResponseDto) => {
@@ -600,7 +675,9 @@
         </FrameleafButton>
       </div>
     </header>
-    {#if mergeSuggestions.length > 0}
+    {#if facesOff}
+      <!-- FL-1408: nothing is being compared while face recognition is off, so nothing is asked. -->
+    {:else if mergeSuggestions.length > 0}
       <MergeSuggestionBanner
         suggestion={mergeSuggestions[0]}
         remaining={mergeSuggestions.length - 1}
@@ -643,6 +720,26 @@
           />
         {/snippet}
       </PeopleInfiniteScroll>
+    {:else if !nextPage && people.length === 0 && facesOff}
+      <EmptyState
+        icon={mdiAccountOffOutline}
+        title={$t('frameleaf_people_faces_off_title')}
+        message={authManager.user.isAdmin
+          ? $t('frameleaf_people_faces_off_description')
+          : $t('frameleaf_people_faces_off_description_member')}
+        action={authManager.user.isAdmin
+          ? { label: $t('frameleaf_people_faces_off_action'), href: commandCenterUrl('intelligence', 'faces') }
+          : undefined}
+      />
+    {:else if !nextPage && people.length === 0 && scanning}
+      <EmptyState
+        icon={mdiAccountSearchOutline}
+        title={waitingNotice.title}
+        message={waitingNotice.message}
+        action={waitingNotice.manage && canManageWork
+          ? { label: $t('frameleaf_activity_work_settings'), href: commandCenterUrl('processing', 'queues') }
+          : undefined}
+      />
     {:else if !nextPage}
       <p class="people-empty" role="status">
         {#if search.trim()}

@@ -1004,6 +1004,20 @@ export class AssetJobRepository {
       .orderBy('asset.fileCreatedAt', 'desc');
   }
 
+  /**
+   * FL-1408: whether any of this owner's photos still waits for face detection: what "find the missing
+   * ones" would queue, so a file that is offline is not waited for. No @GenerateSql: one probe row.
+   */
+  async hasFacesToDetect(ownerId: string): Promise<boolean> {
+    const row = await this.selectionForDetectFacesJob(false)
+      .clearOrderBy()
+      .where('asset.ownerId', '=', ownerId)
+      .where(sql<boolean>`asset.status = 'active' and not asset."isOffline"`)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
+  }
+
   @GenerateSql({ params: [], stream: true })
   streamForOcrJob(force?: boolean) {
     return this.selectionForOcrJob(force).stream();
