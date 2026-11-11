@@ -127,7 +127,15 @@ diff --git a/src/features/media-library/services/media-transcription-runner.ts b
 diff --git a/src/features/media-library/services/media-transcription-service.test.ts b/src/features/media-library/services/media-transcription-service.test.ts
 --- a/src/features/media-library/services/media-transcription-service.test.ts
 +++ b/src/features/media-library/services/media-transcription-service.test.ts
-@@ -704,7 +704,7 @@
+@@ -96,6 +96,7 @@
+ const { mediaTranscriptionService } = await import('./media-transcription-service')
+
+ beforeEach(() => {
++  saveTranscriptMock.mockImplementation(async (transcript) => transcript)
+   useCompositionsStoreGetStateMock.mockReturnValue({
+     compositions: [],
+     updateComposition: vi.fn(),
+@@ -704,7 +705,7 @@
      expect(saveTranscriptMock).toHaveBeenCalledTimes(1)
    })
 
@@ -136,19 +144,20 @@ diff --git a/src/features/media-library/services/media-transcription-service.tes
      const sourceFile = new File(['audio'], 'clip.mp3', { type: 'audio/mpeg' })
      const updateItem = vi.fn()
      const clip: VideoItem = {
-@@ -725,7 +725,10 @@
+@@ -725,7 +726,11 @@
          style: { color: '#ffcc00', fontSize: 48 },
        },
      }
 -    useTimelineStoreGetStateMock.mockReturnValue({ items: [clip], updateItem })
-+    const timeline = { fps: 30, items: [clip], updateItem }
++    const linked = { ...clip, id: 'other-clip' }
++    const timeline = { fps: 30, items: [clip, linked], updateItem }
 +    useTimelineStoreGetStateMock.mockReturnValue(timeline)
 +    useProjectStoreGetStateMock.mockReturnValue({ currentProject: null })
 +    useSelectionStoreGetStateMock.mockReturnValue({ selectedItemIds: [], selectItems: vi.fn() })
      getMediaMock.mockResolvedValue({
        id: 'media-1',
        fileName: 'clip.mp3',
-@@ -736,13 +739,33 @@
+@@ -736,13 +741,42 @@
      getMediaFileMock.mockResolvedValue(sourceFile)
      transcribeCollectMock.mockResolvedValue([{ text: 'Fresh text', start: 0.2, end: 1.4 }])
 
@@ -172,9 +181,18 @@ diff --git a/src/features/media-library/services/media-transcription-service.tes
 +      ...transcript,
 +      segments: [{ text: 'Another draft', start: 0, end: 1 }],
 +    })
-+    saveTranscriptMock.mockResolvedValue(transcript)
++    saveTranscriptMock.mockImplementationOnce(async (reviewed, guard) => {
++      guard.validate()
++      guard.commit(reviewed)
++      return reviewed
++    })
 +    await draft.apply()
-+    expect(saveTranscriptMock).toHaveBeenCalledWith(transcript)
++    expect(saveTranscriptMock).toHaveBeenCalledWith(transcript, expect.any(Object))
++    expect(updateItem).toHaveBeenCalledWith('other-clip', {
++      transcriptCaptions: expect.objectContaining({
++        sourceTranscriptUpdatedAt: transcript.updatedAt,
++      }),
++    })
 +    expect(getTranscriptMock).not.toHaveBeenCalled()
      expect(updateItem).toHaveBeenCalledWith('clip-1', {
        transcriptCaptions: expect.objectContaining({
@@ -186,7 +204,7 @@ diff --git a/src/features/media-library/services/media-transcription-service.tes
          cues: [
            {
              id: 'transcript-media-1-0',
-@@ -753,6 +776,46 @@
+@@ -753,6 +787,46 @@
          ],
        }),
      })
@@ -233,17 +251,6 @@ diff --git a/src/features/media-library/services/media-transcription-service.tes
    })
 
    it('refreshes transcript captions inside nested compositions and navigation stashes', async () => {
-@@ -825,6 +888,10 @@
-     ])
-
-     const transcript = await mediaTranscriptionService.transcribeMedia('media-1')
-+
-+    expect(updateComposition).not.toHaveBeenCalled()
-+    expect(useCompositionNavigationStoreSetStateMock).not.toHaveBeenCalled()
-+    mediaTranscriptionService.syncExistingTranscriptCaptions('media-1', transcript)
-
-     expect(updateComposition).toHaveBeenCalledTimes(1)
-     expect(updateComposition).toHaveBeenCalledWith('inner-comp', {
 diff --git a/src/features/media-library/services/media-transcription-service.ts b/src/features/media-library/services/media-transcription-service.ts
 --- a/src/features/media-library/services/media-transcription-service.ts
 +++ b/src/features/media-library/services/media-transcription-service.ts
@@ -305,21 +312,36 @@ diff --git a/src/features/media-library/services/media-transcription-service.ts 
        model,
        quantization,
        language,
-@@ -702,9 +709,10 @@
+@@ -702,10 +709,13 @@
        updatedAt: Date.now(),
      }
 
 -    await saveTranscript(transcript)
 -    this.syncExistingTranscriptCaptions(mediaId, transcript)
 -    this.emitTranscriptChanged(mediaId)
+-    logger.info('Saved transcript', {
 +    if (!job.draft) {
-+      await saveTranscript(transcript)
++      const saved = await saveTranscript(transcript)
++      this.syncExistingTranscriptCaptions(mediaId, saved)
 +      this.emitTranscriptChanged(mediaId)
++      return saved
 +    }
-     logger.info('Saved transcript', {
++    logger.info('Prepared transcript draft', {
        mediaId,
        segments: transcript.segments.length,
-@@ -941,12 +949,57 @@
+       model: getMediaTranscriptionModelLabel(transcript.model),
+@@ -826,7 +836,9 @@
+     mediaId: string,
+     options: InsertTranscriptAsCaptionsOptions = {},
+   ): Promise<InsertTranscriptAsCaptionsResult> {
+-    const transcript = options.segments ? { segments: options.segments } : await getTranscript(mediaId)
++    const transcript = options.segments
++      ? { segments: options.segments }
++      : await getTranscript(mediaId)
+     if (!transcript) {
+       throw new Error('No transcript found for this media item')
+     }
+@@ -941,15 +953,71 @@
      }
    }
 
@@ -359,9 +381,14 @@ diff --git a/src/features/media-library/services/media-transcription-service.ts 
 +      replaceExisting,
 +      apply: async () => {
 +        requireUnchangedTimeline()
-+        const saved = await saveTranscript(transcript)
-+        requireUnchangedTimeline()
-+        await this.enableTranscriptCaptions(mediaId, { clipIds: [clipId], replaceExisting }, saved)
++        await saveTranscript(transcript, {
++          validate: requireUnchangedTimeline,
++          commit: (saved) => {
++            requireUnchangedTimeline()
++            this.applyTranscriptCaptions(mediaId, { clipIds: [clipId], replaceExisting }, saved)
++            this.syncExistingTranscriptCaptions(mediaId, saved)
++          },
++        })
 +        this.emitTranscriptChanged(mediaId)
 +      },
 +    }
@@ -370,15 +397,24 @@ diff --git a/src/features/media-library/services/media-transcription-service.ts 
    async enableTranscriptCaptions(
      mediaId: string,
      options: InsertTranscriptAsCaptionsOptions = {},
-+    reviewedTranscript?: MediaTranscript,
    ): Promise<EnableTranscriptCaptionsResult> {
--    const transcript = await getTranscript(mediaId)
+     const transcript = await getTranscript(mediaId)
 -    if (!transcript) {
-+    const transcript = reviewedTranscript ?? (await getTranscript(mediaId))
 +    if (!transcript || transcript.mediaId !== mediaId) {
        throw new Error('No transcript found for this media item')
      }
-
+-
++    return this.applyTranscriptCaptions(mediaId, options, transcript)
++  }
++
++  private applyTranscriptCaptions(
++    mediaId: string,
++    options: InsertTranscriptAsCaptionsOptions,
++    transcript: MediaTranscript,
++  ): EnableTranscriptCaptionsResult {
+     const timeline = useTimelineStore.getState()
+     const project = useProjectStore.getState().currentProject
+     const targetClips = this.resolveCaptionTargetClips(mediaId, options.clipIds)
 diff --git a/src/features/timeline/components/timeline-item/clip-floating-layer.tsx b/src/features/timeline/components/timeline-item/clip-floating-layer.tsx
 --- a/src/features/timeline/components/timeline-item/clip-floating-layer.tsx
 +++ b/src/features/timeline/components/timeline-item/clip-floating-layer.tsx
@@ -517,7 +553,7 @@ diff --git a/src/features/timeline/components/timeline-item/transcribe-dialog-co
 
    const {
      dialogOpen,
-@@ -48,65 +62,139 @@
+@@ -48,65 +62,141 @@
      transcriptProgress,
      dialogError,
      setDialogError,
@@ -678,10 +714,12 @@ diff --git a/src/features/timeline/components/timeline-item/transcribe-dialog-co
 +            <DialogDescription>
 +              {draft?.replaceExisting
 +                ? t('transcript.reviewReplace', {
-+                    defaultValue: 'Applying will replace this clip’s generated captions.',
++                    defaultValue:
++                      'Applying replaces this clip’s generated captions and refreshes linked captions.',
 +                  })
 +                : t('transcript.reviewApply', {
-+                    defaultValue: 'Check the text before adding captions to this clip.',
++                    defaultValue:
++                      'Check the text before applying. Linked captions that use this transcript will also refresh.',
 +                  })}
 +            </DialogDescription>
 +          </DialogHeader>
@@ -1017,3 +1055,146 @@ diff --git a/src/features/timeline/deps/media-transcription-service.ts b/src/fea
    mediaTranscriptionService,
    runMediaTranscriptionJob,
  } from './media-transcription-service-contract'
+diff --git a/src/infrastructure/storage/workspace-fs/transcripts.test.ts b/src/infrastructure/storage/workspace-fs/transcripts.test.ts
+--- a/src/infrastructure/storage/workspace-fs/transcripts.test.ts
++++ b/src/infrastructure/storage/workspace-fs/transcripts.test.ts
+@@ -37,6 +37,28 @@
+     expect(t!.mediaId).toBe('m1')
+     expect(t!.segments[0]!.text).toBe('hello')
+   })
++
++  it.each(['current', 'legacy', 'missing'])(
++    'keeps the prior %s transcript when a guarded commit refuses',
++    async (kind) => {
++      const root = asHandle(createRoot())
++      setWorkspaceRoot(root)
++      const original = makeTranscript('m1')
++      if (kind === 'current') await saveTranscript(original)
++      if (kind === 'legacy') await writeJsonAtomic(root, legacyTranscriptPath('m1'), original)
++      const before = await getTranscript('m1')
++      const draft = { ...original, segments: [{ start: 0, end: 1, text: 'draft' }] }
++      await expect(
++        saveTranscript(draft, {
++          validate() {},
++          commit() {
++            throw new Error('The timeline changed')
++          },
++        }),
++      ).rejects.toThrow('The timeline changed')
++      expect(await getTranscript('m1')).toEqual(before)
++    },
++  )
+
+   it('getTranscript returns undefined when missing', async () => {
+     const root = createRoot()
+diff --git a/src/infrastructure/storage/workspace-fs/transcripts.ts b/src/infrastructure/storage/workspace-fs/transcripts.ts
+--- a/src/infrastructure/storage/workspace-fs/transcripts.ts
++++ b/src/infrastructure/storage/workspace-fs/transcripts.ts
+@@ -14,8 +14,9 @@
+ import { createLogger } from '@/shared/logging/logger'
+
+ import { requireWorkspaceRoot } from './root'
+-import { readJson, removeEntry } from './fs-primitives'
+-import { legacyTranscriptPath } from './paths'
++import { readJson, removeEntry, writeJsonAtomic } from './fs-primitives'
++import { aiOutputPath, legacyTranscriptPath } from './paths'
++import { withKeyLock } from './with-key-lock'
+ import {
+   readAiOutput,
+   writeAiOutput,
+@@ -66,38 +67,67 @@
+   }
+ }
+
+-export async function saveTranscript(transcript: MediaTranscript): Promise<MediaTranscript> {
+-  try {
+-    const envelope = transcriptFromLegacy(transcript)
+-    const written = await writeAiOutput({
+-      mediaId: envelope.mediaId,
+-      kind: 'transcript',
+-      service: envelope.service,
+-      model: envelope.model,
+-      params: envelope.params,
+-      data: envelope.data,
+-    })
++type TranscriptCommit = {
++  validate: () => void
++  commit: (saved: MediaTranscript) => void
++}
+
+-    // Fire-and-forget legacy-path cleanup on successful migration.
++const transcriptLock = (mediaId: string) => `transcript:${mediaId}`
++
++export async function saveTranscript(
++  transcript: MediaTranscript,
++  guarded?: TranscriptCommit,
++): Promise<MediaTranscript> {
++  const mediaId = transcript.mediaId
++  return withKeyLock(transcriptLock(mediaId), async () => {
++    guarded?.validate()
+     const root = requireWorkspaceRoot()
+-    void removeEntry(root, legacyTranscriptPath(transcript.mediaId)).catch((error) =>
+-      logger.warn(`legacy transcript cleanup failed for ${transcript.mediaId}`, error),
++    const target = aiOutputPath(mediaId, 'transcript')
++    const previous = guarded ? await readJson<unknown>(root, target) : undefined
++    guarded?.validate()
++
++    let saved: MediaTranscript
++    try {
++      const envelope = transcriptFromLegacy(transcript)
++      const written = await writeAiOutput({
++        mediaId,
++        kind: 'transcript',
++        service: envelope.service,
++        model: envelope.model,
++        params: envelope.params,
++        data: envelope.data,
++      })
++      saved = transcriptToLegacy(written)
++    } catch (error) {
++      logger.error(`saveTranscript(${mediaId}) failed`, error)
++      throw new Error(`Failed to save transcript: ${mediaId}`)
++    }
++
++    try {
++      guarded?.commit(saved)
++    } catch (error) {
++      if (previous == null) await removeEntry(root, target)
++      else await writeJsonAtomic(root, target, previous)
++      throw error
++    }
++
++    // Keep a legacy transcript available until the guarded edit has succeeded.
++    void removeEntry(root, legacyTranscriptPath(mediaId)).catch((error) =>
++      logger.warn(`legacy transcript cleanup failed for ${mediaId}`, error),
+     )
+-
+-    return transcriptToLegacy(written)
+-  } catch (error) {
+-    logger.error(`saveTranscript(${transcript.mediaId}) failed`, error)
+-    throw new Error(`Failed to save transcript: ${transcript.mediaId}`)
+-  }
++    return saved
++  })
+ }
+
+ export async function deleteTranscript(mediaId: string): Promise<void> {
+-  try {
+-    await deleteAiOutput(mediaId, 'transcript')
+-    const root = requireWorkspaceRoot()
+-    await removeEntry(root, legacyTranscriptPath(mediaId))
+-  } catch (error) {
+-    logger.error(`deleteTranscript(${mediaId}) failed`, error)
+-    throw new Error(`Failed to delete transcript: ${mediaId}`)
+-  }
++  return withKeyLock(transcriptLock(mediaId), async () => {
++    try {
++      await deleteAiOutput(mediaId, 'transcript')
++      const root = requireWorkspaceRoot()
++      await removeEntry(root, legacyTranscriptPath(mediaId))
++    } catch (error) {
++      logger.error(`deleteTranscript(${mediaId}) failed`, error)
++      throw new Error(`Failed to delete transcript: ${mediaId}`)
++    }
++  })
+ }

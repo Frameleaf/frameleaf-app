@@ -134,7 +134,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1120 inspector copy and panel placement; changes no composition or raster producer.
     sourceSha256 === 'be812d0bab9c29042c3a611e4d67894ceb5862825fec3688379df9e7a72ab402' ||
     // FL-1304 transcribe dialog and caption insertion; changes no composition or raster producer.
-    sourceSha256 === 'c9be2c718ed8dff077b6cbbba072dd8357cc4417109c3faf4f3a556578cffc66'
+    sourceSha256 === 'c9be2c718ed8dff077b6cbbba072dd8357cc4417109c3faf4f3a556578cffc66' ||
+    // FD-27 reviews captions and persists transcript drafts; composition and raster producers are unchanged.
+    sourceSha256 === '0aa58e0ee46dd0d1e058f530ce747707db4f97d037afdf60e4352b8ab3d2c0c3'
   )
     return {
       ...COMPOSITION_SOURCES,
