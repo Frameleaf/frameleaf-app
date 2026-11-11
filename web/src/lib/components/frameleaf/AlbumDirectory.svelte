@@ -943,7 +943,8 @@
   {/if}
 
   {#if arrangement.empty}
-    <!-- FL-1412 (M13): the one empty-page pattern. Only a first album leads somewhere. -->
+    <!-- FL-1412 (M13): the one empty-page pattern. Only a first album leads somewhere, and its button is
+         the quiet one: the header's New is this page's one filled button (BRAND.md). -->
     {#if arrangement.searching}
       <EmptyState
         icon={mdiImageAlbum}
@@ -967,7 +968,7 @@
         icon={mdiImageAlbum}
         title={$t('frameleaf_albums_empty_title')}
         message={$t('frameleaf_albums_empty_text')}
-        action={{ label: $t('frameleaf_albums_create_album'), onClick: () => openCreate(AlbumKind.Album) }}
+        secondaryAction={{ label: $t('frameleaf_albums_create_album'), onClick: () => openCreate(AlbumKind.Album) }}
       />
     {/if}
   {/if}

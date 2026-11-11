@@ -800,7 +800,8 @@
         <div class="fl-album-suggestions">{@render suggestions()}</div>
       {/snippet}
 
-      <!-- FL-1412 (M13): an empty album says how photos get here; whoever can add them gets the way to. -->
+      <!-- FL-1412 (M13): an empty album says how photos get here; whoever can add them gets the way to,
+           as the quiet button: the header's Add photos is this page's one filled button (BRAND.md). -->
       {#snippet empty()}
         {@const canAdd = canChangeAlbum && !album.isSmart}
         <LibraryEmptyState
@@ -813,7 +814,6 @@
                 ? 'frameleaf_album_empty_body'
                 : 'frameleaf_album_empty_viewer',
           )}
-          primary
           action={canAdd
             ? { label: $t('add_photos'), onClick: () => handlePromiseError(addPhotosFromLibrary()) }
             : undefined}
