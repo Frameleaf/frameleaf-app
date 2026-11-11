@@ -969,7 +969,10 @@ export class TimelineManager extends VirtualScrollManager {
         if (!page) {
           // FL-1410: not in the dated order; it may be waiting among the dates to check (FL-1452: on one
           // of their pages, read until it is found)
-          for (const toCheck of months.filter((month) => month.toCheck)) {
+          for (const toCheck of months) {
+            if (!toCheck.toCheck) {
+              continue;
+            }
             if (months !== this.months) {
               return;
             }

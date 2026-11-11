@@ -521,10 +521,12 @@
     }
     fixingMixedDates = true;
     const view = albumView;
+    const generation = mixedDatesGeneration;
     try {
       const ids = await readDatesToCheckIds({ albumId: view.albumId });
-      // Not if the page moved on (another album, back again, or another session) while they were read
-      if (isCurrentView(view)) {
+      // Not if the page moved on (another album, back again, or another session) or the album's photos
+      // changed while they were read
+      if (isCurrentView(view) && mixedDatesGeneration === generation) {
         await itemsView?.changeDates(ids);
       }
     } catch (error) {
