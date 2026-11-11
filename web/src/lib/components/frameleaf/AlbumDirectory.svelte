@@ -944,20 +944,21 @@
 
   {#if arrangement.empty}
     <!-- FL-1412 (M13): the one empty-page pattern. Only a first album leads somewhere, and its button is
-         the quiet one: the header's New is this page's one filled button (BRAND.md). -->
-    {#if arrangement.searching}
+         the quiet one: the header's New is this page's one filled button (BRAND.md). With nothing at all
+         the controls are gone, so a search or filter left on from before never speaks for the page. -->
+    {#if arrangement.searching && !nothingYet}
       <EmptyState
         icon={mdiImageAlbum}
         title={$t('frameleaf_albums_empty_search_title')}
         message={$t('frameleaf_albums_empty_search_text')}
       />
-    {:else if view.filter === 'shared'}
+    {:else if view.filter === 'shared' && !nothingYet}
       <EmptyState
         icon={mdiImageAlbum}
         title={$t('frameleaf_albums_empty_shared_title')}
         message={$t('frameleaf_albums_empty_shared_text')}
       />
-    {:else if view.filter === 'smart'}
+    {:else if view.filter === 'smart' && !nothingYet}
       <EmptyState
         icon={mdiImageAlbum}
         title={$t('frameleaf_albums_empty_smart_title')}

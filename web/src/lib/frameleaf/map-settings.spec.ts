@@ -61,9 +61,18 @@ describe('map filters', () => {
     ['a date range', { datePreset: '30d' as const }],
     ['only favorites', { onlyFavorites: true }],
     ['no shared albums', { withSharedAlbums: false }],
-    ['no partner items', { withPartners: false }],
   ])('is narrowed by %s', (_, patch) => {
     expect(mapIsNarrowed({ ...defaults, ...patch })).toBe(true);
+  });
+
+  it('counts only the switch its scope uses: shared albums for the library, partner items for an album', () => {
+    expect(mapIsNarrowed({ ...defaults, withPartners: false })).toBe(false);
+    expect(mapIsNarrowed({ ...defaults, withPartners: false }, 0, true)).toBe(true);
+    expect(mapIsNarrowed({ ...defaults, withSharedAlbums: false }, 0, true)).toBe(false);
+    // and the reset leaves the other scope's switch as it was set
+    expect(mapFiltersReset(defaults)).not.toHaveProperty('withPartners');
+    expect(mapFiltersReset(defaults, 0, true)).toEqual(expect.objectContaining({ withPartners: true }));
+    expect(mapFiltersReset(defaults, 0, true)).not.toHaveProperty('withSharedAlbums');
   });
 
   it('is narrowed by archived items that are left out', () => {
@@ -78,7 +87,6 @@ describe('map filters', () => {
       dateBefore: '',
       onlyFavorites: false,
       withSharedAlbums: true,
-      withPartners: true,
       includeArchived: false,
     });
     expect(mapFiltersReset(defaults, 4).includeArchived).toBe(true);

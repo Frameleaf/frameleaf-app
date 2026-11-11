@@ -168,6 +168,21 @@ describe('MapScreen (FL-193)', () => {
       expect(get(mapSettings).includeArchived).toBe(true);
     });
 
+    it('offers the reset when the archived count could not be read, rather than saying there are none', async () => {
+      sdkMock.getMapStatistics.mockRejectedValue(new Error('offline'));
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      expect(await screen.findByRole('heading', { name: 'No photos match on the map' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Reset map filters' })).toBeInTheDocument();
+    });
+
+    it('does not count Partner items, an album switch, against the library map', async () => {
+      mapSettings.update((settings) => ({ ...settings, withPartners: false }));
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      expect(await screen.findByRole('heading', { name: 'No photos on the map yet' })).toBeInTheDocument();
+    });
+
     // An album has no archived count of its own, so its empty map offers the reset rather than "none yet".
     it('offers the reset on an empty album map while archived items are left out', async () => {
       sdkMock.getAlbumMapMarkers.mockResolvedValue([]);

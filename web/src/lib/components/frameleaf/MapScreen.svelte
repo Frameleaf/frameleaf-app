@@ -219,6 +219,7 @@
   let abort: AbortController | undefined;
   /** MapView.jsx settings counts: archived and partner items and items without a location (library scope). */
   let statistics = $state<MapStatisticsResponseDto>();
+  let statisticsFailed = $state(false);
   /**
    * FL-51: the configured tile source cannot be reached (offline, or the style or its tiles fail).
    * The located items stay reachable through the "In view" list, which needs no tiles.
@@ -238,12 +239,13 @@
   const patchSettings = (patch: Partial<MapSettings>) => ($mapSettings = { ...$mapSettings, ...patch });
   /** FL-1412 (M13): an empty map under a narrowing setting is "none match", not "none yet". */
   /**
-   * Located archived items the settings may be leaving out. An album has no count of its own (the
-   * statistics are the library's), so there it is assumed there may be some: an empty album map with
-   * archived items off offers the reset rather than saying the album has none.
+   * Located archived items the settings may be leaving out. Where the count is not known it is assumed
+   * there may be some, so an empty map with archived items off offers the reset rather than saying
+   * there are none: an album has no count of its own (the statistics are the library's), and the
+   * library's count can fail to load.
    */
-  const archivedHidden = $derived(scoped ? 1 : (statistics?.archived ?? 0));
-  const narrowed = $derived(mapIsNarrowed($mapSettings, archivedHidden));
+  const archivedHidden = $derived(scoped || statisticsFailed ? 1 : (statistics?.archived ?? 0));
+  const narrowed = $derived(mapIsNarrowed($mapSettings, archivedHidden, scoped));
   const focusGear = () => gear?.querySelector('button')?.focus();
 
   /* ------------------------------------------------------------------ */
@@ -561,12 +563,14 @@
       .then((result) => {
         if (!stale) {
           statistics = result;
+          statisticsFailed = false;
         }
       })
       .catch(() => {
         // the counts are a hint beside the switches; the markers still load without them
         if (!stale) {
           statistics = undefined;
+          statisticsFailed = true;
         }
       });
     return () => {
@@ -1216,7 +1220,7 @@
           message={$t('frameleaf_map_empty_help')}
           action={{
             label: $t('frameleaf_map_reset_filters'),
-            onClick: () => patchSettings(mapFiltersReset($mapSettings, archivedHidden)),
+            onClick: () => patchSettings(mapFiltersReset($mapSettings, archivedHidden, scoped)),
           }}
         />
       {:else}

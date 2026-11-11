@@ -44,24 +44,27 @@ type MapFilters = Pick<
 
 /**
  * FL-1412 (M13): whether the settings sheet keeps located items off the map, so an empty map can tell
- * "no located photos yet" from "none match these filters". `archived` is the sheet's count of located
- * archived items: left out by default, they only count as hidden when there are some.
+ * "no located photos yet" from "none match these filters". `archived` is the count of located archived
+ * items: left out by default, they only count as hidden when there are some (pass 1 when it is not
+ * known). Only the switches that narrow the scope count: shared albums narrow the library's map,
+ * partner items an album's.
  */
-export const mapIsNarrowed = (settings: MapFilters, archived = 0) =>
+export const mapIsNarrowed = (settings: MapFilters, archived = 0, album = false) =>
   settings.datePreset !== 'all' ||
   settings.onlyFavorites ||
-  !settings.withSharedAlbums ||
-  !settings.withPartners ||
+  (album ? !settings.withPartners : !settings.withSharedAlbums) ||
   (!settings.includeArchived && archived > 0);
 
-/** "Reset map filters": every date and every item, and archived ones when they are what is hidden. */
-export const mapFiltersReset = (settings: MapFilters, archived = 0): Partial<MapSettings> => ({
+/**
+ * "Reset map filters": every date and every item of the scope, and archived ones when they are what
+ * is hidden. A switch the scope does not use is left as the person set it.
+ */
+export const mapFiltersReset = (settings: MapFilters, archived = 0, album = false): Partial<MapSettings> => ({
   datePreset: 'all',
   dateAfter: '',
   dateBefore: '',
   onlyFavorites: false,
-  withSharedAlbums: true,
-  withPartners: true,
+  ...(album ? { withPartners: true } : { withSharedAlbums: true }),
   includeArchived: settings.includeArchived || archived > 0,
 });
 

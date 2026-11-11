@@ -220,6 +220,13 @@ describe('AlbumDirectory', () => {
     expect(screen.getByRole('button', { name: 'New' })).toBeInTheDocument();
   });
 
+  it('shows the plain empty page, not a filter\u2019s, when nothing is left under a filter kept from before', () => {
+    albumDirectoryView.set({ ...defaultAlbumDirectoryView, filter: 'smart' });
+    renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: [], spaces: [] }, onRefresh: vi.fn() });
+    expect(screen.getByRole('heading', { level: 2, name: 'No albums yet' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'No smart albums yet' })).toBeNull();
+  });
+
   it('keeps its controls when a search or a filter is what leaves nothing (FL-1412)', async () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
     await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'zzzz' } });
