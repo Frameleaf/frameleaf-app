@@ -114351,6 +114351,10 @@
       },
       "MemoryStatisticsResponseDto": {
         "properties": {
+          "preparing": {
+            "description": "The account has photos and no memories yet, and the overnight run has not happened since its first photo arrived",
+            "type": "boolean"
+          },
           "total": {
             "description": "Total number of memories",
             "maximum": 9007199254740991,
@@ -118433,6 +118437,10 @@
               "$ref": "#/components/schemas/PeopleListItemDto"
             },
             "type": "array"
+          },
+          "scanning": {
+            "description": "Nobody has been found yet and face recognition is still working through this account’s photos",
+            "type": "boolean"
           },
           "total": {
             "description": "Total number of people",

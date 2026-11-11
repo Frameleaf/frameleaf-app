@@ -7,6 +7,7 @@ import {
   otherWorkCards,
   tonightStart,
   workEtaSeconds,
+  faceRecognitionWork,
 } from '$lib/frameleaf/background-work';
 
 const queue = (name: QueueName, patch: Partial<DurableQueueRun> = {}): DurableQueueRun => ({
@@ -486,5 +487,23 @@ describe('workEtaSeconds (FL-1388)', () => {
     expect(workEtaSeconds(summary({ queues: [] }), now)).toBeNull();
     expect(workEtaSeconds(summary({ queues: [moving], canManageQueues: false }), now)).toBeNull();
     expect(workEtaSeconds(null, now)).toBeNull();
+  });
+});
+
+describe('faceRecognitionWork (FL-1408)', () => {
+  it('reads face recognition alone, in the states Activity shows', () => {
+    const state = (queues: DurableQueueRun[]) => faceRecognitionWork(summary({ queues }))?.state;
+
+    expect(state([queue(QueueName.FaceDetection, { active: 1, waiting: 9, total: 10 })])).toBe('running');
+    expect(state([queue(QueueName.FacialRecognition, { isPaused: true, waiting: 9 })])).toBe('paused');
+    expect(state([queue(QueueName.FaceDetection, { heldForNight: true, state: 'paused', waiting: 9 })])).toBe(
+      'tonight',
+    );
+    expect(state([queue(QueueName.FaceDetection, { waiting: 9 })])).toBe('waiting');
+    // pets share the feature but are not face recognition; other work says nothing about it
+    expect(state([queue(QueueName.PetRecognition, { active: 3 }), queue(QueueName.SmartSearch, { active: 3 })])).toBe(
+      'idle',
+    );
+    expect(faceRecognitionWork(null)?.state).toBe('idle');
   });
 });

@@ -189,6 +189,12 @@ const MemoryCreateSchema = z
 const MemoryStatisticsResponseSchema = z
   .object({
     total: z.int().describe('Total number of memories'),
+    preparing: z
+      .boolean()
+      .optional()
+      .describe(
+        'The account has photos and no memories yet, and the overnight run has not happened since its first photo arrived',
+      ),
   })
   .meta({ id: 'MemoryStatisticsResponseDto' });
 

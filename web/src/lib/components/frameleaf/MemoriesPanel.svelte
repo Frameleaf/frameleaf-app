@@ -8,7 +8,9 @@
    *   viewer's own local date (Memories.jsx:260-360): a birthday by the local date in its data, an "on
    *   this day" memory by its show window; trips, highlights and recaps are Earlier. Upcoming cards read
    *   "Tomorrow" / "In N days", recently passed ones "Yesterday" / "N days ago".
-   * - With nothing for today, one quiet row says so and when the next memory arrives (FL-1394).
+   * - With nothing for today, one quiet row says so and when the next memory arrives (FL-1394). The
+   *   day after a first import the same row says the memories are being prepared, and nothing else
+   *   (FL-1408).
    * - Each card's menu: Play, Favorite or Remove from favorites, then show less of its person or pet,
    *   its day or its kind (not in the prototype; composed as more menu items, like its menu), then
    *   Hide memory. Hiding replaces deletion (MI-1): hidden memories wait under "Hidden memories",
@@ -135,6 +137,8 @@
     sections.today.length === 0 && sections.upcoming.length === 0 && sections.earlier.length === 0,
   );
   const nextUp = $derived(sections.upcoming[0]);
+  // FL-1408 (M8): the day after a first import, before the overnight look through the library
+  const preparing = $derived(memoryManager.preparing && nothing);
   const longToday = $derived(
     DateTime.fromISO(today)
       .setLocale($locale ?? 'en')
@@ -513,9 +517,13 @@
     {:else}
       <!-- FL-1394 (B8): a day with nothing to show is one quiet row, not a banner over another day's photo. -->
       <p class="fm-quiet">
-        <strong>{$t('frameleaf_memories_nothing_today')}</strong>
+        <strong>
+          {preparing ? $t('frameleaf_memories_preparing_title') : $t('frameleaf_memories_nothing_today')}
+        </strong>
         <small>
-          {#if nextUp}
+          {#if preparing}
+            {$t('frameleaf_memories_preparing_description')}
+          {:else if nextUp}
             {$t('frameleaf_memories_next_arrives', {
               values: { count: nextUp.inDays ?? 1, title: $memoryHeadline(nextUp.memory).title },
             })}
@@ -543,8 +551,9 @@
     </section>
   {/if}
 
-  <!-- When nothing loaded, the retry above speaks for the page: no empty "Earlier" under it. -->
-  {#if !(failed && nothing)}
+  <!-- When nothing loaded, the retry above speaks for the page: no empty "Earlier" under it. Nor
+       under "being prepared" (FL-1408), which is the page's one message. -->
+  {#if !(failed && nothing) && !preparing}
     <section class="fm-section" aria-label={$t('frameleaf_memories_earlier')}>
       <div class="fm-section-heading">
         <h2>{$t('frameleaf_memories_earlier')}</h2>

@@ -11664,6 +11664,8 @@ export type MemoryShowLessResponseDto = {
     value: string;
 };
 export type MemoryStatisticsResponseDto = {
+    /** The account has photos and no memories yet, and the overnight run has not happened since its first photo arrived */
+    preparing?: boolean;
     /** Total number of memories */
     total: number;
 };
@@ -12227,6 +12229,8 @@ export type PeopleResponseDto = {
     /** Number of hidden people */
     hidden: number;
     people: PeopleListItemDto[];
+    /** Nobody has been found yet and face recognition is still working through this account’s photos */
+    scanning?: boolean;
     /** Total number of people */
     total: number;
 };
