@@ -46,6 +46,18 @@ export const queuedProcessingIsSetAside = sql<boolean>`j.name = any(${[...proces
     sql`coalesce(j.data->'includeSetAside' = 'true'::jsonb, false)`,
   )}`;
 
+/**
+ * A retry someone asked for runs the step again whatever set it aside (three failures, a file type no decoder
+ * opened then, or Stop trying): each put-back job's failure record starts again from zero. Keyed as the set-aside
+ * checks are: the file the job works on (`data.id`) and its step.
+ */
+export async function rearmProcessingFailures(db: Kysely<DB>, jobIds: string[]) {
+  if (jobIds.length === 0) return;
+  await sql`update asset_processing_failure f set attempts = 0, "quarantinedAt" = null, "dismissedAt" = null
+    from job j where j.id = any(${jobIds}::uuid[]) and f.step = j.name
+      and f."assetId" = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end`.execute(db);
+}
+
 export async function recordProcessingFailure(
   db: Kysely<DB>,
   { name, assetId, includeSetAside = false }: { name: string; assetId: string | null; includeSetAside?: boolean },
