@@ -141,15 +141,15 @@
         },
         "cloud-ml-migration": {
           "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
-          "body": "[Fixture Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+          "body": "[Fixture Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.]"
         },
         "cloud-ml-migration-removed-one": {
           "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
-          "body": "[Fixture The cloud processing destination {names} was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+          "body": "[Fixture The cloud processing destination {names} was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.]"
         },
         "cloud-ml-migration-removed-many": {
           "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
-          "body": "[Fixture The cloud processing destinations {names} were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+          "body": "[Fixture The cloud processing destinations {names} were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.]"
         },
         "cloud-ml-migration-jobs-one": {
           "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
@@ -1120,11 +1120,11 @@
       },
       "fallback": {
         "title": "Cloud processing moved to Frameleaf Cloud",
-        "body": "Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud."
+        "body": "Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud."
       },
       "expected": {
         "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
-        "body": "[Fixture Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+        "body": "[Fixture Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.]"
       }
     },
     {
@@ -1139,11 +1139,11 @@
       },
       "fallback": {
         "title": "Cloud processing moved to Frameleaf Cloud",
-        "body": "The cloud processing destination Old GPU <b>box</b>, Lab $& was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud."
+        "body": "The cloud processing destination Old GPU <b>box</b>, Lab $& was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud."
       },
       "expected": {
         "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
-        "body": "[Fixture The cloud processing destination Old GPU <b>box</b>, Lab $& was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+        "body": "[Fixture The cloud processing destination Old GPU <b>box</b>, Lab $& was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.]"
       }
     },
     {
@@ -1158,11 +1158,11 @@
       },
       "fallback": {
         "title": "Cloud processing moved to Frameleaf Cloud",
-        "body": "The cloud processing destinations Old GPU <b>box</b>, Lab $& were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud."
+        "body": "The cloud processing destinations Old GPU <b>box</b>, Lab $& were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud."
       },
       "expected": {
         "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
-        "body": "[Fixture The cloud processing destinations Old GPU <b>box</b>, Lab $& were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+        "body": "[Fixture The cloud processing destinations Old GPU <b>box</b>, Lab $& were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose a new place for it in Where work runs, or add Frameleaf Cloud.]"
       }
     },
     {

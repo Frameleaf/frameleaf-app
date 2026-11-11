@@ -890,7 +890,7 @@ export class EnrichmentPlanService {
     const route = await this.mlDestinations.getRoute(workload);
     if (!route) {
       throw new BadRequestException(
-        `No processing destination is chosen for ${workload}; choose one under Processing destinations`,
+        `No processing destination is chosen for ${workload}; choose one in Where work runs`,
       );
     }
     return route.destinationId;

@@ -184,15 +184,15 @@
       },
       "cloud-ml-migration": {
         "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
-        "body": "Frameleaf Cloud remplace l’ancien service de traitement dans le cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez où il s’exécute sous « Lieu d’exécution des tâches », ou ajoutez Frameleaf Cloud."
+        "body": "Frameleaf Cloud remplace l’ancien service de traitement dans le cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez-lui un nouvel emplacement dans « Lieu d’exécution des tâches », ou ajoutez Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
         "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
-        "body": "La destination de traitement dans le cloud {names} a été supprimée : Frameleaf Cloud remplace l’ancien service de traitement dans le cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez où il s’exécute sous « Lieu d’exécution des tâches », ou ajoutez Frameleaf Cloud."
+        "body": "La destination de traitement dans le cloud {names} a été supprimée : Frameleaf Cloud remplace l’ancien service de traitement dans le cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez-lui un nouvel emplacement dans « Lieu d’exécution des tâches », ou ajoutez Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
         "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
-        "body": "Les destinations de traitement dans le cloud {names} ont été supprimées : Frameleaf Cloud remplace l’ancien service de traitement dans le cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez où il s’exécute sous « Lieu d’exécution des tâches », ou ajoutez Frameleaf Cloud."
+        "body": "Les destinations de traitement dans le cloud {names} ont été supprimées : Frameleaf Cloud remplace l’ancien service de traitement dans le cloud. Le travail qui l’utilisait n’est envoyé nulle part ailleurs. Choisissez-lui un nouvel emplacement dans « Lieu d’exécution des tâches », ou ajoutez Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "Le traitement dans le cloud est passé à Frameleaf Cloud",
@@ -561,15 +561,15 @@
       },
       "cloud-ml-migration": {
         "title": "El procesamiento en la nube se ha movido a Frameleaf Cloud",
-        "body": "Frameleaf Cloud sustituye al servicio de procesamiento en la nube anterior. El trabajo que lo usaba no se envía a ningún otro sitio. Elige dónde se ejecuta en «Dónde se ejecuta el trabajo», o añade Frameleaf Cloud."
+        "body": "Frameleaf Cloud sustituye al servicio de procesamiento en la nube anterior. El trabajo que lo usaba no se envía a ningún otro sitio. Elige un nuevo lugar para ese trabajo en «Dónde se ejecuta el trabajo», o añade Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
         "title": "El procesamiento en la nube se ha movido a Frameleaf Cloud",
-        "body": "Se ha eliminado el destino de procesamiento en la nube {names}: Frameleaf Cloud sustituye al servicio de procesamiento en la nube anterior. El trabajo que lo usaba no se envía a ningún otro sitio. Elige dónde se ejecuta en «Dónde se ejecuta el trabajo», o añade Frameleaf Cloud."
+        "body": "Se ha eliminado el destino de procesamiento en la nube {names}: Frameleaf Cloud sustituye al servicio de procesamiento en la nube anterior. El trabajo que lo usaba no se envía a ningún otro sitio. Elige un nuevo lugar para ese trabajo en «Dónde se ejecuta el trabajo», o añade Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
         "title": "El procesamiento en la nube se ha movido a Frameleaf Cloud",
-        "body": "Se han eliminado los destinos de procesamiento en la nube {names}: Frameleaf Cloud sustituye al servicio de procesamiento en la nube anterior. El trabajo que lo usaba no se envía a ningún otro sitio. Elige dónde se ejecuta en «Dónde se ejecuta el trabajo», o añade Frameleaf Cloud."
+        "body": "Se han eliminado los destinos de procesamiento en la nube {names}: Frameleaf Cloud sustituye al servicio de procesamiento en la nube anterior. El trabajo que lo usaba no se envía a ningún otro sitio. Elige un nuevo lugar para ese trabajo en «Dónde se ejecuta el trabajo», o añade Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "El procesamiento en la nube se ha movido a Frameleaf Cloud",
@@ -938,15 +938,15 @@
       },
       "cloud-ml-migration": {
         "title": "Cloud-Verarbeitung zu Frameleaf Cloud verschoben",
-        "body": "Frameleaf Cloud ersetzt den bisherigen Dienst für die Cloud-Verarbeitung. Die Arbeit, die ihn genutzt hat, wird nirgendwo anders hingesendet. Wähle unter „Wo Arbeit ausgeführt wird“, wo sie laufen soll, oder füge Frameleaf Cloud hinzu."
+        "body": "Frameleaf Cloud ersetzt den bisherigen Dienst für die Cloud-Verarbeitung. Die Arbeit, die ihn genutzt hat, wird nirgendwo anders hingesendet. Wähle unter „Wo Arbeit ausgeführt wird“ einen neuen Ort dafür oder füge Frameleaf Cloud hinzu."
       },
       "cloud-ml-migration-removed-one": {
         "title": "Cloud-Verarbeitung zu Frameleaf Cloud verschoben",
-        "body": "Das Ziel für die Cloud-Verarbeitung {names} wurde entfernt: Frameleaf Cloud ersetzt den bisherigen Dienst für die Cloud-Verarbeitung. Die Arbeit, die ihn genutzt hat, wird nirgendwo anders hingesendet. Wähle unter „Wo Arbeit ausgeführt wird“, wo sie laufen soll, oder füge Frameleaf Cloud hinzu."
+        "body": "Das Ziel für die Cloud-Verarbeitung {names} wurde entfernt: Frameleaf Cloud ersetzt den bisherigen Dienst für die Cloud-Verarbeitung. Die Arbeit, die ihn genutzt hat, wird nirgendwo anders hingesendet. Wähle unter „Wo Arbeit ausgeführt wird“ einen neuen Ort dafür oder füge Frameleaf Cloud hinzu."
       },
       "cloud-ml-migration-removed-many": {
         "title": "Cloud-Verarbeitung zu Frameleaf Cloud verschoben",
-        "body": "Die Ziele für die Cloud-Verarbeitung {names} wurden entfernt: Frameleaf Cloud ersetzt den bisherigen Dienst für die Cloud-Verarbeitung. Die Arbeit, die ihn genutzt hat, wird nirgendwo anders hingesendet. Wähle unter „Wo Arbeit ausgeführt wird“, wo sie laufen soll, oder füge Frameleaf Cloud hinzu."
+        "body": "Die Ziele für die Cloud-Verarbeitung {names} wurden entfernt: Frameleaf Cloud ersetzt den bisherigen Dienst für die Cloud-Verarbeitung. Die Arbeit, die ihn genutzt hat, wird nirgendwo anders hingesendet. Wähle unter „Wo Arbeit ausgeführt wird“ einen neuen Ort dafür oder füge Frameleaf Cloud hinzu."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "Cloud-Verarbeitung zu Frameleaf Cloud verschoben",
@@ -1315,15 +1315,15 @@
       },
       "cloud-ml-migration": {
         "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
-        "body": "Frameleaf Cloud sostituisce il precedente servizio di elaborazione cloud. Il lavoro che lo usava non viene inviato altrove. Scegli dove eseguirlo in «Dove viene eseguito il lavoro», oppure aggiungi Frameleaf Cloud."
+        "body": "Frameleaf Cloud sostituisce il precedente servizio di elaborazione cloud. Il lavoro che lo usava non viene inviato altrove. Scegli una nuova destinazione per questo lavoro in «Dove viene eseguito il lavoro», oppure aggiungi Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
         "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
-        "body": "La destinazione di elaborazione cloud {names} è stata rimossa: Frameleaf Cloud sostituisce il precedente servizio di elaborazione cloud. Il lavoro che la usava non viene inviato altrove. Scegli dove eseguirlo in «Dove viene eseguito il lavoro», oppure aggiungi Frameleaf Cloud."
+        "body": "La destinazione di elaborazione cloud {names} è stata rimossa: Frameleaf Cloud sostituisce il precedente servizio di elaborazione cloud. Il lavoro che la usava non viene inviato altrove. Scegli una nuova destinazione per questo lavoro in «Dove viene eseguito il lavoro», oppure aggiungi Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
         "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
-        "body": "Le destinazioni di elaborazione cloud {names} sono state rimosse: Frameleaf Cloud sostituisce il precedente servizio di elaborazione cloud. Il lavoro che lo usava non viene inviato altrove. Scegli dove eseguirlo in «Dove viene eseguito il lavoro», oppure aggiungi Frameleaf Cloud."
+        "body": "Le destinazioni di elaborazione cloud {names} sono state rimosse: Frameleaf Cloud sostituisce il precedente servizio di elaborazione cloud. Il lavoro che lo usava non viene inviato altrove. Scegli una nuova destinazione per questo lavoro in «Dove viene eseguito il lavoro», oppure aggiungi Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "L’elaborazione cloud è passata a Frameleaf Cloud",
@@ -1692,15 +1692,15 @@
       },
       "cloud-ml-migration": {
         "title": "O processamento na nuvem passou para o Frameleaf Cloud",
-        "body": "O Frameleaf Cloud substitui o serviço de processamento na nuvem anterior. O trabalho que o utilizava não é enviado para mais lado nenhum. Escolha onde é executado em «Onde o trabalho é executado» ou adicione o Frameleaf Cloud."
+        "body": "O Frameleaf Cloud substitui o serviço de processamento na nuvem anterior. O trabalho que o utilizava não é enviado para mais lado nenhum. Escolha um novo local para esse trabalho em «Onde o trabalho é executado» ou adicione o Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
         "title": "O processamento na nuvem passou para o Frameleaf Cloud",
-        "body": "O destino de processamento na nuvem {names} foi removido: o Frameleaf Cloud substitui o serviço de processamento na nuvem anterior. O trabalho que o utilizava não é enviado para mais lado nenhum. Escolha onde é executado em «Onde o trabalho é executado» ou adicione o Frameleaf Cloud."
+        "body": "O destino de processamento na nuvem {names} foi removido: o Frameleaf Cloud substitui o serviço de processamento na nuvem anterior. O trabalho que o utilizava não é enviado para mais lado nenhum. Escolha um novo local para esse trabalho em «Onde o trabalho é executado» ou adicione o Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
         "title": "O processamento na nuvem passou para o Frameleaf Cloud",
-        "body": "Os destinos de processamento na nuvem {names} foram removidos: o Frameleaf Cloud substitui o serviço de processamento na nuvem anterior. O trabalho que o utilizava não é enviado para mais lado nenhum. Escolha onde é executado em «Onde o trabalho é executado» ou adicione o Frameleaf Cloud."
+        "body": "Os destinos de processamento na nuvem {names} foram removidos: o Frameleaf Cloud substitui o serviço de processamento na nuvem anterior. O trabalho que o utilizava não é enviado para mais lado nenhum. Escolha um novo local para esse trabalho em «Onde o trabalho é executado» ou adicione o Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "O processamento na nuvem passou para o Frameleaf Cloud",
@@ -2069,15 +2069,15 @@
       },
       "cloud-ml-migration": {
         "title": "Cloudverwerking is verplaatst naar Frameleaf Cloud",
-        "body": "Frameleaf Cloud vervangt de vorige cloudverwerkingsdienst. Het werk dat deze gebruikte, wordt nergens anders naartoe gestuurd. Kies onder ‘Waar werk wordt uitgevoerd’ waar het wordt uitgevoerd, of voeg Frameleaf Cloud toe."
+        "body": "Frameleaf Cloud vervangt de vorige cloudverwerkingsdienst. Het werk dat deze gebruikte, wordt nergens anders naartoe gestuurd. Kies onder ‘Waar werk wordt uitgevoerd’ een nieuwe plek voor dit werk, of voeg Frameleaf Cloud toe."
       },
       "cloud-ml-migration-removed-one": {
         "title": "Cloudverwerking is verplaatst naar Frameleaf Cloud",
-        "body": "De cloudverwerkingsbestemming {names} is verwijderd: Frameleaf Cloud vervangt de vorige cloudverwerkingsdienst. Het werk dat deze gebruikte, wordt nergens anders naartoe gestuurd. Kies onder ‘Waar werk wordt uitgevoerd’ waar het wordt uitgevoerd, of voeg Frameleaf Cloud toe."
+        "body": "De cloudverwerkingsbestemming {names} is verwijderd: Frameleaf Cloud vervangt de vorige cloudverwerkingsdienst. Het werk dat deze gebruikte, wordt nergens anders naartoe gestuurd. Kies onder ‘Waar werk wordt uitgevoerd’ een nieuwe plek voor dit werk, of voeg Frameleaf Cloud toe."
       },
       "cloud-ml-migration-removed-many": {
         "title": "Cloudverwerking is verplaatst naar Frameleaf Cloud",
-        "body": "De cloudverwerkingsbestemmingen {names} zijn verwijderd: Frameleaf Cloud vervangt de vorige cloudverwerkingsdienst. Het werk dat deze gebruikte, wordt nergens anders naartoe gestuurd. Kies onder ‘Waar werk wordt uitgevoerd’ waar het wordt uitgevoerd, of voeg Frameleaf Cloud toe."
+        "body": "De cloudverwerkingsbestemmingen {names} zijn verwijderd: Frameleaf Cloud vervangt de vorige cloudverwerkingsdienst. Het werk dat deze gebruikte, wordt nergens anders naartoe gestuurd. Kies onder ‘Waar werk wordt uitgevoerd’ een nieuwe plek voor dit werk, of voeg Frameleaf Cloud toe."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "Cloudverwerking is verplaatst naar Frameleaf Cloud",
@@ -2446,15 +2446,15 @@
       },
       "cloud-ml-migration": {
         "title": "Przetwarzanie w chmurze przeniesiono do Frameleaf Cloud",
-        "body": "Frameleaf Cloud zastępuje poprzednią usługę przetwarzania w chmurze. Praca, która z niej korzystała, nie jest wysyłana nigdzie indziej. Wybierz, gdzie ma być wykonywana, w sekcji „Gdzie działa praca” lub dodaj Frameleaf Cloud."
+        "body": "Frameleaf Cloud zastępuje poprzednią usługę przetwarzania w chmurze. Praca, która z niej korzystała, nie jest wysyłana nigdzie indziej. Wybierz dla niej nowe miejsce w sekcji „Gdzie działa praca” lub dodaj Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
         "title": "Przetwarzanie w chmurze przeniesiono do Frameleaf Cloud",
-        "body": "Cel przetwarzania w chmurze {names} został usunięty: Frameleaf Cloud zastępuje poprzednią usługę przetwarzania w chmurze. Praca, która z niego korzystała, nie jest wysyłana nigdzie indziej. Wybierz, gdzie ma być wykonywana, w sekcji „Gdzie działa praca” lub dodaj Frameleaf Cloud."
+        "body": "Cel przetwarzania w chmurze {names} został usunięty: Frameleaf Cloud zastępuje poprzednią usługę przetwarzania w chmurze. Praca, która z niego korzystała, nie jest wysyłana nigdzie indziej. Wybierz dla niej nowe miejsce w sekcji „Gdzie działa praca” lub dodaj Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
         "title": "Przetwarzanie w chmurze przeniesiono do Frameleaf Cloud",
-        "body": "Cele przetwarzania w chmurze {names} zostały usunięte: Frameleaf Cloud zastępuje poprzednią usługę przetwarzania w chmurze. Praca, która z niej korzystała, nie jest wysyłana nigdzie indziej. Wybierz, gdzie ma być wykonywana, w sekcji „Gdzie działa praca” lub dodaj Frameleaf Cloud."
+        "body": "Cele przetwarzania w chmurze {names} zostały usunięte: Frameleaf Cloud zastępuje poprzednią usługę przetwarzania w chmurze. Praca, która z niej korzystała, nie jest wysyłana nigdzie indziej. Wybierz dla niej nowe miejsce w sekcji „Gdzie działa praca” lub dodaj Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "Przetwarzanie w chmurze przeniesiono do Frameleaf Cloud",
@@ -2823,15 +2823,15 @@
       },
       "cloud-ml-migration": {
         "title": "Molnbearbetningen flyttades till Frameleaf Cloud",
-        "body": "Frameleaf Cloud ersätter den tidigare molnbearbetningstjänsten. Arbetet som använde den skickas inte någon annanstans. Välj var det ska köras under ”Var arbetet körs”, eller lägg till Frameleaf Cloud."
+        "body": "Frameleaf Cloud ersätter den tidigare molnbearbetningstjänsten. Arbetet som använde den skickas inte någon annanstans. Välj en ny plats för det under ”Var arbetet körs”, eller lägg till Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
         "title": "Molnbearbetningen flyttades till Frameleaf Cloud",
-        "body": "Molnbearbetningsmålet {names} togs bort: Frameleaf Cloud ersätter den tidigare molnbearbetningstjänsten. Arbetet som använde den skickas inte någon annanstans. Välj var det ska köras under ”Var arbetet körs”, eller lägg till Frameleaf Cloud."
+        "body": "Molnbearbetningsmålet {names} togs bort: Frameleaf Cloud ersätter den tidigare molnbearbetningstjänsten. Arbetet som använde den skickas inte någon annanstans. Välj en ny plats för det under ”Var arbetet körs”, eller lägg till Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
         "title": "Molnbearbetningen flyttades till Frameleaf Cloud",
-        "body": "Molnbearbetningsmålen {names} togs bort: Frameleaf Cloud ersätter den tidigare molnbearbetningstjänsten. Arbetet som använde den skickas inte någon annanstans. Välj var det ska köras under ”Var arbetet körs”, eller lägg till Frameleaf Cloud."
+        "body": "Molnbearbetningsmålen {names} togs bort: Frameleaf Cloud ersätter den tidigare molnbearbetningstjänsten. Arbetet som använde den skickas inte någon annanstans. Välj en ny plats för det under ”Var arbetet körs”, eller lägg till Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "Molnbearbetningen flyttades till Frameleaf Cloud",
@@ -3200,15 +3200,15 @@
       },
       "cloud-ml-migration": {
         "title": "Skybehandling er flyttet til Frameleaf Cloud",
-        "body": "Frameleaf Cloud erstatter den tidligere tjeneste til skybehandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg, hvor det skal køre, under ”Hvor arbejdet kører”, eller tilføj Frameleaf Cloud."
+        "body": "Frameleaf Cloud erstatter den tidligere tjeneste til skybehandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg et nyt sted til det under ”Hvor arbejdet kører”, eller tilføj Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
         "title": "Skybehandling er flyttet til Frameleaf Cloud",
-        "body": "Destinationen til skybehandling {names} blev fjernet: Frameleaf Cloud erstatter den tidligere tjeneste til skybehandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg, hvor det skal køre, under ”Hvor arbejdet kører”, eller tilføj Frameleaf Cloud."
+        "body": "Destinationen til skybehandling {names} blev fjernet: Frameleaf Cloud erstatter den tidligere tjeneste til skybehandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg et nyt sted til det under ”Hvor arbejdet kører”, eller tilføj Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
         "title": "Skybehandling er flyttet til Frameleaf Cloud",
-        "body": "Destinationerne til skybehandling {names} blev fjernet: Frameleaf Cloud erstatter den tidligere tjeneste til skybehandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg, hvor det skal køre, under ”Hvor arbejdet kører”, eller tilføj Frameleaf Cloud."
+        "body": "Destinationerne til skybehandling {names} blev fjernet: Frameleaf Cloud erstatter den tidligere tjeneste til skybehandling. Arbejdet, der brugte den, sendes ikke andre steder hen. Vælg et nyt sted til det under ”Hvor arbejdet kører”, eller tilføj Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "Skybehandling er flyttet til Frameleaf Cloud",
@@ -3577,15 +3577,15 @@
       },
       "cloud-ml-migration": {
         "title": "Skybehandling er flyttet til Frameleaf Cloud",
-        "body": "Frameleaf Cloud erstatter den forrige skybehandlingstjenesten. Arbeidet som brukte den sendes ikke noe annet sted. Velg hvor det skal kjøres under «Hvor arbeidet kjøres», eller legg til Frameleaf Cloud."
+        "body": "Frameleaf Cloud erstatter den forrige skybehandlingstjenesten. Arbeidet som brukte den sendes ikke noe annet sted. Velg et nytt sted for det under «Hvor arbeidet kjøres», eller legg til Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-one": {
         "title": "Skybehandling er flyttet til Frameleaf Cloud",
-        "body": "Skybehandlingsmålet {names} ble fjernet: Frameleaf Cloud erstatter den forrige skybehandlingstjenesten. Arbeidet som brukte den sendes ikke noe annet sted. Velg hvor det skal kjøres under «Hvor arbeidet kjøres», eller legg til Frameleaf Cloud."
+        "body": "Skybehandlingsmålet {names} ble fjernet: Frameleaf Cloud erstatter den forrige skybehandlingstjenesten. Arbeidet som brukte den sendes ikke noe annet sted. Velg et nytt sted for det under «Hvor arbeidet kjøres», eller legg til Frameleaf Cloud."
       },
       "cloud-ml-migration-removed-many": {
         "title": "Skybehandling er flyttet til Frameleaf Cloud",
-        "body": "Skybehandlingsmålene {names} ble fjernet: Frameleaf Cloud erstatter den forrige skybehandlingstjenesten. Arbeidet som brukte den sendes ikke noe annet sted. Velg hvor det skal kjøres under «Hvor arbeidet kjøres», eller legg til Frameleaf Cloud."
+        "body": "Skybehandlingsmålene {names} ble fjernet: Frameleaf Cloud erstatter den forrige skybehandlingstjenesten. Arbeidet som brukte den sendes ikke noe annet sted. Velg et nytt sted for det under «Hvor arbeidet kjøres», eller legg til Frameleaf Cloud."
       },
       "cloud-ml-migration-jobs-one": {
         "title": "Skybehandling er flyttet til Frameleaf Cloud",
