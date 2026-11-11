@@ -4,12 +4,14 @@ import {
   PreservationPackageStatus,
   type PreservationPackageDto,
 } from '@frameleaf/sdk';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import PreservationPanel from './PreservationPanel.svelte';
 
+const { location } = vi.hoisted(() => ({ location: { url: new URL('https://photos.example.test/') } }));
+vi.mock('$app/state', () => ({ page: location }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me', isAdmin: false } } }));
 
@@ -49,6 +51,7 @@ describe('PreservationPanel (FL-74)', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    location.url.search = '';
     sdkMock.getPreservationRestores.mockResolvedValue([]);
   });
 
@@ -65,6 +68,41 @@ describe('PreservationPanel (FL-74)', () => {
     ]);
     const { unmount } = render(PreservationPanel);
     expect(await screen.findByText(/2 of 3 saved links written · 1 skipped/)).toBeInTheDocument();
+    unmount();
+  });
+
+  it('opens the requested package when it belongs to the signed-in account', async () => {
+    location.url.searchParams.set('preservationPackage', 'requested');
+    sdkMock.getPreservationPackages.mockResolvedValue([
+      exporting,
+      { ...exporting, id: 'requested', name: 'Summer', operation: null },
+    ]);
+    const { unmount } = render(PreservationPanel);
+    expect(await screen.findByRole('dialog', { name: /Summer/ })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Family archive/ })).toBeNull();
+    unmount();
+  });
+
+  it('keeps retry reachable for a cancelled album export', async () => {
+    location.url.searchParams.set('preservationPackage', exporting.id);
+    sdkMock.getPreservationPackages.mockResolvedValue([
+      {
+        ...exporting,
+        operation: { ...exporting.operation!, status: MediaOperationStatus.Cancelled },
+      },
+    ]);
+    const { unmount } = render(PreservationPanel);
+    const dialog = await screen.findByRole('dialog', { name: /Family archive/ });
+    expect(within(dialog).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    unmount();
+  });
+
+  it('leaves the dialog closed when the requested package is missing from the account', async () => {
+    location.url.searchParams.set('preservationPackage', 'unknown');
+    sdkMock.getPreservationPackages.mockResolvedValue([exporting]);
+    const { unmount } = render(PreservationPanel);
+    expect(await screen.findByText('Family archive')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
     unmount();
   });
 

@@ -38,6 +38,7 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { workspaceHref } from '$lib/frameleaf/search-context';
   import {
     handleCreateAlbumEntry,
@@ -315,6 +316,7 @@
     save({ icon, color }, $t('frameleaf_album_color_saved'));
   /** Make a movie (FL-561): beside Slideshow, in the "…" menu on phones. */
   let movieOpen = $state(false);
+  let preservationExportOpen = $state(false);
   let shareOpen = $state(false);
   let shareSection = $state<'people' | 'links'>('people');
   const openShare = (section: 'people' | 'links' = 'people') => {
@@ -934,6 +936,12 @@
           {/if}
           <div class="menu-separator" role="separator"></div>
         {/if}
+        {#if owner && album.kind === AlbumKind.Album}
+          <MenuItem disabled={assetCount === 0} onSelect={() => (preservationExportOpen = true)}>
+            <Icon icon={mdiDownloadOutline} size="18" />
+            {$t('frameleaf_preservation_album_export')}
+          </MenuItem>
+        {/if}
         {#if canCreateChild}
           <!-- CollectionHeader.jsx "new-album": from a plain album it goes next to it, in the same collection
              when you can add to that collection; otherwise at the top level. -->
@@ -1103,6 +1111,21 @@
 {/if}
 <AlbumCoverDialog {album} albumIds={coverSourceIds} bind:open={coverOpen} onUpdated={onCoverChange} />
 <AlbumOptionsDialog {album} bind:open={optionsOpen} onUpdated={onAlbumChange} />
+
+{#if owner && album.kind === AlbumKind.Album && preservationExportOpen}
+  {#key album.id}
+    {#await import('$lib/components/frameleaf/PreservationExportDialog.svelte') then { default: PreservationExportDialog }}
+      <PreservationExportDialog
+        bind:open={preservationExportOpen}
+        {album}
+        onCreated={(created) => {
+          toastManager.info($t('frameleaf_preservation_export_started'));
+          void goto(commandCenterUrl('backup', 'preservation', { preservationPackage: created.id }));
+        }}
+      />
+    {/await}
+  {/key}
+{/if}
 
 {#if editOpen}{#await import('$lib/components/frameleaf/AlbumCreateDialog.svelte') then { default: AlbumCreateDialog }}
     <AlbumCreateDialog
