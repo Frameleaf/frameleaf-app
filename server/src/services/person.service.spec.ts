@@ -1674,6 +1674,7 @@ describe(PersonService.name, () => {
 
     it('puts the moved faces back when a split fails halfway, and keeps the suggestion', async () => {
       const { auth, person, merge, remove } = setupSplit();
+      mocks.person.hasFaces.mockResolvedValue(true);
       vi.spyOn(sut, 'reassignFacesById')
         .mockResolvedValueOnce({} as never)
         .mockRejectedValueOnce(new Error('the second face could not move'));
@@ -1688,8 +1689,23 @@ describe(PersonService.name, () => {
       expect(mocks.person.deleteSplitCandidate).not.toHaveBeenCalled();
     });
 
-    it('removes the new person when not even the first face moved', async () => {
+    it('puts a face back when its move failed after the face was written', async () => {
       const { auth, person, merge, remove } = setupSplit();
+      // the very first move throws, but its write had already happened
+      mocks.person.hasFaces.mockResolvedValue(true);
+      vi.spyOn(sut, 'reassignFacesById').mockRejectedValue(new Error('failed after the write'));
+
+      await expect(sut.setSplitVerdict(auth, { personId: person.personGroupId, verdict: 'split' })).rejects.toThrow(
+        'failed after the write',
+      );
+
+      expect(merge).toHaveBeenCalledWith(auth, { ids: [person.personGroupId, 'new-person'] });
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('removes the new person when no face reached it', async () => {
+      const { auth, person, merge, remove } = setupSplit();
+      mocks.person.hasFaces.mockResolvedValue(false);
       vi.spyOn(sut, 'reassignFacesById').mockRejectedValue(new Error('no face could move'));
 
       await expect(sut.setSplitVerdict(auth, { personId: person.personGroupId, verdict: 'split' })).rejects.toThrow(
@@ -1698,6 +1714,30 @@ describe(PersonService.name, () => {
 
       expect(remove).toHaveBeenCalledWith(auth, 'new-person');
       expect(merge).not.toHaveBeenCalled();
+    });
+
+    it('reports what moved when the faces cannot be put back, so the page can offer its Undo', async () => {
+      const { auth, person, merge } = setupSplit();
+      mocks.person.hasFaces.mockResolvedValue(true);
+      merge.mockResolvedValue([{ id: 'new-person', success: false }]);
+      vi.spyOn(sut, 'reassignFacesById')
+        .mockResolvedValueOnce({} as never)
+        .mockRejectedValueOnce(new Error('the second face could not move'));
+      // the faces of the reviewed person are counted first, then those left with the new person
+      mocks.person.getSplitFaceCounts
+        .mockResolvedValueOnce({ total: 9, faceIds: ['face-1', 'face-2', 'face-3'] })
+        .mockResolvedValueOnce({ total: 1, faceIds: [] });
+
+      await expect(sut.setSplitVerdict(auth, { personId: person.personGroupId, verdict: 'split' })).resolves.toEqual({
+        personId: person.personGroupId,
+        verdict: 'split',
+        newPersonId: 'new-person',
+        movedFaceCount: 1,
+      });
+
+      expect(mocks.person.getSplitFaceCounts).toHaveBeenLastCalledWith('new-person', []);
+      // the suggestion stays, for the faces that did not move
+      expect(mocks.person.deleteSplitCandidate).not.toHaveBeenCalled();
     });
 
     it('moves every face and forgets the suggestion when all goes well', async () => {

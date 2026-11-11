@@ -404,40 +404,46 @@ export class PersonService extends BaseService {
     const created = await this.create(auth, {});
     // ponytail: one face at a time, as "Fix incorrect match" moves them, so each has its history entry;
     // batch the moves if splitting thousands of faces proves slow.
-    let moved = 0;
     try {
       for (const id of movable) {
         await this.reassignFacesById(auth, created.id, { id });
-        moved++;
       }
     } catch (error) {
       // a split that fails halfway is put back, so the person is as they were and the answer can be given again
-      await this.undoPartialSplit(auth, personId, created.id, moved);
-      throw error;
+      const stranded = await this.undoPartialSplit(auth, personId, created.id);
+      if (stranded === 0) {
+        throw error;
+      }
+      // the faces could not be put back: say what did move, so the page shows it and offers its Undo.
+      // The suggestion stays, for the faces that did not move.
+      this.logger.error(`A split of ${personId} stopped with ${stranded} faces on ${created.id}: ${error}`);
+      return { personId, verdict: 'split', newPersonId: created.id, movedFaceCount: stranded };
     }
     await this.personRepository.deleteSplitCandidate(auth.user.id, personId);
     return { personId, verdict: 'split', newPersonId: created.id, movedFaceCount: movable.length };
   }
 
   /**
-   * FL-1385: takes back the part of a split that happened before it failed: the faces that moved return
-   * by merging the new person into the one they came from (as the web's Undo does), and a new person no
-   * face reached is removed. The candidate stays, so the owner is asked again.
+   * FL-1385: takes back the part of a split that happened before it failed. Whether a face reached the
+   * new person is read from the database, not counted: a move can fail after its write. Faces that moved
+   * return by merging the new person into the one they came from (as the web's Undo does); a new person
+   * no face reached is removed. Returns how many faces are still with the new person: 0 once it is undone.
    */
-  private async undoPartialSplit(auth: AuthDto, personId: string, createdId: string, moved: number) {
+  private async undoPartialSplit(auth: AuthDto, personId: string, createdId: string): Promise<number> {
     try {
-      if (moved === 0) {
+      if (!(await this.personRepository.hasFaces(createdId))) {
         await this.delete(auth, createdId);
-        return;
+        return 0;
       }
       const results = await this.mergePeople(auth, { ids: [personId, createdId] });
-      const mergedBack = results.find(({ id }) => id === createdId)?.success;
-      if (!mergedBack) {
-        throw new Error('the new person could not be merged back');
+      if (results.find(({ id }) => id === createdId)?.success) {
+        return 0;
       }
     } catch (error) {
-      this.logger.error(`A split of ${personId} failed and ${moved} faces stayed with ${createdId}: ${error}`);
+      this.logger.error(`The failed split of ${personId} could not be put back from ${createdId}: ${error}`);
     }
+    const { total } = await this.personRepository.getSplitFaceCounts(createdId, []);
+    return total;
   }
 
   /** FL-1385: undoes a "same" or "later" answer, so the person can be suggested again. */
