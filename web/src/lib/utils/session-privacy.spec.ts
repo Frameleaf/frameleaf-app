@@ -110,4 +110,25 @@ describe('revokeSessionView', () => {
     expect(() => revokeSessionView('/photos')).toThrow('navigation failed');
     expect(document.documentElement.style.display).toBe('none');
   });
+
+  it('revokes the native offline scope after cancelling browser downloads on local sign-out', () => {
+    vi.stubGlobal('__FRAMELEAF_DESKTOP_LOCAL_OFFLINE_ALBUMS__', true);
+    try {
+      let request: AbortSignal | undefined;
+      downloadManager.start({ name: 'private.zip', assetIds: ['protected-asset'] }, ({ signal }) => {
+        request = signal;
+        return new Promise<Blob>(() => {});
+      });
+      const replace = vi.spyOn(location, 'replace').mockImplementation(() => {
+        expect(request?.aborted).toBe(true);
+        expect(document.documentElement.style.display).toBe('none');
+      });
+
+      revokeSessionView('/auth/logout?continue=%2Fphotos');
+
+      expect(replace).toHaveBeenCalledWith('/__frameleaf_desktop__/offline-albums/revoke');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

@@ -519,10 +519,11 @@ export class BookmarkRepository {
       .where('asset.visibility', '!=', AssetVisibility.Hidden);
   }
 
-  getAlbumAssets(auth: AuthDto, albumId: string, afterId?: string, limit = 200) {
+  getAlbumAssets(auth: AuthDto, albumId: string, afterId?: string, limit = 200, assetId?: string) {
     return this.albumAssets(auth, albumId)
       .select(columns.searchAsset)
       .select(isLocked().as('isLocked'))
+      .$if(!!assetId, (qb) => qb.where('asset.id', '=', assetId!))
       .$if(!!afterId, (qb) => qb.where('asset.id', '>', afterId!))
       .orderBy('asset.id')
       .limit(limit)

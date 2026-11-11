@@ -11,6 +11,7 @@ import { browser } from '$app/env';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { keepExtensionContinue } from '$lib/frameleaf/extension-sign-in';
+import { hasLocalOfflineAlbums } from '$lib/frameleaf/local-offline';
 import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
 import { clearPrivateBrowserState, getPrivateBrowserStateGeneration } from '$lib/frameleaf/private-browser-state';
 import { retireStudioImportSessions } from '$lib/frameleaf/studio/import-retention';
@@ -168,6 +169,15 @@ class AuthManager {
     // FL-80: the account's private browser state goes with the session, also when the provider's
     // sign-out page takes over (which skips the in-app reset below)
     clearPrivateBrowserState();
+
+    // Signing out already deleted the session, which revokes its offline album grants on the server.
+    // A provider sign-out page still has to run, so Desktop's revoke step is only used without one.
+    if (hasLocalOfflineAlbums() && redirectUri.startsWith('/')) {
+      this.reset();
+      eventManager.emit('AuthLogout');
+      revokeSessionView(Route.logout());
+      return;
+    }
 
     if (redirectUri.startsWith('/')) {
       this.isPurchased = false;

@@ -958,6 +958,20 @@ export class AuthService extends BaseService {
     });
   }
 
+  /** The narrow offline album grant never inherits a browser's PIN elevation. */
+  async authorizeOfflineAlbumSession(sessionId: string, ownerId: string): Promise<AuthDto | undefined> {
+    const user = await this.sessionRepository.getOfflineAlbumOwner(sessionId, ownerId);
+    if (!user) return;
+    const auth: AuthDto = { user, session: { id: sessionId, hasElevatedPermission: false } };
+    const hiddenContent = await this.getHiddenContentFilter(auth, false);
+    if (hasHiddenContentFilter(hiddenContent)) {
+      auth.suppressedContent = hiddenContent;
+      auth.hiddenContent = hiddenContent;
+      auth.hideNsfwAssets = true;
+    }
+    return auth;
+  }
+
   async authenticate({ headers, queryParams, metadata }: ValidateRequest): Promise<AuthDto> {
     const appToken = this.getBearerToken(headers);
     const authDto = isOAuthAccessToken(appToken)

@@ -1,4 +1,5 @@
 import { browser } from '$app/env';
+import { offlineSessionExit } from '$lib/frameleaf/local-offline';
 import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { downloadManager } from '$lib/managers/download-manager.svelte';
 
@@ -17,10 +18,11 @@ export const revokeSessionView = (destination: string) => {
 
   // A SvelteKit navigation retains singleton result caches and in-flight work.
   // Replace the whole document so they cannot repopulate a locked route.
+  const exit = offlineSessionExit(destination);
   if (exitingPictureInPicture) {
-    void exitingPictureInPicture.then(() => location.replace(destination));
+    void exitingPictureInPicture.then(() => location.replace(exit));
   } else {
-    location.replace(destination);
+    location.replace(exit);
   }
 };
 
