@@ -7549,7 +7549,6 @@
   "frameleaf_eagle_collections_detail": "Nested {depth, plural, one {# level} other {# levels}} deep, as in Eagle. {several, plural, =0 {No item sits in more than one.} one {# item sits in more than one; it is stored once.} other {# items sit in more than one; each is stored once.}}",
   "frameleaf_eagle_comes_over": "What comes over",
   "frameleaf_eagle_dates": "Date changed in Eagle",
-  "frameleaf_eagle_default_collection": "Studio References",
   "frameleaf_eagle_differently": "Brought over differently",
   "frameleaf_eagle_failed_start": "The import couldn’t make its collections and tags. Nothing was lost; try again.",
   "frameleaf_eagle_field_map": "What each Eagle detail becomes",

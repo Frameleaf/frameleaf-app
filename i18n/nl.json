@@ -7646,7 +7646,6 @@
   "frameleaf_eagle_collections_detail": "{depth, plural, one {# niveau} other {# niveaus}} diep genest, zoals in Eagle. {several, plural, =0 {Geen enkel item zit in meer dan één.} one {# item zit in meer dan één; het wordt één keer opgeslagen.} other {# items zitten in meer dan één; elk wordt één keer opgeslagen.}}",
   "frameleaf_eagle_comes_over": "Wat wordt overgebracht",
   "frameleaf_eagle_dates": "Datum gewijzigd in Eagle",
-  "frameleaf_eagle_default_collection": "Studio-referenties",
   "frameleaf_eagle_differently": "Anders overgebracht",
   "frameleaf_eagle_failed_start": "De import kon zijn collecties en tags niet aanmaken. Er is niets verloren gegaan; probeer het opnieuw.",
   "frameleaf_eagle_field_map": "Wat elk Eagle-detail wordt",

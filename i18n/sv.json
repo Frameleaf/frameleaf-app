@@ -7642,7 +7642,6 @@
   "frameleaf_eagle_collections_detail": "Nästlade {depth, plural, one {# nivå} other {# nivåer}} djupt, som i Eagle. {several, plural, =0 {Inget objekt finns i mer än en.} one {# objekt finns i mer än en. Det lagras en gång.} other {# objekt finns i mer än en. Var och ett lagras en gång.}}",
   "frameleaf_eagle_comes_over": "Det som förs över",
   "frameleaf_eagle_dates": "Datum ändrat i Eagle",
-  "frameleaf_eagle_default_collection": "Studio-referenser",
   "frameleaf_eagle_differently": "Överfört på ett annat sätt",
   "frameleaf_eagle_failed_start": "Importen kunde inte skapa sina samlingar och taggar. Inget gick förlorat. Försök igen.",
   "frameleaf_eagle_field_map": "Vad varje Eagle-uppgift blir",

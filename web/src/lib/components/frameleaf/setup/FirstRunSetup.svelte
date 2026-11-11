@@ -682,7 +682,11 @@
   <label class="frs-language">
     <Icon icon={mdiTranslate} size="16" aria-hidden={true} />
     <span class="sr-only">{$t('language')}</span>
-    <select value={choices.language} onchange={(event) => void chooseLanguage(event.currentTarget.value)}>
+    <select
+      value={choices.language}
+      disabled={busy}
+      onchange={(event) => void chooseLanguage(event.currentTarget.value)}
+    >
       {#each languageChoices(choices.language) as entry (entry.code)}
         <option value={convertBCP47(entry.code)}>{entry.name}</option>
       {/each}

@@ -7644,7 +7644,6 @@
   "frameleaf_eagle_collections_detail": "Imbrication sur {depth, plural, one {# niveau} other {# niveaux}}, comme dans Eagle. {several, plural, =0 {Aucun élément n’appartient à plusieurs collections.} one {# élément appartient à plusieurs collections ; il n’est stocké qu’une fois.} other {# éléments appartiennent à plusieurs collections ; chacun n’est stocké qu’une fois.}}",
   "frameleaf_eagle_comes_over": "Ce qui est importé",
   "frameleaf_eagle_dates": "Date de modification dans Eagle",
-  "frameleaf_eagle_default_collection": "Références Studio",
   "frameleaf_eagle_differently": "Importés différemment",
   "frameleaf_eagle_failed_start": "Impossible de créer les collections et les étiquettes pour l’importation. Rien n’a été perdu ; réessayez.",
   "frameleaf_eagle_field_map": "Correspondance des informations Eagle",

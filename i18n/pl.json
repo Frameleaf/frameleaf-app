@@ -7647,7 +7647,6 @@
   "frameleaf_eagle_collections_detail": "Zagnieżdżone na głębokość {depth, plural, one {# poziomu} few {# poziomów} many {# poziomów} other {# poziomu}}, tak jak w Eagle. {several, plural, =0 {Żaden element nie znajduje się w więcej niż jednej kolekcji.} one {# element znajduje się w więcej niż jednej kolekcji; jest zapisany jeden raz.} few {# elementy znajdują się w więcej niż jednej kolekcji; każdy jest zapisany jeden raz.} many {# elementów znajduje się w więcej niż jednej kolekcji; każdy jest zapisany jeden raz.} other {# elementu znajduje się w więcej niż jednej kolekcji; każdy jest zapisany jeden raz.}}",
   "frameleaf_eagle_comes_over": "Co zostaje przeniesione",
   "frameleaf_eagle_dates": "Data zmieniona w Eagle",
-  "frameleaf_eagle_default_collection": "Materiały referencyjne Studio",
   "frameleaf_eagle_differently": "Przeniesione inaczej",
   "frameleaf_eagle_failed_start": "Import nie mógł utworzyć swoich kolekcji i etykiet. Nic nie zostało utracone; spróbuj ponownie.",
   "frameleaf_eagle_field_map": "Czym staje się każdy szczegół z Eagle",

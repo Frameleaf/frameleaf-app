@@ -7646,7 +7646,6 @@
   "frameleaf_eagle_collections_detail": "Nestet {depth, plural, one {# nivå} other {# nivåer}} dypt, som i Eagle. {several, plural, =0 {Ingen elementer ligger i mer enn én.} one {# element ligger i mer enn én; det lagres én gang.} other {# elementer ligger i mer enn én; hvert lagres én gang.}}",
   "frameleaf_eagle_comes_over": "Hva som tas med over",
   "frameleaf_eagle_dates": "Dato endret i Eagle",
-  "frameleaf_eagle_default_collection": "Studio-referanser",
   "frameleaf_eagle_differently": "Tatt med over på en annen måte",
   "frameleaf_eagle_failed_start": "Importen kunne ikke lage samlingene og etikettene sine. Ingenting gikk tapt; prøv igjen.",
   "frameleaf_eagle_field_map": "Hva hver Eagle-detalj blir til",

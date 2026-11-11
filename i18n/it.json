@@ -7646,7 +7646,6 @@
   "frameleaf_eagle_collections_detail": "Annidate fino a {depth, plural, one {# livello} other {# livelli}} di profondità, come in Eagle. {several, plural, =0 {Nessun elemento è in più di una.} one {# elemento è in più di una; viene archiviato una sola volta.} other {# elementi sono in più di una; ognuno viene archiviato una sola volta.}}",
   "frameleaf_eagle_comes_over": "Cosa viene importato",
   "frameleaf_eagle_dates": "Data modificata in Eagle",
-  "frameleaf_eagle_default_collection": "Riferimenti di Studio",
   "frameleaf_eagle_differently": "Importato in modo diverso",
   "frameleaf_eagle_failed_start": "L’importazione non ha potuto creare le sue raccolte e i suoi tag. Nulla è andato perso; riprova.",
   "frameleaf_eagle_field_map": "In cosa si trasforma ogni dettaglio di Eagle",

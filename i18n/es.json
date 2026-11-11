@@ -7646,7 +7646,6 @@
   "frameleaf_eagle_collections_detail": "Anidadas {depth, plural, one {# nivel} other {# niveles}} de profundidad, como en Eagle. {several, plural, =0 {Ningún elemento está en más de una.} one {# elemento está en más de una; se guarda una sola vez.} other {# elementos están en más de una; cada uno se guarda una sola vez.}}",
   "frameleaf_eagle_comes_over": "Qué se trae",
   "frameleaf_eagle_dates": "Fecha modificada en Eagle",
-  "frameleaf_eagle_default_collection": "Referencias de Studio",
   "frameleaf_eagle_differently": "Se trae de otra forma",
   "frameleaf_eagle_failed_start": "La importación no pudo crear sus colecciones y etiquetas. No se perdió nada; inténtalo de nuevo.",
   "frameleaf_eagle_field_map": "En qué se convierte cada detalle de Eagle",

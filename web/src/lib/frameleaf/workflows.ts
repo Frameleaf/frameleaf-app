@@ -87,14 +87,19 @@ export function workflowIssueMessage(issue: WorkflowIssueDto, localProblems: rea
       return translate('frameleaf_workflows.validation_method_trigger', { values: { step } });
     }
     case 'config_invalid': {
-      return (
-        localProblems.find((problem) => problem.step === issue.step)?.message ??
-        translate(
-          issue.step === undefined
-            ? 'frameleaf_workflows.validation_config'
-            : 'frameleaf_workflows.validation_step_config',
-          { values: { step } },
-        )
+      const local = localProblems.find((problem) => problem.step === issue.step)?.message;
+      if (local) {
+        return local;
+      }
+      // For a step the server names the field at fault: a general sentence would hide it.
+      if (issue.step !== undefined && issue.message) {
+        return `${step}: ${issue.message}`;
+      }
+      return translate(
+        issue.step === undefined
+          ? 'frameleaf_workflows.validation_config'
+          : 'frameleaf_workflows.validation_step_config',
+        { values: { step } },
       );
     }
     default: {

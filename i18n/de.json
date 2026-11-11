@@ -7646,7 +7646,6 @@
   "frameleaf_eagle_collections_detail": "Bis zu {depth, plural, one {# Ebene} other {# Ebenen}} tief verschachtelt, wie in Eagle. {several, plural, =0 {Kein Element liegt in mehr als einer.} one {# Element liegt in mehr als einer; es wird einmal gespeichert.} other {# Elemente liegen in mehr als einer; jedes wird einmal gespeichert.}}",
   "frameleaf_eagle_comes_over": "Was übernommen wird",
   "frameleaf_eagle_dates": "In Eagle geändertes Datum",
-  "frameleaf_eagle_default_collection": "Studio-Referenzen",
   "frameleaf_eagle_differently": "Anders übernommen",
   "frameleaf_eagle_failed_start": "Der Import konnte seine Sammlungen und Tags nicht erstellen. Nichts ging verloren; versuche es erneut.",
   "frameleaf_eagle_field_map": "Was aus jedem Eagle-Detail wird",

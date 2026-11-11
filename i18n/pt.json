@@ -7646,7 +7646,6 @@
   "frameleaf_eagle_collections_detail": "Aninhadas {depth, plural, one {# nível} other {# níveis}} de profundidade, como no Eagle. {several, plural, =0 {Nenhum item está em mais do que uma.} one {# item está em mais do que uma; é guardado uma só vez.} other {# itens estão em mais do que uma; cada um é guardado uma só vez.}}",
   "frameleaf_eagle_comes_over": "O que é trazido",
   "frameleaf_eagle_dates": "Data alterada no Eagle",
-  "frameleaf_eagle_default_collection": "Referências do Studio",
   "frameleaf_eagle_differently": "Trazido de forma diferente",
   "frameleaf_eagle_failed_start": "A importação não conseguiu criar as suas coleções e etiquetas. Nada se perdeu; tente novamente.",
   "frameleaf_eagle_field_map": "Em que se torna cada detalhe do Eagle",

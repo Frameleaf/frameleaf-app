@@ -7640,7 +7640,6 @@
   "frameleaf_eagle_collections_detail": "Indlejret {depth, plural, one {# niveau} other {# niveauer}} dybt, som i Eagle. {several, plural, =0 {Intet element ligger i mere end én.} one {# element ligger i mere end én; det gemmes én gang.} other {# elementer ligger i mere end én; hvert gemmes én gang.}}",
   "frameleaf_eagle_comes_over": "Hvad kommer med over",
   "frameleaf_eagle_dates": "Dato ændret i Eagle",
-  "frameleaf_eagle_default_collection": "Studio-referencer",
   "frameleaf_eagle_differently": "Hentet over på en anden måde",
   "frameleaf_eagle_failed_start": "Importen kunne ikke oprette sine samlinger og tags. Intet gik tabt; prøv igen.",
   "frameleaf_eagle_field_map": "Hvad hver Eagle-detalje bliver til",

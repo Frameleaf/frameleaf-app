@@ -366,5 +366,12 @@ it('translates first-party workflow issue codes while retaining local field vali
   expect(workflowIssueMessage({ code: 'config_invalid' as never, message: 'server text' })).toBe(
     en.frameleaf_workflows.validation_config,
   );
+  // nothing local matches the step: the server's field detail is kept
+  expect(workflowIssueMessage({ code: 'config_invalid' as never, step: 2, message: 'albumName is required' })).toBe(
+    'Step 3: albumName is required',
+  );
+  expect(workflowIssueMessage({ code: 'config_invalid' as never, step: 2, message: '' })).toBe(
+    'Step 3: review the configured values before enabling this workflow.',
+  );
   expect(workflowIssueMessage({ code: 'future-plugin-code' as never, message: 'plugin detail' })).toBe('plugin detail');
 });
