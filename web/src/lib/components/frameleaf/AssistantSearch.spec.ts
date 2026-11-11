@@ -2,7 +2,7 @@ import type { AssetResponseDto, AssistantAskResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { ASSISTANT_NAME, whyLine } from '$lib/frameleaf/assistant';
+import { whyLine } from '$lib/frameleaf/assistant';
 import en from '../../../../../i18n/en.json';
 import AssistantSearch from './AssistantSearch.svelte';
 
@@ -61,10 +61,17 @@ describe('AssistantSearch (FL-918)', () => {
     render(AssistantSearch, props({ onClassic }));
     expect(screen.getByText('Beta')).toBeInTheDocument();
     const group = screen.getByRole('radiogroup', { name: 'How to search' });
-    expect(within(group).getByRole('radio', { name: ASSISTANT_NAME })).toHaveAttribute('aria-checked', 'true');
+    expect(within(group).getByRole('radio', { name: 'Frameleaf Assistant' })).toHaveAttribute('aria-checked', 'true');
 
     await fireEvent.click(within(group).getByRole('radio', { name: 'Classic search' }));
     expect(onClassic).toHaveBeenCalledOnce();
+  });
+
+  it('names Frameleaf Assistant when it is turned off', () => {
+    render(AssistantSearch, props({ problem: 'disabled' }));
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Frameleaf Assistant is turned off on this server. Classic search still works.',
+    );
   });
 
   it('shows the looking state while the question is answered', () => {

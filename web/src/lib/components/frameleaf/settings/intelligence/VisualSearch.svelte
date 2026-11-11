@@ -35,7 +35,6 @@
   } from '$lib/components/frameleaf/settings/intelligence/presets';
   import ServerModelSlider from '$lib/components/frameleaf/settings/intelligence/ServerModelSlider.svelte';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
-  import { ASSISTANT_NAME } from '$lib/frameleaf/assistant';
   import { aboutTime, rereadSeconds, saveAndRedo } from '$lib/frameleaf/library-progress';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -225,13 +224,13 @@
   {/if}
 
   {#if assistant}
-    <Section title={ASSISTANT_NAME}>
+    <Section title={$t('frameleaf_assistant_name')}>
       <Row
-        label={$t('frameleaf_intel_assistant', { values: { name: ASSISTANT_NAME } })}
+        label={$t('frameleaf_intel_assistant', { values: { name: $t('frameleaf_assistant_name') } })}
         help={$t('frameleaf_intel_assistant_help')}
       >
         <Switch
-          label={$t('frameleaf_intel_assistant', { values: { name: ASSISTANT_NAME } })}
+          label={$t('frameleaf_intel_assistant', { values: { name: $t('frameleaf_assistant_name') } })}
           checked={assistant.enabled}
           held={disabled}
           onChange={(value) => (assistant.enabled = value)}

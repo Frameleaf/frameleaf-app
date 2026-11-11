@@ -18,7 +18,6 @@
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
   import { fallbackLocale, locales } from '$lib/constants';
-  import { ASSISTANT_NAME } from '$lib/frameleaf/assistant';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import {
     DEFAULT_LIBRARY_LAYOUT,
@@ -213,7 +212,7 @@
         <!-- FL-918: the same choice as the Library Assistant / Classic search switch on the search page. -->
         <Row
           label={$t('frameleaf_prefs_look_classic_search')}
-          help={$t('frameleaf_prefs_look_classic_search_help', { values: { name: ASSISTANT_NAME } })}
+          help={$t('frameleaf_prefs_look_classic_search_help', { values: { name: $t('frameleaf_assistant_name') } })}
         >
           <Switch
             label={$t('frameleaf_prefs_look_classic_search')}
