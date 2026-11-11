@@ -17,12 +17,31 @@ export const DESIGN_PERMISSIONS = [
   Permission.CaptureCatalogRead,
 ] as const;
 const designPermissions = new Set<Permission>(DESIGN_PERMISSIONS);
+// FL-1427: the same rule for Boards media downloads, in a field of their own.
+export const MEDIA_PERMISSIONS = [
+  Permission.MediaImportRead,
+  Permission.MediaImportCreate,
+  Permission.MediaImportUpdate,
+  Permission.MediaConnectionRead,
+  Permission.MediaConnectionWrite,
+  Permission.MediaSubscriptionRead,
+  Permission.MediaSubscriptionWrite,
+] as const;
+const mediaPermissions = new Set<Permission>(MEDIA_PERMISSIONS);
 const ResponsePermissionSchema = z
-  .enum(Object.values(Permission).filter((permission) => !designPermissions.has(permission)))
+  .enum(
+    Object.values(Permission).filter(
+      (permission) => !designPermissions.has(permission) && !mediaPermissions.has(permission),
+    ),
+  )
   .describe('List of permissions')
   .meta({ id: 'ApiKeyResponsePermission' });
 const DesignPermissionSchema = z.enum(DESIGN_PERMISSIONS).describe('Design workspace permission').meta({
   id: 'DesignPermission',
+});
+
+const MediaPermissionSchema = z.enum(MEDIA_PERMISSIONS).describe('Media download permission').meta({
+  id: 'MediaPermission',
 });
 
 const ApiKeyCreateSchema = z
@@ -49,6 +68,9 @@ const ApiKeyResponseSchema = z
     designPermissions: z
       .array(DesignPermissionSchema)
       .describe('Design workspace permissions, listed apart from permissions so older clients can still read keys'),
+    mediaPermissions: z
+      .array(MediaPermissionSchema)
+      .describe('Media download permissions, listed apart from permissions so older clients can still read keys'),
     // FL-367: recorded at most every few minutes, so it is a moment to the nearest few minutes
     lastUsedAt: z
       .string()
@@ -80,8 +102,11 @@ export class ApiKeyCreateResponseDto extends createZodDto(ApiKeyCreateResponseSc
 
 export const splitApiKeyPermissions = (permissions: Permission[]) => ({
   permissions: permissions.filter(
-    (permission) => !designPermissions.has(permission),
+    (permission) => !designPermissions.has(permission) && !mediaPermissions.has(permission),
   ) as ApiKeyResponseDto['permissions'],
+  mediaPermissions: permissions.filter((permission) =>
+    mediaPermissions.has(permission),
+  ) as ApiKeyResponseDto['mediaPermissions'],
   designPermissions: permissions.filter((permission) =>
     designPermissions.has(permission),
   ) as ApiKeyResponseDto['designPermissions'],

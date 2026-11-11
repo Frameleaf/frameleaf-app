@@ -12,6 +12,7 @@ const access = {
   name: 'Save to Frameleaf · Chrome',
   permissions: [],
   designPermissions: [],
+  mediaPermissions: [],
   createdAt: '2026-10-29T09:00:00.000Z',
   updatedAt: '2026-10-29T09:00:00.000Z',
   lastUsedAt: null,

@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 const keyWith = (permissions: Permission[]) =>
-  ({ permissions, designPermissions: [] }) as unknown as Awaited<ReturnType<typeof getMyApiKey>>;
+  ({ permissions, designPermissions: [], mediaPermissions: [] }) as unknown as Awaited<ReturnType<typeof getMyApiKey>>;
 
 describe('CLI permission admission', () => {
   it('reads current credentials after a previous key allowed the operation', async () => {

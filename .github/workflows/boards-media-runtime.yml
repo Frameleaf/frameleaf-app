@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   runtime:
-    name: Media runtime (${{ matrix.architecture }})
+    name: Media runtime (${{ matrix.runner }})
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
@@ -38,11 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: ubuntu-24.04
-            architecture: amd64
-          - runner: ubuntu-24.04-arm
-            architecture: arm64
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -72,7 +68,7 @@ jobs:
           build-args: |
             NODE_IMAGE=mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
             STUDIO_NODE_IMAGE=mirror.gcr.io/library/node@sha256:2bd396628eceb5c999a6e43731fab69d5fb98b94ba9d9d90b5f64575c5178765
-          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-${{ matrix.architecture }}
+          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-${{ endsWith(matrix.runner, '-arm') && 'arm64' || 'amd64' }}
           secrets: mise_github_token=${{ github.token }}
       - name: Exercise bundled extraction, streams and sandbox with root and custom UID
         env:

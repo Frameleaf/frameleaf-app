@@ -66,6 +66,7 @@ export const canSubmitPin = (
 export const keyPermissions = (key: ApiKeyResponseDto): Permission[] => [
   ...(key.permissions as string[] as Permission[]),
   ...((key.designPermissions ?? []) as string[] as Permission[]),
+  ...((key.mediaPermissions ?? []) as string[] as Permission[]),
 ];
 
 export const INDIVIDUAL_PERMISSIONS: readonly Permission[] = Object.values(Permission).filter(
