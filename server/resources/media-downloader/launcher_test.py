@@ -12,6 +12,7 @@ HIGH = 3000
 
 
 def check():
+    """Runs inside the launcher: no inherited descriptor, no IP networking, the local socket still works."""
     assert os.getuid() != 0
     try:
         os.fstat(int(sys.argv[3]))
@@ -37,6 +38,7 @@ def check():
 
 
 def run(launcher):
+    """Starts the launcher with an inherited socket and waits for the child to report over the local socket."""
     with tempfile.TemporaryDirectory(prefix="flmd-native-", dir="/tmp") as workspace:
         parent = Path(workspace)
         parent.chmod(0o711)
