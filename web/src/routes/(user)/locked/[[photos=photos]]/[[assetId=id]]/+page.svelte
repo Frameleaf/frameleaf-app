@@ -104,7 +104,7 @@
       {#snippet empty()}
         <LibraryEmptyState
           icon={mdiShieldLockOutline}
-          title={$t('nothing_here_yet')}
+          title={$t('frameleaf_locked_empty_title')}
           message={$t('frameleaf_locked_empty')}
         />
       {/snippet}

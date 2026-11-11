@@ -10,7 +10,7 @@
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility } from '@frameleaf/sdk';
-  import { mdiArchiveOutline } from '@mdi/js';
+  import { mdiArchiveArrowDownOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -44,7 +44,12 @@
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
     {#snippet empty()}
-      <LibraryEmptyState icon={mdiArchiveOutline} message={$t('frameleaf_archive_empty')} />
+      <!-- FL-1457 (N6): the empty-page pattern's title and line (prototype EmptyState.jsx proposals). -->
+      <LibraryEmptyState
+        icon={mdiArchiveArrowDownOutline}
+        title={$t('frameleaf_archive_empty_title')}
+        message={$t('frameleaf_archive_empty')}
+      />
     {/snippet}
 
     {#snippet viewer()}
