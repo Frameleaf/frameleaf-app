@@ -149,6 +149,12 @@ export class OAuthRepository {
         profile = tokenClaims as OAuthProfile;
       } else {
         profile = await fetchUserInfo(client, tokens.access_token, skipSubjectCheck);
+        // how the person signed in (amr, acr, auth_time) is an ID token claim, never a userinfo one
+        for (const claim of ['amr', 'acr', 'auth_time'] as const) {
+          if (tokenClaims && claim in tokenClaims && !(claim in profile)) {
+            (profile as Record<string, unknown>)[claim] = tokenClaims[claim];
+          }
+        }
       }
 
       if (!profile.sub) {

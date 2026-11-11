@@ -88,7 +88,7 @@ import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
-import { createSession } from 'src/utils/session.js';
+import { createSession, withCapabilities } from 'src/utils/session.js';
 import { requireSharedLinkUnlocked } from 'src/utils/shared-link.js';
 import {
   type ServerMac,
@@ -131,6 +131,8 @@ export interface LoginDetails {
   appVersion: string | null;
   /** FL-161: how the request arrived, as the edge worker vouched for it (absent or null: not vouched for). */
   via?: FrameleafVia | null;
+  /** Unified sign-in: what the client says it can do (`verification`), from the request header and body. */
+  capabilities?: string[];
 }
 
 /** FL-808: the device, via and address prefix of a sign-in, for the account activity log. */
@@ -276,7 +278,8 @@ export class AuthService extends BaseService {
    * `trustToken` is the browser's "Trust this browser" cookie (FL-793). For an account with two-step
    * sign-in the response then carries `twoFactorRequired` and no session, unless the browser is trusted.
    */
-  async login(dto: LoginCredentialDto, details: LoginDetails, trustToken?: string): Promise<LoginResponseDto> {
+  async login(dto: LoginCredentialDto, loginDetails: LoginDetails, trustToken?: string): Promise<LoginResponseDto> {
+    const details = withCapabilities(loginDetails, dto.capabilities);
     await this.requirePasswordLogin(details);
 
     const { user, password } = await this.signInSecurity.attempt('password', dto.email, details, async (backoff) => {
@@ -330,7 +333,9 @@ export class AuthService extends BaseService {
       };
     }
 
-    return this.createLoginResponse(user, details, { passwordHash: password }, 'password');
+    // the 30-day trusted-browser cookie counts as password plus authenticator (spec: Verified)
+    const methods = twoFactor?.enabledAt ? ['pwd', 'totp'] : ['pwd'];
+    return this.createLoginResponse(user, details, { passwordHash: password }, 'password', methods);
   }
 
   private async requirePasswordLogin(details: LoginDetails) {
@@ -353,8 +358,9 @@ export class AuthService extends BaseService {
    */
   async loginTwoFactor(
     dto: LoginTwoFactorDto,
-    details: LoginDetails,
+    loginDetails: LoginDetails,
   ): Promise<{ response: LoginResponseDto; rememberMe: boolean; trustToken?: string }> {
+    const details = withCapabilities(loginDetails, dto.capabilities);
     await this.requirePasswordLogin(details);
     requireOneSecondFactor(dto);
 
@@ -392,7 +398,13 @@ export class AuthService extends BaseService {
       throw new UnauthorizedException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
     }
 
-    const response = await this.createLoginResponse(user, details, { passwordHash: password }, 'two-factor');
+    const response = await this.createLoginResponse(
+      user,
+      details,
+      { passwordHash: password },
+      'two-factor',
+      dto.recoveryCode ? ['pwd', 'recovery_code'] : ['pwd', 'totp'],
+    );
     const trust: TwoFactorTrust = {
       sub: user.id,
       en: twoFactor.enabledAt.getTime(),
@@ -1070,7 +1082,7 @@ export class AuthService extends BaseService {
   /**
    * FL-161 (instance contract "Via-header contract"): a request arriving through remote access
    * (`relay` or `wan`) must come from a Frameleaf sign-in. A public shared link passes; a session
-   * passes when a Frameleaf sign-in created it (`public.frameleaf_session`), or when an
+   * passes when a Frameleaf sign-in or a passkey created it (`session_sign_in`), or when an
    * administrator allowed password sign-in over remote access; an API key passes only when its
    * owner's account here is linked to a Frameleaf account. Everything else is refused with 403
    * `frameleaf_sign_in_required`. Requests from the home network never reach this check.
@@ -1080,11 +1092,9 @@ export class AuthService extends BaseService {
       return;
     }
     if (auth.session) {
-      if (await this.frameleafAccountRepository.getSession(auth.session.id)) {
-        return;
-      }
       // FL-836: a passkey sign-in is accepted away from home like a Frameleaf one (owner, 2026-11-07)
-      if (await this.passkeyRepository.isPasskeySession(auth.session.id)) {
+      const signIn = await this.sessionRepository.getSignIn(auth.session.id);
+      if (signIn && (signIn.source === 'frameleaf' || signIn.methods.includes('passkey'))) {
         return;
       }
       const config = await this.getConfig({ withCache: true });
@@ -1230,7 +1240,8 @@ export class AuthService extends BaseService {
     );
   }
 
-  async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, loginDetails: LoginDetails) {
+  async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, details: LoginDetails) {
+    const loginDetails = withCapabilities(details, dto.capabilities);
     const { oauth, user: userConfig } = await this.getConfig({ withCache: false });
     if (!oauth.enabled) {
       throw new BadRequestException('OAuth is not enabled');
@@ -1337,7 +1348,7 @@ export class AuthService extends BaseService {
       await this.syncProfilePicture(user, profile.picture);
     }
 
-    return this.createLoginResponse(user, loginDetails, { sid: oauthSid, bearerToken: oauthBearerToken }, 'oauth');
+    return this.createLoginResponse(user, loginDetails, { sid: oauthSid, bearerToken: oauthBearerToken }, 'oauth', []);
   }
 
   private async syncProfilePicture(user: UserAdmin, url: string) {
@@ -1669,11 +1680,13 @@ export class AuthService extends BaseService {
     loginDetails: LoginDetails,
     identity: { sid?: string; bearerToken?: string; passwordHash?: string },
     method: SignInMethod,
+    methods: string[],
   ) {
     const { session, response } = await createSession(
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
       user,
       loginDetails,
+      { methods, source: 'local' },
       identity,
       identity.passwordHash,
     );
