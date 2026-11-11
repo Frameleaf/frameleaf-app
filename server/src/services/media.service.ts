@@ -138,6 +138,7 @@ import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.j
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp, isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
+import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
 import { RawRenderError, type RawRenderFailure } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
@@ -736,6 +737,14 @@ export class MediaService extends BaseService {
 
         throw error;
       }
+    } else if (isOfficePreviewFile(asset.originalFileName)) {
+      const preview = await withOfficePreview(asset.originalPath, asset.originalFileName, (pdf) =>
+        this.generateImageThumbnails({ ...asset, originalPath: pdf }, config),
+      );
+      if (!preview) {
+        return JobStatus.Skipped;
+      }
+      generated = preview;
     } else if (mimeTypes.isFont(asset.originalFileName)) {
       generated = await this.generateFontThumbnails(asset, config);
     } else {

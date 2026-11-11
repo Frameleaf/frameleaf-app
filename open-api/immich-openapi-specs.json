@@ -20097,7 +20097,7 @@
     },
     "/assets/{id}/original": {
       "get": {
-        "description": "Downloads the original file, selected edit, or an explicitly requested still-image export.",
+        "description": "Downloads the original file, selected edit, or an explicitly requested still-image or document PDF export.",
         "operationId": "downloadAsset",
         "parameters": [
           {
@@ -20113,13 +20113,14 @@
             "name": "format",
             "required": false,
             "in": "query",
-            "description": "Explicit still export from an unedited photo; omission returns the untouched original or selected edit",
+            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit",
             "schema": {
               "type": "string",
               "enum": [
                 "sdr-jpeg",
                 "hdr-jpeg",
-                "hdr-heic"
+                "hdr-heic",
+                "document-pdf"
               ]
             }
           },
@@ -79811,11 +79812,12 @@
             "type": "boolean"
           },
           "format": {
-            "description": "Explicit still export from an unedited photo; omission returns the untouched original or selected edit",
+            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit",
             "enum": [
               "sdr-jpeg",
               "hdr-jpeg",
-              "hdr-heic"
+              "hdr-heic",
+              "document-pdf"
             ],
             "type": "string"
           }

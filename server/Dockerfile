@@ -181,6 +181,11 @@ COPY server/base-image/verify-darktable.mjs ./
 COPY server/test/native/patch-darktable-lens.py server/test/native/patch-darktable-mask-geometry.py ./darktable-patches/
 RUN ./darktable.sh
 
+FROM base-server-build AS base-server-office
+COPY server/base-image/office-network-filter.c ./
+RUN cc -Wall -Wextra -Werror -o /tmp/office-network-filter office-network-filter.c && \
+  /tmp/office-network-filter > /office-network-filter.bpf
+
 FROM base-server-build AS base-server-dev
 
 COPY server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
@@ -196,7 +201,8 @@ COPY --from=base-server-libraw /usr/local/bin/dcraw_emu /usr/local/bin/
 COPY --from=base-server-imagemagick /usr/local/bin/magick /usr/local/bin/
 COPY --from=base-server-libjpeg-turbo /usr/local/bin/djpeg /usr/local/bin/
 COPY --from=base-server-libjpeg-turbo /usr/local/share/licenses/ /usr/local/share/licenses/
-RUN apt-update-strict && apt-get install --no-install-recommends -yqq libjxr-tools
+RUN apt-update-strict && apt-get install --no-install-recommends -yqq libjxr-tools libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation
+COPY --from=base-server-office /office-network-filter.bpf /usr/local/share/frameleaf/office-network-filter.bpf
 COPY --from=base-server-libvips /usr/local/include/vips/ /usr/local/include/vips/
 COPY --from=base-server-geodata /build/geodata /build/geodata
 COPY --from=base-server-darktable /usr/local/lib/ /usr/local/lib/
@@ -246,6 +252,7 @@ ARG GMMLIB_VERSION=22.10.0
 WORKDIR /build
 
 COPY --from=base-server-darktable /build/darktable-runtime-packages.txt /build/darktable-runtime-packages.txt
+COPY --from=base-server-office /office-network-filter.bpf /usr/local/share/frameleaf/office-network-filter.bpf
 COPY server/base-image/configure-apt.sh server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
 COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-update-strict
 
@@ -271,6 +278,7 @@ RUN . /etc/os-release && \
   libgomp1 \
   libgsf-1-114 \
   liblcms2-2 \
+  libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation \
   libpango-1.0-0 \
   libpangocairo-1.0-0 \
   libjxr-tools \

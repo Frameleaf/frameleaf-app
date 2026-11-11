@@ -58,6 +58,16 @@ const MAX_OUTPUT_BYTES = 1024 ** 3;
  * Where the server already runs under a lower limit, soft or hard, that stricter limit is left as it is and
  * the converter still runs.
  */
+export class ConverterExitError extends Error {
+  constructor(
+    command: string,
+    public readonly exitCode: number | null,
+    signal: NodeJS.Signals | null,
+  ) {
+    super(`${command} exited with ${exitCode ?? signal}`);
+  }
+}
+
 export const runConverter = (command: string, args: string[], signal?: AbortSignal, maxBytes = MAX_OUTPUT_BYTES) =>
   new Promise<void>((resolve, reject) => {
     const blocks = String(Math.ceil(maxBytes / 512));
@@ -71,9 +81,7 @@ export const runConverter = (command: string, args: string[], signal?: AbortSign
     });
     child.once('close', (code, killedBy) => {
       const error =
-        lifetime.error() ??
-        failure ??
-        (code === 0 ? undefined : new Error(`${command} exited with ${code ?? killedBy}`));
+        lifetime.error() ?? failure ?? (code === 0 ? undefined : new ConverterExitError(command, code, killedBy));
       if (error) {
         reject(error);
       } else {

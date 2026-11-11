@@ -234,7 +234,7 @@
             </span>
           {:else}
             {@const shape = tile.font ? '4 / 3' : layout === 'board' ? String(tile.asset.ratio || 1) : undefined}
-            {#if tile.originalOnly}
+            {#if tile.originalOnly && (!tile.asset.thumbhash || previewFailed[previewKey(tile.asset)])}
               <span class="bg-link-blank" aria-hidden="true"><Icon icon={mdiFileOutline} size="36" /></span>
             {:else if previewFailed[previewKey(tile.asset)]}
               <!-- No preview (a design file with no picture inside, or one still being made): the quiet placeholder. -->

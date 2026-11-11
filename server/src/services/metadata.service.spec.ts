@@ -301,6 +301,24 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it('schedules Boards postprocessing for opaque uploads without reading their metadata', async () => {
+      const asset = AssetFactory.from({
+        originalFileName: 'Workbook.xlsx',
+        originalPath: '/upload/workbook.bin',
+        libraryScope: LibraryScope.Design,
+        type: AssetType.Other,
+      }).build();
+      const data = { id: asset.id, source: 'upload' as const };
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      await sut.handleMetadataExtraction(data);
+      expect(mocks.metadata.readTags).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({
+        assetId: asset.id,
+        metadataExtractedAt: expect.any(Date),
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetMetadataPostprocess, data });
+    });
+
     it('reads the tags of a sealed original from a plain copy and seals the item again (FL-721)', async () => {
       const asset = AssetFactory.create();
       const locked = await lockedFixture(asset.ownerId);

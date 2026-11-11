@@ -59,6 +59,8 @@ export class FileDownloadResponse {
   public readonly attachment?: boolean;
   /** called once the file has been sent or the send failed, e.g. to let a temporary copy go (FL-54) */
   public readonly release?: () => void | Promise<void>;
+  /** Milliseconds before an unfinished send is ended, so a stalled client cannot hold the file open. */
+  public readonly deliveryTimeout?: number;
   /**
    * FL-721: who the bytes are for, when the file is an encrypted Locked file (the key holder's
    * `canRead` decides whether they may use a loaded key). `null` is a worker reading for a job (render
@@ -94,8 +96,14 @@ export const sendFile = async (
   logger: LoggingRepository,
 ): Promise<void> => {
   let file: FileDownloadResponse | undefined;
+  let deadline: NodeJS.Timeout | undefined;
   try {
     file = await handler();
+    if (file.deliveryTimeout) {
+      // Ending the response closes the file stream; `release` then runs once the send settles.
+      deadline = setTimeout(() => res.destroy(), file.deliveryTimeout);
+      deadline.unref();
+    }
 
     await access(file.path, constants.R_OK);
 
@@ -155,6 +163,7 @@ export const sendFile = async (
       next(new NotFoundException());
     }
   } finally {
+    clearTimeout(deadline);
     await file?.release?.();
   }
 };
