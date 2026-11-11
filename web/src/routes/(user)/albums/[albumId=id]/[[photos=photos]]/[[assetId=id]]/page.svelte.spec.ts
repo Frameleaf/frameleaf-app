@@ -471,4 +471,10 @@ it('gives a mixed album the dates to check count and a Fix dates that opens Chan
   vi.mocked(getTimelineDatesToCheck).mockResolvedValue({ count: 0, years: [], timeBuckets: [], pages: [] });
   libraryItemsFixture.onApplied!('change-date', ['a', 'b', 'c']);
   await waitFor(() => expect(owners.header?.datesToCheck).toBe(0));
+
+  // Photos added to the album: the count is read again
+  vi.mocked(getAlbumInfo).mockResolvedValue(mixed);
+  vi.mocked(getTimelineDatesToCheck).mockResolvedValue({ count: 1, years: [2031], timeBuckets: ['2031-06-01'] });
+  eventManager.emit('AlbumAddAssets', { albumIds: ['mixed'], assetIds: ['added'] });
+  await waitFor(() => expect(owners.header?.datesToCheck).toBe(1));
 });

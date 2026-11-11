@@ -622,6 +622,8 @@
     if (!albumIds.includes(albumId)) {
       return;
     }
+    // FL-1452: a mixed album reads its dates to check again
+    mixedDatesGeneration++;
     await refreshAlbum();
   };
 
