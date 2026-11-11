@@ -2557,7 +2557,8 @@ export const JobNameSchema = z
     JobName.MediaHealthFixAsset,
     JobName.WorkflowEventDispatch,
     JobName.WorkflowEventTrigger,
-    JobName.MediaImport,
+    // the member's key: its value is 'media-import', unlike the names above
+    'MediaImport',
   ])
   .describe('Job name')
   .meta({ id: 'JobName' });
