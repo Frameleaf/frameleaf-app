@@ -170,7 +170,7 @@ describe(WorkflowExecutionService.name, () => {
       hop().mockResolvedValue(answer('x'.repeat(200_000)));
       const result = await request(['*'], 'https://hooks.example/start', { method: 'POST', body: '{}' });
       expect(result).toMatchObject({ success: true });
-      expect(result.response.body.length).toBeLessThanOrEqual(64_000);
+      expect(result.response.body).toBe('x'.repeat(64_000));
     });
 
     it('preserves the method, body, and credentials on a same-origin 307 redirect', async () => {

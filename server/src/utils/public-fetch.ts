@@ -327,11 +327,12 @@ export const readAutomationAnswer = async (response: { body: AsyncIterable<Uint8
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of response.body ?? []) {
-    size += chunk.byteLength;
-    if (size > WEBHOOK_RESPONSE_BYTES) {
+    const room = WEBHOOK_RESPONSE_BYTES - size;
+    chunks.push(Buffer.from(chunk.subarray(0, room)));
+    size += Math.min(chunk.byteLength, room);
+    if (size >= WEBHOOK_RESPONSE_BYTES) {
       break;
     }
-    chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks).toString('utf8');
 };
