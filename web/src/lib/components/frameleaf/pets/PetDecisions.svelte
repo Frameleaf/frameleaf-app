@@ -192,7 +192,7 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     font-weight: 600;
     cursor: pointer;
   }

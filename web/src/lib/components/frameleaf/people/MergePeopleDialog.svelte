@@ -202,7 +202,7 @@
   }
   .search {
     width: 100%;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     margin-bottom: 10px;
     font-size: var(--fl-font-size);
   }

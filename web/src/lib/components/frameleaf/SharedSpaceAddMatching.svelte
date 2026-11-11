@@ -168,7 +168,7 @@
     color: var(--fl-muted);
   }
   select {
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     padding: 0 var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);

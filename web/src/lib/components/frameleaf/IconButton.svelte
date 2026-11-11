@@ -45,7 +45,7 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    /* Matches the 44px floor the token sheet sets for every control. */
+    /* As wide as the height floor the token sheet sets for every control. */
     min-width: var(--fl-control-height);
     padding: 0.375rem;
     color: var(--fl-text);

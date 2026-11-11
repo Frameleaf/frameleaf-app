@@ -63,7 +63,8 @@
       border-color var(--fl-motion-fast) var(--fl-ease),
       color var(--fl-motion-fast) var(--fl-ease);
   }
-  /* The 44px/48px height floor comes from tokens.css; the prototype's 34px is not ported. */
+  /* The height floor comes from tokens.css (44px, 36px with a mouse, 48px on touch); with a mouse the
+     click area stays 44px through `fl-control` (base.css). */
   button:hover:not(:disabled) {
     background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }

@@ -98,7 +98,7 @@
     <button
       bind:this={trigger}
       type="button"
-      class="action"
+      class="action fl-control"
       class:open
       aria-haspopup="dialog"
       aria-expanded={open}
@@ -168,7 +168,7 @@
     align-items: center;
     gap: var(--fl-space-2);
     padding: 0 var(--fl-space-3);
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     white-space: nowrap;
     font: inherit;
     color: var(--fl-text);

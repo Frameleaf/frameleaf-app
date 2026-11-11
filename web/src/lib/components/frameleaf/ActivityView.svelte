@@ -591,6 +591,7 @@
           {#each ACTIVITY_FILTERS as name (name)}
             <button
               type="button"
+              class="fl-control"
               class:is-on={filter === name}
               aria-pressed={filter === name}
               onclick={() => setFilter(name)}
@@ -1067,7 +1068,15 @@
     border-radius: var(--fl-radius-control);
     padding: var(--fl-space-1);
   }
-  /* The prototype's 30px segments keep the 44px/48px floor from tokens.css. */
+  /*
+   * The segments keep the height floor from tokens.css (44px, 48px on touch); with a mouse they are
+   * the prototype's 30px (activity.css `.fla-filters button`), FL-1390.
+   */
+  @media (pointer: fine) {
+    .fla-filters button {
+      min-height: calc(var(--fl-control-height) - 6px);
+    }
+  }
   .fla-filters button {
     padding: 0 var(--fl-space-4);
     border-radius: var(--fl-radius-control);

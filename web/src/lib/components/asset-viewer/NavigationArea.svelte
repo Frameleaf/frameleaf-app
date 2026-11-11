@@ -20,8 +20,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: var(--fl-control-height);
-    height: var(--fl-control-height);
+    /* A full target on every device: the arrow is alone at the edge of the photo. */
+    width: var(--fl-control-target);
+    height: var(--fl-control-target);
     margin: auto var(--fl-space-4);
     border: 1px solid var(--fl-viewer-border);
     border-radius: var(--fl-radius-control);

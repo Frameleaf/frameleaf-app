@@ -76407,7 +76407,7 @@
             "type": "integer"
           },
           "observedAt": {
-            "description": "When the growth values were read; null for a gap",
+            "description": "When the growth values were read, or for a bucket before the first nightly reading, the end of the bucket they were rebuilt for from the items added by then; null for a gap",
             "format": "date-time",
             "nullable": true,
             "type": "string"
@@ -76417,7 +76417,7 @@
             "type": "boolean"
           },
           "photos": {
-            "description": "Photos added in this period and still in the library",
+            "description": "Photos added in this period and still in the library (a photo taken before the server started counts from the day it was taken)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -76434,7 +76434,7 @@
             "type": "string"
           },
           "videos": {
-            "description": "Videos added in this period and still in the library",
+            "description": "Videos added in this period and still in the library (a video taken before the server started counts from the day it was taken)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -76522,7 +76522,7 @@
             "type": "string"
           },
           "uploaded": {
-            "description": "Items added on this UTC date",
+            "description": "Items added on this UTC date (an item taken before the server started counts from the day it was taken)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"

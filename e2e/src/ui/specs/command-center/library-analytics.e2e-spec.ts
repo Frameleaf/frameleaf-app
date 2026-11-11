@@ -282,7 +282,7 @@ test.describe('Library analytics dashboard', () => {
 
     await expect(page.getByRole('heading', { name: '7 captures over 7 days' })).toBeVisible();
     await page.getByLabel('Show').selectOption('uploaded');
-    await expect(page.getByRole('heading', { name: '4 uploads over 7 days' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '4 items added over 7 days' })).toBeVisible();
     await page.getByText('View daily counts').click();
     expect(await tableTotal(page, 'calendar-uploaded')).toBe(4);
   });
