@@ -84,6 +84,21 @@ export class SessionRepository {
       .executeTakeFirst();
   }
 
+  async isActiveForOwner(id: string, userId: string) {
+    return !!(await this.db
+      .selectFrom('session')
+      .innerJoin('user', 'user.id', 'session.userId')
+      .select('session.id')
+      .where('session.id', '=', id)
+      .where('session.userId', '=', userId)
+      .where('user.deletedAt', 'is', null)
+      .where('user.importClaimPending', '=', false)
+      .where((eb) =>
+        eb.or([eb('session.expiresAt', 'is', null), eb('session.expiresAt', '>', DateTime.now().toJSDate())]),
+      )
+      .executeTakeFirst());
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async isPendingSyncReset(id: string) {
     const result = await this.db

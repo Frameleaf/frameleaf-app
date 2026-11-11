@@ -171,6 +171,7 @@ const ORIGINAL_TRANSFER_ROUTES = new Set([
   'POST download/archive',
   'GET admin/database-backups/:filename',
   'GET preservation/packages/:id/download',
+  'POST preservation/packages/:id/desktop-copy',
   // full-resolution masters, bundles, renders and archives, as large as originals
   'GET assets/:id/edit-versions/:versionId/download',
   'GET studio/bundles/exports/:id/download',
@@ -369,25 +370,23 @@ describe('controllers', () => {
     expect(routes.filter((route) => route.remoteSignInExempt).map((route) => route.id)).toEqual(['POST auth/logout']);
   });
 
-  it('should keep render-worker and local Desktop album routes on the home network', () => {
+  it('should keep render-worker and local Desktop routes on the home network', () => {
     const workerRoutes = routes.filter((route) => route.path.startsWith('render-workers/'));
 
     expect(workerRoutes.map((route) => route.id)).toContain('GET render-workers/operations/:id/inputs/:grant');
     expect(workerRoutes.filter((route) => !route.homeNetworkOnly)).toEqual([]);
-    expect(
-      new Set(
-        routes
-          .filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))
-          .map((route) => route.id),
-      ),
-    ).toEqual(
-      new Set([
-        'POST albums/:id/desktop-offline-grant',
-        'POST albums/:id/desktop-offline/redeem',
-        'GET albums/:id/desktop-offline',
-        'GET albums/:id/desktop-offline/originals/:assetId',
-      ]),
-    );
+    const desktopLocalRoutes = [
+      'GET albums/:id/desktop-offline',
+      'GET albums/:id/desktop-offline/originals/:assetId',
+      'POST albums/:id/desktop-offline-grant',
+      'POST albums/:id/desktop-offline/redeem',
+      'POST preservation/packages/:id/desktop-copy',
+      'POST preservation/packages/:id/desktop-copy-grant',
+    ];
+    const otherLocalRoutes = routes
+      .filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))
+      .map((route) => route.id);
+    expect(otherLocalRoutes.toSorted()).toEqual(desktopLocalRoutes);
   });
 
   it('should rate limit sign-in, licence activation and link start (FL-161)', () => {
