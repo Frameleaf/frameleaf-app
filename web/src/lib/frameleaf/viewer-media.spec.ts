@@ -8,6 +8,7 @@ import {
   isPanoramaVideoProjection,
   isStitchedVideoProjection,
   isVideoAsset,
+  keepsPhoneFooter,
 } from '$lib/frameleaf/viewer-media';
 import { assetFactory } from '@test-data/factories/asset-factory';
 
@@ -20,6 +21,21 @@ describe('viewer media classification', () => {
     expect(isVideoAsset(image)).toBe(false);
     expect(isVideoAsset(video)).toBe(true);
     expect(isImageAsset(video)).toBe(false);
+  });
+
+  // FL-1392 (B6): one bottom bar on phones, except where the footer holds something "…" does not.
+  it('keeps the phone footer for a video and a panorama, not for a photo', () => {
+    expect(keepsPhoneFooter(assetFactory.build({ type: AssetTypeEnum.Image }))).toBe(false);
+    expect(keepsPhoneFooter(assetFactory.build({ type: AssetTypeEnum.Image, livePhotoVideoId: 'clip' }))).toBe(false);
+    expect(keepsPhoneFooter(assetFactory.build({ type: AssetTypeEnum.Video }))).toBe(true);
+    expect(
+      keepsPhoneFooter(
+        assetFactory.build({
+          type: AssetTypeEnum.Image,
+          exifInfo: { projectionType: ProjectionType.EQUIRECTANGULAR },
+        }),
+      ),
+    ).toBe(true);
   });
 
   describe('isPanorama', () => {

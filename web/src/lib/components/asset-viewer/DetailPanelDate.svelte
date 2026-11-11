@@ -13,12 +13,12 @@
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
+  import { captureDateTime } from '$lib/frameleaf/viewer-headline';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import ViewerDateDialog from '$lib/components/frameleaf/ViewerDateDialog.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon, modalManager } from '@frameleaf/ui';
   import { mdiCalendar, mdiPencil } from '@mdi/js';
@@ -33,11 +33,7 @@
   const { asset, onAssetRefresh }: Props = $props();
 
   const timeZone = $derived(asset.exifInfo?.timeZone ?? undefined);
-  const dateTime = $derived(
-    timeZone && asset.exifInfo?.dateTimeOriginal
-      ? fromISODateTime(asset.exifInfo.dateTimeOriginal, timeZone)
-      : fromISODateTimeUTC(asset.localDateTime),
-  );
+  const dateTime = $derived(captureDateTime(asset));
   const isOwner = $derived(authManager.authenticated && asset.ownerId === authManager.user.id);
   /**
    * The prototype's two lines (MediaViewer.jsx "Captured"; UI review 2026-11-10, A5): the day, then
@@ -83,7 +79,7 @@
     const isCurrent = captureView();
     const succeeded = await modalManager.show(ViewerDateDialog, {
       asset,
-      initialDate: dateTime,
+      initialDate: dateTime ?? undefined,
       initialTimeZone: timeZone,
       onError: (error: unknown) => {
         if (isCurrent()) {

@@ -1767,6 +1767,33 @@ describe('TimelineManager', () => {
       const last = march.timelineDays.at(-1)!;
       expect(march.height).toBe(last.top + last.height + timelineManager.headerHeight);
     });
+
+    // FL-1392: on phones a day's places take a second line, so only that day's header is taller.
+    it('makes room for a place line above a day that has places', () => {
+      const options = { rowHeight: 100, headerHeight: 40, gap: 8, fillRowWidth: true, dayRows: true };
+      timelineManager.setLayoutOptions(options);
+      const [march] = timelineManager.months;
+      const [first, second, third] = march.timelineDays;
+      for (const [index, city] of ['Banff', null, 'Lake Louise', null].entries()) {
+        const [photo] = march.timelineDays[index].viewerAssets;
+        photo.asset = { ...photo.asset, city };
+      }
+      const plain = march.timelineDays.map((day) => day.top);
+      const plainHeight = march.height;
+
+      timelineManager.setLayoutOptions({ ...options, placeLineHeight: 18 });
+
+      expect(march.timelineDays.map((day) => day.headerExtra)).toEqual([18, 0, 18, 0]);
+      expect(first.cities).toEqual(['Banff']);
+      // each day's rows start one header below its top, as every position sum expects
+      expect(first.top).toBe(plain[0] + 18);
+      expect(second.top).toBe(plain[1] + 18);
+      expect(third.top).toBe(plain[2] + 36);
+      expect(march.height).toBe(plainHeight + 36);
+      expect(march.findAssetAbsolutePosition(third.viewerAssets[0].id)?.top).toBe(
+        march.top + third.top + timelineManager.headerHeight + third.viewerAssets[0].position!.top,
+      );
+    });
   });
 
   describe('cell grids (FL-33 Browse and Work)', () => {

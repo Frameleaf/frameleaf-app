@@ -470,6 +470,11 @@
       translate: 0 12px;
       pointer-events: none;
     }
+
+    /* FL-1392 (review-1110.css B6): with no footer under it, a photo's toolbar keeps the safe area clear itself. */
+    :global(.phone-one-bar) .fl-viewer-toolbar {
+      padding-block: 6px max(8px, env(safe-area-inset-bottom));
+    }
   }
 
   @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {

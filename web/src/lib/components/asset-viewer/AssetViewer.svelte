@@ -30,7 +30,7 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
   import { isDialogOpen, isTypingTarget } from '$lib/frameleaf/viewer-keys';
-  import { isPanorama, isPanoramaVideoProjection } from '$lib/frameleaf/viewer-media';
+  import { isPanorama, isPanoramaVideoProjection, keepsPhoneFooter } from '$lib/frameleaf/viewer-media';
   import { castManager } from '$lib/managers/cast-manager.svelte';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
@@ -1701,6 +1701,7 @@
   class:dragging={!!dismissDrag}
   class:with-footer={showFilmstripStrip || showStackStrip}
   class:info-open={showDetailPanel}
+  class:phone-one-bar={showFooter && !keepsPhoneFooter(asset)}
   style:--fl-viewer-footer-height={showFooter && footerHeight > 0 ? `${footerHeight}px` : undefined}
   style:--fl-viewer-strips-height="{showFilmstripStrip ? stripsHeight : 0}px"
   style:--fl-viewer-strips-area-height="{stripsAreaHeight}px"
@@ -2460,6 +2461,20 @@
   @media (max-width: 700px) {
     #immich-asset-viewer {
       --fl-viewer-toolbar-offset: calc(var(--fl-viewer-footer-height) + 53px);
+    }
+
+    /*
+     * FL-1392 (review-1110.css B6): a photo has one bottom bar on phones. Its footer is not drawn
+     * (`keepsPhoneFooter`), and the actions toolbar sits on the bottom edge with the safe area under
+     * it (AssetViewerNavBar: 6px, the 40px tools, then 8px or the safe area, under a 1px rule).
+     */
+    #immich-asset-viewer.phone-one-bar {
+      --fl-viewer-footer-height: 0px;
+      --fl-viewer-toolbar-offset: calc(47px + max(8px, env(safe-area-inset-bottom)));
+    }
+
+    .phone-one-bar [data-viewer-chrome='footer'] {
+      display: none;
     }
   }
 

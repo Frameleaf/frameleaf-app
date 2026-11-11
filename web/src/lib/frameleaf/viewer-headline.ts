@@ -6,8 +6,11 @@
  * Pure: it reads the metadata the detail panel already receives and renders no markup.
  */
 import { AssetTypeEnum, type AssetResponseDto, type ExifResponseDto } from '@frameleaf/sdk';
+import type { DateTime } from 'luxon';
 import { get } from 'svelte/store';
+import { formatLuxon } from '$lib/frameleaf/date-format';
 import { locale } from '$lib/stores/preferences.store';
+import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
 
 export const formatFileSize = (bytes: number | null | undefined): string | null => {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
@@ -107,6 +110,43 @@ export function viewerHeadline(asset: AssetResponseDto): string[] {
 }
 
 export const viewerHeadlineText = (asset: AssetResponseDto): string => viewerHeadline(asset).join(' · ');
+
+/**
+ * When the photo was taken, on the clock of the place it was taken in: the capture time in the
+ * photo's own zone when it has one, else the server's local date and time. The Information panel's
+ * date row and the viewer's title read the same value.
+ */
+export const captureDateTime = (asset: AssetResponseDto): DateTime | null => {
+  const timeZone = asset.exifInfo?.timeZone;
+  const value =
+    timeZone && asset.exifInfo?.dateTimeOriginal
+      ? fromISODateTime(asset.exifInfo.dateTimeOriginal, timeZone)
+      : asset.localDateTime
+        ? fromISODateTimeUTC(asset.localDateTime)
+        : null;
+  return value?.isValid ? value : null;
+};
+
+/**
+ * The viewer's title (FL-1392, UI review 2026-11-10 B3; prototype `heading` in `MediaViewer.jsx`):
+ * when and where ("Sun, Aug 16, 2026 · Banff, Alberta"), not the camera's file name. A photo with no
+ * place is titled with its date alone; one with neither is titled with its file name. `time` leads
+ * the line under the title. Both follow the person's date and time format (FL-783).
+ */
+export const viewerWhenWhere = (
+  asset: AssetResponseDto,
+  dateLocale: string | undefined = get(locale),
+): { title: string; time: string } => {
+  const captured = captureDateTime(asset);
+  const date = captured
+    ? formatLuxon(captured, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }, dateLocale)
+    : '';
+  const place = [asset.exifInfo?.city, asset.exifInfo?.state].filter(Boolean).join(', ');
+  return {
+    title: [date, place].filter(Boolean).join(' · ') || asset.originalFileName,
+    time: captured ? formatLuxon(captured, { hour: 'numeric', minute: '2-digit' }, dateLocale) : '',
+  };
+};
 
 /** The folder an offline original was last seen in, for the relink action. */
 export const folderOf = (path: string | null | undefined): string | null => {

@@ -9,6 +9,8 @@
    */
   import AssetTile from '$lib/components/frameleaf/AssetTile.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
+  import { groupPlaces } from '$lib/frameleaf/group-places';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
   import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
@@ -17,7 +19,7 @@
   import type { ViewerAsset } from '$lib/managers/timeline-manager/viewer-asset.svelte';
   import { fromTimelinePlainDate } from '$lib/utils/timeline-util';
   import type { Snippet } from 'svelte';
-  import { locale } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   type Props = {
     timelineDay: TimelineDay;
@@ -119,18 +121,22 @@
   /**
    * The day's title as the prototype writes it (`explore-timeline.mjs` `timelineGroups`): the full
    * date, e.g. "Wednesday, December 11, 2024". Only this header uses it; the manager's shorter
-   * `groupTitle` stays as it is for everything else.
+   * `groupTitle` stays as it is for everything else. It follows the person's date format (FL-783).
    */
   const dayTitle = $derived(
-    fromTimelinePlainDate({
-      year: timelineDay.timelineMonth.yearMonth.year,
-      month: timelineDay.timelineMonth.yearMonth.month,
-      day: timelineDay.day,
-    }).toLocaleString(
+    formatLuxon(
+      fromTimelinePlainDate({
+        year: timelineDay.timelineMonth.yearMonth.year,
+        month: timelineDay.timelineMonth.yearMonth.month,
+        day: timelineDay.day,
+      }),
       { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' },
-      { locale: $locale ?? undefined },
+      $locale ?? undefined,
     ),
   );
+  /** FL-1392 (B3): where the day was spent, beside its date; under it on phones (`headerExtra`). */
+  const places = $derived(showHeader && !grouped ? groupPlaces(timelineDay.cities, $t) : '');
+  const headerExtra = $derived(showHeader && !grouped ? timelineDay.headerExtra : 0);
 </script>
 
 <section
@@ -143,17 +149,19 @@
   aria-label={showHeader || grouped ? undefined : dayTitle}
   style:position="absolute"
   style:inset-inline-start="{timelineDay.start}px"
-  style:top="{timelineDay.top}px"
+  style:top="{timelineDay.top - headerExtra}px"
 >
   {#if showHeader && !grouped}
     <LibraryGroupHeader
       id={headingId}
       title={dayTitle}
+      {places}
+      stacked={timelineDay.timelineMonth.timelineManager.placeLineHeight > 0}
       count={groupCount ?? dayIds.length}
       {state}
       {selecting}
       width={Math.max(timelineDay.width, headerWidth ?? 0)}
-      height={headerHeight}
+      height={headerHeight + headerExtra}
       onSelect={(checked) => onSelectGroup?.(dayIds, checked)}
     />
   {:else}

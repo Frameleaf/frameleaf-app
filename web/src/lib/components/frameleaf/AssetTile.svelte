@@ -31,6 +31,7 @@
   import Thumbhash from '$lib/components/Thumbhash.svelte';
   import { ProjectionType } from '$lib/constants';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
   import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { lockBadgeLabelKey } from '$lib/frameleaf/locked-view';
@@ -250,15 +251,19 @@
   });
   /**
    * Under the Added sort there are no day headers, so the caption names the day too ("18 Aug, 06:00",
-   * prototype `localAddedAt`); otherwise the day header above already says it.
+   * prototype `localAddedAt`); otherwise the day header above already says it. A photo whose time
+   * cannot be read has no caption time (FL-1392). The words follow the person's date and time format.
    */
   const captureTime = $derived(
-    displayDateTime?.toLocaleString(
-      dateType === TimeBucketDateType.Added
-        ? { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }
-        : DateTime.TIME_SIMPLE,
-      { locale: $locale ?? undefined },
-    ) ?? null,
+    (displayDateTime &&
+      formatLuxon(
+        displayDateTime,
+        dateType === TimeBucketDateType.Added
+          ? { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }
+          : DateTime.TIME_SIMPLE,
+        $locale ?? undefined,
+      )) ||
+      null,
   );
   /** The List view (S-15, template asset-tile.css `[data-layout="list"]`): a 96px 3:2 thumbnail and columns. */
   const listed = $derived(layout === 'list');
@@ -268,15 +273,9 @@
   const imageHeight = $derived(listed ? LIST_THUMB_HEIGHT : withCaption ? Math.max(1, height - captionHeight) : height);
   /** The list's name column: the file name without its extension, never a Locked item's. */
   const listName = $derived(isLocked ? $t('frameleaf_library_list_locked_item') : (fileName ?? title));
-  const listDate = $derived.by(() => {
-    try {
-      return displayDateTime?.toLocaleString(DateTime.DATE_MED, {
-        locale: $locale ?? undefined,
-      });
-    } catch {
-      return '';
-    }
-  });
+  const listDate = $derived(
+    displayDateTime ? formatLuxon(displayDateTime, DateTime.DATE_MED, $locale ?? undefined) : '',
+  );
   /** Template: a video's duration, else the pixel size, else the file size. */
   const listDetail = $derived.by(() => {
     if (asset.isVideo && durationSeconds > 0) {

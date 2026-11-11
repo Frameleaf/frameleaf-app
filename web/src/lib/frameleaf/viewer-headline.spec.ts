@@ -10,6 +10,7 @@ import {
   megapixels,
   viewerHeadline,
   viewerHeadlineText,
+  viewerWhenWhere,
 } from '$lib/frameleaf/viewer-headline';
 import { assetFactory } from '@test-data/factories/asset-factory';
 
@@ -162,6 +163,48 @@ describe('viewerHeadline', () => {
         still({ exifInfo: { make: 'Fujifilm', model: 'X-T5', lensModel: 'XF 23mm F1.4' }, width: null, height: null }),
       ),
     ).toBe('Fujifilm X-T5 · XF 23mm F1.4');
+  });
+});
+
+// FL-1392 (UI review 2026-11-10, B3): the viewer's title says when and where.
+describe('viewerWhenWhere', () => {
+  const taken = (overrides: Partial<AssetResponseDto> = {}) =>
+    still({ originalFileName: 'PXL_20260816_071400123.jpg', localDateTime: '2026-08-16T07:14:00.000Z', ...overrides });
+
+  it('titles a photo with its date and place, and gives the time for the line under it', () => {
+    const asset = taken({ exifInfo: { city: 'Banff', state: 'Alberta', country: 'Canada' } });
+    const { title, time } = viewerWhenWhere(asset, 'en-US');
+
+    expect(title).toBe('Sun, Aug 16, 2026 · Banff, Alberta');
+    expect(time).toMatch(/^7:14\sAM$/);
+  });
+
+  it('titles a photo with no place with its date alone', () => {
+    expect(viewerWhenWhere(taken({ exifInfo: { city: null, state: null } }), 'en-US').title).toBe('Sun, Aug 16, 2026');
+    expect(viewerWhenWhere(taken({ exifInfo: undefined }), 'en-US').title).toBe('Sun, Aug 16, 2026');
+  });
+
+  it('names the city alone when the photo has no region', () => {
+    expect(viewerWhenWhere(taken({ exifInfo: { city: 'Reykjavík', state: null } }), 'en-US').title).toBe(
+      'Sun, Aug 16, 2026 · Reykjavík',
+    );
+  });
+
+  it('reads the clock of the place the photo was taken in', () => {
+    const asset = taken({
+      localDateTime: '2026-08-15T22:31:00.000Z',
+      exifInfo: { dateTimeOriginal: '2026-08-16T04:31:00.000Z', timeZone: 'America/Edmonton', city: 'Banff' },
+    });
+    const { title, time } = viewerWhenWhere(asset, 'en-US');
+
+    expect(title).toBe('Sat, Aug 15, 2026 · Banff');
+    expect(time).toMatch(/^10:31\sPM$/);
+  });
+
+  it('falls back to the file name, with no time, for a photo whose date cannot be read', () => {
+    const asset = taken({ localDateTime: 'not a date', exifInfo: { city: null } });
+
+    expect(viewerWhenWhere(asset, 'en-US')).toEqual({ title: 'PXL_20260816_071400123.jpg', time: '' });
   });
 });
 

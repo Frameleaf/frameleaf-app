@@ -386,6 +386,125 @@ describe('AssetTile list and browse dates', () => {
   });
 });
 
+// FL-1392 (UI review 2026-11-10, B3) with the View menu's "Show on photos" (FL-1398): one rule for
+// every layout. "Time taken" shows the time, "File name" adds the name, and the Timeline's default
+// is the time alone.
+describe('AssetTile captions for each "Show on photos" choice', () => {
+  const photo = () =>
+    asset({
+      originalFileName: 'PXL_20260930_160006075.BURST004.jpg',
+      localDateTime: { year: 2026, month: 9, day: 30, hour: 16, minute: 0, second: 6, millisecond: 0 },
+    });
+  const caption = (props: { showTime: boolean; showFileName: boolean; layout?: 'timeline' | 'work' }) => {
+    void locale.set('en-US');
+    const { container } = render(AssetTile, {
+      asset: photo(),
+      width: 200,
+      height: 184,
+      layout: 'timeline',
+      // LibraryView reserves the caption row only when one of the two switches is on
+      captionHeight: props.showTime || props.showFileName ? 24 : 0,
+      ...props,
+    });
+    return container.querySelector('.fl-tile-caption');
+  };
+  const text = (element: Element | null) => element?.textContent?.replaceAll(/\s+/g, ' ').trim();
+
+  it('shows only the time by default: time on, file name off', () => {
+    const row = caption({ showTime: true, showFileName: false });
+    expect(text(row)).toBe('4:00 PM');
+    expect(row).toHaveClass('is-time-only');
+  });
+
+  it('shows the name and the time with both on', () => {
+    const row = caption({ showTime: true, showFileName: true });
+    expect(text(row)).toBe('PXL_20260930_160006075.BURST004 4:00 PM');
+    expect(row).not.toHaveClass('is-time-only');
+  });
+
+  it('shows the name alone with the time off', () => {
+    const row = caption({ showTime: false, showFileName: true });
+    expect(text(row)).toBe('PXL_20260930_160006075.BURST004');
+    expect(row?.querySelector('time')).toBeNull();
+  });
+
+  it('draws no caption with both off', () => {
+    expect(caption({ showTime: false, showFileName: false })).toBeNull();
+  });
+
+  it('follows the same rule in Work', () => {
+    expect(text(caption({ showTime: true, showFileName: false, layout: 'work' }))).toBe('4:00 PM');
+    expect(text(caption({ showTime: true, showFileName: true, layout: 'work' }))).toBe(
+      'PXL_20260930_160006075.BURST004 4:00 PM',
+    );
+  });
+
+  it('shows no caption text for a photo whose time cannot be read', () => {
+    void locale.set('en-US');
+    const { container } = render(AssetTile, {
+      asset: asset({
+        originalFileName: 'scan.jpg',
+        localDateTime: { year: 2026, month: 13, day: 40, hour: 0, minute: 0, second: 0, millisecond: 0 },
+      }),
+      width: 200,
+      height: 184,
+      layout: 'timeline',
+      captionHeight: 24,
+    });
+    expect(container.querySelector('time')).toBeNull();
+    expect(text(container.querySelector('.fl-tile-caption'))).toBe('');
+  });
+});
+
+// FL-1392 (B3): a day header names the day's places; on phones they take a second line under the date.
+describe('LibraryDayGroup places', () => {
+  const day = (cities: string[], placeLineHeight = 0) => {
+    const tile = { id: 'asset-1', asset: asset(), position: { top: 0, left: 0, width: 200, height: 160 } };
+    return {
+      dateType: TimeBucketDateType.Taken,
+      timelineMonth: { viewId: 'month', yearMonth: { year: 2026, month: 8 }, timelineManager: { placeLineHeight } },
+      day: 16,
+      top: 300,
+      start: 0,
+      cities,
+      headerExtra: cities.length > 0 ? placeLineHeight : 0,
+      viewerAssets: [tile],
+      activeViewerAssets: [tile],
+      width: 200,
+      height: 160,
+    } as unknown as TimelineDay;
+  };
+  const mount = (timelineDay: TimelineDay) =>
+    render(LibraryDayGroup, { timelineDay, selection: [], selecting: false, headerHeight: 40 });
+
+  it('names the place beside the date', () => {
+    void locale.set('en-US');
+    const { container } = mount(day(['Banff']));
+    expect(container.querySelector('h2')).toHaveTextContent('Sunday, August 16, 2026');
+    expect(screen.getByTestId('frameleaf-group-places')).toHaveTextContent('Banff');
+    expect(container.querySelector('.fl-group-header')).not.toHaveClass('is-stacked');
+  });
+
+  it('shows no place line for a day whose photos have no place', () => {
+    mount(day([]));
+    expect(screen.queryByTestId('frameleaf-group-places')).not.toBeInTheDocument();
+  });
+
+  it('gives a phone header a second line, only for a day that has places', () => {
+    const withPlaces = mount(day(['Banff', 'Lake Louise'], 18));
+    const header = withPlaces.container.querySelector<HTMLElement>('.fl-group-header')!;
+    expect(header).toHaveClass('is-stacked');
+    expect(header.style.height).toBe('58px');
+    // the taller header starts above the day's top, so the rows stay where the layout put them
+    expect(withPlaces.container.querySelector<HTMLElement>('.fl-day')!.style.top).toBe('282px');
+    withPlaces.unmount();
+
+    const without = mount(day([], 18));
+    expect(without.container.querySelector<HTMLElement>('.fl-group-header')!.style.height).toBe('40px');
+    expect(without.container.querySelector<HTMLElement>('.fl-day')!.style.top).toBe('300px');
+  });
+});
+
 // FL-1409 (M5): a photo that is not ready is calm; one that can't be shown says so and leads to Library care.
 describe('AssetTile for a photo with no thumbnail (FL-1409)', () => {
   const fail = async (container: HTMLElement) => {
