@@ -59,8 +59,9 @@
   $effect(() => {
     const text = query.trim();
     requested = text;
+    // Another query's moments are not this one's: the strip, and the count it reports (FL-1457), start empty.
+    hits = [];
     if (!text) {
-      hits = [];
       return;
     }
     void search(text);

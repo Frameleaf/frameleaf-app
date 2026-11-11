@@ -82,4 +82,27 @@ describe('VideoMomentResults (FL-1393)', () => {
     await waitFor(() => expect(sdkMock.searchVideoMoments).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId('search-moments')).toBeNull();
   });
+
+  // FL-1457 (N2): the count the search page reads belongs to the current query; a new one starts from none.
+  it('reports how many videos match, and none for a new query until its own answer comes', async () => {
+    sdkMock.searchVideoMoments.mockResolvedValueOnce({ hits: [hit(LAKE, 44_000)] });
+    let found = 0;
+    const onFound = (value: number) => (found = value);
+    const view = render(VideoMomentResults, {
+      query: 'lake',
+      get found() {
+        return found;
+      },
+      set found(value) {
+        onFound(value);
+      },
+    });
+    await waitFor(() => expect(found).toBe(1));
+
+    let answer: (value: { hits: VideoMomentSearchHitDto[] }) => void = () => {};
+    sdkMock.searchVideoMoments.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never);
+    await view.rerender({ query: 'campfire' });
+    await waitFor(() => expect(found).toBe(0));
+    answer({ hits: [] });
+  });
 });
