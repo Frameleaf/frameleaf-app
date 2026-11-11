@@ -2,7 +2,7 @@ import { type Kysely, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { causeRank } from 'src/queue/run-failure-cause.js';
+import { causeRank, singleMessage } from 'src/queue/run-failure-cause.js';
 import { type RunFailureGroup, runCountsPhotos, runFailureTasks, summarizeRunFailures } from 'src/queue/run-query.js';
 import { anyUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
 
@@ -50,7 +50,7 @@ export async function reviewRunFailures(
     const ids = candidates.flatMap(({ assetId }) => (assetId ? [assetId] : []));
     const samples = ids.length === 0 ? [] : await visibleSamples(db, ids, privacy);
     const messages = new Map(candidates.map(({ assetId, message }) => [assetId, message]));
-    const message = samples.map(({ assetId }) => messages.get(assetId)).find((text) => !!text) ?? null;
+    const message = singleMessage(samples.map(({ assetId }) => messages.get(assetId)).find((text) => !!text) ?? null);
     causes.push({ ...group, message, samples });
   }
   return {

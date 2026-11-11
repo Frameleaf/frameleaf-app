@@ -252,6 +252,8 @@ describe('summarizeRunFailures', () => {
       'Huffman table broken',
       'Request failed: 404 Not Found',
       'model not found',
+      'File format error; File format error',
+      'Entire file is binary zeros',
     ];
     const inputs: RunFailureInput[] = [];
     for (const error of errors) {
