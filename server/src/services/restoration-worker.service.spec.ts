@@ -1038,10 +1038,10 @@ describe(RestorationWorkerService.name, () => {
         nominalFrameRateRational: { num: 25, den: 1 },
         frameCount: 1125,
       };
-      mocks.media.probe.mockImplementation(async (file) => {
+      mocks.media.probe.mockImplementation((file) => {
         const chunk = /chunk-(\d+)-in-/.exec(file);
         const frameCount = chunk ? (Number(chunk[1]) < 4 ? 240 : 169) : file.includes('result-') ? 4500 : 1125;
-        return {
+        return Promise.resolve({
           format: { formatName: 'mp4', formatLongName: 'mp4', duration: chunk ? frameCount / 25 : 45, bitrate: 0 },
           videoStreams: [
             {
@@ -1051,7 +1051,7 @@ describe(RestorationWorkerService.name, () => {
             },
           ],
           audioStreams: [],
-        } as never;
+        } as never);
       });
       const version = `0123456789ab+${exact ? fingerprint : fingerprint.slice(0, 12)}`;
       restorations.get.mockResolvedValue(
@@ -1103,8 +1103,8 @@ describe(RestorationWorkerService.name, () => {
         expect(restore.mock.calls.map((call) => call[2].trailingContextFrame)).toEqual(
           [true, true, true, true, false].slice(resumed ? 1 : 0),
         );
-        const chunkOptions = mocks.media.transcode.mock.calls.filter(([, output]) => String(output).includes('-in-'));
-        expect(chunkOptions[0][2].outputOptions).toContain(
+        const chunkOptions = mocks.media.transcode.mock.calls.find(([, output]) => String(output).includes('-in-'));
+        expect(chunkOptions?.[2].outputOptions).toContain(
           resumed
             ? 'trim=start_frame=239:end_frame=479,setpts=PTS-STARTPTS'
             : 'trim=start_frame=0:end_frame=240,setpts=PTS-STARTPTS',
