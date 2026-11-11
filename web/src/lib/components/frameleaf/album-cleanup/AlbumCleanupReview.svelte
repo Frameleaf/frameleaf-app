@@ -75,6 +75,8 @@
   const LIST_LIMIT = 60;
   const LOST_LIMIT = 40;
   const SCAN_POLL_MS = 3000;
+  /** A minute of looking. After that the last result is shown, with when it was worked out. */
+  const LOOK_POLLS = 20;
   const APPLY_POLL_MS = 1000;
 
   let phase = $state<Phase>('loading');
@@ -83,6 +85,7 @@
   let computedAt = $state<string | null>(null);
   /** FL-1404: the result a new look is replacing. `undefined` when the page isn't waiting for one. */
   let staleAt: string | null | undefined;
+  let looks = 0;
 
   let delimiters = $state(DEFAULT_DELIMITERS);
   let custom = $state('');
@@ -153,11 +156,15 @@
       // before the albums existed read as "nothing to do". The first newer result is shown, even if albums are
       // still changing and another look is already waiting.
       const looking = snapshot.checking && snapshot.computedAt === staleAt;
-      if (!snapshot.ready || !snapshot.facts || looking) {
+      // A scan that is held up or keeps failing must not hide the last result for good.
+      const waitedEnough = looks >= LOOK_POLLS && snapshot.ready && !!snapshot.facts;
+      if (!snapshot.ready || !snapshot.facts || (looking && !waitedEnough)) {
+        looks += 1;
         phase = 'unready';
         schedule(load, SCAN_POLL_MS);
         return;
       }
+      looks = 0;
       staleAt = undefined;
       facts = snapshot.facts;
       computedAt = snapshot.computedAt;

@@ -155,6 +155,26 @@ describe(AlbumCleanupReview.name, () => {
       }
     });
 
+    it('shows the last result after a minute when the new look never finishes', async () => {
+      sdkMock.getAlbumCleanupSnapshot.mockResolvedValue({ ...snapshot(), checking: true });
+      vi.useFakeTimers();
+      try {
+        render(AlbumCleanupReview);
+        await vi.waitFor(() => expect(screen.getByText('frameleaf_album_cleanup_scanning')).toBeInTheDocument());
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(screen.queryByText('frameleaf_album_cleanup_intro')).not.toBeInTheDocument();
+
+        await vi.advanceTimersByTimeAsync(31_000);
+        await vi.waitFor(() => expect(screen.getByText('frameleaf_album_cleanup_intro')).toBeInTheDocument());
+        expect(screen.getByText('frameleaf_album_cleanup_checked')).toBeInTheDocument();
+        const calls = sdkMock.getAlbumCleanupSnapshot.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(sdkMock.getAlbumCleanupSnapshot).toHaveBeenCalledTimes(calls);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('starts a new look on Check again and waits for it', async () => {
       render(AlbumCleanupReview);
       const button = await screen.findByRole('button', { name: 'frameleaf_album_cleanup_check_again' });
