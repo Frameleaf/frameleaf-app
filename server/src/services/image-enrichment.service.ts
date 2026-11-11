@@ -31,6 +31,7 @@ import {
   FrameleafWorker,
   JobName,
   JobStatus,
+  MlDestinationKind,
   MlWorkload,
   Permission,
   QueueName,
@@ -1557,6 +1558,7 @@ export class ImageEnrichmentService extends BaseService {
     options: {
       imageDescription: SystemConfig['machineLearning']['imageDescription'];
       destinationId: string;
+      localOnly?: boolean;
     },
   ): Promise<DescriptionPreview> {
     const config = await this.getConfig({ withCache: true });
@@ -1582,6 +1584,7 @@ export class ImageEnrichmentService extends BaseService {
           destinationId: options.destinationId,
           jobId: id,
           jobName: 'enrichment-preview',
+          ...(options.localOnly && { requiredKind: MlDestinationKind.Local, desktopPool: 'skip' }),
         });
         let result = await this.machineLearningRepository.describeImage(
           selection,

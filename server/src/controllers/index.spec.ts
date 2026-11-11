@@ -170,6 +170,7 @@ const ORIGINAL_TRANSFER_ROUTES = new Set([
   'POST download/archive',
   'GET admin/database-backups/:filename',
   'GET preservation/packages/:id/download',
+  'POST preservation/packages/:id/desktop-copy',
   // full-resolution masters, bundles, renders and archives, as large as originals
   'GET assets/:id/edit-versions/:versionId/download',
   'GET studio/bundles/exports/:id/download',
@@ -373,7 +374,14 @@ describe('controllers', () => {
 
     expect(workerRoutes.map((route) => route.id)).toContain('GET render-workers/operations/:id/inputs/:grant');
     expect(workerRoutes.filter((route) => !route.homeNetworkOnly)).toEqual([]);
-    expect(routes.filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))).toEqual([]);
+    const localCopyRoutes = [
+      'POST preservation/packages/:id/desktop-copy',
+      'POST preservation/packages/:id/desktop-copy-grant',
+    ];
+    const otherLocalRoutes = routes
+      .filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))
+      .map((route) => route.id);
+    expect(otherLocalRoutes.toSorted()).toEqual(localCopyRoutes);
   });
 
   it('should rate limit sign-in, licence activation and link start (FL-161)', () => {

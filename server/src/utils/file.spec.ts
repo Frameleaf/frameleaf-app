@@ -103,6 +103,25 @@ describe('file delivery', () => {
     );
   });
 
+  it('delivers opaque originals as sandboxed attachments with their original name', async () => {
+    const f = fixture();
+    const file = new FileDownloadResponse({
+      ...f.file,
+      path: '/media/original.bin',
+      fileName: 'Saved page.mhtml',
+      contentType: 'application/octet-stream',
+      attachment: true,
+    });
+    await sendFile(f.res, f.next, () => file, f.log);
+    expect(f.response.header).toHaveBeenCalledWith('Content-Type', 'application/octet-stream');
+    expect(f.response.header).toHaveBeenCalledWith(
+      'Content-Disposition',
+      "attachment; filename*=UTF-8''Saved%20page.mhtml",
+    );
+    expect(f.response.header).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
+    expect(f.response.append).toHaveBeenCalledWith('Content-Security-Policy', DOCUMENT_CONTENT_SECURITY_POLICY);
+  });
+
   it('releases a temporary file only after its asynchronous transfer finishes', async () => {
     const f = fixture();
     const called = Promise.withResolvers<void>();

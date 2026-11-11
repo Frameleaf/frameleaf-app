@@ -998,11 +998,18 @@ export class JobRepository {
     });
   }
 
-  /** Terminal control: the update callback must fence the exact domain claim. Jobs already queued keep running. */
-  async settleLibraryScanSource<T>(operationId: string, update: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
+  /**
+   * Terminal control: the update callback must fence the exact domain claim. Jobs already queued keep running.
+   * FL-1409: `ended` is false when the update put the scan back in the queue, so its run stays open for the rest.
+   */
+  async settleLibraryScanSource<T>(
+    operationId: string,
+    update: (tx: Transaction<DB>) => Promise<T>,
+    ended: (outcome: T) => boolean = () => true,
+  ): Promise<T> {
     return this.store.db.transaction().execute(async (tx) => {
       const outcome = await update(tx);
-      await this.store.finishEnumeration(operationId, tx);
+      if (ended(outcome)) await this.store.finishEnumeration(operationId, tx);
       return outcome;
     });
   }

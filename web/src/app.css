@@ -161,8 +161,12 @@
 
     /* The Frameleaf top bar (FL-30): the prototype's 56px bar, and its two-row phone grid. Both
        include the top safe-area inset (apple-style.css "#9 edge-to-edge", viewport-fit=cover). */
-    --fl-topbar-height: calc(3.5rem + env(safe-area-inset-top, 0px) + var(--fl-setup-bar-height, 0px));
-    --fl-topbar-height-phone: calc(6rem + env(safe-area-inset-top, 0px) + var(--fl-setup-bar-height, 0px));
+    --fl-topbar-height: calc(
+      3.5rem + env(safe-area-inset-top, 0px) + var(--fl-setup-bar-height, 0px) + var(--fl-import-bar-height, 0px)
+    );
+    --fl-topbar-height-phone: calc(
+      6rem + env(safe-area-inset-top, 0px) + var(--fl-setup-bar-height, 0px) + var(--fl-import-bar-height, 0px)
+    );
     /* Room the phone tab bar needs under scrolling content; TabBar.svelte sets it at phone width. */
     --fl-tabbar-space: 0px;
   }
@@ -170,7 +174,9 @@
   /* UI review 2026-10-30 #8: on phones the top bar is one 56px row (no top tabs, TopBar.svelte). */
   @media (max-width: 700px) {
     :root {
-      --fl-topbar-height-phone: calc(3.5rem + env(safe-area-inset-top, 0px) + var(--fl-setup-bar-height, 0px));
+      --fl-topbar-height-phone: calc(
+        3.5rem + env(safe-area-inset-top, 0px) + var(--fl-setup-bar-height, 0px) + var(--fl-import-bar-height, 0px)
+      );
     }
   }
 

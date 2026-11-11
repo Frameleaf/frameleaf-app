@@ -16298,6 +16298,15 @@
         "operationId": "getProcessingFailures",
         "parameters": [
           {
+            "name": "includeDismissed",
+            "required": false,
+            "in": "query",
+            "description": "Also list failures someone chose to keep as they are or to stop trying (FL-1409)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "skip",
             "required": false,
             "in": "query",
@@ -16306,6 +16315,15 @@
               "maximum": 9007199254740991,
               "default": 0,
               "type": "integer"
+            }
+          },
+          {
+            "name": "step",
+            "required": false,
+            "in": "query",
+            "description": "Only failures of this step",
+            "schema": {
+              "$ref": "#/components/schemas/ProcessingFailureStep"
             }
           },
           {
@@ -95576,6 +95594,52 @@
         },
         "type": "object"
       },
+      "DisplayDateFormat": {
+        "description": "FL-783: date order. auto follows the region; iso is 2026-11-01, dmy 01/11/2026, mdy 11/01/2026",
+        "enum": [
+          "auto",
+          "iso",
+          "dmy",
+          "mdy"
+        ],
+        "type": "string"
+      },
+      "DisplayHourCycle": {
+        "description": "FL-783: clock. auto follows the region; h12 is 2:30 PM, h23 is 14:30",
+        "enum": [
+          "auto",
+          "h12",
+          "h23"
+        ],
+        "type": "string"
+      },
+      "DisplayPreferencesResponse": {
+        "properties": {
+          "dateFormat": {
+            "$ref": "#/components/schemas/DisplayDateFormat"
+          },
+          "hourCycle": {
+            "$ref": "#/components/schemas/DisplayHourCycle"
+          }
+        },
+        "required": [
+          "dateFormat",
+          "hourCycle"
+        ],
+        "type": "object"
+      },
+      "DisplayPreferencesUpdate": {
+        "description": "FL-783: how dates and times appear, independent of the language",
+        "properties": {
+          "dateFormat": {
+            "$ref": "#/components/schemas/DisplayDateFormat"
+          },
+          "hourCycle": {
+            "$ref": "#/components/schemas/DisplayHourCycle"
+          }
+        },
+        "type": "object"
+      },
       "DocumentEditAction": {
         "description": "What the owner decided about recognized text",
         "enum": [
@@ -97267,7 +97331,7 @@
             "type": "array"
           },
           "supported": {
-            "description": "File types this import brings over (lower case, no dot)",
+            "description": "File extensions this import accepts (lower case, no dot). * includes downloadable originals.",
             "items": {
               "type": "string"
             },
@@ -97769,6 +97833,10 @@
           },
           "fallbackModelName": {
             "type": "string"
+          },
+          "localOnly": {
+            "description": "Require this Library server at final admission; refuse LAN and cloud",
+            "type": "boolean"
           },
           "modelName": {
             "description": "Draft model; the saved one when omitted",
@@ -137998,11 +138066,19 @@
       },
       "ProcessingFailureQueryDto": {
         "properties": {
+          "includeDismissed": {
+            "description": "Also list failures someone chose to keep as they are or to stop trying (FL-1409)",
+            "type": "boolean"
+          },
           "skip": {
             "default": 0,
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "step": {
+            "$ref": "#/components/schemas/ProcessingFailureStep",
+            "description": "Only failures of this step"
           },
           "take": {
             "default": 100,
@@ -147001,6 +147077,10 @@
       },
       "ServerMediaTypesResponseDto": {
         "properties": {
+          "boardsOriginals": {
+            "description": "Boards accepts other files as downloadable originals",
+            "type": "boolean"
+          },
           "font": {
             "description": "Font file extensions an upload into Boards (libraryScope=design) accepts",
             "items": {
@@ -164246,6 +164326,9 @@
           "clients": {
             "$ref": "#/components/schemas/ClientsResponse"
           },
+          "display": {
+            "$ref": "#/components/schemas/DisplayPreferencesResponse"
+          },
           "download": {
             "$ref": "#/components/schemas/DownloadResponse"
           },
@@ -164387,6 +164470,9 @@
           },
           "clients": {
             "$ref": "#/components/schemas/ClientsUpdate"
+          },
+          "display": {
+            "$ref": "#/components/schemas/DisplayPreferencesUpdate"
           },
           "download": {
             "$ref": "#/components/schemas/DownloadUpdate"

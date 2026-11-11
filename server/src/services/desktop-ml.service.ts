@@ -26,6 +26,7 @@ import {
   type MlSelection,
   type ModelPayload,
 } from 'src/repositories/machine-learning.repository.js';
+import { workerMetrics } from 'src/repositories/metrics.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { assertAssetSource } from 'src/utils/asset-source-authority.js';
@@ -500,8 +501,14 @@ export class DesktopMlService {
             signal.throwIfAborted();
             await this.repository.assertAdoption(task.id, task, tx);
           });
-          if (deferred) await afterJobCommit(() => this.repository.discard(task.id));
-          else await this.repository.assertAdoption(task.id, task);
+          if (deferred) {
+            await afterJobCommit(() => {
+              workerMetrics?.observeDesktopResultAdoption();
+              return this.repository.discard(task.id);
+            });
+          } else {
+            await this.repository.assertAdoption(task.id, task);
+          }
           signal.throwIfAborted();
           return result;
         }

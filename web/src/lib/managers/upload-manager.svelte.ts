@@ -32,7 +32,11 @@ class UploadManager {
 
   /** FL-1359: Boards also takes fonts. An older server lists none. */
   getBoardsExtensions() {
-    return [...this.getExtensions(), ...(this.mediaTypes.font ?? [])];
+    return [
+      ...this.getExtensions(),
+      ...(this.mediaTypes.font ?? []),
+      ...(this.mediaTypes.boardsOriginals ? ['*'] : []),
+    ];
   }
 }
 

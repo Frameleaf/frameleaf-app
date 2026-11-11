@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { PreservationExportCreateDto } from 'src/dtos/preservation.dto.js';
@@ -24,6 +25,7 @@ describe(PreservationService.name, () => {
   let files: Mocked;
   let operations: Mocked;
   let storage: Mocked;
+  let sessions: Mocked;
   let owner: AuthDto;
   let unlocked: AuthDto;
 
@@ -177,6 +179,7 @@ describe(PreservationService.name, () => {
       createZipStream: vi.fn(),
       createReadStream: vi.fn(),
     };
+    sessions = { isActiveForOwner: vi.fn().mockResolvedValue(true) };
 
     sut = new PreservationService(
       getMocks().logger as never,
@@ -184,6 +187,7 @@ describe(PreservationService.name, () => {
       files as never,
       operations as never,
       storage as never,
+      sessions as never,
     );
   });
 
@@ -487,6 +491,81 @@ describe(PreservationService.name, () => {
         `metadata/${sourceAssetId}.json`,
       ]);
       expect(download.disposition).toContain('Italy-2024.frameleaf-preservation.zip');
+    });
+  });
+
+  describe('Desktop copy handoff', () => {
+    const host = '127.0.0.1:2283';
+    const ready = () => {
+      const found = packageOf({ verification: { status: 'verified' } });
+      found.manifest = { ...(found.manifest as object), packageId: found.id };
+      repository.getPackage.mockResolvedValue(found);
+      return found;
+    };
+
+    it('redeems once for the exact package and owner and frames the authoritative manifest first', async () => {
+      const found = ready();
+      const manifest = Buffer.from('authoritative manifest');
+      const close = vi.fn();
+      files.openPackage.mockResolvedValue({ readDocument: vi.fn().mockResolvedValue(manifest), close });
+      const zip = Buffer.from('synthetic ZIP');
+      storage.createZipStream.mockReturnValue({
+        stream: Readable.from([zip]),
+        addFile: vi.fn(),
+        finalize: () => Promise.resolve(),
+      });
+      const { token } = await sut.grantDesktopCopy(owner, found.id, host);
+      await expect(sut.redeemDesktopCopy(newUuidV7(), host, token)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.redeemDesktopCopy(found.id, '127.0.0.1:2284', token)).rejects.toBeInstanceOf(NotFoundException);
+      const { stream } = await sut.redeemDesktopCopy(found.id, host, token);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk as Buffer);
+      }
+      const body = Buffer.concat(chunks);
+      expect(body.readUInt32BE(0)).toBe(manifest.length);
+      expect(body.subarray(4, 4 + manifest.length)).toEqual(manifest);
+      expect(body.subarray(4 + manifest.length)).toEqual(zip);
+      expect(repository.getPackage).toHaveBeenLastCalledWith(found.id, owner.user.id);
+      expect(sessions.isActiveForOwner).toHaveBeenLastCalledWith(owner.session!.id, owner.user.id);
+      expect(close).toHaveBeenCalledOnce();
+      await expect(sut.redeemDesktopCopy(found.id, host, token)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('refuses non-session authorization and rechecks restrictions at redemption', async () => {
+      const found = ready();
+      await expect(sut.grantDesktopCopy({ ...owner, session: undefined }, found.id, host)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      const { token } = await sut.grantDesktopCopy(owner, found.id, host);
+      repository.restrictedPackageIds.mockResolvedValue(new Set([found.id]));
+      await expect(sut.redeemDesktopCopy(found.id, host, token)).rejects.toBeInstanceOf(NotFoundException);
+      expect(storage.createZipStream).not.toHaveBeenCalled();
+    });
+
+    it('refuses a revoked owner session and destroys an active download when that session signs out', async () => {
+      const found = ready();
+      const revoked = await sut.grantDesktopCopy(owner, found.id, host);
+      sessions.isActiveForOwner.mockResolvedValueOnce(false);
+      await expect(sut.redeemDesktopCopy(found.id, host, revoked.token)).rejects.toBeInstanceOf(NotFoundException);
+      expect(storage.createZipStream).not.toHaveBeenCalled();
+
+      files.openPackage.mockResolvedValue({
+        readDocument: vi.fn().mockResolvedValue(Buffer.from('manifest')),
+        close: vi.fn(),
+      });
+      const archive = new Readable({ read() {} });
+      storage.createZipStream.mockReturnValue({
+        stream: archive,
+        addFile: vi.fn(),
+        finalize: vi.fn().mockResolvedValue(undefined),
+      });
+      const accepted = await sut.grantDesktopCopy(owner, found.id, host);
+      const pending = await sut.grantDesktopCopy(owner, found.id, host);
+      const { stream } = await sut.redeemDesktopCopy(found.id, host, accepted.token);
+      sut.onDesktopSessionDelete({ sessionId: owner.session!.id });
+      expect(stream.destroyed).toBe(true);
+      await expect(sut.redeemDesktopCopy(found.id, host, pending.token)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

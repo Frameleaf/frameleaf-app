@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import AssetCollage from './AssetCollage.svelte';
   import QrCode from './QrCode.svelte';
   import Toggle from './Toggle.svelte';
@@ -306,7 +307,7 @@
   const expiryHint = $derived(
     expiresAt
       ? $t('frameleaf_sharing.expires_at', {
-          values: { date: new Date(expiresAt).toLocaleString($locale, { dateStyle: 'medium', timeStyle: 'short' }) },
+          values: { date: formatDateTime(expiresAt, { dateStyle: 'medium', timeStyle: 'short' }, $locale) },
         })
       : $t('frameleaf_sharing.never_expires_hint'),
   );

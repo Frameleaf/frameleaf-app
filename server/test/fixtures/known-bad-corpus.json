@@ -1,0 +1,1102 @@
+{
+  "about": [
+    "FL-883 known-bad file corpus: server/test/medium/specs/corpus/known-bad-corpus.spec.ts runs every file through metadata extraction, thumbnail generation and (videos) the playback encode, and compares what happened with `expect`.",
+    "root: `test-assets` is e2e/test-assets (scripts/checkout-test-assets.sh), `fixtures` is server/test/fixtures.",
+    "outcome per step: ok | skipped | library-care (thumbnail handed to Library care) | set-aside (failed until FL-845 set it aside; `cause` is the stored cause) | failed.",
+    "Only the keys written under a step are compared. metadata: dateTimeOriginal, localDateTime, timeZone, width, height, orientation, videoCodec. thumbnail: preview, thumbnail (WxH). encode: videoCodec, size (WxH).",
+    "To add a file: the fixture repositories are public, so use only a file with a clear licence (CC0, public domain, a permissive licence, or one generated here). Add an entry with file, root, type, note, source, licence, reproduces and an outcome for each step; run `mise run //server:corpus`; check the entry in the report it writes (known-bad-corpus-actual.json) and copy the facts you want pinned into `expect`."
+  ],
+  "files": [
+    {
+      "file": "metadata/dates/date-priority-test.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "DateTimeOriginal wins over the other date tags",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream exif-date-time medium spec (metadata/dates)"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2023-02-02T02:00:00.000Z",
+          "localDateTime": "2023-02-02T02:00:00.000Z",
+          "timeZone": null,
+          "width": 100,
+          "height": 100,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "100x100",
+          "thumbnail": "100x100"
+        }
+      }
+    },
+    {
+      "file": "metadata/dates/gps-datetime.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Time zone comes from the GPS position; GPSDateTime is UTC",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream exif-date-time medium spec (metadata/dates)"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2023-11-15T12:30:00.000Z",
+          "localDateTime": "2023-11-15T04:30:00.000Z",
+          "timeZone": "America/Los_Angeles",
+          "width": 100,
+          "height": 100,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "100x100",
+          "thumbnail": "100x100"
+        }
+      }
+    },
+    {
+      "file": "metadata/dates/datetimeoriginal-gps.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "DateTimeOriginal with GPS but no offset tag",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream metadata/dates fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2025-12-01T18:30:00.000Z",
+          "localDateTime": "2025-12-01T11:30:00.000Z",
+          "timeZone": "America/Denver",
+          "width": 150,
+          "height": 100,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "150x100",
+          "thumbnail": "150x100"
+        }
+      }
+    },
+    {
+      "file": "metadata/dates/time-created.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Only an IPTC TimeCreated: the file date is used",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream exif-date-time medium spec (metadata/dates)"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 100,
+          "height": 100,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "100x100",
+          "thumbnail": "100x100"
+        }
+      }
+    },
+    {
+      "file": "metadata/faces/portrait-orientation-6.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "EXIF orientation 6 with face regions",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream metadata/faces fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 700,
+          "height": 840,
+          "orientation": "6"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "840x700",
+          "thumbnail": "300x250"
+        }
+      }
+    },
+    {
+      "file": "metadata/gps-position/empty_gps.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "GPS block present but empty",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream metadata/gps-position fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2025-06-01T16:59:26.023Z",
+          "localDateTime": "2025-06-01T16:59:26.023Z",
+          "timeZone": null,
+          "width": 4640,
+          "height": 3472,
+          "orientation": "1"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "1924x1440",
+          "thumbnail": "334x250"
+        }
+      }
+    },
+    {
+      "file": "metadata/rating/mongolels.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Rating tag",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream metadata/rating fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2009-08-29T13:18:08.170Z",
+          "localDateTime": "2009-08-29T13:18:08.170Z",
+          "timeZone": null,
+          "width": 950,
+          "height": 634,
+          "orientation": "1"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "950x634",
+          "thumbnail": "375x250"
+        }
+      }
+    },
+    {
+      "file": "formats/heic/IMG_2682.heic",
+      "root": "test-assets",
+      "type": "image",
+      "note": "iPhone HEIC",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-1354"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2019-03-21T16:04:22.348Z",
+          "localDateTime": "2019-03-21T11:04:22.348Z",
+          "timeZone": "America/Chicago",
+          "width": 4032,
+          "height": 3024,
+          "orientation": "1"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "512x512",
+          "thumbnail": "250x250"
+        }
+      }
+    },
+    {
+      "file": "formats/motionphoto/samsung-one-ui-6.heic",
+      "root": "test-assets",
+      "type": "image",
+      "note": "HEIC variant with a motion photo video inside",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream motion photo fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2024-01-13T05:38:53.853Z",
+          "localDateTime": "2024-01-12T21:38:53.853Z",
+          "timeZone": "UTC-8",
+          "width": 4000,
+          "height": 3000,
+          "orientation": "6"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "512x512",
+          "thumbnail": "250x250"
+        }
+      }
+    },
+    {
+      "file": "formats/motionphoto/pixel-8a.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "JPEG motion photo with a trailing MP4",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream motion photo fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2024-07-16T19:03:53.953Z",
+          "localDateTime": "2024-07-16T14:03:53.953Z",
+          "timeZone": "UTC-5",
+          "width": 3472,
+          "height": 4624,
+          "orientation": "1"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "1440x1918",
+          "thumbnail": "250x333"
+        }
+      }
+    },
+    {
+      "file": "formats/avif/10bit-HDR-P3-nclx.avif",
+      "root": "test-assets",
+      "type": "image",
+      "note": "10-bit HDR AVIF, Display P3 nclx",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-97"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 3681,
+          "height": 5594,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "1440x2188",
+          "thumbnail": "250x380"
+        }
+      }
+    },
+    {
+      "file": "formats/jxl/16bit-HDR-P3-nclx.jxl",
+      "root": "test-assets",
+      "type": "image",
+      "note": "16-bit HDR JPEG XL: today its thumbnail goes to Library care (follow-up under FL-883)",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-97"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 5667,
+          "height": 3685,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "library-care",
+          "preview": null,
+          "thumbnail": null
+        }
+      }
+    },
+    {
+      "file": "formats/raw/Canon/EOS_30D.CR2",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Older Canon CR2",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-1355"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2012-07-09T13:37:14.000Z",
+          "localDateTime": "2012-07-09T13:37:14.000Z",
+          "timeZone": null,
+          "width": 3504,
+          "height": 2336,
+          "orientation": "8"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "1440x2160",
+          "thumbnail": "250x375"
+        }
+      }
+    },
+    {
+      "file": "formats/raw/Nikon/D80/glarus.nef",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Nikon NEF",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-1355"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2010-07-20T17:27:12.000Z",
+          "localDateTime": "2010-07-20T17:27:12.000Z",
+          "timeZone": null,
+          "width": 3904,
+          "height": 2616,
+          "orientation": "1"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "2149x1440",
+          "thumbnail": "373x250"
+        }
+      }
+    },
+    {
+      "file": "formats/raw/GoPro/HERO9_Black.GPR",
+      "root": "test-assets",
+      "type": "image",
+      "note": "GoPro GPR: LibRaw cannot open it, the darktable rung does",
+      "source": "https://raw.pixls.us/data/GoPro/HERO9%20Black/GOPR0017.GPR",
+      "licence": "CC0 1.0 (raw.pixls.us), listed in FRAMELEAF-FORMAT-FIXTURES.md",
+      "reproduces": [
+        "FL-1355"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2021-04-08T21:02:48.000Z",
+          "localDateTime": "2021-04-08T17:02:48.000Z",
+          "timeZone": "America/New_York",
+          "width": 5568,
+          "height": 4176,
+          "orientation": "1"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "1920x1440",
+          "thumbnail": "333x250"
+        }
+      }
+    },
+    {
+      "file": "videos/eiffel-tower.mp4",
+      "root": "test-assets",
+      "type": "video",
+      "note": "Portrait phone H.264 with AAC",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-102"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2019-05-24T18:20:53.000Z",
+          "localDateTime": "2019-05-24T18:20:53.000Z",
+          "timeZone": "UTC",
+          "width": 1080,
+          "height": 1920,
+          "orientation": "1",
+          "videoCodec": "h264"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "1080x1920",
+          "thumbnail": "250x444"
+        },
+        "encode": {
+          "outcome": "skipped",
+          "videoCodec": null,
+          "size": null
+        }
+      }
+    },
+    {
+      "file": "formats/jpeg/broken-exif.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "EXIF block whose IFD offset points past its end",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1354"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        }
+      }
+    },
+    {
+      "file": "formats/jpeg/half-rows.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "JPEG cut off halfway",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        }
+      }
+    },
+    {
+      "file": "formats/jpeg/truncated-tail.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "JPEG missing its last rows",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        }
+      }
+    },
+    {
+      "file": "formats/jpeg/missing-eoi.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "JPEG without its end-of-image marker",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        }
+      }
+    },
+    {
+      "file": "formats/jpeg/junk-before-soi.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "Bytes before the start-of-image marker",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        }
+      }
+    },
+    {
+      "file": "formats/jpeg/cmyk.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "CMYK JPEG",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        }
+      }
+    },
+    {
+      "file": "formats/jpeg/12bit.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "12-bit JPEG: only ffmpeg decodes it",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        }
+      }
+    },
+    {
+      "file": "formats/jpeg/arithmetic.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "Arithmetic-coded JPEG",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 320,
+          "height": 240,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        }
+      }
+    },
+    {
+      "file": "formats/still/png-bad-crc.png",
+      "root": "fixtures",
+      "type": "image",
+      "note": "PNG with a wrong chunk checksum",
+      "source": "server/test/fixtures/formats/generate-more-stills.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 96,
+          "height": 72,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "96x72",
+          "thumbnail": "96x72"
+        }
+      }
+    },
+    {
+      "file": "formats/still/tiff-bigtiff.tif",
+      "root": "fixtures",
+      "type": "image",
+      "note": "BigTIFF",
+      "source": "server/test/fixtures/formats/generate-more-stills.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1354"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 96,
+          "height": 72,
+          "orientation": "1"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "96x72",
+          "thumbnail": "96x72"
+        }
+      }
+    },
+    {
+      "file": "formats/still/jxr.hdp",
+      "root": "fixtures",
+      "type": "image",
+      "note": "JPEG XR: decoded by jxrlib",
+      "source": "server/test/fixtures/formats/generate-more-stills.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 96,
+          "height": 72,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "96x72",
+          "thumbnail": "96x72"
+        }
+      }
+    },
+    {
+      "file": "formats/design/thumbnail-only.psd",
+      "root": "fixtures",
+      "type": "image",
+      "note": "PSD with only its embedded thumbnail",
+      "source": "server/test/fixtures/formats/generate-design.py (FL-1358)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1358"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 96,
+          "height": 72,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        }
+      }
+    },
+    {
+      "file": "known-bad/panorama-72mp.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "Very wide 24000x3000 panorama: the preview keeps its 1440 px height, so it comes out 11520 px wide",
+      "source": "server/test/fixtures/known-bad/generate.sh (FL-883)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-883"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": 24000,
+          "height": 3000,
+          "orientation": null
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "11520x1440",
+          "thumbnail": "2000x250"
+        }
+      }
+    },
+    {
+      "file": "formats/video/h264-no-index.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "Truncated MP4: the moov index is gone, so every step fails and FL-845 sets it aside as unreadable",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "set-aside",
+          "cause": "unreadable",
+          "dateTimeOriginal": null,
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": null,
+          "width": null,
+          "height": null,
+          "orientation": null,
+          "videoCodec": null
+        },
+        "thumbnail": {
+          "outcome": "set-aside",
+          "cause": "unreadable",
+          "preview": null,
+          "thumbnail": null
+        },
+        "encode": {
+          "outcome": "set-aside",
+          "cause": "unreadable",
+          "videoCodec": null,
+          "size": null
+        }
+      }
+    },
+    {
+      "file": "formats/video/hevc.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "HEVC tagged hvc1",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": "hevc"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "160x120",
+          "thumbnail": "160x120"
+        },
+        "encode": {
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "160x120"
+        }
+      }
+    },
+    {
+      "file": "known-bad/hevc-hev1.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "HEVC tagged hev1",
+      "source": "server/test/fixtures/known-bad/generate.sh (FL-883)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-883"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 320,
+          "height": 240,
+          "orientation": "1",
+          "videoCodec": "hevc"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        },
+        "encode": {
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "320x240"
+        }
+      }
+    },
+    {
+      "file": "known-bad/hevc-hdr10-pq.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "10-bit BT.2020 PQ HDR10 HEVC, as phones record HDR",
+      "source": "server/test/fixtures/known-bad/generate.sh (FL-883)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-883",
+        "FL-101"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 320,
+          "height": 240,
+          "orientation": "1",
+          "videoCodec": "hevc"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "320x240",
+          "thumbnail": "320x240"
+        },
+        "encode": {
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "320x240"
+        }
+      }
+    },
+    {
+      "file": "formats/video/av1.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "AV1 in MP4",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": "av1"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "160x120",
+          "thumbnail": "160x120"
+        },
+        "encode": {
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "160x120"
+        }
+      }
+    },
+    {
+      "file": "formats/video/prores.mov",
+      "root": "fixtures",
+      "type": "video",
+      "note": "ProRes in QuickTime",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": "prores"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "160x120",
+          "thumbnail": "160x120"
+        },
+        "encode": {
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "160x120"
+        }
+      }
+    },
+    {
+      "file": "formats/video/vp9.webm",
+      "root": "fixtures",
+      "type": "video",
+      "note": "VP9 in WebM",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": "vp9"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "160x120",
+          "thumbnail": "160x120"
+        },
+        "encode": {
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "160x120"
+        }
+      }
+    },
+    {
+      "file": "formats/video/dv.dif",
+      "root": "fixtures",
+      "type": "video",
+      "note": "Raw DV stream, interlaced 768x576",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 720,
+          "height": 576,
+          "orientation": "1",
+          "videoCodec": "dvvideo"
+        },
+        "thumbnail": {
+          "outcome": "ok",
+          "preview": "720x576",
+          "thumbnail": "312x250"
+        },
+        "encode": {
+          "outcome": "ok",
+          "videoCodec": "h264",
+          "size": "768x576"
+        }
+      }
+    },
+    {
+      "file": "formats/video/cinema-raw-standin.braw",
+      "root": "fixtures",
+      "type": "video",
+      "note": "Cinema RAW stand-in no decoder opens. Today the thumbnail is skipped but the playback encode fails until it is set aside (FL-1357 intends both skipped; follow-up under FL-883)",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok",
+          "dateTimeOriginal": "2001-02-03T04:05:06.000Z",
+          "localDateTime": "2001-02-03T04:05:06.000Z",
+          "timeZone": "UTC",
+          "width": 160,
+          "height": 120,
+          "orientation": "1",
+          "videoCodec": null
+        },
+        "thumbnail": {
+          "outcome": "skipped",
+          "preview": null,
+          "thumbnail": null
+        },
+        "encode": {
+          "outcome": "set-aside",
+          "cause": "unreadable",
+          "videoCodec": null,
+          "size": null
+        }
+      }
+    }
+  ]
+}

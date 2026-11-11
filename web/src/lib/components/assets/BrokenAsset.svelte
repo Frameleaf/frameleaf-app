@@ -8,11 +8,20 @@
   interface Props {
     class?: ClassValue;
     hideMessage?: boolean;
+    /** What it says instead of "Error loading image" (FL-1409: "Can't show this photo"). */
+    label?: string;
     width?: string | undefined;
     height?: string | undefined;
   }
 
-  let { class: className, hideMessage = false, width = undefined, height = undefined }: Props = $props();
+  let {
+    class: className,
+    hideMessage = false,
+    label = undefined,
+    width = undefined,
+    height = undefined,
+  }: Props = $props();
+  const words = $derived(label ?? $t('error_loading_image'));
 </script>
 
 <!--
@@ -26,11 +35,11 @@
   style:width
   style:height
   role="img"
-  aria-label={$t('error_loading_image')}
+  aria-label={words}
 >
   <Icon icon={mdiImageBrokenVariant} size="28" class="fl-broken-asset-icon" aria-hidden />
   {#if !hideMessage}
-    <span class="fl-broken-asset-text" aria-hidden="true">{$t('error_loading_image')}</span>
+    <span class="fl-broken-asset-text" aria-hidden="true">{words}</span>
   {/if}
 </div>
 
