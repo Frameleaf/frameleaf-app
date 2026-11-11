@@ -749,7 +749,11 @@ describe('core plugin', () => {
         steps: [{ method: 'immich-plugin-core#webhook', config: { url: 'http://localhost', method: 'POST' } }],
       });
 
-      await ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id }).catch(() => undefined);
+      try {
+        await ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id });
+      } catch {
+        // a refused step may fail the run; what matters is that nothing was sent
+      }
       expect(vi.mocked(fetchAutomationHop).mock.results).toEqual([expect.objectContaining({ type: 'throw' })]);
     });
 
