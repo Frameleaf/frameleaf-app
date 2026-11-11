@@ -13,6 +13,7 @@ on:
       - 'server/src/repositories/metadata.repository.ts'
       - 'server/src/repositories/media.repository.ts'
       - 'server/src/utils/media.ts'
+      - 'server/src/queue/sharp-operations.ts'
       - 'server/src/utils/mime-types.ts'
       - 'server/Dockerfile'
       - 'server/test/fixtures/known-bad-corpus.json'
