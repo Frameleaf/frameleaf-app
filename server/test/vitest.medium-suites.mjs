@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
  * runs: `core` is every medium spec that is not listed here.
  *
  * `corpus` (FL-883) is the known-bad file corpus: it needs the frozen media fixtures and the image's native
- * decoders, and runs before an upstream sync merges (.github/workflows/known-bad-corpus.yml), not in `core`.
+ * decoders, and runs on pull requests that change the media pipeline (.github/workflows/known-bad-corpus.yml), not in `core`.
  */
 export const MEDIUM_SCALE_SUITES = Object.freeze({
   scale: [
