@@ -754,6 +754,8 @@ export type JobItem =
   | { name: JobName.AlbumSuggestionAutoAdd; data: IEntityJob }
   | { name: JobName.AlbumSuggestionOutfit; data: IEntityJob }
   | { name: JobName.AlbumCleanupScan; data: { userId: string } }
+  | { name: JobName.DateDoctorScan; data: { userId: string } }
+  | { name: JobName.DateDoctorScanQueueAll; data?: IBaseJob }
   | { name: JobName.AlbumCleanupApply; data: { id: string } }
   | { name: JobName.MemoryExport; data: IEntityJob }
 

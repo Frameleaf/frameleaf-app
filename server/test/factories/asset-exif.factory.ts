@@ -68,6 +68,8 @@ export class AssetExifFactory {
       state: 'Texas',
       tags: ['parent/child'],
       timeZone: 'UTC-6',
+      offsetTimeOriginal: null,
+      offsetTime: null,
       ...dto,
     });
   }
