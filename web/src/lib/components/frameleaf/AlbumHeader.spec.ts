@@ -11,7 +11,7 @@ import AlbumHeader from './AlbumHeader.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(() => Promise.resolve()) }));
 
-const { captureSession } = vi.hoisted(() => ({ captureSession: vi.fn(() => () => true) }));
+const { captureSession } = vi.hoisted(() => ({ captureSession: vi.fn(() => (): boolean => true) }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {}, captureSession },
 }));
