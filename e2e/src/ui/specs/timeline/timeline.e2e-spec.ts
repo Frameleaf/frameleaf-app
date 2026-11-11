@@ -1143,7 +1143,8 @@ test.describe('Timeline', () => {
         (request) => request.method() === 'PUT' && request.url().includes('/users/me/preferences'),
       );
       await menu.getByRole('switch', { name: 'File name' }).check();
-      expect((await saved).postDataJSON()).toEqual({ libraryView: { workNames: true } });
+      const request = await saved;
+      expect(request.postDataJSON()).toEqual({ libraryView: { workNames: true } });
 
       // The menu stays open while its switches are used; Browse keeps its own choice, a bare grid.
       await expect(menu).toBeVisible();
