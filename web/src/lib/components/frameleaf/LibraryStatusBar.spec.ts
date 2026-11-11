@@ -24,6 +24,12 @@ describe('LibraryStatusBar', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Your view isn’t saved · keep this tab open');
   });
 
+  it('says "250+ items", as the toolbar does, while more results are still to load (FL-1403)', () => {
+    render(LibraryStatusBar, { count: 250, more: true, saved: true });
+
+    expect(screen.getByTestId('library-status-bar')).toHaveTextContent('250+ items');
+  });
+
   it('leaves the count out until it is known', () => {
     render(LibraryStatusBar, { count: null, total: null, saved: true });
 

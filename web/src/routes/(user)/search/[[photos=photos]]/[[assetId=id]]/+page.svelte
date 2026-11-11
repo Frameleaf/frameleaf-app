@@ -44,6 +44,7 @@
   import { brandedArchiveName, namedEntitySegments } from '$lib/frameleaf/archive-name';
   import type { SearchAskProblem } from '$lib/frameleaf/search-ask';
   import { forgetEntityNames, resolveEntityName, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
+  import SearchByTextNotice from '$lib/components/frameleaf/SearchByTextNotice.svelte';
   import { LibrarySearchSession, type LibrarySearchQuery } from '$lib/frameleaf/library-search-session.svelte';
   import type { LibrarySort } from '$lib/frameleaf/library-session';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
@@ -244,7 +245,10 @@
         : terms.filter !== undefined || terms.orderBy !== undefined || terms.cursor !== undefined
           ? structuredSearchRequest(withArchivePreference(terms, includeArchived), null)
           : terms;
-      const smart = ('query' in request || 'queryAssetId' in request) && smartSearchEnabled;
+      // FL-1403: a search by meaning stays one whatever the server offers. The session answers it by
+      // text when Visual search is off or refuses; sent to the metadata endpoint as it is, its text
+      // would be ignored and the whole library shown.
+      const smart = 'query' in request || 'queryAssetId' in request;
       // A flat request (a Places card, an Explore link) keeps asking for the timeline whatever the
       // preference says: it cannot say "timeline or archive", and no visibility at all could bring
       // back the hidden halves of live photos. Only the structured shape carries an order.
@@ -264,6 +268,8 @@
   $effect(() => {
     // Asset-only route navigation and equivalent query objects retain the collection and draft.
     const key = activeSearchKey;
+    // FL-1403: a search by meaning starts again when the server begins or stops offering it.
+    void (activeSearch?.kind === 'smart' && smartSearchEnabled);
     untrack(() => {
       const query = JSON.parse(key) as LibrarySearchQuery | null;
       searchSession.reset(query);
@@ -484,7 +490,7 @@
     const asking = activeSearch?.kind === 'ask' || activeSearch?.kind === 'assistant';
     const assisting = activeSearch?.kind === 'assistant';
     try {
-      await searchSession.loadNextPage({ language: $lang });
+      await searchSession.loadNextPage({ language: $lang, smartSearch: smartSearchEnabled });
     } catch (error) {
       if (!asking) {
         // A first page that fails is the page's own state (with Try again); a later page that fails
@@ -940,6 +946,9 @@
           )}
         </p>
       {/if}
+      {#if hasSearchQuery && searchSession.textFallback}
+        <SearchByTextNotice />
+      {/if}
       {#if typeof terms.query === 'string' && terms.query.trim()}
         <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
         <VideoMomentResults query={terms.query} />
@@ -1072,6 +1081,7 @@
     <div class="frameleaf search-status" data-theme={appTheme}>
       <LibraryStatusBar
         count={searchResultAssets.length}
+        more={hasMore}
         selected={librarySession.selection.length}
         saved
         hidden={librarySession.selection.length > 0}

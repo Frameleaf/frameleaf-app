@@ -15861,6 +15861,7 @@
   "frameleaf_search_bridge_link_newer": "This search link comes from a newer version and can't be opened here.",
   "frameleaf_search_bridge_similar_photo": "Similar to a photo",
   "frameleaf_search_bridge_unsupported": "Part of this search can’t be edited here. It stays as it is unless you change something.",
+  "frameleaf_search_by_text_notice": "Matched by file name, description and other text only. Finding photos by what is in them is off or still getting ready.",
   "frameleaf_search_camera_and_lens": "Camera & lens",
   "frameleaf_search_cameras": "Cameras",
   "frameleaf_search_captured_from": "Captured from",
