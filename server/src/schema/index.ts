@@ -226,6 +226,7 @@ import {
   CloudBackupManifestOriginalTable,
   CloudBackupObjectVerificationTable,
 } from 'src/schema/tables/safety-proof.table.js';
+import { SessionSignInTable } from 'src/schema/tables/session-sign-in.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
@@ -481,6 +482,7 @@ export class ImmichDatabase {
     PreservationRestoreTable,
     PreservationRestoreItemTable,
     SessionTable,
+    SessionSignInTable,
     SharedLinkAssetTable,
     SharedLinkTable,
     SharedSpaceAlbumTable,
@@ -789,6 +791,7 @@ export interface DB extends QueueDatabase {
   render_worker_audit: RenderWorkerAuditTable;
 
   session: SessionTable;
+  session_sign_in: SessionSignInTable;
   session_sync_checkpoint: SessionSyncCheckpointTable;
 
   shared_link: SharedLinkTable;

@@ -64507,6 +64507,15 @@
             }
           },
           {
+            "name": "datesToCheck",
+            "required": false,
+            "in": "query",
+            "description": "Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned.",
+            "schema": {
+              "$ref": "#/components/schemas/TimelineDatesToCheck"
+            }
+          },
+          {
             "name": "filter",
             "required": false,
             "in": "query",
@@ -64852,6 +64861,15 @@
             }
           },
           {
+            "name": "datesToCheck",
+            "required": false,
+            "in": "query",
+            "description": "Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned.",
+            "schema": {
+              "$ref": "#/components/schemas/TimelineDatesToCheck"
+            }
+          },
+          {
             "name": "filter",
             "required": false,
             "in": "query",
@@ -65128,6 +65146,297 @@
         "x-immich-state": "Internal"
       }
     },
+    "/timeline/dates-to-check": {
+      "get": {
+        "description": "For the same filters as the time buckets: how many of the photos have a date that cannot be right (not happened yet, or a camera reset date nobody set by hand), the years those dates claim and the months to read them from. A timeline asks its buckets with datesToCheck=exclude and shows these photos apart, at its end.",
+        "operationId": "getTimelineDatesToCheck",
+        "parameters": [
+          {
+            "name": "albumId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets belonging to a specific album",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "assetType",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets by media type",
+            "schema": {
+              "$ref": "#/components/schemas/AssetTypeEnum"
+            }
+          },
+          {
+            "name": "bbox",
+            "required": false,
+            "in": "query",
+            "description": "Bounding box coordinates as west,south,east,north (WGS84)",
+            "schema": {
+              "example": "11.075683,49.416711,11.117589,49.454875",
+              "type": "string"
+            }
+          },
+          {
+            "name": "bestPhotos",
+            "required": false,
+            "in": "query",
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "dateType",
+            "required": false,
+            "in": "query",
+            "description": "Date source for timeline bucket grouping. Defaults to taken date.",
+            "schema": {
+              "$ref": "#/components/schemas/TimeBucketDateType"
+            }
+          },
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link",
+            "schema": {
+              "maxLength": 16384,
+              "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+              "type": "string"
+            }
+          },
+          {
+            "name": "imageEnrichment",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ImageEnrichmentFilter"
+            }
+          },
+          {
+            "name": "isFavorite",
+            "required": false,
+            "in": "query",
+            "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "isTrashed",
+            "required": false,
+            "in": "query",
+            "description": "Filter by trash status (true for trashed assets only, false for non-trashed only)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
+            "name": "lockReason",
+            "required": false,
+            "in": "query",
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "description": "Sort order for assets within time buckets (ASC for oldest first, DESC for newest first)",
+            "schema": {
+              "$ref": "#/components/schemas/AssetOrder"
+            }
+          },
+          {
+            "name": "orderBy",
+            "required": false,
+            "in": "query",
+            "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf)",
+            "schema": {
+              "$ref": "#/components/schemas/AssetOrderBy"
+            }
+          },
+          {
+            "name": "personId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets containing a specific person (face recognition)",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "petId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets in which the caller confirmed one of their own pets",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "suppressedOnly",
+            "required": false,
+            "in": "query",
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "tagId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets with a specific tag",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets by specific user ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "visibility",
+            "required": false,
+            "in": "query",
+            "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)",
+            "schema": {
+              "$ref": "#/components/schemas/AssetVisibility"
+            }
+          },
+          {
+            "name": "withChildTags",
+            "required": false,
+            "in": "query",
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withCoordinates",
+            "required": false,
+            "in": "query",
+            "description": "Include location data in the response",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withPartners",
+            "required": false,
+            "in": "query",
+            "description": "Include partner-shared copies. Defaults to true; false hides them, except copies in an album the partner made, which always show",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withStacked",
+            "required": false,
+            "in": "query",
+            "description": "Include stacked assets in the response. When true, only primary assets from stacks are returned.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineDatesToCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the dates to check",
+        "tags": [
+          "Timeline"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/timeline/highlights": {
       "get": {
         "description": "Curated Years and Months cards for the same filters as the time buckets: per year or month the count, a key photo (highest Best Photos score, then rating, then most recent), highlights for months and the top three places.",
@@ -65179,6 +65488,15 @@
             "description": "Date source for timeline bucket grouping. Defaults to taken date.",
             "schema": {
               "$ref": "#/components/schemas/TimeBucketDateType"
+            }
+          },
+          {
+            "name": "datesToCheck",
+            "required": false,
+            "in": "query",
+            "description": "Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned.",
+            "schema": {
+              "$ref": "#/components/schemas/TimelineDatesToCheck"
             }
           },
           {
@@ -65512,6 +65830,15 @@
             "description": "Date source for timeline bucket grouping. Defaults to taken date.",
             "schema": {
               "$ref": "#/components/schemas/TimeBucketDateType"
+            }
+          },
+          {
+            "name": "datesToCheck",
+            "required": false,
+            "in": "query",
+            "description": "Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned.",
+            "schema": {
+              "$ref": "#/components/schemas/TimelineDatesToCheck"
             }
           },
           {
@@ -100371,6 +100698,12 @@
             },
             "type": "array"
           },
+          "datesToCheck": {
+            "description": "Originals directly in this folder whose date cannot be right (not happened yet, or a camera reset date nobody set by hand). They are left out of startDate and endDate unless every original is one.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "endDate": {
             "description": "End date (latest original in this folder)",
             "format": "date-time",
@@ -100476,6 +100809,15 @@
       },
       "FrameleafHandoffRedeemDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "code": {
             "description": "The code from POST oauth/frameleaf/handoff",
             "maxLength": 200,
@@ -100529,6 +100871,15 @@
       },
       "FrameleafLinkDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "codeVerifier": {
             "description": "OAuth code verifier (PKCE)",
             "type": "string"
@@ -101161,6 +101512,15 @@
       },
       "FrameleafTokenExchangeDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "rememberMe": {
             "type": "boolean"
           },
@@ -111713,6 +112073,15 @@
       },
       "LoginCredentialDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "email": {
             "description": "User email",
             "example": "testuser@email.com",
@@ -111809,6 +112178,15 @@
       },
       "LoginTwoFactorDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "code": {
             "description": "The 6-digit code from the authenticator app",
             "pattern": "^\\d{6}$",
@@ -120397,6 +120775,15 @@
       },
       "OAuthCallbackDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "codeVerifier": {
             "description": "OAuth code verifier (PKCE)",
             "type": "string"
@@ -121308,6 +121695,15 @@
       },
       "PasskeyLoginDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "credential": {
             "$ref": "#/components/schemas/PasskeyCredentialDto"
           },
@@ -164428,6 +164824,10 @@
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
           },
+          "datesToCheck": {
+            "$ref": "#/components/schemas/TimelineDatesToCheck",
+            "description": "Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned."
+          },
           "filter": {
             "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link",
             "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
@@ -164849,6 +165249,10 @@
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
           },
+          "datesToCheck": {
+            "$ref": "#/components/schemas/TimelineDatesToCheck",
+            "description": "Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned."
+          },
           "filter": {
             "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link",
             "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
@@ -165038,6 +165442,174 @@
         ],
         "type": "object"
       },
+      "TimelineDatesToCheck": {
+        "description": "Photos whose date cannot be right: leave them out, or return only them",
+        "enum": [
+          "exclude",
+          "only"
+        ],
+        "type": "string"
+      },
+      "TimelineDatesToCheckDto": {
+        "properties": {
+          "albumId": {
+            "description": "Filter assets belonging to a specific album",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "assetType": {
+            "$ref": "#/components/schemas/AssetTypeEnum",
+            "description": "Filter assets by media type"
+          },
+          "bbox": {
+            "description": "Bounding box coordinates as west,south,east,north (WGS84)",
+            "example": "11.075683,49.416711,11.117589,49.454875",
+            "type": "string"
+          },
+          "bestPhotos": {
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "type": "boolean"
+          },
+          "dateType": {
+            "$ref": "#/components/schemas/TimeBucketDateType",
+            "description": "Date source for timeline bucket grouping. Defaults to taken date."
+          },
+          "filter": {
+            "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link",
+            "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+            "maxLength": 16384,
+            "type": "string"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
+          },
+          "isFavorite": {
+            "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
+            "type": "boolean"
+          },
+          "isTrashed": {
+            "description": "Filter by trash status (true for trashed assets only, false for non-trashed only)",
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
+          "lockReason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetLockReason"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "immich-locked-folder"
+                ]
+              }
+            ],
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session."
+          },
+          "order": {
+            "$ref": "#/components/schemas/AssetOrder",
+            "description": "Sort order for assets within time buckets (ASC for oldest first, DESC for newest first)"
+          },
+          "orderBy": {
+            "$ref": "#/components/schemas/AssetOrderBy",
+            "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf)"
+          },
+          "personId": {
+            "description": "Filter assets containing a specific person (face recognition)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "petId": {
+            "description": "Filter assets in which the caller confirmed one of their own pets",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "suppressedOnly": {
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "type": "boolean"
+          },
+          "tagId": {
+            "description": "Filter assets with a specific tag",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "userId": {
+            "description": "Filter assets by specific user ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility",
+            "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)"
+          },
+          "withChildTags": {
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "type": "boolean"
+          },
+          "withCoordinates": {
+            "description": "Include location data in the response",
+            "type": "boolean"
+          },
+          "withPartners": {
+            "description": "Include partner-shared copies. Defaults to true; false hides them, except copies in an album the partner made, which always show",
+            "type": "boolean"
+          },
+          "withStacked": {
+            "description": "Include stacked assets in the response. When true, only primary assets from stacks are returned.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "TimelineDatesToCheckResponseDto": {
+        "properties": {
+          "count": {
+            "description": "Photos whose date cannot be right",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "timeBuckets": {
+            "description": "The months those dates claim, as GET /timeline/buckets names them and in the order asked for. Read the photos of each with GET /timeline/bucket and datesToCheck=only",
+            "example": [
+              "2031-06-01",
+              "1970-01-01"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "years": {
+            "description": "The years those dates claim, oldest first, for one short sentence (\"1970 and 2031\")",
+            "items": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "timeBuckets",
+          "years"
+        ],
+        "type": "object"
+      },
       "TimelineHighlightGrouping": {
         "default": "month",
         "description": "One card per year or per month",
@@ -165113,6 +165685,10 @@
           "dateType": {
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
+          },
+          "datesToCheck": {
+            "$ref": "#/components/schemas/TimelineDatesToCheck",
+            "description": "Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned."
           },
           "filter": {
             "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link",
@@ -165256,6 +165832,10 @@
           "dateType": {
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
+          },
+          "datesToCheck": {
+            "$ref": "#/components/schemas/TimelineDatesToCheck",
+            "description": "Photos whose date cannot be right: one that has not happened yet (more than a day ahead), or a camera reset date (1 January 1970, 1980 or 2000), unless somebody set that date by hand. `exclude` leaves them out, so they never lead a timeline; `only` returns just them, to show apart and offer for fixing. Omitted, every photo is returned."
           },
           "filter": {
             "description": "A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link",

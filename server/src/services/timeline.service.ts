@@ -7,6 +7,8 @@ import {
   TimeBucketAssetDto,
   TimeBucketDto,
   TimeBucketsResponseDto,
+  TimelineDatesToCheckDto,
+  TimelineDatesToCheckResponseDto,
   TimelineHighlightResponseDto,
   TimelineHighlightsDto,
   TimelineOrderedDto,
@@ -15,6 +17,7 @@ import { AssetVisibility, Permission } from 'src/enum.js';
 import { TimeBucketOptions, TimelineOrderedPage } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
+import { TimelineDatesToCheck } from 'src/utils/date-sanity.js';
 import {
   getOthersRulesQueryOptions,
   getPrivacyQueryOptions,
@@ -131,6 +134,21 @@ export class TimelineService extends BaseService {
       // a shared link that hides EXIF hides places too, as its buckets do
       withPlaces: !auth.sharedLink || auth.sharedLink.showExif,
     });
+  }
+
+  /**
+   * FL-1410: the photos a timeline request would show whose date cannot be right, counted with the time
+   * buckets' own checks, options and query, so the notice never counts a photo the timeline would not show.
+   */
+  async getDatesToCheck(auth: AuthDto, dto: TimelineDatesToCheckDto): Promise<TimelineDatesToCheckResponseDto> {
+    await this.timeBucketChecks(auth, dto);
+    const options = this.buildTimeBucketOptions(auth, { ...dto, datesToCheck: TimelineDatesToCheck.Only });
+    const buckets = await this.assetRepository.getTimeBuckets(options, auth);
+    return {
+      count: buckets.reduce((sum, { count }) => sum + count, 0),
+      years: [...new Set(buckets.map(({ timeBucket }) => new Date(timeBucket).getUTCFullYear()))].sort((a, b) => a - b),
+      timeBuckets: buckets.map(({ timeBucket }) => timeBucket),
+    };
   }
 
   private buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): TimeBucketOptions {

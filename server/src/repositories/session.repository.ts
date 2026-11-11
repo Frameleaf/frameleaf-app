@@ -7,6 +7,7 @@ import type { Insertable, Kysely, Transaction, Updateable } from 'kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
+import { SessionSignInTable } from 'src/schema/tables/session-sign-in.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { asUuid } from 'src/utils/database.js';
 
@@ -73,6 +74,16 @@ export class SessionRepository {
       )
       .returning(['id', 'deviceOS', 'deviceType'])
       .execute();
+  }
+
+  /** How a session was made; undefined for a session older than the record. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getSignIn(sessionId: string) {
+    return this.db
+      .selectFrom('session_sign_in')
+      .select(['methods', 'level', 'authTime', 'source', 'legacy'])
+      .where('sessionId', '=', sessionId)
+      .executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -162,24 +173,38 @@ export class SessionRepository {
       .execute();
   }
 
-  async create(dto: Insertable<SessionTable>, expectedPassword?: string) {
-    if (expectedPassword === undefined) {
+  /** The session and, in the same transaction, how it was made (`session_sign_in`). */
+  async create(
+    dto: Insertable<SessionTable>,
+    expectedPassword?: string,
+    signIn?: Omit<Insertable<SessionSignInTable>, 'sessionId'>,
+  ) {
+    if (expectedPassword === undefined && !signIn) {
       return this.db.insertInto('session').values(dto).returningAll().executeTakeFirstOrThrow();
     }
     return this.db.transaction().execute(async (trx) => {
-      const user = await trx
-        .selectFrom('user')
-        .select('user.id')
-        .where('user.id', '=', dto.userId)
-        .where('user.password', '=', expectedPassword)
-        .where('user.deletedAt', 'is', null)
-        .where('user.importClaimPending', '=', false)
-        .forShare()
-        .executeTakeFirst();
-      if (!user) {
-        throw new UnauthorizedException('Incorrect email or password');
+      if (expectedPassword !== undefined) {
+        const user = await trx
+          .selectFrom('user')
+          .select('user.id')
+          .where('user.id', '=', dto.userId)
+          .where('user.password', '=', expectedPassword)
+          .where('user.deletedAt', 'is', null)
+          .where('user.importClaimPending', '=', false)
+          .forShare()
+          .executeTakeFirst();
+        if (!user) {
+          throw new UnauthorizedException('Incorrect email or password');
+        }
       }
-      return trx.insertInto('session').values(dto).returningAll().executeTakeFirstOrThrow();
+      const session = await trx.insertInto('session').values(dto).returningAll().executeTakeFirstOrThrow();
+      if (signIn) {
+        await trx
+          .insertInto('session_sign_in')
+          .values({ ...signIn, sessionId: session.id })
+          .execute();
+      }
+      return session;
     });
   }
 

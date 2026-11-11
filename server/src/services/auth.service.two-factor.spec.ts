@@ -66,7 +66,11 @@ describe('AuthService two-step sign-in (FL-793)', () => {
     expect(result.response.accessToken).not.toBe('');
     expect(result.rememberMe).toBe(true);
     expect(result.trustToken).toBeUndefined();
-    expect(mocks.session.create).toHaveBeenCalledWith(expect.objectContaining({ userId: user.id }), PASSWORD_HASH);
+    expect(mocks.session.create).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: user.id }),
+      PASSWORD_HASH,
+      expect.objectContaining({ methods: ['pwd', 'totp'], level: 'verified', source: 'local' }),
+    );
   });
 
   it('refuses a wrong code and a code already used, with 401 so the rate limit counts it', async () => {

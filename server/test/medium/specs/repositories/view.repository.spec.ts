@@ -101,6 +101,7 @@ describe(ViewRepository.name, () => {
           coverAssetIds: [root],
           startDate: day('2020-01-01'),
           endDate: day('2020-01-01'),
+          datesToCheck: 0,
         },
         {
           path: '/library/trips',
@@ -109,6 +110,7 @@ describe(ViewRepository.name, () => {
           coverAssetIds: [newest, tiedFirst, tiedSecond, middle],
           startDate: day('2021-07-04'),
           endDate: day('2025-07-04'),
+          datesToCheck: 0,
         },
         {
           path: '/library/trips/rockies',
@@ -117,6 +119,7 @@ describe(ViewRepository.name, () => {
           coverAssetIds: [nested],
           startDate: day('2026-03-09'),
           endDate: day('2026-03-09'),
+          datesToCheck: 0,
         },
       ]);
     });
@@ -131,19 +134,19 @@ describe(ViewRepository.name, () => {
       const { asset: visible } = await ctx.newAsset({ ...inFolder, ...capturedAt('2024-06-01T10:00:00.000Z') });
       // every file that does not count is newer or older than the one that does, so it would lead the
       // cover or move a date if it were read
-      await ctx.newAsset({ ...inFolder, deletedAt: new Date(), ...capturedAt('2030-01-01T00:00:00.000Z') });
+      await ctx.newAsset({ ...inFolder, deletedAt: new Date(), ...capturedAt('2026-04-01T00:00:00.000Z') });
       await ctx.newAsset({
         ...inFolder,
         visibility: AssetVisibility.Archive,
-        ...capturedAt('2000-01-01T00:00:00.000Z'),
+        ...capturedAt('2000-02-01T00:00:00.000Z'),
       });
-      await ctx.newAsset({ ...inFolder, ownerId: other.id, ...capturedAt('2029-01-01T00:00:00.000Z') });
+      await ctx.newAsset({ ...inFolder, ownerId: other.id, ...capturedAt('2026-03-01T00:00:00.000Z') });
       const { asset: locked } = await ctx.newAsset({
         ...inFolder,
         visibility: AssetVisibility.Locked,
-        ...capturedAt('2028-01-01T00:00:00.000Z'),
+        ...capturedAt('2026-02-01T00:00:00.000Z'),
       });
-      const { asset: hidden } = await ctx.newAsset({ ...inFolder, ...capturedAt('2027-01-01T00:00:00.000Z') });
+      const { asset: hidden } = await ctx.newAsset({ ...inFolder, ...capturedAt('2026-01-01T00:00:00.000Z') });
       await ctx.newTagAsset({ tagIds: [hiddenTag.id], assetIds: [hidden.id] });
       // a folder with nothing to list is not a row at all
       await ctx.newAsset({
@@ -168,6 +171,7 @@ describe(ViewRepository.name, () => {
           coverAssetIds: [visible.id],
           startDate: day('2024-06-01'),
           endDate: day('2024-06-01'),
+          datesToCheck: 0,
         },
       ]);
 
@@ -179,7 +183,8 @@ describe(ViewRepository.name, () => {
           size: 0,
           coverAssetIds: [locked.id, hidden.id, visible.id],
           startDate: day('2024-06-01'),
-          endDate: day('2028-01-01'),
+          endDate: day('2026-02-01'),
+          datesToCheck: 0,
         },
       ]);
     });
@@ -208,6 +213,7 @@ describe(ViewRepository.name, () => {
         coverAssetIds: [last.id, first.id],
         startDate: day('2024-06-01'),
         endDate: day('2024-12-31'),
+        datesToCheck: 0,
       });
 
       const [metadata] = await ctx.get(AlbumRepository).getMetadataForIds([album.id]);
