@@ -130,6 +130,7 @@ import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metada
 export type ControllerContext = {
   authenticate: Mock;
   requireSetupAvailable: Mock;
+  getAuthService: () => Mocked<AuthService>;
   getHttpServer: () => any;
   reset: () => void;
   close: () => Promise<void>;

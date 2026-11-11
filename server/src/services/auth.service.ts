@@ -1248,6 +1248,10 @@ export class AuthService extends BaseService {
       // nothing Cloud vouched for counts any more, a Cloud passkey included: never a local passkey
       record = { ...record, source: 'local', methods: [], level: 'basic' };
     }
+    if (!away && !record) {
+      // a session with no record is legacy, and a legacy session at home keeps today's rights: nothing to judge
+      return;
+    }
     if (away && !record) {
       // a session with no record (made outside createSession) is judged as before: legacy, by its Frameleaf tag
       // or its passkey link
