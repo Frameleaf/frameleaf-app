@@ -99,6 +99,8 @@ jobs:
     if: needs.changes.outputs.assistant-qualification == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    outputs:
+      amd64-manifest: ${{ steps.qualify.outputs.amd64-manifest }}
     permissions:
       contents: read
     steps:
@@ -124,6 +126,7 @@ jobs:
       - name: Install ORAS (checksum-pinned)
         run: .github/install-oras.sh
       - name: Run and verify live qualification on the unpushed ML image
+        id: qualify
         run: node .github/assistant-deploy-gate.mjs qualify
       - name: Retain verified Assistant qualification evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -142,7 +145,7 @@ jobs:
       contains(fromJSON('["success","skipped"]'), needs.server.result) &&
       contains(fromJSON('["success","skipped"]'), needs['machine-learning'].result) &&
       ((needs.changes.outputs.assistant-qualification == 'false' && needs.assistant-qualification.result == 'skipped') ||
-      (needs.changes.outputs.assistant-qualification == 'true' && needs.assistant-qualification.result == 'success'))
+      (needs.changes.outputs.assistant-qualification == 'true' && needs.assistant-qualification.result == 'success' && needs.assistant-qualification.outputs.amd64-manifest != ''))
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -215,7 +218,7 @@ jobs:
 
   machine-learning-publish:
     name: Push ML CPU (tested archive)
-    needs: [changes, deploy-test, machine-learning]
+    needs: [changes, deploy-test, machine-learning, assistant-qualification]
     if: ${{ !cancelled() && needs.changes.outputs['machine-learning'] == 'true' && needs['machine-learning'].result == 'success' && needs['deploy-test'].result == 'success' }}
     uses: ./.github/workflows/local-multi-runner-build.yml
     permissions:
@@ -233,6 +236,7 @@ jobs:
       target: prod
       device: cpu
       mode: publish
+      tested-amd64-manifest: ${{ needs.assistant-qualification.outputs.amd64-manifest }}
 
   machine-learning-hardware:
     name: Build and Push ML hardware variants

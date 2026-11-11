@@ -135,6 +135,8 @@ test("qualification requires the fresh passing report from the same worker invoc
   const source = "a".repeat(40);
   const image = `127.0.0.1:5000/deploy-test/assistant@sha256:${"b".repeat(64)}`;
   const summary = path.join(temp, "summary");
+  const output = path.join(temp, "output");
+  const manifestDigest = `sha256:${"c".repeat(64)}`;
   const evidence = path.join(temp, "assistant-qualification-evidence.json");
   const report = {
     workerModel: planner.name,
@@ -171,6 +173,26 @@ test("qualification requires the fresh passing report from the same worker invoc
         },
         execute(command, args, options) {
           calls.push(`${command} ${args[0]}`);
+          if (command === "oras") {
+            assert.deepEqual(args, [
+              "manifest",
+              "fetch",
+              "--plain-http",
+              image,
+            ]);
+            return JSON.stringify({
+              manifests: [
+                {
+                  platform: { os: "linux", architecture: "amd64" },
+                  digest: manifestDigest,
+                },
+                {
+                  platform: { os: "unknown", architecture: "unknown" },
+                  digest: `sha256:${"d".repeat(64)}`,
+                },
+              ],
+            });
+          }
           if (args[0] === "image")
             return JSON.stringify({
               "org.opencontainers.image.source":
@@ -181,6 +203,7 @@ test("qualification requires the fresh passing report from the same worker invoc
           if (args[0] === "run") {
             assert.equal(args.at(-1), image);
             assert.ok(args.includes("127.0.0.1::3003"));
+            assert.equal(args[args.indexOf("--platform") + 1], "linux/amd64");
           }
           if (args[0] === "port") return "127.0.0.1:32768";
           if (command === "pnpm") {
@@ -212,6 +235,7 @@ test("qualification requires the fresh passing report from the same worker invoc
         {
           RUNNER_TEMP: temp,
           GITHUB_STEP_SUMMARY: summary,
+          GITHUB_OUTPUT: output,
           FRAMELEAF_ASSISTANT_QUALIFICATION_REPORT: "/injected-report.json",
           FRAMELEAF_ASSISTANT_PLANNER_URL: "https://injected.example",
         },
@@ -222,20 +246,29 @@ test("qualification requires the fresh passing report from the same worker invoc
         assert.ok(readFileSync(summary, "utf8").includes(image));
         assert.deepEqual(JSON.parse(readFileSync(evidence, "utf8")), {
           workerImageDigest: `sha256:${"b".repeat(64)}`,
+          workerManifestDigest: manifestDigest,
           report,
         });
+        assert.equal(
+          readFileSync(output, "utf8"),
+          `amd64-manifest=${manifestDigest}\n`,
+        );
       } else if (scenario === "duplicate") {
         const original = readFileSync(evidence, "utf8");
         const originalSummary = readFileSync(summary, "utf8");
+        const originalOutput = readFileSync(output, "utf8");
         await assert.rejects(result, /EEXIST/);
         assert.equal(readFileSync(evidence, "utf8"), original);
         assert.equal(readFileSync(summary, "utf8"), originalSummary);
+        assert.equal(readFileSync(output, "utf8"), originalOutput);
       } else {
         await assert.rejects(result, /ENOENT|source mismatch|Evaluator failed/);
         assert.equal(existsSync(summary), false);
         assert.equal(existsSync(evidence), false);
+        assert.equal(existsSync(output), false);
       }
       assert.deepEqual(calls, [
+        "oras manifest",
         "docker image",
         "docker run",
         "docker port",

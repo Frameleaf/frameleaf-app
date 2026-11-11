@@ -662,9 +662,18 @@ async function verifyImage(
   spec,
   sha,
   reference = commitTag(sha, spec),
+  testedAmd64Manifest,
 ) {
   const index = await registry.read(spec.image, reference);
   const platforms = validateIndex(index.json, spec, sha);
+  if (testedAmd64Manifest) {
+    assert(DIGEST.test(testedAmd64Manifest), "Invalid qualified worker digest");
+    assert.equal(
+      platforms.get("linux/amd64")?.digest,
+      testedAmd64Manifest,
+      "Candidate tag differs from the qualified worker manifest",
+    );
+  }
   for (const [platform, descriptor] of platforms) {
     const manifest = await registry.read(spec.image, descriptor.digest);
     assert.equal(
@@ -1080,7 +1089,13 @@ async function mergeCandidate(env = process.env) {
   }
   // An existing index with missing/corrupt child content fails verification; a
   // child 404 must never be mistaken for permission to overwrite its commit tag.
-  const result = await verifyImage(registry, spec, env.SOURCE_SHA, ref);
+  const result = await verifyImage(
+    registry,
+    spec,
+    env.SOURCE_SHA,
+    ref,
+    env.TESTED_AMD64_MANIFEST,
+  );
   // A retry never overwrites a previously verified same-SHA commit tag.
   // Only the current mainline tip may advance the edge channel.
   if (await currentMainline(env.SOURCE_SHA))

@@ -155,6 +155,20 @@ export async function qualify(
     const image = await loadArchive(archive, "assistant", directory);
     const workerImageDigest = /@(sha256:[a-f0-9]{64})$/.exec(image)?.[1];
     assert(workerImageDigest, "Expected the tested ML archive's exact digest");
+    const index = JSON.parse(
+      execute("oras", ["manifest", "fetch", "--plain-http", image]),
+    );
+    const amd64 = index.manifests.filter(
+      ({ platform }) =>
+        platform?.os === "linux" && platform.architecture === "amd64",
+    );
+    assert.equal(amd64.length, 1, "Expected one linux/amd64 worker manifest");
+    const [{ digest: workerManifestDigest }] = amd64;
+    assert.match(
+      workerManifestDigest,
+      /^sha256:[a-f0-9]{64}$/,
+      "Invalid worker manifest digest",
+    );
     const labels = JSON.parse(
       execute("docker", [
         "image",
@@ -170,6 +184,8 @@ export async function qualify(
       "--detach",
       "--pull",
       "never",
+      "--platform",
+      "linux/amd64",
       "--name",
       worker,
       "--publish",
@@ -211,8 +227,12 @@ export async function qualify(
     verifyQualification(report, source, planner.name);
     writeFileSync(
       path.join(env.RUNNER_TEMP, "assistant-qualification-evidence.json"),
-      `${JSON.stringify({ workerImageDigest, report }, null, 2)}\n`,
+      `${JSON.stringify({ workerImageDigest, workerManifestDigest, report }, null, 2)}\n`,
       { flag: "wx", mode: 0o600 },
+    );
+    appendFileSync(
+      env.GITHUB_OUTPUT,
+      `amd64-manifest=${workerManifestDigest}\n`,
     );
     appendFileSync(
       env.GITHUB_STEP_SUMMARY,

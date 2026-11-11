@@ -256,6 +256,27 @@ test("full verification follows each platform manifest through its image config"
   );
 });
 
+test("an existing same-source ML tag must contain the qualified amd64 worker", async () => {
+  const spec = VARIANTS[1];
+  const { registry, index } = fixture(spec);
+  const amd64 = index.manifests.find(
+    ({ platform }) => platform.architecture === "amd64",
+  );
+  const arm64 = index.manifests.find(
+    ({ platform }) => platform.architecture === "arm64",
+  );
+  await verifyImage(registry, spec, sha, undefined, amd64.digest);
+  await verifyImage(registry, spec, sha, undefined, "");
+  await assert.rejects(
+    verifyImage(registry, spec, sha, undefined, arm64.digest),
+    /Candidate tag differs from the qualified worker manifest/,
+  );
+  await assert.rejects(
+    verifyImage(registry, spec, sha, undefined, "not-a-digest"),
+    /Invalid qualified worker digest/,
+  );
+});
+
 test("index labels cannot disguise wrong image configuration or descriptor size", async () => {
   const first = fixture();
   first.index.manifests[0].size++;

@@ -2098,8 +2098,26 @@ test("all Docker publication routes require same-run Assistant qualification whe
     ).length,
     1,
   );
+  assert.equal(
+    qualification.outputs["amd64-manifest"],
+    "${{ steps.qualify.outputs.amd64-manifest }}",
+  );
   const deployment = jobs["deploy-test"];
   assert.ok(deployment.needs.includes("assistant-qualification"));
+  assert.match(deployment.if, /outputs.amd64-manifest != ''/);
+  const publisher = jobs["machine-learning-publish"];
+  assert.ok(publisher.needs.includes("assistant-qualification"));
+  assert.equal(
+    publisher.with["tested-amd64-manifest"],
+    "${{ needs.assistant-qualification.outputs.amd64-manifest }}",
+  );
+  const merger = workflow("local-multi-runner-build.yml").jobs.merge.steps.at(
+    -1,
+  );
+  assert.equal(
+    merger.env.TESTED_AMD64_MANIFEST,
+    "${{ inputs.tested-amd64-manifest }}",
+  );
   assert.match(
     deployment.if,
     /outputs.assistant-qualification == 'false' && needs.assistant-qualification.result == 'skipped'/,
@@ -2121,6 +2139,107 @@ test("all Docker publication routes require same-run Assistant qualification whe
       /needs\['deploy-test'\]\.result == 'success'/,
       name,
     );
+  }
+});
+
+test("AMD64 publication rejects a substituted archive before its first registry write", () => {
+  const publish = workflow(
+    "local-multi-runner-build.yml",
+  ).jobs.publish.steps.find(
+    (step) => step.name === "Push the tested archive by digest, byte for byte",
+  );
+  assert.equal(
+    publish.env.TESTED_AMD64_MANIFEST,
+    "${{ inputs.tested-amd64-manifest }}",
+  );
+  const directory = mkdtempSync(
+    path.join(tmpdir(), "assistant-digest-publish-"),
+  );
+  const qualified = `sha256:${"a".repeat(64)}`;
+  const archiveDigest = `sha256:${"b".repeat(64)}`;
+  const different = `sha256:${"c".repeat(64)}`;
+  try {
+    const fixture = path.join(directory, "fixture");
+    const temp = path.join(directory, "runner");
+    mkdirSync(path.join(fixture, "blobs", "sha256"), { recursive: true });
+    mkdirSync(path.join(temp, "archive"), { recursive: true });
+    const archive = path.join(temp, "archive", "image.tar");
+    const calls = path.join(directory, "oras-calls");
+    writeFileSync(
+      path.join(temp, "archive", "linux-amd64.json"),
+      JSON.stringify({
+        platform: "linux/amd64",
+        digest: archiveDigest,
+      }),
+    );
+    writeFileSync(
+      path.join(fixture, "index.json"),
+      JSON.stringify({ manifests: [{ digest: archiveDigest }] }),
+    );
+    writeFileSync(
+      path.join(directory, "oras"),
+      [
+        "#!/bin/bash",
+        'echo "$1" >> "$CALLS"',
+        'case "$1" in login) cat >/dev/null ;; resolve) echo "$ARCHIVE_DIGEST" ;; esac',
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    for (const [child, expected, success] of [
+      [different, qualified, false],
+      [different, "invalid", false],
+      [qualified, qualified, true],
+      [different, "", true],
+    ]) {
+      writeFileSync(
+        path.join(fixture, "blobs", "sha256", archiveDigest.slice(7)),
+        JSON.stringify({
+          manifests: [
+            { platform: { os: "linux", architecture: "amd64" }, digest: child },
+            {
+              platform: { os: "unknown", architecture: "unknown" },
+              digest: qualified,
+            },
+          ],
+        }),
+      );
+      execFileSync("tar", [
+        "-cf",
+        archive,
+        "-C",
+        fixture,
+        "index.json",
+        "blobs",
+      ]);
+      writeFileSync(calls, "");
+      const result = spawnSync("bash", ["-c", publish.run], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          RUNNER_TEMP: temp,
+          PLATFORM: "linux/amd64",
+          TESTED_AMD64_MANIFEST: expected,
+          IMAGE: "frameleaf-machine-learning",
+          REGISTRY_TOKEN: "fixture-token",
+          ACTOR: "fixture",
+          CALLS: calls,
+          ARCHIVE_DIGEST: archiveDigest,
+        },
+      });
+      assert.equal(
+        result.status,
+        success ? 0 : 1,
+        result.stderr || result.stdout,
+      );
+      assert.equal(
+        readFileSync(calls, "utf8"),
+        success ? "login\ncp\nresolve\nlogout\n" : "",
+      );
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 

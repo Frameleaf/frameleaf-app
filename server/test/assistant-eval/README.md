@@ -68,8 +68,10 @@ accepted plans. This mode does not produce release qualification evidence.
 Deploy runs the live evaluator before publishing or retagging images when the
 source manifest pins a default planner. The job starts the same run's unpushed
 Linux amd64 CPU worker archive on a loopback port and verifies a fresh report
-against the exact source commit. The job retains the verified report and worker
-archive digest together as a 30-day audit artifact. The hosted CPU image
+against the exact source commit. The job retains the verified report, worker
+archive digest, and Linux amd64 manifest digest as a 30-day audit artifact.
+Publication checks the tested manifest digest before pushing the archive and
+before advancing the candidate tag to edge. The hosted CPU image
 provides the Transformers runtime. An empty manifest leaves the regular
 deployment test in effect.
 
