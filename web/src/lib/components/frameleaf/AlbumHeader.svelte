@@ -203,11 +203,11 @@
   let offlineRequest: AbortController | undefined;
   onDestroy(() => offlineRequest?.abort());
   async function keepOffline() {
-    if (requestingOffline) return;
+    if (typeof location === 'undefined' || requestingOffline) return;
     const id = album.id;
     const path = `/__frameleaf_desktop__/offline-albums/${id}`;
     if (!localDesktopOffline) {
-      globalThis.location.assign(path);
+      location.assign(path);
       return;
     }
     const sessionCurrent = authManager.captureSession();
@@ -226,7 +226,7 @@
       if (typeof value?.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(value.token)) {
         throw new Error('Offline album unavailable');
       }
-      globalThis.location.assign(`${path}#${value.token}`);
+      location.assign(`${path}#${value.token}`);
     } catch (error) {
       if (!request.signal.aborted && sessionCurrent()) handleError(error, $t('frameleaf_album_keep_offline_error'));
     } finally {
