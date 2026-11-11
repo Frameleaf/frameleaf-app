@@ -569,7 +569,12 @@ describe(SearchService.name, () => {
         const later = await sut.searchSmart(authStub.user1, { query: 'lake', page: 2 });
         expect(later.assets).not.toHaveProperty('closeMatches');
 
-        mocks.search.getEmbedding.mockResolvedValue({ assetId: newUuid(), embedding: '[1, 2, 3]' });
+        mocks.search.getEmbedding.mockResolvedValue({
+          assetId: newUuid(),
+          embedding: '[1, 2, 3]',
+          producerAdmissionKey: 'test',
+          producerModelKey: null,
+        });
         mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
         mocks.search.getUnrelatedSearchDistance.mockClear();
         mocks.search.searchSmartV3.mockResolvedValue(ranked(0, 0.5) as never);
