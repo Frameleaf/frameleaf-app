@@ -12,7 +12,9 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter } from '$lib/constants';
+  import { faceRecognitionWork, tonightLabel } from '$lib/frameleaf/background-work';
   import { filterPeopleByName, isUnnamedPerson, sortPeopleForGrid, type PeopleGridSort } from '$lib/frameleaf/people';
+  import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -20,6 +22,7 @@
   import { toastAction, toastUndo } from '$lib/frameleaf/toast';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { Route } from '$lib/route';
+  import { locale } from '$lib/stores/preferences.store';
   import { websocketEvents } from '$lib/stores/websocket';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -68,8 +71,11 @@
    * people is read up front rather than on scroll.
    *
    * With nobody to show, the page says why (FL-1408, M9): face recognition is turned off on this
-   * server (with the way to turn it on, for whoever runs it), or it is still working through the
-   * library. While it is off there are no merge or split prompts either.
+   * server (with the way to turn it on, for whoever runs it), or photos still wait to be looked
+   * through. Whether that work is running, paused, saved for the night or waiting its turn is read from
+   * the queue state Activity and Background work show, so the three never disagree; someone the server
+   * sends no queue state to is told only that photos still wait. While face recognition is off there
+   * are no merge or split prompts either.
    */
 
   interface Props {
@@ -86,6 +92,50 @@
   const facesOff = $derived(!featureFlagsManager.value.facialRecognition);
   /** The server found nobody yet and still has photos of this account to look through. */
   let scanning = $state(untrack(() => data.people.scanning ?? false));
+  const faceWork = $derived(faceRecognitionWork(runningJobsSession.summary));
+  const canManageWork = $derived(runningJobsSession.summary.canManageQueues);
+  /** What the page says while photos still wait for face recognition, in Activity's words for its state. */
+  const waitingNotice = $derived.by(() => {
+    const told = (state: string) => $t('frameleaf_people_scan_state_description', { values: { state } });
+    switch (faceWork?.state) {
+      case 'running': {
+        return {
+          title: $t('frameleaf_people_scanning_title'),
+          message: $t('frameleaf_people_scanning_description'),
+          manage: false,
+        };
+      }
+      case 'paused': {
+        return {
+          title: $t('frameleaf_people_scan_paused_title'),
+          message: $t('frameleaf_people_scan_paused_description'),
+          manage: true,
+        };
+      }
+      case 'tonight': {
+        return {
+          title: $t('frameleaf_people_scan_tonight_title'),
+          message: told(tonightLabel(faceWork.tonight?.startsAt ?? null, $t, $locale ?? undefined)),
+          manage: false,
+        };
+      }
+      case 'waiting':
+      case 'stuck': {
+        return {
+          title: $t('frameleaf_people_scan_waiting_title'),
+          message: told($t(faceWork.statusKey ?? 'frameleaf_activity_work_up_next')),
+          manage: faceWork.state === 'stuck',
+        };
+      }
+      default: {
+        return {
+          title: $t('frameleaf_people_scan_pending_title'),
+          message: $t('frameleaf_people_scan_pending_description'),
+          manage: false,
+        };
+      }
+    }
+  });
   let search = $state(untrack(() => appPage.url.searchParams.get(QueryParameter.SEARCHED_PEOPLE) ?? ''));
   let sort: PeopleGridSort = $state('name');
   let showHidden = $state(false);
@@ -220,14 +270,20 @@
       handlePromiseError(loadSplitSuggestions());
     }
     handlePromiseError(loadLibrarySize());
+    // Only the "photos still wait" page reads the queue state, so only it asks for it.
+    const stopWatchingWork = scanning && !facesOff ? runningJobsSession.watch() : undefined;
 
-    return websocketEvents.on('on_person_thumbnail', (personId: string) => {
+    const stopListening = websocketEvents.on('on_person_thumbnail', (personId: string) => {
       for (const person of people) {
         if (person.id === personId) {
           person.updatedAt = new Date().toISOString();
         }
       }
     });
+    return () => {
+      stopWatchingWork?.();
+      stopListening();
+    };
   });
 
   const replacePerson = (updated: PersonResponseDto) => {
@@ -678,8 +734,11 @@
     {:else if !nextPage && people.length === 0 && scanning}
       <EmptyState
         icon={mdiAccountSearchOutline}
-        title={$t('frameleaf_people_scanning_title')}
-        message={$t('frameleaf_people_scanning_description')}
+        title={waitingNotice.title}
+        message={waitingNotice.message}
+        action={waitingNotice.manage && canManageWork
+          ? { label: $t('frameleaf_activity_work_settings'), href: commandCenterUrl('processing', 'queues') }
+          : undefined}
       />
     {:else if !nextPage}
       <p class="people-empty" role="status">

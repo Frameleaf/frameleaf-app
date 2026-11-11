@@ -1,4 +1,4 @@
-import { PersonMergeVerdict, PersonSplitVerdict } from '@frameleaf/sdk';
+import { PersonMergeVerdict, PersonSplitVerdict, QueueName, type DurableQueueRun } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';
@@ -314,11 +314,64 @@ describe('People library with nobody found', () => {
     expect(screen.queryByRole('link', { name: 'frameleaf_people_faces_off_action' })).not.toBeInTheDocument();
   });
 
-  it('says face recognition is still working through the library', () => {
+  // The wording follows the queue state Activity and Background work show, so they never disagree.
+  const faceQueue = (patch: Partial<DurableQueueRun>): DurableQueueRun => ({
+    name: QueueName.FaceDetection,
+    isPaused: false,
+    canPause: true,
+    active: 0,
+    waiting: 0,
+    processed: 0,
+    total: 0,
+    startedAt: null,
+    ...patch,
+  });
+  const work = (queues: DurableQueueRun[], canManageQueues = true) =>
+    sdkMock.getRunningJobs.mockResolvedValue({ operations: [], memoryExports: [], queues, canManageQueues } as never);
+
+  it('says face recognition is working through the library while its queue runs', async () => {
+    work([faceQueue({ active: 2, waiting: 40, total: 42 })]);
     render(PeoplePage, { data: nobody(true) });
 
-    expect(screen.getByRole('heading', { name: 'frameleaf_people_scanning_title' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scanning_title' })).toBeInTheDocument();
     expect(screen.getByText('frameleaf_people_scanning_description')).toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
+  });
+
+  it('says paused, not working, while Background work says Paused, and offers its settings', async () => {
+    work([faceQueue({ isPaused: true, waiting: 40, total: 40 })]);
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scan_paused_title' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'frameleaf_people_scanning_title' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'frameleaf_activity_work_settings' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('processing'),
+    );
+  });
+
+  it('says the work is saved for the night while quiet hours hold it', async () => {
+    work([faceQueue({ heldForNight: true, resumesAt: '2026-10-31T06:00:00.000Z', state: 'paused', waiting: 40 })]);
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scan_tonight_title' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'frameleaf_activity_work_settings' })).not.toBeInTheDocument();
+  });
+
+  it('says it has not started yet while the work waits its turn', async () => {
+    work([faceQueue({ waiting: 40, total: 40 })]);
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scan_waiting_title' })).toBeInTheDocument();
+  });
+
+  it('claims no state for someone the server sends no queues to', async () => {
+    work([], false);
+    render(PeoplePage, { data: nobody(true) });
+
+    expect(await screen.findByRole('heading', { name: 'frameleaf_people_scan_pending_title' })).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_people_scan_pending_description')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'frameleaf_people_scanning_title' })).not.toBeInTheDocument();
     expect(screen.queryByText('frameleaf_people_none_assigned')).not.toBeInTheDocument();
   });
 

@@ -1,4 +1,10 @@
-import type { DurableJobRun, DurableJobState, DurableQueueRun, DurableRunningJobs, QueueName } from '@frameleaf/sdk';
+import {
+  QueueName,
+  type DurableJobRun,
+  type DurableJobState,
+  type DurableQueueRun,
+  type DurableRunningJobs,
+} from '@frameleaf/sdk';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
 import { isImportRunKind, isRunSettled, runStateKey, settledItems } from '$lib/frameleaf/durable-runs';
@@ -330,6 +336,19 @@ export const buildWorkFeatureRows = (cards: readonly BackgroundWorkCard[]): Work
       ...(state === 'tonight' && { tonight: { startsAt: starts[0] ?? null } }),
     };
   });
+
+const FACE_QUEUES: ReadonlySet<QueueName> = new Set([QueueName.FaceDetection, QueueName.FacialRecognition]);
+
+/**
+ * FL-1408: where face recognition itself stands, for People's "nobody found yet" page, read from the
+ * queue state Activity and Background work show, so People never says "working" while they say
+ * "Paused". Pets share the "Faces & identity" feature and are left out. Idle when its queues are, and
+ * for anyone the server sends no queues to.
+ */
+export const faceRecognitionWork = (summary: DurableRunningJobs | null | undefined): WorkFeatureRow | undefined =>
+  buildWorkFeatureRows(buildBackgroundWorkCards(summary).filter((card) => FACE_QUEUES.has(card.queueName))).find(
+    (row) => row.feature.id === 'faces',
+  );
 
 /** What Activity's first line says, most urgent first (prototype `summaryFor`). */
 export type ActivityWorkStatus = 'paused' | 'attention' | 'working' | 'unread' | 'tonight' | 'jobs' | 'idle';
