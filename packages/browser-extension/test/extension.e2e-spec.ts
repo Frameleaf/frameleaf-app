@@ -24,7 +24,7 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     if (req.url === '/page') {
       res.setHeader('Content-Type', 'text/html');
       res.end(
-        `<title>Synthetic collection page</title><p>Web content</p><img src="${'data:image/svg+xml,' + encodeURIComponent(svg)}"><a href="/images/original.jpg"><img src="/images/small.png" srcset="/images/large.png?transient=private 2000w"></a><div style="background-image:url('/images/background.webp')"></div>${Array.from({ length: 105 }, (_, index) => `<img src="/images/${index}.png?transient=private">`).join('')}`,
+        `<title>Synthetic collection page</title><p>Web content</p><img src="${'data:image/svg+xml,' + encodeURIComponent(svg)}"><img src="/images/small.png" srcset="/images/large.png?transient=private 2000w"><div style="background-image:url('/images/background.webp')"></div>${Array.from({ length: 105 }, (_, index) => `<img src="/images/${index}.png?transient=private">`).join('')}`,
       );
       return;
     }
@@ -207,7 +207,6 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     ).toBeVisible();
     const images = collection
       .getByRole('region', { name: 'Discovered images' })
-      .getByRole('list')
       .getByRole('checkbox');
     expect(await images.count()).toBeGreaterThan(100);
     await images.first().focus();
@@ -224,19 +223,8 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     await expect(collection.getByRole('status')).toContainText(
       '0 of 100 selected',
     );
-    const png = collection.getByRole('checkbox', { name: 'PNG', exact: true });
-    const jpeg = collection.getByRole('checkbox', { name: 'JPEG', exact: true });
-    await png.check();
-    await jpeg.check();
-    await expect(png).toBeChecked();
-    const original = collection.getByText(origin + '/images/original.jpg', { exact: true });
-    await expect(original).toBeVisible();
-    await expect(
-      collection.getByText(origin + '/images/small.png', { exact: true }),
-    ).toBeVisible();
-    await jpeg.uncheck();
-    await expect(original).toHaveCount(0);
     await collection.getByLabel('At least').selectOption('1600');
+    await collection.getByRole('radio', { name: 'PNG', exact: true }).check();
     await expect(images).toHaveCount(1);
     await collection.getByRole('button', { name: /^Save to/ }).click();
     await collection
@@ -290,7 +278,7 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       fullPage: true,
     });
     await collection.getByLabel('At least').selectOption('0');
-    await png.uncheck();
+    await collection.getByRole('radio', { name: 'All', exact: true }).check();
     const embedded = collection
       .locator('.candidate-list li')
       .filter({ hasText: 'Embedded image' });

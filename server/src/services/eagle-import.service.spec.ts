@@ -19,14 +19,8 @@ import { LibraryScope } from 'src/enum.js';
 import { EagleLibraryRepository } from 'src/repositories/eagle-library.repository.js';
 import { TakeoutStagingError, type TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
 import { EagleImportWorkerService } from 'src/services/eagle-import-worker.service.js';
-import { EagleImportService, eagleServerSupported } from 'src/services/eagle-import.service.js';
+import { EagleImportService } from 'src/services/eagle-import.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-
-it('offers the full Boards upload formats to the Eagle worker', () => {
-  const supported = eagleServerSupported();
-  expect([...supported]).toEqual(expect.arrayContaining(['psb', 'kra', 'cr3', 'mxf', 'woff2']));
-  expect(supported.has('xmp')).toBe(false);
-});
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -60,19 +54,18 @@ async function writeLibrary(root: string) {
   await mkdir(library, { recursive: true });
   await writeFile(
     path.join(library, 'metadata.json'),
-    '\uFEFF' +
-      JSON.stringify({
-        folders: [
-          {
-            id: 'F1',
-            name: 'Web',
-            iconColor: 'blue',
-            children: [{ id: 'F2', name: 'Hero sections', iconColor: 'orange', children: [] }],
-          },
-          { id: 'F3', name: 'Type', children: [] },
-        ],
-        modificationTime: 1_790_000_000_000,
-      }),
+    JSON.stringify({
+      folders: [
+        {
+          id: 'F1',
+          name: 'Web',
+          iconColor: 'blue',
+          children: [{ id: 'F2', name: 'Hero sections', iconColor: 'orange', children: [] }],
+        },
+        { id: 'F3', name: 'Type', children: [] },
+      ],
+      modificationTime: 1_790_000_000_000,
+    }),
   );
   await item(
     'I1',

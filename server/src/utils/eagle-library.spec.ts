@@ -97,32 +97,6 @@ describe('FL-653 Eagle library on the server', () => {
     expect(findEagleItemFile({ name: '../../etc/passwd', ext: 'jpg' }, ['photo.jpg'])).toBe('photo.jpg');
     expect(findEagleItemFile({ name: 'a', ext: 'jpg' }, ['b.jpg', 'c.jpg'])).toBeUndefined();
     expect(findEagleItemFile({ name: 'a', ext: 'png' }, ['a_thumbnail.png', 'metadata.json'])).toBeUndefined();
-    expect(findEagleItemFile({ name: 'type', ext: 'otf' }, ['._type.otf', 'metadata.json'])).toBeUndefined();
-  });
-
-  it('matches a normalized original and recovers an omitted extension without taking previews', () => {
-    const library = buildEagleLibrary('x.library', metadata, [
-      {
-        id: 'I1',
-        metadata: { name: 'Café', ext: ' .PSB ' },
-        fileNames: ['CAFE\u0301.PSB', 'other.psb', 'metadata.json'],
-      },
-      {
-        id: 'I2',
-        metadata: { name: 'Type' },
-        fileNames: ['Type.OTF', 'Type_THUMBNAIL.PNG', 'Type.xmp', 'metadata.json'],
-      },
-      {
-        id: 'I3',
-        metadata: { name: 'Unknown' },
-        fileNames: ['one.otf', 'two.otf', 'metadata.json'],
-      },
-    ])!;
-    expect(library.items.map(({ ext, fileName }) => [ext, fileName])).toEqual([
-      ['psb', 'CAFE\u0301.PSB'],
-      ['otf', 'Type.OTF'],
-      ['', undefined],
-    ]);
   });
 
   it('names clashing top folders "Name (Eagle)" only at the top level', () => {

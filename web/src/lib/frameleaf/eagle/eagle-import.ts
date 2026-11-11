@@ -20,7 +20,7 @@ export const EAGLE_COLOURS: Readonly<Record<string, string>> = {
   pink: 'pink',
 };
 
-/** Default formats for a plan built without a server capability list. */
+/** File types Boards holds, as in the design. The server's own list narrows this further. */
 export const BOARDS_EXTENSIONS: ReadonlySet<string> = new Set([
   'jpg',
   'jpeg',
@@ -229,7 +229,7 @@ export function parseEagleLibraryMetadata(value: unknown) {
 /** One `images/<id>.info/metadata.json`. `fallbackId` is the folder's name without `.info`. */
 export function parseEagleItem(value: unknown, fallbackId: string): EagleItem {
   const item = record(value);
-  const ext = text(item.ext, 20).trim().toLowerCase().replace(/^\./, '');
+  const ext = text(item.ext, 20).toLowerCase().replace(/^\./, '');
   return {
     id: text(item.id, 200) || fallbackId,
     name: text(item.name, 1000) || fallbackId,
@@ -300,7 +300,6 @@ export interface EaglePlanOptions {
   outcomes?: Readonly<Record<string, EagleItemOutcome>>;
   /** Annotations can be written (FL-652). Until then, area comments are listed as not brought over. */
   annotations?: boolean;
-  videoExtensions?: ReadonlySet<string>;
 }
 
 export interface EagleUnsupported {
@@ -340,11 +339,23 @@ export function eagleAddedDate(item: Pick<EagleItem, 'modificationTime'>, now = 
 }
 
 /** Area comments on a picture: the ones that can become annotations. */
-export const areaComments = (item: EagleItem, videoExtensions = VIDEO_EXTENSIONS) =>
-  videoExtensions.has(item.ext) ? [] : item.comments.filter((comment) => comment.width > 0 && comment.height > 0);
+export const areaComments = (item: EagleItem) =>
+  VIDEO_EXTENSIONS.has(item.ext) ? [] : item.comments.filter((comment) => comment.width > 0 && comment.height > 0);
 
-export const supportedExtensions = (serverExtensions: Iterable<string>) =>
-  new Set([...serverExtensions].map((extension) => extension.toLowerCase().replace(/^\./, '')));
+export const supportedExtensions = (serverExtensions?: Iterable<string>) => {
+  if (!serverExtensions) {
+    return BOARDS_EXTENSIONS;
+  }
+  const server = new Set([...serverExtensions].map((extension) => extension.toLowerCase().replace(/^\./, '')));
+  const supported = new Set<string>();
+  // A loop rather than Set#intersection, which Chrome 109 lacks.
+  for (const extension of BOARDS_EXTENSIONS) {
+    if (server.has(extension)) {
+      supported.add(extension);
+    }
+  }
+  return supported;
+};
 
 /**
  * Items whose file has the same contents as an earlier item in the library. The import stores such a
@@ -381,21 +392,18 @@ export function planEagleImport(library: EagleLibrary, options: EaglePlanOptions
   const live = readable.filter((item) => !item.isDeleted);
   const trash = readable.filter((item) => item.isDeleted).map((item) => eagleFileName(item));
   const unsupported: EagleUnsupported[] = live
-    .filter((item) => item.ext && !supported.has(item.ext))
+    .filter((item) => !supported.has(item.ext))
     .map((item) => ({ name: eagleFileName(item), reason: UNSUPPORTED_REASON[item.ext] ?? 'other' }));
   const missing = [
     ...library.items.filter((item) => item.unreadable).map((item) => `${item.id}.info`),
-    ...live
-      .filter((item) => (!item.ext || supported.has(item.ext)) && !hasFile(item))
-      .map((item) => eagleFileName(item)),
+    ...live.filter((item) => supported.has(item.ext) && !hasFile(item)).map((item) => eagleFileName(item)),
   ];
   const coming = live.filter((item) => isComing(item, supported));
   const isAlready = (item: EagleItem) =>
     Object.hasOwn(outcomes, item.id) ? outcomes[item.id].duplicate : existing.has(item.id);
   const already = coming.filter((item) => isAlready(item)).length;
   const filedIn = (item: EagleItem) => item.folders.filter((id) => folderIds.has(id));
-  const videoExtensions = options.videoExtensions ?? VIDEO_EXTENSIONS;
-  const areas = coming.flatMap((item) => areaComments(item, videoExtensions)).length;
+  const areas = coming.flatMap((item) => areaComments(item)).length;
   return {
     library: library.name,
     found: library.items.length,
@@ -429,7 +437,7 @@ export function planEagleImport(library: EagleLibrary, options: EaglePlanOptions
       tagGroups: library.tagGroups,
       folderIcons: folders.filter(({ icon }) => icon).map(({ name }) => name),
       videoComments: coming
-        .filter((item) => videoExtensions.has(item.ext) && item.comments.length > 0)
+        .filter((item) => VIDEO_EXTENSIONS.has(item.ext) && item.comments.length > 0)
         .map((item) => eagleFileName(item)),
     },
   };
@@ -492,7 +500,6 @@ export interface EagleResultInput {
   stopped: boolean;
   supported?: ReadonlySet<string>;
   annotations?: boolean;
-  videoExtensions?: ReadonlySet<string>;
 }
 
 /**
@@ -521,7 +528,7 @@ export function importResult(plan: EaglePlan, library: EagleLibrary, input: Eagl
     rated: done.filter(({ star }) => star > 0).length,
     notes: done.filter(({ annotation }) => annotation.trim()).length,
     sources: done.filter((item) => eagleSourceUrl(item)).length,
-    annotations: input.annotations ? done.flatMap((item) => areaComments(item, input.videoExtensions)).length : 0,
+    annotations: input.annotations ? done.flatMap((item) => areaComments(item)).length : 0,
   };
 }
 export type EagleResult = ReturnType<typeof importResult>;

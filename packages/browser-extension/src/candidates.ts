@@ -92,17 +92,6 @@ export function collectCandidates(document: Document): CaptureCandidate[] {
   ) {
     if (element.tagName === 'IMG') {
       const image = element as HTMLImageElement;
-      const href = image.closest('a[href]')?.getAttribute('href');
-      const linked = href && candidateUrl(href, document.baseURI, document.URL);
-      if (
-        linked &&
-        /^https?:/.test(linked) &&
-        /^(?:jpeg|png|webp|avif|gif|svg|bmp|tiff?|hei[cf]|jxl|ico)$/.test(
-          candidateFormat({ url: linked }) ?? '',
-        )
-      ) {
-        add(linked);
-      }
       if (image.currentSrc)
         add(image.currentSrc, image.naturalWidth, image.naturalHeight);
       const raw = image.getAttribute('src');
@@ -158,7 +147,7 @@ const normalizeFormat = (value: string) =>
 
 /** The format a candidate's address suggests (a page hint), such as "jpeg" or "svg". */
 export function candidateFormat(
-  candidate: Pick<CaptureCandidate, 'url'>,
+  candidate: CaptureCandidate,
 ): string | undefined {
   try {
     const url = new URL(candidate.url);

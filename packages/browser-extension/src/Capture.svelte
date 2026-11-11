@@ -40,7 +40,7 @@
   let loading = $state(true);
   let selected = $state<string[]>([]);
   let minWidth = $state(0);
-  let selectedFormats = $state<string[]>([]);
+  let format = $state("");
   let albumId = $state("");
   let tagIds = $state<string[]>([]);
   let note = $state("");
@@ -193,7 +193,7 @@
   const visible = $derived(
     filterCandidates(preview?.discovery.candidates ?? [], {
       minWidth,
-      formats: selectedFormats,
+      formats: format ? [format] : [],
     }),
   );
   async function load() {
@@ -918,12 +918,20 @@
             </div>
             <fieldset class="chips">
               <legend class="visually-hidden">Format</legend>
+              <label class="chip"
+                ><input
+                  type="radio"
+                  name="format"
+                  value=""
+                  bind:group={format}
+                /><span>All</span></label
+              >
               {#each formats as value (value)}<label class="chip"
                   ><input
-                    type="checkbox"
+                    type="radio"
                     name="format"
                     {value}
-                    bind:group={selectedFormats}
+                    bind:group={format}
                   /><span>{value.toUpperCase()}</span></label
                 >{/each}
             </fieldset>
