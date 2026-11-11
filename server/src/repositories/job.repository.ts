@@ -61,6 +61,7 @@ import { FIX_SEARCH_DELAY_MS } from 'src/utils/file-fix.js';
 import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
+import { NIGHT_DATA_KEY, nightWork, withNight } from 'src/utils/night-work.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
@@ -745,7 +746,7 @@ export class JobRepository {
     }
     const context = queueExecution.getStore();
     context?.signal.throwIfAborted();
-    const admit = (tx: Transaction<DB>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
+    const admit = (tx: Transaction<DB>) => this.store.admitRun(id, kind, withNight(selection), admission.intents, tx);
     if (context?.buffering) {
       // The run and its parent-dependent intents become visible only with successful publication.
       context.adoptions.push(async (tx) => void (await admit(tx)));
@@ -804,7 +805,10 @@ export class JobRepository {
   private intent(item: JobItem): QueueIntent {
     const context = queueExecution.getStore();
     const runId = runSubmission.getStore() ?? context?.claim.runId ?? undefined;
-    const data = inheritWorkflowCausation((item.data ?? {}) as Record<string, unknown>);
+    const causal = inheritWorkflowCausation((item.data ?? {}) as Record<string, unknown>);
+    // FL-1430: work the overnight schedule queues carries its night, for the run it opens when it runs
+    const night = nightWork.getStore();
+    const data = night ? { ...causal, [NIGHT_DATA_KEY]: night } : causal;
     const queue = this.getQueueName(item.name);
     const isMl = [
       QueueName.SmartSearch,
@@ -868,7 +872,7 @@ export class JobRepository {
     const itemKey = `producer/${context.claim.id}`;
     await this.fenced(context, async (tx) => {
       await sql`insert into job_run(id, kind, selection, "enumerationDone")
-        values (${runId}::uuid, ${context.claim.name}, '{}'::jsonb, true)`.execute(tx);
+        values (${runId}::uuid, ${context.claim.name}, ${JSON.stringify(withNight({}))}::text::jsonb, true)`.execute(tx);
       await sql`update job set "runId" = ${runId}::uuid, "itemKey" = ${itemKey}
         where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(tx);
     });
@@ -903,7 +907,7 @@ export class JobRepository {
   /** A library scan's run (its operation id) exists before its first batch; idempotent. */
   private async openLibraryScanRun(tx: Transaction<DB>, identity: LibrarySourceIdentity) {
     await sql`insert into job_run(id, kind, selection, "enumerationDone") values (${identity.operationId}::uuid,
-      ${MediaOperationKind.LibraryScan}, ${JSON.stringify({ libraryId: identity.libraryId })}::text::jsonb, false)
+      ${MediaOperationKind.LibraryScan}, ${JSON.stringify(withNight({ libraryId: identity.libraryId }))}::text::jsonb, false)
       on conflict do nothing`.execute(tx);
   }
 
@@ -1005,7 +1009,7 @@ export class JobRepository {
         const runId = producerRun ?? randomUUID();
         if (!producerRun) {
           await sql`insert into job_run(id, kind, selection, "enumerationDone")
-            values (${runId}::uuid, ${name}, '{}'::jsonb, true)`.execute(tx);
+            values (${runId}::uuid, ${name}, ${JSON.stringify(withNight({}))}::text::jsonb, true)`.execute(tx);
         }
         for (let after: string | null = null; ;) {
           const page = await this.store.insertSelectionPage(

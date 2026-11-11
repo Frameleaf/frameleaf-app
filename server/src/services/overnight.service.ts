@@ -25,6 +25,7 @@ import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { getConfig } from 'src/utils/config.js';
+import { nightWork } from 'src/utils/night-work.js';
 import {
   OVERNIGHT_STEPS,
   OVERNIGHT_STEPS_COMPETING_WITH_BACKUP,
@@ -133,10 +134,11 @@ export class OvernightService {
         this.logger.log('The overnight schedule came round while a run is still going; it is not started twice');
         return JobStatus.Skipped;
       }
+      const startedAt = new Date().toISOString();
       await this.save({
         ...state,
         run: {
-          startedAt: new Date().toISOString(),
+          startedAt,
           manual,
           step: OVERNIGHT_STEPS[0],
           begunAt: null,
@@ -144,9 +146,12 @@ export class OvernightService {
           trashDue: await this.trashDue(),
         },
       });
-      await this.startRequestedRedo();
-      await this.startRequestedRecompare();
-      await this.advance(true);
+      // FL-1430: what the night starts is marked with it, so Recent work shows the night as one card
+      await nightWork.run({ startedAt, manual }, async () => {
+        await this.startRequestedRedo();
+        await this.startRequestedRecompare();
+        await this.advance(true);
+      });
       return JobStatus.Success;
     });
   }
@@ -432,7 +437,7 @@ export class OvernightService {
               }
               return;
             } else {
-              await this.begin(step, config);
+              await nightWork.run({ startedAt: run.startedAt, manual: run.manual }, () => this.begin(step, config));
               run = { ...run, begunAt: new Date().toISOString(), waitingForBackupSince: null };
               state = { ...state, run };
               await this.save(state);
@@ -452,7 +457,8 @@ export class OvernightService {
       }
       // The counts that run every night go with the first step, whether or not it runs.
       if (step === 'cleanup' && result !== 'done' && result !== 'unfinished') {
-        await this.queueService.handleNightlyJobs({ cleanup: false }).catch((error: unknown) => {
+        const night = { startedAt: run.startedAt, manual: run.manual };
+        await nightWork.run(night, () => this.queueService.handleNightlyJobs({ cleanup: false })).catch((error: unknown) => {
           this.logger.warn(`Overnight run: the nightly counts did not start: ${error}`);
         });
       }
