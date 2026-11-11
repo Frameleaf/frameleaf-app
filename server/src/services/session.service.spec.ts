@@ -93,6 +93,18 @@ describe('SessionService', () => {
       expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
     });
 
+    it('makes a child of a session with no record an older session too, which the policy and confirmation judge', async () => {
+      const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
+      mocks.session.getSignIn.mockResolvedValue(undefined);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await sut.create(auth, {});
+
+      // no record: AuthService treats it as an older session (legacy until "Apply to older apps too")
+      expect(mocks.session.create).toHaveBeenCalledWith(expect.anything(), undefined, undefined);
+      expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
+    });
+
     it('gives a child of a Frameleaf session the same Frameleaf tag', async () => {
       const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
       const authTime = new Date('2026-11-11T10:00:00Z');
