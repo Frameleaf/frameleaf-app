@@ -7406,7 +7406,7 @@ export type ChangePasswordDto = {
     password: string;
 };
 export type LoginCredentialDto = {
-    /** What this client can do; "verification" means it can answer verification_required (default: none) */
+    /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
     capabilities?: string[];
     /** User email */
     email: string;
@@ -7440,7 +7440,7 @@ export type LoginResponseDto = {
     userId: string;
 };
 export type LoginTwoFactorDto = {
-    /** What this client can do; "verification" means it can answer verification_required (default: none) */
+    /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
     capabilities?: string[];
     /** The 6-digit code from the authenticator app */
     code?: string;
@@ -7492,7 +7492,7 @@ export type PasskeyCredentialDto = {
     "type": string;
 };
 export type PasskeyLoginDto = {
-    /** What this client can do; "verification" means it can answer verification_required (default: none) */
+    /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
     capabilities?: string[];
     credential: PasskeyCredentialDto;
     /** Keep the session after the browser closes */
@@ -12110,7 +12110,7 @@ export type OAuthBackchannelLogoutDto = {
     logout_token: string;
 };
 export type OAuthCallbackDto = {
-    /** What this client can do; "verification" means it can answer verification_required (default: none) */
+    /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
     capabilities?: string[];
     /** OAuth code verifier (PKCE) */
     codeVerifier?: string;
@@ -12122,7 +12122,7 @@ export type OAuthCallbackDto = {
     url: string;
 };
 export type FrameleafTokenExchangeDto = {
-    /** What this client can do; "verification" means it can answer verification_required (default: none) */
+    /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
     capabilities?: string[];
     rememberMe?: boolean;
     /** A server-audience token from the Frameleaf identity provider (OAuth token exchange), signed by the issuer this server is linked to, with header typ "frameleaf-exchange+jwt", aud this server's client id, iat, exp, a single-use jti and the Sign in with Frameleaf claims */
@@ -12146,7 +12146,7 @@ export type FrameleafHandoffResponseDto = {
     url: string | null;
 };
 export type FrameleafHandoffRedeemDto = {
-    /** What this client can do; "verification" means it can answer verification_required (default: none) */
+    /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
     capabilities?: string[];
     /** The code from POST oauth/frameleaf/handoff */
     code: string;
@@ -12162,7 +12162,7 @@ export type FrameleafAccountLinkResponseDto = {
     linkedAt: string | null;
 };
 export type FrameleafLinkDto = {
-    /** What this client can do; "verification" means it can answer verification_required (default: none) */
+    /** What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session. */
     capabilities?: string[];
     /** OAuth code verifier (PKCE) */
     codeVerifier?: string;

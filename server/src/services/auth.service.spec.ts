@@ -2818,6 +2818,24 @@ describe(AuthService.name, () => {
         expect(mocks.frameleafAccount.getLinkByUser).not.toHaveBeenCalled();
       });
 
+      it.each(['wan', 'relay'] as const)(
+        'refuses a Frameleaf session whose tag was removed by unlinking, arriving %s',
+        async (via) => {
+          mocks.session.getByToken.mockResolvedValue(sessionRow());
+          mocks.session.getSignIn.mockResolvedValue({
+            source: 'frameleaf',
+            methods: [],
+            level: 'basic',
+            legacy: false,
+            authTime: new Date(),
+          } as never);
+          mocks.frameleafAccount.getSession.mockResolvedValue(undefined);
+          mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+          await signInRequired(sut.authenticate(sessionRequest(via)));
+        },
+      );
+
       it.each(['wan', 'relay'] as const)('accepts a Frameleaf session arriving %s', async (via) => {
         mocks.session.getByToken.mockResolvedValue(sessionRow());
         mocks.session.getSignIn.mockResolvedValue({
@@ -2827,6 +2845,7 @@ describe(AuthService.name, () => {
           legacy: false,
           authTime: new Date(),
         } as never);
+        mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
 
         await expect(sut.authenticate(sessionRequest(via))).resolves.toMatchObject({ user });
         expect(mocks.session.getSignIn).toHaveBeenCalledWith('session-1');
@@ -3009,6 +3028,7 @@ describe(AuthService.name, () => {
               : null) as never,
           ),
         );
+        mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
         mocks.session.getByToken.mockResolvedValue(sessionRow());
         mocks.session.getSignIn.mockResolvedValue({
           source: 'frameleaf',

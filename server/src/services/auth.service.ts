@@ -1094,7 +1094,12 @@ export class AuthService extends BaseService {
     if (auth.session) {
       // FL-836: a passkey sign-in is accepted away from home like a Frameleaf one (owner, 2026-11-07)
       const signIn = await this.sessionRepository.getSignIn(auth.session.id);
-      if (signIn && (signIn.source === 'frameleaf' || signIn.methods.includes('passkey'))) {
+      // a Frameleaf sign-in counts only while its live tag exists (unlinking removes the tag and keeps the session)
+      if (
+        signIn &&
+        ((signIn.source === 'frameleaf' && (await this.frameleafAccountRepository.getSession(auth.session.id))) ||
+          (signIn.source === 'local' && signIn.methods.includes('passkey')))
+      ) {
         return;
       }
       const config = await this.getConfig({ withCache: true });
