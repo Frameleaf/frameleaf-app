@@ -50,13 +50,13 @@ import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-v
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
-import { countCloseMatches } from 'src/utils/search-relevance.js';
 import {
   applyLockedVisibilityPolicy,
   collectFilterIds,
   requirePetFilterAllowed,
   requireSourceFilterAllowed,
 } from 'src/utils/search-filter.js';
+import { countCloseMatches } from 'src/utils/search-relevance.js';
 
 @Injectable()
 export class SearchService extends BaseService {

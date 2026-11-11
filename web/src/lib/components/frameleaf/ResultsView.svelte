@@ -113,6 +113,7 @@
 
   const currentUserId = $derived(authManager.authenticated ? authManager.user.id : undefined);
   const byId = $derived(new Map(assets.map((asset) => [asset.id, asset])));
+  const rangeIds = $derived(assets.map((asset) => asset.id));
 
   /** The one place a session action is applied here, so the list and the session drop the same ids. */
   const dispatch = (action: LibrarySessionAction) => {
@@ -219,7 +220,7 @@
 </script>
 
 <div class="frameleaf fl-results" data-testid="frameleaf-results">
-  <!-- ponytail: a shift-click range stays inside its section; pass the whole order down if ranges must cross headings. -->
+  <!-- Each section's grid is given the whole order, so a shift-click range can cross the headings. -->
   {#each sections ?? [{ assets, header }] as section, index (index)}
     <AssetGrid
       items={sections ? undefined : items}
@@ -238,6 +239,7 @@
       {caption}
       {offlineFor}
       header={section.header}
+      rangeIds={sections ? rangeIds : undefined}
       {empty}
     />
   {/each}

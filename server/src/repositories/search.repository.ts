@@ -11,6 +11,7 @@ import {
 } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import z from 'zod';
+import type { LibraryViewScope } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { LANDMARK_WIDE_RADIUS_M } from 'src/constants.js';
@@ -32,7 +33,6 @@ import {
   LibraryScope,
   PetObservationState,
 } from 'src/enum.js';
-import type { LibraryViewScope } from 'src/enum.js';
 import { deferJobAdoption } from 'src/queue/context.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';

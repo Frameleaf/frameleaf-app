@@ -37,7 +37,7 @@ export const momentsByVideo = <T extends MomentHit>(hits: T[]): VideoMoments<T>[
       byVideo.set(hit.assetId, [hit]);
     }
   }
-  return [...byVideo.entries()].map(([assetId, group]) => {
+  return [...byVideo].map(([assetId, group]) => {
     const ordered = [...group].sort((a, b) => a.timestampMs - b.timestampMs);
     let count = 0;
     let last = -Infinity;
