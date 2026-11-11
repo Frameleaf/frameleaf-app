@@ -145,7 +145,7 @@ export class OAuthRepository {
     url: string,
     expectedState: string,
     codeVerifier: string,
-  ): Promise<{ profile: OAuthProfile; sid?: string; idToken?: string }> {
+  ): Promise<{ profile: OAuthProfile; sid?: string; idToken?: string; idClaims?: Record<string, unknown> }> {
     const client = await this.getClient(config);
     const pkceCodeVerifier = client.serverMetadata().supportsPKCE() ? codeVerifier : undefined;
 
@@ -159,15 +159,6 @@ export class OAuthRepository {
         profile = tokenClaims as OAuthProfile;
       } else {
         profile = await fetchUserInfo(client, tokens.access_token, skipSubjectCheck);
-        // how the person signed in (amr, acr, auth_time) is an ID token claim, never a userinfo one: the
-        // verified ID token's value wins, and a value only userinfo carries is dropped
-        for (const claim of ['amr', 'acr', 'auth_time'] as const) {
-          if (tokenClaims && claim in tokenClaims) {
-            (profile as Record<string, unknown>)[claim] = tokenClaims[claim];
-          } else {
-            delete (profile as Record<string, unknown>)[claim];
-          }
-        }
       }
 
       if (!profile.sub) {
@@ -182,7 +173,8 @@ export class OAuthRepository {
         }
       }
 
-      return { profile, sid, idToken: tokens.id_token };
+      // the verified ID token's claims, for callers that must not read them from userinfo (Sign in with Frameleaf)
+      return { profile, sid, idToken: tokens.id_token, idClaims: tokenClaims as Record<string, unknown> | undefined };
     } catch (error: any) {
       const refusal = callbackRefusal(error);
       if (refusal) {
