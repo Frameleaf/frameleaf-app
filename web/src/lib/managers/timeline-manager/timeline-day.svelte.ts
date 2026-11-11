@@ -140,6 +140,7 @@ export class TimelineDay {
       return { moveAssets, processedIds, unprocessedIds, changedGeometry };
     }
 
+    const headerExtraBefore = this.headerExtra;
     for (let index = this.viewerAssets.length - 1; index >= 0; index--) {
       const { id: assetId, asset } = this.viewerAssets[index];
       if (!ids.has(assetId)) {
@@ -164,6 +165,8 @@ export class TimelineDay {
         changedGeometry = true;
       }
     }
+    // FL-1392: a day that gains its first place, or loses its last, changes its header's height on phones.
+    changedGeometry ||= this.headerExtra !== headerExtraBefore;
     return { moveAssets, processedIds, unprocessedIds, changedGeometry };
   }
 

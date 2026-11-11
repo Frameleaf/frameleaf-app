@@ -1794,6 +1794,41 @@ describe('TimelineManager', () => {
         march.top + third.top + timelineManager.headerHeight + third.viewerAssets[0].position!.top,
       );
     });
+
+    it('lays the month out again when a day gains its first place or loses its last', () => {
+      timelineManager.setLayoutOptions({
+        rowHeight: 100,
+        headerHeight: 40,
+        gap: 8,
+        fillRowWidth: true,
+        dayRows: true,
+        placeLineHeight: 18,
+      });
+      const [march] = timelineManager.months;
+      for (const day of march.timelineDays) {
+        day.viewerAssets[0].asset = { ...day.viewerAssets[0].asset, city: null };
+      }
+      timelineManager.refreshLayout();
+      const [first, second] = march.timelineDays;
+      const plain = { first: first.top, second: second.top, height: march.height };
+      const id = first.viewerAssets[0].id;
+
+      timelineManager.update([id], (asset) => {
+        asset.city = 'Banff';
+      });
+      expect(first.headerExtra).toBe(18);
+      expect(first.top).toBe(plain.first + 18);
+      expect(second.top).toBe(plain.second + 18);
+      expect(march.height).toBe(plain.height + 18);
+
+      timelineManager.update([id], (asset) => {
+        asset.city = null;
+      });
+      expect(first.headerExtra).toBe(0);
+      expect(first.top).toBe(plain.first);
+      expect(second.top).toBe(plain.second);
+      expect(march.height).toBe(plain.height);
+    });
   });
 
   describe('cell grids (FL-33 Browse and Work)', () => {

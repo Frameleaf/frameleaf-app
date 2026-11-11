@@ -289,7 +289,7 @@
   // The settings return focus to the footer's cog, as closing them does in the template (MediaViewer.jsx:740-744).
   // A photo on a phone has no footer (FL-1392), so there focus goes back to the More button.
   const openSlideshowSettings = () => {
-    const footer = document.querySelector<HTMLElement>('[data-viewer-chrome="footer"]');
+    const footer = document.querySelector<HTMLElement>('[data-viewer-footer]');
     slideshowStore.openSettings(
       footer && getComputedStyle(footer).display !== 'none'
         ? footer.querySelector<HTMLElement>('[data-slideshow-settings]')

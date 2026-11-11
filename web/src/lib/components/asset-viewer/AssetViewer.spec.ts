@@ -1464,6 +1464,21 @@ describe('AssetViewer', () => {
       expect(video.viewer).not.toHaveClass('phone-one-bar');
       expect(video.viewer.querySelector('[data-testid="viewer-footer"]')).not.toBeNull();
     });
+
+    // The rule hides the footer alone: the filmstrip and stack strip share its chrome group.
+    it('marks only the footer for the one-bar rule', () => {
+      const { viewer } = renderImage();
+      const marked = viewer.querySelectorAll('[data-viewer-footer]');
+      expect(marked).toHaveLength(1);
+      expect(marked[0].querySelector('[data-testid="viewer-footer"]')).not.toBeNull();
+    });
+
+    // A shared link has no "…" menu, so its slideshow settings and filmstrip switch stay in the footer.
+    it('keeps the footer on phones for a shared link', () => {
+      setSharedLink(sharedLinkFactory.build());
+      const { viewer } = renderImage();
+      expect(viewer).not.toHaveClass('phone-one-bar');
+    });
   });
 
   // FL-36 / V-18 (MediaViewer.jsx:254-263): the slideshow plays in the viewer; full screen is a choice.
