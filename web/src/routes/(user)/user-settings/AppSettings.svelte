@@ -19,7 +19,7 @@
   import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
   import { fallbackLocale, locales } from '$lib/constants';
   import { ASSISTANT_NAME } from '$lib/frameleaf/assistant';
-  import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+  import { libraryView } from '$lib/frameleaf/library-view.svelte';
   import {
     DEFAULT_LIBRARY_LAYOUT,
     LIBRARY_LAYOUTS,
@@ -198,8 +198,8 @@
       <Row label={$t('frameleaf_prefs_look_file_names')} help={$t('frameleaf_prefs_look_file_names_help')}>
         <Switch
           label={$t('frameleaf_prefs_look_file_names')}
-          checked={libraryGridPreferences.showFileNames}
-          onChange={(value) => (libraryGridPreferences.showFileNames = value)}
+          checked={libraryView.value.workNames}
+          onChange={(workNames) => libraryView.set({ workNames })}
         />
       </Row>
       <Row label={$t('frameleaf_prefs_look_archived')} help={$t('frameleaf_prefs_look_archived_help')}>

@@ -363,15 +363,24 @@ describe('AssetTile list and browse dates', () => {
     expect(tile).not.toHaveClass('is-in-panel');
   });
 
-  it('keeps Browse free of time captions', () => {
-    const { container } = render(AssetTile, {
-      asset: asset(),
+  it('keeps Browse free of captions until the View menu gives it one (FL-1398)', async () => {
+    const { container, rerender } = render(AssetTile, {
+      asset: asset({ originalFileName: 'IMG_0412.jpg' }),
       width: 200,
       height: 200,
       layout: 'browse',
-      captionHeight: 24,
       dateType: TimeBucketDateType.Added,
     });
+    expect(container.querySelector('.fl-tile-caption')).toBeNull();
+
+    // "File name" on, "Time taken" off: the name alone
+    await rerender({ captionHeight: 24, showFileName: true, showTime: false });
+    expect(container.querySelector('.fl-tile-caption')).toHaveTextContent('IMG_0412');
     expect(container.querySelector('time')).toBeNull();
+
+    // "Time taken" alone starts under the photo's edge
+    await rerender({ showFileName: false, showTime: true });
+    expect(container.querySelector('.fl-tile-caption')).toHaveClass('is-time-only');
+    expect(container.querySelector('time')).not.toBeNull();
   });
 });

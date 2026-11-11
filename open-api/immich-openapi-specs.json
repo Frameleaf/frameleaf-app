@@ -108473,12 +108473,161 @@
         ],
         "type": "object"
       },
+      "LibraryViewResponse": {
+        "description": "Library View menu choices",
+        "properties": {
+          "archived": {
+            "description": "Whether the Library also shows archived items",
+            "type": "boolean"
+          },
+          "badges": {
+            "description": "Whether photos show video length and badges",
+            "type": "boolean"
+          },
+          "browseNames": {
+            "description": "Browse: whether photos show the file name",
+            "type": "boolean"
+          },
+          "browseTime": {
+            "description": "Browse: whether photos show the time taken",
+            "type": "boolean"
+          },
+          "crop": {
+            "description": "Whether Browse and Work crop each photo to fill its tile; off shows the whole photo",
+            "type": "boolean"
+          },
+          "favorites": {
+            "description": "Whether favorite photos show a heart",
+            "type": "boolean"
+          },
+          "groupBy": {
+            "description": "How Browse and Work group photos into sections: none, day, month or year",
+            "type": "string"
+          },
+          "partnerPhotos": {
+            "description": "Whether the Library also shows photos a partner shares",
+            "type": "boolean"
+          },
+          "ratings": {
+            "description": "Whether photos show their rating",
+            "type": "boolean"
+          },
+          "scrubber": {
+            "description": "Whether the Timeline shows the year scrubber",
+            "type": "boolean"
+          },
+          "stacksTogether": {
+            "description": "Whether a stack shows as one photo with a count; off shows every photo in it",
+            "type": "boolean"
+          },
+          "timelineNames": {
+            "description": "Timeline: whether photos show the file name",
+            "type": "boolean"
+          },
+          "timelineTime": {
+            "description": "Timeline: whether photos show the time taken",
+            "type": "boolean"
+          },
+          "workNames": {
+            "description": "Work: whether photos show the file name",
+            "type": "boolean"
+          },
+          "workTime": {
+            "description": "Work: whether photos show the time taken",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "archived",
+          "badges",
+          "browseNames",
+          "browseTime",
+          "crop",
+          "favorites",
+          "groupBy",
+          "partnerPhotos",
+          "ratings",
+          "scrubber",
+          "stacksTogether",
+          "timelineNames",
+          "timelineTime",
+          "workNames",
+          "workTime"
+        ],
+        "type": "object"
+      },
       "LibraryViewScope": {
         "enum": [
           "personal",
           "design"
         ],
         "type": "string"
+      },
+      "LibraryViewUpdate": {
+        "description": "Library View menu choices",
+        "properties": {
+          "archived": {
+            "description": "Whether the Library also shows archived items",
+            "type": "boolean"
+          },
+          "badges": {
+            "description": "Whether photos show video length and badges",
+            "type": "boolean"
+          },
+          "browseNames": {
+            "description": "Browse: whether photos show the file name",
+            "type": "boolean"
+          },
+          "browseTime": {
+            "description": "Browse: whether photos show the time taken",
+            "type": "boolean"
+          },
+          "crop": {
+            "description": "Whether Browse and Work crop each photo to fill its tile; off shows the whole photo",
+            "type": "boolean"
+          },
+          "favorites": {
+            "description": "Whether favorite photos show a heart",
+            "type": "boolean"
+          },
+          "groupBy": {
+            "description": "How Browse and Work group photos into sections: none, day, month or year",
+            "type": "string"
+          },
+          "partnerPhotos": {
+            "description": "Whether the Library also shows photos a partner shares",
+            "type": "boolean"
+          },
+          "ratings": {
+            "description": "Whether photos show their rating",
+            "type": "boolean"
+          },
+          "scrubber": {
+            "description": "Whether the Timeline shows the year scrubber",
+            "type": "boolean"
+          },
+          "stacksTogether": {
+            "description": "Whether a stack shows as one photo with a count; off shows every photo in it",
+            "type": "boolean"
+          },
+          "timelineNames": {
+            "description": "Timeline: whether photos show the file name",
+            "type": "boolean"
+          },
+          "timelineTime": {
+            "description": "Timeline: whether photos show the time taken",
+            "type": "boolean"
+          },
+          "workNames": {
+            "description": "Work: whether photos show the file name",
+            "type": "boolean"
+          },
+          "workTime": {
+            "description": "Work: whether photos show the time taken",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       },
       "LicenseActivateDto": {
         "properties": {
@@ -164014,6 +164163,15 @@
           "folders": {
             "$ref": "#/components/schemas/FoldersResponse"
           },
+          "libraryView": {
+            "$ref": "#/components/schemas/LibraryViewResponse",
+            "x-immich-history": [
+              {
+                "version": "v3.5.0",
+                "state": "Added"
+              }
+            ]
+          },
           "lockedPin": {
             "$ref": "#/components/schemas/LockedPinResponse"
           },
@@ -164150,6 +164308,15 @@
           },
           "folders": {
             "$ref": "#/components/schemas/FoldersUpdate"
+          },
+          "libraryView": {
+            "$ref": "#/components/schemas/LibraryViewUpdate",
+            "x-immich-history": [
+              {
+                "version": "v3.5.0",
+                "state": "Added"
+              }
+            ]
           },
           "lockedPin": {
             "$ref": "#/components/schemas/LockedPinUpdate"
