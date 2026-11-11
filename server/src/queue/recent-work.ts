@@ -466,9 +466,12 @@ const CHECK_LIVE = sql`(exists (select 1 from media_operation o where o.kind = $
     and j.data->>'runId' = h.id::text))`;
 
 /**
- * FL-1430: the file checks (Library care's missing and corrupt checks, one row per account and kind) still running,
- * or else those that ended in the last `FILE_CHECK_SHOWN`, added up, with whether any of those failed or was
- * cancelled. `asset_health_run` is small: a few rows a night.
+ * FL-1430: Library care's file check, as one piece of work. A check is one row per account and kind (missing,
+ * corrupt) that read the same files, so per account the larger of its kinds' counts is its files, and accounts add up.
+ * While any check's work is live, those running checks are the card. Else, per account, its latest pass (its kinds
+ * started within a minute) that ended in the last `FILE_CHECK_SHOWN` and looked at files or didn't finish; a later
+ * pass that checked nothing new (all zeros) doesn't hide it. Only when an account has nothing but such passes is its
+ * latest one shown (adding 0). `asset_health_run` is small: a few rows a night.
  * ponytail: a running check writes its counts only when it ends, so while it runs `total` is usually 0.
  */
 export async function recentFileCheck(db: Kysely<any>): Promise<RecentFileCheck | undefined> {
@@ -476,17 +479,29 @@ export async function recentFileCheck(db: Kysely<any>): Promise<RecentFileCheck 
     rows: [row],
   } = await sql<RecentFileCheck & { n: number }>`with live as (
       select * from asset_health_run h where h.category in ('missing','corrupt') and h.status = 'running' and ${CHECK_LIVE}
+    ), done as (
+      select * from asset_health_run where category in ('missing','corrupt') and status <> 'running'
+        and "finishedAt" > now() - ${FILE_CHECK_SHOWN}::interval and not exists (select 1 from live)
+    ), anchor as (
+      select distinct on ("ownerId") "ownerId", "startedAt" from done
+      order by "ownerId", ("totalAssets" > 0 or status in ('failed','cancelled')) desc, "startedAt" desc
     ), picked as (
       select * from live
       union all
-      select * from asset_health_run where category in ('missing','corrupt') and status <> 'running'
-        and "finishedAt" > now() - ${FILE_CHECK_SHOWN}::interval and not exists (select 1 from live)
-    ) select count(*)::int n, bool_or(status = 'running') running, min("startedAt") "startedAt",
-      case when bool_or(status = 'running') then null else max("finishedAt") end "finishedAt",
-      coalesce(sum("checkedAssets"), 0)::int checked, coalesce(sum("totalAssets"), 0)::int total,
-      coalesce(sum("foundAssets") filter (where category = 'corrupt'), 0)::int damaged,
-      coalesce(sum("foundAssets") filter (where category = 'missing'), 0)::int missing,
-      coalesce(bool_or(status in ('failed','cancelled')), false) failed from picked`.execute(db);
+      select d.* from done d join anchor a on a."ownerId" is not distinct from d."ownerId"
+        and d."startedAt" between a."startedAt" - interval '1 minute' and a."startedAt" + interval '1 minute'
+    ), owners as (
+      select bool_or(status = 'running') running, min("startedAt") "startedAt", max("finishedAt") "finishedAt",
+        max("checkedAssets") checked, max("totalAssets") total,
+        coalesce(sum("foundAssets") filter (where category = 'corrupt'), 0) damaged,
+        coalesce(sum("foundAssets") filter (where category = 'missing'), 0) missing,
+        bool_or(status in ('failed','cancelled')) failed
+      from picked group by "ownerId"
+    ) select count(*)::int n, bool_or(running) running, min("startedAt") "startedAt",
+      case when bool_or(running) then null else max("finishedAt") end "finishedAt",
+      coalesce(sum(checked), 0)::int checked, coalesce(sum(total), 0)::int total,
+      coalesce(sum(damaged), 0)::int damaged, coalesce(sum(missing), 0)::int missing,
+      coalesce(bool_or(failed), false) failed from owners`.execute(db);
   if (!row || row.n === 0) return;
   const { n: _, ...check } = row;
   return check;

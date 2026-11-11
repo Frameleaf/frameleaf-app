@@ -774,11 +774,12 @@ describe('Recent work (FL-1349)', () => {
         expect(await recentFileCheck(tx)).toBeUndefined();
         await check('missing', 'completed', 5, { checked: 1786, total: 1786, found: 3 });
         await check('corrupt', 'completed', 6, { checked: 14_288, total: 14_288, found: 660 });
+        // one pass: both kinds read the same files, so they are counted once
         expect(await recentFileCheck(tx)).toMatchObject({
           running: false,
           failed: false,
-          checked: 16_074,
-          total: 16_074,
+          checked: 14_288,
+          total: 14_288,
           damaged: 660,
           missing: 3,
         });
@@ -797,6 +798,60 @@ describe('Recent work (FL-1349)', () => {
         await sql`delete from asset_health_run where status = 'running'`.execute(tx);
         await check('missing', 'cancelled', 2);
         expect(await recentFileCheck(tx)).toMatchObject({ running: false, failed: true });
+        throw new RolledBack();
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof RolledBack)) throw error;
+      });
+  });
+
+  it('shows the latest file check, each file once, as a library shaped like the seed (FL-1430)', async () => {
+    const { ctx } = newMediumService(BaseService, {
+      database: db as unknown as Kysely<DB>,
+      real: [],
+      mock: [LoggingRepository],
+    });
+    const { user: big } = await ctx.newUser();
+    const { user: small } = await ctx.newUser();
+    await db
+      .transaction()
+      .execute(async (tx) => {
+        await sql`delete from asset_health_run where status = 'running' or "finishedAt" > now() - interval '1 day'`.execute(
+          tx,
+        );
+        const check = (owner: string, category: string, startedAgo: number, took: number, total: number, found = 0) =>
+          sql`insert into asset_health_run("ownerId", category, status, "startedAt", "finishedAt", "checkedAssets",
+              "totalAssets", "foundAssets")
+            values (${owner}::uuid, ${category}, 'completed', now() - ${startedAgo} * interval '1 second',
+              now() - ${startedAgo - took} * interval '1 second', ${total}, ${total}, ${found})`.execute(tx);
+        // a full pass of the big library (20 minutes), then of the small one; later passes checked nothing new
+        await check(big.id, 'missing', 3000, 1206, 14_288);
+        await check(big.id, 'corrupt', 3000, 1206, 14_288, 660);
+        await check(small.id, 'missing', 1500, 84, 1786);
+        await check(small.id, 'corrupt', 1500, 84, 1786);
+        await check(big.id, 'missing', 1499, 84, 0);
+        await check(big.id, 'corrupt', 1499, 84, 0);
+        await check(small.id, 'missing', 300, 1, 0);
+        await check(small.id, 'corrupt', 300, 1, 0);
+        await check(big.id, 'missing', 299, 1, 0);
+        await check(big.id, 'corrupt', 299, 1, 0);
+        const card = (await recentFileCheck(tx))!;
+        // each owner's latest pass that looked at files, each file once (both kinds read the same files)
+        expect(card).toMatchObject({
+          running: false,
+          failed: false,
+          checked: 16_074,
+          total: 16_074,
+          damaged: 660,
+          missing: 0,
+        });
+        // it finished when the small library's pass did
+        const {
+          rows: [{ at }],
+        } = await sql<{ at: Date }>`select max("finishedAt") at from asset_health_run where "totalAssets" > 0`.execute(
+          tx,
+        );
+        expect(card.finishedAt?.getTime()).toBe(at.getTime());
         throw new RolledBack();
       })
       .catch((error: unknown) => {
