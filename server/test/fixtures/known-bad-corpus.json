@@ -1,0 +1,764 @@
+{
+  "about": [
+    "FL-883 known-bad file corpus: server/test/medium/specs/corpus/known-bad-corpus.spec.ts runs every file through metadata extraction, thumbnail generation and (videos) the playback encode, and compares what happened with `expect`.",
+    "root: `test-assets` is e2e/test-assets (scripts/checkout-test-assets.sh), `fixtures` is server/test/fixtures.",
+    "outcome per step: ok | skipped | library-care (thumbnail handed to Library care) | set-aside (failed until FL-845 set it aside; `cause` is the stored cause) | failed.",
+    "Only the keys written under a step are compared. metadata: dateTimeOriginal, localDateTime, timeZone, width, height, orientation, videoCodec. thumbnail: preview, thumbnail (WxH). encode: videoCodec, size (WxH).",
+    "To add a file: the fixture repositories are public, so use only a file with a clear licence (CC0, public domain, a permissive licence, or one generated here). Add an entry with file, root, type, note, source, licence, reproduces and an outcome for each step; run `mise run //server:corpus`; check the entry in the report it writes (known-bad-corpus-actual.json) and copy the facts you want pinned into `expect`."
+  ],
+  "files": [
+    {
+      "file": "metadata/dates/date-priority-test.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "DateTimeOriginal wins over the other date tags",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream exif-date-time medium spec (metadata/dates)"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "metadata/dates/gps-datetime.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Time zone comes from the GPS position; GPSDateTime is UTC",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream exif-date-time medium spec (metadata/dates)"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "metadata/dates/datetimeoriginal-gps.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "DateTimeOriginal with GPS but no offset tag",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream metadata/dates fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "metadata/dates/time-created.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Only an IPTC TimeCreated: the file date is used",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream exif-date-time medium spec (metadata/dates)"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "metadata/faces/portrait-orientation-6.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "EXIF orientation 6 with face regions",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream metadata/faces fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "metadata/gps-position/empty_gps.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "GPS block present but empty",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream metadata/gps-position fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "metadata/rating/mongolels.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Rating tag",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream metadata/rating fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "formats/heic/IMG_2682.heic",
+      "root": "test-assets",
+      "type": "image",
+      "note": "iPhone HEIC",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-1354"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "formats/motionphoto/samsung-one-ui-6.heic",
+      "root": "test-assets",
+      "type": "image",
+      "note": "HEIC variant with a motion photo video inside",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream motion photo fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "formats/motionphoto/pixel-8a.jpg",
+      "root": "test-assets",
+      "type": "image",
+      "note": "JPEG motion photo with a trailing MP4",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "upstream motion photo fixture"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "formats/avif/10bit-HDR-P3-nclx.avif",
+      "root": "test-assets",
+      "type": "image",
+      "note": "10-bit HDR AVIF, Display P3 nclx",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-97"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "formats/jxl/16bit-HDR-P3-nclx.jxl",
+      "root": "test-assets",
+      "type": "image",
+      "note": "16-bit HDR JPEG XL",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-97"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "formats/raw/Canon/EOS_30D.CR2",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Older Canon CR2",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-1355"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "formats/raw/Nikon/D80/glarus.nef",
+      "root": "test-assets",
+      "type": "image",
+      "note": "Nikon NEF",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-1355"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "formats/raw/GoPro/HERO9_Black.GPR",
+      "root": "test-assets",
+      "type": "image",
+      "note": "GoPro GPR: LibRaw cannot open it, the darktable rung does",
+      "source": "https://raw.pixls.us/data/GoPro/HERO9%20Black/GOPR0017.GPR",
+      "licence": "CC0 1.0 (raw.pixls.us), listed in FRAMELEAF-FORMAT-FIXTURES.md",
+      "reproduces": [
+        "FL-1355"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "videos/eiffel-tower.mp4",
+      "root": "test-assets",
+      "type": "video",
+      "note": "Portrait phone H.264 with AAC",
+      "source": "https://github.com/immich-app/test-assets, frozen in Frameleaf/frameleaf-test-assets",
+      "licence": "Public domain (frameleaf-test-assets README: all upstream test assets are public domain)",
+      "reproduces": [
+        "FL-102"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        },
+        "encode": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "jpeg/broken-exif.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "EXIF block whose IFD offset points past its end",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1354"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "jpeg/half-rows.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "JPEG cut off halfway",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "jpeg/truncated-tail.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "JPEG missing its last rows",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "jpeg/missing-eoi.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "JPEG without its end-of-image marker",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "jpeg/junk-before-soi.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "Bytes before the start-of-image marker",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "jpeg/cmyk.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "CMYK JPEG",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "jpeg/12bit.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "12-bit JPEG: only ffmpeg decodes it",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "jpeg/arithmetic.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "Arithmetic-coded JPEG",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "still/png-bad-crc.png",
+      "root": "fixtures",
+      "type": "image",
+      "note": "PNG with a wrong chunk checksum",
+      "source": "server/test/fixtures/formats/generate-more-stills.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "still/tiff-bigtiff.tif",
+      "root": "fixtures",
+      "type": "image",
+      "note": "BigTIFF",
+      "source": "server/test/fixtures/formats/generate-more-stills.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1354"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "still/jxr.hdp",
+      "root": "fixtures",
+      "type": "image",
+      "note": "JPEG XR: decoded by jxrlib",
+      "source": "server/test/fixtures/formats/generate-more-stills.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1356"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "design/thumbnail-only.psd",
+      "root": "fixtures",
+      "type": "image",
+      "note": "PSD with only its embedded thumbnail",
+      "source": "server/test/fixtures/formats/generate-design.py (FL-1358)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1358"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "known-bad/panorama-72mp.jpg",
+      "root": "fixtures",
+      "type": "image",
+      "note": "Very wide 24000x3000 panorama",
+      "source": "server/test/fixtures/known-bad/generate.sh (FL-883)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-883"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "video/h264-no-index.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "Truncated MP4: the moov index is gone",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        },
+        "encode": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "video/hevc.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "HEVC tagged hvc1",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        },
+        "encode": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "known-bad/hevc-hev1.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "HEVC tagged hev1",
+      "source": "server/test/fixtures/known-bad/generate.sh (FL-883)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-883"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        },
+        "encode": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "known-bad/hevc-hdr10-pq.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "10-bit BT.2020 PQ HDR10 HEVC, as phones record HDR",
+      "source": "server/test/fixtures/known-bad/generate.sh (FL-883)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-883",
+        "FL-101"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        },
+        "encode": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "video/av1.mp4",
+      "root": "fixtures",
+      "type": "video",
+      "note": "AV1 in MP4",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        },
+        "encode": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "video/prores.mov",
+      "root": "fixtures",
+      "type": "video",
+      "note": "ProRes in QuickTime",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        },
+        "encode": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "video/vp9.webm",
+      "root": "fixtures",
+      "type": "video",
+      "note": "VP9 in WebM",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        },
+        "encode": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "video/dv.dif",
+      "root": "fixtures",
+      "type": "video",
+      "note": "Raw DV stream, interlaced 768x576",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "ok"
+        },
+        "encode": {
+          "outcome": "ok"
+        }
+      }
+    },
+    {
+      "file": "video/cinema-raw-standin.braw",
+      "root": "fixtures",
+      "type": "video",
+      "note": "Cinema RAW stand-in no decoder opens",
+      "source": "server/test/fixtures/formats/generate.sh (FL-1354)",
+      "licence": "No third-party rights: generated from a test pattern",
+      "reproduces": [
+        "FL-1357"
+      ],
+      "expect": {
+        "metadata": {
+          "outcome": "ok"
+        },
+        "thumbnail": {
+          "outcome": "skipped"
+        },
+        "encode": {
+          "outcome": "skipped"
+        }
+      }
+    }
+  ]
+}
