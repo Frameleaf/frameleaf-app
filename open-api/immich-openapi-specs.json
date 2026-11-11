@@ -99065,6 +99065,15 @@
       },
       "FrameleafHandoffRedeemDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none)",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "code": {
             "description": "The code from POST oauth/frameleaf/handoff",
             "maxLength": 200,
@@ -99118,6 +99127,15 @@
       },
       "FrameleafLinkDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none)",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "codeVerifier": {
             "description": "OAuth code verifier (PKCE)",
             "type": "string"
@@ -99750,6 +99768,15 @@
       },
       "FrameleafTokenExchangeDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none)",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "rememberMe": {
             "type": "boolean"
           },
@@ -110302,6 +110329,15 @@
       },
       "LoginCredentialDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none)",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "email": {
             "description": "User email",
             "example": "testuser@email.com",
@@ -110398,6 +110434,15 @@
       },
       "LoginTwoFactorDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none)",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "code": {
             "description": "The 6-digit code from the authenticator app",
             "pattern": "^\\d{6}$",
@@ -117403,6 +117448,15 @@
       },
       "OAuthCallbackDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none)",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "codeVerifier": {
             "description": "OAuth code verifier (PKCE)",
             "type": "string"
@@ -118314,6 +118368,15 @@
       },
       "PasskeyLoginDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none)",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "credential": {
             "$ref": "#/components/schemas/PasskeyCredentialDto"
           },
