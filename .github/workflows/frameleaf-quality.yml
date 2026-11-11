@@ -182,7 +182,8 @@ jobs:
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
       - name: Build ML runtime with locked fork dependencies
-        run: docker build --build-arg DEVICE=${{ matrix.device }} --build-arg CPU_IMAGE="$FRAMELEAF_CI_PYTHON_IMAGE" --build-arg CUDA_IMAGE="$FRAMELEAF_CI_CUDA_IMAGE" --target prod --build-context frameleaf=. -t fork-ml-test machine-learning
+        # Container DNS on GitHub runners stopped resolving *.ubuntu.com (2026-11-11); use the host resolver.
+        run: docker build --network host --build-arg DEVICE=${{ matrix.device }} --build-arg CPU_IMAGE="$FRAMELEAF_CI_PYTHON_IMAGE" --build-arg CUDA_IMAGE="$FRAMELEAF_CI_CUDA_IMAGE" --target prod --build-context frameleaf=. -t fork-ml-test machine-learning
       - name: Verify runtime imports without downloading models
         run: |
           docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import frameleaf_ml.models.image_description'
