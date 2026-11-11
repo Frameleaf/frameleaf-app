@@ -102,8 +102,14 @@ describe('CloudJobDialog: one confirmation per job', () => {
     expect(sdkMock.estimateCloudMlJob).toHaveBeenCalledTimes(2);
   });
 
-  it('estimates the model the slider it was opened from named', async () => {
-    sdkMock.estimateCloudMlJob.mockResolvedValue(estimate(null));
+  it('estimates the named Smooth motion model before asking for consent', async () => {
+    const selected = { ...model, sku: 'ms_RIFE', label: 'Smooth motion · Standard' };
+    sdkMock.estimateCloudMlJob.mockResolvedValue({
+      ...estimate(null),
+      workload: MlWorkload.Interpolation,
+      model: selected,
+      models: [selected],
+    });
     render(CloudJobDialog, {
       open: true,
       title: 'Smooth motion',
@@ -121,6 +127,7 @@ describe('CloudJobDialog: one confirmation per job', () => {
         cloudMlJobEstimateRequestDto: expect.objectContaining({ modelSku: 'ms_RIFE', factor: 2 }),
       }),
     );
+    expect(sdkMock.createCloudMlJob).not.toHaveBeenCalled();
   });
 });
 

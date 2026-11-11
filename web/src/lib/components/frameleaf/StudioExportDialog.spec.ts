@@ -1,4 +1,6 @@
 import {
+  CloudMlConnection,
+  CloudMlModelGroup,
   MediaOperationDestination,
   MlDestinationKind,
   MlWorkload,
@@ -10,6 +12,9 @@ import {
   StudioExportSubtitleMode,
   StudioReframeShotType,
   StudioReframeSubject,
+  getCloudMlCatalog,
+  getCloudMlModelChoices,
+  getCloudMlStatus,
   getMlCapabilities,
   getStudioFraming,
 } from '@frameleaf/sdk';
@@ -19,8 +24,14 @@ import MemoryHighlightDialog from '$lib/components/frameleaf/MemoryHighlightDial
 import StudioExportDialog from '$lib/components/frameleaf/StudioExportDialog.svelte';
 import type { StudioRenderEvidence } from '$lib/frameleaf/studio/host-contract';
 
+const { auth } = vi.hoisted(() => ({ auth: { user: { isAdmin: false } } }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
+
 vi.mock('@frameleaf/sdk', async () => ({
   ...(await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk')),
+  getCloudMlCatalog: vi.fn(),
+  getCloudMlModelChoices: vi.fn(),
+  getCloudMlStatus: vi.fn(),
   getMlCapabilities: vi.fn(),
   getStudioFraming: vi.fn(),
 }));
@@ -761,6 +772,38 @@ describe('Studio export dialog', () => {
           smoothMotion: { factor: 2, destinationId: 'cloud-1' },
         }),
       );
+    });
+
+    it('offers one Cloud destination and leaves named catalogue choices for the Library estimate', async () => {
+      auth.user.isAdmin = true;
+      try {
+        interpolation([cloud]);
+        vi.mocked(getCloudMlStatus).mockResolvedValue({ connection: CloudMlConnection.Ready } as never);
+        vi.mocked(getCloudMlModelChoices).mockResolvedValue({ choices: [] });
+        vi.mocked(getCloudMlCatalog).mockResolvedValue({
+          models: ['Smooth motion standard', 'Smooth motion high quality'].map((name, rank) => ({
+            id: `ms_RIFE${rank}`,
+            name,
+            group: CloudMlModelGroup.Interpolation,
+            rank,
+          })),
+        } as never);
+        const onExport = vi.fn();
+        render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
+
+        await fireEvent.click(within(smoothGroup()).getAllByRole('radio')[1]);
+        await waitFor(() => expect(screen.getByText('frameleaf_studio_export_smooth_motion_cloud')).toBeInTheDocument());
+        expect(getCloudMlCatalog).toHaveBeenCalledOnce();
+        const slider = within(screen.getByRole('group', { name: 'frameleaf_restoration_smooth_motion_model' }));
+        const usable = (slider.getAllByRole('radio') as HTMLInputElement[]).filter((radio) => !radio.disabled);
+        expect(usable).toHaveLength(1);
+        expect(usable[0]).toHaveAccessibleName(/frameleaf_enhance_model_cloud/);
+        expect(slider.queryByText('Smooth motion high quality')).not.toBeInTheDocument();
+        await fireEvent.click(exportButton());
+        expect(onExport.mock.calls[0][0].smoothMotion).toEqual({ factor: 2, destinationId: 'cloud-1' });
+      } finally {
+        auth.user.isAdmin = false;
+      }
     });
 
     it('crosses out home stops when Where work runs says Frameleaf Cloud only', async () => {
