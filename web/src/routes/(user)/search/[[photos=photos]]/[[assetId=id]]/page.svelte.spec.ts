@@ -769,3 +769,19 @@ it('points at the videos above instead of the empty page when only moments match
   expect(await screen.findByText('No photos match “campfire song”. The video above mentions it.')).toBeInTheDocument();
   expect(screen.queryByTestId('frameleaf-empty-state')).toBeNull();
 });
+
+// FL-1457: photos answered with nothing while moments in videos are still asked: the page waits before it calls the
+// search empty, and says so once the moments answer with none.
+it('waits for the moments before showing the empty page', async () => {
+  addMessages('dev', en);
+  moments.found = undefined;
+  setQuery({ query: 'campfire song' });
+  render(SearchPage);
+
+  await vi.waitFor(() => expect(searchAssets).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(screen.queryByTestId('frameleaf-empty-state')).toBeNull();
+
+  moments.found = 0;
+  expect(await screen.findByTestId('frameleaf-empty-state')).toBeInTheDocument();
+});

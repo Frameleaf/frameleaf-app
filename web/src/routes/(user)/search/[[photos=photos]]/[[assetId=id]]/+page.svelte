@@ -690,7 +690,11 @@
         : 'frameleaf_search_empty_fewer_words'
       : 'frameleaf_library_empty_filtered_message',
   );
-  let momentsFound = $state(0);
+  let momentsFound = $state<number | undefined>(0);
+  /** FL-1457: the moments strip is still asking, so the page waits before calling the search empty. */
+  const momentsPending = $derived(
+    momentsFound === undefined && typeof terms.query === 'string' && !!terms.query.trim(),
+  );
   const emptyClear = $derived({ label: $t('frameleaf_library_empty_filtered_clear'), onClick: clearSearch });
   const emptySecondary = $derived(
     widerQuery
@@ -1156,7 +1160,9 @@
             onRetry={retrySearch}
           />
         </div>
-      {:else if hasSearchQuery && !isLoading && momentsFound > 0 && typeof terms.query === 'string' && terms.query.trim()}
+      {:else if hasSearchQuery && !isLoading && momentsPending}
+        <!-- FL-1457: photos answered with nothing, moments in videos have not answered yet. -->
+      {:else if hasSearchQuery && !isLoading && (momentsFound ?? 0) > 0 && typeof terms.query === 'string' && terms.query.trim()}
         <!-- FL-1457 (N2): only moments in videos matched; the strip above stays, with one quiet line under it. -->
         <p class="frameleaf search-moments-only" data-theme={appTheme} role="status">
           {$t('frameleaf_search_moments_only', { values: { query: titleText, count: momentsFound } })}

@@ -83,26 +83,44 @@ describe('VideoMomentResults (FL-1393)', () => {
     expect(screen.queryByTestId('search-moments')).toBeNull();
   });
 
-  // FL-1457 (N2): the count the search page reads belongs to the current query; a new one starts from none.
-  it('reports how many videos match, and none for a new query until its own answer comes', async () => {
+  // FL-1457 (N2): the count the search page reads belongs to the current query, and is unknown while it is asked.
+  it('reports how many videos match, and nothing for a new query until its own answer comes', async () => {
     sdkMock.searchVideoMoments.mockResolvedValueOnce({ hits: [hit(LAKE, 44_000)] });
-    let found = 0;
-    const onFound = (value: number) => (found = value);
-    const view = render(VideoMomentResults, {
+    let found: number | undefined = -1;
+    const props = {
       query: 'lake',
       get found() {
         return found;
       },
       set found(value) {
-        onFound(value);
+        found = value;
       },
-    });
+    };
+    const view = render(VideoMomentResults, props);
     await waitFor(() => expect(found).toBe(1));
 
     let answer: (value: { hits: VideoMomentSearchHitDto[] }) => void = () => {};
     sdkMock.searchVideoMoments.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never);
     await view.rerender({ query: 'campfire' });
-    await waitFor(() => expect(found).toBe(0));
+    await waitFor(() => expect(found).toBeUndefined());
     answer({ hits: [] });
+    await waitFor(() => expect(found).toBe(0));
+  });
+
+  // FL-1457: only the latest request counts, even when an earlier one for the same words fails after it answered.
+  it('keeps the latest answer when an earlier request for the same words fails later', async () => {
+    let failFirst: (error: Error) => void = () => {};
+    sdkMock.searchVideoMoments
+      .mockImplementationOnce(() => new Promise((_, reject) => (failFirst = reject)) as never)
+      .mockResolvedValueOnce({ hits: [] })
+      .mockResolvedValueOnce({ hits: [hit(LAKE, 44_000)] });
+    const view = render(VideoMomentResults, { query: 'lake' });
+    await view.rerender({ query: 'drive' });
+    await view.rerender({ query: 'lake' });
+    expect(await screen.findByTestId('search-moments')).toBeInTheDocument();
+
+    failFirst(new Error('late'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId('search-moments')).toBeInTheDocument();
   });
 });
