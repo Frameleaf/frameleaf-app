@@ -1,0 +1,279 @@
+/*
+ * FL-831: two-step sign-in (the approved FL-776 prototype's `src/two-step.css`). Unscoped, so every
+ * class is prefixed `ts-`; the sign-in step's rules sit under `.auth-screen`. Spacing is kept generous
+ * on purpose (owner, 2026-11-07: web spacing reads too tight).
+ */
+
+/* ---------------------------------------------------------------- sign-in code step */
+
+.auth-screen .ts-heading {
+  gap: var(--fl-space-3);
+}
+.auth-screen .ts-heading p {
+  max-width: 440px;
+  line-height: 1.55;
+}
+.auth-screen .ts-mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 6px;
+  border-radius: var(--fl-radius-card);
+  color: var(--fl-accent);
+  background: var(--fl-accent-soft);
+}
+.auth-screen .ts-mark.is-warn {
+  color: var(--fl-warning);
+  background: color-mix(in srgb, var(--fl-warning) 14%, transparent);
+}
+.auth-screen .ts-mark.is-bad {
+  color: var(--fl-danger);
+  background: color-mix(in srgb, var(--fl-danger) 14%, transparent);
+}
+.auth-screen .auth-card.ts-card {
+  display: grid;
+  gap: 22px;
+  padding: var(--fl-space-8);
+}
+.auth-screen .ts-who {
+  display: flex;
+  align-items: center;
+  gap: var(--fl-space-3);
+  padding: var(--fl-space-3) 14px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  font-size: var(--fl-font-callout);
+}
+.auth-screen .ts-who svg {
+  flex: none;
+  color: var(--fl-muted);
+}
+.auth-screen .ts-who span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.auth-screen .auth-field input.ts-code {
+  min-height: 60px;
+  padding: 0 var(--fl-space-4);
+  font-size: var(--fl-font-headline);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.32em;
+  text-align: center;
+}
+.auth-screen .auth-field input.ts-code.is-recovery {
+  font-size: var(--fl-font-title);
+  letter-spacing: 0.12em;
+}
+.auth-screen .auth-field input.ts-code::placeholder {
+  color: var(--fl-muted);
+  opacity: 0.6;
+  font-weight: 400;
+}
+.auth-screen .auth-check.ts-trust {
+  align-items: flex-start;
+  gap: var(--fl-space-3);
+  color: var(--fl-text);
+  font-size: var(--fl-font-callout);
+}
+.auth-screen .auth-check.ts-trust input {
+  flex: none;
+  margin-top: 3px;
+}
+.auth-screen .ts-trust small {
+  display: block;
+  margin-top: var(--fl-space-1);
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.5;
+}
+.auth-screen .ts-switch {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--fl-space-3) var(--fl-space-5);
+}
+.auth-screen .ts-lost {
+  justify-self: start;
+}
+.auth-screen .ts-quiet {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.55;
+}
+@media (max-width: 640px) {
+  .auth-screen .auth-card.ts-card {
+    padding: 22px;
+  }
+}
+
+/* ---------------------------------------------------------------- settings: dialogs */
+
+.ts-dialog {
+  display: grid;
+  gap: var(--fl-space-6);
+  padding: var(--fl-space-1) 0 var(--fl-space-2);
+  font-size: var(--fl-font-size);
+  line-height: 1.55;
+}
+.ts-dialog > p,
+.ts-dialog .ts-quiet {
+  max-width: 600px;
+  margin: 0;
+  color: var(--fl-muted);
+}
+.ts-dialog .ts-quiet {
+  font-size: var(--fl-font-small);
+}
+.ts-step {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.ts-field {
+  display: grid;
+  gap: var(--fl-space-2);
+  font-weight: 600;
+}
+.ts-field small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-weight: 400;
+}
+.ts-field input {
+  width: min(360px, 100%);
+  min-height: var(--fl-control-height);
+  padding: 0 var(--fl-space-3);
+  font-size: var(--fl-font-size);
+  font-weight: 400;
+}
+.ts-field input.ts-code {
+  width: min(260px, 100%);
+  min-height: 56px;
+  font-size: var(--fl-font-title);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+.ts-field input.ts-code.is-recovery {
+  letter-spacing: 0.1em;
+}
+.ts-field input[aria-invalid='true'] {
+  border-color: var(--fl-danger);
+}
+.ts-error {
+  display: flex;
+  gap: var(--fl-space-3);
+  align-items: flex-start;
+  margin: 0;
+  padding: var(--fl-space-3) 14px;
+  border-radius: var(--fl-radius-control);
+  background: color-mix(in srgb, var(--fl-danger) 12%, var(--fl-panel));
+}
+.ts-error svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fl-danger);
+}
+.ts-scan {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--fl-space-8);
+  padding: var(--fl-space-6);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-raised);
+}
+.ts-key {
+  display: grid;
+  gap: var(--fl-space-3);
+}
+.ts-key code {
+  font-family: inherit;
+  font-size: var(--fl-font-title);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+}
+.ts-key button {
+  justify-self: start;
+}
+.ts-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--fl-space-3) var(--fl-space-8);
+  margin: 0;
+  padding: var(--fl-space-6) 28px;
+  list-style: none;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-raised);
+  counter-reset: code;
+}
+.ts-codes li {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-size: var(--fl-font-title);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.ts-codes li::before {
+  min-width: 18px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-weight: 400;
+  text-align: right;
+  content: counter(code);
+  counter-increment: code;
+}
+.ts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-3);
+}
+.ts-saved {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fl-space-3);
+  padding: var(--fl-space-4) 18px;
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-raised);
+  cursor: pointer;
+  font-weight: 600;
+}
+.ts-saved input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--fl-accent);
+}
+.ts-saved small {
+  display: block;
+  margin-top: var(--fl-space-1);
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-weight: 400;
+}
+.ts-dialog .kit-link {
+  justify-self: start;
+}
+@media (max-width: 640px) {
+  .ts-scan {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: var(--fl-space-5);
+  }
+  .ts-codes {
+    grid-template-columns: 1fr;
+    padding: var(--fl-space-5);
+  }
+}

@@ -25,6 +25,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { passkeysInThisBrowser } from '$lib/frameleaf/passkeys';
+  import { RECOVERY_CODE_COUNT } from '$lib/frameleaf/two-step';
   import {
     getAuthStatus,
     getPasskeys,
@@ -33,7 +34,14 @@
     type PasskeyResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, modalManager } from '@frameleaf/ui';
-  import { mdiChevronRight, mdiEmailOutline, mdiFingerprint, mdiFormTextboxPassword, mdiLoginVariant } from '@mdi/js';
+  import {
+    mdiCellphoneKey,
+    mdiChevronRight,
+    mdiEmailOutline,
+    mdiFingerprint,
+    mdiFormTextboxPassword,
+    mdiLoginVariant,
+  } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -87,6 +95,29 @@
             })
           : undefined,
       button: $t('frameleaf_security_who_open'),
+    };
+  });
+
+  /** FL-831: the Two-step sign-in row (FL-776 prototype `twoStepRow`). */
+  const twoStepRow = $derived.by(() => {
+    if (!auth) {
+      return { off: true, tone: 'off' as const, status: undefined, note: undefined };
+    }
+    if (!auth.twoFactorEnabled) {
+      return {
+        off: true,
+        tone: 'off' as const,
+        status: $t('frameleaf_two_step_off'),
+        note: $t('frameleaf_two_step_row_off_note'),
+      };
+    }
+    return {
+      off: false,
+      tone: auth.recoveryCodesRemaining <= 1 ? ('warn' as const) : ('good' as const),
+      status: $t('frameleaf_two_step_on'),
+      note: $t('frameleaf_two_step_row_codes', {
+        values: { left: auth.recoveryCodesRemaining, count: RECOVERY_CODE_COUNT },
+      }),
     };
   });
 
@@ -207,6 +238,25 @@
               label={$t('frameleaf_passkey_row_open')}
               onclick={() => goto(commandCenterUrl('privacy', 'passkeys'))}
               >{passkeyRow.button}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+            >
+          {/snippet}
+        </Item>
+        <Item
+          icon={mdiCellphoneKey}
+          name={$t('frameleaf_two_step_title')}
+          detail={$t('frameleaf_two_step_subtitle')}
+          off={twoStepRow.off}
+          tone={twoStepRow.tone}
+          status={twoStepRow.status}
+          note={twoStepRow.note}
+        >
+          {#snippet action()}
+            <Button
+              label={$t('frameleaf_two_step_row_open')}
+              onclick={() => goto(commandCenterUrl('privacy', 'two-step'))}
+              >{auth && !auth.twoFactorEnabled
+                ? $t('frameleaf_two_step_row_turn_on')
+                : $t('frameleaf_security_who_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
             >
           {/snippet}
         </Item>
