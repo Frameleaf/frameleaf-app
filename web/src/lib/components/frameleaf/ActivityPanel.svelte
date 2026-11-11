@@ -174,7 +174,7 @@
 >
   <header>
     <h2>{$t('frameleaf_album_comments_title')}</h2>
-    <button type="button" aria-label={$t('frameleaf_album_comments_close')} onclick={onClose}>
+    <button type="button" class="fl-control" aria-label={$t('frameleaf_album_comments_close')} onclick={onClose}>
       <Icon icon={mdiClose} size="18" />
     </button>
   </header>
@@ -182,7 +182,7 @@
   <div class="likes">
     <button
       type="button"
-      class="like"
+      class="like fl-control"
       class:on={liked}
       aria-pressed={liked}
       disabled={!enabled}
@@ -194,7 +194,7 @@
     {#if canOpenLikers}
       <button
         type="button"
-        class="count likers-toggle"
+        class="count likers-toggle fl-control"
         aria-expanded={likersOpen}
         aria-controls="activity-likers"
         onclick={() => (likersOpen = !likersOpen)}
@@ -316,7 +316,7 @@
         }}></textarea>
       <button
         type="submit"
-        class="send"
+        class="send fl-control"
         aria-label={$t('frameleaf_album_activity_send')}
         disabled={sending || !draft.trim()}
       >
@@ -358,8 +358,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 44px;
-    min-height: 44px;
+    min-width: var(--fl-control-height);
+    min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: transparent;
     border: 1px solid transparent;
@@ -380,7 +380,7 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0 var(--fl-space-3) 0 9px;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
@@ -404,7 +404,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     padding: 0 0.25rem;
     border: 0;
     background: none;
@@ -578,8 +578,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 44px;
-    min-height: 44px;
+    min-width: var(--fl-control-height);
+    min-height: var(--fl-control-height);
     color: var(--fl-accent-text);
     background: var(--fl-accent);
     border: 1px solid var(--fl-accent);

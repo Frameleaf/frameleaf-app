@@ -1230,6 +1230,16 @@
     border: 0;
     border-radius: var(--fl-radius-control);
   }
+  /*
+   * FL-1390: with a mouse a row is the prototype's 31px (command-center.css `.cc-nav-group > button`
+   * at this window height): the 24px icon and what is left shared above and below it.
+   */
+  @media (pointer: fine) {
+    .area {
+      min-height: var(--fl-nav-row-height);
+      padding-block: calc((var(--fl-nav-row-height) - 24px) / 2);
+    }
+  }
   .area:hover {
     background: var(--fl-raised);
     color: var(--fl-text);
@@ -1381,14 +1391,14 @@
   .cc-main :global(h1[tabindex='-1']:focus) {
     outline: none;
   }
-  /* One 44px control, as tall as the scope select beside it: the field is the label, not the input in it. */
+  /* One control, as tall as the scope select beside it: the field is the label, not the input in it. */
   .cc-search {
     display: flex;
     flex-shrink: 0;
     align-items: center;
     gap: 10px;
     width: min(340px, 35%);
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     padding: 0 var(--fl-space-3);
     color: var(--fl-muted);
     background: var(--fl-canvas);

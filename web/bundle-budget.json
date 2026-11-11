@@ -1,7 +1,7 @@
 {
   "/": 431181,
   "/(user)/activity": 636855,
-  "/(user)/albums": 705967,
+  "/(user)/albums": 705900,
   "/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]": 883088,
   "/(user)/albums/cleanup": 628771,
   "/(user)/archive/[[photos=photos]]/[[assetId=id]]": 775372,

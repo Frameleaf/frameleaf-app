@@ -463,7 +463,7 @@
     <div class="fl-filter" bind:this={filterControl}>
       <button
         type="button"
-        class="fl-filter-button"
+        class="fl-filter-button fl-control"
         class:is-active={filterCount > 0}
         class:is-open={filterOpen}
         aria-expanded={filterOpen}
@@ -478,7 +478,7 @@
       </button>
       <button
         type="button"
-        class="fl-filter-more"
+        class="fl-filter-more fl-control"
         bind:this={menuButton}
         aria-label={$t('frameleaf_library_choose_filter')}
         aria-haspopup="menu"
@@ -515,7 +515,13 @@
     </div>
 
     {#if onSlideshow}
-      <button type="button" class="fl-tool" title={$t('slideshow')} disabled={count === 0} onclick={onSlideshow}>
+      <button
+        type="button"
+        class="fl-tool fl-control"
+        title={$t('slideshow')}
+        disabled={count === 0}
+        onclick={onSlideshow}
+      >
         <Icon icon={mdiPlayBoxOutline} size="16" />
         {$t('slideshow')}
       </button>
@@ -532,7 +538,7 @@
           <button
             bind:this={viewButton}
             type="button"
-            class="fl-tool fl-view-button"
+            class="fl-tool fl-view-button fl-control"
             class:is-open={viewMenuOpen}
             aria-haspopup="true"
             aria-expanded={viewMenuOpen}

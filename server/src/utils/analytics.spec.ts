@@ -12,6 +12,7 @@ import {
   analyticsScopeKey,
   analyticsWindow,
   assertApprovedSample,
+  backfillGrowth,
   bindGrowth,
   cameraName,
   collectedSeriesFor,
@@ -153,6 +154,41 @@ describe('analyticsWindow', () => {
     const first = window.buckets[0];
     expect(first.from).toBe(window.from);
     expect(first.partial).toBe(first.key !== window.from);
+  });
+});
+
+describe('backfillGrowth', () => {
+  const window = analyticsWindow(AnalyticsRange.Year, new Date('2026-09-19T12:00:00.000Z'));
+  const reading = new Date('2026-09-18T00:05:00Z');
+
+  it('rebuilds the months before the first reading from the added days and keeps the readings after', () => {
+    const bound = bindGrowth(window.buckets, [
+      { series: AnalyticsSeriesId.LibraryItems, value: 99, observedAt: reading },
+    ]);
+    const added = [
+      { day: window.buckets[0].from, items: 10, logicalBytes: 1000, physicalBytes: 800 },
+      { day: '2026-03-15', items: 5, logicalBytes: 500, physicalBytes: 500 },
+      { day: '2026-09-18', items: 1, logicalBytes: 1, physicalBytes: 1 },
+    ];
+    const growth = backfillGrowth(window.buckets, bound, added);
+    const month = (key: string) => growth[window.buckets.findIndex((bucket) => bucket.key === key)];
+    expect(month('2026-02')).toMatchObject({ [AnalyticsSeriesId.LibraryItems]: 10 });
+    expect(month('2026-03')).toMatchObject({
+      [AnalyticsSeriesId.LibraryItems]: 15,
+      [AnalyticsSeriesId.LibraryLogicalBytes]: 1500,
+      [AnalyticsSeriesId.LibraryPhysicalBytes]: 1300,
+      observedAt: new Date('2026-03-31T23:59:59.999Z'),
+    });
+    expect(month('2026-08')).toMatchObject({ [AnalyticsSeriesId.LibraryItems]: 15 });
+    // the month holding the reading keeps it, exactly as bound
+    expect(month('2026-09')).toBe(bound.at(-1));
+  });
+
+  it('leaves growth alone when the window has no reading at all', () => {
+    const bound = bindGrowth(window.buckets, []);
+    expect(
+      backfillGrowth(window.buckets, bound, [{ day: '2026-03-15', items: 5, logicalBytes: 5, physicalBytes: 5 }]),
+    ).toBe(bound);
   });
 });
 

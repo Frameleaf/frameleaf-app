@@ -302,7 +302,7 @@
       flex-wrap: wrap;
       justify-content: stretch;
     }
-    /* The prototype shrinks footer text here; the 44px floor stays from tokens.css. */
+    /* The prototype shrinks footer text here; the height floor stays from tokens.css. */
     .dialog-actions > :global(*) {
       /* auto basis so a long label (cloud job: "Run on Frameleaf Cloud · hold $0.80") wraps instead of clipping */
       flex: 1 1 auto;

@@ -75065,7 +75065,7 @@
             "type": "integer"
           },
           "observedAt": {
-            "description": "When the growth values were read; null for a gap",
+            "description": "When the growth values were read, or for a bucket before the first nightly reading, the end of the bucket they were rebuilt for from the items added by then; null for a gap",
             "format": "date-time",
             "nullable": true,
             "type": "string"
@@ -75075,7 +75075,7 @@
             "type": "boolean"
           },
           "photos": {
-            "description": "Photos added in this period and still in the library",
+            "description": "Photos added in this period and still in the library (a photo taken before the server started counts from the day it was taken)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -75092,7 +75092,7 @@
             "type": "string"
           },
           "videos": {
-            "description": "Videos added in this period and still in the library",
+            "description": "Videos added in this period and still in the library (a video taken before the server started counts from the day it was taken)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -75180,7 +75180,7 @@
             "type": "string"
           },
           "uploaded": {
-            "description": "Items added on this UTC date",
+            "description": "Items added on this UTC date (an item taken before the server started counts from the day it was taken)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -99398,6 +99398,15 @@
       },
       "FrameleafHandoffRedeemDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "code": {
             "description": "The code from POST oauth/frameleaf/handoff",
             "maxLength": 200,
@@ -99451,6 +99460,15 @@
       },
       "FrameleafLinkDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "codeVerifier": {
             "description": "OAuth code verifier (PKCE)",
             "type": "string"
@@ -100083,6 +100101,15 @@
       },
       "FrameleafTokenExchangeDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "rememberMe": {
             "type": "boolean"
           },
@@ -110635,6 +110662,15 @@
       },
       "LoginCredentialDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "email": {
             "description": "User email",
             "example": "testuser@email.com",
@@ -110731,6 +110767,15 @@
       },
       "LoginTwoFactorDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "code": {
             "description": "The 6-digit code from the authenticator app",
             "pattern": "^\\d{6}$",
@@ -117736,6 +117781,15 @@
       },
       "OAuthCallbackDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "codeVerifier": {
             "description": "OAuth code verifier (PKCE)",
             "type": "string"
@@ -118647,6 +118701,15 @@
       },
       "PasskeyLoginDto": {
         "properties": {
+          "capabilities": {
+            "description": "What this client can do; \"verification\" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
           "credential": {
             "$ref": "#/components/schemas/PasskeyCredentialDto"
           },

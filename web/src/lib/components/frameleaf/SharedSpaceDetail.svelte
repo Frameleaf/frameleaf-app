@@ -541,7 +541,7 @@
       {/if}
 
       <!-- A space's people are invitations and roles, managed on its Members panel. -->
-      <button type="button" class="action" onclick={() => choosePanel('members')}>
+      <button type="button" class="action fl-control" onclick={() => choosePanel('members')}>
         <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" />
         <span>{owner ? $t('share') : $t('frameleaf_albums_members')}</span>
       </button>
@@ -551,7 +551,7 @@
         {#if owner}
           <button
             type="button"
-            class="action"
+            class="action fl-control"
             aria-label={linkCount > 0
               ? $t('frameleaf_spaces_links_count', { values: { count: linkCount } })
               : $t('frameleaf_albums_create_link')}
@@ -566,19 +566,29 @@
         {/if}
 
         <!-- The space's own map and conversation are its Places and Comments panels. -->
-        <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => choosePanel('places')}>
+        <button
+          type="button"
+          class="action fl-control"
+          disabled={space.assetCount === 0}
+          onclick={() => choosePanel('places')}
+        >
           <Icon icon={mdiMapOutline} size="18" />
           <span>{$t('map')}</span>
         </button>
 
-        <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => void startSlideshow()}>
+        <button
+          type="button"
+          class="action fl-control"
+          disabled={space.assetCount === 0}
+          onclick={() => void startSlideshow()}
+        >
           <Icon icon={mdiPlayCircleOutline} size="18" />
           <span>{$t('slideshow')}</span>
         </button>
 
         <button
           type="button"
-          class="action"
+          class="action fl-control"
           disabled={space.assetCount === 0}
           onclick={() => handleDownloadAlbum(space)}
         >
@@ -589,7 +599,7 @@
         <!-- SHARING-P7: "Comments", as on the album header. -->
         <button
           type="button"
-          class="action"
+          class="action fl-control"
           aria-pressed={panel === 'activity'}
           aria-label={$t('frameleaf_spaces_activity_button', { values: { count: activityCount } })}
           onclick={() => choosePanel('activity')}
@@ -678,7 +688,7 @@
     </div>
     {#if contributor && panel === 'timeline'}
       <!-- SHARING-P5: "Add everything matching" waits behind a button, so the tab opens on its photos. -->
-      <button type="button" class="action" aria-haspopup="dialog" onclick={() => (addMatchingOpen = true)}>
+      <button type="button" class="action fl-control" aria-haspopup="dialog" onclick={() => (addMatchingOpen = true)}>
         <Icon icon={mdiPlaylistPlus} size="18" />
         <span>{$t('frameleaf_spaces_add_matching_open')}</span>
       </button>
@@ -1009,7 +1019,7 @@
   }
   .action {
     padding: 0 var(--fl-space-3);
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     font: inherit;
     color: var(--fl-text);
     background: var(--fl-raised);
@@ -1090,9 +1100,16 @@
     justify-content: space-between;
   }
   /* Six panels do not fit a phone's width; the row scrolls sideways instead of the page. */
+  /*
+   * A scroll box clips what reaches past it: 4px above and below hold the segments' 44px click area
+   * around the 36px track (FL-1390), and the negative margin keeps the row where it was.
+   */
   .panels {
     max-width: 100%;
     overflow-x: auto;
+    overflow-y: hidden;
+    padding-block: calc((var(--fl-control-target) - var(--fl-control-height)) / 2);
+    margin-block: calc((var(--fl-control-height) - var(--fl-control-target)) / 2);
     scrollbar-width: thin;
   }
   .panels :global(.segments) {

@@ -83,7 +83,7 @@
 </div>
 
 <style>
-  /* As tall as its tabs (the control height), so the underline is the foot of what is pressed. */
+  /* As tall as its tabs, so the underline is the foot of what is drawn. */
   .fl-layouts {
     position: relative;
     display: flex;
@@ -134,6 +134,21 @@
     height: 2px;
     border-radius: 2px;
     background: var(--fl-text);
+  }
+  /*
+   * FL-1390: with a mouse a tab is the prototype's 38px, and what is pressed is still the 44px
+   * target: an unseen strip above and below the tab belongs to it. The current tab's `::after` is
+   * its underline, so the strip is the `::before`.
+   */
+  @media (pointer: fine) {
+    .fl-layout {
+      min-height: var(--fl-tab-height);
+    }
+    .fl-layout::before {
+      content: '';
+      position: absolute;
+      inset: calc((var(--fl-tab-height) - var(--fl-control-target)) / 2) 0;
+    }
   }
   @media (max-width: 700px) {
     .fl-layouts {

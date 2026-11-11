@@ -55,6 +55,15 @@ export type AuthDto = {
   suppressedContent?: HiddenContentFilter;
 };
 
+/** Unified sign-in: what this client can do. `verification`: it can answer `verification_required`. */
+export const capabilitiesField = z
+  .array(z.string().max(64))
+  .max(16)
+  .optional()
+  .describe(
+    'What this client can do; "verification" means it can answer verification_required (default: none). Send it on every request that can create a session, including the two-step completion (POST /auth/login/two-factor), or as the X-Frameleaf-Capabilities header; without it the session is recorded as an older-app session.',
+  );
+
 const LoginCredentialSchema = z
   .object({
     email: toEmail.describe('User email').meta({ example: 'testuser@email.com' }),
@@ -63,6 +72,7 @@ const LoginCredentialSchema = z
       .boolean()
       .optional()
       .describe('Persist authentication cookies across browser sessions (default true)'),
+    capabilities: capabilitiesField,
     twoFactor: z
       .boolean()
       .optional()
@@ -122,6 +132,7 @@ const LoginTwoFactorSchema = z
     code: twoFactorCode.optional(),
     recoveryCode: recoveryCode.optional(),
     trustDevice: z.boolean().optional().describe('Skip the code step in this browser for 30 days'),
+    capabilities: capabilitiesField,
   })
   .meta({ id: 'LoginTwoFactorDto' });
 
@@ -165,7 +176,7 @@ const LogoutResponseSchema = z
   })
   .meta({ id: 'LogoutResponseDto' });
 
-const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true, twoFactor: true })
+const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true, twoFactor: true, capabilities: true })
   .extend({
     name: z.string().describe('User name').meta({ example: 'Admin' }),
   })
@@ -245,6 +256,7 @@ export const OAuthCallbackSchema = z
       .describe('Persist authentication cookies across browser sessions (default true)'),
     state: z.string().optional().describe('OAuth state parameter'),
     codeVerifier: z.string().optional().describe('OAuth code verifier (PKCE)'),
+    capabilities: capabilitiesField,
   })
   .meta({ id: 'OAuthCallbackDto' });
 

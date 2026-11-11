@@ -48,7 +48,7 @@ import {
   requestOrigin,
 } from 'src/utils/passkey.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
-import { createSession } from 'src/utils/session.js';
+import { createSession, withCapabilities } from 'src/utils/session.js';
 
 /** FL-836: the error code of adding a passkey without a recent password check. */
 export const PASSKEY_PASSWORD_REQUIRED = 'passkey_password_required';
@@ -318,7 +318,8 @@ export class PasskeyService extends BaseService {
    * that moved on (or a passkey that doesn't count). Failures answer 401 so the sign-in limits count them.
    * The new session skips two-step sign-in, and works through remote access like a Frameleaf sign-in.
    */
-  async login(dto: PasskeyLoginDto, details: LoginDetails) {
+  async login(dto: PasskeyLoginDto, loginDetails: LoginDetails) {
+    const details = withCapabilities(loginDetails, dto.capabilities);
     await this.requireLocalSignIn();
     const credential = dto.credential as unknown as AuthenticationResponseJSON;
     const challenge = answeredChallenge(credential.response?.clientDataJSON);
@@ -397,6 +398,7 @@ export class PasskeyService extends BaseService {
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
       user,
       details,
+      { methods: ['passkey'], source: 'local' },
     );
     // removed (by its owner or an administrator) while this sign-in was checked: no session from it
     if (!(await this.passkeyRepository.linkSession(session.id, passkey.id))) {

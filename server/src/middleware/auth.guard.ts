@@ -109,6 +109,19 @@ export const FileResponse = (...contentTypes: string[]) =>
     ),
   });
 
+/** Unified sign-in: the client's declared capabilities, `X-Frameleaf-Capabilities: verification` (comma separated). */
+const requestCapabilities = (request: Request): string[] | undefined => {
+  const header = request.headers['x-frameleaf-capabilities'];
+  const value = Array.isArray(header) ? header.join(',') : header;
+  return value
+    ? value
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean)
+        .slice(0, 16)
+    : undefined;
+};
+
 export const GetLoginDetails = createParamDecorator((data, context: ExecutionContext): LoginDetails => {
   const request = context.switchToHttp().getRequest<Request>();
   const device = getUserAgentDetails(request.headers);
@@ -120,6 +133,7 @@ export const GetLoginDetails = createParamDecorator((data, context: ExecutionCon
     isSecure: request.secure,
     ...device,
     via: requestVia(request),
+    capabilities: requestCapabilities(request),
   };
 });
 

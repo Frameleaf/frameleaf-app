@@ -94,7 +94,7 @@
     font-size: var(--fl-font-small);
   }
   .field input {
-    min-height: 44px;
+    min-height: var(--fl-control-height);
     font-size: var(--fl-font-size);
   }
   .hint {

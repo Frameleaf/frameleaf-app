@@ -135,7 +135,7 @@ export class OAuthRepository {
     url: string,
     expectedState: string,
     codeVerifier: string,
-  ): Promise<{ profile: OAuthProfile; sid?: string; idToken?: string }> {
+  ): Promise<{ profile: OAuthProfile; sid?: string; idToken?: string; idClaims?: Record<string, unknown> }> {
     const client = await this.getClient(config);
     const pkceCodeVerifier = client.serverMetadata().supportsPKCE() ? codeVerifier : undefined;
 
@@ -163,7 +163,8 @@ export class OAuthRepository {
         }
       }
 
-      return { profile, sid, idToken: tokens.id_token };
+      // the verified ID token's claims, for callers that must not read them from userinfo (Sign in with Frameleaf)
+      return { profile, sid, idToken: tokens.id_token, idClaims: tokenClaims as Record<string, unknown> | undefined };
     } catch (error: any) {
       const refusal = callbackRefusal(error);
       if (refusal) {

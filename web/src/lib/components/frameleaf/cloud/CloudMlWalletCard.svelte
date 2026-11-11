@@ -225,7 +225,7 @@
     <Button onclick={() => (topUpOpen = false)}>{$t('cancel')}</Button>
     {#if checkout}
       <a
-        class="fc-button-link"
+        class="fc-button-link fl-control"
         href={checkout}
         target="_blank"
         rel="noopener noreferrer"

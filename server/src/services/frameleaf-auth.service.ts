@@ -67,7 +67,8 @@ import {
 } from 'src/utils/frameleaf-sign-in.js';
 import { localNotificationText } from 'src/utils/preferences.js';
 import { publishedLocalOrigins } from 'src/utils/public-url.js';
-import { createSession } from 'src/utils/session.js';
+import { createSession, withCapabilities } from 'src/utils/session.js';
+import { levelFromAcr, parseAmr } from 'src/utils/sign-in-level.js';
 
 /** How long a handoff code may be used. */
 export const HANDOFF_TTL_SECONDS = 60;
@@ -228,7 +229,8 @@ export class FrameleafAuthService extends BaseService {
   }
 
   /** `POST oauth/frameleaf/callback`: finish a sign-in and create a tagged session. */
-  async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, loginDetails: LoginDetails) {
+  async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, details: LoginDetails) {
+    const loginDetails = withCapabilities(details, dto.capabilities);
     const config = await this.requireConfig();
     const authority = await this.signInAuthority(config);
     const issuedAt = new Date();
@@ -268,7 +270,8 @@ export class FrameleafAuthService extends BaseService {
    *
    * Every refusal carries a `FrameleafTokenExchangeErrorCode`.
    */
-  async exchangeToken(dto: FrameleafTokenExchangeDto, loginDetails: LoginDetails) {
+  async exchangeToken(dto: FrameleafTokenExchangeDto, details: LoginDetails) {
+    const loginDetails = withCapabilities(details, dto.capabilities);
     const config = await this.config();
     if (!config) {
       const { linked } = await readCloudLink({
@@ -495,6 +498,13 @@ export class FrameleafAuthService extends BaseService {
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
       user,
       loginDetails,
+      {
+        // how Frameleaf Cloud says the person signed in; no `acr` is Basic (spec, Contract A.3)
+        methods: parseAmr(profile.amr),
+        level: levelFromAcr(profile.acr),
+        authTime: typeof profile.auth_time === 'number' ? new Date(profile.auth_time * 1000) : undefined,
+        source: 'frameleaf',
+      },
       oauth,
     );
     try {
@@ -560,7 +570,8 @@ export class FrameleafAuthService extends BaseService {
   }
 
   /** `POST oauth/frameleaf/handoff/redeem`: exchange a handoff code for a new, tagged session. */
-  async redeemHandoff(dto: FrameleafHandoffRedeemDto, loginDetails: LoginDetails) {
+  async redeemHandoff(dto: FrameleafHandoffRedeemDto, details: LoginDetails) {
+    const loginDetails = withCapabilities(details, dto.capabilities);
     const parent = await this.frameleafAccountRepository.takeHandoff(this.hashCode(dto.code));
     if (!parent || !parent.handoffExpiresAt || new Date(parent.handoffExpiresAt).getTime() <= Date.now()) {
       throw new UnauthorizedException('This sign-in code is not valid any more');
@@ -573,10 +584,18 @@ export class FrameleafAuthService extends BaseService {
     if (!user) {
       throw new UnauthorizedException('This sign-in code is not valid any more');
     }
+    const parentSignIn = await this.sessionRepository.getSignIn(parent.sessionId);
     const { session, response } = await createSession(
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
       user,
       loginDetails,
+      // the new address inherits how the handed-over session was made
+      {
+        methods: parentSignIn?.methods ?? [],
+        level: parentSignIn?.level ?? 'basic',
+        authTime: parentSignIn?.authTime,
+        source: 'frameleaf',
+      },
       { sid: parent.sid ?? undefined },
     );
     try {
@@ -891,12 +910,20 @@ export class FrameleafAuthService extends BaseService {
       throw new BadRequestException('OAuth code verifier is missing');
     }
     try {
-      return await this.oauthRepository.getProfileAndOAuthSid(
+      const { profile, idClaims, ...rest } = await this.oauthRepository.getProfileAndOAuthSid(
         config,
         frameleafCallbackUrl(dto.url),
         expectedState,
         codeVerifier,
       );
+      // how the person signed in (amr, acr, auth_time) is an ID token claim, never a userinfo one: the verified
+      // ID token's value wins and a value only userinfo carries is dropped (other claims are untouched)
+      const signedIn: Record<string, unknown> = { ...profile };
+      for (const claim of ['amr', 'acr', 'auth_time']) {
+        if (idClaims && claim in idClaims) signedIn[claim] = idClaims[claim];
+        else delete signedIn[claim];
+      }
+      return { ...rest, profile: signedIn as OAuthProfile };
     } catch (error) {
       this.logger.warn(`Sign in with Frameleaf failed: ${error}`);
       throw new UnauthorizedException('Sign in with Frameleaf did not finish. Try again.');
