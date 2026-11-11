@@ -9,7 +9,15 @@ vi.mock('$lib/frameleaf/activity-session.svelte', () => ({
   activitySession: { watch: () => () => {}, operations: [], refresh: vi.fn(), cancel: vi.fn(), retry: vi.fn() },
 }));
 
-const model = { sku: 'ms_54S55W7C', rev: 'mr_0WNPDD697MT0', label: 'Upscale · Standard', gpu: 'L4-class, 24 GB' };
+const model = {
+  sku: 'ms_54S55W7C',
+  rev: 'mr_0WNPDD697MT0',
+  label: 'Upscale · Standard',
+  gpu: 'L4-class, 24 GB',
+  rank: 1,
+  perSecondUsd: 0.0004,
+  startFeeUsd: 0.02,
+};
 
 const estimate = (upscale: CloudMlJobEstimateResponseDto['upscale']): CloudMlJobEstimateResponseDto =>
   ({
