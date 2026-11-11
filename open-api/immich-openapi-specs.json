@@ -21791,7 +21791,7 @@
             "api_key": []
           }
         ],
-        "summary": "Ask the Library Assistant",
+        "summary": "Search with Frameleaf Assistant",
         "tags": [
           "Search"
         ],
@@ -69696,11 +69696,11 @@
       "AdminConfigAssistantDto": {
         "properties": {
           "enabled": {
-            "description": "Enable the Library Assistant in search",
+            "description": "Enable Frameleaf Assistant in search",
             "type": "boolean"
           },
           "maxResults": {
-            "description": "Maximum number of Library Assistant results",
+            "description": "Maximum number of Frameleaf Assistant results",
             "maximum": 500,
             "minimum": 1,
             "type": "integer"

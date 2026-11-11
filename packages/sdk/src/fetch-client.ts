@@ -1901,9 +1901,9 @@ export type AdminConfigAskSearchDto = {
     maxResults: number;
 };
 export type AdminConfigAssistantDto = {
-    /** Enable the Library Assistant in search */
+    /** Enable Frameleaf Assistant in search */
     enabled: boolean;
-    /** Maximum number of Library Assistant results */
+    /** Maximum number of Frameleaf Assistant results */
     maxResults: number;
     /** Plan questions with an installed planner model before the rules */
     planner: boolean;
@@ -27387,7 +27387,7 @@ export function getAssetWaveform({ buckets, channels, id, key, slug }: {
     }));
 }
 /**
- * Ask the Library Assistant
+ * Search with Frameleaf Assistant
  */
 export function askAssistant({ assistantAskDto }: {
     assistantAskDto: AssistantAskDto;

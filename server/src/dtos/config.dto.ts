@@ -1216,8 +1216,8 @@ const AdminConfigSchemaWithVisibility = z
         // It plans with the rules by default; `planner` also asks a planner model when one is installed.
         assistant: z
           .object({
-            enabled: configBool.describe('Enable the Library Assistant in search'),
-            maxResults: z.int().min(1).max(500).describe('Maximum number of Library Assistant results'),
+            enabled: configBool.describe('Enable Frameleaf Assistant in search'),
+            maxResults: z.int().min(1).max(500).describe('Maximum number of Frameleaf Assistant results'),
             planner: configBool.describe('Plan questions with an installed planner model before the rules'),
           })
           .meta({ id: 'AdminConfigAssistantDto' })

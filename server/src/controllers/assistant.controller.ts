@@ -16,7 +16,7 @@ export class AssistantController {
   @Authenticated({ permission: Permission.AssetRead })
   @HttpCode(HttpStatus.OK)
   @Endpoint({
-    summary: 'Ask the Library Assistant',
+    summary: 'Search with Frameleaf Assistant',
     description:
       'Answer a question about the library with matching items and, for each one, why it matched. Plans with a planner model when one is installed and turned on, otherwise with the search rules.',
     history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
