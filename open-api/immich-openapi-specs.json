@@ -97245,7 +97245,7 @@
             "type": "array"
           },
           "supported": {
-            "description": "File types this import brings over (lower case, no dot)",
+            "description": "File extensions this import accepts (lower case, no dot). * includes downloadable originals.",
             "items": {
               "type": "string"
             },
@@ -146756,6 +146756,10 @@
       },
       "ServerMediaTypesResponseDto": {
         "properties": {
+          "boardsOriginals": {
+            "description": "Boards accepts other files as downloadable originals",
+            "type": "boolean"
+          },
           "font": {
             "description": "Font file extensions an upload into Boards (libraryScope=design) accepts",
             "items": {

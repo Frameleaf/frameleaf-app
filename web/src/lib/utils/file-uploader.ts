@@ -106,7 +106,7 @@ export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
     multiple,
     // A directory picker ignores `accept`; fileUploadHandler still filters unsupported
     // files out of whatever the folder contains, so nothing unsupported gets uploaded.
-    extensions: directory ? undefined : extensions,
+    extensions: directory || extensions.includes('*') ? undefined : extensions,
     directory,
   });
 
@@ -143,7 +143,7 @@ export const fileUploadHandler = async ({
   const promises = [];
   for (const file of files) {
     const name = file.name.toLowerCase();
-    if (extensions.some((extension) => name.endsWith(extension))) {
+    if (extensions.includes('*') || extensions.some((extension) => name.endsWith(extension))) {
       const deviceAssetId = getDeviceAssetId(file);
       uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId, isLockedAssets, libraryScope });
       promises.push(

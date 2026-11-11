@@ -354,6 +354,14 @@ export class MetadataService extends BaseService {
     if (!asset) {
       return;
     }
+    if (
+      asset.libraryScope === LibraryScope.Design &&
+      asset.type === AssetType.Other &&
+      mimeTypes.isBoardOriginal(asset.originalFileName)
+    ) {
+      await this.queueLockedSeal([asset.id]);
+      return;
+    }
     // FL-721 (spec §8.2): exiftool, ffprobe and sharp read a sealed original from one plain copy;
     // what is compared and recorded (the publication check, the asset row) stays the real path
     await withPlainCopy(asset.originalPath, (plainOriginal) =>

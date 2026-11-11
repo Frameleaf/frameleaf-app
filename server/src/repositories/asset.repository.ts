@@ -1900,6 +1900,16 @@ export class AssetRepository {
       // FL-1359: a font is a Boards item; Photos has no place for one
       if (libraryScope !== LibraryScope.Design && rows.some((row) => mimeTypes.isFont(row.originalFileName)))
         throw new BadRequestException('Fonts stay in Boards');
+      if (
+        libraryScope !== LibraryScope.Design &&
+        rows.some(
+          (row) =>
+            row.libraryScope === LibraryScope.Design &&
+            row.type === AssetType.Other &&
+            mimeTypes.isBoardOriginal(row.originalFileName),
+        )
+      )
+        throw new BadRequestException('Original files stay in Boards');
       await assets.updateAll(requested, { libraryScope });
       const motionIds = [
         ...new Set(rows.map(({ livePhotoVideoId }) => livePhotoVideoId).filter((id): id is string => !!id)),

@@ -64,6 +64,23 @@ describe('reading an Eagle library', () => {
     expect(planEagleImport(library, { supported: supportedExtensions(['.psb', '.otf']) }).coming).toBe(2);
   });
 
+  it('imports unfamiliar and extensionless originals when the server supports them', async () => {
+    const entry = (path: string, data = '') => ({ path, file: new File([data], path.split('/').at(-1)!) });
+    const library = await readEagleLibrary('Originals.library', [
+      entry('metadata.json', '{}'),
+      entry('images/I1.info/metadata.json', '{"name":"README"}'),
+      entry('images/I1.info/README'),
+      entry('images/I2.info/metadata.json', '{"name":"Page","ext":"mhtml"}'),
+      entry('images/I2.info/Page.mhtml'),
+    ]);
+    expect(planEagleImport(library, { supported: new Set(['*']) })).toMatchObject({
+      coming: 2,
+      unsupported: [],
+      missing: [],
+    });
+    expect(planEagleImport(library, { supported: new Set(['jpg']) })).toMatchObject({ coming: 0 });
+  });
+
   it('tells two libraries with the same name apart', async () => {
     const first = await readFixture();
     const again = await readFixture();
