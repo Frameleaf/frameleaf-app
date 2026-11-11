@@ -27081,7 +27081,7 @@ export function getAssetOcr({ id }: {
  */
 export function downloadAsset({ edited, format, id, key, slug }: {
     edited?: boolean;
-    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic";
+    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic" | "document-pdf";
     id: string;
     key?: string;
     slug?: string;

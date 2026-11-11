@@ -5,8 +5,9 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { rm } from 'node:fs/promises';
+import { copyFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { Transaction } from 'kysely';
@@ -66,6 +67,7 @@ import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
 import {
   OriginalAsset,
   OriginalLocationPolicy,
@@ -599,6 +601,74 @@ export class AssetMediaService extends BaseService {
     }
   }
 
+  private activeDocumentReviews = 0;
+
+  private async reviewDocument(
+    auth: AuthDto,
+    id: string,
+    ownerId: string,
+    originalPath: string,
+    originalFileName: string,
+    signal?: AbortSignal,
+  ): Promise<FileDownloadResponse> {
+    if (!originalPath || !isOfficePreviewFile(originalFileName)) {
+      throw new NotFoundException('Document preview is unavailable');
+    }
+    if (
+      getOriginalLocationPolicies({ auth, assets: [{ id, ownerId }], purpose: 'download' })({ id, ownerId }) !==
+      OriginalLocationPolicy.Serve
+    ) {
+      throw new ForbiddenException('Downloads are turned off while metadata is hidden');
+    }
+    if (this.activeDocumentReviews >= 2) {
+      throw new ServiceUnavailableException('Document previews are busy. Try again shortly.');
+    }
+
+    this.activeDocumentReviews++;
+    try {
+      const directory = await makeWorkDir('document-review', await isLockedPath(originalPath));
+      const release = () => rm(directory, { recursive: true, force: true });
+      try {
+        const output = path.join(directory, 'review.pdf');
+        const rendered = await withPlainCopy(
+          originalPath,
+          (source) =>
+            withOfficePreview(
+              source,
+              originalFileName,
+              async (pdf) => {
+                await copyFile(pdf, output);
+                return true;
+              },
+              { allPages: true, signal },
+            ),
+          { viewerId: lockedViewerOf(auth) },
+        );
+        if (!rendered) {
+          throw new NotFoundException('Document preview is unavailable');
+        }
+        signal?.throwIfAborted();
+        await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+        const current = await this.assetRepository.getForOriginal(id, false);
+        if (current.ownerId !== ownerId || current.originalPath !== originalPath) {
+          throw new ConflictException('This document changed during preview');
+        }
+        return new FileDownloadResponse({
+          path: output,
+          release,
+          contentType: 'application/pdf',
+          fileName: `${getFileNameWithoutExtension(originalFileName)}.pdf`,
+          cacheControl: CacheControl.PrivateWithoutCache,
+        });
+      } catch (error) {
+        await release();
+        throw error;
+      }
+    } finally {
+      this.activeDocumentReviews--;
+    }
+  }
+
   async downloadOriginal(
     auth: AuthDto,
     id: string,
@@ -616,6 +686,10 @@ export class AssetMediaService extends BaseService {
       id,
       dto.edited ?? false,
     );
+
+    if (dto.format === 'document-pdf') {
+      return this.reviewDocument(auth, id, ownerId, originalPath!, originalFileName, signal);
+    }
 
     // Downloaded as shown (owner, 2026-10-16): the owner's viewer shows their current develop version.
     const developedPath = dto.edited && !dto.format ? await this.getShownDevelopMaster(auth, id, ownerId) : undefined;
@@ -693,7 +767,9 @@ export class AssetMediaService extends BaseService {
       fileName: boardOriginal
         ? originalFileName
         : getFileNameWithoutExtension(originalFileName) + getFilenameExtension(filePath),
-      contentType: boardOriginal ? 'application/octet-stream' : mimeTypes.lookup(filePath),
+      contentType: boardOriginal
+        ? (mimeTypes.boardAudioType(originalFileName) ?? 'application/octet-stream')
+        : mimeTypes.lookup(filePath),
       ...(boardOriginal && { attachment: true }),
       // The current version can change under the same URL; a cached copy could be the one before.
       cacheControl: developedPath ? CacheControl.PrivateWithoutCache : CacheControl.PrivateWithCache,

@@ -148,7 +148,8 @@ export class AssetMediaController {
   @OriginalTransfer()
   @Endpoint({
     summary: 'Download original asset',
-    description: 'Downloads the original file, selected edit, or an explicitly requested still-image export.',
+    description:
+      'Downloads the original file, selected edit, or an explicitly requested still-image or document PDF export.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   async downloadAsset(

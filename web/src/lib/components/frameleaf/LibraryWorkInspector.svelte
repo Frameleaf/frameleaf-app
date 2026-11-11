@@ -412,7 +412,30 @@
     {#if fontMode}
       <!-- The specimen is the viewer's stage. -->
     {:else if originalOnly}
-      <!-- The file is available through Download original. -->
+      {#if detail && /\.(?:aac|flac|m4a|mp3|ogg|wav)$/i.test(detail.originalFileName)}
+        <audio
+          controls
+          preload="none"
+          aria-label={detail.originalFileName}
+          src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Original, edited: false })}
+        ></audio>
+      {:else if asset.thumbhash && previewFailed !== asset.id}
+        <a
+          class="preview"
+          href={detail && /\.(?:docx?|html|key|numbers|pages|potx|pptx?|txt|xlsx?)$/i.test(detail.originalFileName)
+            ? getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Original, format: 'document-pdf', edited: false })
+            : getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Fullsize, cacheKey: asset.thumbhash })}
+          target="_blank"
+          rel="noopener"
+          aria-label={$t('frameleaf_work_inspector_open')}
+        >
+          <img
+            src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash })}
+            alt=""
+            onerror={() => (previewFailed = asset.id)}
+          />
+        </a>
+      {/if}
     {:else if annotations && detail}
       {@const current = annotations}
       <figure class="preview annotated">

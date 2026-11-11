@@ -312,10 +312,10 @@ const AssetDownloadOriginalSchema = z
         "Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original",
       ),
     format: z
-      .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'])
+      .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'document-pdf'])
       .optional()
       .describe(
-        'Explicit still export from an unedited photo; omission returns the untouched original or selected edit',
+        'Explicit still-image export or read-only document PDF; omission returns the original or selected edit',
       ),
   })
   .meta({ id: 'AssetDownloadOriginalDto' });

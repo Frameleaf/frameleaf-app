@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { vitest } from 'vitest';
@@ -52,12 +52,17 @@ import { userStub } from 'test/fixtures/user.stub.js';
 import { getForAsset } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
-const { retainFile } = vi.hoisted(() => ({ retainFile: vi.fn() }));
+const { retainFile, withOfficePreview } = vi.hoisted(() => ({ retainFile: vi.fn(), withOfficePreview: vi.fn() }));
 
 // The never-replace move is proved on real files in media-health-roots.spec.ts; here only its wiring is.
 vi.mock('src/utils/media-health-roots.js', async (original) => ({
   ...(await original<typeof import('src/utils/media-health-roots.js')>()),
   retainFile,
+}));
+
+vi.mock('src/utils/office-preview.js', async (original) => ({
+  ...(await original<typeof import('src/utils/office-preview.js')>()),
+  withOfficePreview,
 }));
 
 const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
@@ -254,7 +259,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue(asset);
       await expect(sut.downloadOriginal(authStub.admin, asset.id, {})).resolves.toMatchObject({
         fileName: originalName,
-        contentType: 'application/octet-stream',
+        contentType: originalName.endsWith('.wav') ? 'audio/wav' : 'application/octet-stream',
         attachment: true,
       });
     },
@@ -1513,6 +1518,40 @@ describe(AssetMediaService.name, () => {
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+    });
+
+    it('opens a read-only PDF for an Office original and releases the temporary response', async () => {
+      const folder = await mkdtemp(join(tmpdir(), 'office-review-test-'));
+      try {
+        const originalPath = join(folder, 'report.bin');
+        const pdf = join(folder, 'preview.pdf');
+        await writeFile(originalPath, 'original');
+        await writeFile(pdf, '%PDF-1.7');
+        const asset = AssetFactory.from({
+          originalPath,
+          originalFileName: 'Report.docx',
+          type: AssetType.Other,
+        }).build();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginal.mockResolvedValue(asset);
+        withOfficePreview.mockImplementationOnce((_input, _name, save) => save(pdf));
+
+        const response = await sut.downloadOriginal(authStub.admin, asset.id, { format: 'document-pdf' });
+        try {
+          expect(withOfficePreview).toHaveBeenCalledWith(originalPath, 'Report.docx', expect.any(Function), {
+            allPages: true,
+            signal: undefined,
+          });
+          expect(response).toMatchObject({ contentType: 'application/pdf', fileName: 'Report.pdf' });
+          expect(await readFile(response.path, 'utf8')).toBe('%PDF-1.7');
+          expect(await readFile(originalPath, 'utf8')).toBe('original');
+        } finally {
+          await response.release?.();
+        }
+        await expect(stat(response.path)).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
     });
 
     it('downloads the original by default even when edits exist', async () => {

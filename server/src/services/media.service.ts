@@ -136,6 +136,7 @@ import {
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
 import { batched, clamp, isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
@@ -736,6 +737,14 @@ export class MediaService extends BaseService {
 
         throw error;
       }
+    } else if (isOfficePreviewFile(asset.originalFileName)) {
+      const preview = await withOfficePreview(asset.originalPath, asset.originalFileName, (pdf) =>
+        this.generateImageThumbnails({ ...asset, originalPath: pdf }, config),
+      );
+      if (!preview) {
+        return JobStatus.Skipped;
+      }
+      generated = preview;
     } else if (mimeTypes.isFont(asset.originalFileName)) {
       generated = await this.generateFontThumbnails(asset, config);
     } else {
