@@ -10,7 +10,7 @@
  * every difference from the manifest, and known-bad-corpus-actual.json, what each step did for every file.
  */
 import { Kysely } from 'kysely';
-import { existsSync, mkdirSync, readFileSync, Stats, writeFileSync } from 'node:fs';
+import { Stats, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -337,7 +337,7 @@ describe('known-bad corpus', () => {
         await checkFile(entry);
       } catch (error) {
         // A file that stopped part way must not leave the report saying everything matched.
-        if (!differences.some(({ file }) => file === entry.file)) {
+        if (differences.every(({ file }) => file !== entry.file)) {
           const message = error instanceof Error ? error.message : String(error);
           differences.push({ file: entry.file, lines: [`the run stopped: ${message.split('\n', 1)[0]}`] });
         }
