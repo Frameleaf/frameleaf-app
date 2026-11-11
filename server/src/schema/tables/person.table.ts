@@ -67,6 +67,10 @@ export class PersonTable {
   @ForeignKeyColumn(() => AssetFaceTable, { onDelete: 'SET NULL', nullable: true })
   faceAssetId!: string | null;
 
+  /** FL-1383: the owner picked the featured face, so it is never replaced by a better-looking one. */
+  @Column({ type: 'boolean', default: false })
+  isFeaturedFaceManual!: Generated<boolean>;
+
   @Column({ type: 'boolean', default: false })
   isFavorite!: Generated<boolean>;
 

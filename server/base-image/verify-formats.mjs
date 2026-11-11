@@ -151,6 +151,15 @@ const decoders = {
       ]);
       const { width, height } = await sharp(output).metadata();
       assert.deepEqual([width, height], [1440, 1080]);
+      // A Latin display face must not come out the same as the same words with no font file: that would
+      // mean the specimen was set in the image's fallback font. (Other scripts may share the fallback.)
+      if (facts.scripts.join(',') === 'latin') {
+        const plain = join(folder, 'plain.jpeg');
+        await new SharpOperations().renderFontSpecimen(null, { family: facts.family, text: sample }, [
+          { path: plain, size: 1440, format: 'jpeg', quality: 80 },
+        ]);
+        assert.notEqual(sha256(output), sha256(plain), 'the specimen was not set in the font file');
+      }
     } finally {
       rmSync(folder, { recursive: true, force: true });
     }

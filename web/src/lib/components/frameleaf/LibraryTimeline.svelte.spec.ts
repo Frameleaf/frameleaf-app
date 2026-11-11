@@ -1,5 +1,5 @@
 import { AssetVisibility, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
@@ -9,6 +9,7 @@ import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
 import { timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
+import TimelineHeaderHarness from '@test-data/frameleaf/TimelineHeaderHarness.svelte';
 
 vi.mock('$app/navigation', () => ({ afterNavigate: vi.fn(), beforeNavigate: vi.fn(), goto: vi.fn() }));
 const routerStarted = vi.hoisted(() => ({ value: false }));
@@ -439,15 +440,26 @@ describe('LibraryTimeline curated Years and Months', () => {
     return { ...view, onGroupingChange };
   };
 
-  it('leaves the grouping control to a header with room for it (FL-1391 B1)', async () => {
-    const { container, rerender } = renderGrouping('days');
+  it('hands the grouping control to a header with room for it (FL-1391 B1)', async () => {
+    const onGroupingChange = vi.fn();
+    const { container, rerender } = render(TimelineHeaderHarness, {
+      timelineManager: manager,
+      session,
+      grouping: 'days',
+      onGroupingChange,
+    });
     await tick();
     const row = () => container.querySelector('.fl-grouping')!;
+    const slot = () => within(screen.getByTestId('header-slot'));
     expect(row().querySelectorAll('button')).toHaveLength(4);
+    expect(slot().queryAllByRole('button')).toHaveLength(0);
 
-    // The row stays as an empty marker of where the header block ends.
+    // The header draws the control; the row stays as an empty marker of where the header block ends.
     await rerender({ groupingInHeader: true });
     expect(row()).toBeEmptyDOMElement();
+    expect(slot().getAllByRole('button')).toHaveLength(4);
+    await fireEvent.click(slot().getByRole('button', { name: 'frameleaf_library_grouping_months' }));
+    expect(onGroupingChange).toHaveBeenCalledWith('months');
   });
 
   it('forgets a header menu left open in the rows when the view turns to cards', async () => {

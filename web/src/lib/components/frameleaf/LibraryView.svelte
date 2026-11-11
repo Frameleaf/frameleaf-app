@@ -1957,6 +1957,7 @@
                   onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
                   leading={toolbarStart}
                   start={tabsInToolbar ? toolbarTabs : undefined}
+                  countElsewhere={tabsInToolbar && showStatusBar}
                 >
                   {@render toolbar?.()}
                   <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
