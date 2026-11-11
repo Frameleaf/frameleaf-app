@@ -11027,6 +11027,97 @@ export type MediaConnectionRefreshDto = {
         username?: string;
     };
 };
+export type MediaReach = {
+    count?: number;
+    mode: MediaReachMode;
+    since?: string;
+};
+export type MediaSaves = {
+    images?: boolean;
+    live?: boolean;
+    photos?: boolean;
+    pins?: boolean;
+    reels?: boolean;
+    replies?: boolean;
+    reposts?: boolean;
+    shorts?: boolean;
+    videos?: boolean;
+};
+export type MediaCreatorSubscription = {
+    connectionId: string | null;
+    error: string | null;
+    history: MediaReach;
+    historyComplete: boolean;
+    id: string;
+    intervalMinutes: number;
+    lastSuccessAt: string | null;
+    limitation: string | null;
+    nextCheckAt: string;
+    quality: MediaQuality;
+    saves: MediaSaves;
+    status: MediaSubscriptionState;
+};
+export type MediaCreatorResponseDto = {
+    about: string | null;
+    albumId: string | null;
+    createdAt: string;
+    /** The site’s own identifier for this account */
+    creatorId: string;
+    /** False for a creator added by saving one of their posts */
+    following: boolean;
+    handle: string | null;
+    hasAvatar: boolean;
+    hasBanner: boolean;
+    id: string;
+    name: string;
+    /** Items saved since this account last opened the creator */
+    newCount: number;
+    parentAlbumId: string | null;
+    provider: string;
+    savedCount: number;
+    seenAt: string;
+    subscription: (MediaCreatorSubscription) | null;
+    url: string | null;
+};
+export type MediaCreatorListDto = {
+    creators: MediaCreatorResponseDto[];
+};
+export type MediaCreatorItemResponse = {
+    assetId: string;
+    /** The creator record this item belongs to */
+    creatorId: string;
+    description: string;
+    /** Seconds */
+    duration: number | null;
+    hasPoster: boolean;
+    kind: MediaItemKind;
+    pageUrl: string | null;
+    playlistId: string | null;
+    playlistTitle: string | null;
+    /** Seconds */
+    position: number;
+    /** Attachments of one post share it */
+    postId: string | null;
+    publishedAt: string | null;
+    savedAt: string;
+    savedBy: MediaSavedBy;
+    section: (MediaSection) | null;
+    tags: string[];
+    title: string;
+    watched: boolean;
+};
+export type MediaCreatorFeedDto = {
+    items: MediaCreatorItemResponse[];
+};
+export type MediaCreatorUpdateDto = {
+    /** A private collection to file under, or null for none */
+    parentAlbumId: string | null;
+};
+export type MediaCreatorItemsDto = {
+    hasNextPage: boolean;
+    items: MediaCreatorItemResponse[];
+    page: number;
+};
 export type MediaHealthChecksumDto = {
     algorithm: MediaHealthChecksumAlgorithm;
     /** Checksum as lowercase hex */
@@ -11447,14 +11538,19 @@ export type MediaImportItemResponse = {
     creator: string | null;
     creatorId: string | null;
     description: string;
+    duration: number | null;
     error: string | null;
     id: string;
     kind: MediaItemKind;
     pageUrl: string;
+    playlistId: string | null;
+    playlistTitle: string | null;
     postId: string;
     provider: string;
     publishedAt: string | null;
+    section: (MediaSection) | null;
     state: MediaImportItemState;
+    tags: string[];
     title: string;
 };
 export type MediaImportResponseDto = {
@@ -11471,7 +11567,9 @@ export type MediaImportResponseDto = {
     items: MediaImportItemResponse[];
     kind: (MediaInspectionKind) | null;
     limitation: string | null;
+    mediaCreatorId: string | null;
     provider: string | null;
+    quality: MediaQuality;
     saved: number;
     skipped: number;
     state: MediaImportState;
@@ -11482,11 +11580,13 @@ export type MediaImportListDto = {
     imports: MediaImportResponseDto[];
 };
 export type MediaImportCreateDto = {
-    albumId: string;
+    /** Left out, the items are filed into their creator’s own collection */
+    albumId?: string;
     idempotencyKey: string;
     inspectionId: string;
     itemIds: string[];
     overrideSuppression?: boolean;
+    quality?: MediaQuality;
     streamMp4?: boolean;
     tagIds?: string[];
 };
@@ -11720,6 +11820,7 @@ export type MediaSubscriptionResponseDto = {
     discovered: number;
     error: string | null;
     failed: number;
+    /** Kept for older clients, which read a recent reach as new; use reach */
     history: {
         mode: MediaHistoryMode;
         since?: string;
@@ -11729,9 +11830,13 @@ export type MediaSubscriptionResponseDto = {
     intervalMinutes: number;
     lastSuccessAt: string | null;
     limitation: string | null;
+    mediaCreatorId: string | null;
     nextCheckAt: string;
     provider: string;
+    quality: MediaQuality;
+    reach: MediaReach;
     saved: number;
+    saves: MediaSaves;
     skipped: number;
     status: MediaSubscriptionState;
     url: string;
@@ -11740,19 +11845,32 @@ export type MediaSubscriptionListDto = {
     subscriptions: MediaSubscriptionResponseDto[];
 };
 export type MediaSubscriptionCreateDto = {
-    history: {
-        mode: MediaHistoryMode;
-        since?: string;
-    };
+    history: MediaReach;
     idempotencyKey: string;
     inspectionId: string;
     intervalMinutes?: 15 | 60 | 360 | 1440;
     parentId?: string;
+    quality?: MediaQuality;
+    saves?: MediaSaves;
 };
 export type MediaSubscriptionUpdateDto = {
     action?: MediaSubscriptionAction;
     connectionId?: string | null;
+    history?: MediaReach;
     intervalMinutes?: 15 | 60 | 360 | 1440;
+    quality?: MediaQuality;
+    saves?: MediaSaves;
+};
+export type MediaWatchUpdateDto = {
+    /** Seconds */
+    position?: number;
+    watched: boolean;
+};
+export type MediaWatchResponseDto = {
+    assetId: string;
+    position: number;
+    updatedAt: string;
+    watched: boolean;
 };
 export type MemoryStoryPlaceDto = {
     /** City */
@@ -30800,6 +30918,140 @@ export function refreshMediaConnection({ id, mediaConnectionRefreshDto }: {
     })));
 }
 /**
+ * List followed and added creators with their new item counts
+ */
+export function getMediaCreators(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorListDto;
+    }>("/media-creators", {
+        ...opts
+    }));
+}
+/**
+ * Retrieve the cover a site gave a saved video
+ */
+export function getMediaCreatorItemPoster({ assetId }: {
+    assetId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-creators/items/${encodeURIComponent(assetId)}/poster`, {
+        ...opts
+    }));
+}
+/**
+ * List the newest items not yet seen, across creators
+ */
+export function getNewMediaCreatorItems({ limit }: {
+    limit?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorFeedDto;
+    }>(`/media-creators/new${QS.query(QS.explode({
+        limit
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get one creator
+ */
+export function getMediaCreator({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorResponseDto;
+    }>(`/media-creators/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Move a creator’s collection into a private folder
+ */
+export function updateMediaCreator({ id, mediaCreatorUpdateDto }: {
+    id: string;
+    mediaCreatorUpdateDto: MediaCreatorUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorResponseDto;
+    }>(`/media-creators/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: mediaCreatorUpdateDto
+    })));
+}
+/**
+ * Retrieve the kept copy of a creator’s picture
+ */
+export function getMediaCreatorAvatar({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-creators/${encodeURIComponent(id)}/avatar`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve the kept copy of a creator’s banner
+ */
+export function getMediaCreatorBanner({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/media-creators/${encodeURIComponent(id)}/banner`, {
+        ...opts
+    }));
+}
+/**
+ * List a creator’s saved items, one page at a time
+ */
+export function getMediaCreatorItems({ id, kind, page, q, section, sort, unwatched }: {
+    id: string;
+    kind?: MediaItemKind;
+    page?: number;
+    q?: string;
+    section?: MediaSection;
+    sort?: MediaCreatorItemSort;
+    unwatched?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorItemsDto;
+    }>(`/media-creators/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        kind,
+        page,
+        q,
+        section,
+        sort,
+        unwatched
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Record that this account opened a creator
+ */
+export function markMediaCreatorSeen({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCreatorResponseDto;
+    }>(`/media-creators/${encodeURIComponent(id)}/seen`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * List media health findings
  */
 export function list({ allAccounts, category, needsAttention, ownerId, page, size, status }: {
@@ -31474,6 +31726,22 @@ export function updateMediaSubscription({ id, mediaSubscriptionUpdateDto }: {
         ...opts,
         method: "PATCH",
         body: mediaSubscriptionUpdateDto
+    })));
+}
+/**
+ * Record what this account has watched of a saved item
+ */
+export function updateMediaWatch({ assetId, mediaWatchUpdateDto }: {
+    assetId: string;
+    mediaWatchUpdateDto: MediaWatchUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaWatchResponseDto;
+    }>(`/media-watch/${encodeURIComponent(assetId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: mediaWatchUpdateDto
     })));
 }
 /**
@@ -42215,6 +42483,47 @@ export enum MediaConnectionStatus {
     Expired = "expired",
     Disconnected = "disconnected"
 }
+export enum MediaReachMode {
+    Recent = "recent",
+    All = "all",
+    Since = "since",
+    New = "new"
+}
+export enum MediaQuality {
+    $720 = "720",
+    $1080 = "1080",
+    Best = "best",
+    Audio = "audio"
+}
+export enum MediaSubscriptionState {
+    Active = "active",
+    Paused = "paused",
+    Attention = "attention",
+    Unsubscribed = "unsubscribed"
+}
+export enum MediaItemKind {
+    Image = "image",
+    Video = "video",
+    Audio = "audio"
+}
+export enum MediaSavedBy {
+    Subscription = "subscription",
+    Download = "download"
+}
+export enum MediaSection {
+    Video = "video",
+    Short = "short",
+    Live = "live",
+    Reel = "reel",
+    Post = "post",
+    Pin = "pin",
+    Photo = "photo"
+}
+export enum MediaCreatorItemSort {
+    Newest = "newest",
+    Oldest = "oldest",
+    Longest = "longest"
+}
 export enum MediaHealthCategory {
     Missing = "missing",
     Corrupt = "corrupt"
@@ -42288,11 +42597,6 @@ export enum MediaHealthActivityAction {
     RecoverDamagedMedia = "recover-damaged-media",
     TrashDamagedMedia = "trash-damaged-media"
 }
-export enum MediaItemKind {
-    Image = "image",
-    Video = "video",
-    Audio = "audio"
-}
 export enum MediaImportItemState {
     Discovered = "discovered",
     Downloading = "downloading",
@@ -42360,12 +42664,6 @@ export enum MediaHistoryMode {
     All = "all",
     Since = "since",
     New = "new"
-}
-export enum MediaSubscriptionState {
-    Active = "active",
-    Paused = "paused",
-    Attention = "attention",
-    Unsubscribed = "unsubscribed"
 }
 export enum MediaSubscriptionAction {
     Pause = "pause",
